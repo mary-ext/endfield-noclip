@@ -62,7 +62,8 @@ struct VertexIn {
 }
 
 struct VertexOut {
-	@builtin(position) position: vec4f,
+	// alpha-tested meshes are shaded where their depth equals that of an earlier pass with another pipeline
+	@builtin(position) @invariant position: vec4f,
 	@location(0) rel: vec3f,
 	@location(1) normal: vec3f,
 	// w = bitangent sign, 0 without a tangent
@@ -109,23 +110,14 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	return out;
 }
 
-// two entry points per pass: alpha-tested materials get the ones that can discard. a shader that may discard
-// loses early depth and, on tile-based GPUs, hidden-surface removal, so opaque draws must not use them.
+// a shader that may discard loses early depth and, on tile-based GPUs, hidden-surface removal, so only the
+// depth passes of alpha-tested materials discard (fs_cutout_depth). their shading runs fs_opaque where the
+// depth matches.
 
 @fragment
 fn fs_opaque(in: VertexOut) -> Shaded {
 	let draw = draws[in.draw];
 	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
-	return shade_mesh(in, draw, base);
-}
-
-@fragment
-fn fs_cutout(in: VertexOut) -> Shaded {
-	let draw = draws[in.draw];
-	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
-	if (cut_out(draw, base.a)) {
-		discard;
-	}
 	return shade_mesh(in, draw, base);
 }
 
@@ -136,8 +128,7 @@ fn cut_out(draw: Draw, alpha: f32) -> bool {
 
 fn shade_mesh(in: VertexOut, draw: Draw, base: vec4f) -> Shaded {
 	let flags = bitcast<u32>(draw.offset.w);
-	// derivatives (and implicit-LOD sampling) must happen in uniform control flow, which `discard` keeps (it
-	// demotes the invocation to a helper)
+	// derivatives (and implicit-LOD sampling) must happen in uniform control flow
 	let faceted = cross(dpdy(in.rel), dpdx(in.rel));
 	let packed = textureSample(normal_map, detail_sampler, in.uv * draw.normal_uv.xy + draw.normal_uv.zw);
 	let mask = textureSample(mask_map, detail_sampler, in.uv * draw.mask_uv.xy + draw.mask_uv.zw);
@@ -199,9 +190,10 @@ fn shade_mesh(in: VertexOut, draw: Draw, base: vec4f) -> Shaded {
 	return shade_surface(s, in.rel);
 }
 
-// the shadow pass of alpha-tested materials (opaque ones have no fragment stage)
+// the depth of alpha-tested materials, in the main pass and the shadow passes (opaque ones have no fragment
+// stage there)
 @fragment
-fn fs_shadow_cutout(in: VertexOut) {
+fn fs_cutout_depth(in: VertexOut) {
 	let draw = draws[in.draw];
 	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
 	if (cut_out(draw, base.a)) {

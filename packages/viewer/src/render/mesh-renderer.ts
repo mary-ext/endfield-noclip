@@ -29,13 +29,16 @@ const DRAW_FLOATS = 8 + LOOK_FLOATS;
 const MAX_DRAWS = 16_384;
 /** bytes per vertex of the zero buffer bound in place of missing streams (the widest is UV set 0) */
 const ZERO_STRIDE = 8;
-/** pipeline keys of a pass: opaque draws, then alpha-tested ones */
-interface PassKeys {
-	opaque: string;
-	cutout: string;
+/** one run over a pass's opaque or alpha-tested draws with one pipeline */
+interface DrawPhase {
+	key: string;
+	/** over the alpha-tested draws, else the opaque ones */
+	cutout: boolean;
+	/** whether the pipeline reads the material's textures */
+	textured: boolean;
 }
 
-const SHADOW_KEYS: PassKeys = { opaque: 'mesh/shadow/opaque', cutout: 'mesh/shadow/cutout' };
+const SHADOW_KEYS = { opaque: 'mesh/shadow/opaque', cutout: 'mesh/shadow/cutout' };
 
 interface PreparedDraw {
 	cutout: boolean;
@@ -73,7 +76,8 @@ export class MeshRenderer {
 	#device: GPUDevice;
 	#layouts: BindLayouts;
 	#pipelines: PipelineCache;
-	#keys: PassKeys;
+	/** main-pass pipeline keys */
+	#keys: { opaque: string; cutoutDepth: string; cutoutShade: string };
 	#instances: GPUBindGroup;
 	#params: GPUBuffer;
 	#paramData = new Float32Array(MAX_DRAWS * DRAW_FLOATS);
@@ -161,23 +165,42 @@ export class MeshRenderer {
 		};
 		this.#keys = {
 			opaque: `mesh/opaque/x${format.sampleCount}`,
-			cutout: `mesh/cutout/x${format.sampleCount}`,
+			cutoutDepth: `mesh/cutout-depth/x${format.sampleCount}`,
+			cutoutShade: `mesh/cutout-shade/x${format.sampleCount}`,
 		};
 		// instances may be mirrored (negative determinant), which flips winding per instance
 		const primitive: GPUPrimitiveState = { topology: 'triangle-list', cullMode: 'none' };
-		for (const [key, entryPoint] of [
-			[this.#keys.opaque, 'fs_opaque'],
-			[this.#keys.cutout, 'fs_cutout'],
-		]) {
-			void pipelines.prepare(key, () => ({
-				layout: layouts.meshPipeline,
-				vertex,
-				fragment: { module, entryPoint, targets: format.targets },
-				primitive,
-				depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
-				multisample: { count: format.sampleCount },
-			}));
-		}
+		const multisample: GPUMultisampleState = { count: format.sampleCount };
+		void pipelines.prepare(this.#keys.opaque, () => ({
+			layout: layouts.meshPipeline,
+			vertex,
+			fragment: { module, entryPoint: 'fs_opaque', targets: format.targets },
+			primitive,
+			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
+			multisample,
+		}));
+		// alpha-tested meshes: their depth first, cut out, then shading only the surviving front-most samples,
+		// with a shader that can't discard
+		void pipelines.prepare(this.#keys.cutoutDepth, () => ({
+			layout: layouts.meshPipeline,
+			vertex,
+			fragment: {
+				module,
+				entryPoint: 'fs_cutout_depth',
+				targets: format.targets.map((target) => ({ ...target, writeMask: 0 })),
+			},
+			primitive,
+			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
+			multisample,
+		}));
+		void pipelines.prepare(this.#keys.cutoutShade, () => ({
+			layout: layouts.meshPipeline,
+			vertex,
+			fragment: { module, entryPoint: 'fs_opaque', targets: format.targets },
+			primitive,
+			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: 'equal' },
+			multisample,
+		}));
 		void pipelines.prepare(SHADOW_KEYS.opaque, () => ({
 			layout: layouts.meshPipeline,
 			vertex,
@@ -187,7 +210,7 @@ export class MeshRenderer {
 		void pipelines.prepare(SHADOW_KEYS.cutout, () => ({
 			layout: layouts.meshPipeline,
 			vertex,
-			fragment: { module, entryPoint: 'fs_shadow_cutout', targets: [] },
+			fragment: { module, entryPoint: 'fs_cutout_depth', targets: [] },
 			primitive,
 			depthStencil: SHADOW_DEPTH_STATE,
 		}));
@@ -386,7 +409,12 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encode(pass: GPURenderPassEncoder): number {
-		return this.#encode(pass, this.#keys, { shadow: false });
+		const keys = this.#keys;
+		return this.#encode(pass, [
+			{ key: keys.opaque, cutout: false, textured: true },
+			{ key: keys.cutoutDepth, cutout: true, textured: true },
+			{ key: keys.cutoutShade, cutout: true, textured: true },
+		]);
 	}
 
 	/**
@@ -396,49 +424,67 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encodeShadow(pass: GPURenderPassEncoder): number {
-		return this.#encode(pass, SHADOW_KEYS, { shadow: true });
+		return this.#encode(pass, [
+			// opaque shadow draws read no textures, so any material group will do
+			{ key: SHADOW_KEYS.opaque, cutout: false, textured: false },
+			{ key: SHADOW_KEYS.cutout, cutout: true, textured: true },
+		]);
 	}
 
-	#encode(pass: GPURenderPassEncoder, keys: PassKeys, { shadow }: { shadow: boolean }): number {
-		const opaque = this.#pipelines.get(keys.opaque);
-		const cutout = this.#pipelines.get(keys.cutout);
-		if (opaque === undefined || cutout === undefined || this.#drawCount === 0) {
+	/** encodes the phases in order; nothing if any phase's pipeline isn't ready */
+	#encode(pass: GPURenderPassEncoder, phases: readonly DrawPhase[]): number {
+		if (this.#drawCount === 0) {
 			return 0;
+		}
+		const pipelines: GPURenderPipeline[] = [];
+		for (const phase of phases) {
+			const pipeline = this.#pipelines.get(phase.key);
+			if (pipeline === undefined) {
+				return 0;
+			}
+			pipelines.push(pipeline);
+		}
+		// draws are sorted opaque first
+		let split = 0;
+		while (split < this.#drawCount && !this.#draws[split].cutout) {
+			split++;
 		}
 		pass.setBindGroup(1, this.#instances);
 		pass.setBindGroup(2, this.#drawGroup);
-		let pipeline: GPURenderPipeline | null = null;
-		let geometry: ResidentGeometry | null = null;
-		let material: GPUBindGroup | null = null;
-		for (let i = 0; i < this.#drawCount; i++) {
-			const draw = this.#draws[i];
-			const drawPipeline = draw.cutout ? cutout : opaque;
-			if (drawPipeline !== pipeline) {
-				pipeline = drawPipeline;
-				pass.setPipeline(pipeline);
+		let draws = 0;
+		phases.forEach((phase, p) => {
+			const from = phase.cutout ? split : 0;
+			const to = phase.cutout ? this.#drawCount : split;
+			if (from === to) {
+				return;
 			}
-			// opaque shadow draws read no textures, so any material group will do
-			const needsMaterial = !shadow || draw.cutout || material === null;
-			if (needsMaterial && draw.material !== material) {
-				material = draw.material;
-				pass.setBindGroup(3, material);
+			pass.setPipeline(pipelines[p]);
+			let geometry: ResidentGeometry | null = null;
+			let material: GPUBindGroup | null = null;
+			for (let i = from; i < to; i++) {
+				const draw = this.#draws[i];
+				if ((phase.textured || material === null) && draw.material !== material) {
+					material = draw.material;
+					pass.setBindGroup(3, material);
+				}
+				if (draw.geometry !== geometry) {
+					const next: ResidentGeometry = draw.geometry;
+					geometry = next;
+					pass.setVertexBuffer(0, next.vertices, 0, next.positionBytes);
+					const optional = [next.normalOffset, next.uvOffset, next.tangentOffset];
+					optional.forEach((offset, slot) => {
+						if (offset === null) {
+							pass.setVertexBuffer(slot + 1, this.#zeros);
+						} else {
+							pass.setVertexBuffer(slot + 1, next.vertices, offset);
+						}
+					});
+					pass.setIndexBuffer(next.indices, next.indexFormat);
+				}
+				pass.drawIndexed(draw.indexCount, draw.count, draw.firstIndex, draw.baseVertex, draw.first);
 			}
-			if (draw.geometry !== geometry) {
-				const next: ResidentGeometry = draw.geometry;
-				geometry = next;
-				pass.setVertexBuffer(0, next.vertices, 0, next.positionBytes);
-				const optional = [next.normalOffset, next.uvOffset, next.tangentOffset];
-				optional.forEach((offset, slot) => {
-					if (offset === null) {
-						pass.setVertexBuffer(slot + 1, this.#zeros);
-					} else {
-						pass.setVertexBuffer(slot + 1, next.vertices, offset);
-					}
-				});
-				pass.setIndexBuffer(next.indices, next.indexFormat);
-			}
-			pass.drawIndexed(draw.indexCount, draw.count, draw.firstIndex, draw.baseVertex, draw.first);
-		}
-		return this.#drawCount;
+			draws += to - from;
+		});
+		return draws;
 	}
 }
