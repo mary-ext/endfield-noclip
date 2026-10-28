@@ -1,11 +1,23 @@
+import {
+	type EnvironmentVolume,
+	EnvironmentVolumeType,
+} from '@endfield-noclip/formats/endfield/environment-volume';
 import type { PartitionLevel } from '@endfield-noclip/formats/endfield/level-partition';
 import {
 	ENVIRONMENT_SECTIONS,
 	type EnvironmentPhase,
+	type EnvironmentSection,
 	type EnvironmentSectionName,
 } from '@endfield-noclip/formats/hg/environment-phase';
 import type { PlainObject } from '@endfield-noclip/formats/unity/plain-object';
-import type { EnvironmentProfile, PostProfile } from '@endfield-noclip/package-format/format';
+import type {
+	EnvironmentPhaseInfo,
+	EnvironmentProfile,
+	EnvironmentSections,
+	EnvironmentVolumeInfo,
+	EnvironmentVolumeShape,
+	PostProfile,
+} from '@endfield-noclip/package-format/format';
 
 import { getOrInsert, intern } from '../collections.ts';
 import type { Context } from '../context.ts';
@@ -63,16 +75,45 @@ export interface EnvironmentPlan {
 	/** per level, in partition order: index into {@link profiles}, or `null` */
 	levels: (number | null)[];
 	profiles: PendingProfile[];
-	/** textures the profiles reference; slots index this list */
+	/** every phase a volume applies, uncomposed */
+	phases: PendingPhase[];
+	volumes: EnvironmentVolumeInfo[];
+	/** textures the profiles and phases reference; slots index this list */
 	textures: ObjectRef[];
 	debug: LevelEnvironmentDebug[];
+}
+
+/** a texture field to fill in once texture ids are known */
+interface TextureSlot {
+	holder: PlainObject;
+	key: string;
+	texture: number;
 }
 
 interface PendingProfile {
 	/** owned; texture fields are `null` until {@link finishEnvironments} */
 	profile: EnvironmentProfile;
-	slots: { holder: PlainObject; key: string; texture: number }[];
+	slots: TextureSlot[];
 }
+
+interface PendingPhase {
+	/** owned; texture fields are `null` until {@link finishEnvironments} */
+	phase: EnvironmentPhaseInfo;
+	slots: TextureSlot[];
+}
+
+/** the manifest's environment lists */
+export interface FinishedEnvironments {
+	environments: EnvironmentProfile[];
+	environmentPhases: EnvironmentPhaseInfo[];
+	environmentVolumes: EnvironmentVolumeInfo[];
+}
+
+/**
+ * volume names that read as story or battle states rather than an area's look: Snowy Forest's quest night,
+ * boss fights, battles (`zhandou`)
+ */
+const STATE_NAME = /night|fight|zhandou|battle/i;
 
 /**
  * resolves every level's environment and loads the phases and profiles involved
@@ -87,7 +128,14 @@ export const planEnvironments = async (
 	scene: string,
 	levels: readonly PartitionLevel[],
 ): Promise<EnvironmentPlan> => {
-	const plan: EnvironmentPlan = { levels: [], profiles: [], textures: [], debug: [] };
+	const plan: EnvironmentPlan = {
+		levels: [],
+		profiles: [],
+		phases: [],
+		volumes: [],
+		textures: [],
+		debug: [],
+	};
 	if (levels.length === 0) {
 		return plan;
 	}
@@ -163,26 +211,165 @@ export const planEnvironments = async (
 		// oxlint-disable-next-line no-await-in-loop -- all lookups are in flight; profiles are built in order
 		plan.profiles.push(buildProfile(phases, await textures, post, plan.textures, textureIndex));
 	}
+
+	// every volume with its own phase, for blending at the camera. a phase that can't be read leaves its volume
+	// without one, which the viewer skips
+	const volumePhases = await Promise.all(
+		volumes.environment.map(async ({ volume }) => {
+			if (volume.envPhase === null) {
+				return null;
+			}
+			try {
+				const loadedPhase = await phase(volume.envPhase);
+				return { loaded: loadedPhase, textures: await resolvePhaseTextures(resolver, loadedPhase) };
+			} catch {
+				return null;
+			}
+		}),
+	);
+	const phaseIndex = new Map<string, number>();
+	for (const [i, { tag, volume }] of volumes.environment.entries()) {
+		const shape = volumeShape(volume);
+		if (shape === null) {
+			continue;
+		}
+		const loadedPhase = volumePhases[i];
+		const index =
+			loadedPhase === null
+				? null
+				: intern(plan.phases, phaseIndex, loadedPhase.loaded.phase.name, () =>
+						buildPhase(loadedPhase.loaded.phase, loadedPhase.textures, plan.textures, textureIndex),
+					);
+		plan.volumes.push({
+			name: volume.name.replace(/#.*$/, ''),
+			level: tag,
+			shape,
+			blendMode: volume.blendMode,
+			priority: volume.priority,
+			blendDistance: volume.blendDistance,
+			fadeInDuration: volume.fadeInDuration,
+			fadeOutDuration: volume.fadeOutDuration,
+			phase: index,
+			state: STATE_NAME.test(volume.name),
+		});
+	}
 	return plan;
 };
 
+/** @returns where a volume applies, or `null` for shapes not understood */
+const volumeShape = (volume: EnvironmentVolume): EnvironmentVolumeShape | null => {
+	switch (volume.volumeType) {
+		case EnvironmentVolumeType.Global: {
+			return { kind: 'global' };
+		}
+		case EnvironmentVolumeType.Box: {
+			const transform = volume.transform;
+			return transform === null
+				? null
+				: { kind: 'box', position: transform.position, rotation: transform.rotation, scale: transform.scale };
+		}
+		case EnvironmentVolumeType.PolyLine: {
+			const shape = volume.shape;
+			if (shape === null || shape.points.length < 3) {
+				return null;
+			}
+			const bottom = shape.position[1] + shape.baseHeightOffset;
+			return { kind: 'prism', points: shape.points, bottom, top: bottom + shape.height };
+		}
+		default: {
+			return null;
+		}
+	}
+};
+
+/** @returns a phase's texture objects per section, resolved against its own file */
+const resolvePhaseTextures = async (
+	resolver: AssetResolver,
+	loaded: LoadedPhase,
+): Promise<SectionTextures> => {
+	const entries = await Promise.all(
+		ENVIRONMENT_SECTIONS.map(async (name) => {
+			const refs = await Promise.all(
+				loaded.phase.sections[name].textures.map(({ pptr }) =>
+					resolver.resolve(loaded.ref, pptr).catch(() => null),
+				),
+			);
+			return [name, refs] as const;
+		}),
+	);
+	return new Map(entries);
+};
+
+const buildPhase = (
+	phase: EnvironmentPhase,
+	textureRefs: SectionTextures,
+	textures: ObjectRef[],
+	textureIndex: Map<string, number>,
+): PendingPhase => {
+	const slots: TextureSlot[] = [];
+	const sections: Partial<Record<keyof EnvironmentSections, PlainObject>> = {};
+	const active: (keyof EnvironmentSections)[] = [];
+	for (const name of ENVIRONMENT_SECTIONS) {
+		const section = phase.sections[name];
+		const value = structuredClone(section.value);
+		fillTextureSlots(value, section, textureRefs.get(name), slots, textures, textureIndex);
+		sections[SECTION_KEYS[name]] = value;
+		if (section.active) {
+			active.push(SECTION_KEYS[name]);
+		}
+	}
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the sections are the game's TypeTree, which the interfaces transcribe
+	const typed = sections as unknown as EnvironmentSections;
+	return { phase: { name: phase.name, active, sections: typed }, slots };
+};
+
+/** nulls a section's texture fields and records where each resolved texture goes */
+const fillTextureSlots = (
+	value: PlainObject,
+	section: EnvironmentSection,
+	refs: (ObjectRef | null)[] | undefined,
+	slots: TextureSlot[],
+	textures: ObjectRef[],
+	textureIndex: Map<string, number>,
+): void => {
+	for (const [i, { path }] of section.textures.entries()) {
+		const holder = objectAt(value, path.slice(0, -1));
+		const key = path.at(-1)!;
+		holder[key] = null;
+		const ref = refs?.[i] ?? null;
+		if (ref !== null) {
+			slots.push({ holder, key, texture: intern(textures, textureIndex, objectKey(ref), () => ref) });
+		}
+	}
+};
+
 /**
- * fills in the texture ids of planned profiles
+ * fills in the texture ids of planned profiles and phases
  *
- * @param plan the plan; its profiles are completed in place and handed out
+ * @param plan the plan; its profiles and phases are completed in place and handed out
  * @param textureIds per {@link EnvironmentPlan.textures} entry, its texture-table id or `null`
- * @returns the manifest's environments
+ * @returns the manifest's environment lists
  */
 export const finishEnvironments = (
 	plan: EnvironmentPlan,
 	textureIds: readonly (number | null)[],
-): EnvironmentProfile[] => {
-	return plan.profiles.map(({ profile, slots }) => {
+): FinishedEnvironments => {
+	const fill = (slots: readonly TextureSlot[]): void => {
 		for (const { holder, key, texture } of slots) {
 			holder[key] = textureIds[texture] ?? null;
 		}
-		return profile;
-	});
+	};
+	return {
+		environments: plan.profiles.map(({ profile, slots }) => {
+			fill(slots);
+			return profile;
+		}),
+		environmentPhases: plan.phases.map(({ phase, slots }) => {
+			fill(slots);
+			return phase;
+		}),
+		environmentVolumes: plan.volumes,
+	};
 };
 
 const levelDebug = (level: PartitionLevel, choice: LevelEnvironmentChoice): LevelEnvironmentDebug => {
@@ -228,22 +415,13 @@ const buildProfile = (
 	textures: ObjectRef[],
 	textureIndex: Map<string, number>,
 ): PendingProfile => {
-	const slots: PendingProfile['slots'] = [];
+	const slots: TextureSlot[] = [];
 	const sections: Partial<Record<keyof EnvironmentProfile, PlainObject>> = {};
 	for (const name of ENVIRONMENT_SECTIONS) {
 		const { section } = composed[name];
 		// inherited sections are shared between profiles, so each profile gets its own copy
 		const value = structuredClone(section.value);
-		for (const [i, { path }] of section.textures.entries()) {
-			const holder = objectAt(value, path.slice(0, -1));
-			const key = path.at(-1)!;
-			holder[key] = null;
-			const ref = textureRefs.get(name)?.[i] ?? null;
-			if (ref === null) {
-				continue;
-			}
-			slots.push({ holder, key, texture: intern(textures, textureIndex, objectKey(ref), () => ref) });
-		}
+		fillTextureSlots(value, section, textureRefs.get(name), slots, textures, textureIndex);
 		sections[SECTION_KEYS[name]] = value;
 	}
 	return { profile: profileOf(own.phase, sections, post), slots };

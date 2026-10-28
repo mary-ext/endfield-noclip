@@ -36,7 +36,9 @@ import {
 	CORE_ARCHIVE,
 	CORE_PATHS,
 	DrawRole,
+	type EnvironmentPhaseInfo,
 	type EnvironmentProfile,
+	type EnvironmentVolumeInfo,
 	type GeometryTable,
 	type InstanceBlock,
 	isTerrainHole,
@@ -298,7 +300,7 @@ export const packScene = async (
 		const [environmentTextureIds, waterTextureIds] = assetTables.extraTextureIds;
 		const written = await writePackage(pack, assetTables, {
 			...states,
-			environments: finishEnvironments(environments, environmentTextureIds),
+			...finishEnvironments(environments, environmentTextureIds),
 			water: finishWater(water, waterTextureIds),
 			resident: instances.resident,
 			terrainLevels,
@@ -782,6 +784,8 @@ const writePackage = async (
 	assetTables: AssetTables,
 	states: SceneStateInfo & {
 		environments: EnvironmentProfile[];
+		environmentPhases: EnvironmentPhaseInfo[];
+		environmentVolumes: EnvironmentVolumeInfo[];
 		water: WaterTable;
 		resident: ContentRef[];
 		terrainLevels: number[];
@@ -845,6 +849,8 @@ const writePackage = async (
 		terrain: scene.terrain === null ? null : { ...scene.terrain, levels: states.terrainLevels },
 		levels: states.levels,
 		environments: states.environments,
+		environmentPhases: states.environmentPhases,
+		environmentVolumes: states.environmentVolumes,
 		states: {
 			progressions: states.progressions,
 			conditionalSets: [],

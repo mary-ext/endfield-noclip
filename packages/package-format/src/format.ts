@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 4;
+export const PACKAGE_VERSION = 5;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -269,6 +269,10 @@ export interface PackageManifest {
 	levels: LevelInfo[];
 	/** environment profiles, deduplicated; {@link LevelInfo.environment} indexes this list */
 	environments: EnvironmentProfile[];
+	/** every phase an environment volume applies; {@link EnvironmentVolumeInfo.phase} indexes this list */
+	environmentPhases: EnvironmentPhaseInfo[];
+	/** the scene's environment volumes, for blending at the camera */
+	environmentVolumes: EnvironmentVolumeInfo[];
 	states: StatesInfo;
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
 	archives: ArchiveInfo[];
@@ -519,6 +523,56 @@ export interface EnvironmentProfile {
 	autoExposure: AutoExposureConfig;
 	/** the level's global post-processing volume, or `null` if it has none */
 	post: PostProfile | null;
+}
+
+/** the sections of an environment phase, as in {@link EnvironmentProfile} */
+export type EnvironmentSections = Omit<EnvironmentProfile, 'name' | 'post'>;
+
+/**
+ * an `HGEnvironmentPhase` as the environment volumes apply it: its own sections, uncomposed. sections it
+ * marks inactive leave what's under them unchanged
+ */
+export interface EnvironmentPhaseInfo {
+	/** the asset name, e.g. `Env_map02_lv006_jian2_key` */
+	name: string;
+	/** the sections the phase sets */
+	active: (keyof EnvironmentSections)[];
+	sections: EnvironmentSections;
+}
+
+/** where an environment volume applies, in the Unity world frame */
+export type EnvironmentVolumeShape =
+	| { kind: 'global' }
+	/** a unit cube under the transform */
+	| { kind: 'box'; position: Vec3; rotation: Vec3; scale: Vec3 }
+	/** a vertical prism over a closed polygon in world x, z, from `bottom` to `top` (world y) */
+	| { kind: 'prism'; points: Vec2[]; bottom: number; top: number };
+
+/**
+ * an `HGEnvironmentVolume`. the game blends them at the camera each frame (`HGEnvironmentManager`): starting
+ * from the default phase, volumes in ascending order of priority (then shape: global, box, prism) that
+ * contain the camera apply their phase: blend mode 0 replaces, 1 lerps by `clamp(distance to the edge /
+ * blendDistance)`, 2 fades over `fadeIn/OutDuration` seconds (instantly when the camera moves over 5 m in a
+ * frame), 3 lerps by a scripted factor
+ */
+export interface EnvironmentVolumeInfo {
+	/** the object's name */
+	name: string;
+	/** the owning level's tag (0 for scene-wide) */
+	level: number;
+	shape: EnvironmentVolumeShape;
+	blendMode: number;
+	priority: number;
+	blendDistance: number;
+	fadeInDuration: number;
+	fadeOutDuration: number;
+	/** index into {@link PackageManifest.environmentPhases}, or `null` if the phase is unset or unreadable */
+	phase: number | null;
+	/**
+	 * whether the volume looks like a story or battle state the level scripts switch on (night, fights) rather
+	 * than the area's look; judged by name, since which volumes start enabled isn't known
+	 */
+	state: boolean;
 }
 
 /**
