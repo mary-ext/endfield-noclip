@@ -1,45 +1,66 @@
 // the sky, aerial perspective and height fog as the composite and water passes apply them. needs
 // post-common.wgsl and atmosphere.wgsl.
 
-// distance (m) the sky counts as for fog without a cutoff
-const SKY_FOG_DISTANCE = 100000.0;
+// the fog as HGRP's deferred lighting and sky apply it (its non-volumetric branch; the froxel fog that adds
+// in front isn't drawn): the atmosphere fog, then the two-layer height fog, in the game's own units.
 
-// one exponential layer's optical depth along a ray from the camera, Unreal's analytic line integral
-fn fog_layer_depth(layer: vec4f, origin_y: f32, delta_y: f32, distance: f32) -> f32 {
-	let density = layer.x * exp(-layer.y * (origin_y - layer.z));
-	let falloff = layer.y * delta_y;
-	var integral = 1.0;
-	if (abs(falloff) > 1e-4) {
-		integral = (1.0 - exp(-falloff)) / falloff;
+// one height-fog layer's density along a ray from the camera, per metre of ray: Unreal's base-2 form of the
+// line integral, with its series near zero
+fn fog_layer_density(layer: vec4f, delta_y: f32) -> f32 {
+	let x = max(-127.0, layer.y * delta_y);
+	var integral = 0.693147182 - 0.240226507 * x;
+	if (abs(x) > 5.96e-8) {
+		integral = (1.0 - exp2(-x)) / x;
 	}
-	return density * integral * distance;
+	return layer.x * exp2(-max(-127.0, layer.y * (post.eye.y - layer.z))) * integral;
 }
 
-fn height_fog(colour: vec3f, direction: vec3f, distance: f32) -> vec3f {
-	let start = post.fog_range.x;
-	let cutoff = post.fog_range.y;
-	var end = distance;
-	if (cutoff > 0.0) {
-		end = min(end, cutoff);
+struct Fog {
+	// what the colour behind is multiplied by
+	transmittance: vec3f,
+	// what's added in front
+	inscatter: vec3f,
+}
+
+// the fog between the camera and something `distance` metres along unit `direction`
+fn fog_over(direction: vec3f, distance: f32) -> Fog {
+	var fog = Fog(vec3f(1.0), vec3f(0.0));
+	let point_y = post.eye.y + direction.y * distance;
+
+	// atmosphere fog: density e^((start height − y) / H), integrated from the camera's height
+	var atmosphere = vec3f(1.0);
+	if (post.flags.z != 0u && post.sky_fog.y > 0.5) {
+		let below = -point_y * post.atmo_mie.w;
+		let a = max(0.01, below + post.eye.y * post.atmo_mie.w);
+		let depth = max(0.0, distance * post.atmo_rayleigh.w - post.atmo_extinction.w) * ((1.0 - exp(-a)) / a) *
+			exp(below + post.atmo_ambient.w);
+		atmosphere = exp(-post.atmo_extinction.rgb * depth);
+		let mu = dot(direction, post.atmo_sun.xyz);
+		let g = post.atmo_sun.w;
+		let hg_base = 1.0 + g * g - 2.0 * g * mu;
+		let hg = (1.0 - g * g) / max(4.0 * PI * hg_base * sqrt(hg_base), 0.001);
+		let rayleigh = 3.0 / (16.0 * PI) * (1.0 + mu * mu);
+		let scattered = clamp(post.atmo_rayleigh.rgb * rayleigh + post.atmo_ambient.rgb + post.atmo_mie.rgb * hg,
+			vec3f(0.0), vec3f(255.0));
+		fog = Fog(atmosphere, scattered * (vec3f(1.0) - atmosphere));
 	}
-	if (end <= start) {
-		return colour;
+
+	// height fog: fades in past the start distance and out past the cutoff, each over 1 / transition metres
+	if (post.flags.y != 0u) {
+		let delta_y = direction.y * distance;
+		let density = fog_layer_density(post.fog_layer0, delta_y) + fog_layer_density(post.fog_layer1, delta_y);
+		let range = post.fog_range;
+		let before_start = clamp((range.x - distance) * range.y, 0.0, 1.0);
+		let past_cutoff = clamp((distance - range.z) * range.w, 0.0, 1.0);
+		let t = clamp(max(clamp(exp2(-density * distance), 0.0, 1.0), post.fog_colour.w) + before_start + past_cutoff,
+			0.0, 1.0);
+		let toward_light = clamp(dot(direction, post.fog_directional_direction.xyz), 0.0, 1.0);
+		let directional_depth = density * max(distance - post.fog_directional_direction.w, 0.0);
+		let directional = post.fog_directional.rgb * pow(toward_light, post.fog_directional.w) *
+			(1.0 - clamp(exp2(-directional_depth), 0.0, 1.0)) * (1.0 - past_cutoff);
+		fog = Fog(fog.transmittance * t, fog.inscatter * t + post.fog_colour.rgb * (1.0 - t) + directional);
 	}
-	// the part of the ray past the start distance
-	let length_after = end - start;
-	let origin_y = post.eye.y + direction.y * start;
-	let delta_y = direction.y * length_after;
-	let depth = fog_layer_depth(post.fog_layer0, origin_y, delta_y, length_after) +
-		fog_layer_depth(post.fog_layer1, origin_y, delta_y, length_after);
-	let opacity = min(1.0 - exp(-depth), post.fog_colour.w);
-	// the inscatter colour reads as a multiple of the sky's illuminance (the ambient probe is far too dim for
-	// the near-white fog the game shows); a guess, matched against in-game shots
-	var inscatter = post.fog_colour.rgb * post.sky_illuminance.rgb / PI;
-	if (distance > post.fog_range.w) {
-		let toward_sun = clamp(dot(direction, post.sun.xyz), 0.0, 1.0);
-		inscatter += post.fog_directional.rgb * pow(toward_sun, post.fog_range.z);
-	}
-	return mix(colour, inscatter, opacity);
+	return fog;
 }
 
 // the cloud panorama's uv along a direction: equirectangular over the whole sphere, v = 0 at the nadir (the
@@ -74,32 +95,34 @@ fn sky_scale() -> f32 {
 	return luminance(post.sky_up.rgb) / max(luminance(mean), 1e-6);
 }
 
-// the sky along a direction, given the cloud panorama's texel there (ignored without a cloud layer)
-fn sky_radiance(direction: vec3f, painted: vec3f) -> vec3f {
+// the sky along a direction, given the cloud panorama's texel there (ignored without a cloud layer): the
+// atmosphere's sky with the cloud layer blended over it above the horizon, as HGRP/ProceduralSky does
+fn sky_radiance(direction: vec3f, painted: vec4f) -> vec3f {
 	if (post.flags.x == 0u) {
 		return vec3f(0.0);
 	}
-	if (post.cloud_tint.w > 0.5) {
-		if (post.cloud_shape.w > 0.5) {
-			return painted;
-		}
-		// the panorama is an opaque painted sky (alpha is 1 throughout); its brightness settings read as an
-		// absolute scale and an exposure offset
-		return painted * post.cloud_tint.rgb * post.cloud.w * exp2(post.cloud.z);
+	if (post.cloud.w > 0.5 && post.cloud_shape.w > 0.5) {
+		return painted.rgb;
 	}
-	return sky_view(direction) * sky_scale();
+	// the game fades its sky-view LUT out just below the horizon
+	var sky = sky_view(direction) * sky_scale() * clamp(1.0 + direction.y * 10.0, 0.0, 1.0);
+	if (post.cloud.w > 0.5 && direction.y >= 0.0) {
+		let contrasted = (painted.rgb - 0.5) * post.cloud.y + 0.5;
+		var cloud = vec4f(contrasted, painted.a) * vec4f(post.cloud_shape.xy, 1.0, 1.0);
+		cloud = mix(cloud, vec4f(max(cloud.r, cloud.g)), post.cloud.z) * post.cloud_tint;
+		sky = mix(sky, cloud.rgb, clamp(cloud.a, 0.0, 1.0));
+	}
+	return sky;
 }
 
-// aerial perspective and height fog over something `distance` metres away
+// the sky along a direction, fogged at the sky dome's distance
+fn fogged_sky(direction: vec3f, painted: vec4f) -> vec3f {
+	let fog = fog_over(direction, post.sky_fog.x);
+	return sky_radiance(direction, painted) * fog.transmittance + fog.inscatter;
+}
+
+// the fog over something `distance` metres away
 fn atmosphere_over(colour: vec3f, direction: vec3f, distance: f32) -> vec3f {
-	var c = colour;
-	if (post.flags.z != 0u) {
-		let km = distance * 0.001;
-		let scattering = integrate_scattering(camera_planet_position(), direction, km, post.sky_sun.xyz, 8);
-		c = c * scattering.transmittance + scattering.inscatter * sky_scale();
-	}
-	if (post.flags.y != 0u) {
-		c = height_fog(c, direction, distance);
-	}
-	return c;
+	let fog = fog_over(direction, distance);
+	return colour * fog.transmittance + fog.inscatter;
 }

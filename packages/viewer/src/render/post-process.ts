@@ -23,7 +23,7 @@ import { type TextureBinding, placeholderView } from './texture-store.ts';
 import type { WaterRenderer } from './water-renderer.ts';
 
 /** byte size of `Post` in post-common.wgsl */
-const POST_BYTES = 34 * 16;
+const POST_BYTES = 41 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
@@ -287,12 +287,15 @@ export class PostProcess {
 	}
 
 	/**
-	 * @param pipeline a pass built from {@link postShaderSource} with atmosphere.wgsl and sky.wgsl that reads
-	 *   every LUT (the sky, aerial perspective)
+	 * @param pipeline a pass built from {@link postShaderSource} with atmosphere.wgsl and sky.wgsl that draws
+	 *   the sky (it reads the sky-view LUT and its mean; the fog is analytic)
 	 * @returns its groups 0 (uniforms) and 1 (atmosphere)
 	 */
 	#skyGroups(pipeline: GPURenderPipeline): GPUBindGroup[] {
-		return [this.#uniformsGroup(pipeline), this.#atmosphereGroup(pipeline, Object.values(Lut))];
+		return [
+			this.#uniformsGroup(pipeline),
+			this.#atmosphereGroup(pipeline, [Lut.skyView, Lut.sampler, Lut.skyMean]),
+		];
 	}
 
 	/** @returns bytes of the targets the chain holds */
@@ -574,9 +577,19 @@ export class PostProcess {
 		const fog = environment.fog;
 		set(16, [fog.layers[0].density, fog.layers[0].falloff, fog.layers[0].height, 0]);
 		set(17, [fog.layers[1].density, fog.layers[1].falloff, fog.layers[1].height, 0]);
-		set(18, [...fog.inscatter, fog.maxOpacity]);
-		set(19, [fog.startDistance, fog.cutoffDistance, fog.directionalExponent, fog.directionalStartDistance]);
-		set(20, [...fog.directional, 0]);
+		set(18, [...fog.inscatter, 1 - fog.maxOpacity]);
+		set(19, [fog.startDistance, fog.startTransition, fog.cutoffDistance, fog.cutoffTransition]);
+		set(20, [...fog.directional, fog.directionalExponent]);
+		set(34, [...fog.directionalDirection, fog.directionalStartDistance]);
+		const atmo = environment.atmosphereFog;
+		if (atmo !== null) {
+			set(35, [...atmo.sunDirection, atmo.mieAnisotropy]);
+			set(36, [...atmo.extinction, atmo.startDistance]);
+			set(37, [...atmo.rayleigh, atmo.distanceScale]);
+			set(38, [...atmo.mie, 1 / atmo.fallOffHeight]);
+			set(39, [...atmo.ambient, atmo.startHeight / atmo.fallOffHeight]);
+		}
+		set(40, [environment.skyDistance, atmo !== null ? 1 : 0, 0, 0]);
 		set(21, [...evaluateSh(environment.sh, [0, 1, 0]), 0]);
 		set(22, [...evaluateSh(environment.sh, [Math.SQRT1_2, 0, Math.SQRT1_2]), 0]);
 		const { bloom, ao, vignette } = environment.post;
@@ -587,14 +600,9 @@ export class PostProcess {
 		set(29, [...(vignette?.colour ?? [0, 0, 0]), vignette?.roundness ?? 1]);
 		set(30, [...(vignette?.centre ?? [0.5, 0.5]), vignette?.rounded ? 1 : 0, 0]);
 		const cloud = environment.cloud;
-		set(31, [
-			cloud?.rotation ?? 0,
-			cloud?.contrast ?? 0,
-			cloud?.brightness ?? 0,
-			cloud?.absoluteBrightness ?? 1,
-		]);
-		set(32, [...(cloud?.tint ?? [1, 1, 1]), 0]);
-		set(33, [cloud?.opacity[0] ?? 0, cloud?.opacity[1] ?? 0, cloud?.mode ?? 0, 0]);
+		set(31, [cloud?.rotation ?? 0, cloud?.contrast ?? 1, cloud?.singleChannel ? 1 : 0, 0]);
+		set(32, cloud?.tint ?? [1, 1, 1, 1]);
+		set(33, [cloud?.opacity[0] ?? 1, cloud?.opacity[1] ?? 1, 0, 0]);
 	}
 
 	/** writes the per-frame uniforms (camera, settings) over the environment's and uploads them all */
@@ -637,7 +645,7 @@ export class PostProcess {
 			],
 			27 * 4,
 		);
-		f[32 * 4 + 3] = environment.cloud !== null && this.#cloud !== this.#noCloud ? 1 : 0;
+		f[31 * 4 + 3] = environment.cloud !== null && this.#cloud !== this.#noCloud ? 1 : 0;
 		f[33 * 4 + 3] = settings.debugView === 'clouds' ? 1 : 0;
 		this.#device.queue.writeBuffer(this.#uniforms, 0, f);
 	}
@@ -683,7 +691,8 @@ export class PostProcess {
 			this.#run(encoder, 'multiple scattering lut', luts.multiScattering);
 			this.#lutsReady = true;
 		}
-		if (settings.sky || settings.aerialPerspective) {
+		// the atmosphere fog is analytic; only the sky reads the LUTs
+		if (settings.sky) {
 			this.#run(encoder, 'sky view lut', luts.skyView);
 			this.#run(encoder, 'sky mean', luts.skyMean);
 		}

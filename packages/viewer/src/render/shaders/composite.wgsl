@@ -16,13 +16,11 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 	let ray = view_ray(in.uv);
 	let direction = normalize(ray);
 	if (depth <= 0.0) {
-		let painted = textureSampleLevel(cloud_texture, cloud_sampler, cloud_uv(direction), 0.0).rgb;
-		var colour = sky_radiance(direction, painted);
-		// the sky is fogged only by fog without a cutoff distance
-		if (post.flags.y != 0u && post.fog_range.y <= 0.0) {
-			colour = height_fog(colour, direction, SKY_FOG_DISTANCE);
+		let painted = textureSampleLevel(cloud_texture, cloud_sampler, cloud_uv(direction), 0.0);
+		if (post.cloud.w > 0.5 && post.cloud_shape.w > 0.5) {
+			return vec4f(painted.rgb, 1.0);
 		}
-		return vec4f(colour, 1.0);
+		return vec4f(fogged_sky(direction, painted), 1.0);
 	}
 	let radiance = textureLoad(radiance_texture, px, 0).rgb;
 	let ambient = textureLoad(ambient_texture, px, 0).rgb;

@@ -34,14 +34,14 @@ struct Post {
 	// x = tent tip value, y = tent width (km)
 	ozone_tent: vec4f,
 	ground_albedo: vec4f,
-	// height fog layers: density (per m), falloff (per m), height (m), unused
+	// height fog layers in the game's base-2 units: density, falloff, height (m), unused
 	fog_layer0: vec4f,
 	fog_layer1: vec4f,
-	// fog inscattering multiplier on the sky's ambient radiance, w = max opacity
+	// fog inscattered radiance (pre-exposed), w = least transmittance (1 − max opacity)
 	fog_colour: vec4f,
-	// start distance, cutoff distance (0 = none), directional exponent, directional start distance (m)
+	// start distance, start transition, cutoff distance, cutoff transition (m, per m)
 	fog_range: vec4f,
-	// directional inscattering colour (pre-exposed), w unused
+	// directional inscattered radiance (pre-exposed), w = exponent
 	fog_directional: vec4f,
 	// the ambient probe looking up and looking at the horizon, pre-exposed
 	sky_up: vec4f,
@@ -61,12 +61,26 @@ struct Post {
 	vignette_colour: vec4f,
 	// vignette centre (uv), z = 1 when rounded
 	vignette_centre: vec4f,
-	// cloud layer: rotation (rad), contrast, brightness, absolute brightness
+	// cloud layer: rotation (rad), contrast, 1 = colour from max(R, G) (texture mode 0), w = 1 with a cloud layer
 	cloud: vec4f,
-	// cloud tint (linear), w = 1 with a cloud layer
+	// multiplies the cloud texel (the game's _CloudTint)
 	cloud_tint: vec4f,
-	// opacity of the R and G layers, texture mode, w = 1 to show the raw texture
+	// opacity of the R and G layers, unused, w = 1 to show the raw texture
 	cloud_shape: vec4f,
+	// towards the light the fog's directional inscattering comes from, w = its start distance (m)
+	fog_directional_direction: vec4f,
+	// atmosphere fog: towards its sun, w = Mie anisotropy
+	atmo_sun: vec4f,
+	// extinction (per km), w = fog-free distance (km)
+	atmo_extinction: vec4f,
+	// Rayleigh-scattered sun over extinction (pre-exposed), w = km of fog per metre of distance
+	atmo_rayleigh: vec4f,
+	// Mie-scattered sun over extinction, w = 1 / falloff height (per m)
+	atmo_mie: vec4f,
+	// scattered ambient over extinction, w = start height / falloff height
+	atmo_ambient: vec4f,
+	// sky dome distance (m), atmosphere fog on, unused, unused
+	sky_fog: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> post: Post;

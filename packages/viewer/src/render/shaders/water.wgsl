@@ -118,7 +118,8 @@ fn fs_water(in: VertexOut) -> @location(0) vec4f {
 	// the ground under the surface
 	let scene_depth = textureLoad(depth_texture, px, 0);
 	let ray = view_ray(in.position.xy / size);
-	var ground_distance = SKY_FOG_DISTANCE;
+	// nothing drawn behind: the sky, far away
+	var ground_distance = 100000.0;
 	if (scene_depth > 0.0) {
 		ground_distance = length(ray * view_depth(scene_depth));
 	}
@@ -154,8 +155,8 @@ fn fs_water(in: VertexOut) -> @location(0) vec4f {
 	let r = reflect(-v, n);
 	var reflected = post.sky_horizon.rgb;
 	if (post.flags.x != 0u && r.y >= 0.0) {
-		let painted = textureSampleLevel(cloud_texture, cloud_sampler, cloud_uv(r), 0.0).rgb;
-		reflected = sky_radiance(r, painted);
+		let painted = textureSampleLevel(cloud_texture, cloud_sampler, cloud_uv(r), 0.0);
+		reflected = fogged_sky(r, painted);
 	}
 	let h = normalize(post.sun.xyz + v);
 	let roughness = max(c.surface.x, 0.02);
