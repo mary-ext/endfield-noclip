@@ -1,0 +1,383 @@
+/**
+ * per-instance selection for packages with geometry: frustum and small-feature culling, then LOD selection
+ * with the game's LODGroup thresholds, bucketing visible instances by (geometry, submesh, material) for
+ * instanced draws. instances whose chosen LOD isn't resident yet fall back to their box, and request the
+ * geometry.
+ *
+ * this is the CPU version of the planned GPU cull pass: the output (an instance list plus per-bucket ranges)
+ * is what a compute shader would write next to indirect draw arguments.
+ *
+ * @module
+ */
+
+import { type Chain, DrawRole, type GeometryEntry } from '@endfield-noclip/package-format/format';
+
+import { CULL_FLOATS, ROW_WORDS } from '../render/instance-rows.ts';
+import type { MaterialLook } from '../render/materials.ts';
+import type { TextureStore } from '../render/texture-store.ts';
+import type { Plane, Vec3 } from '../scene/camera.ts';
+
+import type { InstanceRange } from './selection.ts';
+import type { ContentItem, StreamManager } from './stream-manager.ts';
+
+/** instances sharing one geometry submesh and material */
+export interface MeshBucket {
+	geometry: ContentItem;
+	submesh: number;
+	material: number;
+	look: MaterialLook;
+	/** global row indices; reset every frame */
+	rows: number[];
+	/** largest projected size of an instance this frame, px */
+	pixels: number;
+	/** offset and count of the rows in this frame's visible list, set by `InstanceRenderer.prepareList` */
+	first: number;
+	count: number;
+	/** last frame the bucket had rows */
+	frame: number;
+}
+
+/** this frame's mesh selection, reused across frames */
+export interface MeshSelection {
+	buckets: MeshBucket[];
+	/** rows drawn as boxes (geometry pending or not converted) */
+	boxes: number[];
+}
+
+/** camera inputs */
+export interface MeshView {
+	eye: Vec3;
+	planes: readonly Plane[];
+	pixelFactor: number;
+	viewportHeight: number;
+	/** cull instances smaller than this, px */
+	minPixels: number;
+}
+
+/** what the selector reads */
+export interface MeshSelectorInit {
+	/** LOD-chain templates */
+	chains: readonly Chain[];
+	/** the geometry table */
+	geometries: readonly GeometryEntry[];
+	/** by material id, from `materialLooks` */
+	looks: readonly MaterialLook[];
+	stream: StreamManager;
+	textures: TextureStore;
+}
+
+/** a drawn (non-shadow, visible-material) draw of a chain */
+interface ChainSlot {
+	minSquared: number;
+	maxSquared: number;
+	geometry: number;
+	submesh: number;
+	material: number;
+	/** the slot's bucket, once it had rows */
+	bucket: MeshBucket | null;
+}
+
+/** buckets without rows for this many frames are dropped */
+const BUCKET_LIFETIME = 600;
+
+/**
+ * @param runs (chain, first, count) triples in row order
+ * @param row a row
+ * @returns the word offset of the run containing `row`, or of the first run after it
+ */
+const firstRunAt = (runs: Uint32Array, row: number): number => {
+	let lo = 0;
+	let hi = runs.length / 3;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (runs[mid * 3 + 1] + runs[mid * 3 + 2] <= row) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	return lo * 3;
+};
+
+/** selects LODs and buckets instances */
+export class MeshSelector {
+	readonly selection: MeshSelection = { buckets: [], boxes: [] };
+	#chains: readonly Chain[];
+	#geometries: readonly GeometryEntry[];
+	#looks: readonly MaterialLook[];
+	#stream: StreamManager;
+	#textures: TextureStore;
+	#buckets = new Map<number, MeshBucket>();
+	/** drawn draws per chain, built on first use */
+	#slots: (ChainSlot[] | undefined)[] = [];
+	#frame = 0;
+	/** per geometry: the frame {@link #geometryReady} last looked it up */
+	#checkedFrame: Int32Array;
+	/** per geometry: whether it was resident that frame */
+	#ready: Uint8Array;
+	/** per geometry: the highest priority it was wanted with that frame */
+	#wanted: Float64Array;
+	#planes = new Float64Array(4 * 5);
+	#pending: ChainSlot[] = [];
+
+	/** @param init tables and residency */
+	constructor(init: MeshSelectorInit) {
+		this.#chains = init.chains;
+		this.#geometries = init.geometries;
+		this.#looks = init.looks;
+		this.#stream = init.stream;
+		this.#textures = init.textures;
+		const count = init.geometries.length;
+		this.#checkedFrame = new Int32Array(count).fill(-1);
+		this.#ready = new Uint8Array(count);
+		this.#wanted = new Float64Array(count);
+	}
+
+	/**
+	 * @param ranges the instance ranges the tree traversal selected
+	 * @param view camera inputs
+	 * @returns buckets and box fallbacks (the same object every frame)
+	 */
+	run(ranges: readonly InstanceRange[], view: MeshView): MeshSelection {
+		const frame = ++this.#frame;
+		const selection = this.selection;
+		const buckets = selection.buckets;
+		const boxes = selection.boxes;
+		buckets.length = 0;
+		boxes.length = 0;
+		const { eye, pixelFactor, viewportHeight, minPixels } = view;
+		const planes = this.#planes;
+		const planeFloats = Math.min(view.planes.length * 4, planes.length);
+		for (let p = 0; p < planeFloats; p++) {
+			planes[p] = view.planes[p >> 2][p & 3];
+		}
+		const pending = this.#pending;
+
+		for (const { item, first, count } of ranges) {
+			const instances = item.resident;
+			if (instances?.kind !== 'instances') {
+				continue;
+			}
+			const f32 = instances.rowsF32;
+			const cull = instances.cull;
+			const ox = instances.origin[0] - eye[0];
+			const oy = instances.origin[1] - eye[1];
+			const oz = instances.origin[2] - eye[2];
+			const runs = instances.runs;
+			const end = first + count;
+			for (let r = firstRunAt(runs, first); r < runs.length; r += 3) {
+				const runFirst = runs[r + 1];
+				const runEnd = runFirst + runs[r + 2];
+				if (runFirst >= end) {
+					break;
+				}
+				if (runEnd <= first) {
+					continue;
+				}
+				const slots = this.#chainSlots(runs[r]);
+				const last = Math.min(end, runEnd);
+				for (let i = Math.max(first, runFirst); i < last; i++) {
+					const at = i * ROW_WORDS;
+					const x = ox + f32[at + 12];
+					const y = oy + f32[at + 13];
+					const z = oz + f32[at + 14];
+					const radius = cull[i * CULL_FLOATS];
+					const distance = Math.max(Math.sqrt(x * x + y * y + z * z), 0.1);
+					if ((radius * pixelFactor) / distance < minPixels) {
+						continue;
+					}
+					let inside = true;
+					for (let p = 0; p < planeFloats; p += 4) {
+						if (planes[p] * x + planes[p + 1] * y + planes[p + 2] * z + planes[p + 3] < -radius) {
+							inside = false;
+							break;
+						}
+					}
+					if (!inside) {
+						continue;
+					}
+					// Unity's LODGroup metric: the object's size relative to the screen height
+					const relative = (2 * cull[i * CULL_FLOATS + 1] * pixelFactor) / (distance * viewportHeight);
+					const squared = relative * relative;
+					const priority = relative * viewportHeight;
+
+					let pendingCount = 0;
+					let ready = true;
+					let any = false;
+					for (let s = 0; s < slots.length; s++) {
+						const slot = slots[s];
+						if (!(squared > slot.minSquared && squared <= slot.maxSquared)) {
+							continue;
+						}
+						any = true;
+						if (this.#geometryReady(slot.geometry, priority, frame)) {
+							pending[pendingCount++] = slot;
+						} else {
+							ready = false;
+						}
+					}
+					if (!any) {
+						// culled by the LOD chain's smallest threshold
+						continue;
+					}
+					const row = instances.alloc.start + i;
+					if (!ready) {
+						boxes.push(row);
+						continue;
+					}
+					for (let p = 0; p < pendingCount; p++) {
+						const slot = pending[p];
+						const bucket = slot.bucket ?? this.#bucketOf(slot);
+						if (bucket.frame !== frame) {
+							bucket.frame = frame;
+							bucket.rows.length = 0;
+							bucket.pixels = 0;
+							buckets.push(bucket);
+						}
+						bucket.rows.push(row);
+						if (priority > bucket.pixels) {
+							bucket.pixels = priority;
+						}
+					}
+				}
+			}
+		}
+
+		for (const bucket of buckets) {
+			if (bucket.look.texture >= 0) {
+				this.#streamTexture(bucket.look.texture, bucket.pixels, bucket.look.uvScale);
+			}
+		}
+		if (frame % BUCKET_LIFETIME === 0) {
+			this.#prune(frame);
+		}
+		return selection;
+	}
+
+	/**
+	 * wants a geometry at `priority` and reports whether it's resident. residency can't change before the
+	 * stream update, so each geometry is asked about at most once per frame and priority increase.
+	 */
+	#geometryReady(geometry: number, priority: number, frame: number): boolean {
+		if (this.#checkedFrame[geometry] !== frame) {
+			this.#checkedFrame[geometry] = frame;
+			this.#wanted[geometry] = -Infinity;
+			this.#ready[geometry] = 0;
+		}
+		if (priority > this.#wanted[geometry]) {
+			this.#wanted[geometry] = priority;
+			const entry = this.#geometries[geometry];
+			this.#ready[geometry] =
+				entry?.status === 'ready' && this.#stream.want(entry.blob, priority) !== null ? 1 : 0;
+		}
+		return this.#ready[geometry] === 1;
+	}
+
+	#chainSlots(chain: number): ChainSlot[] {
+		let slots = this.#slots[chain];
+		if (slots === undefined) {
+			slots = [];
+			for (const draw of this.#chains[chain].draws) {
+				const drawn = draw.material < this.#looks.length && this.#looks[draw.material].drawn;
+				if (draw.role === DrawRole.ShadowOnly || !drawn) {
+					continue;
+				}
+				slots.push({
+					minSquared: draw.minSquared,
+					maxSquared: draw.maxSquared,
+					geometry: draw.geometry,
+					submesh: draw.submesh,
+					material: draw.material,
+					bucket: null,
+				});
+			}
+			this.#slots[chain] = slots;
+		}
+		return slots;
+	}
+
+	#bucketOf(slot: ChainSlot): MeshBucket {
+		const { geometry, submesh, material } = slot;
+		const key = (geometry * 256 + submesh) * 65_536 + material;
+		let bucket = this.#buckets.get(key);
+		if (bucket === undefined) {
+			const entry = this.#geometries[geometry];
+			const item = entry.status === 'ready' ? this.#stream.get(entry.blob) : undefined;
+			if (item === undefined) {
+				throw new Error(`geometry ${geometry} has no stream item`);
+			}
+			bucket = {
+				geometry: item,
+				submesh,
+				material,
+				look: this.#looks[material],
+				rows: [],
+				pixels: 0,
+				first: 0,
+				count: 0,
+				frame: -1,
+			};
+			this.#buckets.set(key, bucket);
+		}
+		slot.bucket = bucket;
+		return bucket;
+	}
+
+	/** drops buckets unused for a while, and the slots' references to them */
+	#prune(frame: number): void {
+		let pruned = false;
+		for (const [key, bucket] of this.#buckets) {
+			if (bucket.frame < frame - BUCKET_LIFETIME) {
+				this.#buckets.delete(key);
+				pruned = true;
+			}
+		}
+		if (pruned) {
+			for (const slots of this.#slots) {
+				for (const slot of slots ?? []) {
+					slot.bucket = null;
+				}
+			}
+		}
+	}
+
+	/**
+	 * requests a texture's pieces coarse to fine, up to the level its largest on-screen use needs: about one
+	 * texel per pixel across the object, scaled by how often the UVs tile
+	 */
+	#streamTexture(id: number, pixels: number, uvScale: number): void {
+		const entry = this.#textures.streamable(id);
+		if (entry === null) {
+			return;
+		}
+		const texels = Math.max(entry.width, entry.height) * uvScale;
+		const level = Math.min(
+			entry.mipCount - 1,
+			Math.max(0, Math.floor(Math.log2(texels / Math.max(pixels, 1)))),
+		);
+		const pieces = entry.pieces;
+		const integrated = this.#textures.integrated(id);
+		for (let i = 0; i < pieces.length; i++) {
+			const piece = pieces[i];
+			const blob = piece.blob;
+			if (i < integrated) {
+				this.#stream.markUsed(blob);
+			} else if (i === integrated) {
+				// a piece left over from before a coarser one was evicted can't be integrated: fetch it again
+				if (this.#stream.isReady(blob)) {
+					this.#stream.discard(blob);
+				}
+				// coarse pieces first; the tail always, then each level the view needs
+				if (i === 0 || piece.firstLevel + piece.levelCount - 1 >= level) {
+					this.#stream.want(blob, pixels / (1 + i));
+				}
+			} else {
+				// decoded ahead of a coarser piece: keep it from looking unused until it's integrated
+				this.#stream.markUsed(blob);
+			}
+			if (piece.firstLevel <= level) {
+				break;
+			}
+		}
+	}
+}

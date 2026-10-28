@@ -1,0 +1,276 @@
+:root {
+	color-scheme: dark;
+	--panel-bg: rgb(16 18 22 / 0.72);
+	--panel-border: rgb(255 255 255 / 0.08);
+	--text: #e6e8ec;
+	--muted: #9aa1ad;
+	--accent: #f2c14e;
+	--gap: 8px;
+	font:
+		12px/1.4 ui-sans-serif,
+		system-ui,
+		sans-serif;
+	font-variant-numeric: tabular-nums;
+	color: var(--text);
+	accent-color: var(--accent);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	margin: 0;
+	height: 100%;
+	overflow: hidden;
+	background: #000;
+}
+
+.app {
+	position: relative;
+	height: 100%;
+}
+
+.viewport {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+	touch-action: none;
+	cursor: crosshair;
+}
+
+/* docks stack panels along an edge; they let pointer events through except on the panels themselves */
+.dock {
+	position: absolute;
+	display: flex;
+	flex-direction: column;
+	gap: var(--gap);
+	padding: var(--gap);
+	max-height: 100%;
+	pointer-events: none;
+
+	&.left {
+		top: 0;
+		left: 0;
+		width: 300px;
+	}
+
+	&.right {
+		top: 0;
+		right: 0;
+		width: 280px;
+		overflow-y: auto;
+		scrollbar-width: thin;
+	}
+
+	&.bottom {
+		bottom: 0;
+		left: 50%;
+		translate: -50% 0;
+		max-width: calc(100% - 620px);
+	}
+}
+
+.panel {
+	pointer-events: auto;
+	padding: 8px 10px;
+	border: 1px solid var(--panel-border);
+	border-radius: 8px;
+	background: var(--panel-bg);
+	backdrop-filter: blur(10px);
+
+	& header {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: var(--gap);
+		margin-bottom: 6px;
+	}
+
+	& h2 {
+		margin: 0;
+		font-size: 12px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	& p {
+		margin: 0;
+	}
+
+	&.error {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		translate: -50% -50%;
+		max-width: 420px;
+		border-color: rgb(255 120 100 / 0.5);
+	}
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.small {
+	font-size: 11px;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	padding: 3px 8px;
+	border: 1px solid var(--panel-border);
+	border-radius: 5px;
+	background: rgb(255 255 255 / 0.06);
+	cursor: pointer;
+
+	&:hover {
+		background: rgb(255 255 255 / 0.12);
+	}
+
+	&:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+
+	&[aria-pressed='true'] {
+		border-color: var(--accent);
+		background: rgb(242 193 78 / 0.18);
+	}
+
+	&:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+}
+
+.row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--gap);
+	margin-top: 6px;
+}
+
+.choices {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 0 0 6px;
+	padding: 0;
+	list-style: none;
+
+	& button {
+		width: 100%;
+		text-align: start;
+	}
+}
+
+.stats dl {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 1px 10px;
+	margin: 0 0 6px;
+
+	& div {
+		display: contents;
+	}
+
+	& dt {
+		color: var(--muted);
+	}
+
+	& dd {
+		margin: 0;
+		text-align: end;
+	}
+}
+
+.areas ul {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.areas li {
+	display: grid;
+	grid-template-columns: 1fr auto auto;
+	gap: 4px;
+
+	&.isolated .area-name {
+		border-color: var(--accent);
+	}
+}
+
+.area-name {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	text-align: start;
+}
+
+.settings {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+
+	& fieldset {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 2px 10px;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	& legend {
+		margin-bottom: 2px;
+		color: var(--muted);
+	}
+}
+
+.toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+	user-select: none;
+
+	& input {
+		margin: 0;
+	}
+}
+
+.slider {
+	display: grid;
+	grid-template-columns: 90px 1fr 64px;
+	align-items: center;
+	gap: 6px;
+
+	& label {
+		color: var(--muted);
+	}
+
+	& input {
+		width: 100%;
+		margin: 0;
+	}
+
+	& output {
+		text-align: end;
+	}
+}
+
+.camera {
+	text-align: center;
+	white-space: nowrap;
+}
