@@ -21,12 +21,12 @@ import {
 	VertexAttribute,
 } from '@endfield-noclip/package-format/format';
 
-import { decompress } from 'fzstd';
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
 
 import { buildInstanceRows } from '../render/instance-rows.ts';
 
 import type { DecodedGeometry, DecodeRequest, DecodeResponse } from './decode-protocol.ts';
+import { decompressZstd, zstdReady } from './zstd.ts';
 
 const unwrap = (data: ArrayBuffer, codec: BlobCodec, rawLength: number): Uint8Array<ArrayBuffer> => {
 	const stored = new Uint8Array(data);
@@ -35,9 +35,7 @@ const unwrap = (data: ArrayBuffer, codec: BlobCodec, rawLength: number): Uint8Ar
 			return stored;
 		}
 		case BlobCodec.Zstd: {
-			const raw = new Uint8Array(rawLength);
-			decompress(stored, raw);
-			return raw;
+			return decompressZstd(stored, rawLength);
 		}
 		default: {
 			throw new Error(`unknown blob codec ${String(codec)}`);
@@ -53,7 +51,7 @@ const ownBuffer = (bytes: Uint8Array<ArrayBuffer>): ArrayBuffer => {
 	return bytes.slice().buffer;
 };
 
-let meshoptReady = false;
+let wasmReady = false;
 
 const findStream = (blob: GeometryBlob, attribute: number): GeometryStream | undefined => {
 	return blob.streams.find((candidate) => candidate.attribute === attribute);
@@ -228,10 +226,10 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 
 self.addEventListener('message', (event: MessageEvent<DecodeRequest>) => {
 	const request = event.data;
-	if (request.kind === 'geometry' && !meshoptReady) {
-		// the decoder compiles its wasm asynchronously; queue behind it
-		void MeshoptDecoder.ready.then(() => {
-			meshoptReady = true;
+	if (!wasmReady) {
+		// the decoders compile their wasm asynchronously; queue behind them
+		void Promise.all([MeshoptDecoder.ready, zstdReady]).then(() => {
+			wasmReady = true;
 			self.dispatchEvent(new MessageEvent('message', { data: request }));
 		});
 		return;

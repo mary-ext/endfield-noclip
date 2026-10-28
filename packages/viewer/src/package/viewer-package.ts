@@ -23,9 +23,9 @@ import {
 } from '@endfield-noclip/package-format/format';
 
 import { fromUint8Array, openArchive } from '@mary-ext/czar';
-import { decompress } from 'fzstd';
 
 import type { PackageSource } from './package-source.ts';
+import { decompressZstd, zstdReady } from './zstd.ts';
 
 /** index of {@link CORE_ARCHIVE} in {@link PackageManifest.archives} */
 export const CORE_ARCHIVE_INDEX = 0;
@@ -84,6 +84,7 @@ export const openViewerPackage = async (
 	const archive = await openArchive(fromUint8Array(await source.readFile(CORE_ARCHIVE)));
 
 	onProgress('decoding tables');
+	await zstdReady;
 	const member = async (path: string): Promise<Uint8Array> => {
 		const file = archive.get(path);
 		if (file === undefined) {
@@ -94,7 +95,7 @@ export const openViewerPackage = async (
 	const json = async (path: string): Promise<unknown> => {
 		const bytes = await member(path);
 		// `.zst` members are a single zstd frame
-		return JSON.parse(new TextDecoder().decode(path.endsWith('.zst') ? decompress(bytes) : bytes));
+		return JSON.parse(new TextDecoder().decode(path.endsWith('.zst') ? decompressZstd(bytes) : bytes));
 	};
 
 	const manifestValue = await json(CORE_PATHS.manifest);
