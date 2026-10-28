@@ -232,6 +232,25 @@ button {
 		margin-bottom: 2px;
 		color: var(--muted);
 	}
+
+	& .slider {
+		flex-basis: 100%;
+	}
+
+	& select {
+		min-width: 0;
+		max-width: 100%;
+	}
+}
+
+/* the environment volumes in effect, lowest priority first */
+.applied-volumes {
+	flex-basis: 100%;
+	margin: 0;
+	padding-left: 18px;
+	color: var(--muted);
+	font-size: 11px;
+	overflow-wrap: anywhere;
 }
 
 .toggle {

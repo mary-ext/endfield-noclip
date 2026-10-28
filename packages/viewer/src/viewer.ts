@@ -9,6 +9,7 @@
 import {
 	BlobKind,
 	type ContentRef,
+	type EnvironmentProfile,
 	type LevelInfo,
 	isTerrainHole,
 	terrainHeight,
@@ -25,6 +26,7 @@ import { UniformRing } from './gfx/uniform-ring.ts';
 import { DecodePool } from './package/decode-pool.ts';
 import type { PackageSource } from './package/package-source.ts';
 import { CORE_ARCHIVE_INDEX, type ViewerPackage, openViewerPackage } from './package/viewer-package.ts';
+import { type AppliedVolume, blendEnvironment, EnvironmentFades } from './render/environment-blend.ts';
 import { type Environment, deriveEnvironment } from './render/environment.ts';
 import { DEBUG_VIEWS, type DebugView, FRAME_UNIFORM_BYTES, FrameOffsets } from './render/frame-uniforms.ts';
 import { InstanceRenderer } from './render/instance-renderer.ts';
@@ -79,6 +81,12 @@ export interface ViewerOptions {
 	ao: boolean;
 	bloom: boolean;
 	vignette: boolean;
+	/** blend the game's environment volumes at the camera; off shows the level's base environment */
+	environmentVolumes: boolean;
+	/** let volumes flagged as story or battle states apply (night, fights) */
+	environmentStates: boolean;
+	/** an environment phase to show over the base instead of the volumes, or `null` */
+	environmentPin: number | null;
 	/** a material channel instead of the lit image */
 	debugView: DebugView;
 }
@@ -108,6 +116,9 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	ao: true,
 	bloom: true,
 	vignette: true,
+	environmentVolumes: true,
+	environmentStates: false,
+	environmentPin: null,
 	debugView: 'lit',
 };
 
@@ -241,6 +252,15 @@ export class Viewer {
 	#water: WaterRenderer;
 	/** the shown level's look */
 	#environment: Environment = deriveEnvironment(null);
+	/** the shown level's base environment, which the volumes blend over */
+	#baseProfile: EnvironmentProfile | null = null;
+	/** what the environment was last blended for */
+	#blendEye: Vec3 = [Infinity, Infinity, Infinity];
+	#blendSettings = '';
+	#blendKey: string | null = null;
+	#appliedVolumes: AppliedVolume[] = [];
+	/** the time-faded volumes' fade state for the camera */
+	readonly #fades = new EnvironmentFades();
 	#pool: DecodePool;
 	#listeners = new Set<() => void>();
 	#raf = 0;
@@ -524,14 +544,93 @@ export class Viewer {
 	#applyEnvironment(): void {
 		const index = this.#level?.environment ?? null;
 		const manifest = this.scene?.pkg.manifest;
-		const profile = index === null || manifest === undefined ? null : manifest.environments[index];
+		this.#baseProfile = index === null || manifest === undefined ? null : manifest.environments[index];
+		this.#blendKey = null;
+		this.#fades.reset();
+		this.#blendEnvironment(true, 0);
+	}
+
+	/**
+	 * re-blends the environment volumes at the camera when it moved, a fade is running or the options changed,
+	 * and relights the scene if the result differs
+	 *
+	 * @param force blend even if nothing changed
+	 * @param dt seconds since the last frame, which time-faded volumes advance by
+	 */
+	#blendEnvironment(force: boolean, dt: number): void {
+		const options = this.options;
+		const eye = this.camera.position;
+		const settings = `${options.environmentVolumes}|${options.environmentStates}|${options.environmentPin}`;
+		const last = this.#blendEye;
+		if (
+			!force &&
+			settings === this.#blendSettings &&
+			!this.#fades.animating &&
+			eye[0] === last[0] &&
+			eye[1] === last[1] &&
+			eye[2] === last[2]
+		) {
+			return;
+		}
+		this.#blendEye = [...eye];
+		this.#blendSettings = settings;
+		const manifest = this.scene?.pkg.manifest;
+		const base = this.#baseProfile;
+		let profile = base;
+		let key = base?.name ?? '';
+		this.#appliedVolumes = [];
+		if (
+			manifest !== undefined &&
+			base !== null &&
+			(options.environmentVolumes || options.environmentPin !== null)
+		) {
+			const blended = blendEnvironment(
+				manifest,
+				base,
+				eye,
+				{ states: options.environmentStates, pinnedPhase: options.environmentPin },
+				{ fades: this.#fades, dt },
+			);
+			profile = blended.profile;
+			key = blended.key;
+			this.#appliedVolumes = blended.applied;
+		}
+		if (key === this.#blendKey) {
+			return;
+		}
+		this.#blendKey = key;
 		this.#environment = deriveEnvironment(profile);
 		this.#post.setEnvironment(this.#environment);
+		this.#dirty = true;
+		this.#emitState();
 	}
 
 	/** @returns the name of the environment profile lighting the shown level, or `null` for the defaults */
 	get environmentName(): string | null {
 		return this.#environment.name;
+	}
+
+	/** @returns the environment volumes applied at the camera, in order */
+	get appliedVolumes(): readonly AppliedVolume[] {
+		return this.#appliedVolumes;
+	}
+
+	/** @returns the phases the shown level's volumes apply, for pinning one: index and name */
+	environmentPhases(): { index: number; name: string }[] {
+		const manifest = this.scene?.pkg.manifest;
+		const level = this.#level;
+		if (manifest === undefined || level === null) {
+			return [];
+		}
+		const indices = new Set<number>();
+		for (const volume of manifest.environmentVolumes) {
+			if (volume.phase !== null && (volume.level === level.tag || volume.level === 0)) {
+				indices.add(volume.phase);
+			}
+		}
+		return [...indices]
+			.map((index) => ({ index, name: manifest.environmentPhases[index].name }))
+			.toSorted((a, b) => a.name.localeCompare(b.name));
 	}
 
 	/** @returns the loaded package's levels (the same array until the package changes) */
@@ -803,6 +902,7 @@ export class Viewer {
 
 		const moved = this.controls.update(dt) || this.#settleFirstPose();
 		const resized = this.#targets.update();
+		this.#blendEnvironment(false, dt);
 		this.#span('controls');
 		const scene = this.scene;
 		const options = this.options;

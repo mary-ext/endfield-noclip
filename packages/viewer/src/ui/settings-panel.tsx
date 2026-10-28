@@ -95,6 +95,46 @@ const Choice = <K extends 'tonemapper' | 'debugView'>({
 	);
 };
 
+/** the environment volumes in effect at the camera, and a picker to pin one phase instead */
+const EnvironmentControls = ({ viewer }: { viewer: Viewer }) => {
+	const pinId = useId();
+	const phases = viewer.environmentPhases();
+	const pinned = viewer.options.environmentPin;
+	return (
+		<fieldset>
+			<legend>environment</legend>
+			<Toggle viewer={viewer} name="environmentVolumes" label="volumes at camera" />
+			<Toggle viewer={viewer} name="environmentStates" label="story states" />
+			<div className="slider">
+				<label htmlFor={pinId}>pin</label>
+				<select
+					id={pinId}
+					value={pinned ?? ''}
+					onChange={(event) => {
+						const value = event.currentTarget.value;
+						viewer.setOptions({ environmentPin: value === '' ? null : Number(value) });
+					}}
+				>
+					<option value="">none</option>
+					{phases.map(({ index, name }) => (
+						<option key={index} value={index}>
+							{name}
+						</option>
+					))}
+				</select>
+			</div>
+			<ol className="applied-volumes">
+				{viewer.appliedVolumes.map(({ id, name, phase, factor }) => (
+					<li key={id} title={name}>
+						{phase}
+						{factor < 1 ? ` · ${Math.round(factor * 100)}%` : ''}
+					</li>
+				))}
+			</ol>
+		</fieldset>
+	);
+};
+
 /** layer toggles and quality sliders */
 export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 	useViewerState(viewer);
@@ -126,6 +166,7 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<Toggle viewer={viewer} name="bloom" label="bloom" />
 				<Toggle viewer={viewer} name="vignette" label="vignette" />
 			</fieldset>
+			<EnvironmentControls viewer={viewer} />
 			<Slider viewer={viewer} name="exposure" label="exposure" min={-4} max={4} step={0.25} unit="EV" />
 			<Choice viewer={viewer} name="tonemapper" label="tonemapper" choices={TONEMAPPERS} />
 			<Choice viewer={viewer} name="debugView" label="show" choices={DEBUG_VIEWS} />
