@@ -172,7 +172,9 @@ describe('BlobStore', () => {
 			assert.equal(archives[records[a].archive], 'shards/x.czar');
 
 			const shards = await store.writeShards(dir, 'core.czar');
-			await store.writeCore(dir, 'core.czar', [{ path: 'manifest.json', data: new Uint8Array([123, 125]) }]);
+			const core = await store.writeCore(dir, 'core.czar', [
+				{ path: 'manifest.json', data: new Uint8Array([123, 125]) },
+			]);
 
 			// a shard blob, read by range from the table alone
 			{
@@ -182,6 +184,11 @@ describe('BlobStore', () => {
 				const stored = new Uint8Array(record.length);
 				await handle.read(stored, 0, record.length, shard.dataOffset + record.offset);
 				assert.deepEqual(new Uint8Array(zstdDecompressSync(stored)), compressible);
+				const archive = await openArchive(await fromFileHandle(handle));
+				assert.equal(
+					archive.get(blobPath(record.hash, record.kind))!.position,
+					shard.dataOffset + record.offset,
+				);
 			}
 			// a core blob, through czar, at the recorded offset
 			{
@@ -189,13 +196,7 @@ describe('BlobStore', () => {
 				const archive = await openArchive(await fromFileHandle(handle));
 				const file = archive.get(blobPath(records[b].hash, BlobKind.Other))!;
 				assert.deepEqual(await file.bytes(), random);
-				const prelude = new Uint8Array(16);
-				await handle.read(prelude, 0, 16, 0);
-				const dataOffset =
-					Math.ceil((16 + Number(new DataView(prelude.buffer).getBigUint64(8, true))) / 16) * 16;
-				const direct = new Uint8Array(random.length);
-				await handle.read(direct, 0, random.length, dataOffset + records[b].offset);
-				assert.deepEqual(direct, random);
+				assert.equal(core.dataOffset + records[b].offset, file.position);
 				assert.ok(archive.get('manifest.json'));
 			}
 			await store.dispose();

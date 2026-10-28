@@ -10,7 +10,7 @@
 	},
 	"dependencies": {
 		"@endfield-noclip/package-format": "workspace:*",
-		"@mary-ext/czar": "^0.1.1",
+		"@mary-ext/czar": "^0.1.2",
 		"fzstd": "0.1.1",
 		"meshoptimizer": "1.3.0",
 		"react": "^19.3.1",

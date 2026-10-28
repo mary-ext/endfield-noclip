@@ -256,7 +256,7 @@ export class BlobStore {
 			const stream = encodeArchiveStream(plan, (source) => createReadStream(this.#spoolPath(source.index)));
 			// oxlint-disable-next-line no-await-in-loop -- one archive at a time bounds open files
 			await pipeline(Readable.fromWeb(stream), createWriteStream(target));
-			written.set(name, describe(name, plan.size, plan.head, indices.length));
+			written.set(name, describe(name, plan, indices.length));
 		}
 		return written;
 	}
@@ -286,11 +286,11 @@ export class BlobStore {
 		const files = [...blobs, ...members];
 		const archive = encodeArchive(files);
 		await writeFile(join(outDir, core), archive);
-		// the plan's head is the layout encodeArchive wrote; it's only needed for its length
-		const { head } = planArchive(
+		// the plan is the layout encodeArchive wrote; only its lengths are needed
+		const plan = planArchive(
 			files.map(({ path, data }) => ({ path, size: data.length, crc32: crc32(data) })),
 		);
-		return describe(core, archive.length, head, files.length);
+		return describe(core, plan, files.length);
 	}
 
 	/** waits for spool writes, then removes the spool */
@@ -332,7 +332,6 @@ export class BlobStore {
 	}
 }
 
-const describe = (name: string, size: number, head: Uint8Array, members: number): WrittenArchive => {
-	const headerLength = Number(new DataView(head.buffer, head.byteOffset).getBigUint64(8, true));
-	return { name, size, dataOffset: head.length, headerLength, members };
+const describe = <T>(name: string, plan: ArchivePlan<T>, members: number): WrittenArchive => {
+	return { name, size: plan.size, dataOffset: plan.head.length, headerLength: plan.headerLength, members };
 };

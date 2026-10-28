@@ -39,8 +39,8 @@ importers:
         specifier: workspace:*
         version: link:../package-format
       '@mary-ext/czar':
-        specifier: ^0.1.1
-        version: 0.1.1
+        specifier: ^0.1.2
+        version: 0.1.2
       meshoptimizer:
         specifier: 1.3.0
         version: 1.3.0
@@ -63,8 +63,8 @@ importers:
         specifier: workspace:*
         version: link:../package-format
       '@mary-ext/czar':
-        specifier: ^0.1.1
-        version: 0.1.1
+        specifier: ^0.1.2
+        version: 0.1.2
       fzstd:
         specifier: 0.1.1
         version: 0.1.1
@@ -102,8 +102,8 @@ packages:
   '@mary-ext/crc32@0.1.0':
     resolution: {integrity: sha512-g80zjr5uEb4qGIDacr129pGJLz1SQ2qRqeHf3EduXMXqtfwV/DS2zmoBApxB1Xeivq2eWDuXhhI9ktfR/UIzTA==}
 
-  '@mary-ext/czar@0.1.1':
-    resolution: {integrity: sha512-74m0mPz4VrmBv0aOD7lENWTRfO4E/NxOPb1/jkqWISVQNWQa+Zz9Rgvv+pH2I9WJs5rJ7tCmwzn6ToLYkgknUw==}
+  '@mary-ext/czar@0.1.2':
+    resolution: {integrity: sha512-ExOMSdinACb2aQ3opf49xxLDszdua6XCJAzO6qIGuiIo1/q4l3EOkZifHa6Lqlt/VjOSpPykpGSKwoIuxX0DHw==}
     hasBin: true
 
   '@mary-ext/oxlint-rules@0.1.2':
@@ -932,7 +932,7 @@ snapshots:
 
   '@mary-ext/crc32@0.1.0': {}
 
-  '@mary-ext/czar@0.1.1':
+  '@mary-ext/czar@0.1.2':
     dependencies:
       '@atcute/uint8array': 1.2.1
       '@mary-ext/crc32': 0.1.0

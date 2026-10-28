@@ -10,7 +10,7 @@
 	"dependencies": {
 		"@endfield-noclip/formats": "workspace:*",
 		"@endfield-noclip/package-format": "workspace:*",
-		"@mary-ext/czar": "^0.1.1",
+		"@mary-ext/czar": "^0.1.2",
 		"meshoptimizer": "1.3.0"
 	}
 }
