@@ -60,11 +60,12 @@ export interface ResidentGeometry {
 	kind: 'geometry';
 	/** GPU bytes */
 	bytes: number;
-	/** positions, then normals, then UV set 0, in one buffer */
+	/** positions, then normals, UV set 0 and tangents where present, in one buffer */
 	vertices: GPUBuffer;
 	positionBytes: number;
 	normalOffset: number | null;
 	uvOffset: number | null;
+	tangentOffset: number | null;
 	indices: GPUBuffer;
 	indexFormat: GPUIndexFormat;
 	positionOffset: [x: number, y: number, z: number];

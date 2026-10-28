@@ -131,11 +131,11 @@ fn vs_wire(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 }
 
 @fragment
-fn fs_fill(in: VertexOut) -> @location(0) vec4f {
-	return to_display(shade(in.colour, in.normal, in.rel));
+fn fs_fill(in: VertexOut) -> Shaded {
+	return shade_surface(default_surface(in.colour, in.normal), in.rel);
 }
 
 @fragment
-fn fs_wire(in: VertexOut) -> @location(0) vec4f {
-	return to_display(in.colour * 1.4);
+fn fs_wire(in: VertexOut) -> Shaded {
+	return unlit(in.colour * 1.4);
 }

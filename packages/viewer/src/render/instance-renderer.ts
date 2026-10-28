@@ -17,7 +17,7 @@
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
 import { RangeAllocator } from '../gfx/range-allocator.ts';
-import { DEPTH_COMPARE, DEPTH_FORMAT } from '../gfx/render-targets.ts';
+import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
 import type { DecodedInstances } from '../package/decode-protocol.ts';
 import type { Vec3 } from '../scene/camera.ts';
 import type { InstanceRange } from '../streaming/selection.ts';
@@ -72,14 +72,14 @@ export class InstanceRenderer {
 	 * @param device the device
 	 * @param layouts shared layouts
 	 * @param pipelines pipeline cache
-	 * @param targets color format and sample count of the main pass
+	 * @param format the main pass's targets
 	 * @param capacityRows rows the mega buffer holds
 	 */
 	constructor(
 		device: GPUDevice,
 		layouts: BindLayouts,
 		pipelines: PipelineCache,
-		targets: { colorFormat: GPUTextureFormat; sampleCount: number },
+		format: MainPassFormat,
 		capacityRows: number,
 	) {
 		this.#device = device;
@@ -118,7 +118,7 @@ export class InstanceRenderer {
 		});
 
 		const module = pipelines.module('instance-boxes', FRAME_WGSL + boxesWgsl);
-		const suffix = `${targets.colorFormat}/x${targets.sampleCount}`;
+		const suffix = `x${format.sampleCount}`;
 		this.#keys = {
 			ranges: { fill: `boxes/fill/${suffix}`, wire: `boxes/wire/${suffix}` },
 			list: { fill: `boxes/list-fill/${suffix}`, wire: `boxes/list-wire/${suffix}` },
@@ -131,7 +131,7 @@ export class InstanceRenderer {
 				fragment: {
 					module,
 					entryPoint: lines ? 'fs_wire' : 'fs_fill',
-					targets: [{ format: targets.colorFormat }],
+					targets: format.targets,
 				},
 				// generated boxes aren't wound consistently; they're closed, so culling would only halve fill cost
 				primitive: { topology: lines ? 'line-list' : 'triangle-list', cullMode: 'none' },
@@ -140,7 +140,7 @@ export class InstanceRenderer {
 					depthWriteEnabled: !lines,
 					depthCompare: lines ? 'greater-equal' : DEPTH_COMPARE,
 				},
-				multisample: { count: targets.sampleCount },
+				multisample: { count: format.sampleCount },
 			};
 		};
 		void pipelines.prepare(this.#keys.ranges.fill, () => describe(false, false));

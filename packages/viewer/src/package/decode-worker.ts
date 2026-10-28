@@ -83,6 +83,31 @@ const decodeAttribute = (
 	return decodeVertices(blob, stream).buffer;
 };
 
+/**
+ * decodes the normals to plain `snorm16x2` octahedral pairs. the game's 10-bit normals are stored as their
+ * integers with a dequantization scale, which is applied here so every mesh shares one vertex format
+ */
+const decodeNormals = (blob: GeometryBlob): ArrayBuffer | null => {
+	const stream = findStream(blob, VertexAttribute.Normal);
+	if (stream === undefined) {
+		return null;
+	}
+	if (stream.format !== GeometryVertexFormat.Snorm16x2) {
+		throw new Error(`geometry normals have format ${stream.format}, expected snorm16x2`);
+	}
+	const raw = decodeVertices(blob, stream);
+	if ((stream.flags & GeometryStreamFlags.Dequantize) === 0) {
+		return raw.buffer;
+	}
+	const values = new Int16Array(raw.buffer);
+	for (let i = 0; i < values.length; i++) {
+		const k = i & 1;
+		const value = (stream.offset[k] + (values[i] / 32_767) * stream.scale[k]) * 32_767;
+		values[i] = Math.max(-32_767, Math.min(32_767, Math.round(value)));
+	}
+	return raw.buffer;
+};
+
 /** decodes UV set 0 to `float32x2` whatever its stored format, so one pipeline layout fits every mesh */
 const decodeUvs = (blob: GeometryBlob): ArrayBuffer | null => {
 	const stream = findStream(blob, VertexAttribute.TexCoord0);
@@ -135,14 +160,15 @@ const decodeGeometry = (
 	if (position === undefined || positions === null) {
 		throw new Error('geometry has no positions');
 	}
-	const normals = decodeAttribute(blob, VertexAttribute.Normal, GeometryVertexFormat.Snorm16x2);
+	const normals = decodeNormals(blob);
 	const uvs = decodeUvs(blob);
+	const tangents = decodeAttribute(blob, VertexAttribute.Tangent, GeometryVertexFormat.Snorm8x4);
 	const indexSize = blob.flags & GeometryFlags.IndexU32 ? 4 : 2;
 	// index buffers are bound whole and must be a multiple of 4 bytes
 	const indices = new Uint8Array(Math.ceil((blob.indexCount * indexSize) / 4) * 4);
 	MeshoptDecoder.decodeIndexBuffer(indices, blob.indexCount, indexSize, blob.indices);
 	const transfer: Transferable[] = [positions, indices.buffer];
-	for (const extra of [normals, uvs]) {
+	for (const extra of [normals, uvs, tangents]) {
 		if (extra !== null) {
 			transfer.push(extra);
 		}
@@ -159,6 +185,7 @@ const decodeGeometry = (
 			positions,
 			normals,
 			uvs,
+			tangents,
 			submeshes: blob.submeshes.map(({ firstIndex, indexCount, baseVertex }) => ({
 				firstIndex,
 				indexCount,

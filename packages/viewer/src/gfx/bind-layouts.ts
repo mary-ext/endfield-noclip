@@ -24,7 +24,10 @@ export interface BindLayouts {
 	instances: GPUBindGroupLayout;
 	/** group 2 of the mesh families: per-draw parameters (dequantization, material look), per-entry draw ids */
 	draw: GPUBindGroupLayout;
-	/** group 3 of the mesh families: the material's base colour texture and its sampler */
+	/**
+	 * group 3 of the mesh families: the material's base colour, normal, mask and emissive textures, the base
+	 * colour's sampler and one for the rest
+	 */
 	materials: GPUBindGroupLayout;
 
 	terrainPipeline: GPUPipelineLayout;
@@ -45,6 +48,10 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 				visibility: VERTEX | FRAGMENT,
 				buffer: { type: 'uniform', hasDynamicOffset: true },
 			},
+			{ binding: 1, visibility: FRAGMENT, texture: { sampleType: 'depth', viewDimension: '2d-array' } },
+			{ binding: 2, visibility: FRAGMENT, sampler: { type: 'comparison' } },
+			{ binding: 3, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: 'cube' } },
+			{ binding: 4, visibility: FRAGMENT, sampler: { type: 'filtering' } },
 		],
 	});
 	const terrain = device.createBindGroupLayout({
@@ -57,13 +64,22 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 	});
 	const draw = device.createBindGroupLayout({
 		label: 'draw',
-		entries: [storage(0, VERTEX), storage(1, VERTEX)],
+		entries: [storage(0, VERTEX | FRAGMENT), storage(1, VERTEX)],
+	});
+	const texture = (binding: number): GPUBindGroupLayoutEntry => ({
+		binding,
+		visibility: FRAGMENT,
+		texture: { sampleType: 'float' },
 	});
 	const materials = device.createBindGroupLayout({
 		label: 'materials',
 		entries: [
-			{ binding: 0, visibility: FRAGMENT, texture: { sampleType: 'float' } },
-			{ binding: 1, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			texture(0),
+			texture(1),
+			texture(2),
+			texture(3),
+			{ binding: 4, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			{ binding: 5, visibility: FRAGMENT, sampler: { type: 'filtering' } },
 		],
 	});
 	return {

@@ -10,11 +10,16 @@
  * @module
  */
 
-import { type Chain, DrawRole, type GeometryEntry } from '@endfield-noclip/package-format/format';
+import {
+	type Chain,
+	DrawRole,
+	type GeometryEntry,
+	type ReadyTexture,
+} from '@endfield-noclip/package-format/format';
 
 import { CULL_FLOATS, ROW_WORDS } from '../render/instance-rows.ts';
 import type { MaterialLook } from '../render/materials.ts';
-import type { TextureStore } from '../render/texture-store.ts';
+import type { TextureBinding, TextureStore } from '../render/texture-store.ts';
 import type { Plane, Vec3 } from '../scene/camera.ts';
 
 import type { InstanceRange } from './selection.ts';
@@ -244,8 +249,11 @@ export class MeshSelector {
 		}
 
 		for (const bucket of buckets) {
-			if (bucket.look.texture >= 0) {
-				this.#streamTexture(bucket.look.texture, bucket.pixels, bucket.look.uvScale);
+			const look = bucket.look;
+			for (let i = 0; i < look.textures.length; i++) {
+				if (look.textures[i] >= 0) {
+					this.#streamTexture(look.textures[i], bucket.pixels, look.uvScales[i]);
+				}
 			}
 		}
 		if (frame % BUCKET_LIFETIME === 0) {
@@ -346,7 +354,7 @@ export class MeshSelector {
 	 * texel per pixel across the object, scaled by how often the UVs tile
 	 */
 	#streamTexture(id: number, pixels: number, uvScale: number): void {
-		const entry = this.#textures.streamable(id);
+		const entry = this.#textures.streamable(id, '2d');
 		if (entry === null) {
 			return;
 		}
@@ -355,29 +363,76 @@ export class MeshSelector {
 			entry.mipCount - 1,
 			Math.max(0, Math.floor(Math.log2(texels / Math.max(pixels, 1)))),
 		);
-		const pieces = entry.pieces;
-		const integrated = this.#textures.integrated(id);
-		for (let i = 0; i < pieces.length; i++) {
-			const piece = pieces[i];
-			const blob = piece.blob;
-			if (i < integrated) {
-				this.#stream.markUsed(blob);
-			} else if (i === integrated) {
-				// a piece left over from before a coarser one was evicted can't be integrated: fetch it again
-				if (this.#stream.isReady(blob)) {
-					this.#stream.discard(blob);
-				}
-				// coarse pieces first; the tail always, then each level the view needs
-				if (i === 0 || piece.firstLevel + piece.levelCount - 1 >= level) {
-					this.#stream.want(blob, pixels / (1 + i));
-				}
-			} else {
-				// decoded ahead of a coarser piece: keep it from looking unused until it's integrated
-				this.#stream.markUsed(blob);
-			}
-			if (piece.firstLevel <= level) {
-				break;
-			}
-		}
+		requestTexturePieces({ stream: this.#stream, textures: this.#textures, entry, level, priority: pixels });
 	}
 }
+
+/**
+ * requests a texture's pieces coarse to fine, down to the piece holding `level`, and keeps the integrated
+ * ones in use.
+ *
+ * @param request the stream, the texture store, the texture, the finest level wanted and the priority
+ */
+const requestTexturePieces = (request: {
+	stream: StreamManager;
+	textures: TextureStore;
+	entry: ReadyTexture;
+	level: number;
+	priority: number;
+}): void => {
+	const { stream, textures, entry, level, priority } = request;
+	const pieces = entry.pieces;
+	const integrated = textures.integrated(entry.id);
+	for (let i = 0; i < pieces.length; i++) {
+		const piece = pieces[i];
+		const blob = piece.blob;
+		if (i < integrated) {
+			stream.markUsed(blob);
+		} else if (i === integrated) {
+			// a piece left over from before a coarser one was evicted can't be integrated: fetch it again
+			if (stream.isReady(blob)) {
+				stream.discard(blob);
+			}
+			// coarse pieces first; the tail always, then each level the view needs
+			if (i === 0 || piece.firstLevel + piece.levelCount - 1 >= level) {
+				stream.want(blob, priority / (1 + i));
+			}
+		} else {
+			// decoded ahead of a coarser piece: keep it from looking unused until it's integrated
+			stream.markUsed(blob);
+		}
+		if (piece.firstLevel <= level) {
+			break;
+		}
+	}
+};
+
+/** a texture streamed whole by {@link streamWholeTexture} */
+export interface StreamedTexture {
+	entry: ReadyTexture;
+	/** `null` until its tail arrives */
+	binding: TextureBinding | null;
+}
+
+/**
+ * requests every level of a texture (sky and water textures, which aren't picked by screen size).
+ *
+ * @param request the stream, the texture store, the texture id (or `null` for none), the kind it's bound as
+ *   and the priority
+ * @returns the texture and its current binding, or `null` without a texture streamable as that kind
+ */
+export const streamWholeTexture = (request: {
+	stream: StreamManager;
+	textures: TextureStore;
+	id: number | null;
+	kind: '2d' | 'cube' | '2d-array';
+	priority: number;
+}): StreamedTexture | null => {
+	const { stream, textures, id, kind, priority } = request;
+	const entry = id === null ? null : textures.streamable(id, kind);
+	if (entry === null) {
+		return null;
+	}
+	requestTexturePieces({ stream, textures, entry, level: 0, priority });
+	return { entry, binding: textures.binding(entry.id) };
+};

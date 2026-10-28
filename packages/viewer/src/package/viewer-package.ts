@@ -18,6 +18,7 @@ import {
 	type PackageManifest,
 	type TextureTable,
 	type Tree,
+	type WaterTable,
 	blobPath,
 } from '@endfield-noclip/package-format/format';
 
@@ -47,6 +48,8 @@ export interface ViewerPackage {
 	geometries: GeometryTable;
 	materials: MaterialTable;
 	textures: TextureTable;
+	/** the scene's water */
+	water: WaterTable;
 	/**
 	 * @param index index of a blob in the core archive
 	 * @returns the blob's stored bytes (codec not undone), in a buffer of their own
@@ -118,6 +121,8 @@ export const openViewerPackage = async (
 	const materials = (await json(CORE_PATHS.materials)) as MaterialTable;
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
 	const textures = (await json(CORE_PATHS.textures)) as TextureTable;
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
+	const water = (await json(CORE_PATHS.water)) as WaterTable;
 
 	return {
 		source,
@@ -128,6 +133,7 @@ export const openViewerPackage = async (
 		geometries,
 		materials,
 		textures,
+		water,
 		readCoreBlob(index) {
 			const blob = blobs[index];
 			const file =

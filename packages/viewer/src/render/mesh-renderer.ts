@@ -1,31 +1,35 @@
 /**
  * geometry residency and the mesh family: each geometry gets one vertex buffer (quantized positions,
- * octahedral normals, UV set 0) and one index buffer; each mesh bucket is one instanced `drawIndexed` over
- * its slice of the visible list. per-draw parameters (dequantization, colour, alpha test, UV transform) sit
- * in a storage array indexed through a per-list-entry draw id, and the material's base colour texture is in
- * group 3 (a white texture until the texture streams in). draws are sorted by geometry, then material, so
- * runs of draws share their bindings.
+ * octahedral normals, UV set 0, tangents) and one index buffer; each mesh bucket is one instanced
+ * `drawIndexed` over its slice of the visible list. per-draw parameters (dequantization, the material look)
+ * sit in a storage array indexed through a per-list-entry draw id, and the material's textures are in group 3
+ * (a white texture for slots whose texture hasn't streamed in, with the slot's flag cleared). draws are
+ * sorted by geometry, then material, so runs of draws share their bindings.
  *
  * @module
  */
 
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
-import { DEPTH_COMPARE, DEPTH_FORMAT } from '../gfx/render-targets.ts';
+import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
 import type { DecodedGeometry } from '../package/decode-protocol.ts';
 import type { MeshBucket } from '../streaming/mesh-selection.ts';
 import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
-import { LOOK_FLOATS } from './materials.ts';
+import { LOOK_FLOATS, SLOTS, SLOT_FLAGS } from './materials.ts';
 import meshWgsl from './shaders/mesh.wgsl?raw';
+import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
 import type { TextureBinding, TextureStore } from './texture-store.ts';
 
 /** floats of `Draw` in mesh.wgsl: dequantization offset and scale, then the material look */
 const DRAW_FLOATS = 8 + LOOK_FLOATS;
 /** draws per frame at most; buckets past it aren't drawn */
 const MAX_DRAWS = 16_384;
+/** bytes per vertex of the zero buffer bound in place of missing streams (the widest is UV set 0) */
+const ZERO_STRIDE = 8;
+const SHADOW_KEY = 'mesh/shadow';
 
 interface PreparedDraw {
 	geometry: ResidentGeometry;
@@ -38,7 +42,8 @@ interface PreparedDraw {
 }
 
 interface MaterialBinding {
-	version: number;
+	/** the slot bindings' versions the group was built from (-1 for the fallback) */
+	versions: number[];
 	group: GPUBindGroup;
 }
 
@@ -62,15 +67,19 @@ export class MeshRenderer {
 	#instances: GPUBindGroup;
 	#params: GPUBuffer;
 	#paramData = new Float32Array(MAX_DRAWS * DRAW_FLOATS);
+	#paramWords = new Uint32Array(this.#paramData.buffer);
 	#drawIds: GPUBuffer;
 	#drawIdData = new Uint32Array(LIST_CAPACITY);
 	#drawGroup: GPUBindGroup;
-	/** zeros bound as the normal/UV streams of meshes without them */
+	/** zeros bound as the streams meshes lack */
 	#zeros: GPUBuffer;
 	#zerosSize = 0;
-	#white: GPUBindGroup;
-	/** material bind groups by texture id */
+	#white: GPUTextureView;
+	#defaultSampler: GPUSampler;
+	/** material bind groups by material id */
 	#bindings = new Map<number, MaterialBinding>();
+	#slotBindings: (TextureBinding | null)[] = [null, null, null, null];
+	#versions: number[] = [-1, -1, -1, -1];
 	#order: MeshBucket[] = [];
 	/** prepared draws; entries past {@link #drawCount} are reused next frame */
 	#draws: PreparedDraw[] = [];
@@ -81,20 +90,20 @@ export class MeshRenderer {
 	 * @param layouts shared layouts
 	 * @param pipelines pipeline cache
 	 * @param instances group 1: instance rows, block origins and the visible list
-	 * @param targets color format and sample count of the main pass
+	 * @param format the main pass's targets
 	 */
 	constructor(
 		device: GPUDevice,
 		layouts: BindLayouts,
 		pipelines: PipelineCache,
 		instances: GPUBindGroup,
-		targets: { colorFormat: GPUTextureFormat; sampleCount: number },
+		format: MainPassFormat,
 	) {
 		this.#device = device;
 		this.#layouts = layouts;
 		this.#pipelines = pipelines;
 		this.#instances = instances;
-		this.#zeros = this.#zeroBuffer(8 * 65_536);
+		this.#zeros = this.#zeroBuffer(ZERO_STRIDE * 65_536);
 		this.#params = device.createBuffer({
 			label: 'mesh draws',
 			size: this.#paramData.byteLength,
@@ -120,32 +129,42 @@ export class MeshRenderer {
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
 		});
 		device.queue.writeTexture({ texture: white }, new Uint8Array([255, 255, 255, 255]), {}, [1, 1]);
-		this.#white = device.createBindGroup({
-			label: 'white material',
-			layout: layouts.materials,
-			entries: [
-				{ binding: 0, resource: white.createView() },
-				{ binding: 1, resource: device.createSampler() },
-			],
+		this.#white = white.createView();
+		this.#defaultSampler = device.createSampler({
+			label: 'material default',
+			addressModeU: 'repeat',
+			addressModeV: 'repeat',
+			magFilter: 'linear',
+			minFilter: 'linear',
+			mipmapFilter: 'linear',
 		});
 		const module = pipelines.module('mesh', FRAME_WGSL + meshWgsl);
-		this.#key = `mesh/fill/${targets.colorFormat}/x${targets.sampleCount}`;
+		const vertex: GPUVertexState = {
+			module,
+			entryPoint: 'vs_main',
+			buffers: [
+				{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }] },
+				{ arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'snorm16x2' }] },
+				{ arrayStride: 8, attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }] },
+				{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
+			],
+		};
+		this.#key = `mesh/fill/x${format.sampleCount}`;
 		void pipelines.prepare(this.#key, () => ({
 			layout: layouts.meshPipeline,
-			vertex: {
-				module,
-				entryPoint: 'vs_main',
-				buffers: [
-					{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }] },
-					{ arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'snorm16x2' }] },
-					{ arrayStride: 8, attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }] },
-				],
-			},
-			fragment: { module, entryPoint: 'fs_main', targets: [{ format: targets.colorFormat }] },
+			vertex,
+			fragment: { module, entryPoint: 'fs_main', targets: format.targets },
 			// instances may be mirrored (negative determinant), which flips winding per instance
 			primitive: { topology: 'triangle-list', cullMode: 'none' },
 			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
-			multisample: { count: targets.sampleCount },
+			multisample: { count: format.sampleCount },
+		}));
+		void pipelines.prepare(SHADOW_KEY, () => ({
+			layout: layouts.meshPipeline,
+			vertex,
+			fragment: { module, entryPoint: 'fs_shadow', targets: [] },
+			primitive: { topology: 'triangle-list', cullMode: 'none' },
+			depthStencil: SHADOW_DEPTH_STATE,
 		}));
 	}
 
@@ -162,24 +181,27 @@ export class MeshRenderer {
 	 * @returns the residency (geometry buffers aren't pooled; the memory budget bounds them)
 	 */
 	upload(blob: number, decoded: DecodedGeometry): ResidentGeometry {
-		const positionBytes = decoded.positions.byteLength;
-		const normalBytes = decoded.normals?.byteLength ?? 0;
-		const uvBytes = decoded.uvs?.byteLength ?? 0;
+		const streams = [decoded.positions, decoded.normals, decoded.uvs, decoded.tangents];
+		const offsets: (number | null)[] = [];
+		let size = 0;
+		for (const stream of streams) {
+			offsets.push(stream === null ? null : size);
+			size += stream?.byteLength ?? 0;
+		}
 		const vertices = this.#device.createBuffer({
 			label: `geometry ${blob}`,
-			size: Math.max(4, positionBytes + normalBytes + uvBytes),
+			size: Math.max(4, size),
 			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
 		});
-		this.#device.queue.writeBuffer(vertices, 0, decoded.positions);
-		if (decoded.normals !== null) {
-			this.#device.queue.writeBuffer(vertices, positionBytes, decoded.normals);
-		}
-		if (decoded.uvs !== null) {
-			this.#device.queue.writeBuffer(vertices, positionBytes + normalBytes, decoded.uvs);
-		}
-		if ((decoded.normals === null || decoded.uvs === null) && decoded.vertexCount * 8 > this.#zerosSize) {
+		streams.forEach((stream, i) => {
+			const offset = offsets[i];
+			if (stream !== null && offset !== null) {
+				this.#device.queue.writeBuffer(vertices, offset, stream);
+			}
+		});
+		if (streams.includes(null) && decoded.vertexCount * ZERO_STRIDE > this.#zerosSize) {
 			this.#zeros.destroy();
-			this.#zeros = this.#zeroBuffer(decoded.vertexCount * 8);
+			this.#zeros = this.#zeroBuffer(decoded.vertexCount * ZERO_STRIDE);
 		}
 		const indices = this.#device.createBuffer({
 			label: `geometry ${blob} indices`,
@@ -191,9 +213,10 @@ export class MeshRenderer {
 			kind: 'geometry',
 			bytes: vertices.size + indices.size,
 			vertices,
-			positionBytes,
-			normalOffset: decoded.normals === null ? null : positionBytes,
-			uvOffset: decoded.uvs === null ? null : positionBytes + normalBytes,
+			positionBytes: decoded.positions.byteLength,
+			normalOffset: offsets[1],
+			uvOffset: offsets[2],
+			tangentOffset: offsets[3],
 			indices,
 			indexFormat: decoded.indexSize === 4 ? 'uint32' : 'uint16',
 			positionOffset: decoded.positionOffset,
@@ -213,20 +236,27 @@ export class MeshRenderer {
 		this.#bindings.clear();
 	}
 
-	#materialGroup(texture: number, binding: TextureBinding): GPUBindGroup {
-		const cached = this.#bindings.get(texture);
-		if (cached?.version === binding.version) {
+	/** the material's bind group over its slots' current bindings (`null` slots get the white texture) */
+	#materialGroup(material: number, slots: readonly (TextureBinding | null)[]): GPUBindGroup {
+		const versions = this.#versions;
+		for (let i = 0; i < slots.length; i++) {
+			versions[i] = slots[i]?.version ?? -1;
+		}
+		const cached = this.#bindings.get(material);
+		if (cached !== undefined && cached.versions.every((version, i) => version === versions[i])) {
 			return cached.group;
 		}
+		const detail = slots[1] ?? slots[2] ?? slots[0];
 		const group = this.#device.createBindGroup({
-			label: `texture ${texture}`,
+			label: `material ${material}`,
 			layout: this.#layouts.materials,
 			entries: [
-				{ binding: 0, resource: binding.view },
-				{ binding: 1, resource: binding.sampler },
+				...slots.map((slot, i) => ({ binding: i, resource: slot?.view ?? this.#white })),
+				{ binding: 4, resource: slots[0]?.sampler ?? this.#defaultSampler },
+				{ binding: 5, resource: detail?.sampler ?? this.#defaultSampler },
 			],
 		});
-		this.#bindings.set(texture, { version: binding.version, group });
+		this.#bindings.set(material, { versions: [...versions], group });
 		return group;
 	}
 
@@ -256,7 +286,9 @@ export class MeshRenderer {
 		order.sort(byBindings);
 
 		const params = this.#paramData;
+		const words = this.#paramWords;
 		const ids = this.#drawIdData;
+		const slots = this.#slotBindings;
 		let listStart = LIST_CAPACITY;
 		let listEnd = 0;
 		let d = 0;
@@ -267,42 +299,50 @@ export class MeshRenderer {
 				continue;
 			}
 			const look = bucket.look;
-			const binding = look.texture < 0 ? null : textures.binding(look.texture);
+			let flags = look.flags;
+			for (let i = 0; i < SLOTS.length; i++) {
+				const texture = look.textures[i];
+				slots[i] = texture < 0 ? null : textures.binding(texture);
+				if (slots[i] === null) {
+					flags &= ~SLOT_FLAGS[i];
+				}
+			}
 			const at = d * DRAW_FLOATS;
 			params.set(resident.positionOffset, at);
-			params[at + 3] = binding === null ? 0 : 1;
+			words[at + 3] = flags;
 			params.set(resident.positionScale, at + 4);
 			params[at + 7] = 0;
-			params.set(binding === null ? look.untextured : look.textured, at + 8);
+			params.set(look.params, at + 8);
 			ids.fill(d, bucket.first, bucket.first + bucket.count);
 			listStart = Math.min(listStart, bucket.first);
 			listEnd = Math.max(listEnd, bucket.first + bucket.count);
 
-			let draw = this.#draws[d];
+			const material = this.#materialGroup(bucket.material, slots);
+			const draw = this.#draws[d];
 			if (draw === undefined) {
-				draw = {
+				this.#draws[d] = {
 					geometry: resident,
-					indexCount: 0,
-					firstIndex: 0,
-					baseVertex: 0,
-					first: 0,
-					count: 0,
-					material: this.#white,
+					indexCount: range.indexCount,
+					firstIndex: range.firstIndex,
+					baseVertex: range.baseVertex,
+					first: bucket.first,
+					count: bucket.count,
+					material,
 				};
-				this.#draws[d] = draw;
+			} else {
+				draw.geometry = resident;
+				draw.indexCount = range.indexCount;
+				draw.firstIndex = range.firstIndex;
+				draw.baseVertex = range.baseVertex;
+				draw.first = bucket.first;
+				draw.count = bucket.count;
+				draw.material = material;
 			}
-			draw.geometry = resident;
-			draw.indexCount = range.indexCount;
-			draw.firstIndex = range.firstIndex;
-			draw.baseVertex = range.baseVertex;
-			draw.first = bucket.first;
-			draw.count = bucket.count;
-			draw.material = binding === null ? this.#white : this.#materialGroup(look.texture, binding);
 			d++;
 
 			this.instanceCount += bucket.count;
 			this.triangles += (bucket.count * range.indexCount) / 3;
-			if (binding !== null) {
+			if (slots[0] !== null) {
 				this.texturedDraws++;
 			}
 		}
@@ -319,7 +359,21 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encode(pass: GPURenderPassEncoder): number {
-		const pipeline = this.#pipelines.get(this.#key);
+		return this.#encode(pass, this.#key);
+	}
+
+	/**
+	 * draws this frame's meshes into a shadow cascade.
+	 *
+	 * @param pass a shadow pass, with group 0 bound
+	 * @returns draw calls issued
+	 */
+	encodeShadow(pass: GPURenderPassEncoder): number {
+		return this.#encode(pass, SHADOW_KEY);
+	}
+
+	#encode(pass: GPURenderPassEncoder, key: string): number {
+		const pipeline = this.#pipelines.get(key);
 		if (pipeline === undefined || this.#drawCount === 0) {
 			return 0;
 		}
@@ -335,19 +389,18 @@ export class MeshRenderer {
 				pass.setBindGroup(3, material);
 			}
 			if (draw.geometry !== geometry) {
-				geometry = draw.geometry;
-				pass.setVertexBuffer(0, geometry.vertices, 0, geometry.positionBytes);
-				if (geometry.normalOffset === null) {
-					pass.setVertexBuffer(1, this.#zeros);
-				} else {
-					pass.setVertexBuffer(1, geometry.vertices, geometry.normalOffset);
-				}
-				if (geometry.uvOffset === null) {
-					pass.setVertexBuffer(2, this.#zeros);
-				} else {
-					pass.setVertexBuffer(2, geometry.vertices, geometry.uvOffset);
-				}
-				pass.setIndexBuffer(geometry.indices, geometry.indexFormat);
+				const next: ResidentGeometry = draw.geometry;
+				geometry = next;
+				pass.setVertexBuffer(0, next.vertices, 0, next.positionBytes);
+				const optional = [next.normalOffset, next.uvOffset, next.tangentOffset];
+				optional.forEach((offset, slot) => {
+					if (offset === null) {
+						pass.setVertexBuffer(slot + 1, this.#zeros);
+					} else {
+						pass.setVertexBuffer(slot + 1, next.vertices, offset);
+					}
+				});
+				pass.setIndexBuffer(next.indices, next.indexFormat);
 			}
 			pass.drawIndexed(draw.indexCount, draw.count, draw.firstIndex, draw.baseVertex, draw.first);
 		}

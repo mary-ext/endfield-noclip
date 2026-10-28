@@ -49,7 +49,44 @@ interface TextureState {
 	sampler: GPUSampler;
 }
 
+/** the view a texture of this kind is bound as */
+const viewDimension = (kind: ReadyTexture['kind']): GPUTextureViewDimension => {
+	switch (kind) {
+		case 'cube': {
+			return 'cube';
+		}
+		case '2d-array': {
+			return '2d-array';
+		}
+		default: {
+			return '2d';
+		}
+	}
+};
+
 const blockAligned = (value: number, block: number): number => Math.ceil(value / block) * block;
+
+/**
+ * @param device the device
+ * @param options the label, the view dimension, and the format (`rgba8unorm` by default)
+ * @returns a view of a 1×1 zeroed texture (six layers for a cube), bound where a texture is missing
+ */
+export const placeholderView = (
+	device: GPUDevice,
+	{
+		label,
+		dimension,
+		format = 'rgba8unorm',
+	}: { label: string; dimension: '2d' | '2d-array' | 'cube'; format?: GPUTextureFormat },
+): GPUTextureView =>
+	device
+		.createTexture({
+			label,
+			size: [1, 1, dimension === 'cube' ? 6 : 1],
+			format,
+			usage: GPUTextureUsage.TEXTURE_BINDING,
+		})
+		.createView({ dimension });
 
 /** owns texture residency for one package */
 export class TextureStore {
@@ -60,6 +97,13 @@ export class TextureStore {
 	#samplers = new Map<string, GPUSampler>();
 	/** textures that lost pieces since the last {@link commit} */
 	#released = new Set<TextureState>();
+	/**
+	 * GPU textures replaced since the last {@link commit}. bindings handed out before the stream update that
+	 * replaced them are still in this frame's command buffer, so they're destroyed one commit later, by when
+	 * every user has asked for its binding again
+	 */
+	#retired: GPUTexture[] = [];
+	#retiring: GPUTexture[] = [];
 	#supported: boolean;
 	/** GPU bytes of integrated levels */
 	bytes = 0;
@@ -85,11 +129,12 @@ export class TextureStore {
 
 	/**
 	 * @param id texture id
-	 * @returns the entry if this viewer can stream it (2D, a supported format, block-aligned size)
+	 * @param kind the kind the caller binds it as
+	 * @returns the entry if this viewer can stream it (that kind, a supported format, block-aligned size)
 	 */
-	streamable(id: number): ReadyTexture | null {
+	streamable(id: number, kind: '2d' | 'cube' | '2d-array'): ReadyTexture | null {
 		const entry = this.#table.entries[id];
-		if (entry?.status !== 'ready' || entry.kind !== '2d') {
+		if (entry?.status !== 'ready' || entry.kind !== kind) {
 			return null;
 		}
 		const info = TEXTURE_FORMATS[entry.format];
@@ -166,8 +211,16 @@ export class TextureStore {
 		this.#released.add(state);
 	}
 
-	/** shrinks the textures that lost pieces since the last call, once however many pieces each lost */
+	/**
+	 * shrinks the textures that lost pieces since the last call, once however many pieces each lost. call once
+	 * a frame, after the stream update; bindings from before the previous call are invalid afterwards.
+	 */
 	commit(): void {
+		for (const texture of this.#retiring) {
+			texture.destroy();
+		}
+		this.#retiring = this.#retired;
+		this.#retired = [];
 		for (const state of this.#released) {
 			this.#shrink(state);
 		}
@@ -179,6 +232,11 @@ export class TextureStore {
 		for (const state of this.#states.values()) {
 			state.gpu?.destroy();
 		}
+		for (const texture of [...this.#retired, ...this.#retiring]) {
+			texture.destroy();
+		}
+		this.#retired = [];
+		this.#retiring = [];
 		this.#states.clear();
 		this.#released.clear();
 		this.bytes = 0;
@@ -221,7 +279,7 @@ export class TextureStore {
 		const layout = textureLevelLayout(entry, top);
 		return this.#device.createTexture({
 			label: `texture ${entry.id}@${top}`,
-			size: [layout.width, layout.height, 1],
+			size: [layout.width, layout.height, layout.depthOrArrayLayers],
 			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TEXTURE_FORMATS keys are WebGPU format names
 			format: entry.format as GPUTextureFormat,
 			mipLevelCount: entry.mipCount - top,
@@ -240,18 +298,30 @@ export class TextureStore {
 				encoder.copyTextureToTexture(
 					{ texture: previous, mipLevel: level - state.top },
 					{ texture: next, mipLevel: level - top },
-					[blockAligned(layout.width, info.blockWidth), blockAligned(layout.height, info.blockHeight), 1],
+					[
+						blockAligned(layout.width, info.blockWidth),
+						blockAligned(layout.height, info.blockHeight),
+						layout.depthOrArrayLayers,
+					],
 				);
 			}
 			this.#device.queue.submit([encoder.finish()]);
 		}
 		this.bytes -= this.#levelBytes(state.entry, state.top);
-		previous?.destroy();
+		if (previous !== null) {
+			this.#retired.push(previous);
+		}
 		state.gpu = next;
 		state.top = next === null ? state.entry.mipCount : top;
 		state.version++;
 		state.binding =
-			next === null ? null : { view: next.createView(), sampler: state.sampler, version: state.version };
+			next === null
+				? null
+				: {
+						view: next.createView({ dimension: viewDimension(state.entry.kind) }),
+						sampler: state.sampler,
+						version: state.version,
+					};
 		this.bytes += this.#levelBytes(state.entry, state.top);
 	}
 
@@ -285,7 +355,11 @@ export class TextureStore {
 				{ texture: next, mipLevel: level - piece.firstLevel },
 				data.subarray(at, at + layout.byteLength),
 				{ bytesPerRow: layout.bytesPerRow, rowsPerImage: layout.rowsPerImage },
-				[blockAligned(layout.width, info.blockWidth), blockAligned(layout.height, info.blockHeight), 1],
+				[
+					blockAligned(layout.width, info.blockWidth),
+					blockAligned(layout.height, info.blockHeight),
+					layout.depthOrArrayLayers,
+				],
 			);
 			at += layout.byteLength;
 		}

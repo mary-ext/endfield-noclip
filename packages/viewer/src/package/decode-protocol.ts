@@ -55,6 +55,8 @@ export interface DecodedGeometry {
 	normals: ArrayBuffer | null;
 	/** UV set 0 as `float32x2` (dequantized), or `null` if the mesh has none */
 	uvs: ArrayBuffer | null;
+	/** `snorm8x4` tangents (octahedral xy, bitangent sign z), or `null` if the mesh has none */
+	tangents: ArrayBuffer | null;
 	submeshes: { firstIndex: number; indexCount: number; baseVertex: number }[];
 }
 

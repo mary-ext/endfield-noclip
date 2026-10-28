@@ -1,6 +1,7 @@
-// instanced meshes with their base colour texture: quantized positions, octahedral normals and UV set 0 from
-// the geometry blob, instances from this frame's visible list, draw parameters by the list entry's draw id. a
-// simple stand-in for the game's material families (no normal/MRO maps yet).
+// instanced meshes with the HGRP surface essentials: base colour, tangent-space normal map, roughness from
+// the normal map's B channel or an MRO map, emission. quantized positions, octahedral normals and tangents
+// and UV set 0 from the geometry blob; instances from this frame's visible list; draw parameters by the list
+// entry's draw id (see materials.ts for their layout).
 
 struct Row {
 	t0: vec4f,
@@ -13,14 +14,31 @@ struct Row {
 }
 
 struct Draw {
-	// dequantization: position = offset.xyz + value · scale.xyz; offset.w = 1 when the base colour texture is bound
+	// dequantization: position = offset.xyz + value · scale.xyz; offset.w = look flags (u32 bits)
 	offset: vec4f,
 	scale: vec4f,
-	// material tint (linear); w = alpha-test threshold, negative without alpha testing
-	colour: vec4f,
-	// base colour UV transform: uv · xy + zw
-	uv: vec4f,
+	// linear tint, w = alpha-test threshold (negative without alpha testing)
+	tint: vec4f,
+	// UV transforms (uv · xy + zw) of the base colour, normal, mask and emissive slots
+	base_uv: vec4f,
+	normal_uv: vec4f,
+	mask_uv: vec4f,
+	emissive_uv: vec4f,
+	// roughness min, roughness max, metallic, normal scale
+	surface: vec4f,
+	// occlusion strength, f0, transmission, base colour brighter scale
+	surface2: vec4f,
+	// emissive colour (linear), w = how much the tint covers the base colour
+	emissive: vec4f,
 }
+
+const BASE_MAP = 1u;
+const NORMAL_MAP = 2u;
+const MASK_MAP = 4u;
+const EMISSIVE_MAP = 8u;
+const NORMAL_RAG = 16u;
+const NORMAL_ROUGHNESS = 32u;
+const FOLIAGE = 64u;
 
 @group(1) @binding(0) var<storage, read> rows: array<Row>;
 @group(1) @binding(1) var<storage, read> blocks: array<vec4f>;
@@ -28,81 +46,147 @@ struct Draw {
 @group(2) @binding(0) var<storage, read> draws: array<Draw>;
 // per visible-list entry: its index into `draws`
 @group(2) @binding(1) var<storage, read> draw_ids: array<u32>;
-@group(3) @binding(0) var base_colour: texture_2d<f32>;
-@group(3) @binding(1) var base_sampler: sampler;
+@group(3) @binding(0) var base_map: texture_2d<f32>;
+@group(3) @binding(1) var normal_map: texture_2d<f32>;
+@group(3) @binding(2) var mask_map: texture_2d<f32>;
+@group(3) @binding(3) var emissive_map: texture_2d<f32>;
+@group(3) @binding(4) var base_sampler: sampler;
+@group(3) @binding(5) var detail_sampler: sampler;
 
 struct VertexIn {
 	@location(0) position: vec4f,
 	@location(1) normal: vec2f,
 	@location(2) uv: vec2f,
+	// octahedral tangent, z = bitangent sign; zero without tangents
+	@location(3) tangent: vec4f,
 }
 
 struct VertexOut {
 	@builtin(position) position: vec4f,
 	@location(0) rel: vec3f,
 	@location(1) normal: vec3f,
-	@location(2) @interpolate(flat) colour: vec3f,
+	// w = bitangent sign, 0 without a tangent
+	@location(2) tangent: vec4f,
 	@location(3) uv: vec2f,
-	// x = 1 when the base colour texture is bound, y = alpha-test threshold
-	@location(4) @interpolate(flat) material: vec2f,
-}
-
-fn oct_decode(e: vec2f) -> vec3f {
-	var n = vec3f(e, 1.0 - abs(e.x) - abs(e.y));
-	if (n.z < 0.0) {
-		let s = select(vec2f(-1.0), vec2f(1.0), n.xy >= vec2f(0.0));
-		n = vec3f((1.0 - abs(n.yx)) * s, n.z);
-	}
-	return n;
+	@location(4) @interpolate(flat) draw: u32,
 }
 
 @vertex
 fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	let row = rows[list[ii]];
-	let draw = draws[draw_ids[ii]];
+	let draw_id = draw_ids[ii];
+	let draw = draws[draw_id];
 	let p = draw.offset.xyz + v.position.xyz * draw.scale.xyz;
 	let rel = vec3f(
 		dot(row.t0.xyz, p) + row.t0.w,
 		dot(row.t1.xyz, p) + row.t1.w,
 		dot(row.t2.xyz, p) + row.t2.w,
 	) + blocks[row.block].xyz;
+	let m = mat3x3f(
+		vec3f(row.t0.x, row.t1.x, row.t2.x),
+		vec3f(row.t0.y, row.t1.y, row.t2.y),
+		vec3f(row.t0.z, row.t1.z, row.t2.z),
+	);
 	// no normals in the mesh: zero here, faceted in the fragment shader
 	var n = vec3f(0.0);
 	if (any(v.normal != vec2f(0.0))) {
-		let local = oct_decode(v.normal);
-		n = vec3f(dot(row.t0.xyz, local), dot(row.t1.xyz, local), dot(row.t2.xyz, local));
+		// strictly the inverse transpose; scenery is scaled close to uniformly, so the matrix does once
+		// renormalized
+		n = m * oct_decode(v.normal);
+	}
+	var t = vec4f(0.0);
+	if (any(v.tangent.xy != vec2f(0.0))) {
+		let sign = select(-1.0, 1.0, v.tangent.z >= 0.0) * select(-1.0, 1.0, determinant(m) >= 0.0);
+		t = vec4f(m * oct_decode(v.tangent.xy), sign);
 	}
 	var out: VertexOut;
 	out.position = frame.view_proj * vec4f(rel, 1.0);
 	out.rel = rel;
 	out.normal = n;
-	out.uv = v.uv * draw.uv.xy + draw.uv.zw;
-	out.material = vec2f(draw.offset.w, draw.colour.w);
-	out.colour = draw.colour.rgb;
+	out.tangent = t;
+	out.uv = v.uv;
+	out.draw = draw_id;
 	return out;
 }
 
 @fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4f {
+fn fs_main(in: VertexOut) -> Shaded {
+	let draw = draws[in.draw];
+	let flags = bitcast<u32>(draw.offset.w);
 	// derivatives (and implicit-LOD sampling) must happen in uniform control flow
 	let faceted = cross(dpdy(in.rel), dpdx(in.rel));
-	let texel = textureSample(base_colour, base_sampler, in.uv);
-	var albedo = in.colour;
-	if (in.material.x > 0.5) {
-		if (texel.a < in.material.y) {
+	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
+	let packed = textureSample(normal_map, detail_sampler, in.uv * draw.normal_uv.xy + draw.normal_uv.zw);
+	let mask = textureSample(mask_map, detail_sampler, in.uv * draw.mask_uv.xy + draw.mask_uv.zw);
+	let glow = textureSample(emissive_map, base_sampler, in.uv * draw.emissive_uv.xy + draw.emissive_uv.zw);
+
+	var albedo = clamp(base.rgb * draw.surface2.w, vec3f(0.0), vec3f(1.0));
+	if ((flags & BASE_MAP) != 0u) {
+		if (draw.tint.w >= 0.0 && base.a < draw.tint.w) {
 			discard;
 		}
-		albedo *= texel.rgb;
+	} else {
+		albedo = vec3f(1.0);
 	}
+	albedo = mix(albedo, draw.tint.rgb, draw.emissive.w);
+
 	var n = in.normal;
 	if (dot(n, n) < 1e-6) {
 		n = faceted;
 	}
 	n = normalize(n);
-	// culling is off (mirrored instances flip winding), so light back faces from the viewer's side
-	if (dot(n, in.rel) > 0.0) {
+	// culling is off (mirrored instances flip winding, foliage is two-sided): light the side facing us
+	let towards_viewer = dot(n, in.rel) <= 0.0;
+	if (!towards_viewer) {
 		n = -n;
 	}
-	return to_display(shade(albedo, n, in.rel));
+
+	var roughness = draw.surface.y;
+	if ((flags & NORMAL_MAP) != 0u && in.tangent.w != 0.0) {
+		var xy = packed.rg * 2.0 - 1.0;
+		if ((flags & NORMAL_RAG) != 0u) {
+			xy.x = (packed.r * packed.a) * 2.0 - 1.0;
+		}
+		let z = sqrt(max(1.0 - dot(xy, xy), 0.0));
+		xy *= draw.surface.w;
+		var t = normalize(in.tangent.xyz - n * dot(in.tangent.xyz, n));
+		var b = cross(in.normal, in.tangent.xyz) * in.tangent.w;
+		if (!towards_viewer) {
+			b = -b;
+		}
+		b = normalize(b - n * dot(b, n));
+		n = normalize(t * xy.x + b * xy.y + n * z);
+		if ((flags & NORMAL_ROUGHNESS) != 0u) {
+			roughness = mix(draw.surface.x, draw.surface.y, packed.b);
+		}
+	}
+
+	var s = default_surface(albedo, n);
+	s.roughness = roughness;
+	s.metallic = draw.surface.z;
+	s.f0 = draw.surface2.y;
+	if ((flags & MASK_MAP) != 0u) {
+		s.metallic = mask.r;
+		s.roughness = mix(draw.surface.x, draw.surface.y, mask.g);
+		s.occlusion = mix(1.0, mask.b, draw.surface2.x);
+	}
+	if ((flags & EMISSIVE_MAP) != 0u) {
+		// emission is authored in nits; pre-expose it like the light
+		s.emission = glow.rgb * draw.emissive.rgb * frame.ambient.y;
+	}
+	if ((flags & FOLIAGE) != 0u) {
+		s.transmission = draw.surface2.z;
+	}
+	return shade_surface(s, in.rel);
 }
 
+// the shadow pass: depth only, cut out where the base colour's alpha test fails
+@fragment
+fn fs_shadow(in: VertexOut) {
+	let draw = draws[in.draw];
+	let flags = bitcast<u32>(draw.offset.w);
+	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
+	if ((flags & BASE_MAP) != 0u && draw.tint.w >= 0.0 && base.a < draw.tint.w) {
+		discard;
+	}
+}

@@ -25,17 +25,21 @@ import { UniformRing } from './gfx/uniform-ring.ts';
 import { DecodePool } from './package/decode-pool.ts';
 import type { PackageSource } from './package/package-source.ts';
 import { CORE_ARCHIVE_INDEX, type ViewerPackage, openViewerPackage } from './package/viewer-package.ts';
-import { FOG_COLOUR, FRAME_UNIFORM_BYTES, FrameOffsets, clearColour } from './render/frame-uniforms.ts';
+import { type Environment, deriveEnvironment } from './render/environment.ts';
+import { DEBUG_VIEWS, type DebugView, FRAME_UNIFORM_BYTES, FrameOffsets } from './render/frame-uniforms.ts';
 import { InstanceRenderer } from './render/instance-renderer.ts';
 import { RowKind, type RowKinds, type TierSpan } from './render/instance-rows.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
+import { PostProcess, type Tonemapper } from './render/post-process.ts';
+import { CASCADES, SHADOW_FORMAT, ShadowMap } from './render/shadow-map.ts';
 import { PAGE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
-import { TextureStore } from './render/texture-store.ts';
+import { type TextureBinding, TextureStore, placeholderView } from './render/texture-store.ts';
+import { WaterRenderer } from './render/water-renderer.ts';
 import { Camera, type Vec3 } from './scene/camera.ts';
 import { type CameraPose, NoclipControls } from './scene/noclip-controls.ts';
 import { type TileTree, buildTileTree } from './scene/tile-tree.ts';
-import { type MeshSelection, MeshSelector } from './streaming/mesh-selection.ts';
+import { type MeshSelection, MeshSelector, streamWholeTexture } from './streaming/mesh-selection.ts';
 import { Selector } from './streaming/selection.ts';
 import { StreamManager } from './streaming/stream-manager.ts';
 
@@ -64,6 +68,19 @@ export interface ViewerOptions {
 	budgetMiB: number;
 	/** render every frame instead of only on change (for measuring) */
 	continuous: boolean;
+	/** exposure compensation on top of the level's exposure, EV */
+	exposure: number;
+	tonemapper: Tonemapper;
+	sky: boolean;
+	fog: boolean;
+	aerialPerspective: boolean;
+	shadows: boolean;
+	water: boolean;
+	ao: boolean;
+	bloom: boolean;
+	vignette: boolean;
+	/** a material channel instead of the lit image */
+	debugView: DebugView;
 }
 
 /** defaults for {@link ViewerOptions} */
@@ -79,8 +96,19 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	terrainPixels: 3,
 	minBoxPixels: 1.5,
 	outlineMetres: 60,
-	budgetMiB: 192,
+	budgetMiB: 384,
 	continuous: false,
+	exposure: 0,
+	tonemapper: 'aces',
+	sky: true,
+	fog: true,
+	aerialPerspective: true,
+	shadows: true,
+	water: true,
+	ao: true,
+	bloom: true,
+	vignette: true,
+	debugView: 'lit',
 };
 
 /** numbers for the stats panel */
@@ -133,15 +161,6 @@ const SAMPLE_COUNT = 4;
 const TERRAIN_SLOTS = 4096;
 const INSTANCE_ROWS = 1_500_000;
 const STATS_INTERVAL = 250;
-
-/** towards a late-afternoon sun in the south-west, normalized */
-const SUN_DIRECTION: Vec3 = (() => {
-	const [x, y, z] = [-0.45, 0.62, -0.64];
-	const length = Math.sqrt(x * x + y * y + z * z);
-	return [x / length, y / length, z / length];
-})();
-const SUN_AMBIENT = 0.5;
-const FOG_DENSITY = 0.00006;
 
 interface LoadedScene {
 	pkg: ViewerPackage;
@@ -201,10 +220,23 @@ export class Viewer {
 	#pipelines: PipelineCache;
 	#ring: UniformRing;
 	#frameBindGroup: GPUBindGroup;
+	#shadowFrameBindGroup: GPUBindGroup;
+	#shadows: ShadowMap;
+	#shadowPlaceholder: GPUTextureView;
+	/** bound while the level has no reflection cubemap, or it hasn't streamed in */
+	#noReflection: TextureBinding;
+	/** the reflection binding the frame groups were built with */
+	#reflection: TextureBinding;
+	/** mip levels of the bound reflection cubemap, minus one */
+	#reflectionMips = 0;
 	#timer: GpuTimer;
 	#terrain: TerrainRenderer;
 	#instances: InstanceRenderer;
 	#meshes: MeshRenderer;
+	#post: PostProcess;
+	#water: WaterRenderer;
+	/** the shown level's look */
+	#environment: Environment = deriveEnvironment(null);
 	#pool: DecodePool;
 	#listeners = new Set<() => void>();
 	#raf = 0;
@@ -230,23 +262,40 @@ export class Viewer {
 		this.#targets = new RenderTargets(device, canvas, gfx.presentationFormat, SAMPLE_COUNT);
 		this.#layouts = createBindLayouts(device);
 		this.#pipelines = new PipelineCache(device);
-		this.#ring = new UniformRing(device, FRAME_UNIFORM_BYTES, 3);
-		this.#frameBindGroup = device.createBindGroup({
-			label: 'frame',
-			layout: this.#layouts.frame,
-			entries: [{ binding: 0, resource: { buffer: this.#ring.buffer, size: FRAME_UNIFORM_BYTES } }],
+		// the main pass's frame plus one per shadow cascade
+		const alignment = device.limits.minUniformBufferOffsetAlignment;
+		this.#ring = new UniformRing(
+			device,
+			Math.ceil(FRAME_UNIFORM_BYTES / alignment) * alignment * (1 + CASCADES),
+			3,
+		);
+		this.#shadows = new ShadowMap(device);
+		// the shadow passes can't bind the map they render into
+		this.#shadowPlaceholder = placeholderView(device, {
+			label: 'shadow placeholder',
+			dimension: '2d-array',
+			format: SHADOW_FORMAT,
 		});
+		this.#noReflection = {
+			view: placeholderView(device, { label: 'no reflection', dimension: 'cube' }),
+			sampler: device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear' }),
+			version: -1,
+		};
+		this.#reflection = this.#noReflection;
+		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(this.#noReflection);
 		this.#timer = new GpuTimer(device, gfx.features.timestampQuery);
-		const targets = { colorFormat: gfx.presentationFormat, sampleCount: SAMPLE_COUNT };
-		this.#terrain = new TerrainRenderer(device, this.#layouts, this.#pipelines, targets, TERRAIN_SLOTS);
-		this.#instances = new InstanceRenderer(device, this.#layouts, this.#pipelines, targets, INSTANCE_ROWS);
+		const format = this.#targets.format;
+		this.#terrain = new TerrainRenderer(device, this.#layouts, this.#pipelines, format, TERRAIN_SLOTS);
+		this.#instances = new InstanceRenderer(device, this.#layouts, this.#pipelines, format, INSTANCE_ROWS);
 		this.#meshes = new MeshRenderer(
 			device,
 			this.#layouts,
 			this.#pipelines,
 			this.#instances.bindGroup,
-			targets,
+			format,
 		);
+		this.#post = new PostProcess(device, gfx.presentationFormat, SAMPLE_COUNT, this.#environment);
+		this.#water = new WaterRenderer(device, SAMPLE_COUNT);
 		this.#pool = new DecodePool(Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) >> 1)));
 		this.controls = new NoclipControls(this.camera, canvas);
 		this.stats = this.#emptyStats();
@@ -366,6 +415,8 @@ export class Viewer {
 		const showable = manifest.levels.filter((level) => level.instances > 0);
 		this.#level = showable.find((level) => level.id === initialLevel) ?? showable[0] ?? null;
 		selector.setLevel(this.#level?.tag ?? null);
+		this.#water.setTable(pkg.water);
+		this.#applyEnvironment();
 		if (this.#level !== null) {
 			this.#focusCells = this.#cellIds(this.#level);
 		}
@@ -387,11 +438,80 @@ export class Viewer {
 		this.scene?.stream.destroy();
 		this.scene?.textures.destroy();
 		this.#meshes.releaseMaterials();
+		// the destroyed store's sky textures
+		this.#post.setCloud(null);
+		this.#setReflection(this.#noReflection, 1);
 		this.scene = null;
+		this.#water.setTable(null);
 		this.#level = null;
 		this.#focusCells = null;
+		this.#applyEnvironment();
 		this.#dirty = true;
 		this.#emitState();
+	}
+
+	/** @returns group 0 for the main pass and for the shadow passes, with this reflection cubemap */
+	#frameGroups(reflection: TextureBinding): [main: GPUBindGroup, shadow: GPUBindGroup] {
+		const device = this.#gfx.device;
+		const group = (label: string, shadowView: GPUTextureView): GPUBindGroup =>
+			device.createBindGroup({
+				label,
+				layout: this.#layouts.frame,
+				entries: [
+					{ binding: 0, resource: { buffer: this.#ring.buffer, size: FRAME_UNIFORM_BYTES } },
+					{ binding: 1, resource: shadowView },
+					{ binding: 2, resource: this.#shadows.sampler },
+					{ binding: 3, resource: reflection.view },
+					{ binding: 4, resource: reflection.sampler },
+				],
+			});
+		return [group('frame', this.#shadows.view), group('shadow frame', this.#shadowPlaceholder)];
+	}
+
+	/** streams the level's sky textures (reflection cubemap, cloud panorama) and binds them as they arrive */
+	#updateSkyTextures(scene: LoadedScene): void {
+		const { stream, textures } = scene;
+		const environment = this.#environment;
+		const cloud = streamWholeTexture({
+			stream,
+			textures,
+			id: environment.cloud?.texture ?? null,
+			kind: '2d',
+			priority: 1e6,
+		});
+		this.#post.setCloud(cloud?.binding ?? null);
+
+		const reflection = streamWholeTexture({
+			stream,
+			textures,
+			id: environment.reflection,
+			kind: 'cube',
+			priority: 1e6,
+		});
+		this.#setReflection(reflection?.binding ?? this.#noReflection, reflection?.entry.mipCount ?? 1);
+	}
+
+	/** rebinds the frame groups when the reflection's binding changed (the store hands out a new one then) */
+	#setReflection(binding: TextureBinding, mipCount: number): void {
+		if (binding !== this.#reflection) {
+			this.#reflection = binding;
+			this.#reflectionMips = mipCount - 1;
+			[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(binding);
+		}
+	}
+
+	/** lights the scene with the shown level's environment, or the defaults */
+	#applyEnvironment(): void {
+		const index = this.#level?.environment ?? null;
+		const manifest = this.scene?.pkg.manifest;
+		const profile = index === null || manifest === undefined ? null : manifest.environments[index];
+		this.#environment = deriveEnvironment(profile);
+		this.#post.setEnvironment(this.#environment);
+	}
+
+	/** @returns the name of the environment profile lighting the shown level, or `null` for the defaults */
+	get environmentName(): string | null {
+		return this.#environment.name;
 	}
 
 	/** @returns the loaded package's levels (the same array until the package changes) */
@@ -527,6 +647,7 @@ export class Viewer {
 		}
 		this.#level = level;
 		this.scene.selector.setLevel(level.tag);
+		this.#applyEnvironment();
 		this.#flyOver(level);
 		this.#emitState();
 	}
@@ -665,6 +786,19 @@ export class Viewer {
 				minPixels: options.minBoxPixels,
 			});
 		}
+		this.#updateSkyTextures(scene);
+		if (options.water) {
+			this.#water.prepare({
+				level: this.#level?.tag ?? null,
+				eye: this.camera.position,
+				planes: view.planes,
+				stream,
+				geometries: scene.pkg.geometries.entries,
+				textures: scene.textures,
+			});
+		} else {
+			this.#water.clear();
+		}
 		stream.update();
 		scene.textures.commit();
 		if (!prepare) {
@@ -687,20 +821,56 @@ export class Viewer {
 		const device = this.#gfx.device;
 		const ring = this.#ring;
 		ring.beginFrame();
+		const shadows = hasScene && this.options.shadows && this.options.debugView === 'lit';
+		if (shadows) {
+			this.#shadows.fit(
+				this.camera,
+				this.#targets.width / this.#targets.height,
+				this.#environment.sunDirection,
+			);
+		}
 		const uniforms = ring.allocate(FRAME_UNIFORM_BYTES);
-		this.#writeFrameUniforms(uniforms.f32, uniforms.u32);
+		this.#writeFrameUniforms(uniforms.f32, uniforms.u32, { shadows });
+		// each cascade's frame: the main one with the cascade's view-projection
+		const cascadeOffsets: number[] = [];
+		if (shadows) {
+			for (const cascade of this.#shadows.cascades) {
+				const block = ring.allocate(FRAME_UNIFORM_BYTES);
+				block.f32.set(uniforms.f32);
+				block.f32.set(cascade.render, FrameOffsets.viewProj);
+				cascadeOffsets.push(block.offset);
+			}
+		}
 		ring.flush();
 
 		const encoder = device.createCommandEncoder({ label: 'frame' });
-		const { color, depth } = this.#targets.mainPassAttachments(clearColour());
+		let draws = 0;
+		cascadeOffsets.forEach((offset, i) => {
+			const pass = encoder.beginRenderPass({
+				label: `shadow cascade ${i}`,
+				colorAttachments: [],
+				depthStencilAttachment: {
+					view: this.#shadows.layers[i],
+					depthClearValue: 1,
+					depthLoadOp: 'clear',
+					depthStoreOp: 'store',
+				},
+			});
+			pass.setBindGroup(0, this.#shadowFrameBindGroup, [offset]);
+			if (this.options.terrain) {
+				draws += this.#terrain.encodeShadow(pass);
+			}
+			draws += this.#meshes.encodeShadow(pass);
+			pass.end();
+		});
+		const { colors, depth } = this.#targets.mainPassAttachments();
 		const timestampWrites = this.#timer.passWrites();
 		const pass = encoder.beginRenderPass({
 			label: 'main',
-			colorAttachments: [color],
+			colorAttachments: colors,
 			depthStencilAttachment: depth,
 			timestampWrites,
 		});
-		let draws = 0;
 		if (hasScene) {
 			pass.setBindGroup(0, this.#frameBindGroup, [uniforms.offset]);
 			draws += this.#terrain.encode(pass);
@@ -712,6 +882,27 @@ export class Viewer {
 			}
 		}
 		pass.end();
+		const options = this.options;
+		this.#post.encode(encoder, {
+			scene: this.#targets.scene,
+			swapchain: this.#targets.swapchainView(),
+			camera: this.camera,
+			width: this.#targets.width,
+			height: this.#targets.height,
+			settings: {
+				exposure: options.exposure,
+				tonemapper: options.tonemapper,
+				sky: options.sky,
+				fog: options.fog,
+				aerialPerspective: options.aerialPerspective,
+				ao: options.ao,
+				bloom: options.bloom,
+				vignette: options.vignette,
+				debugView: options.debugView,
+			},
+			frame: this.#frame,
+			water: this.#water,
+		});
 		if (timestampWrites !== undefined) {
 			this.#timer.resolve(encoder);
 		}
@@ -720,7 +911,7 @@ export class Viewer {
 		return draws;
 	}
 
-	#writeFrameUniforms(f32: Float32Array, u32: Uint32Array): void {
+	#writeFrameUniforms(f32: Float32Array, u32: Uint32Array, { shadows }: { shadows: boolean }): void {
 		const camera = this.camera;
 		const eye = camera.position;
 		const width = this.#targets.width;
@@ -735,11 +926,16 @@ export class Viewer {
 			f32[at + 3] = performance.now() / 1000;
 		}
 		{
-			const at = FrameOffsets.sun;
-			f32[at] = SUN_DIRECTION[0];
-			f32[at + 1] = SUN_DIRECTION[1];
-			f32[at + 2] = SUN_DIRECTION[2];
-			f32[at + 3] = SUN_AMBIENT;
+			const environment = this.#environment;
+			f32.set(environment.sunDirection, FrameOffsets.sun);
+			f32[FrameOffsets.sun + 3] = 1;
+			f32.set(environment.sunIlluminance, FrameOffsets.sunColour);
+			f32[FrameOffsets.sunColour + 3] = environment.sunSpecular;
+			f32.set(environment.sh, FrameOffsets.sh);
+			f32[FrameOffsets.ambient] = environment.indirectSpecular;
+			f32[FrameOffsets.ambient + 1] = environment.preExposure;
+			f32[FrameOffsets.ambient + 2] = this.#reflection === this.#noReflection ? 0 : 1;
+			f32[FrameOffsets.ambient + 3] = this.#reflectionMips;
 		}
 		{
 			const at = FrameOffsets.viewport;
@@ -755,16 +951,21 @@ export class Viewer {
 			f32[at + 1] = terrain.heightScale / terrain.holeBit;
 			u32[at + 2] = terrain.holeBit;
 		}
-		f32.set(FOG_COLOUR, FrameOffsets.fog);
-		f32[FrameOffsets.fog + 3] = FOG_DENSITY;
 		{
 			const at = FrameOffsets.flags;
 			u32[at] = this.options.wireframe ? 1 : 0;
-			u32[at + 1] = 0;
+			u32[at + 1] = DEBUG_VIEWS.indexOf(this.options.debugView);
 			u32[at + 2] = 0;
 			u32[at + 3] = 0;
 		}
 		f32[FrameOffsets.params] = this.options.outlineMetres;
+		const cascades = this.#shadows.cascades;
+		cascades.forEach((cascade, i) => {
+			f32.set(cascade.sample, FrameOffsets.shadowMatrices + i * 16);
+			f32[FrameOffsets.shadowParams + i] = cascade.texel;
+		});
+		f32.set(this.#shadows.splits, FrameOffsets.shadowSplits);
+		f32[FrameOffsets.shadowSplits + 3] = shadows ? 1 : 0;
 	}
 
 	/** refreshes {@link stats}, notifying subscribers only if something changed */
@@ -790,7 +991,12 @@ export class Viewer {
 			nodesVisited: scene === null ? 0 : this.#visited,
 			residentBytes: stream?.residentBytes ?? 0,
 			pinnedBytes: stream?.pinnedBytes ?? 0,
-			poolBytes: this.#terrain.poolBytes + this.#instances.poolBytes + this.#targets.bytes,
+			poolBytes:
+				this.#terrain.poolBytes +
+				this.#instances.poolBytes +
+				this.#targets.bytes +
+				this.#post.bytes +
+				this.#shadows.bytes,
 			queued: stream?.queued ?? 0,
 			requestsInFlight: stream?.requestsInFlight ?? 0,
 			decoding: stream?.decoding ?? 0,
@@ -821,6 +1027,9 @@ export class Viewer {
 		cancelAnimationFrame(this.#raf);
 		this.unload();
 		this.controls.destroy();
+		this.#post.destroy();
+		this.#water.destroy();
+		this.#shadows.destroy();
 		this.#pool.destroy();
 		this.#targets.destroy();
 		this.#gfx.device.destroy();

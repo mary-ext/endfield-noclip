@@ -94,25 +94,35 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 	return out;
 }
 
+// stand-in ground colours until the terrain's own textures are packed
 fn albedo(in: VertexOut, n: vec3f) -> vec3f {
-	let grass = vec3f(0.20, 0.27, 0.12);
-	let rock = vec3f(0.33, 0.31, 0.28);
+	let grass = vec3f(0.13, 0.19, 0.07);
+	let rock = vec3f(0.24, 0.22, 0.2);
 	return mix(rock, grass, smoothstep(0.72, 0.86, n.y));
 }
 
 @fragment
-fn fs_main(in: VertexOut) -> @location(0) vec4f {
+fn fs_main(in: VertexOut) -> Shaded {
 	if (in.hole > 0.01) {
 		discard;
 	}
 	let n = normalize(in.normal);
-	return to_display(shade(albedo(in, n), n, in.rel));
+	var s = default_surface(albedo(in, n), n);
+	s.roughness = 0.9;
+	return shade_surface(s, in.rel);
 }
 
 @fragment
-fn fs_wire(in: VertexOut) -> @location(0) vec4f {
+fn fs_wire(in: VertexOut) -> Shaded {
 	if (in.hole > 0.01) {
 		discard;
 	}
-	return to_display(mix(vec3f(0.02), hue(f32(in.level) * 0.17) * 0.6, 0.5));
+	return unlit(mix(vec3f(0.02), hue(f32(in.level) * 0.17) * 0.6, 0.5));
+}
+
+@fragment
+fn fs_shadow(in: VertexOut) {
+	if (in.hole > 0.01) {
+		discard;
+	}
 }

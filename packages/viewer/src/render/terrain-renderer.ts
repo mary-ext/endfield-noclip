@@ -7,7 +7,7 @@
 
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
-import { DEPTH_COMPARE, DEPTH_FORMAT } from '../gfx/render-targets.ts';
+import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
 import type { DecodedHeights } from '../package/decode-protocol.ts';
 import type { Vec3 } from '../scene/camera.ts';
 import type { TerrainPatch } from '../streaming/selection.ts';
@@ -15,6 +15,7 @@ import type { ResidentHeights } from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import terrainWgsl from './shaders/terrain.wgsl?raw';
+import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
 
 /** samples per page edge the shader is written for (its `SIDE`) */
 export const PAGE_SIDE = 65;
@@ -24,6 +25,7 @@ const GRID = QUADS / 2 + 1;
 const PAGE_WORDS = Math.ceil((PAGE_SIDE * PAGE_SIDE) / 2);
 const PAGE_BYTES = PAGE_WORDS * 4;
 const PATCH_FLOATS = 12;
+const SHADOW_KEY = 'terrain/shadow';
 
 const vertexAt = (x: number, z: number): number => z * GRID + x;
 
@@ -90,14 +92,14 @@ export class TerrainRenderer {
 	 * @param device the device
 	 * @param layouts shared layouts
 	 * @param pipelines pipeline cache
-	 * @param targets color format and sample count of the main pass
+	 * @param format the main pass's targets
 	 * @param capacity height page slots
 	 */
 	constructor(
 		device: GPUDevice,
 		layouts: BindLayouts,
 		pipelines: PipelineCache,
-		targets: { colorFormat: GPUTextureFormat; sampleCount: number },
+		format: MainPassFormat,
 		capacity: number,
 	) {
 		this.#device = device;
@@ -135,7 +137,7 @@ export class TerrainRenderer {
 
 		const module = pipelines.module('terrain', FRAME_WGSL + terrainWgsl);
 		const constants = { SIDE: PAGE_SIDE };
-		const suffix = `${targets.colorFormat}/x${targets.sampleCount}`;
+		const suffix = `x${format.sampleCount}`;
 		this.#fillKey = `terrain/fill/${suffix}`;
 		this.#wireKey = `terrain/wire/${suffix}`;
 		const describe = (lines: boolean): GPURenderPipelineDescriptor => ({
@@ -144,7 +146,7 @@ export class TerrainRenderer {
 			fragment: {
 				module,
 				entryPoint: lines ? 'fs_wire' : 'fs_main',
-				targets: [{ format: targets.colorFormat }],
+				targets: format.targets,
 			},
 			primitive: lines
 				? { topology: 'line-list' }
@@ -154,10 +156,17 @@ export class TerrainRenderer {
 				depthWriteEnabled: !lines,
 				depthCompare: lines ? 'greater-equal' : DEPTH_COMPARE,
 			},
-			multisample: { count: targets.sampleCount },
+			multisample: { count: format.sampleCount },
 		});
 		void pipelines.prepare(this.#fillKey, () => describe(false));
 		void pipelines.prepare(this.#wireKey, () => describe(true));
+		void pipelines.prepare(SHADOW_KEY, () => ({
+			layout: layouts.terrainPipeline,
+			vertex: { module, entryPoint: 'vs_main', constants },
+			fragment: { module, entryPoint: 'fs_shadow', targets: [] },
+			primitive: { topology: 'triangle-list' },
+			depthStencil: SHADOW_DEPTH_STATE,
+		}));
 	}
 
 	#indexBuffer(label: string, data: Uint16Array): GPUBuffer {
@@ -260,6 +269,16 @@ export class TerrainRenderer {
 	 */
 	encode(pass: GPURenderPassEncoder): number {
 		return this.#encode(pass, this.#fillKey, this.#fillIndices, this.#fillCount);
+	}
+
+	/**
+	 * draws the terrain into a shadow cascade.
+	 *
+	 * @param pass a shadow pass, with group 0 bound
+	 * @returns draw calls issued
+	 */
+	encodeShadow(pass: GPURenderPassEncoder): number {
+		return this.#encode(pass, SHADOW_KEY, this.#fillIndices, this.#fillCount);
 	}
 
 	/**

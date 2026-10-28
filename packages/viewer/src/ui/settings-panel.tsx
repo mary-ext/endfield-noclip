@@ -1,5 +1,7 @@
 import { useId } from 'react';
 
+import { DEBUG_VIEWS } from '../render/frame-uniforms.ts';
+import { TONEMAPPERS } from '../render/post-process.ts';
 import type { Viewer, ViewerOptions } from '../viewer.ts';
 
 import { useViewerState } from './use-viewer.ts';
@@ -31,7 +33,7 @@ const Slider = ({
 	unit,
 }: {
 	viewer: Viewer;
-	name: 'maxSse' | 'terrainPixels' | 'minBoxPixels' | 'outlineMetres' | 'budgetMiB';
+	name: 'maxSse' | 'terrainPixels' | 'minBoxPixels' | 'outlineMetres' | 'budgetMiB' | 'exposure';
 	label: string;
 	min: number;
 	max: number;
@@ -58,6 +60,41 @@ const Slider = ({
 	);
 };
 
+const Choice = <K extends 'tonemapper' | 'debugView'>({
+	viewer,
+	name,
+	label,
+	choices,
+}: {
+	viewer: Viewer;
+	name: K;
+	label: string;
+	choices: readonly ViewerOptions[K][];
+}) => {
+	const id = useId();
+	return (
+		<div className="slider">
+			<label htmlFor={id}>{label}</label>
+			<select
+				id={id}
+				value={viewer.options[name]}
+				onChange={(event) => {
+					const value = choices.find((choice) => choice === event.currentTarget.value);
+					if (value !== undefined) {
+						viewer.setOptions({ [name]: value });
+					}
+				}}
+			>
+				{choices.map((choice) => (
+					<option key={choice} value={choice}>
+						{choice}
+					</option>
+				))}
+			</select>
+		</div>
+	);
+};
+
 /** layer toggles and quality sliders */
 export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 	useViewerState(viewer);
@@ -78,6 +115,20 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<Toggle viewer={viewer} name="resident" label="resident" />
 				<Toggle viewer={viewer} name="wireframe" label="wireframe" />
 			</fieldset>
+			<fieldset>
+				<legend>look{viewer.environmentName === null ? '' : ` · ${viewer.environmentName}`}</legend>
+				<Toggle viewer={viewer} name="sky" label="sky" />
+				<Toggle viewer={viewer} name="fog" label="height fog" />
+				<Toggle viewer={viewer} name="aerialPerspective" label="aerial perspective" />
+				<Toggle viewer={viewer} name="shadows" label="shadows" />
+				<Toggle viewer={viewer} name="water" label="water" />
+				<Toggle viewer={viewer} name="ao" label="ambient occlusion" />
+				<Toggle viewer={viewer} name="bloom" label="bloom" />
+				<Toggle viewer={viewer} name="vignette" label="vignette" />
+			</fieldset>
+			<Slider viewer={viewer} name="exposure" label="exposure" min={-4} max={4} step={0.25} unit="EV" />
+			<Choice viewer={viewer} name="tonemapper" label="tonemapper" choices={TONEMAPPERS} />
+			<Choice viewer={viewer} name="debugView" label="show" choices={DEBUG_VIEWS} />
 			<fieldset>
 				<legend>HLOD tiers</legend>
 				{HLOD_TIERS.map((tier) => (
