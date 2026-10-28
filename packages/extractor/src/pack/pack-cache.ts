@@ -32,7 +32,6 @@ const CONVERTER_SOURCES = [
 	'../hg/vfs.ts',
 	'../zstd.ts',
 	'./blob-file.ts',
-	'./convert-pool.ts',
 	'./convert-worker.ts',
 	'./geometry.ts',
 	'./textures.ts',

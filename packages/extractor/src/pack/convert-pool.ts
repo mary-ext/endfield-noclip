@@ -75,11 +75,14 @@ interface PoolWorker {
 	pending: Map<number, { resolve: (result: ConvertResult) => void; reject: (error: Error) => void }>;
 }
 
-/** a fixed set of conversion workers, started by the first job; jobs go to the least busy one */
+/**
+ * up to a fixed number of conversion workers, started as jobs need them (a pack that finds everything in its
+ * cache starts none); jobs go to the least busy one
+ */
 export class ConvertPool {
 	readonly size: number;
 	readonly #data: ConvertWorkerData;
-	#workers: PoolWorker[] | undefined;
+	readonly #workers: PoolWorker[] = [];
 	#nextId = 0;
 
 	/**
@@ -97,25 +100,29 @@ export class ConvertPool {
 	 * @throws {Error} with the worker's message if conversion fails
 	 */
 	run(job: ConvertJob): Promise<ConvertResult> {
-		this.#workers ??= this.#start();
-		let target = this.#workers[0];
+		let target: PoolWorker | undefined;
 		for (const entry of this.#workers) {
-			if (entry.pending.size < target.pending.size) {
+			if (target === undefined || entry.pending.size < target.pending.size) {
 				target = entry;
 			}
 		}
+		if (target === undefined || (target.pending.size > 0 && this.#workers.length < this.size)) {
+			target = this.#start();
+			this.#workers.push(target);
+		}
+		const chosen = target;
 		const id = this.#nextId++;
 		return new Promise((resolve, reject) => {
-			target.pending.set(id, { resolve, reject });
+			chosen.pending.set(id, { resolve, reject });
 			// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a node worker, not a window
-			target.worker.postMessage({ type: 'job', id, job } satisfies WorkerRequest);
+			chosen.worker.postMessage({ type: 'job', id, job } satisfies WorkerRequest);
 		});
 	}
 
 	/** lets every worker close its files and exit */
 	async close(): Promise<void> {
 		await Promise.all(
-			(this.#workers ?? []).map(({ worker }) => {
+			this.#workers.map(({ worker }) => {
 				const exited = new Promise((resolve) => worker.once('exit', resolve));
 				// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a node worker, not a window
 				worker.postMessage({ type: 'close' } satisfies WorkerRequest);
@@ -124,32 +131,29 @@ export class ConvertPool {
 		);
 	}
 
-	#start(): PoolWorker[] {
-		const data = this.#data;
-		return Array.from({ length: this.size }, () => {
-			const entry: PoolWorker = {
-				worker: new Worker(new URL('./convert-worker.ts', import.meta.url), { workerData: data }),
-				pending: new Map(),
-			};
-			entry.worker.on('message', (reply: WorkerReply) => {
-				const job = entry.pending.get(reply.id);
-				entry.pending.delete(reply.id);
-				if ('error' in reply) {
-					job?.reject(new Error(reply.error));
-				} else {
-					job?.resolve(reply.result);
-				}
-			});
-			// a crashed worker fails its jobs rather than hanging the pack
-			const fail = (error: Error) => {
-				for (const job of entry.pending.values()) {
-					job.reject(error);
-				}
-				entry.pending.clear();
-			};
-			entry.worker.on('error', fail);
-			entry.worker.on('exit', (code) => fail(new Error(`conversion worker exited with code ${code}`)));
-			return entry;
+	#start(): PoolWorker {
+		const entry: PoolWorker = {
+			worker: new Worker(new URL('./convert-worker.ts', import.meta.url), { workerData: this.#data }),
+			pending: new Map(),
+		};
+		entry.worker.on('message', (reply: WorkerReply) => {
+			const job = entry.pending.get(reply.id);
+			entry.pending.delete(reply.id);
+			if ('error' in reply) {
+				job?.reject(new Error(reply.error));
+			} else {
+				job?.resolve(reply.result);
+			}
 		});
+		// a crashed worker fails its jobs rather than hanging the pack
+		const fail = (error: Error) => {
+			for (const job of entry.pending.values()) {
+				job.reject(error);
+			}
+			entry.pending.clear();
+		};
+		entry.worker.on('error', fail);
+		entry.worker.on('exit', (code) => fail(new Error(`conversion worker exited with code ${code}`)));
+		return entry;
 	}
 }
