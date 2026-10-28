@@ -24,31 +24,47 @@ const TEXTURE_CLASSES: ReadonlySet<number> = new Set(Object.values(TextureClass)
 /**
  * @param resolver asset resolver
  * @param ref a Mesh object
+ * @param sources collects the indices of the bundles the mesh was read from
  * @returns the decoded mesh
  * @throws {FormatError} if the object isn't a mesh or doesn't decode
  */
-export const loadMesh = async (resolver: AssetResolver, ref: ObjectRef): Promise<DecodedMesh> => {
+export const loadMesh = async (
+	resolver: AssetResolver,
+	ref: ObjectRef,
+	sources?: Set<number>,
+): Promise<DecodedMesh> => {
 	if (ref.info.classId !== UnityClass.Mesh) {
 		throw new FormatError(`object ${ref.info.pathId} is class ${ref.info.classId}, not a Mesh`);
 	}
+	sources?.add(ref.bundleIndex);
 	const mesh = await resolver.read(ref);
 	const stream = streamingInfo(mesh);
-	return decodeMesh(mesh, stream && (await resolver.streamData(ref, stream)));
+	return decodeMesh(mesh, stream && (await resolver.streamData(ref, stream, sources)));
 };
 
 /**
  * @param resolver asset resolver
  * @param ref a texture object (Texture2D, Cubemap, Texture2DArray, CubemapArray or Texture3D)
+ * @param sources collects the indices of the bundles the texture was read from
  * @returns the decoded texture
  * @throws {FormatError} if the object isn't a texture or doesn't decode
  */
-export const loadTexture = async (resolver: AssetResolver, ref: ObjectRef): Promise<DecodedTexture> => {
+export const loadTexture = async (
+	resolver: AssetResolver,
+	ref: ObjectRef,
+	sources?: Set<number>,
+): Promise<DecodedTexture> => {
 	if (!TEXTURE_CLASSES.has(ref.info.classId)) {
 		throw new FormatError(`object ${ref.info.pathId} is class ${ref.info.classId}, not a texture`);
 	}
+	sources?.add(ref.bundleIndex);
 	const texture = await resolver.read(ref);
 	const stream = streamingInfo(texture);
-	return decodeTexture(ref.info.classId, texture, stream && (await resolver.streamData(ref, stream)));
+	return decodeTexture(
+		ref.info.classId,
+		texture,
+		stream && (await resolver.streamData(ref, stream, sources)),
+	);
 };
 
 const shaderCache = new WeakMap<AssetResolver, Map<string, Promise<ShaderSummary>>>();

@@ -17,8 +17,9 @@ import { orderedPool } from '../pool.ts';
 
 import { type AssetArchives, type Place, mergePlaces } from './asset-placement.ts';
 import type { BlobMeta, BlobStore, PutOptions } from './blob-store.ts';
-import type { ConvertPool, TextureLocator } from './convert-pool.ts';
+import type { ConvertJob, ConvertPool, ConvertResult, TextureLocator } from './convert-pool.ts';
 import { convertMaterial, ShaderTable } from './materials.ts';
+import type { PackCache } from './pack-cache.ts';
 import { PhaseTimer } from './phase-timer.ts';
 
 // the packer references assets by dense ids handed out here, in first-reference order. converting them reads
@@ -64,6 +65,8 @@ export interface AssetConversionInput {
 	store: BlobStore;
 	/** converts meshes and textures, writing their blobs to the store's directory */
 	pool: ConvertPool;
+	/** remembers conversions across packs, or `null`; its blob directory must be the store's */
+	cache: PackCache | null;
 	geometries: readonly AssetRef[];
 	materials: readonly AssetRef[];
 	chains: readonly Chain[];
@@ -143,7 +146,30 @@ export interface AssetConversion {
  * @returns the tables, debug rows and statistics
  */
 export const convertAssets = async (input: AssetConversionInput): Promise<AssetConversion> => {
-	const { resolver, store, pool, archives } = input;
+	const { resolver, store, pool, cache, archives } = input;
+	/**
+	 * converts on the pool, or recalls the conversion from the cache. a result is remembered only when every
+	 * byte came from `bundles`, whose md5s key it
+	 */
+	const convert = async (job: ConvertJob, bundles: number[]): Promise<ConvertResult> => {
+		if (cache === null || bundles.length === 0) {
+			return pool.run(job);
+		}
+		const md5s = await Promise.all(bundles.map((index) => resolver.bundleMd5(index)));
+		const key = cache.key({
+			job,
+			bundles: bundles.map((index, i) => [resolver.manifest.bundle(index).name, md5s[i]]),
+		});
+		const recalled = await cache.recall(key);
+		if (recalled !== undefined) {
+			return recalled;
+		}
+		const result = await pool.run(job);
+		if (result.sources.every((index) => bundles.includes(index))) {
+			await cache.remember(key, result);
+		}
+		return result;
+	};
 	const failures: Record<string, number> = {};
 	const fail = (kind: string, error: Error): string => {
 		const reason = `${kind}: ${failureReason(error)}`;
@@ -239,12 +265,15 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 		input.geometries,
 		jobsInFlight(pool),
 		async (asset, id) => {
-			const result = await pool.run({
+			const job: ConvertJob = {
 				kind: 'geometry',
 				asset,
 				tangentUv: tangentUv[id],
 				zstdLevel: input.geometryZstdLevel,
-			});
+			};
+			// the mesh is found among the bundles the manifest lists for its path hash
+			const bundles = [...new Set(resolver.manifest.findAssets(asset.hash).map((row) => row.bundleIndex))];
+			const result = await convert(job, bundles);
 			if (result.kind !== 'geometry') {
 				throw new Error(`a geometry job returned a ${result.kind}`);
 			}
@@ -291,11 +320,8 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 		textureObjects,
 		jobsInFlight(pool),
 		async (object) => {
-			const result = await pool.run({
-				kind: 'texture',
-				locator: object.locator,
-				zstdLevel: input.textureZstdLevel,
-			});
+			const job: ConvertJob = { kind: 'texture', locator: object.locator, zstdLevel: input.textureZstdLevel };
+			const result = await convert(job, [object.locator.bundleIndex]);
 			if (result.kind !== 'texture') {
 				throw new Error(`a texture job returned a ${result.kind}`);
 			}

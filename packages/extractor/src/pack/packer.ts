@@ -86,6 +86,7 @@ import { ChainTable } from './chains.ts';
 import { ConvertPool } from './convert-pool.ts';
 import { finishEnvironments, type LevelEnvironmentDebug, planEnvironments } from './environments.ts';
 import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
+import { type CacheReport, PackCache } from './pack-cache.ts';
 import { PhaseTimer } from './phase-timer.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
 import { finishWater, planWater, type WaterDebug } from './water.ts';
@@ -110,6 +111,8 @@ export interface PackOptions {
 	convertAssets: boolean;
 	/** worker threads converting meshes and textures */
 	jobs: number;
+	/** the pack cache directory (see `pack-cache.ts`), or `null` to convert everything afresh */
+	cacheDir: string | null;
 	/** progress output */
 	log: (line: string) => void;
 }
@@ -148,6 +151,8 @@ export interface PackReport {
 	coreMembers: Record<string, number>;
 	archives: { name: string; size: number; headerLength: number; members: number }[];
 	totalBytes: number;
+	/** cache hits and sweep, or `null` without a cache */
+	cache: CacheReport | null;
 	/** peak resident set size of the process, bytes */
 	peakRss: number;
 }
@@ -191,13 +196,18 @@ export const packScene = async (
 	options: PackOptions,
 ): Promise<PackReport> => {
 	const timer = new PhaseTimer(options.log);
-	await prepareOutDir(options.outDir);
-	const scene = await indexScene(context, options);
-	timer.end('setup');
-
+	const cache = options.cacheDir === null ? null : await PackCache.open(options.cacheDir);
 	const spool = join(options.outDir, '.spool');
-	const store = new BlobStore(new BlobDir(spool), { zstdLevel: options.zstdLevel, temporary: true });
+	// with a cache, blobs go straight into it
+	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), {
+		zstdLevel: options.zstdLevel,
+		temporary: cache === null,
+	});
 	try {
+		await prepareOutDir(options.outDir);
+		const scene = await indexScene(context, options);
+		timer.end('setup');
+
 		const pack: PackState = {
 			scene,
 			store,
@@ -262,6 +272,7 @@ export const packScene = async (
 					resolver: await context.resolver(),
 					store,
 					pool,
+					cache,
 					geometries: pack.geometries.assets,
 					materials: pack.materials.assets,
 					chains: pack.chains.chains,
@@ -306,6 +317,11 @@ export const packScene = async (
 			water: water.debug,
 		});
 		timer.end('debug');
+
+		const cacheReport = (await cache?.finish(options.outDir, store.hashes())) ?? null;
+		if (cacheReport !== null) {
+			timer.end('cache sweep');
+		}
 
 		const { rows } = instances;
 		return {
@@ -358,6 +374,7 @@ export const packScene = async (
 			},
 			blobs: blobTotals(store),
 			coreMembers: written.coreMembers,
+			cache: cacheReport,
 			archives: written.archives,
 			totalBytes: written.archives.reduce((sum, archive) => sum + archive.size, 0),
 			// maxRSS is in KiB
@@ -365,6 +382,8 @@ export const packScene = async (
 		};
 	} finally {
 		await store.dispose();
+		await rm(spool, { recursive: true, force: true });
+		await cache?.close();
 	}
 };
 

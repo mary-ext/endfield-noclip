@@ -51,7 +51,8 @@ const convert = async (job: ConvertJob): Promise<ConvertResult> => {
 		case 'geometry': {
 			await geometryReady;
 			const ref = await resolver.findUnique(job.asset, UnityClass.Mesh);
-			const mesh = await loadMesh(resolver, ref);
+			const sources = new Set<number>();
+			const mesh = await loadMesh(resolver, ref, sources);
 			const converted = convertMesh(mesh, job.tangentUv);
 			return {
 				kind: 'geometry',
@@ -60,11 +61,17 @@ const convert = async (job: ConvertJob): Promise<ConvertResult> => {
 				entry: converted.entry,
 				gpuBytes: converted.gpuBytes,
 				blob: await store(converted.blob, job.zstdLevel),
+				sources: [...sources],
 			};
 		}
 		case 'texture': {
 			const { bundleIndex, file, pathId } = job.locator;
-			const texture = await loadTexture(resolver, await resolver.objectIn(bundleIndex, file, pathId));
+			const sources = new Set<number>();
+			const texture = await loadTexture(
+				resolver,
+				await resolver.objectIn(bundleIndex, file, pathId),
+				sources,
+			);
 			const converted = convertTexture(texture);
 			const metas = await Promise.all(converted.pieces.map((piece) => store(piece.data, job.zstdLevel)));
 			return {
@@ -77,6 +84,7 @@ const convert = async (job: ConvertJob): Promise<ConvertResult> => {
 					levelCount,
 					blob: metas[i],
 				})),
+				sources: [...sources],
 			};
 		}
 	}

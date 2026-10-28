@@ -13,14 +13,19 @@ export const summary =
 
 const USAGE = `usage:
   pack <scene> [-o <dir>] [--level <id>] [--bounds xmin,xmax,zmin,zmax] [--zstd-level n]
-       [--texture-zstd-level n] [--jobs n] [--no-assets] [--json]
+       [--texture-zstd-level n] [--jobs n] [--cache <dir> | --no-cache] [--no-assets] [--json]
 
 writes the package for one streaming scene (e.g. map02). --level keeps the content one level owns and the
 terrain under its cells; --bounds keeps content whose centre lies in the world x, z rectangle. the output
 directory must be empty, absent, or hold a previous package; it defaults to out/<scene>[-<level>] at the
 repository root, which git ignores. --no-assets skips geometry, material and texture conversion, leaving
 their table entries pending. texture blobs use their own zstd level (default 9; 19 saves ~2% at 10× the time). --jobs sets the
-worker threads converting meshes and textures (default: one per core but one, at most 8).`;
+worker threads converting meshes and textures (default: one per core but one, at most 8).
+
+converted meshes and textures, and every blob, are cached across packs (default out/.cache): a re-pack
+converts only what the install or the converter changed. the cache keeps what the packages it built hold and
+deletes the rest after each pack; a package directory deleted by hand releases its share at the next pack.
+--no-cache converts everything and keeps nothing.`;
 
 /** default worker count at most; each worker holds ~400 MB of its own catalogs and caches */
 const MAX_DEFAULT_JOBS = 8;
@@ -43,6 +48,8 @@ export const run = async (args: string[]): Promise<void> => {
 				type: 'string',
 				default: String(Math.max(1, Math.min(MAX_DEFAULT_JOBS, availableParallelism() - 1))),
 			},
+			cache: { type: 'string' },
+			'no-cache': { type: 'boolean', default: false },
 			'no-assets': { type: 'boolean', default: false },
 			json: { type: 'boolean', default: false },
 		},
@@ -73,6 +80,7 @@ export const run = async (args: string[]): Promise<void> => {
 			zstdLevel,
 			textureZstdLevel,
 			jobs,
+			cacheDir: values['no-cache'] ? null : resolve(values.cache ?? new URL('.cache', DEFAULT_OUT).pathname),
 			convertAssets: !values['no-assets'],
 			log: (line) => console.error(line),
 		});
@@ -160,6 +168,13 @@ const formatReport = (report: PackReport): string => {
 			.map(([path, size]) => `${path} ${mb(size)}`)
 			.join(', ')}`,
 	);
+	if (report.cache !== null) {
+		const { hits, swept } = report.cache;
+		lines.push(
+			`cache ${report.cache.dir}: ${hits.geometries} geometries and ${hits.textures} textures reused; ` +
+				`swept ${swept.blobs} blobs and ${swept.memos} conversions (${mb(swept.bytes)})`,
+		);
+	}
 	lines.push(`peak RSS ${(report.peakRss / 1e9).toFixed(2)} GB`);
 	lines.push(
 		`hlod: ${hlod.clusters} clusters (tiers ${hlod.tierCounts.join('/')}), ` +

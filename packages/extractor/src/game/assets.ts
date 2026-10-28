@@ -11,6 +11,7 @@ import {
 	BUNDLE_PREFIX,
 	type BundleAssetFile,
 	bundlePath,
+	findBundleFile,
 	openAssetFiles,
 	openBundle,
 } from '../hg/bundles.ts';
@@ -132,6 +133,14 @@ export class AssetResolver {
 			throw new Error(`bundle ${name} isn't in the manifest`);
 		}
 		return index;
+	}
+
+	/**
+	 * @param index manifest bundle index
+	 * @returns the md5 of the bundle's file, from the VFS catalog (nothing is read)
+	 */
+	async bundleMd5(index: number): Promise<string> {
+		return (await findBundleFile(this.context.vfs, this.manifest.bundle(index).name)).entry.dataMd5;
 	}
 
 	/**
@@ -272,19 +281,27 @@ export class AssetResolver {
 	 *
 	 * @param from the object whose `m_StreamData` this is
 	 * @param info the streaming info
+	 * @param sources collects the index of the bundle the bytes come from
 	 * @returns the bytes, or `undefined` if the data is inline (empty path)
 	 */
-	async streamData(from: ObjectRef, info: StreamingInfo): Promise<Uint8Array | undefined> {
+	async streamData(
+		from: ObjectRef,
+		info: StreamingInfo,
+		sources?: Set<number>,
+	): Promise<Uint8Array | undefined> {
 		if (info.path === '') {
 			return undefined;
 		}
 		const name = archiveFileName(info.path);
 		let bundle = from.file.bundle;
 		let node = bundle.node(name);
+		let index = from.bundleIndex;
 		if (node === undefined) {
-			bundle = await this.bundle(await this.bundleOfCab(name, from.bundleIndex));
+			index = await this.bundleOfCab(name, from.bundleIndex);
+			bundle = await this.bundle(index);
 			node = bundle.node(name);
 		}
+		sources?.add(index);
 		if (node === undefined) {
 			throw new Error(`stream file ${info.path} not found`);
 		}

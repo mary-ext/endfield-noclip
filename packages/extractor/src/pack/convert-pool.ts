@@ -40,7 +40,7 @@ export type ConvertJob =
 	| { kind: 'texture'; locator: TextureLocator; zstdLevel: number };
 
 /** a converted asset; its blobs are in the blob directory */
-export type ConvertResult =
+export type ConvertResult = (
 	| {
 			kind: 'geometry';
 			/** `CAB-<hex>:<path id>` of the mesh */
@@ -58,7 +58,11 @@ export type ConvertResult =
 			contentKey: string;
 			/** coarse to fine */
 			pieces: { firstLevel: number; levelCount: number; blob: BlobMeta }[];
-	  };
+	  }
+) & {
+	/** manifest indices of the bundles the asset's bytes were read from */
+	sources: number[];
+};
 
 export type WorkerRequest = { type: 'job'; id: number; job: ConvertJob } | { type: 'close' };
 
@@ -71,21 +75,58 @@ interface PoolWorker {
 	pending: Map<number, { resolve: (result: ConvertResult) => void; reject: (error: Error) => void }>;
 }
 
-/** a fixed set of conversion workers; jobs go to the least busy one */
+/** a fixed set of conversion workers, started by the first job; jobs go to the least busy one */
 export class ConvertPool {
 	readonly size: number;
-	readonly #workers: PoolWorker[];
+	readonly #data: ConvertWorkerData;
+	#workers: PoolWorker[] | undefined;
 	#nextId = 0;
 
 	/**
-	 * starts the workers
-	 *
 	 * @param size number of workers
 	 * @param data how workers open the install and where they write blobs
 	 */
 	constructor(size: number, data: ConvertWorkerData) {
 		this.size = size;
-		this.#workers = Array.from({ length: size }, () => {
+		this.#data = data;
+	}
+
+	/**
+	 * @param job the asset to convert
+	 * @returns the converted asset
+	 * @throws {Error} with the worker's message if conversion fails
+	 */
+	run(job: ConvertJob): Promise<ConvertResult> {
+		this.#workers ??= this.#start();
+		let target = this.#workers[0];
+		for (const entry of this.#workers) {
+			if (entry.pending.size < target.pending.size) {
+				target = entry;
+			}
+		}
+		const id = this.#nextId++;
+		return new Promise((resolve, reject) => {
+			target.pending.set(id, { resolve, reject });
+			// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a node worker, not a window
+			target.worker.postMessage({ type: 'job', id, job } satisfies WorkerRequest);
+		});
+	}
+
+	/** lets every worker close its files and exit */
+	async close(): Promise<void> {
+		await Promise.all(
+			(this.#workers ?? []).map(({ worker }) => {
+				const exited = new Promise((resolve) => worker.once('exit', resolve));
+				// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a node worker, not a window
+				worker.postMessage({ type: 'close' } satisfies WorkerRequest);
+				return exited;
+			}),
+		);
+	}
+
+	#start(): PoolWorker[] {
+		const data = this.#data;
+		return Array.from({ length: this.size }, () => {
 			const entry: PoolWorker = {
 				worker: new Worker(new URL('./convert-worker.ts', import.meta.url), { workerData: data }),
 				pending: new Map(),
@@ -110,37 +151,5 @@ export class ConvertPool {
 			entry.worker.on('exit', (code) => fail(new Error(`conversion worker exited with code ${code}`)));
 			return entry;
 		});
-	}
-
-	/**
-	 * @param job the asset to convert
-	 * @returns the converted asset
-	 * @throws {Error} with the worker's message if conversion fails
-	 */
-	run(job: ConvertJob): Promise<ConvertResult> {
-		let target = this.#workers[0];
-		for (const entry of this.#workers) {
-			if (entry.pending.size < target.pending.size) {
-				target = entry;
-			}
-		}
-		const id = this.#nextId++;
-		return new Promise((resolve, reject) => {
-			target.pending.set(id, { resolve, reject });
-			// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a node worker, not a window
-			target.worker.postMessage({ type: 'job', id, job } satisfies WorkerRequest);
-		});
-	}
-
-	/** lets every worker close its files and exit */
-	async close(): Promise<void> {
-		await Promise.all(
-			this.#workers.map(({ worker }) => {
-				const exited = new Promise((resolve) => worker.once('exit', resolve));
-				// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a node worker, not a window
-				worker.postMessage({ type: 'close' } satisfies WorkerRequest);
-				return exited;
-			}),
-		);
 	}
 }

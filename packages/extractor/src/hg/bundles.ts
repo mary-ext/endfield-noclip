@@ -68,6 +68,26 @@ const vfsSource = (vfs: Vfs, file: VfsFile): ByteSource => {
 };
 
 /**
+ * locates a bundle's logical file
+ *
+ * @param vfs the VFS
+ * @param name any form accepted by {@link bundlePath}
+ * @returns the file; its catalog entry carries the bundle's md5
+ * @throws {Error} if the bundle isn't in the catalog
+ */
+export const findBundleFile = async (vfs: Vfs, name: string): Promise<VfsFile> => {
+	const path = bundlePath(name);
+	// `initial/` bundles ship in their own group
+	const file =
+		(await vfs.find(VfsGroup.Bundle, path)) ??
+		(path.startsWith(`${BUNDLE_PREFIX}initial/`) ? await vfs.find(VfsGroup.InitialBundle, path) : undefined);
+	if (file === undefined) {
+		throw new Error(`bundle ${path} not found in groups ${VfsGroup.Bundle}/${VfsGroup.InitialBundle}`);
+	}
+	return file;
+};
+
+/**
  * opens a bundle from the Bundle group without reading it whole
  *
  * @param context VFS and keys
@@ -75,16 +95,7 @@ const vfsSource = (vfs: Vfs, file: VfsFile): ByteSource => {
  * @throws {Error} if the bundle isn't in the catalog
  */
 export const openBundle = async (context: { vfs: Vfs; keys: Keys }, name: string): Promise<UnityBundle> => {
-	const path = bundlePath(name);
-	// `initial/` bundles ship in their own group
-	const file =
-		(await context.vfs.find(VfsGroup.Bundle, path)) ??
-		(path.startsWith(`${BUNDLE_PREFIX}initial/`)
-			? await context.vfs.find(VfsGroup.InitialBundle, path)
-			: undefined);
-	if (file === undefined) {
-		throw new Error(`bundle ${path} not found in groups ${VfsGroup.Bundle}/${VfsGroup.InitialBundle}`);
-	}
+	const file = await findBundleFile(context.vfs, name);
 	return UnityBundle.open(vfsSource(context.vfs, file), bundlePad(context.keys));
 };
 
