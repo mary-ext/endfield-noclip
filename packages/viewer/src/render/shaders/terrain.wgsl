@@ -97,11 +97,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 fn albedo(in: VertexOut, n: vec3f) -> vec3f {
 	let grass = vec3f(0.20, 0.27, 0.12);
 	let rock = vec3f(0.33, 0.31, 0.28);
-	var colour = mix(rock, grass, smoothstep(0.72, 0.86, n.y));
-	if (frame.flags.x == 1u) {
-		colour = mix(colour, hue(f32(in.level) * 0.17), 0.45);
-	}
-	return colour;
+	return mix(rock, grass, smoothstep(0.72, 0.86, n.y));
 }
 
 @fragment

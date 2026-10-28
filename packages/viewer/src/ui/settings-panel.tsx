@@ -91,20 +91,6 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 					</label>
 				))}
 			</fieldset>
-			<fieldset>
-				<legend>colour by</legend>
-				{(['tier', 'level'] as const).map((mode) => (
-					<label className="toggle" key={mode}>
-						<input
-							type="radio"
-							name="colour-by"
-							checked={viewer.options.colourBy === mode}
-							onChange={() => viewer.setOptions({ colourBy: mode })}
-						/>
-						{mode}
-					</label>
-				))}
-			</fieldset>
 			<Slider viewer={viewer} name="maxSse" label="HLOD error" min={1} max={64} step={1} unit="px" />
 			<Slider
 				viewer={viewer}

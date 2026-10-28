@@ -13,7 +13,7 @@ struct Frame {
 	terrain: vec4f,
 	// fog colour (linear), w = density per metre
 	fog: vec4f,
-	// colour mode (0 = tier, 1 = level), wireframe on, z and w reserved
+	// wireframe on; y, z, w reserved
 	flags: vec4u,
 	// boxes larger than x metres (max half extent) draw as outlines only; y, z, w reserved
 	params: vec4f,
@@ -37,9 +37,4 @@ fn to_display(linear: vec3f) -> vec4f {
 fn hue(h: f32) -> vec3f {
 	let k = vec3f(0.0, 2.0 / 3.0, 1.0 / 3.0);
 	return clamp(abs(fract(vec3f(h) + k) * 6.0 - 3.0) - 1.0, vec3f(0.0), vec3f(1.0));
-}
-
-// a distinct colour per level tag
-fn tag_colour(tag: u32) -> vec3f {
-	return mix(vec3f(0.5), hue(f32(tag) * 0.381966), 0.75);
 }

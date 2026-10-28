@@ -52,7 +52,6 @@ export interface ViewerOptions {
 	wireframe: boolean;
 	/** draw instance stand-in boxes (the only instance representation until geometry streams) */
 	boxes: boolean;
-	colourBy: 'tier' | 'level';
 	/** instance refinement threshold, px */
 	maxSse: number;
 	/** terrain sample spacing target, px */
@@ -76,7 +75,6 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	hlodTiers: [true, true, true],
 	wireframe: false,
 	boxes: true,
-	colourBy: 'tier',
 	maxSse: 12,
 	terrainPixels: 3,
 	minBoxPixels: 1.5,
@@ -761,8 +759,8 @@ export class Viewer {
 		f32[FrameOffsets.fog + 3] = FOG_DENSITY;
 		{
 			const at = FrameOffsets.flags;
-			u32[at] = this.options.colourBy === 'level' ? 1 : 0;
-			u32[at + 1] = this.options.wireframe ? 1 : 0;
+			u32[at] = this.options.wireframe ? 1 : 0;
+			u32[at + 1] = 0;
 			u32[at + 2] = 0;
 			u32[at + 3] = 0;
 		}
