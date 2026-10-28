@@ -10,6 +10,8 @@ const READBACK_BUFFERS = 4;
 const MAX_PASSES = 48;
 /** weight of the newest frame in the smoothed times */
 const SMOOTHING = 0.1;
+/** resolved bytes per pass: begin and end timestamps */
+const PASS_BYTES = 2 * 8;
 
 interface Readback {
 	buffer: GPUBuffer;
@@ -25,8 +27,9 @@ export class GpuProfiler {
 	 */
 	milliseconds: number | null = null;
 	/**
-	 * smoothed GPU time per pass label (passes sharing a label are summed), ms. passes overlap on tile-based
-	 * GPUs, where these don't add up to {@link milliseconds}
+	 * smoothed GPU time per pass label (passes sharing a label are summed), ms. tile-based GPUs (Apple) overlap
+	 * passes, so there these are pass lifetimes rather than costs and can sum to far more than
+	 * {@link milliseconds}; compare frames with features toggled instead
 	 */
 	readonly passes = new Map<string, number>();
 
@@ -46,7 +49,7 @@ export class GpuProfiler {
 			this.#resolve = null;
 			return;
 		}
-		const bytes = MAX_PASSES * 2 * 8;
+		const bytes = MAX_PASSES * PASS_BYTES;
 		this.#querySet = device.createQuerySet({ type: 'timestamp', count: MAX_PASSES * 2 });
 		this.#resolve = device.createBuffer({
 			label: 'pass timestamps',
@@ -77,7 +80,7 @@ export class GpuProfiler {
 		}
 		const labels = this.#labels;
 		const beginRenderPass = (descriptor: GPURenderPassDescriptor): GPURenderPassEncoder => {
-			if (labels.length >= MAX_PASSES || descriptor.timestampWrites !== undefined) {
+			if (labels.length >= MAX_PASSES) {
 				return encoder.beginRenderPass(descriptor);
 			}
 			const index = labels.length * 2;
@@ -114,7 +117,7 @@ export class GpuProfiler {
 			return;
 		}
 		encoder.resolveQuerySet(this.#querySet, 0, count * 2, this.#resolve, 0);
-		encoder.copyBufferToBuffer(this.#resolve, 0, buffer, 0, count * 16);
+		encoder.copyBufferToBuffer(this.#resolve, 0, buffer, 0, count * PASS_BYTES);
 		this.#pending = { buffer, labels: this.#labels };
 	}
 

@@ -117,19 +117,10 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 @fragment
 fn fs_opaque(in: VertexOut) -> Shaded {
 	let draw = draws[in.draw];
-	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
-	return shade_mesh(in, draw, base);
-}
-
-fn cut_out(draw: Draw, alpha: f32) -> bool {
-	let flags = bitcast<u32>(draw.offset.w);
-	return (flags & BASE_MAP) != 0u && draw.tint.w >= 0.0 && alpha < draw.tint.w;
-}
-
-fn shade_mesh(in: VertexOut, draw: Draw, base: vec4f) -> Shaded {
 	let flags = bitcast<u32>(draw.offset.w);
 	// derivatives (and implicit-LOD sampling) must happen in uniform control flow
 	let faceted = cross(dpdy(in.rel), dpdx(in.rel));
+	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
 	let packed = textureSample(normal_map, detail_sampler, in.uv * draw.normal_uv.xy + draw.normal_uv.zw);
 	let mask = textureSample(mask_map, detail_sampler, in.uv * draw.mask_uv.xy + draw.mask_uv.zw);
 	let glow = textureSample(emissive_map, base_sampler, in.uv * draw.emissive_uv.xy + draw.emissive_uv.zw);
@@ -191,12 +182,13 @@ fn shade_mesh(in: VertexOut, draw: Draw, base: vec4f) -> Shaded {
 }
 
 // the depth of alpha-tested materials, in the main pass and the shadow passes (opaque ones have no fragment
-// stage there)
+// stage there). only drawn for materials with an alpha-test threshold whose base colour is bound (`cutout`
+// in materials.ts and MeshRenderer.prepare)
 @fragment
 fn fs_cutout_depth(in: VertexOut) {
 	let draw = draws[in.draw];
 	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
-	if (cut_out(draw, base.a)) {
+	if (base.a < draw.tint.w) {
 		discard;
 	}
 }

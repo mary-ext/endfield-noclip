@@ -123,10 +123,7 @@ export interface ViewerStats {
 	cpuPhases: Record<string, number>;
 	/** smoothed GPU time of all passes, ms, if timestamps are available */
 	gpuMs: number | null;
-	/**
-	 * GPU time by pass label, ms. tile-based GPUs (Apple) overlap passes, so there these are pass lifetimes
-	 * rather than costs and can sum to far more than {@link gpuMs}; compare frames with features toggled instead
-	 */
+	/** GPU time by pass label, ms; see {@link GpuProfiler.passes} for how far to trust it */
 	gpuPasses: Record<string, number>;
 	draws: number;
 	triangles: number;
@@ -236,7 +233,7 @@ export class Viewer {
 	#reflection: TextureBinding;
 	/** mip levels of the bound reflection cubemap, minus one */
 	#reflectionMips = 0;
-	#timer: GpuProfiler;
+	#profiler: GpuProfiler;
 	#terrain: TerrainRenderer;
 	#instances: InstanceRenderer;
 	#meshes: MeshRenderer;
@@ -301,7 +298,7 @@ export class Viewer {
 		};
 		this.#reflection = this.#noReflection;
 		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(this.#noReflection);
-		this.#timer = new GpuProfiler(device, gfx.features.timestampQuery);
+		this.#profiler = new GpuProfiler(device, gfx.features.timestampQuery);
 		const format = this.#targets.format;
 		this.#terrain = new TerrainRenderer(device, this.#layouts, this.#pipelines, format, TERRAIN_SLOTS);
 		this.#instances = new InstanceRenderer(device, this.#layouts, this.#pipelines, format, INSTANCE_ROWS);
@@ -938,8 +935,7 @@ export class Viewer {
 		ring.flush();
 		this.#span('uniforms');
 
-		const frameEncoder = device.createCommandEncoder({ label: 'frame' });
-		const encoder = this.#timer.instrument(frameEncoder);
+		const encoder = this.#profiler.instrument(device.createCommandEncoder({ label: 'frame' }));
 		let draws = 0;
 		cascadeOffsets.forEach((offset, i) => {
 			const pass = encoder.beginRenderPass({
@@ -997,10 +993,10 @@ export class Viewer {
 			frame: this.#frame,
 			water: this.#water,
 		});
-		this.#timer.resolve(frameEncoder);
+		this.#profiler.resolve(encoder);
 		this.#span('encode');
-		device.queue.submit([frameEncoder.finish()]);
-		this.#timer.afterSubmit();
+		device.queue.submit([encoder.finish()]);
+		this.#profiler.afterSubmit();
 		this.#span('submit');
 		return draws;
 	}
@@ -1072,8 +1068,8 @@ export class Viewer {
 			frameMs: this.#frameMs,
 			cpuMs: this.#cpuMs,
 			cpuPhases: Object.fromEntries(this.#cpuSpans),
-			gpuMs: this.#timer.milliseconds,
-			gpuPasses: Object.fromEntries(this.#timer.passes),
+			gpuMs: this.#profiler.milliseconds,
+			gpuPasses: Object.fromEntries(this.#profiler.passes),
 			draws: this.#lastDraws,
 			triangles:
 				(this.options.terrain ? this.#terrain.patchCount * this.#terrain.patchTriangles : 0) +

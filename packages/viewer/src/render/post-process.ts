@@ -25,8 +25,10 @@ import type { WaterRenderer } from './water-renderer.ts';
 /** byte size of `Post` in post-common.wgsl */
 const POST_BYTES = 34 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
-/** the half-resolution view depth the AO marches */
+/** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
+/** full-resolution pixels per AO pixel along each axis; matches `AO_SCALE` in gtao.wgsl */
+const AO_SCALE = 2;
 /** bloom levels at most, the first at half resolution */
 const BLOOM_LEVELS = 6;
 
@@ -300,9 +302,9 @@ export class PostProcess {
 			return 0;
 		}
 		const pixels = sized.width * sized.height;
-		// half-resolution AO depth and AO, the blurred AO, the scene and the water's background, and the bloom
-		// chain (two quarter-size mips)
-		return pixels * ((4 + 1) / 4 + 1 + 8 + 8) + pixels * 8 * (2 / 3);
+		// the reduced AO depth and AO, the blurred AO, the scene and the water's background, and the bloom chain
+		// (two quarter-size mips)
+		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) + pixels * 8 * (2 / 3);
 	}
 
 	/** the composite pass's group 2: the main pass's outputs, the blurred AO and the cloud panorama */
@@ -385,10 +387,10 @@ export class PostProcess {
 					GPUTextureUsage.COPY_SRC |
 					GPUTextureUsage.COPY_DST,
 			});
-		const halfWidth = Math.max(1, Math.ceil(width / 2));
-		const halfHeight = Math.max(1, Math.ceil(height / 2));
-		const aoDepth = texture('ao depth', halfWidth, halfHeight, AO_DEPTH_FORMAT);
-		const ao = texture('ao', halfWidth, halfHeight, AO_FORMAT);
+		const aoWidth = Math.max(1, Math.ceil(width / AO_SCALE));
+		const aoHeight = Math.max(1, Math.ceil(height / AO_SCALE));
+		const aoDepth = texture('ao depth', aoWidth, aoHeight, AO_DEPTH_FORMAT);
+		const ao = texture('ao', aoWidth, aoHeight, AO_FORMAT);
 		const aoBlurred = texture('ao blurred', width, height, AO_FORMAT);
 		const sceneTexture = texture('hdr scene', width, height, HDR_FORMAT);
 		const background = texture('hdr background', width, height, HDR_FORMAT);

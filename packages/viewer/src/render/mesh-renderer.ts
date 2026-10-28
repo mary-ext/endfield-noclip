@@ -3,8 +3,9 @@
  * octahedral normals, UV set 0, tangents) and one index buffer; each mesh bucket is one instanced
  * `drawIndexed` over its slice of the visible list. per-draw parameters (dequantization, the material look)
  * sit in a storage array indexed through a per-list-entry draw id, and the material's textures are in group 3
- * (a white texture for slots whose texture hasn't streamed in, with the slot's flag cleared). draws are
- * sorted by geometry, then material, so runs of draws share their bindings.
+ * (a white texture for slots whose texture hasn't streamed in, with the slot's flag cleared). opaque draws
+ * come before alpha-tested ones, which each pass draws with its own pipelines (see mesh.wgsl for why); within
+ * each, draws are sorted by geometry, then material, so runs of draws share their bindings.
  *
  * @module
  */
@@ -34,14 +35,16 @@ interface DrawPhase {
 	key: string;
 	/** over the alpha-tested draws, else the opaque ones */
 	cutout: boolean;
-	/** whether the pipeline reads the material's textures */
+	/** whether the pipeline reads the material's textures; if not, any material group will do */
 	textured: boolean;
 }
 
-const SHADOW_KEYS = { opaque: 'mesh/shadow/opaque', cutout: 'mesh/shadow/cutout' };
+const SHADOW_PHASES: readonly DrawPhase[] = [
+	{ key: 'mesh/shadow/opaque', cutout: false, textured: false },
+	{ key: 'mesh/shadow/cutout', cutout: true, textured: true },
+];
 
 interface PreparedDraw {
-	cutout: boolean;
 	geometry: ResidentGeometry;
 	indexCount: number;
 	firstIndex: number;
@@ -57,14 +60,11 @@ interface MaterialBinding {
 	group: GPUBindGroup;
 }
 
-/** draw order: opaque before alpha-tested (one pipeline switch), then geometry, material and submesh */
+/** draw order within the opaque and the alpha-tested draws: geometry, then material and submesh */
 const byBindings = (a: MeshBucket, b: MeshBucket): number =>
-	Number(a.look.cutout) - Number(b.look.cutout) ||
-	a.geometry.blob - b.geometry.blob ||
-	a.material - b.material ||
-	a.submesh - b.submesh;
+	a.geometry.blob - b.geometry.blob || a.material - b.material || a.submesh - b.submesh;
 
-/** owns geometry buffers, material bind groups and the mesh pipeline */
+/** owns geometry buffers, material bind groups and the mesh pipelines */
 export class MeshRenderer {
 	/** mesh instances last frame */
 	instanceCount = 0;
@@ -76,8 +76,7 @@ export class MeshRenderer {
 	#device: GPUDevice;
 	#layouts: BindLayouts;
 	#pipelines: PipelineCache;
-	/** main-pass pipeline keys */
-	#keys: { opaque: string; cutoutDepth: string; cutoutShade: string };
+	#mainPhases: readonly DrawPhase[];
 	#instances: GPUBindGroup;
 	#params: GPUBuffer;
 	#paramData = new Float32Array(MAX_DRAWS * DRAW_FLOATS);
@@ -94,10 +93,13 @@ export class MeshRenderer {
 	#bindings = new Map<number, MaterialBinding>();
 	#slotBindings: (TextureBinding | null)[] = [null, null, null, null];
 	#versions: number[] = [-1, -1, -1, -1];
-	#order: MeshBucket[] = [];
-	/** prepared draws; entries past {@link #drawCount} are reused next frame */
+	#opaqueOrder: MeshBucket[] = [];
+	#cutoutOrder: MeshBucket[] = [];
+	/** prepared draws, opaque ones first; entries past {@link #drawCount} are reused next frame */
 	#draws: PreparedDraw[] = [];
 	#drawCount = 0;
+	/** index of the first alpha-tested draw */
+	#cutoutStart = 0;
 
 	/**
 	 * @param device the device
@@ -163,57 +165,53 @@ export class MeshRenderer {
 				{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
 			],
 		};
-		this.#keys = {
-			opaque: `mesh/opaque/x${format.sampleCount}`,
-			cutoutDepth: `mesh/cutout-depth/x${format.sampleCount}`,
-			cutoutShade: `mesh/cutout-shade/x${format.sampleCount}`,
+		const prepare = (
+			key: string,
+			stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil' | 'multisample'>,
+		): void => {
+			void pipelines.prepare(key, () => ({
+				layout: layouts.meshPipeline,
+				vertex,
+				// instances may be mirrored (negative determinant), which flips winding per instance
+				primitive: { topology: 'triangle-list', cullMode: 'none' },
+				...stages,
+			}));
 		};
-		// instances may be mirrored (negative determinant), which flips winding per instance
-		const primitive: GPUPrimitiveState = { topology: 'triangle-list', cullMode: 'none' };
-		const multisample: GPUMultisampleState = { count: format.sampleCount };
-		void pipelines.prepare(this.#keys.opaque, () => ({
-			layout: layouts.meshPipeline,
-			vertex,
-			fragment: { module, entryPoint: 'fs_opaque', targets: format.targets },
-			primitive,
-			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
-			multisample,
-		}));
-		// alpha-tested meshes: their depth first, cut out, then shading only the surviving front-most samples,
-		// with a shader that can't discard
-		void pipelines.prepare(this.#keys.cutoutDepth, () => ({
-			layout: layouts.meshPipeline,
-			vertex,
+		const samples = format.sampleCount;
+		const multisample: GPUMultisampleState = { count: samples };
+		const depthWrite: GPUDepthStencilState = {
+			format: DEPTH_FORMAT,
+			depthWriteEnabled: true,
+			depthCompare: DEPTH_COMPARE,
+		};
+		const shade: GPUFragmentState = { module, entryPoint: 'fs_opaque', targets: format.targets };
+		this.#mainPhases = [
+			{ key: `mesh/opaque/x${samples}`, cutout: false, textured: true },
+			{ key: `mesh/cutout-depth/x${samples}`, cutout: true, textured: true },
+			{ key: `mesh/cutout-shade/x${samples}`, cutout: true, textured: true },
+		];
+		const [opaque, cutoutDepth, cutoutShade] = this.#mainPhases;
+		prepare(opaque.key, { fragment: shade, depthStencil: depthWrite, multisample });
+		prepare(cutoutDepth.key, {
 			fragment: {
 				module,
 				entryPoint: 'fs_cutout_depth',
 				targets: format.targets.map((target) => ({ ...target, writeMask: 0 })),
 			},
-			primitive,
-			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
+			depthStencil: depthWrite,
 			multisample,
-		}));
-		void pipelines.prepare(this.#keys.cutoutShade, () => ({
-			layout: layouts.meshPipeline,
-			vertex,
-			fragment: { module, entryPoint: 'fs_opaque', targets: format.targets },
-			primitive,
+		});
+		prepare(cutoutShade.key, {
+			fragment: shade,
 			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: 'equal' },
 			multisample,
-		}));
-		void pipelines.prepare(SHADOW_KEYS.opaque, () => ({
-			layout: layouts.meshPipeline,
-			vertex,
-			primitive,
-			depthStencil: SHADOW_DEPTH_STATE,
-		}));
-		void pipelines.prepare(SHADOW_KEYS.cutout, () => ({
-			layout: layouts.meshPipeline,
-			vertex,
+		});
+		const [shadowOpaque, shadowCutout] = SHADOW_PHASES;
+		prepare(shadowOpaque.key, { depthStencil: SHADOW_DEPTH_STATE });
+		prepare(shadowCutout.key, {
 			fragment: { module, entryPoint: 'fs_cutout_depth', targets: [] },
-			primitive,
 			depthStencil: SHADOW_DEPTH_STATE,
-		}));
+		});
 	}
 
 	#zeroBuffer(size: number): GPUBuffer {
@@ -324,14 +322,24 @@ export class MeshRenderer {
 	 */
 	prepare(buckets: readonly MeshBucket[], textures: TextureStore): void {
 		this.clear();
-		const order = this.#order;
-		order.length = 0;
+		const opaque = this.#opaqueOrder;
+		const cutout = this.#cutoutOrder;
+		opaque.length = 0;
+		cutout.length = 0;
 		for (const bucket of buckets) {
-			if (bucket.count > 0 && bucket.geometry.resident?.kind === 'geometry') {
-				order.push(bucket);
+			if (bucket.count === 0 || bucket.geometry.resident?.kind !== 'geometry') {
+				continue;
+			}
+			// without its base colour there's no alpha to test yet
+			const look = bucket.look;
+			if (look.cutout && textures.binding(look.textures[0]) !== null) {
+				cutout.push(bucket);
+			} else {
+				opaque.push(bucket);
 			}
 		}
-		order.sort(byBindings);
+		opaque.sort(byBindings);
+		cutout.sort(byBindings);
 
 		const params = this.#paramData;
 		const words = this.#paramWords;
@@ -340,7 +348,11 @@ export class MeshRenderer {
 		let listStart = LIST_CAPACITY;
 		let listEnd = 0;
 		let d = 0;
-		for (const bucket of order) {
+		for (let b = 0; b < opaque.length + cutout.length; b++) {
+			if (b === opaque.length) {
+				this.#cutoutStart = d;
+			}
+			const bucket = b < opaque.length ? opaque[b] : cutout[b - opaque.length];
 			const resident = bucket.geometry.resident;
 			const range = resident?.kind === 'geometry' ? resident.submeshes[bucket.submesh] : undefined;
 			if (resident?.kind !== 'geometry' || range === undefined || d >= MAX_DRAWS) {
@@ -369,7 +381,6 @@ export class MeshRenderer {
 			const draw = this.#draws[d];
 			if (draw === undefined) {
 				this.#draws[d] = {
-					cutout: look.cutout,
 					geometry: resident,
 					indexCount: range.indexCount,
 					firstIndex: range.firstIndex,
@@ -379,7 +390,6 @@ export class MeshRenderer {
 					material,
 				};
 			} else {
-				draw.cutout = look.cutout;
 				draw.geometry = resident;
 				draw.indexCount = range.indexCount;
 				draw.firstIndex = range.firstIndex;
@@ -397,6 +407,9 @@ export class MeshRenderer {
 			}
 		}
 		this.#drawCount = d;
+		if (cutout.length === 0) {
+			this.#cutoutStart = d;
+		}
 		if (d > 0) {
 			const queue = this.#device.queue;
 			queue.writeBuffer(this.#params, 0, params, 0, d * DRAW_FLOATS);
@@ -409,12 +422,7 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encode(pass: GPURenderPassEncoder): number {
-		const keys = this.#keys;
-		return this.#encode(pass, [
-			{ key: keys.opaque, cutout: false, textured: true },
-			{ key: keys.cutoutDepth, cutout: true, textured: true },
-			{ key: keys.cutoutShade, cutout: true, textured: true },
-		]);
+		return this.#encode(pass, this.#mainPhases);
 	}
 
 	/**
@@ -424,11 +432,7 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encodeShadow(pass: GPURenderPassEncoder): number {
-		return this.#encode(pass, [
-			// opaque shadow draws read no textures, so any material group will do
-			{ key: SHADOW_KEYS.opaque, cutout: false, textured: false },
-			{ key: SHADOW_KEYS.cutout, cutout: true, textured: true },
-		]);
+		return this.#encode(pass, SHADOW_PHASES);
 	}
 
 	/** encodes the phases in order; nothing if any phase's pipeline isn't ready */
@@ -436,29 +440,22 @@ export class MeshRenderer {
 		if (this.#drawCount === 0) {
 			return 0;
 		}
-		const pipelines: GPURenderPipeline[] = [];
 		for (const phase of phases) {
-			const pipeline = this.#pipelines.get(phase.key);
-			if (pipeline === undefined) {
+			if (this.#pipelines.get(phase.key) === undefined) {
 				return 0;
 			}
-			pipelines.push(pipeline);
-		}
-		// draws are sorted opaque first
-		let split = 0;
-		while (split < this.#drawCount && !this.#draws[split].cutout) {
-			split++;
 		}
 		pass.setBindGroup(1, this.#instances);
 		pass.setBindGroup(2, this.#drawGroup);
 		let draws = 0;
-		phases.forEach((phase, p) => {
-			const from = phase.cutout ? split : 0;
-			const to = phase.cutout ? this.#drawCount : split;
-			if (from === to) {
-				return;
+		for (const phase of phases) {
+			const from = phase.cutout ? this.#cutoutStart : 0;
+			const to = phase.cutout ? this.#drawCount : this.#cutoutStart;
+			const pipeline = this.#pipelines.get(phase.key);
+			if (from === to || pipeline === undefined) {
+				continue;
 			}
-			pass.setPipeline(pipelines[p]);
+			pass.setPipeline(pipeline);
 			let geometry: ResidentGeometry | null = null;
 			let material: GPUBindGroup | null = null;
 			for (let i = from; i < to; i++) {
@@ -484,7 +481,7 @@ export class MeshRenderer {
 				pass.drawIndexed(draw.indexCount, draw.count, draw.firstIndex, draw.baseVertex, draw.first);
 			}
 			draws += to - from;
-		});
+		}
 		return draws;
 	}
 }

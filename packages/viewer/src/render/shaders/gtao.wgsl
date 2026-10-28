@@ -13,13 +13,15 @@
 
 const SLICES = 2;
 const STEPS = 6;
-/** the march's reach, half-resolution pixels */
+// full-resolution pixels per AO pixel along each axis (AO_SCALE in post-process.ts sizes the targets)
+const AO_SCALE = 2;
+// the march's reach, AO pixels
 const MAX_RADIUS = 48.0;
 
 @fragment
 fn fs_ao_depth(in: FullscreenOut) -> @location(0) vec4f {
 	let size = vec2i(textureDimensions(depth_texture));
-	let depth = textureLoad(depth_texture, min(vec2i(in.position.xy) * 2, size - 1), 0);
+	let depth = textureLoad(depth_texture, min(vec2i(in.position.xy) * AO_SCALE, size - 1), 0);
 	return vec4f(select(view_depth(depth), 0.0, depth <= 0.0), 0.0, 0.0, 1.0);
 }
 
@@ -66,7 +68,7 @@ fn fs_gtao(in: FullscreenOut) -> @location(0) vec4f {
 
 	let radius = post.ao.x;
 	// the pixel factor is for full resolution
-	let radius_px = min(radius * post.right.w * 0.5 / p.z, MAX_RADIUS);
+	let radius_px = min(radius * post.right.w / (f32(AO_SCALE) * p.z), MAX_RADIUS);
 	if (radius_px < 1.0) {
 		return vec4f(1.0);
 	}
@@ -129,7 +131,7 @@ fn fs_blur(in: FullscreenOut) -> @location(0) vec4f {
 	}
 	let z = view_depth(depth);
 	let size = vec2i(textureDimensions(ao_texture));
-	let centre = px / 2;
+	let centre = px / AO_SCALE;
 	var sum = 0.0;
 	var weight = 0.0;
 	for (var y = -2; y < 2; y++) {

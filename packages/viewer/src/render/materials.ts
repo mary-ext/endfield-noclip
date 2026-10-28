@@ -58,7 +58,10 @@ export const LOOK_FLOATS = 32;
 export interface MaterialLook {
 	/** `false` for materials not drawn at all (fog volumes, additive blending) */
 	drawn: boolean;
-	/** alpha-tested against the base colour's alpha; such draws need pipelines that can discard */
+	/**
+	 * alpha-tested against the base colour's alpha (`fs_cutout_depth` in mesh.wgsl), once the base colour is
+	 * bound; such draws need pipelines that can discard
+	 */
 	cutout: boolean;
 	/** texture id per {@link SLOTS} entry, or -1 */
 	textures: [number, number, number, number];
