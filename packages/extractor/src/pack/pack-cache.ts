@@ -19,7 +19,8 @@ import type { ConvertResult } from './convert-pool.ts';
 
 /**
  * code whose output the cache stores, relative to this module: editing any of it invalidates every cached
- * conversion. instance, terrain and environment packing aren't cached, so their code isn't listed
+ * conversion. it must cover what `convert-worker.ts` imports to decide results; instance, terrain and
+ * environment packing aren't cached, so their code isn't listed
  */
 const CONVERTER_SOURCES = [
 	'../../../formats/src/binary',
@@ -28,10 +29,12 @@ const CONVERTER_SOURCES = [
 	'../../../package-format/src',
 	'../game/asset-decode.ts',
 	'../game/assets.ts',
+	'../game/world-index.ts',
 	'../hg/bundles.ts',
 	'../hg/vfs.ts',
 	'../zstd.ts',
 	'./blob-file.ts',
+	'./bounds.ts',
 	'./convert-worker.ts',
 	'./geometry.ts',
 	'./textures.ts',
