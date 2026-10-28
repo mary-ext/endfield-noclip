@@ -200,6 +200,7 @@ const loadOracleBundles = async (vfs: Vfs, log: (message: string) => void): Prom
 		.toSorted((a, b) => a.length - b.length);
 	const oracles: OracleBundle[] = [];
 	for (const entry of candidates) {
+		// oxlint-disable-next-line no-await-in-loop -- stops reading once enough oracles are found
 		const data = await vfs.read({ group, entry });
 		const block = firstPayloadBlock(data);
 		// the block-0 oracle checks a SerializedFile signature, so the first block must be one (not a resource)

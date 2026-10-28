@@ -228,6 +228,7 @@ export class AssetResolver {
 		// open directories a few at a time; stop as soon as the CAB shows up
 		const BATCH = 16;
 		for (let i = 0; i < candidates.length; i += BATCH) {
+			// oxlint-disable-next-line no-await-in-loop -- batches stop opening bundles once the CAB is found
 			await Promise.all(candidates.slice(i, i + BATCH).map((index) => this.bundle(index)));
 			const found = this.#cabs.get(key);
 			if (found !== undefined) {
@@ -305,11 +306,9 @@ export class AssetResolver {
 		if (assets.length === 0) {
 			throw new Error(`${path} isn't in the bundle manifest`);
 		}
-		const found: ObjectRef[] = [];
-		for (const index of new Set(assets.map((asset) => asset.bundleIndex))) {
-			found.push(...(await this.findInBundle(index, path, classId)));
-		}
-		return found;
+		const bundles = [...new Set(assets.map((asset) => asset.bundleIndex))];
+		const found = await Promise.all(bundles.map((index) => this.findInBundle(index, path, classId)));
+		return found.flat();
 	}
 
 	/**
@@ -344,32 +343,34 @@ export class AssetResolver {
 	async findInBundle(index: number, path: string, classId: number): Promise<ObjectRef[]> {
 		const [containerPath, subAsset] = path.toLowerCase().split('##');
 		const files = await this.assetFiles(index);
-		const found: ObjectRef[] = [];
+		const listed: ObjectRef[] = [];
 		for (const pptr of (await this.#container(index)).get(containerPath) ?? []) {
 			for (const file of files) {
 				const info = file.file.objectsByPathId.get(pptr.pathId);
-				if (
-					info !== undefined &&
-					info.classId === classId &&
-					(subAsset === undefined || (await file.peekName(info))?.toLowerCase() === subAsset)
-				) {
-					found.push({ bundleIndex: index, file, info });
+				if (info !== undefined && info.classId === classId) {
+					listed.push({ bundleIndex: index, file, info });
 				}
 			}
 		}
-		if (found.length === 0) {
-			// FBX sub-assets aren't listed in the container (it names the model's root); match objects by name
-			for (const file of files) {
+		let found = listed;
+		if (subAsset !== undefined) {
+			const names = await Promise.all(listed.map((ref) => ref.file.peekName(ref.info)));
+			found = listed.filter((_, i) => names[i]?.toLowerCase() === subAsset);
+		}
+		if (found.length > 0) {
+			return found;
+		}
+		// FBX sub-assets aren't listed in the container (it names the model's root); match objects by name
+		const perFile = await Promise.all(
+			files.map(async (file) => {
 				const infos =
 					subAsset === undefined
 						? file.file.objects.filter((info) => info.classId === classId)
 						: await file.objectsNamed(classId, subAsset);
-				for (const info of infos) {
-					found.push({ bundleIndex: index, file, info });
-				}
-			}
-		}
-		return found;
+				return infos.map((info): ObjectRef => ({ bundleIndex: index, file, info }));
+			}),
+		);
+		return perFile.flat();
 	}
 
 	/** @returns the bundle's `m_Container`, by path, keeping only entries into its own files */
@@ -378,8 +379,10 @@ export class AssetResolver {
 		if (cached === undefined) {
 			cached = (async () => {
 				const byPath = new Map<string, PPtr[]>();
-				for (const file of await this.assetFiles(index)) {
-					for (const bundle of await file.assetBundles()) {
+				const files = await this.assetFiles(index);
+				const perFile = await Promise.all(files.map((file) => file.assetBundles()));
+				for (const bundles of perFile) {
+					for (const bundle of bundles) {
 						for (const entry of bundle.container) {
 							if (entry.asset.fileId !== 0) {
 								continue;

@@ -136,6 +136,7 @@ export const run = async (args: string[]): Promise<void> => {
 				const failures = new Map<string, number>();
 				let draws = 0;
 				for (const entity of entities) {
+					// oxlint-disable-next-line no-await-in-loop -- the scene dedupes meshes and materials as draws are added in order
 					const report = await exportEntity(world, resolver, entity, lod, scene);
 					for (const draw of report.draws) {
 						draws++;
@@ -222,33 +223,35 @@ const textureSummary = (texture: DecodedTexture) => {
 };
 
 const materialJson = async (resolver: AssetResolver, material: LoadedMaterial) => {
-	const textures: Record<string, object> = {};
-	for (const [slot, resolved] of Object.entries(material.textures)) {
-		const source = material.record.textures[slot];
-		if (resolved.ref === null) {
-			if (resolved.error !== undefined) {
-				textures[slot] = { error: resolved.error };
+	const slots = await Promise.all(
+		Object.entries(material.textures).map(async ([slot, resolved]): Promise<[string, object] | undefined> => {
+			const source = material.record.textures[slot];
+			if (resolved.ref === null) {
+				return resolved.error === undefined ? undefined : [slot, { error: resolved.error }];
 			}
-			continue;
-		}
-		try {
-			const texture = await loadTexture(resolver, resolved.ref);
-			textures[slot] = {
-				object: objectKey(resolved.ref),
-				bundle: resolver.manifest.bundle(resolved.ref.bundleIndex).name,
-				name: texture.name,
-				format: texture.format.name,
-				size: [texture.width, texture.height],
-				mipCount: texture.mipCount,
-				srgb: texture.srgb,
-				uvSet: source.uvSet,
-				scale: source.scale,
-				offset: source.offset,
-			};
-		} catch (error) {
-			textures[slot] = { object: objectKey(resolved.ref), error: errorText(error) };
-		}
-	}
+			try {
+				const texture = await loadTexture(resolver, resolved.ref);
+				return [
+					slot,
+					{
+						object: objectKey(resolved.ref),
+						bundle: resolver.manifest.bundle(resolved.ref.bundleIndex).name,
+						name: texture.name,
+						format: texture.format.name,
+						size: [texture.width, texture.height],
+						mipCount: texture.mipCount,
+						srgb: texture.srgb,
+						uvSet: source.uvSet,
+						scale: source.scale,
+						offset: source.offset,
+					},
+				];
+			} catch (error) {
+				return [slot, { object: objectKey(resolved.ref), error: errorText(error) }];
+			}
+		}),
+	);
+	const textures = Object.fromEntries(slots.filter((entry) => entry !== undefined));
 	const { record } = material;
 	return {
 		name: record.name,
@@ -310,15 +313,18 @@ const exportEntity = async (
 	lod: number,
 	scene: GlbScene,
 ): Promise<{ id: number; name: string; draws: DrawReport[] }> => {
+	const lookup = await world.pathLookup();
 	const draws: DrawReport[] = [];
 	for (const draw of entity.renderer?.draws ?? []) {
 		if (draw.lod !== lod || (draw.flags & DrawFlags.ShadowOnly) !== 0 || entity.matrix === null) {
 			continue;
 		}
-		const meshPath = await world.pathOf(draw.meshHash);
+		const meshPath = lookup(draw.meshHash);
 		try {
+			// oxlint-disable-next-line no-await-in-loop -- the scene dedupes meshes and materials as draws are added in order
 			const [meshKey, mesh] = await resolveMesh(resolver, draw.meshHash, meshPath, scene);
-			const materialPath = await world.pathOf(draw.materialHash);
+			const materialPath = lookup(draw.materialHash);
+			// oxlint-disable-next-line no-await-in-loop -- the scene dedupes materials as draws are added in order
 			const [materialKey, material] = await resolveMaterial(resolver, draw.materialHash, materialPath, scene);
 			scene.draws.push({
 				mesh: meshKey,

@@ -208,11 +208,14 @@ export class WorldIndex {
 					text.set(key, value);
 				}
 			}
+			const tables = await Promise.all(
+				['MapIdTable', 'LevelDescTable'].map((table) =>
+					this.#read(VfsGroup.Table, `Data/TableCfg/${table}.bytes`),
+				),
+			);
 			const names = new Map<string, string>();
-			for (const table of ['MapIdTable', 'LevelDescTable']) {
-				for (const [key, value] of parseSparkTable(
-					await this.#read(VfsGroup.Table, `Data/TableCfg/${table}.bytes`),
-				).entries) {
+			for (const table of tables) {
+				for (const [key, value] of parseSparkTable(table).entries) {
 					const name = i18nText(value, text);
 					if (typeof key === 'string' && name) {
 						names.set(key, name);
@@ -331,6 +334,7 @@ export class WorldIndex {
 			if (file.scene !== scene || (filter && !filter(file))) {
 				continue;
 			}
+			// oxlint-disable-next-line no-await-in-loop -- entities stream out a file at a time
 			for (const entity of await this.readChunk(file, partition)) {
 				if (!seen.has(entity.id)) {
 					seen.add(entity.id);

@@ -113,9 +113,11 @@ const requirePartition = async (world: WorldIndex, mapId: string): Promise<Level
 const listMaps = async (world: WorldIndex): Promise<void> => {
 	const names = await world.names();
 	const files = await world.chunkFiles();
-	for (const scene of await world.scenes()) {
+	const scenes = await world.scenes();
+	const partitions = await Promise.all(scenes.map((scene) => world.partition(scene)));
+	for (const [i, scene] of scenes.entries()) {
 		const chunks = files.filter((file) => file.scene === scene);
-		const partition = await world.partition(scene);
+		const partition = partitions[i];
 		const levels =
 			partition === undefined ? '' : `${partition.levels.length} levels, ${partition.map.sideGridNum}² grid`;
 		console.log(
@@ -216,28 +218,26 @@ const listEntities = async (
 		throw new Error(`no InitChunkData for ${mapId} ${cell === 'global' ? 'Global' : `${cell.x},${cell.z}`}`);
 	}
 
-	const rows: object[] = [];
-	for (const file of files) {
-		const entities = await world.readChunk(file, partition);
-		if (!options.json) {
-			console.log(`# ${file.name} (${entities.length} entities)`);
-		}
-		for (const entity of entities) {
-			if (options.json) {
-				rows.push(await entityJson(world, entity, partition));
-			} else {
-				console.log(await entityLine(world, entity));
-			}
-		}
-	}
+	const perFile = await Promise.all(files.map((file) => world.readChunk(file, partition)));
 	if (options.json) {
+		const names = await assetNames(world);
+		const rows = perFile.flat().map((entity) => entityJson(entity, partition, names));
 		console.log(JSON.stringify(rows, null, '\t'));
+		return;
+	}
+	const pathOf = await world.pathLookup();
+	for (const [i, file] of files.entries()) {
+		console.log(`# ${file.name} (${perFile[i].length} entities)`);
+		for (const entity of perFile[i]) {
+			console.log(entityLine(entity, pathOf));
+		}
 	}
 };
 
 const listMembers = async (world: WorldIndex, levelId: string, json: boolean): Promise<void> => {
 	const { partition, level } = await findLevel(world, levelId);
 	const counts = new Map<string, { all: number; renderer: number }>();
+	const names = json ? await assetNames(world) : undefined;
 	const rows: object[] = [];
 	for await (const entity of world.entitiesOfLevel(level, partition)) {
 		const where = entity.source.cell === null ? 'global' : entity.membership.placement;
@@ -247,8 +247,8 @@ const listMembers = async (world: WorldIndex, levelId: string, json: boolean): P
 			count.renderer++;
 		}
 		counts.set(where, count);
-		if (json) {
-			rows.push(await entityJson(world, entity, partition));
+		if (names !== undefined) {
+			rows.push(entityJson(entity, partition, names));
 		}
 	}
 	if (json) {
@@ -370,7 +370,22 @@ const resolve = async (world: WorldIndex, query: string): Promise<void> => {
 
 // #region formatting
 
-const entityLine = async (world: WorldIndex, entity: IndexedEntity): Promise<string> => {
+/** lookups that name an entity's assets */
+interface AssetNames {
+	pathOf: (hash: bigint) => string | undefined;
+	bundleOf: (hash: bigint) => string | null;
+}
+
+const assetNames = async (world: WorldIndex): Promise<AssetNames> => {
+	const [pathOf, manifest] = await Promise.all([world.pathLookup(), world.manifest()]);
+	const bundleOf = (hash: bigint): string | null => {
+		const asset = manifest.findAssets(hash)[0];
+		return asset === undefined ? null : manifest.bundle(asset.bundleIndex).name;
+	};
+	return { pathOf, bundleOf };
+};
+
+const entityLine = (entity: IndexedEntity, pathOf: (hash: bigint) => string | undefined): string => {
 	const p = entity.pivot;
 	const pos = p === null ? '-' : `${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}`;
 	const { membership } = entity;
@@ -378,22 +393,17 @@ const entityLine = async (world: WorldIndex, entity: IndexedEntity): Promise<str
 	let draws = '';
 	if (entity.renderer !== null) {
 		const first = entity.renderer.draws[0];
-		const mesh = first === undefined ? '' : ((await world.pathOf(first.meshHash)) ?? '?').split('##').pop();
+		const mesh = first === undefined ? '' : (pathOf(first.meshHash) ?? '?').split('##').pop();
 		draws = `  ${entity.renderer.draws.length} draws/${entity.renderer.lodCount} lods  ${mesh}`;
 	}
 	return `${String(entity.id).padStart(10)} t${String(entity.levelTag).padEnd(2)} ${owner.padEnd(12)} ${membership.placement.padEnd(9)} ${pos.padEnd(26)} ${entity.name}${draws}`;
 };
 
-const entityJson = async (
-	world: WorldIndex,
+const entityJson = (
 	entity: IndexedEntity,
 	partition: LevelPartition | undefined,
-): Promise<object> => {
-	const manifest = await world.manifest();
-	const bundleOf = (hash: bigint): string | null => {
-		const asset = manifest.findAssets(hash)[0];
-		return asset === undefined ? null : manifest.bundle(asset.bundleIndex).name;
-	};
+	{ pathOf, bundleOf }: AssetNames,
+): object => {
 	return {
 		id: entity.id,
 		levelTag: entity.levelTag,
@@ -412,19 +422,17 @@ const entityJson = async (
 				? null
 				: {
 						lodCount: entity.renderer.lodCount,
-						draws: await Promise.all(
-							entity.renderer.draws.map(async (draw) => ({
-								lod: draw.lod,
-								mesh: (await world.pathOf(draw.meshHash)) ?? `0x${draw.meshHash.toString(16)}`,
-								meshBundle: bundleOf(draw.meshHash),
-								material: (await world.pathOf(draw.materialHash)) ?? `0x${draw.materialHash.toString(16)}`,
-								materialBundle: bundleOf(draw.materialHash),
-								submesh: draw.submesh,
-								flags: draw.flags,
-								lodMaxSquared: draw.lodMaxSquared,
-								lodMinSquared: draw.lodMinSquared,
-							})),
-						),
+						draws: entity.renderer.draws.map((draw) => ({
+							lod: draw.lod,
+							mesh: pathOf(draw.meshHash) ?? `0x${draw.meshHash.toString(16)}`,
+							meshBundle: bundleOf(draw.meshHash),
+							material: pathOf(draw.materialHash) ?? `0x${draw.materialHash.toString(16)}`,
+							materialBundle: bundleOf(draw.materialHash),
+							submesh: draw.submesh,
+							flags: draw.flags,
+							lodMaxSquared: draw.lodMaxSquared,
+							lodMinSquared: draw.lodMinSquared,
+						})),
 					},
 	};
 };

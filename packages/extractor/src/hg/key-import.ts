@@ -25,6 +25,7 @@ export const importKeys = async (dirs: string[]): Promise<KeyConfig> => {
 		for (const candidate of [dir, join(dir, 'map-extractor'), join(dir, 'animestudio')]) {
 			const vfsPy = join(candidate, 'src/extractor_core/vfs.py');
 			if (vfsKey === undefined && existsSync(vfsPy)) {
+				// oxlint-disable-next-line no-await-in-loop -- the first source found wins
 				const text = await readFile(vfsPy, 'utf8');
 				const match = /DEFAULT_VFS_KEY_HEX\s*=\s*\(([^)]*)\)/.exec(text);
 				if (match) {
@@ -35,8 +36,8 @@ export const importKeys = async (dirs: string[]): Promise<KeyConfig> => {
 			const helperCs = join(candidate, 'AnimeStudio/Crypto/CryptoHelper.cs');
 			const utilsCs = join(candidate, 'AnimeStudio/Crypto/VFSUtils.cs');
 			if (bundle === undefined && existsSync(helperCs) && existsSync(utilsCs)) {
-				const helper = await readFile(helperCs, 'utf8');
-				const utils = await readFile(utilsCs, 'utf8');
+				// oxlint-disable-next-line no-await-in-loop -- the first source found wins
+				const [helper, utils] = await Promise.all([readFile(helperCs, 'utf8'), readFile(utilsCs, 'utf8')]);
 				const array = (name: string): string | undefined => {
 					const body = new RegExp(`\\b${name}\\s*=\\s*new byte\\[\\]\\s*\\{([^}]*)\\}`).exec(helper)?.[1];
 					return body && [...body.matchAll(/0x([0-9A-Fa-f]{2})/g)].map((m) => m[1]).join('');

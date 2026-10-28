@@ -21,16 +21,19 @@ export const run = async (args: string[]): Promise<void> => {
 	await withContext(values.config, async ({ vfs }) => {
 		switch (sub) {
 			case 'groups': {
-				for (const hash of await vfs.listGroups()) {
-					try {
-						const { catalog } = await vfs.group(hash);
-						const gib = (catalog.chunksLength / 1024 ** 3).toFixed(2);
-						console.log(
-							`${hash}  ${catalog.groupName.padEnd(20)} ${String(catalog.fileCount).padStart(7)} files  ${gib} GiB`,
-						);
-					} catch (error) {
-						console.log(`${hash}  (unreadable: ${errorText(error)})`);
+				const hashes = await vfs.listGroups();
+				const mounted = await Promise.allSettled(hashes.map((hash) => vfs.group(hash)));
+				for (const [i, result] of mounted.entries()) {
+					const hash = hashes[i];
+					if (result.status === 'rejected') {
+						console.log(`${hash}  (unreadable: ${errorText(result.reason)})`);
+						continue;
 					}
+					const { catalog } = result.value;
+					const gib = (catalog.chunksLength / 1024 ** 3).toFixed(2);
+					console.log(
+						`${hash}  ${catalog.groupName.padEnd(20)} ${String(catalog.fileCount).padStart(7)} files  ${gib} GiB`,
+					);
 				}
 				break;
 			}

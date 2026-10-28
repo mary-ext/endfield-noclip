@@ -88,14 +88,10 @@ export class Vfs {
 
 	/** @returns group hashes present in any layer */
 	async listGroups(): Promise<string[]> {
-		const found = new Set<string>();
-		for (const layer of vfsLayerDirs(this.gameData)) {
-			for (const name of await ignoreMissing(readdir(layer), [])) {
-				if (/^[0-9A-F]{8}$/.test(name)) {
-					found.add(name);
-				}
-			}
-		}
+		const listings = await Promise.all(
+			vfsLayerDirs(this.gameData).map((layer) => ignoreMissing(readdir(layer), [])),
+		);
+		const found = new Set(listings.flat().filter((name) => /^[0-9A-F]{8}$/.test(name)));
 		return [...found].toSorted();
 	}
 

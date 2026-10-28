@@ -31,6 +31,10 @@ import {
 	type SourcedWaterSurface,
 } from '../game/water-source.ts';
 import type { WorldIndex } from '../game/world-index.ts';
+import { mapPool } from '../pool.ts';
+
+/** assets decoded at once by `--resolve` */
+const RESOLVE_CONCURRENCY = 16;
 
 export const summary =
 	'water surfaces: surfaces <map> [<level> | <x> <z>] [--resolve] [--json] | census <map> | config <path|hash>';
@@ -109,19 +113,24 @@ const listSurfaces = async (
 	}
 
 	const lookup = await world.pathLookup();
-	const resolved = new Map<bigint, object>();
+	let resolved = new Map<bigint, object>();
 	if (options.resolve) {
 		const resolver = await context.resolver();
+		const kinds = new Map<bigint, 'mesh' | 'config'>();
 		for (const surface of selected) {
-			for (const [hash, kind] of [
-				[surface.meshHash, 'mesh'],
-				[surface.configHash, 'config'],
-			] as const) {
-				if (!resolved.has(hash)) {
-					resolved.set(hash, await resolveAsset(resolver, hash, lookup(hash) ?? null, kind));
-				}
+			if (!kinds.has(surface.meshHash)) {
+				kinds.set(surface.meshHash, 'mesh');
+			}
+			if (!kinds.has(surface.configHash)) {
+				kinds.set(surface.configHash, 'config');
 			}
 		}
+		resolved = new Map(
+			await mapPool([...kinds], RESOLVE_CONCURRENCY, async ([hash, kind]): Promise<[bigint, object]> => [
+				hash,
+				await resolveAsset(resolver, hash, lookup(hash) ?? null, kind),
+			]),
+		);
 	}
 
 	if (options.json) {
@@ -318,20 +327,20 @@ const globalJson = async (
 			return { error: errorText(error) };
 		}
 	};
-	const surfaceConfigs: object[] = [];
-	for (const pptr of config.surfaceConfigs) {
-		try {
-			const ref = await resolver.resolve(from, pptr);
-			const value: TypeTreeObject | null = ref === null ? null : await resolver.read(ref);
-			surfaceConfigs.push(
-				ref === null || value === null
-					? { null: true }
-					: { object: objectKey(ref), name: value.m_Name, materialIndex: value.materialIndex },
-			);
-		} catch (error) {
-			surfaceConfigs.push({ error: errorText(error) });
-		}
-	}
+	const surfaceConfigs = await Promise.all(
+		config.surfaceConfigs.map(async (pptr): Promise<object> => {
+			try {
+				const ref = await resolver.resolve(from, pptr);
+				if (ref === null) {
+					return { null: true };
+				}
+				const value: TypeTreeObject = await resolver.read(ref);
+				return { object: objectKey(ref), name: value.m_Name, materialIndex: value.materialIndex };
+			} catch (error) {
+				return { error: errorText(error) };
+			}
+		}),
+	);
 	const xs = config.sectors.map((sector) => sector.x);
 	const zs = config.sectors.map((sector) => sector.z);
 	return {

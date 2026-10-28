@@ -7,6 +7,8 @@ import {
 import { levelOfTag, type LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import type { StreamAreaTable } from '@endfield-noclip/formats/endfield/stream-area';
 
+import { mapPool } from '../pool.ts';
+
 import type { ChunkFile, WorldIndex } from './world-index.ts';
 
 // scenery variants of an open-world map come from two independent mechanisms:
@@ -86,6 +88,9 @@ export interface StateSelection {
 
 // #region loading
 
+/** chunk files read at once */
+const READ_CONCURRENCY = 16;
+
 /**
  * catalogues a map's stream areas and progression controllers. reads every non-zero-state chunk file and
  * every `fb_main` file of the scene, so it takes a few seconds
@@ -107,12 +112,18 @@ export const loadSceneStates = async (world: WorldIndex, scene: string): Promise
 			areaFiles.set(file.state, list);
 		}
 	}
+	const allFiles = [...areaFiles.values()].flat();
+	// keep only what the tally needs, so all files' entities needn't stay in memory at once
+	const perFile = await mapPool(allFiles, READ_CONCURRENCY, async (file) =>
+		(await world.readChunk(file, undefined)).map(({ id, levelTag }) => ({ id, levelTag })),
+	);
+	const entitiesOf = new Map(allFiles.map((file, i) => [file, perFile[i]]));
 	const areas: StreamAreaInfo[] = [];
 	for (const [id, files] of [...areaFiles].toSorted((a, b) => a[0] - b[0])) {
 		const seen = new Set<number>();
 		const tags = new Map<number, number>();
 		for (const file of files) {
-			for (const entity of await world.readChunk(file, undefined)) {
+			for (const entity of entitiesOf.get(file) ?? []) {
 				if (!seen.has(entity.id)) {
 					seen.add(entity.id);
 					tags.set(entity.levelTag, (tags.get(entity.levelTag) ?? 0) + 1);

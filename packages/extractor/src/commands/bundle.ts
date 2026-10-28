@@ -138,7 +138,8 @@ const info = async (files: BundleAssetFile[]): Promise<void> => {
 		);
 	}
 
-	for (const asset of files) {
+	const assetBundles = await Promise.all(files.map((asset) => asset.assetBundles()));
+	for (const [i, asset] of files.entries()) {
 		const { file } = asset;
 		console.log(
 			`\n${asset.node.path}: SerializedFile v${file.header.version}, ${file.unityVersion}, ` +
@@ -159,7 +160,7 @@ const info = async (files: BundleAssetFile[]): Promise<void> => {
 				console.log(`    ${index + 1}: ${external.pathName}`);
 			}
 		}
-		for (const { name, container } of await asset.assetBundles()) {
+		for (const { name, container } of assetBundles[i]) {
 			console.log(`  AssetBundle ${name ?? '?'}: ${container.length} container entries`);
 			for (const entry of container.slice(0, 10)) {
 				console.log(`    ${entry.path}`);
@@ -199,6 +200,7 @@ const dump = async (
 			};
 			let value: unknown;
 			try {
+				// oxlint-disable-next-line no-await-in-loop -- objects print in order, up to the limit
 				value = toJson(await asset.read(object), options.maxArray);
 			} catch (error) {
 				value = { error: errorText(error) };
@@ -256,7 +258,6 @@ const find = async (
 	context: Context,
 	options: { filter: RegExp | undefined; className: string | undefined; scan: number; limit: number },
 ): Promise<void> => {
-	const { filter, className } = options;
 	const names = [...(await context.vfs.group(VfsGroup.Bundle)).files.keys()];
 	let scanned = 0;
 	let found = 0;
@@ -267,34 +268,14 @@ const find = async (
 		}
 		scanned++;
 		try {
-			const bundle = await openBundle(context, name);
-			for (const asset of await openAssetFiles(bundle)) {
-				const { objects } = asset.file;
-				if (className !== undefined) {
-					const hits = objects.filter((object) => isClass(object, className));
-					if (hits.length === 0) {
-						continue;
-					}
-					if (filter === undefined) {
-						const labels = await Promise.all(
-							hits.slice(0, 5).map(async (object) => (await asset.peekName(object)) ?? '?'),
-						);
-						const more = hits.length > 5 ? ` …${hits.length - 5} more` : '';
-						console.log(`${name}\t${hits.length}× ${className}: ${labels.join(', ')}${more}`);
-						found++;
-						continue;
-					}
-				}
-				if (filter === undefined) {
-					continue;
-				}
-				for (const { container } of await asset.assetBundles()) {
-					for (const { path } of container) {
-						if (filter.test(path) && found < options.limit) {
-							found++;
-							console.log(`${name}\t${path}`);
-						}
-					}
+			// oxlint-disable-next-line no-await-in-loop -- one bundle at a time, so the scan stops at its limits
+			const assets = await openAssetFiles(await openBundle(context, name));
+			// oxlint-disable-next-line no-await-in-loop -- one bundle at a time, so the scan stops at its limits
+			const matches = await Promise.all(assets.map((asset) => scanAsset(asset, options)));
+			for (const match of matches.flat()) {
+				if (found < options.limit) {
+					found++;
+					console.log(`${name}\t${match}`);
 				}
 			}
 		} catch (error) {
@@ -303,6 +284,35 @@ const find = async (
 		}
 	}
 	console.error(`scanned ${scanned} bundles, ${found} matches, ${failed} failures`);
+};
+
+/**
+ * @returns the asset file's matches: a summary line of its objects of `className`, or else its container
+ *   paths matching `filter`
+ */
+const scanAsset = async (
+	asset: BundleAssetFile,
+	{ filter, className }: { filter: RegExp | undefined; className: string | undefined },
+): Promise<string[]> => {
+	if (className !== undefined) {
+		const hits = asset.file.objects.filter((object) => isClass(object, className));
+		if (hits.length === 0) {
+			return [];
+		}
+		if (filter === undefined) {
+			const labels = await Promise.all(
+				hits.slice(0, 5).map(async (object) => (await asset.peekName(object)) ?? '?'),
+			);
+			const more = hits.length > 5 ? ` …${hits.length - 5} more` : '';
+			return [`${hits.length}× ${className}: ${labels.join(', ')}${more}`];
+		}
+	}
+	if (filter === undefined) {
+		return [];
+	}
+	return (await asset.assetBundles()).flatMap(({ container }) =>
+		container.map(({ path }) => path).filter((path) => filter.test(path)),
+	);
 };
 
 // #endregion
