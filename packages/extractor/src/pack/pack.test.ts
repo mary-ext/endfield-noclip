@@ -19,7 +19,7 @@ import {
 import { openArchive } from '@mary-ext/czar';
 import { fromFileHandle } from '@mary-ext/czar/node';
 
-import { BlobStore } from './blob-store.ts';
+import { BlobDir, BlobStore } from './blob-store.ts';
 import { ChainTable } from './chains.ts';
 import { InstanceBlockBuilder } from './instances.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
@@ -148,7 +148,7 @@ describe('BlobStore', () => {
 	it('dedupes, places blobs in archives and reports readable offsets', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(join(dir, '.spool'), { zstdLevel: 3 });
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3, temporary: true });
 			const compressible = new Uint8Array(4096).fill(7);
 			const random = Uint8Array.from({ length: 333 }, (_, i) => (i * 2654435761) >>> 24);
 			const [a, b, c] = await store.putMany([
@@ -208,7 +208,7 @@ describe('BlobStore', () => {
 	it('round-trips an instance block through compression', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(join(dir, '.spool'), { zstdLevel: 3 });
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3, temporary: true });
 			const rows = new InstanceBlockBuilder();
 			rows.add(
 				{
@@ -244,7 +244,7 @@ describe('BlobStore', () => {
 	it('assigns indices in commit order and skips zstd that barely helps', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(join(dir, '.spool'), { zstdLevel: 3 });
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3, temporary: true });
 			const archives: [string, number][] = [];
 			const options = {
 				kind: BlobKind.Texture,
@@ -269,12 +269,12 @@ describe('BlobStore', () => {
 			assert.equal(store.commit(early), 0);
 			assert.equal(store.commit(late), 1);
 			assert.equal(store.commit(await store.prepare(noise, options)), 0);
-			assert.equal(early.codec, BlobCodec.None);
-			assert.equal(late.codec, BlobCodec.Zstd);
+			assert.equal(early.meta.codec, BlobCodec.None);
+			assert.equal(late.meta.codec, BlobCodec.Zstd);
 			// the placement callback runs once per new blob, with the stored length
 			assert.deepEqual(archives, [
-				[early.hash, 4096],
-				[late.hash, late.stored.byteLength],
+				[early.meta.hash, 4096],
+				[late.meta.hash, late.meta.length],
 			]);
 			await store.dispose();
 		} finally {

@@ -11,21 +11,20 @@ import {
 } from '@endfield-noclip/package-format/format';
 
 import { failureReason } from '../errors.ts';
-import { loadMaterial, loadMesh, loadTexture } from '../game/asset-decode.ts';
+import { loadMaterial } from '../game/asset-decode.ts';
 import { type AssetRef, type AssetResolver, objectKey, type ObjectRef } from '../game/assets.ts';
 import { orderedPool } from '../pool.ts';
 
 import { type AssetArchives, type Place, mergePlaces } from './asset-placement.ts';
-import type { BlobStore, PreparedBlob } from './blob-store.ts';
-import { convertMesh, geometryReady } from './geometry.ts';
+import type { BlobMeta, BlobStore, PutOptions } from './blob-store.ts';
+import type { ConvertPool, TextureLocator } from './convert-pool.ts';
 import { convertMaterial, ShaderTable } from './materials.ts';
 import { PhaseTimer } from './phase-timer.ts';
-import { convertTexture } from './textures.ts';
 
 // the packer references assets by dense ids handed out here, in first-reference order. converting them reads
 // materials first (they decide which meshes need tangents and which textures are used), then meshes, then
-// textures. each phase decodes several assets concurrently but stores results in id order, so the package
-// is deterministic.
+// textures. meshes and textures convert on worker threads; each phase stores results in id order, so the
+// package is deterministic.
 
 // #region ids
 
@@ -63,6 +62,8 @@ export class AssetIds {
 export interface AssetConversionInput {
 	resolver: AssetResolver;
 	store: BlobStore;
+	/** converts meshes and textures, writing their blobs to the store's directory */
+	pool: ConvertPool;
 	geometries: readonly AssetRef[];
 	materials: readonly AssetRef[];
 	chains: readonly Chain[];
@@ -72,9 +73,11 @@ export interface AssetConversionInput {
 	extraTextures: readonly (readonly PlacedTexture[])[];
 	/** names the asset archives blobs go to */
 	archives: AssetArchives;
+	/** zstd level for geometry blobs */
+	geometryZstdLevel: number;
 	/** zstd level for texture blobs */
 	textureZstdLevel: number;
-	/** assets decoded at once per phase */
+	/** materials decoded at once */
 	concurrency: number;
 	log: (line: string) => void;
 }
@@ -140,8 +143,7 @@ export interface AssetConversion {
  * @returns the tables, debug rows and statistics
  */
 export const convertAssets = async (input: AssetConversionInput): Promise<AssetConversion> => {
-	const { resolver, store, archives } = input;
-	await geometryReady;
+	const { resolver, store, pool, archives } = input;
 	const failures: Record<string, number> = {};
 	const fail = (kind: string, error: Error): string => {
 		const reason = `${kind}: ${failureReason(error)}`;
@@ -235,17 +237,18 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	};
 	await orderedPool(
 		input.geometries,
-		input.concurrency,
+		jobsInFlight(pool),
 		async (asset, id) => {
-			const ref = await resolver.findUnique(asset, UnityClass.Mesh);
-			const mesh = await loadMesh(resolver, ref);
-			const converted = convertMesh(mesh, tangentUv[id]);
-			const prepared = await store.prepare(converted.blob, {
-				kind: BlobKind.Geometry,
-				compress: true,
-				archive: (_hash, length) => archives.archive(input.places.geometries[id], length),
+			const result = await pool.run({
+				kind: 'geometry',
+				asset,
+				tangentUv: tangentUv[id],
+				zstdLevel: input.geometryZstdLevel,
 			});
-			return { ref, name: mesh.name, converted, prepared };
+			if (result.kind !== 'geometry') {
+				throw new Error(`a geometry job returned a ${result.kind}`);
+			}
+			return result;
 		},
 		(result, _asset, id) => {
 			if (result instanceof Error) {
@@ -253,14 +256,21 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				geometryDebug.push({ object: null, name: null, error: fail('geometry', result) });
 				return;
 			}
-			const { ref, name, converted, prepared } = result;
-			const blob = commit(store, prepared, geometry);
-			geometryEntries.push({ id, status: 'ready', blob, ...converted.entry });
-			geometryDebug.push({ object: objectKey(ref), name, error: null });
-			geometry.vertices += converted.entry.vertexCount;
-			geometry.triangles += converted.entry.indexCount / 3;
-			geometry.gpuBytes += converted.gpuBytes;
-			if (converted.entry.tangentUv !== null) {
+			const blob = commit(
+				store,
+				result.blob,
+				{
+					kind: BlobKind.Geometry,
+					archive: (_hash, length) => archives.archive(input.places.geometries[id], length),
+				},
+				geometry,
+			);
+			geometryEntries.push({ id, status: 'ready', blob, ...result.entry });
+			geometryDebug.push({ object: result.object, name: result.name, error: null });
+			geometry.vertices += result.entry.vertexCount;
+			geometry.triangles += result.entry.indexCount / 3;
+			geometry.gpuBytes += result.gpuBytes;
+			if (result.entry.tangentUv !== null) {
 				geometry.generatedTangents++;
 			}
 		},
@@ -279,26 +289,17 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	let textureDuplicates = 0;
 	await orderedPool(
 		textureObjects,
-		input.concurrency,
+		jobsInFlight(pool),
 		async (object) => {
-			const { bundleIndex, file, pathId } = object.locator;
-			const ref = await resolver.objectIn(bundleIndex, file, pathId);
-			const texture = await loadTexture(resolver, ref);
-			const converted = convertTexture(texture);
-			// a twin already stored needs no compression; the commit maps it either way
-			const pieces = byContent.has(converted.contentKey)
-				? []
-				: await Promise.all(
-						converted.pieces.map((piece) =>
-							store.prepare(piece.data, {
-								kind: BlobKind.Texture,
-								compress: true,
-								zstdLevel: input.textureZstdLevel,
-								archive: (_hash, length) => archives.archive(object.place, length),
-							}),
-						),
-					);
-			return { name: texture.name, converted, pieces };
+			const result = await pool.run({
+				kind: 'texture',
+				locator: object.locator,
+				zstdLevel: input.textureZstdLevel,
+			});
+			if (result.kind !== 'texture') {
+				throw new Error(`a texture job returned a ${result.kind}`);
+			}
+			return result;
 		},
 		(result, object) => {
 			if (result instanceof Error) {
@@ -312,8 +313,8 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				textureEntries.push({ id: textureEntries.length, status: 'failed' });
 				return;
 			}
-			const { name, converted, pieces } = result;
-			const twin = byContent.get(converted.contentKey);
+			const { name, pieces } = result;
+			const twin = byContent.get(result.contentKey);
 			if (twin !== undefined) {
 				textureDuplicates++;
 				textureIds.push(twin);
@@ -321,19 +322,23 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				return;
 			}
 			const id = textureEntries.length;
-			byContent.set(converted.contentKey, id);
+			byContent.set(result.contentKey, id);
 			textureIds.push(id);
-			textureFormats[converted.entry.format] = (textureFormats[converted.entry.format] ?? 0) + 1;
+			textureFormats[result.entry.format] = (textureFormats[result.entry.format] ?? 0) + 1;
+			const placement: Pick<PutOptions, 'kind' | 'archive'> = {
+				kind: BlobKind.Texture,
+				archive: (_hash, length) => archives.archive(object.place, length),
+			};
 			textureEntries.push({
 				id,
 				status: 'ready',
-				...converted.entry,
-				pieces: converted.pieces.map((piece, i) => {
-					const { width, height } = textureLevelLayout(converted.entry, piece.firstLevel);
+				...result.entry,
+				pieces: pieces.map((piece, i) => {
+					const { width, height } = textureLevelLayout(result.entry, piece.firstLevel);
 					const group = i === 0 && piece.levelCount > 1 ? 'tail' : String(Math.max(width, height));
 					texturePieces[group] ??= { count: 0, stored: 0, raw: 0 };
 					return {
-						blob: commit(store, pieces[i], texturePieces[group]),
+						blob: commit(store, piece.blob, placement, texturePieces[group]),
 						firstLevel: piece.firstLevel,
 						levelCount: piece.levelCount,
 					};
@@ -399,28 +404,30 @@ export const pendingAssets = (
 
 // #region helpers
 
-/** where a texture object lives, without holding its bundle open */
-interface TextureLocator {
-	bundleIndex: number;
-	/** SerializedFile name, `CAB-<hex>` */
-	file: string;
-	pathId: bigint;
-}
-
 const locate = (ref: ObjectRef): TextureLocator => ({
 	bundleIndex: ref.bundleIndex,
 	file: ref.file.node.path,
 	pathId: ref.info.pathId,
 });
 
-/** commits a prepared blob, counting its bytes when it's new */
-const commit = (store: BlobStore, prepared: PreparedBlob, tally: BlobTally): number => {
+/** jobs queued per worker, so a worker always has its next job while it finishes one */
+const JOBS_PER_WORKER = 2;
+
+const jobsInFlight = (pool: ConvertPool): number => pool.size * JOBS_PER_WORKER;
+
+/** commits a blob a worker wrote, counting its bytes when it's new */
+const commit = (
+	store: BlobStore,
+	meta: BlobMeta,
+	options: Pick<PutOptions, 'kind' | 'archive'>,
+	tally: BlobTally,
+): number => {
 	const before = store.size;
-	const index = store.commit(prepared);
+	const index = store.commit({ meta, options });
 	if (store.size > before) {
 		tally.count++;
-		tally.stored += prepared.stored.byteLength;
-		tally.raw += prepared.rawLength;
+		tally.stored += meta.length;
+		tally.raw += meta.rawLength;
 	}
 	return index;
 };

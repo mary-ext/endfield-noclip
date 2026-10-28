@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -12,13 +13,17 @@ export const summary =
 
 const USAGE = `usage:
   pack <scene> [-o <dir>] [--level <id>] [--bounds xmin,xmax,zmin,zmax] [--zstd-level n]
-       [--texture-zstd-level n] [--no-assets] [--json]
+       [--texture-zstd-level n] [--jobs n] [--no-assets] [--json]
 
 writes the package for one streaming scene (e.g. map02). --level keeps the content one level owns and the
 terrain under its cells; --bounds keeps content whose centre lies in the world x, z rectangle. the output
 directory must be empty, absent, or hold a previous package; it defaults to out/<scene>[-<level>] at the
 repository root, which git ignores. --no-assets skips geometry, material and texture conversion, leaving
-their table entries pending. texture blobs use their own zstd level (default 9; 19 saves ~2% at 10× the time).`;
+their table entries pending. texture blobs use their own zstd level (default 9; 19 saves ~2% at 10× the time). --jobs sets the
+worker threads converting meshes and textures (default: one per core but one, at most 8).`;
+
+/** default worker count at most; each worker holds ~400 MB of its own catalogs and caches */
+const MAX_DEFAULT_JOBS = 8;
 
 /** the repository's gitignored output directory */
 const DEFAULT_OUT = new URL('../../../../out/', import.meta.url);
@@ -34,6 +39,10 @@ export const run = async (args: string[]): Promise<void> => {
 			bounds: { type: 'string' },
 			'zstd-level': { type: 'string', default: '19' },
 			'texture-zstd-level': { type: 'string', default: '9' },
+			jobs: {
+				type: 'string',
+				default: String(Math.max(1, Math.min(MAX_DEFAULT_JOBS, availableParallelism() - 1))),
+			},
 			'no-assets': { type: 'boolean', default: false },
 			json: { type: 'boolean', default: false },
 		},
@@ -49,6 +58,10 @@ export const run = async (args: string[]): Promise<void> => {
 			: resolve(values.output);
 	const zstdLevel = parseZstdLevel(values['zstd-level'], '--zstd-level');
 	const textureZstdLevel = parseZstdLevel(values['texture-zstd-level'], '--texture-zstd-level');
+	const jobs = Number(values.jobs);
+	if (!Number.isInteger(jobs) || jobs < 1) {
+		throw new Error(`--jobs must be a positive integer, got ${values.jobs}`);
+	}
 
 	await withContext(values.config, async (context) => {
 		console.error(`packing ${scene}${level === null ? '' : ` (${level})`} into ${outDir}`);
@@ -59,6 +72,7 @@ export const run = async (args: string[]): Promise<void> => {
 			bounds: values.bounds === undefined ? null : parseBounds(values.bounds),
 			zstdLevel,
 			textureZstdLevel,
+			jobs,
 			convertAssets: !values['no-assets'],
 			log: (line) => console.error(line),
 		});

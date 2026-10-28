@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -11,6 +11,101 @@ import { BlobCodec, blobPath, type BlobKind, type BlobRecord } from '@endfield-n
 import { type ArchivePlan, encodeArchive, encodeArchiveStream, planArchive } from '@mary-ext/czar';
 
 import { zstd } from '../zstd.ts';
+
+// #region blob files
+
+/** a stored blob's identity and sizes; its bytes live in a {@link BlobDir} under {@link hash} */
+export interface BlobMeta {
+	/** first 128 bits of the SHA-256 of the stored bytes, hex */
+	hash: string;
+	codec: BlobCodec;
+	/** stored byte length */
+	length: number;
+	/** byte length after undoing the codec */
+	rawLength: number;
+	crc32: number;
+}
+
+/**
+ * picks a blob's stored form: the zstd frame when it saves at least 1/32 of the bytes (a frame costs a decode
+ * pass), else the raw bytes
+ *
+ * @param raw the blob's bytes
+ * @param packed `raw` as one zstd frame, or `null` when the blob isn't compressed
+ * @returns the stored bytes and their description
+ */
+export const storedBlob = (
+	raw: Uint8Array,
+	packed: Uint8Array | null,
+): { meta: BlobMeta; stored: Uint8Array } => {
+	const pays = packed !== null && packed.length <= raw.length - raw.length / 32;
+	const stored = pays ? packed : raw;
+	return {
+		meta: {
+			hash: createHash('sha256').update(stored).digest('hex').slice(0, 32),
+			codec: pays ? BlobCodec.Zstd : BlobCodec.None,
+			length: stored.length,
+			rawLength: raw.length,
+			crc32: crc32(stored),
+		},
+		stored,
+	};
+};
+
+/**
+ * a directory of stored blobs named by hash, fanned out by the hash's first two digits. writers in several
+ * threads may add the same blob at once: each write goes to a temporary file that's renamed into place
+ */
+export class BlobDir {
+	readonly root: string;
+	readonly #made = new Map<string, Promise<unknown>>();
+
+	/** @param root the directory; created on demand */
+	constructor(root: string) {
+		this.root = root;
+	}
+
+	/** @returns where a blob's bytes live */
+	path(hash: string): string {
+		return join(this.root, hash.slice(0, 2), hash);
+	}
+
+	/** @returns whether a blob's file exists */
+	async has(hash: string): Promise<boolean> {
+		try {
+			await stat(this.path(hash));
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * stores a blob unless it's there already
+	 *
+	 * @param hash the blob's hash
+	 * @param stored its stored bytes
+	 */
+	async write(hash: string, stored: Uint8Array): Promise<void> {
+		if (await this.has(hash)) {
+			return;
+		}
+		const fan = join(this.root, hash.slice(0, 2));
+		let made = this.#made.get(fan);
+		if (made === undefined) {
+			made = mkdir(fan, { recursive: true });
+			this.#made.set(fan, made);
+		}
+		await made;
+		const temp = `${this.path(hash)}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+		await writeFile(temp, stored);
+		await rename(temp, this.path(hash));
+	}
+}
+
+// #endregion
+
+// #region store
 
 /** how to store one blob */
 export interface PutOptions {
@@ -26,24 +121,16 @@ export interface PutOptions {
 	archive: (hash: string, length: number) => string;
 }
 
-/** a blob compressed and hashed, but not stored yet; see {@link BlobStore.prepare} */
+/** a blob whose bytes are in the store's directory, but which has no index yet; see {@link BlobStore.commit} */
 export interface PreparedBlob {
-	hash: string;
-	stored: Uint8Array;
-	codec: BlobCodec;
-	rawLength: number;
-	options: PutOptions;
+	meta: BlobMeta;
+	options: Pick<PutOptions, 'kind' | 'archive'>;
 }
 
 /** a blob as the store tracks it */
-interface StoredBlob {
-	hash: string;
+interface StoredBlob extends BlobMeta {
 	kind: BlobKind;
-	codec: BlobCodec;
 	archive: string;
-	length: number;
-	rawLength: number;
-	crc32: number;
 }
 
 /** a non-blob member of the core archive (manifest, tables) */
@@ -73,27 +160,27 @@ interface BlobSource {
 }
 
 /**
- * content-addressed blob store. blobs are compressed and spooled to disk as they arrive, deduplicated by the
- * SHA-256 of their stored bytes, and laid out into czar archives at the end. a blob's index is fixed by its
- * first `put`, so tables can reference blobs before any archive exists
+ * content-addressed blob store. blobs are compressed and written to a {@link BlobDir} as they arrive,
+ * deduplicated by the SHA-256 of their stored bytes, and laid out into czar archives at the end. a blob's
+ * index is fixed by its commit, so tables can reference blobs before any archive exists
  */
 export class BlobStore {
-	readonly #spool: string;
+	readonly dir: BlobDir;
 	readonly #level: number;
+	readonly #temporary: boolean;
 	readonly #blobs: StoredBlob[] = [];
 	readonly #byHash = new Map<string, number>();
-	readonly #pending: Promise<void>[] = [];
-	#spoolReady: Promise<unknown> | undefined;
 	/** blob indices by archive, in first-use order; dropped whenever a blob is added */
 	#groupsCache: Map<string, number[]> | undefined;
 
 	/**
-	 * @param spool scratch directory for blob bytes; created on demand, removed by {@link BlobStore.dispose}
-	 * @param options zstd level for compressed blobs
+	 * @param dir where blob bytes go: a scratch directory, or a cache that outlives the store
+	 * @param options zstd level for compressed blobs, and whether {@link BlobStore.dispose} removes `dir`
 	 */
-	constructor(spool: string, options: { zstdLevel: number }) {
-		this.#spool = spool;
+	constructor(dir: BlobDir, options: { zstdLevel: number; temporary: boolean }) {
+		this.dir = dir;
 		this.#level = options.zstdLevel;
+		this.#temporary = options.temporary;
 	}
 
 	/** number of distinct blobs */
@@ -126,54 +213,36 @@ export class BlobStore {
 	}
 
 	/**
-	 * compresses and hashes a blob without storing it, so several can be prepared concurrently and committed in
-	 * a deterministic order
+	 * compresses, hashes and writes a blob without indexing it, so several can be prepared concurrently and
+	 * committed in a deterministic order
 	 *
 	 * @param raw the blob's bytes before compression; may be reused once the promise settles
 	 * @param options kind, compression and placement
 	 * @returns the prepared blob, for {@link BlobStore.commit}
 	 */
 	async prepare(raw: Uint8Array, options: PutOptions): Promise<PreparedBlob> {
-		let stored: Uint8Array | undefined;
-		let codec: BlobCodec = BlobCodec.None;
-		if (options.compress) {
-			const packed = await zstd(raw, options.zstdLevel ?? this.#level);
-			// a zstd frame costs a decode pass; take it only when it pays
-			if (packed.length <= raw.length - raw.length / 32) {
-				stored = packed;
-				codec = BlobCodec.Zstd;
-			}
-		}
-		// the spool keeps its own copy, since callers may reuse `raw`
-		stored ??= raw.slice();
-		const hash = createHash('sha256').update(stored).digest('hex').slice(0, 32);
-		return { hash, stored, codec, rawLength: raw.length, options };
+		const packed = options.compress ? await zstd(raw, options.zstdLevel ?? this.#level) : null;
+		const { meta, stored } = storedBlob(raw, packed);
+		await this.dir.write(meta.hash, stored);
+		return { meta, options };
 	}
 
 	/**
-	 * stores a prepared blob, or finds its twin
+	 * indexes a prepared blob, or finds its twin
 	 *
-	 * @param blob from {@link BlobStore.prepare}
+	 * @param blob from {@link BlobStore.prepare}, or a blob another thread wrote to {@link BlobStore.dir}
 	 * @returns the blob's index
 	 */
 	commit(blob: PreparedBlob): number {
-		const existing = this.#byHash.get(blob.hash);
+		const { meta, options } = blob;
+		const existing = this.#byHash.get(meta.hash);
 		if (existing !== undefined) {
 			return existing;
 		}
 		const index = this.#blobs.length;
-		this.#blobs.push({
-			hash: blob.hash,
-			kind: blob.options.kind,
-			codec: blob.codec,
-			archive: blob.options.archive(blob.hash, blob.stored.length),
-			length: blob.stored.length,
-			rawLength: blob.rawLength,
-			crc32: crc32(blob.stored),
-		});
-		this.#byHash.set(blob.hash, index);
+		this.#blobs.push({ ...meta, kind: options.kind, archive: options.archive(meta.hash, meta.length) });
+		this.#byHash.set(meta.hash, index);
 		this.#groupsCache = undefined;
-		this.#pending.push(this.#spoolWrite(blob.hash, blob.stored));
 		return index;
 	}
 
@@ -193,6 +262,11 @@ export class BlobStore {
 	/** @returns the hash of a stored blob */
 	hashOf(index: number): string {
 		return this.#blobs[index].hash;
+	}
+
+	/** @returns every blob's hash, in index order */
+	hashes(): string[] {
+		return this.#blobs.map((blob) => blob.hash);
 	}
 
 	/** @returns archive names in first-use order */
@@ -236,14 +310,13 @@ export class BlobStore {
 	}
 
 	/**
-	 * streams every archive except the core to disk, reading blob bytes from the spool
+	 * streams every archive except the core to disk, reading blob bytes from the store's directory
 	 *
 	 * @param outDir package root
 	 * @param core core archive name, written by {@link BlobStore.writeCore}
 	 * @returns the written archives by name
 	 */
 	async writeShards(outDir: string, core: string): Promise<Map<string, WrittenArchive>> {
-		await Promise.all(this.#pending);
 		const written = new Map<string, WrittenArchive>();
 		for (const [name, indices] of this.#groups()) {
 			if (name === core) {
@@ -253,7 +326,7 @@ export class BlobStore {
 			const target = join(outDir, name);
 			// oxlint-disable-next-line no-await-in-loop -- one archive at a time bounds open files
 			await mkdir(dirname(target), { recursive: true });
-			const stream = encodeArchiveStream(plan, (source) => createReadStream(this.#spoolPath(source.index)));
+			const stream = encodeArchiveStream(plan, (source) => createReadStream(this.#blobPath(source.index)));
 			// oxlint-disable-next-line no-await-in-loop -- one archive at a time bounds open files
 			await pipeline(Readable.fromWeb(stream), createWriteStream(target));
 			written.set(name, describe(name, plan, indices.length));
@@ -271,7 +344,6 @@ export class BlobStore {
 	 * @throws {Error} if a member would sort before the blobs
 	 */
 	async writeCore(outDir: string, core: string, members: readonly ArchiveMember[]): Promise<WrittenArchive> {
-		await Promise.all(this.#pending);
 		for (const member of members) {
 			if (member.path < 'blobs/') {
 				throw new Error(`core member ${member.path} would sort before the blobs and shift their offsets`);
@@ -280,7 +352,7 @@ export class BlobStore {
 		const blobs = await Promise.all(
 			(this.#groups().get(core) ?? []).map(async (index) => {
 				const blob = this.#blobs[index];
-				return { path: blobPath(blob.hash, blob.kind), data: await readFile(this.#spoolPath(index)) };
+				return { path: blobPath(blob.hash, blob.kind), data: await readFile(this.#blobPath(index)) };
 			}),
 		);
 		const files = [...blobs, ...members];
@@ -293,10 +365,11 @@ export class BlobStore {
 		return describe(core, plan, files.length);
 	}
 
-	/** waits for spool writes, then removes the spool */
+	/** removes the store's directory if it's a scratch one */
 	async dispose(): Promise<void> {
-		await Promise.allSettled(this.#pending);
-		await rm(this.#spool, { recursive: true, force: true });
+		if (this.#temporary) {
+			await rm(this.dir.root, { recursive: true, force: true });
+		}
 	}
 
 	#groups(): Map<string, number[]> {
@@ -321,17 +394,13 @@ export class BlobStore {
 		);
 	}
 
-	#spoolPath(index: number): string {
-		return join(this.#spool, this.#blobs[index].hash);
-	}
-
-	async #spoolWrite(hash: string, data: Uint8Array): Promise<void> {
-		this.#spoolReady ??= mkdir(this.#spool, { recursive: true });
-		await this.#spoolReady;
-		await writeFile(join(this.#spool, hash), data);
+	#blobPath(index: number): string {
+		return this.dir.path(this.#blobs[index].hash);
 	}
 }
 
 const describe = <T>(name: string, plan: ArchivePlan<T>, members: number): WrittenArchive => {
 	return { name, size: plan.size, dataOffset: plan.head.length, headerLength: plan.headerLength, members };
 };
+
+// #endregion

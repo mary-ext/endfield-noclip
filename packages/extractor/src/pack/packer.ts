@@ -80,9 +80,10 @@ import {
 	pendingAssets,
 	type PlacedTexture,
 } from './assets.ts';
-import { BlobStore, type PutOptions } from './blob-store.ts';
+import { BlobDir, BlobStore, type PutOptions } from './blob-store.ts';
 import { aabbBounds, growBounds, squareOverlapsRect } from './bounds.ts';
 import { ChainTable } from './chains.ts';
+import { ConvertPool } from './convert-pool.ts';
 import { finishEnvironments, type LevelEnvironmentDebug, planEnvironments } from './environments.ts';
 import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
 import { PhaseTimer } from './phase-timer.ts';
@@ -107,6 +108,8 @@ export interface PackOptions {
 	textureZstdLevel: number;
 	/** convert geometry, materials and textures; without, their table entries stay `pending` */
 	convertAssets: boolean;
+	/** worker threads converting meshes and textures */
+	jobs: number;
 	/** progress output */
 	log: (line: string) => void;
 }
@@ -152,8 +155,8 @@ export interface PackReport {
 /** asset archives stop growing at this size and continue in a next part */
 const ASSET_ARCHIVE_CAP = 1024 ** 3;
 
-/** assets decoded concurrently per conversion phase */
-const ASSET_CONCURRENCY = 8;
+/** materials decoded concurrently */
+const MATERIAL_CONCURRENCY = 8;
 
 // #endregion
 
@@ -184,7 +187,7 @@ const BLOB_BATCH = 64;
  * @throws {Error} if the output directory holds something other than a package, or the scene is unknown
  */
 export const packScene = async (
-	context: Pick<Context, 'vfs' | 'world' | 'resolver'>,
+	context: Pick<Context, 'config' | 'keys' | 'vfs' | 'world' | 'resolver'>,
 	options: PackOptions,
 ): Promise<PackReport> => {
 	const timer = new PhaseTimer(options.log);
@@ -193,7 +196,7 @@ export const packScene = async (
 	timer.end('setup');
 
 	const spool = join(options.outDir, '.spool');
-	const store = new BlobStore(spool, { zstdLevel: options.zstdLevel });
+	const store = new BlobStore(new BlobDir(spool), { zstdLevel: options.zstdLevel, temporary: true });
 	try {
 		const pack: PackState = {
 			scene,
@@ -249,19 +252,30 @@ export const packScene = async (
 				pack.geometries.assets.length,
 				pack.materials.assets.length,
 			);
-			conversion = await convertAssets({
-				resolver: await context.resolver(),
-				store,
-				geometries: pack.geometries.assets,
-				materials: pack.materials.assets,
-				chains: pack.chains.chains,
-				places,
-				extraTextures,
-				archives: pack.assetArchives,
-				textureZstdLevel: options.textureZstdLevel,
-				concurrency: ASSET_CONCURRENCY,
-				log: options.log,
+			const pool = new ConvertPool(options.jobs, {
+				gameData: context.config.gameData,
+				keys: context.keys,
+				blobDir: store.dir.root,
 			});
+			try {
+				conversion = await convertAssets({
+					resolver: await context.resolver(),
+					store,
+					pool,
+					geometries: pack.geometries.assets,
+					materials: pack.materials.assets,
+					chains: pack.chains.chains,
+					places,
+					extraTextures,
+					archives: pack.assetArchives,
+					geometryZstdLevel: options.zstdLevel,
+					textureZstdLevel: options.textureZstdLevel,
+					concurrency: MATERIAL_CONCURRENCY,
+					log: options.log,
+				});
+			} finally {
+				await pool.close();
+			}
 			assetTables = conversion;
 			timer.adopt(conversion.stats.timings);
 		} else {
