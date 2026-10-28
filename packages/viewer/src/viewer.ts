@@ -253,6 +253,11 @@ export class Viewer {
 	#focusCells: Set<string> | null = null;
 	/** the level being shown; `null` when the package has no level with content, which shows everything */
 	#level: LevelInfo | null = null;
+	/**
+	 * the first view after loading, when it was posed before the coarse terrain was resident (at the spawn
+	 * height); it's re-posed over the ground once that lands, unless the camera moved first
+	 */
+	#unsettledPose: CameraPose | null = null;
 	#lastDraws = 0;
 	#viewProj = new Float32Array(16);
 
@@ -420,11 +425,15 @@ export class Viewer {
 		if (this.#level !== null) {
 			this.#focusCells = this.#cellIds(this.#level);
 		}
-		const pose = this.#level === null ? this.#overviewPose() : this.#levelPose(this.#level);
-		if (pose !== null) {
-			this.camera.position = pose.position;
-			this.camera.yaw = pose.yaw;
-			this.camera.pitch = pose.pitch;
+		if (this.#level === null) {
+			const pose = this.#overviewPose();
+			if (pose !== null) {
+				this.#setPose(pose);
+			}
+		} else {
+			const { pose, settled } = this.#levelPose(this.#level);
+			this.#setPose(pose);
+			this.#unsettledPose = settled ? null : pose;
 		}
 		this.stats.geometriesTotal = geometries.length;
 		this.stats.geometriesReady = geometriesReady;
@@ -444,6 +453,7 @@ export class Viewer {
 		this.scene = null;
 		this.#water.setTable(null);
 		this.#level = null;
+		this.#unsettledPose = null;
 		this.#focusCells = null;
 		this.#applyEnvironment();
 		this.#dirty = true;
@@ -526,18 +536,21 @@ export class Viewer {
 	/**
 	 * @param x world x
 	 * @param z world z
-	 * @returns terrain height from the always-resident coarse pages, or `null` off the terrain
+	 * @returns terrain height from the always-resident coarse pages, `null` off the terrain or over a hole, or
+	 *   `undefined` while no page covering the point is resident yet
 	 */
-	#groundHeight(x: number, z: number): number | null {
+	#groundHeight(x: number, z: number): number | null | undefined {
 		const scene = this.scene;
 		const terrain = scene?.pkg.manifest.terrain;
 		if (scene == null || terrain == null) {
 			return null;
 		}
 		const info = scene.pkg.manifest.tree;
+		let covered = false;
 		for (let level = scene.tree.terrainLeafLevel; level >= scene.tree.terrainRootLevel; level--) {
 			const node = scene.tree.byId.get(tileId(tileAt(info, level, x, z)));
 			const blob = node?.terrain?.blob;
+			covered ||= blob !== undefined;
 			const resident = blob === undefined ? null : scene.stream.get(blob)?.resident;
 			const samples = resident?.kind === 'heights' ? resident.samples : null;
 			if (node === undefined || samples === null) {
@@ -550,7 +563,7 @@ export class Viewer {
 			const sample = samples[Math.round(fz) * side + Math.round(fx)];
 			return isTerrainHole(terrain, sample) ? null : terrainHeight(terrain, sample);
 		}
-		return null;
+		return covered ? undefined : null;
 	}
 
 	/** @returns a pose looking over the whole region, or `null` without a package */
@@ -583,16 +596,58 @@ export class Viewer {
 		return this.scene?.pkg.manifest.levels.find((candidate) => candidate.id === id);
 	}
 
-	/** @returns a pose looking over the level's playable rectangle */
-	#levelPose(level: LevelInfo): CameraPose {
+	/**
+	 * @returns a pose looking over the level's playable rectangle (over the terrain, or the spawn height off
+	 *   it), and whether it's settled: unsettled poses fell back to the spawn height while the coarse pages
+	 *   load
+	 */
+	#levelPose(level: LevelInfo): { pose: CameraPose; settled: boolean } {
 		const { rect, playerInitPos } = level;
 		const cx = (rect.minX + rect.maxX) / 2;
 		const cz = (rect.minZ + rect.maxZ) / 2;
 		const extent = Math.max(rect.maxX - rect.minX, rect.maxZ - rect.minZ);
-		const ground = this.#groundHeight(cx, cz) ?? playerInitPos[1];
+		const ground = this.#groundHeight(cx, cz);
 		const back = extent * 0.75;
 		const up = extent * 0.55;
-		return { position: [cx, ground + up, cz - back], yaw: 0, pitch: -Math.atan2(up, back) };
+		return {
+			pose: {
+				position: [cx, (ground ?? playerInitPos[1]) + up, cz - back],
+				yaw: 0,
+				pitch: -Math.atan2(up, back),
+			},
+			settled: ground !== undefined,
+		};
+	}
+
+	#setPose({ position, yaw, pitch }: CameraPose): void {
+		this.camera.position = [...position];
+		this.camera.yaw = yaw;
+		this.camera.pitch = pitch;
+	}
+
+	/** re-poses the first view over the ground once the coarse terrain lands; drops it if the camera moved */
+	#settleFirstPose(): boolean {
+		const pending = this.#unsettledPose;
+		const level = this.#level;
+		if (pending === null || level === null) {
+			return false;
+		}
+		const camera = this.camera;
+		if (
+			camera.yaw !== pending.yaw ||
+			camera.pitch !== pending.pitch ||
+			camera.position.some((value, axis) => value !== pending.position[axis])
+		) {
+			this.#unsettledPose = null;
+			return false;
+		}
+		const { pose, settled } = this.#levelPose(level);
+		if (!settled) {
+			return false;
+		}
+		this.#setPose(pose);
+		this.#unsettledPose = null;
+		return true;
 	}
 
 	/**
@@ -608,7 +663,7 @@ export class Viewer {
 	}
 
 	#flyOver(level: LevelInfo): void {
-		this.controls.flyTo(this.#levelPose(level));
+		this.controls.flyTo(this.#levelPose(level).pose);
 		this.#focusCells = this.#cellIds(level);
 		this.#dirty = true;
 	}
@@ -732,7 +787,7 @@ export class Viewer {
 		this.#lastTime = time;
 		const cpuStart = performance.now();
 
-		const moved = this.controls.update(dt);
+		const moved = this.controls.update(dt) || this.#settleFirstPose();
 		const resized = this.#targets.update();
 		const scene = this.scene;
 		const options = this.options;
