@@ -29,9 +29,16 @@ const DRAW_FLOATS = 8 + LOOK_FLOATS;
 const MAX_DRAWS = 16_384;
 /** bytes per vertex of the zero buffer bound in place of missing streams (the widest is UV set 0) */
 const ZERO_STRIDE = 8;
-const SHADOW_KEY = 'mesh/shadow';
+/** pipeline keys of a pass: opaque draws, then alpha-tested ones */
+interface PassKeys {
+	opaque: string;
+	cutout: string;
+}
+
+const SHADOW_KEYS: PassKeys = { opaque: 'mesh/shadow/opaque', cutout: 'mesh/shadow/cutout' };
 
 interface PreparedDraw {
+	cutout: boolean;
 	geometry: ResidentGeometry;
 	indexCount: number;
 	firstIndex: number;
@@ -47,9 +54,12 @@ interface MaterialBinding {
 	group: GPUBindGroup;
 }
 
-/** draw order: geometry, then material, then submesh */
+/** draw order: opaque before alpha-tested (one pipeline switch), then geometry, material and submesh */
 const byBindings = (a: MeshBucket, b: MeshBucket): number =>
-	a.geometry.blob - b.geometry.blob || a.material - b.material || a.submesh - b.submesh;
+	Number(a.look.cutout) - Number(b.look.cutout) ||
+	a.geometry.blob - b.geometry.blob ||
+	a.material - b.material ||
+	a.submesh - b.submesh;
 
 /** owns geometry buffers, material bind groups and the mesh pipeline */
 export class MeshRenderer {
@@ -63,7 +73,7 @@ export class MeshRenderer {
 	#device: GPUDevice;
 	#layouts: BindLayouts;
 	#pipelines: PipelineCache;
-	#key: string;
+	#keys: PassKeys;
 	#instances: GPUBindGroup;
 	#params: GPUBuffer;
 	#paramData = new Float32Array(MAX_DRAWS * DRAW_FLOATS);
@@ -149,21 +159,36 @@ export class MeshRenderer {
 				{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
 			],
 		};
-		this.#key = `mesh/fill/x${format.sampleCount}`;
-		void pipelines.prepare(this.#key, () => ({
+		this.#keys = {
+			opaque: `mesh/opaque/x${format.sampleCount}`,
+			cutout: `mesh/cutout/x${format.sampleCount}`,
+		};
+		// instances may be mirrored (negative determinant), which flips winding per instance
+		const primitive: GPUPrimitiveState = { topology: 'triangle-list', cullMode: 'none' };
+		for (const [key, entryPoint] of [
+			[this.#keys.opaque, 'fs_opaque'],
+			[this.#keys.cutout, 'fs_cutout'],
+		]) {
+			void pipelines.prepare(key, () => ({
+				layout: layouts.meshPipeline,
+				vertex,
+				fragment: { module, entryPoint, targets: format.targets },
+				primitive,
+				depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
+				multisample: { count: format.sampleCount },
+			}));
+		}
+		void pipelines.prepare(SHADOW_KEYS.opaque, () => ({
 			layout: layouts.meshPipeline,
 			vertex,
-			fragment: { module, entryPoint: 'fs_main', targets: format.targets },
-			// instances may be mirrored (negative determinant), which flips winding per instance
-			primitive: { topology: 'triangle-list', cullMode: 'none' },
-			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
-			multisample: { count: format.sampleCount },
+			primitive,
+			depthStencil: SHADOW_DEPTH_STATE,
 		}));
-		void pipelines.prepare(SHADOW_KEY, () => ({
+		void pipelines.prepare(SHADOW_KEYS.cutout, () => ({
 			layout: layouts.meshPipeline,
 			vertex,
-			fragment: { module, entryPoint: 'fs_shadow', targets: [] },
-			primitive: { topology: 'triangle-list', cullMode: 'none' },
+			fragment: { module, entryPoint: 'fs_shadow_cutout', targets: [] },
+			primitive,
 			depthStencil: SHADOW_DEPTH_STATE,
 		}));
 	}
@@ -321,6 +346,7 @@ export class MeshRenderer {
 			const draw = this.#draws[d];
 			if (draw === undefined) {
 				this.#draws[d] = {
+					cutout: look.cutout,
 					geometry: resident,
 					indexCount: range.indexCount,
 					firstIndex: range.firstIndex,
@@ -330,6 +356,7 @@ export class MeshRenderer {
 					material,
 				};
 			} else {
+				draw.cutout = look.cutout;
 				draw.geometry = resident;
 				draw.indexCount = range.indexCount;
 				draw.firstIndex = range.firstIndex;
@@ -359,7 +386,7 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encode(pass: GPURenderPassEncoder): number {
-		return this.#encode(pass, this.#key);
+		return this.#encode(pass, this.#keys, { shadow: false });
 	}
 
 	/**
@@ -369,22 +396,30 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encodeShadow(pass: GPURenderPassEncoder): number {
-		return this.#encode(pass, SHADOW_KEY);
+		return this.#encode(pass, SHADOW_KEYS, { shadow: true });
 	}
 
-	#encode(pass: GPURenderPassEncoder, key: string): number {
-		const pipeline = this.#pipelines.get(key);
-		if (pipeline === undefined || this.#drawCount === 0) {
+	#encode(pass: GPURenderPassEncoder, keys: PassKeys, { shadow }: { shadow: boolean }): number {
+		const opaque = this.#pipelines.get(keys.opaque);
+		const cutout = this.#pipelines.get(keys.cutout);
+		if (opaque === undefined || cutout === undefined || this.#drawCount === 0) {
 			return 0;
 		}
-		pass.setPipeline(pipeline);
 		pass.setBindGroup(1, this.#instances);
 		pass.setBindGroup(2, this.#drawGroup);
+		let pipeline: GPURenderPipeline | null = null;
 		let geometry: ResidentGeometry | null = null;
 		let material: GPUBindGroup | null = null;
 		for (let i = 0; i < this.#drawCount; i++) {
 			const draw = this.#draws[i];
-			if (draw.material !== material) {
+			const drawPipeline = draw.cutout ? cutout : opaque;
+			if (drawPipeline !== pipeline) {
+				pipeline = drawPipeline;
+				pass.setPipeline(pipeline);
+			}
+			// opaque shadow draws read no textures, so any material group will do
+			const needsMaterial = !shadow || draw.cutout || material === null;
+			if (needsMaterial && draw.material !== material) {
 				material = draw.material;
 				pass.setBindGroup(3, material);
 			}

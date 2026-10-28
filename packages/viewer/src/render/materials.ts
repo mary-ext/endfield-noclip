@@ -58,6 +58,8 @@ export const LOOK_FLOATS = 32;
 export interface MaterialLook {
 	/** `false` for materials not drawn at all (fog volumes, additive blending) */
 	drawn: boolean;
+	/** alpha-tested against the base colour's alpha; such draws need pipelines that can discard */
+	cutout: boolean;
 	/** texture id per {@link SLOTS} entry, or -1 */
 	textures: [number, number, number, number];
 	/** largest UV scale of each slot, for picking the mip level to stream */
@@ -88,7 +90,7 @@ const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => {
 	for (let i = 0; i < SLOTS.length; i++) {
 		params.set([1, 1, 0, 0], LookRow.uv + i * 4);
 	}
-	return { drawn, textures: [-1, -1, -1, -1], uvScales: [1, 1, 1, 1], flags: 0, params };
+	return { drawn, cutout: false, textures: [-1, -1, -1, -1], uvScales: [1, 1, 1, 1], flags: 0, params };
 };
 
 /** a material's value of a float property: its override, else the shader's default */
@@ -165,6 +167,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		const brighter = floatOf(entry, shader, '_BaseColorBrighterScale', 1);
 		const colour = tint === undefined ? [1, 1, 1] : linearRgb(tint);
 		params.set([...colour, entry.alphaClip ?? -1], LookRow.tint);
+		look.cutout = entry.alphaClip !== null && entry.alphaClip >= 0 && look.textures[0] >= 0;
 		params[LookRow.surface2 + 3] = brighter;
 		// untextured: the tint alone
 		params[LookRow.emissive + 3] = look.textures[0] < 0 ? 1 : cover;
