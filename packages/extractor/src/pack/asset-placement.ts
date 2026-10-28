@@ -56,6 +56,8 @@ export const mergePlaces = (a: Place, b: Place): Place => {
 export class AssetPlacement {
 	readonly #shardLevel: number;
 	readonly #chains: Place[] = [];
+	/** geometry uses outside chains */
+	readonly #geometries: Place[] = [];
 
 	/** @param shardLevel uses are recorded at this level's tiles (finer tiles are lifted to it) */
 	constructor(shardLevel: number) {
@@ -69,23 +71,35 @@ export class AssetPlacement {
 	 * @param tile the tile whose content draws it, or `null` for content outside the tile tree (resident)
 	 */
 	note(chain: number, tile: TileKey | null): void {
-		const place =
-			tile === null || tile.level <= this.#shardLevel ? tile : tileAncestor(tile, this.#shardLevel);
-		this.#chains[chain] = mergePlaces(this.#chains[chain], place);
+		this.#chains[chain] = mergePlaces(this.#chains[chain], this.#lift(tile));
+	}
+
+	/**
+	 * records a use of a geometry outside the chain table
+	 *
+	 * @param geometry geometry id
+	 * @param tile the tile whose content draws it, or `null` for resident content
+	 */
+	noteGeometry(geometry: number, tile: TileKey | null): void {
+		this.#geometries[geometry] = mergePlaces(this.#geometries[geometry], this.#lift(tile));
+	}
+
+	#lift(tile: TileKey | null): TileKey | null {
+		return tile === null || tile.level <= this.#shardLevel ? tile : tileAncestor(tile, this.#shardLevel);
 	}
 
 	/**
 	 * @param chains the chain table
 	 * @param geometryCount geometry ids in use
 	 * @param materialCount material ids in use
-	 * @returns each geometry's and material's placement
+	 * @returns each geometry's and material's placement, over chain and direct uses
 	 */
 	resolve(
 		chains: readonly Chain[],
 		geometryCount: number,
 		materialCount: number,
 	): { geometries: Place[]; materials: Place[] } {
-		const geometries = Array.from({ length: geometryCount }, (): Place => undefined);
+		const geometries = Array.from({ length: geometryCount }, (_, id): Place => this.#geometries[id]);
 		const materials = Array.from({ length: materialCount }, (): Place => undefined);
 		for (const [id, chain] of chains.entries()) {
 			const place = this.#chains[id];

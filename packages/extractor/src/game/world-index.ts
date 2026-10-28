@@ -22,6 +22,7 @@ import { parseSparkTable, type SparkValue } from '@endfield-noclip/formats/hg/sp
 import { StringPathHashTable } from '@endfield-noclip/formats/hg/string-path-hash';
 import { parseStringPoolBlock, StringPool } from '@endfield-noclip/formats/hg/string-pool';
 
+import { getOrInsert } from '../collections.ts';
 import { VfsGroup, type Vfs } from '../hg/vfs.ts';
 import { mapPool } from '../pool.ts';
 
@@ -178,7 +179,7 @@ export class WorldIndex {
 	 * @returns its MapConfig, or `undefined` if it has none
 	 */
 	mapConfig(mapId: string): Promise<MapConfig | undefined> {
-		return cached(this.#mapConfigs, mapId, async () => {
+		return getOrInsert(this.#mapConfigs, mapId, async () => {
 			const file = await this.vfs.find(VfsGroup.JsonData, `Data/Json/MapConfig/${mapId}.json`);
 			return file && parseMapConfig(new TextDecoder().decode(await this.vfs.readVerified(file)));
 		});
@@ -189,7 +190,7 @@ export class WorldIndex {
 	 * @returns its level partition, or `undefined` if the map has no MapConfig (and so no levels)
 	 */
 	partition(mapId: string): Promise<LevelPartition | undefined> {
-		return cached(this.#partitions, mapId, async () => {
+		return getOrInsert(this.#partitions, mapId, async () => {
 			const map = await this.mapConfig(mapId);
 			return map && buildLevelPartition(map, (await this.levelConfigs()).values());
 		});
@@ -287,8 +288,7 @@ export class WorldIndex {
 	 * @returns its entities
 	 */
 	async readChunk(file: ChunkFile, partition: LevelPartition | undefined): Promise<IndexedEntity[]> {
-		const data = await this.#read(VfsGroup.Streaming, file.name);
-		const chunk = parseInitChunk(unpackHgPayload(data));
+		const chunk = parseInitChunk(await this.readInitPayload(file));
 		return readChunkEntities(chunk).map((entity) => {
 			const pivot = pivotOf(entity);
 			const membership: Membership =
@@ -298,6 +298,27 @@ export class WorldIndex {
 			// the decoded rows are fresh objects owned here, so extend them in place
 			return Object.assign(entity, { source: file, membership, pivot });
 		});
+	}
+
+	/**
+	 * @param file chunk file
+	 * @returns its InitChunkData FlatBuffer, unpacked
+	 * @throws {Error} if the VFS doesn't have it
+	 */
+	async readInitPayload(file: ChunkFile): Promise<Uint8Array> {
+		return unpackHgPayload(await this.#read(VfsGroup.Streaming, file.name));
+	}
+
+	/**
+	 * @param file chunk file
+	 * @returns its StreamingChunkData sibling's FlatBuffer, unpacked, or `null` if the VFS doesn't have one
+	 */
+	async readStreamingPayload(file: ChunkFile): Promise<Uint8Array | null> {
+		const entry = await this.vfs.find(
+			VfsGroup.Streaming,
+			file.name.replace('/InitChunkData_', '/StreamingChunkData_'),
+		);
+		return entry === undefined ? null : unpackHgPayload(await this.vfs.readVerified(entry));
 	}
 
 	/**
@@ -341,7 +362,7 @@ export class WorldIndex {
 	 * @returns its stream-area table, or `undefined` if the scene has none
 	 */
 	streamAreas(scene: string): Promise<StreamAreaTable | undefined> {
-		return cached(this.#streamAreas, scene, async () => {
+		return getOrInsert(this.#streamAreas, scene, async () => {
 			const file = await this.vfs.find(
 				VfsGroup.DynamicStreaming,
 				`${DYNAMIC_SCENE_ROOT}${scene}/FBStreamArea.bytes`,
@@ -355,7 +376,7 @@ export class WorldIndex {
 	 * @returns every DynamicStreaming entity of the scene's `fb_main` files, in file-name order
 	 */
 	dynamicEntities(scene: string): Promise<DynamicEntity[]> {
-		return cached(this.#dynamicEntities, scene, async () => {
+		return getOrInsert(this.#dynamicEntities, scene, async () => {
 			const prefix = `${DYNAMIC_SCENE_ROOT}${scene}/fb_main_`;
 			const names = [...(await this.vfs.group(VfsGroup.DynamicStreaming)).files.keys()]
 				.filter((name) => name.startsWith(prefix))
@@ -375,16 +396,6 @@ export class WorldIndex {
 		return this.vfs.readVerified(file);
 	}
 }
-
-/** @returns the cached promise for `key`, creating it with `load` on first use */
-const cached = <K, V>(cache: Map<K, Promise<V>>, key: K, load: () => Promise<V>): Promise<V> => {
-	let promise = cache.get(key);
-	if (promise === undefined) {
-		promise = load();
-		cache.set(key, promise);
-	}
-	return promise;
-};
 
 /**
  * @param entity decoded entity

@@ -2,61 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { FormatError } from '../binary/binary-reader.ts';
+import { FlatBufferWriter as Writer } from '../binary/flatbuffer-writer.ts';
 
 import { Component, DrawFlags, parseInitChunk, readChunkEntities } from './init-chunk-data.ts';
 
-// #region synthetic FlatBuffer writer
-
-/** forward-only writer: everything a table references is written after it, so uoffsets stay positive */
-class Writer {
-	bytes = new Uint8Array(1 << 16);
-	view = new DataView(this.bytes.buffer);
-	pos = 0;
-
-	reserve(size: number, align = 4): number {
-		this.pos = Math.ceil(this.pos / align) * align;
-		const at = this.pos;
-		this.pos += size;
-		return at;
-	}
-
-	/** writes a vtable + table; returns the table position and each field's position (`-1` if absent) */
-	table(sizes: number[]): { at: number; fields: number[] } {
-		const vtable = this.reserve(4 + sizes.length * 2, 2);
-		const offsets: number[] = [];
-		let cursor = 4;
-		for (const size of sizes) {
-			if (size === 0) {
-				offsets.push(0);
-				continue;
-			}
-			cursor = Math.ceil(cursor / Math.min(size, 4)) * Math.min(size, 4);
-			offsets.push(cursor);
-			cursor += size;
-		}
-		const at = this.reserve(cursor, 4);
-		this.view.setUint16(vtable, 4 + sizes.length * 2, true);
-		this.view.setUint16(vtable + 2, cursor, true);
-		offsets.forEach((offset, i) => this.view.setUint16(vtable + 4 + i * 2, offset, true));
-		this.view.setInt32(at, at - vtable, true);
-		return { at, fields: offsets.map((offset) => (offset === 0 ? -1 : at + offset)) };
-	}
-
-	/** writes `u32 length` + elements; returns the vector position and element start */
-	vector(elementSize: number, length: number): { at: number; start: number } {
-		const at = this.reserve(4 + elementSize * length, 4);
-		this.view.setUint32(at, length, true);
-		return { at, start: at + 4 };
-	}
-
-	link(at: number, target: number): void {
-		this.view.setUint32(at, target - at, true);
-	}
-
-	finish(): Uint8Array {
-		return this.bytes.slice(0, this.pos);
-	}
-}
+// #region synthetic chunk
 
 const encoder = new TextEncoder();
 

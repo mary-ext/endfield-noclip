@@ -24,6 +24,8 @@ import {
 import { MeshoptEncoder } from 'meshoptimizer/encoder';
 import { MeshoptTangents } from 'meshoptimizer/tangents';
 
+import { aabbBounds } from './bounds.ts';
+
 // converts a decoded Unity mesh into a geometry blob (layout in package-format's VertexAttribute and
 // package-codec's encodeGeometryBlob): tangents generated where normal maps need them, each submesh given its
 // own vertex-cache/fetch-optimized vertex range, attributes quantized, streams and indices meshopt-encoded.
@@ -105,16 +107,12 @@ export const convertMesh = (mesh: DecodedMesh, tangentUv: number | null): Conver
 				order.push(vertex);
 			}
 		}
-		const { center, extents } = mesh.submeshes[s].bounds;
 		submeshes.push({
 			firstIndex,
 			indexCount: local.length,
 			baseVertex: order.length - vertexCount,
 			vertexCount,
-			bounds: {
-				min: [center[0] - extents[0], center[1] - extents[1], center[2] - extents[2]],
-				max: [center[0] + extents[0], center[1] + extents[1], center[2] + extents[2]],
-			},
+			bounds: aabbBounds(mesh.submeshes[s].bounds),
 		});
 		localIndices.push(local);
 		firstIndex += local.length;

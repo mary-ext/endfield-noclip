@@ -7,6 +7,7 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { type DecodedTexture, toKtx2Texture } from '@endfield-noclip/formats/unity/texture';
 
 import {
+	jsonReplacer,
 	parseInteger,
 	parseOptionalInteger,
 	parsePathId,
@@ -165,17 +166,6 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 const save = async (path: string, bytes: Uint8Array): Promise<void> => {
 	await saveFile(path, bytes);
 	console.error(`wrote ${bytes.length} bytes to ${path}`);
-};
-
-/** JSON.stringify replacer for bigints and typed arrays */
-const jsonReplacer = (_key: string, value: unknown): unknown => {
-	if (typeof value === 'bigint') {
-		return value.toString();
-	}
-	if (ArrayBuffer.isView(value)) {
-		return `<${value.constructor.name} ${value.byteLength} bytes>`;
-	}
-	return value;
 };
 
 /**

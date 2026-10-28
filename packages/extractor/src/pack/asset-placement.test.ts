@@ -64,6 +64,26 @@ describe('AssetPlacement', () => {
 		assert.deepEqual(materials[0], { level: 2, x: 1, z: 0 });
 		assert.equal(materials[2], null);
 	});
+
+	it('merges direct geometry uses with chain uses', () => {
+		const draw = {
+			geometry: 0,
+			material: 0,
+			submesh: 0,
+			lod: 0,
+			role: DrawRole.Lit,
+			minSquared: -1,
+			maxSquared: 1,
+			sourceFlags: 0,
+		};
+		const placement = new AssetPlacement(3);
+		placement.note(0, { level: 3, x: 1, z: 1 });
+		placement.noteGeometry(0, null);
+		placement.noteGeometry(1, { level: 6, x: 8, z: 8 });
+		const { geometries } = placement.resolve([{ lodCount: 1, flags: 0, draws: [draw] }], 2, 1);
+		assert.equal(geometries[0], null);
+		assert.deepEqual(geometries[1], { level: 3, x: 1, z: 1 });
+	});
 });
 
 describe('AssetArchives', () => {

@@ -142,6 +142,42 @@ export const parseBounds = (text: string): Rect => {
 };
 
 /**
+ * @param value a positional, or `undefined` if it wasn't given
+ * @param what what it names, for the error
+ * @param usage the command's usage text, appended to the error
+ * @returns the value
+ * @throws {Error} if it wasn't given
+ */
+export const need = (value: string | undefined, what: string, usage: string): string => {
+	if (value === undefined) {
+		throw new Error(`missing ${what}\n${usage}`);
+	}
+	return value;
+};
+
+/**
+ * @param text a `<path|hash>` argument
+ * @returns the StringPathHash key if it's a decimal or `0x` number (taken as unsigned 64-bit), else `null`
+ *   for a path
+ */
+export const parseHash = (text: string): bigint | null =>
+	/^(0x[0-9a-f]+|\d+)$/i.test(text) ? BigInt.asUintN(64, BigInt(text)) : null;
+
+/** @returns a StringPathHash key as `0x…` */
+export const hashText = (hash: bigint): string => `0x${hash.toString(16)}`;
+
+/** JSON.stringify replacer for bigints and typed arrays */
+export const jsonReplacer = (_key: string, value: unknown): unknown => {
+	if (typeof value === 'bigint') {
+		return value.toString();
+	}
+	if (ArrayBuffer.isView(value)) {
+		return `<${value.constructor.name} ${value.byteLength} bytes>`;
+	}
+	return value;
+};
+
+/**
  * writes a file, creating its directory
  *
  * @param path destination

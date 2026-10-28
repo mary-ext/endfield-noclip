@@ -29,11 +29,19 @@ export interface ChunkObject {
 	/**
 	 * union tag of the row. by name census: 1 = environment (reflection probes, `Env_*`, volumes, wind, terrain
 	 * root), 2 = component-group entities (renderers, colliders, decals, lights), 3 = audio emitters, grass
-	 * grids, surface-type data. names of the member types are not recovered.
+	 * grids, surface-type data. names of the member types are not recovered. see {@link ChunkObjectKind}
 	 */
 	kind: number;
 	name: string;
 }
+
+/** {@link ChunkObject.kind} values with a decoder */
+export const ChunkObjectKind = {
+	/** GameObjects rebuilt as MonoBehaviours, see `mono-objects.ts` */
+	Mono: 1,
+	/** component-group entities */
+	Entity: 2,
+} as const;
 
 /** one component column inside a group's blob */
 export interface ComponentColumn {
@@ -273,12 +281,11 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 	for (const group of chunk.groups) {
 		const ids = group.columns.map((column) => column.id);
 		const blobView = new DataView(group.blob.buffer, group.blob.byteOffset, group.blob.byteLength);
-		const column = (id: number): ComponentColumn | undefined => group.columns.find((c) => c.id === id);
+		const column = (id: number): ComponentColumn | undefined => groupColumn(group, id);
 
-		const boundsColumns = [0, 1, 2, 3, 4, 5].map(column);
-		const hasBounds = boundsColumns.every((c) => c !== undefined && c.stride === 4);
+		const boundsOf = groupBounds(group);
 		const matrixColumn = column(Component.InstanceData) ?? column(Component.RectDecal);
-		const nameColumn = column(Component.Name);
+		const nameOf = groupNames(group, names);
 		const lodColumn = column(Component.LodRanges);
 		const refColumns = group.columns.filter(
 			(c) => c.id >= Component.DrawRefFirst && c.id <= Component.DrawRefLast,
@@ -286,20 +293,8 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 
 		for (let i = 0; i < group.ids.length; i++) {
 			const id = group.ids[i];
-
-			let name = names.get(id);
-			if (name === undefined && nameColumn !== undefined) {
-				const start = nameColumn.offset + i * nameColumn.stride;
-				const raw = group.blob.subarray(start, start + nameColumn.stride);
-				const end = raw.indexOf(0);
-				name = textDecoder.decode(end < 0 ? raw : raw.subarray(0, end));
-			}
-
-			let bounds: Aabb | null = null;
-			if (hasBounds) {
-				const v = boundsColumns.map((c) => blobView.getFloat32(c!.offset + i * 4, true));
-				bounds = { center: [v[0], v[1], v[2]], extents: [v[3], v[4], v[5]] };
-			}
+			const name = nameOf(i);
+			const bounds = boundsOf?.(i) ?? null;
 
 			let matrix: Float32Array | null = null;
 			if (matrixColumn !== undefined) {
@@ -330,7 +325,7 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 			entities.push({
 				id,
 				levelTag: levelTagOf(id),
-				name: name ?? '',
+				name,
 				matrix,
 				bounds,
 				renderer,
@@ -340,6 +335,57 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 		}
 	}
 	return entities;
+};
+
+/**
+ * @param group a component group
+ * @param id a descriptor id
+ * @returns the group's column with that id, if any
+ */
+export const groupColumn = (group: ComponentGroup, id: number): ComponentColumn | undefined =>
+	group.columns.find((column) => column.id === id);
+
+/**
+ * @param group a component group
+ * @returns a reader of each member's world bounds (by index in the group), or `null` if the group has no
+ *   bounds columns
+ */
+export const groupBounds = (group: ComponentGroup): ((index: number) => Aabb) | null => {
+	const columns: ComponentColumn[] = [];
+	for (let id = Component.BoundsCenterX; id < Component.BoundsCenterX + 6; id++) {
+		const column = groupColumn(group, id);
+		if (column === undefined || column.stride !== 4) {
+			return null;
+		}
+		columns.push(column);
+	}
+	const view = new DataView(group.blob.buffer, group.blob.byteOffset, group.blob.byteLength);
+	return (index) => {
+		const v = columns.map((column) => view.getFloat32(column.offset + index * 4, true));
+		return { center: [v[0], v[1], v[2]], extents: [v[3], v[4], v[5]] };
+	};
+};
+
+/**
+ * @param group a component group
+ * @param names object names by id (the root rows'), which win over the group's truncated name column
+ * @returns a reader of each member's name (by index in the group); `''` where neither has one
+ */
+export const groupNames = (
+	group: ComponentGroup,
+	names: ReadonlyMap<number, string>,
+): ((index: number) => string) => {
+	const column = groupColumn(group, Component.Name);
+	return (index) => {
+		const name = names.get(group.ids[index]);
+		if (name !== undefined || column === undefined) {
+			return name ?? '';
+		}
+		const start = column.offset + index * column.stride;
+		const raw = group.blob.subarray(start, start + column.stride);
+		const end = raw.indexOf(0);
+		return textDecoder.decode(end < 0 ? raw : raw.subarray(0, end));
+	};
 };
 
 /** one entity's draw-ref and draw-info columns */
