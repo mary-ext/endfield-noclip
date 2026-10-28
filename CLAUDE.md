@@ -1,5 +1,4 @@
-blank-typescript-project is a starter project template, please replace instances of
-"blank-typescript-project"!
+Endfield's game levels in the browser
 
 ## development notes
 
