@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 3;
+export const PACKAGE_VERSION = 4;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -36,6 +36,7 @@ export const CORE_PATHS = {
 	geometries: 'tables/geometries.json.zst',
 	materials: 'tables/materials.json.zst',
 	textures: 'tables/textures.json.zst',
+	water: 'tables/water.json.zst',
 } as const;
 
 // #endregion
@@ -266,6 +267,8 @@ export interface PackageManifest {
 	 * scenes without levels, whose instances are all shown
 	 */
 	levels: LevelInfo[];
+	/** environment profiles, deduplicated; {@link LevelInfo.environment} indexes this list */
+	environments: EnvironmentProfile[];
 	states: StatesInfo;
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
 	archives: ArchiveInfo[];
@@ -370,6 +373,11 @@ export interface LevelInfo {
 	instances: number;
 	/** world bounds of the instances the level owns in this package, or `null` if none were packed */
 	contentBounds: Bounds | null;
+	/**
+	 * index into {@link PackageManifest.environments}: the level's base environment, i.e. the one the game
+	 * applies over most of the level's ground. `null` if the level has none
+	 */
+	environment: number | null;
 }
 
 /** a world x, z rectangle */
@@ -464,6 +472,645 @@ export interface SourceFingerprint {
 	buildGuid: string;
 	/** the bundle manifest's content hash */
 	contentHash: string;
+}
+
+// #endregion
+
+// #region environment
+
+/** an RGBA colour, as authored (not converted to linear; HDR colours exceed 1) */
+export type Color = [r: number, g: number, b: number, a: number];
+/** a `Vector2f` */
+export type Vec2 = [x: number, y: number];
+/** a `Vector3f`; directions and positions are in the Unity world frame */
+export type Vec3 = [x: number, y: number, z: number];
+/** a `Vector4f` */
+export type Vec4 = [x: number, y: number, z: number, w: number];
+/** a unit quaternion */
+export type Quat = [x: number, y: number, z: number, w: number];
+
+/** a texture-table id, or `null` when unset or not converted */
+export type TextureRef = number | null;
+
+/**
+ * one environment: an `HGEnvironmentPhase` (`EnvParse/Env_*.asset`) plus the post-processing profile of the
+ * level's global `Volume`. each section is the game's `HG*Config` with the game's field names: colours as
+ * {@link Color}, vectors as arrays, `SphericalHarmonicsL2` as 27 numbers in the game's order, flags as
+ * booleans, nested structs as objects, textures as {@link TextureRef}s. colour curves, editor state and
+ * non-texture object references are left out.
+ *
+ * the game blends environment volumes by priority, and a phase only sets the sections it marks active. a
+ * section the level's phase leaves inactive is taken from the scene's global volume's phase (what the game
+ * applies under it), so every section here is the one in effect
+ */
+export interface EnvironmentProfile {
+	/** the level phase's asset name, e.g. `Env_map02_lv001_art_Global_01` */
+	name: string;
+	light: LightConfig;
+	sky: SkyConfig;
+	atmosphere: AtmosphereConfig;
+	fog: FogConfig;
+	heightFog: HeightFogConfig;
+	volumetricFog: VolumetricFogConfig;
+	cloud: CloudConfig;
+	wind: WindConfig;
+	lightShaft: LightShaftConfig;
+	colorGrading: ColorGradingConfig;
+	autoExposure: AutoExposureConfig;
+	/** the level's global post-processing volume, or `null` if it has none */
+	post: PostProfile | null;
+}
+
+/**
+ * `HGLightConfig`: the sun. physical units: `directLux` is illuminance and `directEV100` the exposure, with
+ * `preExposure = 1 / (1.2 · 2^directEV100)` and `directIntensity = directLux · preExposure` (both precomputed
+ * by the game). every effect that draws the sun has its own direction: `<effect>PitchYawMode` 0 follows
+ * `directPitchYaw`, 1 uses `<effect>PitchYaw`; the `rotation*` quaternions are the resolved results
+ */
+export interface LightConfig {
+	/** the colour in effect: `directCustomColor` or the temperature's, per `directColorMode` */
+	directColor: Color;
+	directColorMode: number;
+	directCustomColor: Color;
+	/** kelvin */
+	directColorTemperature: number;
+	directLux: number;
+	directEV100: number;
+	directSpecularIntensity: number;
+	directSoftSourceRadius: number;
+	directDirectionMode: number;
+	/** degrees: elevation, then azimuth */
+	directPitchYaw: Vec2;
+	timeOfDayYawOffset: number;
+	timeOfDayPitchMax: number;
+	indirectDiffuseFactor: number;
+	indirectSpecularFactor: number;
+	indirectSpecularFactorType: number;
+	atmospherePitchYawMode: number;
+	atmospherePitchYaw: Vec2;
+	lightShaftPitchYawMode: number;
+	lightShaftPitchYaw: Vec2;
+	sunDiscPitchYawMode: number;
+	sunDiscPitchYaw: Vec2;
+	lensFlarePitchYawMode: number;
+	lensFlarePitchYaw: Vec2;
+	cloudShadowPitchYawMode: number;
+	cloudShadowPitchYaw: Vec2;
+	heightFogDirectionalInscatteringPitchYawMode: number;
+	heightFogDirectionalInscatteringPitchYaw: Vec2;
+	preExposure: number;
+	directIntensity: number;
+	directIntensityDividePi: number;
+	/** the direction the sunlight travels, Unity world frame */
+	forwardDirect: Vec3;
+	/** the light's frame, 16 numbers row-major (`e00 e01 e02 e03 e10 …`) */
+	localToWorld: number[];
+	rotationAtmosphere: Quat;
+	rotationLightShaft: Quat;
+	rotationSunDisc: Quat;
+	rotationLensFlare: Quat;
+	rotationCloudShadow: Quat;
+	rotationHeightFogDirectionalInscattering: Quat;
+	bakedIndirectMultiplier: number;
+	giBakedIndirectMultiplier: number;
+}
+
+/** `HGSkyConfig`: sky luminance, ambient light and reflections */
+export interface SkyConfig {
+	skyDistance: number;
+	useSkyDistanceForBakeFogLut: boolean;
+	skyBakedIndirectIntensity: number;
+	skyDirectIntensity: number;
+	giSkyMultiplier: number;
+	useCustomIVDefaultSH: boolean;
+	/** ambient SH used outside irradiance-volume coverage when {@link useCustomIVDefaultSH} is set */
+	customIVDefaultSH: number[];
+	skyMaterialType: number;
+	proceduralSkyLuxFactor: number;
+	enableSunDisc: boolean;
+	sunDiscRadius: number;
+	sunDiscRampIntensity: number;
+	sunDiscColor: Color;
+	skyboxBrightness: number;
+	skyboxTintColor: Color;
+	/** degrees */
+	skyboxRotation: number;
+	visibleBox: Vec3;
+	reflectionType: number;
+	/** the sky reflection cubemap (BC6H) */
+	reflectionMap: TextureRef;
+	culloff: number;
+	/**
+	 * ambient light, Unity `SphericalHarmonicsL2` order: 9 coefficients of red, then green, then blue; scaled
+	 * by {@link LightConfig.indirectDiffuseFactor}
+	 */
+	skyAmbientSH: number[];
+	skyboxCubeMap: TextureRef;
+}
+
+/** `HGAtmosphereConfig`: physically based sky (Hillaire-style); distances in km */
+export interface AtmosphereConfig {
+	groundRadius: number;
+	groundAlbedo: Color;
+	outerSunIrradianceColor: Color;
+	atmosphereHeight: number;
+	multiScatteringFactor: number;
+	rayleighScatteringScale: number;
+	rayleighScattering: Color;
+	rayleighExponentialDistribution: number;
+	mieScatteringScale: number;
+	mieScattering: Color;
+	mieAbsorptionScale: number;
+	mieAbsorption: Color;
+	mieAnisotropy: number;
+	mieExponentialDistribution: number;
+	ozoneAbsorptionScale: number;
+	ozoneAbsorption: Color;
+	tentTipAltitude: number;
+	tentTipValue: number;
+	tentWidth: number;
+}
+
+/** `HGFogConfig`: distance fog (aerial perspective) */
+export interface FogConfig {
+	enable: boolean;
+	startDistance: number;
+	startHeight: number;
+	fallOffHeight: number;
+	fallOffDistance: number;
+	mieScattering: Color;
+	mieScatteringScale: number;
+	mieAnisotropy: number;
+	rayleighScattering: Color;
+	rayleighScatteringScale: number;
+	inscatterAmbientColor: Color;
+}
+
+/** the two exponential height-fog layers and their froxel-fog parameters, shared by both height-fog sections */
+export interface HeightFogLayers {
+	enable: boolean;
+	heightFogStartHeight: number;
+	heightFogDensity: number;
+	heightFogFalloff: number;
+	heightFogStartHeightSecond: number;
+	heightFogDensitySecond: number;
+	heightFogFalloffSecond: number;
+	heightFogInscatter: Color;
+	heightFogMaxOpacity: number;
+	heightFogStartDistance: number;
+	heightFogStartTransition: number;
+	heightFogCutoffDistance: number;
+	heightFogCutoffTransition: number;
+	heightFogDirectionalInscatteringExponent: number;
+	heightFogDirectionalInscatteringStartDistance: number;
+	heightFogDirectionalInscattering: Color;
+	volumetricFogScatteringDistribution: number;
+	volumetricFogAlbedo: Color;
+	volumetricFogEmissive: Color;
+	volumetricFogExtinctionScale: number;
+	volumetricFogDistance: number;
+	volumetricFogStartDistance: number;
+	volumetricFogNearFadeInDistance: number;
+	volumetricFogDirectLightingScatteringIntensity: number;
+	volumetricFogSkyLightingScatteringIntensity: number;
+	enableFlowNoise: boolean;
+	flowNoiseIntensity: number;
+	flowNoiseDistance: number;
+	flowNoiseTilling: number;
+	flowNoiseHorizontalDirAngle: number;
+	flowNoiseVerticalDirAngle: number;
+	flowNoiseDir: Vec3;
+	flowNoiseSpeed: number;
+}
+
+/** `HGHeightFogConfig`: analytic height fog */
+export interface HeightFogConfig extends HeightFogLayers {
+	heightFogCullingFarClipPlane: number;
+	heightFogDirectionalInscatteringExponentMobile: number;
+	heightFogDirectionalInscatteringMobile: Color;
+	enableVolumetricFog: boolean;
+}
+
+/** `HGVolumetricFogConfig`: froxel volumetric fog */
+export interface VolumetricFogConfig extends HeightFogLayers {
+	enableVLFlowNoise: boolean;
+	flowVLNoise3DTexture: TextureRef;
+	enableTwoParameter: boolean;
+	flowVLNoiseIntensity: number;
+	flowVLNoiseRemapRange: Vec2;
+	flowVLNoiseDistance: number;
+	flowVLNoiseTilling: number;
+	flowVLNoiseTillingScale: Vec3;
+	flowVLNoiseHorizontalDirAngle: number;
+	flowVLNoiseVerticalDirAngle: number;
+	flowVLNoiseDir: Vec3;
+	flowVLNoiseSpeed: number;
+	flowVLNoisePerturb3DTexture: TextureRef;
+	flowVLNoisePerturbTilling: number;
+	flowVLNoisePerturbIntensity: number;
+	flowVLNoisePerturbSpeed: Vec3;
+}
+
+/** `HGCloudShadowConfig` */
+export interface CloudShadowConfig {
+	cloudShadowTexture: TextureRef;
+	cloudShadowEnvCenter: Vec3;
+	cloudShadowCoverage: number;
+	cloudShadowFlowSpeed: number;
+	cloudShadowFlowDirection: Vec2;
+	cloudShadowAlpha: number;
+	cloudShadowDistanceScale: number;
+	cloudShadowScaleStartDistance: number;
+	cloudShadowScaleEndDistance: number;
+	enableFarCloudShadowTexture: boolean;
+	cloudShadowFarEnvCenter: Vec3;
+	cloudShadowFarCoverage: number;
+	cloudShadowFarFlowSpeed: number;
+	cloudShadowFarFlowDirection: Vec2;
+}
+
+/** `HGCloudConfig`: the panoramic cloud layer and cloud shadows */
+export interface CloudConfig {
+	enable: boolean;
+	cloudTexture: TextureRef;
+	cloudTint: Color;
+	cloudContrast: number;
+	lightAffectCloud: boolean;
+	cloudBrightness: number;
+	cloudAbsoluteBrightness: number;
+	brightnessAffectCloudAlpha: boolean;
+	drawCloudAfterPlanet: boolean;
+	cloudTextureMode: number;
+	cloudOpacityR: number;
+	cloudOpacityG: number;
+	cloudFlowType: number;
+	/** degrees */
+	rotation: number;
+	cloudFlowMap: TextureRef;
+	flowSpeed: number;
+	flowDirectionX: number;
+	flowDirectionY: number;
+	enableLightShaftCloudMask: boolean;
+	lightShaftCloudMaskTexture: TextureRef;
+	enableCloudShadow: boolean;
+	cloudShadowConfig: CloudShadowConfig;
+	cloudFadeAlpha: number;
+}
+
+/** `HGWindConfig`: foliage and cloth wind */
+export interface WindConfig {
+	/** m/s */
+	speed: number;
+	/** degrees */
+	horizontalDirectionAngle: number;
+	verticalDirectionAngle: number;
+	/** unit vector the wind blows toward, Unity world frame */
+	direction: Vec3;
+}
+
+/** `HGLightShaftConfig`: screen-space sun shafts */
+export interface LightShaftConfig {
+	enable: boolean;
+	bloomScale: number;
+	bloomThreshold: number;
+	bloomMaxBrightness: number;
+	bloomTint: Color;
+	blurIntensity: number;
+	occlusionDepthRange: number;
+	enableOcclusion: boolean;
+	occlusionMaskDarkness: number;
+}
+
+/** `HGShadowsMidtonesHighlights` */
+export interface ShadowsMidtonesHighlights {
+	shadows: Vec4;
+	midtones: Vec4;
+	highlights: Vec4;
+	shadowsStart: number;
+	shadowsEnd: number;
+	highlightsStart: number;
+	highlightsEnd: number;
+	shadowsOverriding: boolean;
+	midtonesOverriding: boolean;
+	highlightsOverriding: boolean;
+	shadowsStartOverriding: boolean;
+	shadowsEndOverriding: boolean;
+	highlightsStartOverriding: boolean;
+	highlightsEndOverriding: boolean;
+}
+
+/** `HGLiftGammaGain` */
+export interface LiftGammaGain {
+	lift: Vec4;
+	gamma: Vec4;
+	gain: Vec4;
+	liftOverriding: boolean;
+	gammaOverriding: boolean;
+	gainOverriding: boolean;
+}
+
+/**
+ * `HGColorGradingConfig`: tonemapping and URP-style grading (the colour curves aren't included).
+ * `tonemappingMode` indexes the game's `None, Neutral, ACES, ACESmodified, Custom, External` (5 everywhere
+ * seen; the curve behind it isn't known)
+ */
+export interface ColorGradingConfig {
+	tonemappingMode: number;
+	colorLookupEnabled: boolean;
+	colorLookupTexture: TextureRef;
+	colorLookupContribution: number;
+	whiteBalanceEnabled: boolean;
+	whiteBalanceTemperature: number;
+	whiteBalanceTint: number;
+	colorAdjustmentsEnabled: boolean;
+	colorAdjustmentsPostExposure: number;
+	colorAdjustmentsContrast: number;
+	colorAdjustmentsColorFilter: Color;
+	colorAdjustmentsHueShift: number;
+	colorAdjustmentsSaturation: number;
+	channelMixerEnabled: boolean;
+	channelMixerRedOutRedIn: number;
+	channelMixerRedOutGreenIn: number;
+	channelMixerRedOutBlueIn: number;
+	channelMixerGreenOutRedIn: number;
+	channelMixerGreenOutGreenIn: number;
+	channelMixerGreenOutBlueIn: number;
+	channelMixerBlueOutRedIn: number;
+	channelMixerBlueOutGreenIn: number;
+	channelMixerBlueOutBlueIn: number;
+	shadowsMidtonesHighlightsEnabled: boolean;
+	shadowsMidtonesHighlights: ShadowsMidtonesHighlights;
+	liftGammaGainEnabled: boolean;
+	liftGammaGain: LiftGammaGain;
+	splitToningEnabled: boolean;
+	splitToningShadows: Color;
+	splitToningHighlights: Color;
+	splitToningBalance: number;
+	colorCurvesEnabled: boolean;
+}
+
+/** `HGAutoExposureConfig`; mode 0 is fixed exposure from {@link LightConfig.directEV100} */
+export interface AutoExposureConfig {
+	autoExposureMode: number;
+	autoExposureManualEvCompensationAuto: number;
+	autoExposureLerpUpSpeed: number;
+	autoExposureLerpDownSpeed: number;
+	autoExposureEv100Range: Vec2;
+	autoExposureEv100HistogramRange: Vec2;
+	autoExposureMeteringMode: number;
+	autoExposurePixelLuminanceRange: Vec2;
+	autoExposureEvClampRange: Vec2;
+	autoExposureManualEvCompensationManual: number;
+}
+
+/**
+ * a post-processing `VolumeProfile` (`gvp_*.asset`): its components under the game's field names, each `null`
+ * when the profile doesn't have it or has it switched off. values are the profile's, overridden or not (with
+ * a single global volume, the non-overridden ones are the defaults in effect). tonemapping isn't a volume
+ * component here; see {@link ColorGradingConfig.tonemappingMode}
+ */
+export interface PostProfile {
+	/** the profile's asset name, e.g. `gvp_map02_lv000_art_01` */
+	name: string;
+	bloom: BloomSettings | null;
+	ambientOcclusion: AmbientOcclusionSettings | null;
+	vignette: VignetteSettings | null;
+	screenSpaceReflection: ScreenSpaceReflectionSettings | null;
+}
+
+/**
+ * the game's `Bloom`, with settings per quality tier (the PC client's high tier is the reference look) and a
+ * second, additive pass
+ */
+export interface BloomSettings {
+	quality: number;
+	resolutionHighQuality: number;
+	resolutionMedQuality: number;
+	resolutionLowQuality: number;
+	thresholdHighQuality: number;
+	thresholdMedQuality: number;
+	thresholdLowQuality: number;
+	intensityHighQuality: number;
+	intensityMedQuality: number;
+	intensityLowQuality: number;
+	scatterHighQuality: number;
+	scatterMedQuality: number;
+	scatterLowQuality: number;
+	tint: Color;
+	blendMode: number;
+	bloomUpsampleAdditive: boolean;
+	thresholdAdditiveHighQuality: number;
+	intensityAdditiveHighQuality: number;
+	scatterAdditiveHighQuality: number;
+	characterBloomControl: boolean;
+	characterThreshold: number;
+	characterSoftness: number;
+	characterIntensity: number;
+	dirtIntensity: number;
+	anamorphic: boolean;
+}
+
+/** the game's `GTAmbientOcclusion` (ground-truth AO) */
+export interface AmbientOcclusionSettings {
+	enable: boolean;
+	custom: boolean;
+	enableFP32Depths: boolean;
+	generateNormalsInplace: boolean;
+	qualityLevel: number;
+	denoisePasses: number;
+	/** metres */
+	radius: number;
+	radiusMultiplier: number;
+	falloffRange: number;
+	sampleDistributionPower: number;
+	thinOccluderCompensation: number;
+	/** exponent applied to the AO term */
+	finalValuePower: number;
+	depthMIPSamplingOffset: number;
+	mvFactor: number;
+	depthFactor: number;
+}
+
+/** URP's `Vignette`, plus the game's mode and blink */
+export interface VignetteSettings {
+	mode: number;
+	color: Color;
+	/** screen UV */
+	center: Vec2;
+	intensity: number;
+	smoothness: number;
+	roundness: number;
+	rounded: boolean;
+	blink: boolean;
+	opacity: number;
+}
+
+/** the game's `ScreenSpaceReflectionVolume` */
+export interface ScreenSpaceReflectionSettings {
+	enable: boolean;
+	fadenessOnScreen: number;
+	fadenessOnDepth: number;
+	fadenessOnDepthFactor: number;
+	fadenessOnMirrorMul: number;
+	fadenessOnMirrorAdd: number;
+	mipThreshold: number;
+}
+
+// #endregion
+
+// #region water
+
+/**
+ * `tables/water.json`: the scene's open-world water. every surface is resident (the game keeps them in its
+ * Global chunks), so the table is loaded with the core. a viewer shows the surfaces carrying the current
+ * level's tag plus tag 0, like instances, and shades them with their config and the global maps
+ */
+export interface WaterTable {
+	/** the scene's global water, or `null` if the scene has none or the package holds no surface */
+	global: WaterGlobal | null;
+	/** surface configs, deduplicated; {@link WaterSurfaceEntry.config} indexes this list */
+	configs: WaterConfigEntry[];
+	surfaces: WaterSurfaceEntry[];
+}
+
+/**
+ * the scene's `Global_Water_Config`: maps shared by every surface. textures are the game's, unchanged. the
+ * global flow map covers the square of edge {@link mapSize} around {@link centre}, i.e. (assumed from the
+ * game's tooling, not its shaders) `uv = (world.xz - centre) / mapSize + 0.5`
+ */
+export interface WaterGlobal {
+	/** edge of the square the global flow map and the sector grid cover, metres */
+	mapSize: number;
+	/** edge of one sector, metres */
+	sectorSize: number;
+	/** world x, z the grid is centred on (`sceneCenterOffset`) */
+	centre: [x: number, z: number];
+	/** metres per texel of a sector tile */
+	flowmapPrecision: number;
+	/** flow over the whole grid: RG direction, B foam, A amplitude (channel meanings unconfirmed) */
+	flowMap: TextureRef;
+	causticMap: TextureRef;
+	/** a `2d-array` of wave normals (RG normal; A foam shape on the small-wave layer, unconfirmed) */
+	normalMaps: TextureRef;
+	rainMap: TextureRef;
+	/**
+	 * high-resolution flow tiles, like {@link flowMap} at {@link flowmapPrecision} m/texel. sector `(x, z)`
+	 * covers world `[centre.x + x·sectorSize, +sectorSize) × [centre.z + z·sectorSize, +sectorSize)`. only the
+	 * sectors that have data and overlap a packed surface are listed; elsewhere use {@link flowMap}
+	 */
+	sectors: WaterSector[];
+}
+
+/** one flow-map tile of the sector grid */
+export interface WaterSector {
+	x: number;
+	z: number;
+	texture: TextureRef;
+}
+
+/** a surface `WaterConfig` */
+export interface WaterConfigEntry {
+	/** asset name, e.g. `Config_water_Map02_15` */
+	name: string;
+	values: WaterConfig;
+}
+
+/**
+ * a surface `WaterConfig`'s numeric fields under the game's serialized names: scalars as numbers (flags as
+ * 0/1), vectors as `[x, y(, z, w)]`, colours as {@link Color}s as authored. the fields named here are those a
+ * renderer needs; every other numeric field (character ripples, displacement, TAA tweaks, …) is kept under
+ * its own name too
+ */
+export interface WaterConfig {
+	[field: string]: number | number[];
+	// optics
+	/** Rayleigh scattering per metre, rgb (`w` unused) */
+	waterRayleighScatteringMeter: Vec4;
+	/** absorption per metre, rgb; `w` unconfirmed */
+	waterRayleighAbsorptionMeter: Vec4;
+	/** a second absorption, rgb; how it combines with the first is unconfirmed */
+	waterRayleighAbsorptionMeter2: Vec4;
+	absorptionTint: Color;
+	absorptionTint2: Color;
+	absorptionScale: number;
+	scatterTint: Color;
+	scatterScale: number;
+	/** depth (m) past which the water is fully absorbed */
+	safeFullAbsorpDistance: number;
+	envLightIntensity: number;
+	sceneColorEnvInfluence: number;
+	rayleighMieLerpFactor: number;
+	distanceEdgeBlendFactor: number;
+	// appearance
+	roughness: number;
+	specular: number;
+	/** screen-space refraction distortion strength, not an index of refraction */
+	waterIOR: number;
+	envLightSpecularIntensity: number;
+	punctualLightSpecularIntensity: number;
+	distanceFade: number;
+	flowBaseColor: Color;
+	foamColorG: Color;
+	foamOpacity: number;
+	foamRoughness: number;
+	foamShapeOffset: number;
+	foamFadeDistance: number;
+	// caustics
+	causticTilling: number;
+	causticOpacity: number;
+	causticDistort: number;
+	causticSpeed: number;
+	causticStartDepth: number;
+	causticEndDepth: number;
+	// flow and waves
+	/** 1 to follow the flow maps, 0 to flow along {@link flowDirectionVector2} */
+	useFlowMap: number;
+	flowDirectionVector2: Vec2;
+	flowSpeed: number;
+	flowFullCycle: number;
+	normalTilling: number;
+	normalScale: number;
+	/** layer of {@link WaterGlobal.normalMaps} for the small waves */
+	smallWaveNormalType: number;
+	/** layer of {@link WaterGlobal.normalMaps} for the large waves */
+	largeWaveNormalType: number;
+	largeWaveFlowSpeed: number;
+	largeWaveNormalTilling: number;
+	largeWaveNormalScale: number;
+	flowFullCycleLarge: number;
+	largeWaveInvDir: number;
+}
+
+/** one water surface */
+export interface WaterSurfaceEntry {
+	/** the game's entity id */
+	id: number;
+	/** the owning level's tag (`id >>> 27`), matching {@link LevelInfo.tag} */
+	level: number;
+	/**
+	 * the game's StreamingLayer of the chunk the surface came from. 6 and 7 hold almost only paddy-field pools;
+	 * whether they need progression gating is open
+	 */
+	layer: number;
+	/**
+	 * geometry-table id. only positions are needed (the shading works in world x, z), and some meshes have no
+	 * UVs; no tangents are generated
+	 */
+	geometry: number;
+	/**
+	 * object-to-world, rows3x4 as in {@link InstanceBlock.transforms} but absolute. many river and polygon
+	 * meshes are authored in world space and have an identity transform; quads and planes are 0.1 m and scaled
+	 * up
+	 */
+	transform: number[];
+	/** world bounds, from the game */
+	bounds: Bounds;
+	/** index into {@link WaterTable.configs} */
+	config: number;
+	/** the game's render type mask, 1 or 2; meaning unknown */
+	renderTypeMask: number;
+	/** the game's per-surface `param1`; `w` is always 1, `x`/`y`/`z` meaning unknown */
+	param1: Vec4;
 }
 
 // #endregion

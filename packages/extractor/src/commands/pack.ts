@@ -118,6 +118,29 @@ const formatReport = (report: PackReport): string => {
 			lines.push(`  failed ${String(count).padStart(5)} × ${reason}`);
 		}
 	}
+	{
+		const { environments } = report;
+		lines.push(
+			`environments: ${environments.profiles} profiles referencing ${environments.textures} textures ` +
+				'(per level in debug/environments.json, `world env` explains the choice)',
+		);
+		for (const level of environments.levels) {
+			const inherited = Object.entries(level.sections).map(([name, source]) => `${name} ${source}`);
+			lines.push(
+				`  ${level.level.padEnd(14)} ${level.phase ?? level.error ?? '(none)'}` +
+					(inherited.length > 0 ? ` (${inherited.join(', ')})` : ''),
+			);
+		}
+	}
+	{
+		const { water } = report;
+		lines.push(
+			`water: ${water.surfaces.packed} of ${water.surfaces.scene} surfaces, ${water.configs} configs, ` +
+				`global ${water.global ?? '(none)'}, ${water.sectors.packed} of ${water.sectors.scene} sectors, ` +
+				`${water.textures} textures` +
+				(water.errors > 0 ? `; ${water.errors} errors (debug/water.json)` : ''),
+		);
+	}
 	lines.push(
 		`core members: ${Object.entries(report.coreMembers)
 			.map(([path, size]) => `${path} ${mb(size)}`)

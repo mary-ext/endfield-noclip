@@ -68,6 +68,8 @@ export interface AssetConversionInput {
 	chains: readonly Chain[];
 	/** per geometry and material id, where its uses are; see `AssetPlacement` */
 	places: { geometries: readonly Place[]; materials: readonly Place[] };
+	/** textures referenced outside materials (environment and water maps), in groups of the caller's choosing */
+	extraTextures: readonly (readonly PlacedTexture[])[];
 	/** names the asset archives blobs go to */
 	archives: AssetArchives;
 	/** zstd level for texture blobs */
@@ -75,6 +77,12 @@ export interface AssetConversionInput {
 	/** assets decoded at once per phase */
 	concurrency: number;
 	log: (line: string) => void;
+}
+
+/** a texture referenced outside materials, and where its blobs go */
+export interface PlacedTexture {
+	ref: ObjectRef;
+	place: Place;
 }
 
 /** a debug-index row: what an entry came from and why it failed */
@@ -97,6 +105,11 @@ export interface AssetConversion {
 	geometries: GeometryEntry[];
 	materials: MaterialTable;
 	textures: TextureEntry[];
+	/**
+	 * per {@link AssetConversionInput.extraTextures} group and entry, its texture-table id, or `null` if it
+	 * failed
+	 */
+	extraTextureIds: (number | null)[][];
 	debug: {
 		geometries: AssetDebug[];
 		materials: (AssetDebug & { shader: string | null })[];
@@ -145,6 +158,18 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	/** texture objects in first-use order, with a provisional id each */
 	const textureObjects: { key: string; locator: TextureLocator; place: Place }[] = [];
 	const textureIndex = new Map<string, number>();
+	const useTexture = (ref: ObjectRef, place: Place): number => {
+		const key = objectKey(ref);
+		let index = textureIndex.get(key);
+		if (index === undefined) {
+			index = textureObjects.length;
+			textureIndex.set(key, index);
+			textureObjects.push({ key, locator: locate(ref), place });
+		} else {
+			textureObjects[index].place = mergePlaces(textureObjects[index].place, place);
+		}
+		return index;
+	};
 	await orderedPool(
 		input.materials,
 		input.concurrency,
@@ -167,16 +192,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				if (target === null || target === undefined) {
 					return undefined;
 				}
-				const key = objectKey(target);
-				let index = textureIndex.get(key);
-				if (index === undefined) {
-					index = textureObjects.length;
-					textureIndex.set(key, index);
-					textureObjects.push({ key, locator: locate(target), place });
-				} else {
-					textureObjects[index].place = mergePlaces(textureObjects[index].place, place);
-				}
-				return index;
+				return useTexture(target, place);
 			});
 			materialEntries.push({ id, status: 'ready', ...converted.material });
 			materialDebug.push({
@@ -187,6 +203,9 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 			});
 			normalMapUv.push(converted.normalMapUv);
 		},
+	);
+	const extraIndices = input.extraTextures.map((group) =>
+		group.map(({ ref, place }) => useTexture(ref, place)),
 	);
 	timer.end('materials');
 	// #endregion
@@ -336,6 +355,12 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 		geometries: geometryEntries,
 		materials: { shaders: shaders.shaders, entries: materialEntries },
 		textures: textureEntries,
+		extraTextureIds: extraIndices.map((group) =>
+			group.map((index) => {
+				const id = textureIds[index];
+				return textureEntries[id]?.status === 'ready' ? id : null;
+			}),
+		),
 		debug: { geometries: geometryDebug, materials: materialDebug, textures: textureDebug },
 		stats: {
 			timings: timer.timings,
@@ -353,18 +378,21 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
  *
  * @param geometries geometry count
  * @param materials material count
- * @returns pending tables
+ * @param extraTextures the textures referenced outside materials, grouped as for {@link convertAssets}
+ * @returns pending tables; extra textures have no id
  */
 export const pendingAssets = (
 	geometries: number,
 	materials: number,
-): Pick<AssetConversion, 'geometries' | 'materials' | 'textures'> => ({
+	extraTextures: readonly (readonly PlacedTexture[])[],
+): Pick<AssetConversion, 'geometries' | 'materials' | 'textures' | 'extraTextureIds'> => ({
 	geometries: Array.from({ length: geometries }, (_, id) => ({ id, status: 'pending' })),
 	materials: {
 		shaders: [],
 		entries: Array.from({ length: materials }, (_, id) => ({ id, status: 'pending' })),
 	},
 	textures: [],
+	extraTextureIds: extraTextures.map((group) => group.map(() => null)),
 });
 
 // #endregion

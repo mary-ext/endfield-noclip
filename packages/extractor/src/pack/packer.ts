@@ -36,6 +36,7 @@ import {
 	CORE_ARCHIVE,
 	CORE_PATHS,
 	DrawRole,
+	type EnvironmentProfile,
 	type GeometryTable,
 	type InstanceBlock,
 	isTerrainHole,
@@ -59,8 +60,10 @@ import {
 	tileId,
 	type Tree,
 	type TreeInfo,
+	type WaterTable,
 } from '@endfield-noclip/package-format/format';
 
+import { getOrInsert } from '../collections.ts';
 import type { Context } from '../context.ts';
 import { loadProgressions, progressionId } from '../game/scene-states.ts';
 import { indexTerrain, loadTerrainSurface, type TerrainSceneIndex } from '../game/terrain-source.ts';
@@ -69,12 +72,22 @@ import { orderedPool } from '../pool.ts';
 import { zstdSync } from '../zstd.ts';
 
 import { AssetArchives, AssetPlacement } from './asset-placement.ts';
-import { type AssetConversion, type AssetDebug, AssetIds, convertAssets, pendingAssets } from './assets.ts';
+import {
+	type AssetConversion,
+	type AssetDebug,
+	AssetIds,
+	convertAssets,
+	pendingAssets,
+	type PlacedTexture,
+} from './assets.ts';
 import { BlobStore, type PutOptions } from './blob-store.ts';
+import { aabbBounds, growBounds } from './bounds.ts';
 import { ChainTable } from './chains.ts';
+import { finishEnvironments, type LevelEnvironmentDebug, planEnvironments } from './environments.ts';
 import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
 import { PhaseTimer } from './phase-timer.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
+import { finishWater, planWater, type WaterDebug } from './water.ts';
 
 // #region options and report
 
@@ -116,6 +129,15 @@ export interface PackReport {
 	};
 	/** asset conversion details, or `null` when assets weren't converted */
 	conversion: AssetConversion['stats'] | null;
+	/** environment profiles, the textures they reference, and what each level resolved to */
+	environments: { profiles: number; textures: number; levels: LevelEnvironmentDebug[] };
+	/** water surfaces in the scene and packed, configs, the global config's name, sectors and maps */
+	water: Pick<WaterDebug, 'surfaces' | 'global' | 'sectors'> & {
+		configs: number;
+		textures: number;
+		/** assets that failed to load, listed in `debug/water.json` */
+		errors: number;
+	};
 	hlod: { clusters: number; tierCounts: number[]; nameMatchesPosition: number };
 	tree: { nodes: number; refs: number; byKind: Record<string, number> };
 	blobs: Record<string, { count: number; stored: number; raw: number }>;
@@ -191,6 +213,28 @@ export const packScene = async (
 		const terrainLevels = await packTerrain(context, pack);
 		timer.end('terrain');
 
+		// independent; only water interns geometries, so ids stay deterministic
+		const [environments, water] = await Promise.all([
+			planEnvironments(context, options.scene, scene.partition?.levels ?? []),
+			planWater(context, options.scene, {
+				includes: (tag, x, z) => scene.subset.includesEntity(tag, x, z),
+				subset: scene.subset.info !== null,
+				geometry: (hash) => {
+					const id = pack.geometries.intern(hash, scene.pathOf);
+					// water is resident, so its meshes go to the common archive
+					pack.uses.noteGeometry(id, null);
+					return id;
+				},
+				placeSector: (rect) =>
+					tileAt(scene.grid, scene.grid.shardLevel, (rect.minX + rect.maxX) / 2, (rect.minZ + rect.maxZ) / 2),
+			}),
+		]);
+		timer.end('environments and water');
+		const extraTextures: PlacedTexture[][] = [
+			environments.textures.map((ref) => ({ ref, place: null })),
+			water.textures,
+		];
+
 		// spooled, so a failed pack leaves nothing outside the package's own entries
 		const debugLog = await DebugLog.create(join(spool, 'instances.jsonl'));
 		const instances = await packInstances(pack, entities.collected, debugLog);
@@ -200,17 +244,19 @@ export const packScene = async (
 		let conversion: AssetConversion | null = null;
 		let assetTables: AssetTables;
 		if (options.convertAssets) {
+			const places = pack.uses.resolve(
+				pack.chains.chains,
+				pack.geometries.assets.length,
+				pack.materials.assets.length,
+			);
 			conversion = await convertAssets({
 				resolver: await context.resolver(),
 				store,
 				geometries: pack.geometries.assets,
 				materials: pack.materials.assets,
 				chains: pack.chains.chains,
-				places: pack.uses.resolve(
-					pack.chains.chains,
-					pack.geometries.assets.length,
-					pack.materials.assets.length,
-				),
+				places,
+				extraTextures,
 				archives: pack.assetArchives,
 				textureZstdLevel: options.textureZstdLevel,
 				concurrency: ASSET_CONCURRENCY,
@@ -219,15 +265,18 @@ export const packScene = async (
 			assetTables = conversion;
 			timer.adopt(conversion.stats.timings);
 		} else {
-			assetTables = pendingAssets(pack.geometries.assets.length, pack.materials.assets.length);
+			assetTables = pendingAssets(pack.geometries.assets.length, pack.materials.assets.length, extraTextures);
 			timer.end('assets');
 		}
 
-		const states = await sceneStates(context.world, scene, entities.collected);
+		const states = await sceneStates(context.world, scene, entities.collected, environments.levels);
 		timer.end('states');
 
+		const [environmentTextureIds, waterTextureIds] = assetTables.extraTextureIds;
 		const written = await writePackage(pack, assetTables, {
 			...states,
+			environments: finishEnvironments(environments, environmentTextureIds),
+			water: finishWater(water, waterTextureIds),
 			resident: instances.resident,
 			terrainLevels,
 		});
@@ -239,6 +288,8 @@ export const packScene = async (
 			geometries: pack.geometries.assets,
 			materials: pack.materials.assets,
 			conversion: conversion?.debug ?? null,
+			environments: environments.debug,
+			water: water.debug,
 		});
 		timer.end('debug');
 
@@ -268,6 +319,19 @@ export const packScene = async (
 				},
 			},
 			conversion: conversion?.stats ?? null,
+			environments: {
+				profiles: environments.profiles.length,
+				textures: environments.textures.length,
+				levels: environments.debug,
+			},
+			water: {
+				surfaces: water.debug.surfaces,
+				configs: water.table.configs.length,
+				global: water.debug.global,
+				sectors: water.debug.sectors,
+				textures: water.textures.length,
+				errors: water.debug.errors.length,
+			},
 			hlod: {
 				clusters: instances.hlodClusters,
 				tierCounts: instances.tierCounts,
@@ -292,7 +356,7 @@ export const packScene = async (
 
 // #region phases
 
-type AssetTables = Pick<AssetConversion, 'geometries' | 'materials' | 'textures'>;
+type AssetTables = Pick<AssetConversion, 'geometries' | 'materials' | 'textures' | 'extraTextureIds'>;
 
 /** tree parameters before the tree is built */
 type TreeGrid = Omit<TreeInfo, 'nodeCount' | 'refCount'>;
@@ -662,6 +726,8 @@ const sceneStates = async (
 	world: WorldIndex,
 	scene: SceneIndex,
 	collected: Collector,
+	/** per partition level: its index into the manifest's environments */
+	environments: readonly (number | null)[],
 ): Promise<SceneStateInfo> => {
 	const { partition } = scene;
 	const progressions = (await loadProgressions(world, scene.options.scene)).map(
@@ -674,7 +740,9 @@ const sceneStates = async (
 			defaultLevel: progression.defaultLevel,
 		}),
 	);
-	const levels = (partition?.levels ?? []).map((level) => levelInfo(level, scene, collected));
+	const levels = (partition?.levels ?? []).map((level, i) =>
+		levelInfo(level, scene, collected, environments[i] ?? null),
+	);
 	return { levels, progressions };
 };
 
@@ -682,7 +750,12 @@ const sceneStates = async (
 const writePackage = async (
 	pack: PackState,
 	assetTables: AssetTables,
-	states: SceneStateInfo & { resident: ContentRef[]; terrainLevels: number[] },
+	states: SceneStateInfo & {
+		environments: EnvironmentProfile[];
+		water: WaterTable;
+		resident: ContentRef[];
+		terrainLevels: number[];
+	},
 ): Promise<{ tree: Tree; coreMembers: Record<string, number>; archives: PackReport['archives'] }> => {
 	const { scene, store } = pack;
 	const { options, grid } = scene;
@@ -693,6 +766,7 @@ const writePackage = async (
 		geometries: zstdTable(json({ entries: assetTables.geometries } satisfies GeometryTable)),
 		materials: zstdTable(json(assetTables.materials satisfies MaterialTable)),
 		textures: zstdTable(json({ entries: assetTables.textures } satisfies TextureTable)),
+		water: zstdTable(json(states.water)),
 	};
 
 	const shardNames = store
@@ -704,7 +778,15 @@ const writePackage = async (
 	const written = await store.writeShards(options.outDir, CORE_ARCHIVE);
 
 	const generation = createHash('sha256');
-	for (const part of [treeBin, chainsBin, blobsBin, tables.geometries, tables.materials, tables.textures]) {
+	for (const part of [
+		treeBin,
+		chainsBin,
+		blobsBin,
+		tables.geometries,
+		tables.materials,
+		tables.textures,
+		tables.water,
+	]) {
 		generation.update(part);
 	}
 	const archives = archiveNames.map((name): ArchiveInfo => {
@@ -727,6 +809,7 @@ const writePackage = async (
 		tree: { ...grid, nodeCount: tree.nodes.length, refCount: tree.refs.length },
 		terrain: scene.terrain === null ? null : { ...scene.terrain, levels: states.terrainLevels },
 		levels: states.levels,
+		environments: states.environments,
 		states: {
 			progressions: states.progressions,
 			conditionalSets: [],
@@ -744,6 +827,7 @@ const writePackage = async (
 		{ path: CORE_PATHS.geometries, data: tables.geometries },
 		{ path: CORE_PATHS.materials, data: tables.materials },
 		{ path: CORE_PATHS.textures, data: tables.textures },
+		{ path: CORE_PATHS.water, data: tables.water },
 	]);
 
 	return {
@@ -755,6 +839,7 @@ const writePackage = async (
 			[CORE_PATHS.geometries]: tables.geometries.length,
 			[CORE_PATHS.materials]: tables.materials.length,
 			[CORE_PATHS.textures]: tables.textures.length,
+			[CORE_PATHS.water]: tables.water.length,
 		},
 		archives: [core, ...written.values()].map(({ name, size, headerLength, members }) => ({
 			name,
@@ -977,29 +1062,12 @@ const countRows = (groups: Iterable<Group>): number => {
 	return count;
 };
 
-const getOrInsert = <K, V>(map: Map<K, V>, key: K, create: () => V): V => {
-	let value = map.get(key);
-	if (value === undefined) {
-		value = create();
-		map.set(key, value);
-	}
-	return value;
-};
-
-const aabbBounds = ({ center, extents }: Aabb): Bounds => ({
-	min: [center[0] - extents[0], center[1] - extents[1], center[2] - extents[2]],
-	max: [center[0] + extents[0], center[1] + extents[1], center[2] + extents[2]],
-});
-
-/** grows owned bounds, in place, to enclose an AABB */
-const growBounds = (bounds: Bounds, { center, extents }: Aabb): void => {
-	for (let axis = 0; axis < 3; axis++) {
-		bounds.min[axis] = Math.min(bounds.min[axis], center[axis] - extents[axis]);
-		bounds.max[axis] = Math.max(bounds.max[axis], center[axis] + extents[axis]);
-	}
-};
-
-const levelInfo = (level: PartitionLevel, scene: SceneIndex, collected: Collector): LevelInfo => {
+const levelInfo = (
+	level: PartitionLevel,
+	scene: SceneIndex,
+	collected: Collector,
+	environment: number | null,
+): LevelInfo => {
 	const { config } = level;
 	return {
 		id: level.id,
@@ -1019,6 +1087,7 @@ const levelInfo = (level: PartitionLevel, scene: SceneIndex, collected: Collecto
 			.toSorted((a, b) => a[1] - b[1] || a[0] - b[0]),
 		instances: collected.tagInstances.get(level.tag) ?? 0,
 		contentBounds: collected.tagBounds.get(level.tag) ?? null,
+		environment,
 	};
 };
 
@@ -1128,10 +1197,14 @@ const writeDebug = async (
 		geometries: { hash: bigint; path: string | null }[];
 		materials: { hash: bigint; path: string | null }[];
 		conversion: AssetConversion['debug'] | null;
+		environments: LevelEnvironmentDebug[];
+		water: WaterDebug;
 	},
 ): Promise<void> => {
 	const dir = join(outDir, 'debug');
 	await mkdir(dir, { recursive: true });
+	await writeFile(join(dir, 'environments.json'), json(debug.environments));
+	await writeFile(join(dir, 'water.json'), json(debug.water));
 	await writeFile(
 		join(dir, 'assets.json'),
 		json({

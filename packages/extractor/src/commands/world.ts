@@ -8,12 +8,28 @@ import {
 } from '@endfield-noclip/formats/endfield/level-partition';
 import { CELL_SIZE } from '@endfield-noclip/formats/endfield/map-config';
 
-import { parseInteger, parseOptionalInteger, separatePositionals } from '../cli-args.ts';
-import { withContext } from '../context.ts';
+import {
+	hashText,
+	need as needArg,
+	parseHash,
+	parseInteger,
+	parseOptionalInteger,
+	separatePositionals,
+} from '../cli-args.ts';
+import { getOrInsert } from '../collections.ts';
+import { type Context, withContext } from '../context.ts';
+import {
+	type LoadedPhase,
+	loadEnvironmentPhase,
+	loadLevelPhases,
+	loadSceneVolumes,
+	resolveLevelEnvironment,
+	resolveLevelPost,
+} from '../game/environment.ts';
 import type { IndexedEntity, WorldIndex } from '../game/world-index.ts';
 
 export const summary =
-	'world index: maps | levels <map> [--verify] | cells <level> | entities <map> <x> <z>|global | members <level> | resolve <path|hash>';
+	'world index: maps | levels <map> [--verify] | cells <level> | entities <map> <x> <z>|global | members <level> | env <map|level> | resolve <path|hash>';
 
 const USAGE = `usage:
   world maps                               streaming scenes, with level counts for open-world maps
@@ -21,6 +37,7 @@ const USAGE = `usage:
   world cells <level>                      cells a level owns and their chunk files
   world entities <map> <x> <z> [--json]    entities in one cell's chunks (or 'global'); --layer/--state filter
   world members <level> [--json]           every entity the level owns, bucketed by placement
+  world env <map|level>                    base environment per level (a map lists all), and why
   world resolve <path|hash>                path ↔ hash, then asset → bundle + dependencies`;
 
 const OPTIONS = {
@@ -39,7 +56,8 @@ export const run = async (args: string[]): Promise<void> => {
 	});
 	const [sub, ...rest] = positionals;
 
-	await withContext(values.config, async ({ world }) => {
+	await withContext(values.config, async (context) => {
+		const { world } = context;
 		switch (sub) {
 			case 'maps': {
 				await listMaps(world);
@@ -65,6 +83,10 @@ export const run = async (args: string[]): Promise<void> => {
 				await listMembers(world, need(rest[0], 'level'), values.json);
 				break;
 			}
+			case 'env': {
+				await showEnvironment(context, need(rest[0], 'map or level'));
+				break;
+			}
 			case 'resolve': {
 				await resolve(world, need(rest[0], 'path or hash'));
 				break;
@@ -76,12 +98,7 @@ export const run = async (args: string[]): Promise<void> => {
 	});
 };
 
-const need = (value: string | undefined, what: string): string => {
-	if (value === undefined) {
-		throw new Error(`missing ${what}\n${USAGE}`);
-	}
-	return value;
-};
+const need = (value: string | undefined, what: string): string => needArg(value, what, USAGE);
 
 const requirePartition = async (world: WorldIndex, mapId: string): Promise<LevelPartition> => {
 	const partition = await world.partition(mapId);
@@ -249,13 +266,75 @@ const listMembers = async (world: WorldIndex, levelId: string, json: boolean): P
 	console.log(`  ${'total'.padEnd(10)} ${String(total).padStart(8)}  (${renderers} with renderers)`);
 };
 
+const percent = (part: number, whole: number): string => `${((part / Math.max(1, whole)) * 100).toFixed(1)}%`;
+
+const showEnvironment = async (context: Context, target: string): Promise<void> => {
+	const { world } = context;
+	let scene = await world.partition(target);
+	let levels = scene?.levels ?? [];
+	if (scene === undefined) {
+		const found = await findLevel(world, target);
+		scene = found.partition;
+		levels = [found.level];
+	}
+	const [volumes, pathOf, names, resolver] = await Promise.all([
+		loadSceneVolumes(world, scene.mapId),
+		world.pathLookup(),
+		world.names(),
+		context.resolver(),
+	]);
+	const assetName = (hash: bigint | null): string =>
+		hash === null
+			? '(none)'
+			: (pathOf(hash)
+					?.split('/')
+					.pop()
+					?.replace(/\.asset$/, '') ?? hashText(hash));
+	const phaseLoads = new Map<bigint, Promise<LoadedPhase>>();
+	const loadPhase = (hash: bigint) =>
+		getOrInsert(phaseLoads, hash, () => loadEnvironmentPhase(resolver, hash, pathOf));
+
+	const choices = levels.map((level) => resolveLevelEnvironment(level, volumes));
+	const phases = await Promise.all(choices.map((choice) => loadLevelPhases(choice, loadPhase)));
+	for (const [i, level] of levels.entries()) {
+		const choice = choices[i];
+		console.log(`${level.id} (tag ${level.tag}) ${names.get(level.id) ?? ''}`);
+		console.log(
+			`  ${choice.samples} samples on a ${CELL_SIZE / 4} m grid over the level's cells; its volumes by coverage:`,
+		);
+		console.log('    covers   shown  priority type  volume → phase');
+		for (const { volume, covered, wins } of choice.shares.slice(0, 6)) {
+			console.log(
+				`    ${percent(covered, choice.samples).padStart(6)}  ${percent(wins, choice.samples).padStart(6)}  ${String(volume.priority).padStart(8)} ${String(volume.volumeType).padStart(4)}  ${volume.name} → ${assetName(volume.envPhase)}`,
+			);
+		}
+		if (choice.shares.length > 6) {
+			console.log(`    … ${choice.shares.length - 6} more`);
+		}
+		console.log(`  base: ${assetName(choice.volume?.envPhase ?? null)}`);
+		const loaded = phases[i];
+		if (loaded !== null) {
+			const sources = Object.entries(loaded.composed).map(([name, { source }]) =>
+				source === 'level' ? name.replace(/Config$/, '') : `${name.replace(/Config$/, '')} (${source})`,
+			);
+			console.log(`  sections: ${sources.join(', ')}`);
+			console.log(
+				`  scene global under it: ${choice.global?.name ?? '(none)'} → ${assetName(choice.global?.envPhase ?? null)}`,
+			);
+		}
+		const post = resolveLevelPost(level, volumes);
+		console.log(`  post: ${post === null ? '(none)' : `${post.name} → ${assetName(post.profile)}`}`);
+	}
+};
+
 const resolve = async (world: WorldIndex, query: string): Promise<void> => {
 	const manifest = await world.manifest();
 	let hashes: bigint[];
-	if (/^(0x[0-9a-f]+|\d+)$/i.test(query)) {
-		hashes = [BigInt.asUintN(64, BigInt(query))];
-		const path = await world.pathOf(hashes[0]);
-		console.log(`hash ${hashes[0]} (0x${hashes[0].toString(16)}) → ${path ?? '(not in StringPathHash)'}`);
+	const parsed = parseHash(query);
+	if (parsed !== null) {
+		hashes = [parsed];
+		const path = await world.pathOf(parsed);
+		console.log(`hash ${parsed} (${hashText(parsed)}) → ${path ?? '(not in StringPathHash)'}`);
 	} else {
 		hashes = await world.hashesOf(query);
 		if (hashes.length === 0) {

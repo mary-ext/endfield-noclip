@@ -116,7 +116,8 @@ const HG_FIELD_CONDITIONS: Record<string, Record<string, (siblings: TypeTreeObje
 	Mesh: { m_CompressedMesh: (siblings) => siblings.m_CollisionMeshBaked !== true },
 };
 
-interface TreeNode {
+/** a TypeTree node with its children, as built by {@link typeTreeHierarchy} */
+export interface TreeNode {
 	node: TypeTreeNode;
 	children: TreeNode[];
 }
@@ -145,6 +146,18 @@ export const compileTypeTree = (nodes: readonly TypeTreeNode[]): CompiledTypeTre
 		root: compileClass(root, children),
 		children,
 	};
+};
+
+/**
+ * @param nodes a flattened, non-empty TypeTree, as in `SerializedType.nodes`
+ * @returns the root node with its children nested, for walking a read value alongside its types
+ * @throws {FormatError} if the tree is empty or a node's level skips one
+ */
+export const typeTreeHierarchy = (nodes: readonly TypeTreeNode[]): TreeNode => {
+	if (nodes.length === 0) {
+		throw new FormatError('empty TypeTree (was the file built without TypeTrees?)');
+	}
+	return buildTree(nodes);
 };
 
 const buildTree = (nodes: readonly TypeTreeNode[]): TreeNode => {
