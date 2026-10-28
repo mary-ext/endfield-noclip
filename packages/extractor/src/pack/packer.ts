@@ -80,7 +80,8 @@ import {
 	pendingAssets,
 	type PlacedTexture,
 } from './assets.ts';
-import { BlobDir, BlobStore, type PutOptions } from './blob-store.ts';
+import { BlobDir } from './blob-file.ts';
+import { BlobStore, type PutOptions } from './blob-store.ts';
 import { aabbBounds, growBounds, squareOverlapsRect } from './bounds.ts';
 import { ChainTable } from './chains.ts';
 import { ConvertPool } from './convert-pool.ts';

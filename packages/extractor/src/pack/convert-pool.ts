@@ -5,7 +5,7 @@ import type { ReadyGeometry, ReadyTexture } from '@endfield-noclip/package-forma
 import type { Keys } from '../config.ts';
 import type { AssetRef } from '../game/assets.ts';
 
-import type { BlobMeta } from './blob-store.ts';
+import type { BlobMeta } from './blob-file.ts';
 
 // mesh and texture conversion is CPU-bound (LZ4, meshopt, zstd, SHA-256), so it runs on worker threads
 // (`convert-worker.ts`). each worker opens the install itself and writes blobs straight to the blob directory.

@@ -16,7 +16,8 @@ import { type AssetRef, type AssetResolver, objectKey, type ObjectRef } from '..
 import { orderedPool } from '../pool.ts';
 
 import { type AssetArchives, type Place, mergePlaces } from './asset-placement.ts';
-import type { BlobMeta, BlobStore, PutOptions } from './blob-store.ts';
+import type { BlobMeta } from './blob-file.ts';
+import type { BlobStore, PutOptions } from './blob-store.ts';
 import type { ConvertJob, ConvertPool, ConvertResult, TextureLocator } from './convert-pool.ts';
 import { convertMaterial, ShaderTable } from './materials.ts';
 import type { PackCache } from './pack-cache.ts';

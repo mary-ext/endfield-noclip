@@ -19,7 +19,8 @@ import {
 import { openArchive } from '@mary-ext/czar';
 import { fromFileHandle } from '@mary-ext/czar/node';
 
-import { BlobDir, BlobStore } from './blob-store.ts';
+import { BlobDir } from './blob-file.ts';
+import { BlobStore } from './blob-store.ts';
 import { ChainTable } from './chains.ts';
 import { InstanceBlockBuilder } from './instances.ts';
 import { TileTreeBuilder } from './tile-tree.ts';

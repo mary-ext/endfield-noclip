@@ -18,7 +18,7 @@ import { WorldIndex } from '../game/world-index.ts';
 import { Vfs } from '../hg/vfs.ts';
 import { zstdSync } from '../zstd.ts';
 
-import { BlobDir, type BlobMeta, storedBlob } from './blob-store.ts';
+import { BlobDir, type BlobMeta, storedBlob } from './blob-file.ts';
 import type {
 	ConvertJob,
 	ConvertResult,

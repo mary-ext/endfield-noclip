@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
 
-import { BlobDir } from './blob-store.ts';
+import { BlobDir } from './blob-file.ts';
 import type { ConvertResult } from './convert-pool.ts';
 
 // a persistent cache for packing: converted meshes and textures, and every blob a pack stores. blobs live in
@@ -31,7 +31,7 @@ const CONVERTER_SOURCES = [
 	'../hg/bundles.ts',
 	'../hg/vfs.ts',
 	'../zstd.ts',
-	'./blob-store.ts',
+	'./blob-file.ts',
 	'./convert-pool.ts',
 	'./convert-worker.ts',
 	'./geometry.ts',
