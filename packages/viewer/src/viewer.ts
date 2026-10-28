@@ -18,7 +18,7 @@ import {
 
 import { type BindLayouts, createBindLayouts } from './gfx/bind-layouts.ts';
 import { type GfxDevice, createGfxDevice } from './gfx/device.ts';
-import { GpuTimer } from './gfx/gpu-timer.ts';
+import { GpuProfiler } from './gfx/gpu-profiler.ts';
 import { PipelineCache } from './gfx/pipeline-cache.ts';
 import { RenderTargets } from './gfx/render-targets.ts';
 import { UniformRing } from './gfx/uniform-ring.ts';
@@ -119,8 +119,15 @@ export interface ViewerStats {
 	frameMs: number;
 	/** smoothed CPU time per frame that did work (traversal, streaming, encoding), ms */
 	cpuMs: number;
-	/** smoothed GPU time of the main pass, ms, if timestamps are available */
+	/** {@link cpuMs} by frame phase, ms */
+	cpuPhases: Record<string, number>;
+	/** smoothed GPU time of all passes, ms, if timestamps are available */
 	gpuMs: number | null;
+	/**
+	 * GPU time by pass label, ms. tile-based GPUs (Apple) overlap passes, so there these are pass lifetimes
+	 * rather than costs and can sum to far more than {@link gpuMs}; compare frames with features toggled instead
+	 */
+	gpuPasses: Record<string, number>;
 	draws: number;
 	triangles: number;
 	instances: number;
@@ -229,7 +236,7 @@ export class Viewer {
 	#reflection: TextureBinding;
 	/** mip levels of the bound reflection cubemap, minus one */
 	#reflectionMips = 0;
-	#timer: GpuTimer;
+	#timer: GpuProfiler;
 	#terrain: TerrainRenderer;
 	#instances: InstanceRenderer;
 	#meshes: MeshRenderer;
@@ -249,6 +256,12 @@ export class Viewer {
 	#seenVersion = -1;
 	#frameMs = 16.7;
 	#cpuMs = 0;
+	/** CPU time per frame phase in this frame so far, ms */
+	#frameSpans = new Map<string, number>();
+	/** {@link #frameSpans} smoothed over the frames that did work */
+	#cpuSpans = new Map<string, number>();
+	/** when the current span started */
+	#spanAt = 0;
 	#visited = 0;
 	#focusCells: Set<string> | null = null;
 	/** the level being shown; `null` when the package has no level with content, which shows everything */
@@ -288,7 +301,7 @@ export class Viewer {
 		};
 		this.#reflection = this.#noReflection;
 		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(this.#noReflection);
-		this.#timer = new GpuTimer(device, gfx.features.timestampQuery);
+		this.#timer = new GpuProfiler(device, gfx.features.timestampQuery);
 		const format = this.#targets.format;
 		this.#terrain = new TerrainRenderer(device, this.#layouts, this.#pipelines, format, TERRAIN_SLOTS);
 		this.#instances = new InstanceRenderer(device, this.#layouts, this.#pipelines, format, INSTANCE_ROWS);
@@ -751,7 +764,9 @@ export class Viewer {
 				.map(([name]) => name),
 			frameMs: 0,
 			cpuMs: 0,
+			cpuPhases: {},
 			gpuMs: null,
+			gpuPasses: {},
 			draws: 0,
 			triangles: 0,
 			instances: 0,
@@ -786,9 +801,12 @@ export class Viewer {
 		const dt = this.#lastTime === 0 ? 1 / 60 : Math.min(0.1, (time - this.#lastTime) / 1000);
 		this.#lastTime = time;
 		const cpuStart = performance.now();
+		this.#spanAt = cpuStart;
+		this.#frameSpans.clear();
 
 		const moved = this.controls.update(dt) || this.#settleFirstPose();
 		const resized = this.#targets.update();
+		this.#span('controls');
 		const scene = this.scene;
 		const options = this.options;
 		let render = this.#dirty || moved || resized || options.continuous;
@@ -808,12 +826,28 @@ export class Viewer {
 		}
 		if (render || traverse) {
 			this.#cpuMs = this.#cpuMs * 0.9 + (performance.now() - cpuStart) * 0.1;
+			const spans = this.#cpuSpans;
+			for (const name of spans.keys()) {
+				if (!this.#frameSpans.has(name)) {
+					spans.set(name, (spans.get(name) ?? 0) * 0.9);
+				}
+			}
+			for (const [name, ms] of this.#frameSpans) {
+				spans.set(name, (spans.get(name) ?? ms) * 0.9 + ms * 0.1);
+			}
 		}
 
 		if (time - this.#lastStats > STATS_INTERVAL) {
 			this.#lastStats = time;
 			this.#publishStats();
 		}
+	}
+
+	/** ends the current CPU span, attributing its time to `name` */
+	#span(name: string): void {
+		const now = performance.now();
+		this.#frameSpans.set(name, (this.#frameSpans.get(name) ?? 0) + now - this.#spanAt);
+		this.#spanAt = now;
 	}
 
 	/** selects and streams this frame's content, and when `prepare` is set, writes it for the renderers */
@@ -830,6 +864,7 @@ export class Viewer {
 		};
 		const selection = scene.selector.run(view, options, this.#focusCells);
 		this.#visited = selection.visited;
+		this.#span('tree');
 		// per-instance LOD selection also requests geometry, so it runs before the stream update
 		let meshSelection: MeshSelection | null = null;
 		if (scene.meshes !== null && options.instances) {
@@ -841,6 +876,7 @@ export class Viewer {
 				minPixels: options.minBoxPixels,
 			});
 		}
+		this.#span('mesh select');
 		this.#updateSkyTextures(scene);
 		if (options.water) {
 			this.#water.prepare({
@@ -854,8 +890,10 @@ export class Viewer {
 		} else {
 			this.#water.clear();
 		}
+		this.#span('sky, water');
 		stream.update();
 		scene.textures.commit();
+		this.#span('stream');
 		if (!prepare) {
 			return;
 		}
@@ -870,6 +908,7 @@ export class Viewer {
 			this.#instances.prepareList(options.boxes ? meshSelection.boxes : [], meshSelection.buckets);
 			this.#meshes.prepare(meshSelection.buckets, scene.textures);
 		}
+		this.#span('prepare');
 	}
 
 	#render(hasScene: boolean): number {
@@ -897,8 +936,10 @@ export class Viewer {
 			}
 		}
 		ring.flush();
+		this.#span('uniforms');
 
-		const encoder = device.createCommandEncoder({ label: 'frame' });
+		const frameEncoder = device.createCommandEncoder({ label: 'frame' });
+		const encoder = this.#timer.instrument(frameEncoder);
 		let draws = 0;
 		cascadeOffsets.forEach((offset, i) => {
 			const pass = encoder.beginRenderPass({
@@ -919,12 +960,10 @@ export class Viewer {
 			pass.end();
 		});
 		const { colors, depth } = this.#targets.mainPassAttachments();
-		const timestampWrites = this.#timer.passWrites();
 		const pass = encoder.beginRenderPass({
 			label: 'main',
 			colorAttachments: colors,
 			depthStencilAttachment: depth,
-			timestampWrites,
 		});
 		if (hasScene) {
 			pass.setBindGroup(0, this.#frameBindGroup, [uniforms.offset]);
@@ -958,11 +997,11 @@ export class Viewer {
 			frame: this.#frame,
 			water: this.#water,
 		});
-		if (timestampWrites !== undefined) {
-			this.#timer.resolve(encoder);
-		}
-		device.queue.submit([encoder.finish()]);
+		this.#timer.resolve(frameEncoder);
+		this.#span('encode');
+		device.queue.submit([frameEncoder.finish()]);
 		this.#timer.afterSubmit();
+		this.#span('submit');
 		return draws;
 	}
 
@@ -1032,7 +1071,9 @@ export class Viewer {
 			...this.stats,
 			frameMs: this.#frameMs,
 			cpuMs: this.#cpuMs,
+			cpuPhases: Object.fromEntries(this.#cpuSpans),
 			gpuMs: this.#timer.milliseconds,
+			gpuPasses: Object.fromEntries(this.#timer.passes),
 			draws: this.#lastDraws,
 			triangles:
 				(this.options.terrain ? this.#terrain.patchCount * this.#terrain.patchTriangles : 0) +
