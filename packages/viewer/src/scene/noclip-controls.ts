@@ -1,7 +1,6 @@
 /**
  * free-flight camera controls: WASD to move, mouse look under pointer lock (or drag), E/R or Space up, Q/F or
- * C down, Shift to boost, Alt to creep, wheel to change the base speed. speed also scales with height above
- * the ground so whole-region vistas don't take minutes to cross.
+ * C down, Shift to boost, Alt to creep, wheel to change the base speed.
  *
  * @module
  */
@@ -14,8 +13,6 @@ const MAX_PITCH = Math.PI / 2 - 0.001;
 const SMOOTHING = 0.08;
 const BOOST = 5;
 const CREEP = 0.2;
-/** above this height over the ground, speed grows linearly with height */
-const ALTITUDE_SCALE_START = 40;
 
 /** a camera pose to fly to */
 export interface CameraPose {
@@ -50,7 +47,6 @@ export class NoclipControls {
 
 	#camera: Camera;
 	#element: HTMLElement;
-	#groundHeight: (x: number, z: number) => number | null;
 	#keys = new Set<string>();
 	#velocity: Vec3 = [0, 0, 0];
 	#flight: Flight | null = null;
@@ -61,12 +57,10 @@ export class NoclipControls {
 	/**
 	 * @param camera the camera to drive
 	 * @param element receives clicks (pointer lock) and wheel events
-	 * @param groundHeight terrain height at a world x, z, if known
 	 */
-	constructor(camera: Camera, element: HTMLElement, groundHeight: (x: number, z: number) => number | null) {
+	constructor(camera: Camera, element: HTMLElement) {
 		this.#camera = camera;
 		this.#element = element;
-		this.#groundHeight = groundHeight;
 		const signal = this.#abort.signal;
 
 		window.addEventListener(
@@ -181,9 +175,7 @@ export class NoclipControls {
 		const strafe = key('KeyD', 'ArrowRight') - key('KeyA', 'ArrowLeft');
 		const lift = key('KeyE', 'KeyR', 'Space', 'PageUp') - key('KeyQ', 'KeyF', 'KeyC', 'PageDown');
 
-		const ground = this.#groundHeight(camera.position[0], camera.position[2]);
-		const altitude = ground === null ? ALTITUDE_SCALE_START : camera.position[1] - ground;
-		let speed = this.speed * Math.max(1, altitude / ALTITUDE_SCALE_START);
+		let speed = this.speed;
 		if (this.#keys.has('ShiftLeft') || this.#keys.has('ShiftRight')) {
 			speed *= BOOST;
 		}

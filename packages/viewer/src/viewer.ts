@@ -250,7 +250,7 @@ export class Viewer {
 			targets,
 		);
 		this.#pool = new DecodePool(Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) >> 1)));
-		this.controls = new NoclipControls(this.camera, canvas, (x, z) => this.groundHeight(x, z));
+		this.controls = new NoclipControls(this.camera, canvas);
 		this.stats = this.#emptyStats();
 	}
 
