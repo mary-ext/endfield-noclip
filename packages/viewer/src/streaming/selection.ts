@@ -79,6 +79,7 @@ export class Selector {
 	#pageQuads: number;
 	#rootSize: number;
 	#focusCells: ReadonlySet<string> | null = null;
+	#level: number | null = null;
 
 	/**
 	 * @param tree the linked tree
@@ -117,6 +118,9 @@ export class Selector {
 		if (options.instances && options.resident) {
 			// resident blobs are pinned: drawn once they arrive, never wanted
 			for (const ref of this.#resident) {
+				if (!this.#shows(ref)) {
+					continue;
+				}
 				const item = this.#stream.markUsed(ref.blob) ? this.#stream.get(ref.blob) : undefined;
 				if (item !== undefined) {
 					selection.instances.push({ item, first: ref.first, count: ref.count });
@@ -136,6 +140,19 @@ export class Selector {
 
 	// #region instances
 
+	/**
+	 * limits instances to one level's, plus shared (tag 0) content
+	 *
+	 * @param tag the level's tag, or `null` to show every instance
+	 */
+	setLevel(tag: number | null): void {
+		this.#level = tag;
+	}
+
+	#shows(ref: ContentRef): boolean {
+		return this.#level === null || ref.level === this.#level || ref.level === 0;
+	}
+
 	#priority(node: TileNode, sse: number, inView: boolean): number {
 		let priority = sse * (inView ? 1 : OFFSCREEN_PRIORITY);
 		if (this.#focusCells !== null && node.cellId !== null && this.#focusCells.has(node.cellId)) {
@@ -149,7 +166,7 @@ export class Selector {
 		const ranges: InstanceRange[] = [];
 		let ready = true;
 		for (const ref of node.hlod) {
-			if (!options.hlodTiers[ref.tier]) {
+			if (!options.hlodTiers[ref.tier] || !this.#shows(ref)) {
 				continue;
 			}
 			const item = this.#stream.want(ref.blob, priority);
@@ -163,7 +180,11 @@ export class Selector {
 	}
 
 	#hasHlod(node: TileNode, options: SelectionOptions): boolean {
-		return node.hlod.some((ref) => options.hlodTiers[ref.tier]);
+		return node.hlod.some((ref) => options.hlodTiers[ref.tier] && this.#shows(ref));
+	}
+
+	#hasDetail(node: TileNode): boolean {
+		return node.detail.some((ref) => this.#shows(ref));
 	}
 
 	/** @returns whether the node's area is fully covered by what was emitted (or needs nothing) */
@@ -179,7 +200,7 @@ export class Selector {
 		const priority = this.#priority(node, sse, true);
 		const hasHlod = this.#hasHlod(node, options);
 		const leaf = isLeaf(node);
-		const canRefine = !leaf || (options.detail && node.detail.length > 0);
+		const canRefine = !leaf || (options.detail && this.#hasDetail(node));
 		const refine = canRefine && (sse > options.maxSse || !hasHlod);
 
 		if (!refine) {
@@ -198,6 +219,9 @@ export class Selector {
 		let complete = true;
 		if (leaf) {
 			for (const ref of node.detail) {
+				if (!this.#shows(ref)) {
+					continue;
+				}
 				const item = this.#stream.want(ref.blob, priority);
 				if (item === null) {
 					complete = false;

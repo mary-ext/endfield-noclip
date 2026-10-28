@@ -12,7 +12,6 @@ struct Patch {
 
 @group(1) @binding(0) var<storage, read> heights: array<u32>;
 @group(1) @binding(1) var<storage, read> patches: array<Patch>;
-@group(1) @binding(2) var<storage, read> cell_mask: array<u32>;
 
 // samples per page edge, from `PAGE_SIDE`
 override SIDE: i32 = 65;
@@ -95,25 +94,11 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 	return out;
 }
 
-fn isolated_out(rel: vec3f) -> bool {
-	if (frame.flags.z == 0u) {
-		return false;
-	}
-	let world = rel.xz + frame.eye.xz;
-	let cell = vec2i(floor((world - frame.cells.xy) / frame.cells.z));
-	let side = i32(frame.cells.w);
-	if (any(cell < vec2i(0)) || any(cell >= vec2i(side))) {
-		return true;
-	}
-	let bit = u32(cell.y * side + cell.x);
-	return (cell_mask[bit / 32u] & (1u << (bit % 32u))) == 0u;
-}
-
 fn albedo(in: VertexOut, n: vec3f) -> vec3f {
 	let grass = vec3f(0.20, 0.27, 0.12);
 	let rock = vec3f(0.33, 0.31, 0.28);
 	var colour = mix(rock, grass, smoothstep(0.72, 0.86, n.y));
-	if (frame.flags.y == 1u) {
+	if (frame.flags.x == 1u) {
 		colour = mix(colour, hue(f32(in.level) * 0.17), 0.45);
 	}
 	return colour;
@@ -121,7 +106,7 @@ fn albedo(in: VertexOut, n: vec3f) -> vec3f {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4f {
-	if (in.hole > 0.01 || isolated_out(in.rel)) {
+	if (in.hole > 0.01) {
 		discard;
 	}
 	let n = normalize(in.normal);
@@ -130,7 +115,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4f {
 
 @fragment
 fn fs_wire(in: VertexOut) -> @location(0) vec4f {
-	if (in.hole > 0.01 || isolated_out(in.rel)) {
+	if (in.hole > 0.01) {
 		discard;
 	}
 	return to_display(mix(vec3f(0.02), hue(f32(in.level) * 0.17) * 0.6, 0.5));

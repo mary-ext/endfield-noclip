@@ -11,11 +11,9 @@ struct Frame {
 	viewport: vec4f,
 	// terrain: zero-sample height relative to the eye, metres per height unit, hole bit (u32 bits), 0
 	terrain: vec4f,
-	// isolate cell grid: world x and z of cell (0, 0), cell size, cells per side
-	cells: vec4f,
 	// fog colour (linear), w = density per metre
 	fog: vec4f,
-	// isolate level tag (0 = off), colour mode (0 = tier, 1 = level), isolate cells on, wireframe on
+	// colour mode (0 = tier, 1 = level), wireframe on, z and w reserved
 	flags: vec4u,
 	// boxes larger than x metres (max half extent) draw as outlines only; y, z, w reserved
 	params: vec4f,

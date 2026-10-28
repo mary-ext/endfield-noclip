@@ -6,7 +6,6 @@ import { dirname, join } from 'node:path';
 import { DrawFlags, type RendererDraw } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import type { LevelPartition, PartitionLevel } from '@endfield-noclip/formats/endfield/level-partition';
 import { CELL_SIZE } from '@endfield-noclip/formats/endfield/map-config';
-import type { StreamAreaTable } from '@endfield-noclip/formats/endfield/stream-area';
 import {
 	readTerrainHeightSamples,
 	readTerrainTexture,
@@ -26,7 +25,6 @@ import {
 } from '@endfield-noclip/package-format/codec';
 import {
 	type ArchiveInfo,
-	type AreaInfo,
 	BLOB_KIND_NAMES,
 	BlobKind,
 	type Bounds,
@@ -64,7 +62,7 @@ import {
 } from '@endfield-noclip/package-format/format';
 
 import type { Context } from '../context.ts';
-import { labelArea, loadProgressions, progressionId } from '../game/scene-states.ts';
+import { loadProgressions, progressionId } from '../game/scene-states.ts';
 import { indexTerrain, loadTerrainSurface, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
 import { orderedPool } from '../pool.ts';
@@ -369,7 +367,7 @@ const indexScene = async (
 		subset: buildSubset(options, partition, grid),
 		files: chunkFiles
 			.filter((file) => file.scene === options.scene)
-			// base-state files first, so the first-wins dedupe keeps an entity in area 0 whenever it's there
+			// base-state files first, then stream areas: a fixed order for the first-wins dedupe
 			.toSorted((a, b) => Number(a.state !== 0) - Number(b.state !== 0) || (a.name < b.name ? -1 : 1)),
 		pathOf,
 		source: { buildGuid: bundleManifest.guid, contentHash: bundleManifest.contentHash },
@@ -393,6 +391,7 @@ const collectEntities = async (
 		excluded: 0,
 		packed: 0,
 	};
+	// stream areas share some entities, and a level is drawn with all of its areas, so one copy is enough
 	const seen = new Set<number>();
 	/** per geometry id: whether its path names a card mesh */
 	const cards: boolean[] = [];
@@ -437,8 +436,6 @@ const collectEntities = async (
 				}
 				seen.add(entity.id);
 				counts.unique++;
-				// areas are labelled from all their entities, whatever the subset keeps
-				collected.voteArea(file.state, entity.levelTag);
 				if (entity.renderer === null) {
 					counts.noRenderer++;
 					continue;
@@ -479,17 +476,17 @@ const collectEntities = async (
 					if (at.x === key.x && at.z === key.z) {
 						hlodNameMatches++;
 					}
-					collected.addHlod(file.state, tier, key, row, entity.name, fileIndex);
+					collected.addHlod(entity.levelTag, tier, key, row, entity.name, fileIndex);
 					pack.uses.note(row.chain, key);
 				} else if (file.cell === null) {
-					collected.addResident(file.state, row, entity.name, fileIndex);
+					collected.addResident(entity.levelTag, row, entity.name, fileIndex);
 					pack.uses.note(row.chain, null);
 				} else {
 					const key = tileAt(grid, grid.leafLevel, x, z);
-					collected.addDetail(file.state, key, row, entity.name, fileIndex);
+					collected.addDetail(entity.levelTag, key, row, entity.name, fileIndex);
 					pack.uses.note(row.chain, key);
 				}
-				collected.noteOwner(file.state, entity.levelTag, bounds);
+				collected.noteOwner(entity.levelTag, bounds);
 			}
 		},
 	);
@@ -531,7 +528,7 @@ const packTerrain = async (context: Pick<Context, 'vfs'>, pack: PackState): Prom
 				{
 					kind: ContentKind.TerrainHeights,
 					tier: 0,
-					area: 0,
+					level: 0,
 					blob: blobs[i],
 					first: 0,
 					count: 1,
@@ -564,7 +561,7 @@ const packInstances = async (
 	};
 
 	const detailGroups = [...collected.detail.values()].toSorted(
-		(a, b) => a.key.z - b.key.z || a.key.x - b.key.x || a.area - b.area,
+		(a, b) => a.key.z - b.key.z || a.key.x - b.key.x || a.level - b.level,
 	);
 	for (let start = 0; start < detailGroups.length; start += BLOB_BATCH) {
 		const encoded = detailGroups.slice(start, start + BLOB_BATCH).map((group) => {
@@ -585,7 +582,7 @@ const packInstances = async (
 				{
 					kind: ContentKind.Detail,
 					tier: 0,
-					area: group.area,
+					level: group.level,
 					blob: blobs[i],
 					first: 0,
 					count: group.rows.length,
@@ -599,13 +596,13 @@ const packInstances = async (
 		}
 	}
 
-	// HLOD and resident rows form one block per area, in the core
+	// HLOD and resident rows form one block per level, in the core
 	const coreBlocks = async (groups: Map<number, Group>) => {
 		const encoded = [...groups]
 			.toSorted((a, b) => a[0] - b[0])
-			.map(([area, group]) => {
+			.map(([level, group]) => {
 				const { block, order } = group.rows.toBlock([scene.grid.origin[0], 0, scene.grid.origin[1]]);
-				return { area, group, block, order };
+				return { level, group, block, order };
 			});
 		const blobs = await store.putMany(
 			encoded.map(({ block }) => ({
@@ -617,12 +614,12 @@ const packInstances = async (
 			// oxlint-disable-next-line no-await-in-loop -- lines go out in block order
 			await debugLog.block(store.hashOf(blobs[i]), group, block, order);
 		}
-		return encoded.map(({ area, group, order }, i) => ({ area, group, order, blob: blobs[i] }));
+		return encoded.map(({ level, group, order }, i) => ({ level, group, order, blob: blobs[i] }));
 	};
 
 	let hlodClusters = 0;
 	const tierCounts = [0, 0, 0];
-	for (const { area, group, order, blob } of await coreBlocks(collected.hlod)) {
+	for (const { level, group, order, blob } of await coreBlocks(collected.hlod)) {
 		// rows are sorted by node, so each node's clusters are one run
 		const groups = group.rows.groupsInOrder(order);
 		for (let first = 0; first < groups.length;) {
@@ -633,7 +630,7 @@ const packInstances = async (
 			const node = collected.hlodNodes.get(groups[first])!;
 			builder.addRef(
 				node.key,
-				{ kind: ContentKind.Hlod, tier: node.tier, area, blob, first, count: end - first, param: 0 },
+				{ kind: ContentKind.Hlod, tier: node.tier, level, blob, first, count: end - first, param: 0 },
 				NodeFlags.HasHlod,
 			);
 			builder.extend(node.key, node.bounds);
@@ -643,10 +640,10 @@ const packInstances = async (
 		}
 	}
 
-	const resident = (await coreBlocks(collected.resident)).map(({ area, group, blob }): ContentRef => ({
+	const resident = (await coreBlocks(collected.resident)).map(({ level, group, blob }): ContentRef => ({
 		kind: ContentKind.Detail,
 		tier: 0,
-		area,
+		level,
 		blob,
 		first: 0,
 		count: group.rows.length,
@@ -658,8 +655,6 @@ const packInstances = async (
 /** the manifest's levels and scenery states */
 interface SceneStateInfo {
 	levels: LevelInfo[];
-	areaTable: StreamAreaTable | undefined;
-	areas: AreaInfo[];
 	progressions: ProgressionInfo[];
 }
 
@@ -669,19 +664,6 @@ const sceneStates = async (
 	collected: Collector,
 ): Promise<SceneStateInfo> => {
 	const { partition } = scene;
-	const areaTable = await world.streamAreas(scene.options.scene);
-	const areas = [...new Set(scene.files.map((file) => file.state))]
-		.filter((id) => id !== 0)
-		.toSorted((a, b) => a - b)
-		.map((id): AreaInfo => {
-			const { levelId, rootVisible, shownInside } = labelArea(
-				id,
-				collected.areaTags.get(id),
-				partition,
-				areaTable,
-			);
-			return { id, levelId, rootVisible, shownInside, instances: collected.areaInstances.get(id) ?? 0 };
-		});
 	const progressions = (await loadProgressions(world, scene.options.scene)).map(
 		(progression): ProgressionInfo => ({
 			id: progressionId(progression.kind, progression.key),
@@ -693,7 +675,7 @@ const sceneStates = async (
 		}),
 	);
 	const levels = (partition?.levels ?? []).map((level) => levelInfo(level, scene, collected));
-	return { levels, areaTable, areas, progressions };
+	return { levels, progressions };
 };
 
 /** builds the tree and tables, then writes every archive */
@@ -746,9 +728,6 @@ const writePackage = async (
 		terrain: scene.terrain === null ? null : { ...scene.terrain, levels: states.terrainLevels },
 		levels: states.levels,
 		states: {
-			areas: states.areas,
-			rootVisible: states.areaTable?.rootVisible ?? [],
-			defaultAreas: 'all',
 			progressions: states.progressions,
 			conditionalSets: [],
 		},
@@ -920,32 +899,31 @@ const nodeSortKey = (key: TileKey): number =>
 
 /** gathers instances by destination while the entity pass runs */
 class Collector {
-	/** detail rows by `tileId/area` */
-	readonly detail = new Map<string, Group & { key: TileKey; area: number }>();
-	/** HLOD rows by area */
+	/** detail rows by `tileId/levelTag` */
+	readonly detail = new Map<string, Group & { key: TileKey; level: number }>();
+	/** HLOD rows by level tag */
 	readonly hlod = new Map<number, Group>();
 	/** HLOD nodes by sort key */
 	readonly hlodNodes = new Map<number, { key: TileKey; tier: number; bounds: Bounds }>();
-	/** resident rows by area */
+	/** resident rows by level tag */
 	readonly resident = new Map<number, Group>();
-	/** per area: instance count and level-tag votes */
-	readonly areaInstances = new Map<number, number>();
-	readonly areaTags = new Map<number, Map<number, number>>();
+	/** packed instance count by level tag */
+	readonly tagInstances = new Map<number, number>();
 	/** world bounds of packed instances by level tag */
 	readonly tagBounds = new Map<number, Bounds>();
 
-	addDetail(area: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
-		const id = `${tileId(key)}/${area}`;
+	addDetail(level: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
+		const id = `${tileId(key)}/${level}`;
 		let group = this.detail.get(id);
 		if (group === undefined) {
-			group = { ...newGroup(), key, area };
+			group = { ...newGroup(), key, level };
 			this.detail.set(id, group);
 		}
 		push(group, row, 0, name, file);
 	}
 
-	addHlod(area: number, tier: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
-		const group = getOrInsert(this.hlod, area, newGroup);
+	addHlod(level: number, tier: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
+		const group = getOrInsert(this.hlod, level, newGroup);
 		const sortKey = nodeSortKey(key);
 		push(group, row, sortKey, name, file);
 		const node = this.hlodNodes.get(sortKey);
@@ -956,19 +934,13 @@ class Collector {
 		}
 	}
 
-	addResident(area: number, row: InstanceInput, name: string, file: number): void {
-		push(getOrInsert(this.resident, area, newGroup), row, 0, name, file);
+	addResident(level: number, row: InstanceInput, name: string, file: number): void {
+		push(getOrInsert(this.resident, level, newGroup), row, 0, name, file);
 	}
 
-	/** counts an entity's level tag towards its area's owner */
-	voteArea(area: number, tag: number): void {
-		const tags = getOrInsert(this.areaTags, area, () => new Map<number, number>());
-		tags.set(tag, (tags.get(tag) ?? 0) + 1);
-	}
-
-	/** records a packed instance against its area and level */
-	noteOwner(area: number, tag: number, bounds: Aabb): void {
-		this.areaInstances.set(area, (this.areaInstances.get(area) ?? 0) + 1);
+	/** records a packed instance against its level */
+	noteOwner(tag: number, bounds: Aabb): void {
+		this.tagInstances.set(tag, (this.tagInstances.get(tag) ?? 0) + 1);
 		const current = this.tagBounds.get(tag);
 		if (current === undefined) {
 			this.tagBounds.set(tag, aabbBounds(bounds));
@@ -1039,6 +1011,7 @@ const levelInfo = (level: PartitionLevel, scene: SceneIndex, collected: Collecto
 			.map((cell) => cellTile(scene.grid, cell))
 			.map((key): [number, number] => [key.x, key.z])
 			.toSorted((a, b) => a[1] - b[1] || a[0] - b[0]),
+		instances: collected.tagInstances.get(level.tag) ?? 0,
 		contentBounds: collected.tagBounds.get(level.tag) ?? null,
 	};
 };

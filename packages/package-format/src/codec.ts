@@ -148,7 +148,8 @@ const bytesOfHex = (hex: string): Uint8Array => {
  * then 24-byte content refs.
  *
  * node: u8 level, u8 childMask, u16 flags, i32 x, i32 z, f32×3 min, f32×3 max, f32 geometricError, u32
- * refFirst, u32 refCount. ref: u8 kind, u8 tier, u16 0, u32 area, u32 blob, u32 first, u32 count, f32 param.
+ * refFirst, u32 refCount. ref: u8 kind, u8 tier, u16 0, u32 level, u32 blob, u32 first, u32 count, f32
+ * param.
  *
  * @param tree nodes and refs; node ref slices must lie inside `refs`
  * @returns the encoded file
@@ -191,7 +192,7 @@ const writeRef = (view: DataView, at: number, ref: ContentRef): void => {
 	view.setUint8(at, ref.kind);
 	view.setUint8(at + 1, ref.tier);
 	view.setUint16(at + 2, 0, true);
-	view.setUint32(at + 4, ref.area, true);
+	view.setUint32(at + 4, ref.level, true);
 	view.setUint32(at + 8, ref.blob, true);
 	view.setUint32(at + 12, ref.first, true);
 	view.setUint32(at + 16, ref.count, true);
@@ -232,7 +233,7 @@ export const decodeTree = (data: Uint8Array): Tree => {
 		refs.push({
 			kind: checkedEnum(isContentKind, view.getUint8(at), 'content kind'),
 			tier: view.getUint8(at + 1),
-			area: view.getUint32(at + 4, true),
+			level: view.getUint32(at + 4, true),
 			blob: view.getUint32(at + 8, true),
 			first: view.getUint32(at + 12, true),
 			count: view.getUint32(at + 16, true),

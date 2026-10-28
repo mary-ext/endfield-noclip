@@ -1,6 +1,6 @@
 /**
  * the viewer: owns the device, the frame loop, the camera and the loaded package, and wires traversal →
- * streaming → renderers. the React UI drives it through {@link Viewer.setOptions} and the area actions, and
+ * streaming → renderers. the React UI drives it through {@link Viewer.setOptions} and the level actions, and
  * reads {@link ViewerStats} through {@link Viewer.subscribe}.
  *
  * @module
@@ -30,7 +30,7 @@ import { InstanceRenderer } from './render/instance-renderer.ts';
 import { RowKind, type RowKinds, type TierSpan } from './render/instance-rows.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
-import { CELL_MASK_WORDS, PAGE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
+import { PAGE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
 import { TextureStore } from './render/texture-store.ts';
 import { Camera, type Vec3 } from './scene/camera.ts';
 import { type CameraPose, NoclipControls } from './scene/noclip-controls.ts';
@@ -122,11 +122,11 @@ export interface ViewerStats {
 	camera: { position: Vec3; yaw: number; pitch: number; speed: number };
 }
 
-/** what the area list needs */
-export interface AreaEntry {
+/** what the level list needs */
+export interface LevelEntry {
 	id: string;
 	name: string;
-	cellCount: number;
+	instances: number;
 }
 
 // #endregion
@@ -153,7 +153,7 @@ interface LoadedScene {
 	/** per-instance LOD selection, when the package has converted geometry */
 	meshes: MeshSelector | null;
 	textures: TextureStore;
-	areas: AreaEntry[];
+	levels: LevelEntry[];
 }
 
 /**
@@ -191,7 +191,7 @@ export class Viewer {
 	readonly controls: NoclipControls;
 	readonly options: ViewerOptions = structuredClone(DEFAULT_OPTIONS);
 	stats: ViewerStats;
-	/** bumped when the package, the options or the isolated area change; a cheap snapshot for the UI */
+	/** bumped when the package, the options or the shown level change; a cheap snapshot for the UI */
 	stateRevision = 0;
 	/** bumped when {@link stats} change */
 	statsRevision = 0;
@@ -221,8 +221,8 @@ export class Viewer {
 	#cpuMs = 0;
 	#visited = 0;
 	#focusCells: Set<string> | null = null;
-	#isolated: LevelInfo | null = null;
-	#cellMask = new Uint32Array(CELL_MASK_WORDS);
+	/** the level being shown; `null` when the package has no level with content, which shows everything */
+	#level: LevelInfo | null = null;
 	#lastDraws = 0;
 	#viewProj = new Float32Array(16);
 
@@ -272,9 +272,15 @@ export class Viewer {
 	 * opens a package and starts streaming it, replacing any loaded one.
 	 *
 	 * @param source where the package lives
+	 * @param initialLevel id of the level to show first; when absent from the package, the first level with
+	 *   content is shown
 	 * @param onProgress loading phases for the UI
 	 */
-	async load(source: PackageSource, onProgress: (phase: string) => void): Promise<void> {
+	async load(
+		source: PackageSource,
+		initialLevel: string | null,
+		onProgress: (phase: string) => void,
+	): Promise<void> {
 		this.unload();
 		const pkg = await openViewerPackage(source, onProgress);
 		const tree = buildTileTree(pkg.manifest, pkg.tree);
@@ -353,13 +359,19 @@ export class Viewer {
 						})
 					: null,
 			textures,
-			areas: manifest.levels.map((level) => ({
+			levels: manifest.levels.map((level) => ({
 				id: level.id,
 				name: level.name ?? level.id,
-				cellCount: level.cells.length,
+				instances: level.instances,
 			})),
 		};
-		const pose = this.#overviewPose();
+		const showable = manifest.levels.filter((level) => level.instances > 0);
+		this.#level = showable.find((level) => level.id === initialLevel) ?? showable[0] ?? null;
+		selector.setLevel(this.#level?.tag ?? null);
+		if (this.#level !== null) {
+			this.#focusCells = this.#cellIds(this.#level);
+		}
+		const pose = this.#level === null ? this.#overviewPose() : this.#levelPose(this.#level);
 		if (pose !== null) {
 			this.camera.position = pose.position;
 			this.camera.yaw = pose.yaw;
@@ -378,27 +390,27 @@ export class Viewer {
 		this.scene?.textures.destroy();
 		this.#meshes.releaseMaterials();
 		this.scene = null;
-		this.#isolated = null;
+		this.#level = null;
 		this.#focusCells = null;
 		this.#dirty = true;
 		this.#emitState();
 	}
 
-	/** @returns the loaded package's levels for the area list (the same array until the package changes) */
-	areas(): AreaEntry[] {
-		return this.scene?.areas ?? [];
+	/** @returns the loaded package's levels (the same array until the package changes) */
+	levels(): LevelEntry[] {
+		return this.scene?.levels ?? [];
 	}
 
 	// #endregion
 
-	// #region camera and areas
+	// #region camera and levels
 
 	/**
 	 * @param x world x
 	 * @param z world z
 	 * @returns terrain height from the always-resident coarse pages, or `null` off the terrain
 	 */
-	groundHeight(x: number, z: number): number | null {
+	#groundHeight(x: number, z: number): number | null {
 		const scene = this.scene;
 		const terrain = scene?.pkg.manifest.terrain;
 		if (scene == null || terrain == null) {
@@ -449,19 +461,20 @@ export class Viewer {
 		return new Set(level.cells.map(([x, z]) => tileId({ level: cellLevel, x, z })));
 	}
 
-	#level(id: string): LevelInfo | undefined {
+	#levelInfo(id: string): LevelInfo | undefined {
 		return this.scene?.pkg.manifest.levels.find((candidate) => candidate.id === id);
 	}
 
-	/** flies back to the whole-region overview */
-	flyToOverview(): void {
-		const pose = this.#overviewPose();
-		if (pose === null) {
-			return;
-		}
-		this.controls.flyTo(pose);
-		this.#focusCells = null;
-		this.#dirty = true;
+	/** @returns a pose looking over the level's playable rectangle */
+	#levelPose(level: LevelInfo): CameraPose {
+		const { rect, playerInitPos } = level;
+		const cx = (rect.minX + rect.maxX) / 2;
+		const cz = (rect.minZ + rect.maxZ) / 2;
+		const extent = Math.max(rect.maxX - rect.minX, rect.maxZ - rect.minZ);
+		const ground = this.#groundHeight(cx, cz) ?? playerInitPos[1];
+		const back = extent * 0.75;
+		const up = extent * 0.55;
+		return { position: [cx, ground + up, cz - back], yaw: 0, pitch: -Math.atan2(up, back) };
 	}
 
 	/**
@@ -470,18 +483,14 @@ export class Viewer {
 	 * @param id level id
 	 */
 	flyToLevel(id: string): void {
-		const level = this.#level(id);
-		if (level === undefined) {
-			return;
+		const level = this.#levelInfo(id);
+		if (level !== undefined) {
+			this.#flyOver(level);
 		}
-		const { rect, playerInitPos } = level;
-		const cx = (rect.minX + rect.maxX) / 2;
-		const cz = (rect.minZ + rect.maxZ) / 2;
-		const extent = Math.max(rect.maxX - rect.minX, rect.maxZ - rect.minZ);
-		const ground = this.groundHeight(cx, cz) ?? playerInitPos[1];
-		const back = extent * 0.75;
-		const up = extent * 0.55;
-		this.controls.flyTo({ position: [cx, ground + up, cz - back], yaw: 0, pitch: -Math.atan2(up, back) });
+	}
+
+	#flyOver(level: LevelInfo): void {
+		this.controls.flyTo(this.#levelPose(level));
 		this.#focusCells = this.#cellIds(level);
 		this.#dirty = true;
 	}
@@ -492,7 +501,7 @@ export class Viewer {
 	 * @param id level id
 	 */
 	flyToSpawn(id: string): void {
-		const level = this.#level(id);
+		const level = this.#levelInfo(id);
 		if (level === undefined) {
 			return;
 		}
@@ -502,32 +511,25 @@ export class Viewer {
 		this.#dirty = true;
 	}
 
-	/** @returns the isolated level's id, or `null` */
-	get isolated(): string | null {
-		return this.#isolated?.id ?? null;
+	/** @returns the shown level's id, or `null` when the package has no level with content */
+	get level(): string | null {
+		return this.#level?.id ?? null;
 	}
 
 	/**
-	 * shows only one level's instances and the terrain under its cells, or everything again.
+	 * shows one level, whole and alone over the shared terrain, and flies over it. other levels' content stops
+	 * being drawn and is evicted as the budget needs.
 	 *
-	 * @param id level id, or `null` to show everything
+	 * @param id level id
 	 */
-	isolate(id: string | null): void {
-		const scene = this.scene;
-		const level = id === null ? undefined : this.#level(id);
-		this.#isolated = level ?? null;
-		this.#cellMask.fill(0);
-		if (level !== undefined && scene !== null) {
-			const side = 2 ** scene.pkg.manifest.tree.cellLevel;
-			for (const [x, z] of level.cells) {
-				if (x >= 0 && z >= 0 && x < side && z < side) {
-					const bit = z * side + x;
-					this.#cellMask[bit >>> 5] |= 1 << (bit & 31);
-				}
-			}
+	showLevel(id: string): void {
+		const level = this.#levelInfo(id);
+		if (level === undefined || this.scene === null) {
+			return;
 		}
-		this.#terrain.setCellMask(this.#cellMask);
-		this.#dirty = true;
+		this.#level = level;
+		this.scene.selector.setLevel(level.tag);
+		this.#flyOver(level);
 		this.#emitState();
 	}
 
@@ -748,31 +750,21 @@ export class Viewer {
 			f32[at + 2] = camera.pixelFactor(height);
 			f32[at + 3] = this.options.minBoxPixels;
 		}
-		const manifest = this.scene?.pkg.manifest;
-		const terrain = manifest?.terrain;
+		const terrain = this.scene?.pkg.manifest.terrain;
 		if (terrain != null) {
 			const at = FrameOffsets.terrain;
 			f32[at] = terrain.position[1] - eye[1];
 			f32[at + 1] = terrain.heightScale / terrain.holeBit;
 			u32[at + 2] = terrain.holeBit;
 		}
-		if (manifest !== undefined) {
-			const { origin, rootSize, cellLevel } = manifest.tree;
-			const side = 2 ** cellLevel;
-			const at = FrameOffsets.cells;
-			f32[at] = origin[0];
-			f32[at + 1] = origin[1];
-			f32[at + 2] = rootSize / side;
-			f32[at + 3] = side;
-		}
 		f32.set(FOG_COLOUR, FrameOffsets.fog);
 		f32[FrameOffsets.fog + 3] = FOG_DENSITY;
 		{
 			const at = FrameOffsets.flags;
-			u32[at] = this.#isolated?.tag ?? 0;
-			u32[at + 1] = this.options.colourBy === 'level' ? 1 : 0;
-			u32[at + 2] = this.#isolated === null ? 0 : 1;
-			u32[at + 3] = this.options.wireframe ? 1 : 0;
+			u32[at] = this.options.colourBy === 'level' ? 1 : 0;
+			u32[at + 1] = this.options.wireframe ? 1 : 0;
+			u32[at + 2] = 0;
+			u32[at + 3] = 0;
 		}
 		f32[FrameOffsets.params] = this.options.outlineMetres;
 	}

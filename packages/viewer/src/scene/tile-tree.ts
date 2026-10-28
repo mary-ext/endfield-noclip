@@ -35,7 +35,7 @@ export interface TileNode {
 	terrain: ContentRef | null;
 	hlod: ContentRef[];
 	detail: ContentRef[];
-	/** {@link tileId} of the cellLevel ancestor (or self), for focus/isolate lookups; `null` above cellLevel */
+	/** {@link tileId} of the cellLevel ancestor (or self), for focus lookups; `null` above cellLevel */
 	cellId: string | null;
 }
 

@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 2;
+export const PACKAGE_VERSION = 3;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -95,11 +95,11 @@ export const ContentKind = {
 	TerrainHeights: 0,
 	/** HLOD cluster rows `[first, first + count)` of an instance block; `tier` is the HLOD tier */
 	Hlod: 1,
-	/** detail instances of one stream area: a whole instance block */
+	/** detail instances of one level: a whole instance block */
 	Detail: 2,
 	/**
 	 * reserved: instances shown only at some levels of a progression (outpost level, POI facility level).
-	 * `area` holds the index into {@link StatesInfo.conditionalSets}. not written yet
+	 * `level` holds the index into {@link StatesInfo.conditionalSets}. not written yet
 	 */
 	Conditional: 3,
 	/** reserved: baked terrain pages (albedo, normal, tint, splat, cliff); `tier` names the channel */
@@ -259,7 +259,12 @@ export interface PackageManifest {
 	coordinates: CoordinateConventions;
 	tree: TreeInfo;
 	terrain: TerrainInfo | null;
-	/** every level of the scene, whether or not the package's subset includes its content */
+	/**
+	 * every level of the scene, whether or not the package's subset includes its content. a viewer shows one
+	 * level at a time: the instance refs carrying its tag (each level's content includes its own backdrop),
+	 * plus those with tag 0 (shared content, on maps with several levels), over the shared terrain. empty for
+	 * scenes without levels, whose instances are all shown
+	 */
 	levels: LevelInfo[];
 	states: StatesInfo;
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
@@ -361,6 +366,8 @@ export interface LevelInfo {
 	playerInitPos: [x: number, y: number, z: number];
 	/** owned 128 m cells as tile coordinates at {@link TreeInfo.cellLevel} */
 	cells: [x: number, z: number][];
+	/** instances the level owns in this package */
+	instances: number;
 	/** world bounds of the instances the level owns in this package, or `null` if none were packed */
 	contentBounds: Bounds | null;
 }
@@ -380,38 +387,15 @@ export interface Bounds {
 }
 
 /**
- * scenery variants. two independent mechanisms, both additive on top of area 0:
- *
- * - stream areas: the game's `<sceneStateId>` chunk suffixes. they reveal extra static scenery (interiors,
- *   caves, the off-map Si's Painting world) depending on where the camera is. instance sets are keyed per
- *   (tile, area)
- * - progressions: outpost/settlement levels, POI facility levels, factory regions. selected per progression,
- *   mutually exclusive levels. reserved here as conditional instance sets
+ * scenery variants. the game's stream areas (`<sceneStateId>` chunk suffixes: interiors, caves, off-map
+ * places) aren't kept apart: their content is merged into the levels that own it, so a level is drawn whole.
+ * progressions (outpost/settlement levels, POI facility levels, factory regions) are selected per
+ * progression, with mutually exclusive levels, and reserved here as conditional instance sets
  */
 export interface StatesInfo {
-	/** stream areas with chunk content; area 0 (the base world) is implicit */
-	areas: AreaInfo[];
-	/** areas the game shows while the camera is in no trigger */
-	rootVisible: number[];
-	/** what the viewer shows by default: every area, deduplicated by entity id at pack time */
-	defaultAreas: 'all';
 	progressions: ProgressionInfo[];
 	/** reserved: instance sets gated by a progression level. empty until dynamic entities are decoded */
 	conditionalSets: ConditionalSetInfo[];
-}
-
-/** a stream area */
-export interface AreaInfo {
-	/** the `<sceneStateId>` of the area's chunk files */
-	id: number;
-	/** level owning most of its entities */
-	levelId: string | null;
-	/** shown outside every trigger */
-	rootVisible: boolean;
-	/** trigger zones whose visible slice includes this area */
-	shownInside: number[];
-	/** instances packed for this area */
-	instances: number;
 }
 
 /** a selectable progression */
@@ -494,8 +478,11 @@ export interface ContentRef {
 	kind: ContentKind;
 	/** HLOD tier for {@link ContentKind.Hlod}; 0 otherwise */
 	tier: number;
-	/** stream area id; for {@link ContentKind.Conditional}, the conditional set index */
-	area: number;
+	/**
+	 * the instances' level tag (`entityId >>> 27`, matching {@link LevelInfo.tag}) for instance content; 0 for
+	 * terrain; for {@link ContentKind.Conditional}, the conditional set index
+	 */
+	level: number;
 	/** blob index */
 	blob: number;
 	/** first row, for refs into a shared instance block; 0 otherwise */

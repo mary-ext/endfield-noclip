@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 import type { Viewer } from '../viewer.ts';
 
 /**
- * re-renders the caller when the package, the options or the isolated area change.
+ * re-renders the caller when the package, the options or the shown level change.
  *
  * @param viewer the viewer
  * @returns the viewer's state revision (only useful as a dependency)

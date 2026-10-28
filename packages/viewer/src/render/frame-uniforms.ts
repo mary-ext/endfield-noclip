@@ -10,7 +10,7 @@ import frameWgsl from './shaders/frame.wgsl?raw';
 export const FRAME_WGSL = frameWgsl;
 
 /** byte size of `Frame` */
-export const FRAME_UNIFORM_BYTES = 192;
+export const FRAME_UNIFORM_BYTES = 176;
 
 /** float offsets of `Frame` fields */
 export const FrameOffsets = {
@@ -19,11 +19,10 @@ export const FrameOffsets = {
 	sun: 20,
 	viewport: 24,
 	terrain: 28,
-	cells: 32,
-	fog: 36,
+	fog: 32,
 	/** u32 */
-	flags: 40,
-	params: 44,
+	flags: 36,
+	params: 40,
 } as const;
 
 /** fog colour, linear */

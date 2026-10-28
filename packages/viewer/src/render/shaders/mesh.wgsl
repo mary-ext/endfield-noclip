@@ -61,11 +61,6 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	let row = rows[list[ii]];
 	let draw = draws[draw_ids[ii]];
 	let tag = row.info & 0xffu;
-	if (frame.flags.x != 0u && frame.flags.x != tag) {
-		var culled: VertexOut;
-		culled.position = vec4f(2.0, 2.0, 2.0, 1.0);
-		return culled;
-	}
 	let p = draw.offset.xyz + v.position.xyz * draw.scale.xyz;
 	let rel = vec3f(
 		dot(row.t0.xyz, p) + row.t0.w,
@@ -84,7 +79,7 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	out.normal = n;
 	out.uv = v.uv * draw.uv.xy + draw.uv.zw;
 	out.material = vec2f(draw.offset.w, draw.colour.w);
-	if (frame.flags.y == 1u) {
+	if (frame.flags.x == 1u) {
 		out.colour = tag_colour(tag);
 	} else {
 		out.colour = draw.colour.rgb;

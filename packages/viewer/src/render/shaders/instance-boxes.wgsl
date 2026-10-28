@@ -82,14 +82,14 @@ fn load_box(ii: u32) -> Box {
 	box.extent = max(row.extent, vec3f(0.05));
 	let tag = row.info & 0xffu;
 	let kind = (row.info >> 8u) & 0xfu;
-	if (frame.flags.y == 1u) {
+	if (frame.flags.x == 1u) {
 		box.colour = tag_colour(tag);
 	} else {
 		box.colour = kind_colour(kind);
 	}
 	// small-feature culling: drop boxes below the projected size threshold
 	let pixels = length(box.extent) * frame.viewport.z / max(length(box.centre), 1.0);
-	box.visible = pixels >= frame.viewport.w && (frame.flags.x == 0u || frame.flags.x == tag);
+	box.visible = pixels >= frame.viewport.w;
 	box.outline_only = max(box.extent.x, max(box.extent.y, box.extent.z)) > frame.params.x;
 	return box;
 }
@@ -124,7 +124,7 @@ fn vs_fill(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 fn vs_wire(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VertexOut {
 	let box = load_box(ii);
 	// outlines are drawn for every box in wireframe mode, else only for those too large to fill
-	if (!box.visible || (frame.flags.w == 0u && !box.outline_only)) {
+	if (!box.visible || (frame.flags.y == 0u && !box.outline_only)) {
 		return culled();
 	}
 	let rel = box.centre + EDGES[vi] * box.extent;

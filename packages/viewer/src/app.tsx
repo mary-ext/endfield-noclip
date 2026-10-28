@@ -1,8 +1,8 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 
 import type { PackageSource } from './package/package-source.ts';
-import { AreasPanel } from './ui/areas-panel.tsx';
 import { CameraReadout } from './ui/camera-readout.tsx';
+import { LevelsPanel } from './ui/levels-panel.tsx';
 import { type OpenPackage, PackagePanel } from './ui/package-panel.tsx';
 import { sourceFromParam } from './ui/package-param.ts';
 import { SettingsPanel } from './ui/settings-panel.tsx';
@@ -10,8 +10,20 @@ import { StatsPanel } from './ui/stats-panel.tsx';
 import { Viewer } from './viewer.ts';
 
 const PACKAGE_PARAM = 'package';
+const LEVEL_PARAM = 'level';
 
 const describeError = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** sets or clears a search parameter of the page URL without a navigation */
+const setParam = (name: string, value: string | null): void => {
+	const url = new URL(location.href);
+	if (value === null) {
+		url.searchParams.delete(name);
+	} else {
+		url.searchParams.set(name, value);
+	}
+	history.replaceState(null, '', url);
+};
 
 export const App = () => {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -21,17 +33,11 @@ export const App = () => {
 	const [status, setStatus] = useState('');
 
 	const open = (target: Viewer, source: PackageSource, param: string | null): void => {
-		const url = new URL(location.href);
-		if (param === null) {
-			url.searchParams.delete(PACKAGE_PARAM);
-		} else {
-			url.searchParams.set(PACKAGE_PARAM, param);
-		}
-		history.replaceState(null, '', url);
+		setParam(PACKAGE_PARAM, param);
 		setStatus('opening…');
 		setCurrent({ label: source.label, param });
 		target
-			.load(source, setStatus)
+			.load(source, new URL(location.href).searchParams.get(LEVEL_PARAM), setStatus)
 			.then(() => setStatus(''))
 			.catch((err: unknown) => {
 				setCurrent(null);
@@ -73,6 +79,19 @@ export const App = () => {
 		};
 	}, []);
 
+	// the shown level lives in the URL, so a reload or a shared link opens the same level
+	useEffect(() => {
+		if (viewer === null) {
+			return;
+		}
+		return viewer.subscribe(() => {
+			// nothing to record while no package is loaded (including mid-load)
+			if (viewer.scene !== null && new URL(location.href).searchParams.get(LEVEL_PARAM) !== viewer.level) {
+				setParam(LEVEL_PARAM, viewer.level);
+			}
+		});
+	}, [viewer]);
+
 	return (
 		<main className="app">
 			<canvas ref={canvasRef} className="viewport" />
@@ -93,7 +112,7 @@ export const App = () => {
 						<StatsPanel viewer={viewer} />
 					</div>
 					<div className="dock right">
-						<AreasPanel viewer={viewer} />
+						<LevelsPanel viewer={viewer} />
 						<SettingsPanel viewer={viewer} />
 					</div>
 					<div className="dock bottom">

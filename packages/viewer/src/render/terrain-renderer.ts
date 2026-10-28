@@ -18,8 +18,6 @@ import terrainWgsl from './shaders/terrain.wgsl?raw';
 
 /** samples per page edge the shader is written for (its `SIDE`) */
 export const PAGE_SIDE = 65;
-/** u32 words of the isolate cell mask: one bit per cell of a grid up to 181 cells across */
-export const CELL_MASK_WORDS = 1024;
 const QUADS = PAGE_SIDE - 1;
 const GRID = QUADS / 2 + 1;
 /** u32 words per page slot (two samples per word) */
@@ -78,7 +76,6 @@ export class TerrainRenderer {
 	#patchCapacity: number;
 	#patchData: Float32Array;
 	#patchWords: Uint32Array;
-	#cellMask: GPUBuffer;
 	#fillIndices: GPUBuffer;
 	#wireIndices: GPUBuffer;
 	#fillCount: number;
@@ -122,11 +119,6 @@ export class TerrainRenderer {
 			size: this.#patchData.byteLength,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 		});
-		this.#cellMask = device.createBuffer({
-			label: 'terrain cell mask',
-			size: CELL_MASK_WORDS * 4,
-			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-		});
 		const { fill, wire } = gridIndices();
 		this.#fillCount = fill.length;
 		this.#wireCount = wire.length;
@@ -138,7 +130,6 @@ export class TerrainRenderer {
 			entries: [
 				{ binding: 0, resource: { buffer: this.#heights } },
 				{ binding: 1, resource: { buffer: this.#patches } },
-				{ binding: 2, resource: { buffer: this.#cellMask } },
 			],
 		});
 
@@ -214,11 +205,6 @@ export class TerrainRenderer {
 	/** @param resident a page from {@link upload}; its slot returns to the pool */
 	release(resident: ResidentHeights): void {
 		this.#freeSlots.push(resident.slot);
-	}
-
-	/** @param mask isolate bits over the cell grid (row-major, z rows), at most {@link CELL_MASK_WORDS} words */
-	setCellMask(mask: Uint32Array<ArrayBuffer>): void {
-		this.#device.queue.writeBuffer(this.#cellMask, 0, mask, 0, Math.min(mask.length, CELL_MASK_WORDS));
 	}
 
 	/**

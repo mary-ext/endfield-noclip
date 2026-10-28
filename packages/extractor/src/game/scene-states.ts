@@ -21,7 +21,7 @@ import type { ChunkFile, WorldIndex } from './world-index.ts';
 // #region types
 
 /** where a stream area sits: its owning level and when the client shows it */
-export interface AreaLabel {
+interface AreaLabel {
 	/** level owning most of its entities, by id tag */
 	levelId: string | null;
 	/** shown while the camera is in no trigger */
@@ -161,7 +161,7 @@ export const loadProgressions = async (world: WorldIndex, scene: string): Promis
  * @param table the scene's stream-area table, if it has one
  * @returns the area's owning level (the tag with the most votes, earliest on ties) and visibility
  */
-export const labelArea = (
+const labelArea = (
 	id: number,
 	tags: ReadonlyMap<number, number> | undefined,
 	partition: LevelPartition | undefined,
@@ -187,7 +187,7 @@ export const labelArea = (
  * @param area area id
  * @returns ids of areas whose trigger slice includes `area`, excluding itself
  */
-export const revealingAreas = (table: StreamAreaTable, area: number): number[] => {
+const revealingAreas = (table: StreamAreaTable, area: number): number[] => {
 	const ids: number[] = [];
 	for (const [id, visible] of table.visibleWhileInside) {
 		if (id !== area && visible.includes(area)) {
