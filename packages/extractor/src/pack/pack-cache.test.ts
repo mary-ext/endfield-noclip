@@ -24,8 +24,10 @@ const geometry = (hash: string): ConvertResult => ({
 	},
 	gpuBytes: 30,
 	blob: { hash, codec: BlobCodec.None, length: 1, rawLength: 1, crc32: 0 },
-	sources: [0],
+	sources: [{ bundle: 'main/0.ab', md5: 'A' }],
 });
+
+const current = async (): Promise<boolean> => true;
 
 /** a directory that looks like a package to the cache */
 const fakePackage = async (dir: string): Promise<void> => {
@@ -54,7 +56,9 @@ describe('PackCache', () => {
 			await cache.close();
 
 			cache = await PackCache.open(root);
-			assert.deepEqual(await cache.recall(keyA), geometry('aa'.repeat(16)));
+			// a changed source bundle is a miss
+			assert.equal(await cache.recall(keyA, async () => false), undefined);
+			assert.deepEqual(await cache.recall(keyA, current), geometry('aa'.repeat(16)));
 			assert.equal(cache.hits.geometries, 1);
 			const keyB = cache.key({ asset: 2n });
 			await cache.blobs.write('bb'.repeat(16), new Uint8Array([2]));
@@ -67,11 +71,11 @@ describe('PackCache', () => {
 			// b's package is gone, so its blob and conversion go at the next pack
 			await rm(b, { recursive: true });
 			cache = await PackCache.open(root);
-			assert.ok(await cache.recall(keyA));
+			assert.ok(await cache.recall(keyA, current));
 			report = await cache.finish(a, ['aa'.repeat(16)]);
 			assert.equal(report.swept.blobs, 1);
 			assert.equal(report.swept.memos, 1);
-			assert.equal(await cache.recall(keyB), undefined);
+			assert.equal(await cache.recall(keyB, current), undefined);
 			assert.equal((await new BlobDir(join(root, 'roots')).names()).length, 1);
 			await cache.close();
 		} finally {

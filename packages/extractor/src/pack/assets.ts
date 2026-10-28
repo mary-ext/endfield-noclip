@@ -26,6 +26,7 @@ import { type AssetArchives, type Place, mergePlaces } from './asset-placement.t
 import type { BlobMeta } from './blob-file.ts';
 import type { BlobPlacement, BlobStore } from './blob-store.ts';
 import {
+	type BundleSource,
 	type ConvertJob,
 	type ConvertPool,
 	type ConvertResult,
@@ -161,33 +162,34 @@ export interface AssetConversion {
  */
 export const convertAssets = async (input: AssetConversionInput): Promise<AssetConversion> => {
 	const { resolver, store, pool, cache, archives } = input;
-	/**
-	 * converts on the pool, or recalls the conversion from the cache. a result is remembered only when every
-	 * byte came from `bundles`, whose md5s key it
-	 */
-	const convert = async <J extends ConvertJob>(job: J, bundles: number[]): Promise<ConvertResultOf<J>> => {
+	/** @returns whether every bundle still has the md5 it had when the conversion read it */
+	const sourcesCurrent = async (sources: readonly BundleSource[]): Promise<boolean> => {
+		const md5s = await Promise.all(
+			sources.map(async ({ bundle }) => {
+				const index = resolver.manifest.findBundle(bundle);
+				return index === undefined ? undefined : resolver.bundleMd5(index);
+			}),
+		);
+		return sources.every(({ md5 }, i) => md5s[i] === md5);
+	};
+	/** converts on the pool, or recalls the conversion from the cache */
+	const convert = async <J extends ConvertJob>(job: J): Promise<ConvertResultOf<J>> => {
 		const ofJob = (result: ConvertResult): ConvertResultOf<J> => {
 			if (!resultMatches(job, result)) {
 				throw new Error(`a ${job.kind} job returned a ${result.kind}`);
 			}
 			return result;
 		};
-		if (cache === null || bundles.length === 0) {
+		if (cache === null) {
 			return ofJob(await pool.run(job));
 		}
-		const md5s = await Promise.all(bundles.map((index) => resolver.bundleMd5(index)));
-		const key = cache.key({
-			job,
-			bundles: bundles.map((index, i) => [resolver.manifest.bundle(index).name, md5s[i]]),
-		});
-		const recalled = await cache.recall(key);
+		const key = cache.key(job);
+		const recalled = await cache.recall(key, sourcesCurrent);
 		if (recalled !== undefined) {
 			return ofJob(recalled);
 		}
 		const result = await pool.run(job);
-		if (result.sources.every((index) => bundles.includes(index))) {
-			await cache.remember(key, result);
-		}
+		await cache.remember(key, result);
 		return ofJob(result);
 	};
 	const failures: Record<string, number> = {};
@@ -285,10 +287,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 		input.geometries,
 		CONVERSIONS_IN_FLIGHT,
 		(asset, id) =>
-			convert(
-				{ kind: 'geometry', asset, tangentUv: tangentUv[id], zstdLevel: input.geometryZstdLevel },
-				resolver.candidateBundles(asset.hash),
-			),
+			convert({ kind: 'geometry', asset, tangentUv: tangentUv[id], zstdLevel: input.geometryZstdLevel }),
 		(result, _asset, id) => {
 			if (result instanceof Error) {
 				geometryEntries.push({ id, status: 'failed' });
@@ -329,10 +328,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	await orderedPool(
 		textureObjects,
 		CONVERSIONS_IN_FLIGHT,
-		(object) =>
-			convert({ kind: 'texture', locator: object.locator, zstdLevel: input.textureZstdLevel }, [
-				object.locator.bundleIndex,
-			]),
+		(object) => convert({ kind: 'texture', locator: object.locator, zstdLevel: input.textureZstdLevel }),
 		(result, object) => {
 			if (result instanceof Error) {
 				textureIds.push(textureEntries.length);

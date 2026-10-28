@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import type { UnityBundle } from '@endfield-noclip/formats/hg/bundle';
 import type { BundleManifest } from '@endfield-noclip/formats/hg/bundle-manifest';
@@ -67,6 +69,24 @@ export interface AssetRef {
 }
 
 // #endregion
+
+/** the bundles touched on behalf of the current {@link recordBundleReads} call */
+const bundleReads = new AsyncLocalStorage<Set<number>>();
+
+/**
+ * runs `work`, noting every bundle an {@link AssetResolver} opens or reads for it, including bundles whose
+ * directories were searched. concurrent calls keep separate records
+ *
+ * @param work reads through any resolver
+ * @returns its result and the manifest indices of the bundles it touched, ascending
+ */
+export const recordBundleReads = async <T>(
+	work: () => Promise<T>,
+): Promise<{ result: T; bundles: number[] }> => {
+	const bundles = new Set<number>();
+	const result = await bundleReads.run(bundles, work);
+	return { result, bundles: [...bundles].toSorted((a, b) => a - b) };
+};
 
 /** how many opened bundles (directory + a few decoded blocks each) stay cached */
 const BUNDLE_CACHE_SIZE = 96;
@@ -167,6 +187,7 @@ export class AssetResolver {
 	 * @returns the opened bundle (directory only)
 	 */
 	bundle(index: number): Promise<UnityBundle> {
+		bundleReads.getStore()?.add(index);
 		let cached = this.#bundles.get(index);
 		if (cached === undefined) {
 			cached = openBundle(this.context, this.manifest.bundle(index).name).then((bundle) => {
@@ -185,6 +206,7 @@ export class AssetResolver {
 	 * @returns the bundle's SerializedFiles
 	 */
 	assetFiles(index: number): Promise<BundleAssetFile[]> {
+		bundleReads.getStore()?.add(index);
 		let cached = this.#files.get(index);
 		if (cached === undefined) {
 			cached = this.bundle(index).then(openAssetFiles);
@@ -300,27 +322,19 @@ export class AssetResolver {
 	 *
 	 * @param from the object whose `m_StreamData` this is
 	 * @param info the streaming info
-	 * @param sources collects the index of the bundle the bytes come from
 	 * @returns the bytes, or `undefined` if the data is inline (empty path)
 	 */
-	async streamData(
-		from: ObjectRef,
-		info: StreamingInfo,
-		sources?: Set<number>,
-	): Promise<Uint8Array | undefined> {
+	async streamData(from: ObjectRef, info: StreamingInfo): Promise<Uint8Array | undefined> {
 		if (info.path === '') {
 			return undefined;
 		}
 		const name = archiveFileName(info.path);
 		let bundle = from.file.bundle;
 		let node = bundle.node(name);
-		let index = from.bundleIndex;
 		if (node === undefined) {
-			index = await this.bundleOfCab(name, from.bundleIndex);
-			bundle = await this.bundle(index);
+			bundle = await this.bundle(await this.bundleOfCab(name, from.bundleIndex));
 			node = bundle.node(name);
 		}
-		sources?.add(index);
 		if (node === undefined) {
 			throw new Error(`stream file ${info.path} not found`);
 		}
@@ -338,20 +352,13 @@ export class AssetResolver {
 	 * @throws {Error} if the manifest doesn't know the hash
 	 */
 	async findAsset(path: string, pathHash: bigint, classId: number): Promise<ObjectRef[]> {
-		const bundles = this.candidateBundles(pathHash);
-		if (bundles.length === 0) {
+		const assets = this.manifest.findAssets(pathHash);
+		if (assets.length === 0) {
 			throw new Error(`${path} isn't in the bundle manifest`);
 		}
+		const bundles = [...new Set(assets.map((asset) => asset.bundleIndex))];
 		const found = await Promise.all(bundles.map((index) => this.findInBundle(index, path, classId)));
 		return found.flat();
-	}
-
-	/**
-	 * @param pathHash a StringPathHash key
-	 * @returns the bundles {@link findAsset} searches for it: those the manifest lists it in
-	 */
-	candidateBundles(pathHash: bigint): number[] {
-		return [...new Set(this.manifest.findAssets(pathHash).map((asset) => asset.bundleIndex))];
 	}
 
 	/**

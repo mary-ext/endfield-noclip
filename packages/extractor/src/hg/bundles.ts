@@ -1,5 +1,8 @@
+import { brotliDecompressSync } from 'node:zlib';
+
 import { type BundleNode, type ByteSource, UnityBundle } from '@endfield-noclip/formats/hg/bundle';
 import { deriveBundlePad } from '@endfield-noclip/formats/hg/bundle-cipher';
+import { BundleManifest } from '@endfield-noclip/formats/hg/bundle-manifest';
 import {
 	getObjectInfo,
 	type ObjectInfo,
@@ -24,6 +27,24 @@ import { type Vfs, type VfsFile, VfsGroup } from './vfs.ts';
 
 /** logical directory of the Bundle group */
 export const BUNDLE_PREFIX = 'Data/Bundles/Windows/';
+
+/** the bundle manifest's logical path, in {@link VfsGroup.BundleManifest} */
+const MANIFEST_PATH = 'Data/Bundles/Windows/manifest.hgmmap';
+
+/**
+ * @param vfs the VFS
+ * @returns the parsed bundle manifest
+ * @throws {Error} if it's missing or its md5 doesn't match the catalog
+ */
+export const loadBundleManifest = async (vfs: Vfs): Promise<BundleManifest> => {
+	const file = await vfs.find(VfsGroup.BundleManifest, MANIFEST_PATH);
+	if (file === undefined) {
+		throw new Error(`${MANIFEST_PATH} not found in vfs group ${VfsGroup.BundleManifest}`);
+	}
+	return new BundleManifest(await vfs.readVerified(file), {
+		brotliDecompress: (data) => brotliDecompressSync(data),
+	});
+};
 
 /**
  * normalizes the ways a bundle gets named into its logical VFS path

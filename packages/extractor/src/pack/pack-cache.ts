@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,39 +8,26 @@ import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
 import { errorCode, ignoreMissing } from '../errors.ts';
 
 import { BlobDir, shortHash } from './blob-file.ts';
-import type { ConvertResult } from './convert-pool.ts';
+import type { BundleSource, ConvertResult } from './convert-pool.ts';
 
 // a persistent cache for packing: converted meshes and textures, and every blob a pack stores. blobs live in
 // a BlobDir that serves as the pack's blob store, so a re-pack reads cached blobs straight into its archives.
-// conversions are remembered by a key over their source (the bundles' md5s from the VFS catalog, the object,
-// the options) and a fingerprint of the converter's code, so an install update or a converter change misses.
+// conversions are remembered by a key over the job (the object, the options) and a fingerprint of the
+// converter's code, along with the md5s (from the VFS catalog) of every bundle they read, so an install update
+// or a converter change misses.
 //
 // the cache keeps what the packages it built are made of: each pack records its blobs and conversions as a
 // root named after its output directory, and then deletes whatever no root references. a root goes away with
 // its package (when the directory no longer holds a core archive). one pack uses a cache at a time.
 
-/**
- * code whose output the cache stores, relative to this module: editing any of it invalidates every cached
- * conversion. it must cover what `convert-worker.ts` imports to decide results; instance, terrain and
- * environment packing aren't cached, so their code isn't listed
- */
-const CONVERTER_SOURCES = [
-	'../../../formats/src/binary',
-	'../../../formats/src/hg',
-	'../../../formats/src/unity',
-	'../../../package-format/src',
-	'../game/asset-decode.ts',
-	'../game/assets.ts',
-	'../game/world-index.ts',
-	'../hg/bundles.ts',
-	'../hg/vfs.ts',
-	'../zstd.ts',
-	'./blob-file.ts',
-	'./bounds.ts',
-	'./convert-worker.ts',
-	'./geometry.ts',
-	'./textures.ts',
-];
+/** the conversion worker; the fingerprint covers it and every workspace module it imports, transitively */
+const CONVERTER_ENTRY = new URL('./convert-worker.ts', import.meta.url);
+
+/** where workspace packages live, relative to this module; each maps `./*` to `./src/*.ts` */
+const WORKSPACE_PACKAGES = new URL('../../../', import.meta.url);
+
+/** value imports and re-exports (`import … from '…'`, `import '…'`, `export … from '…'`), not type-only ones */
+const IMPORT_SPECIFIER = /^(?:import|export)\s+(?!type\s)(?:[^'";]*?\sfrom\s+)?'([^']+)'/gm;
 
 /** what a pack's cache use came to */
 export interface CacheReport {
@@ -104,15 +91,22 @@ export class PackCache {
 
 	/**
 	 * @param key a conversion's key
-	 * @returns its remembered result, or `undefined` if there's none or one of its blobs is gone
+	 * @param current whether the bundles the conversion read are unchanged
+	 * @returns its remembered result, or `undefined` if there's none, its sources changed or a blob is gone
 	 */
-	async recall(key: string): Promise<ConvertResult | undefined> {
+	async recall(
+		key: string,
+		current: (sources: readonly BundleSource[]) => Promise<boolean>,
+	): Promise<ConvertResult | undefined> {
 		const text = await ignoreMissing(readFile(this.#memos.path(key), 'utf8'), undefined);
 		if (text === undefined) {
 			return undefined;
 		}
 		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by remember() under the same fingerprint
 		const result = JSON.parse(text) as ConvertResult;
+		if (!(await current(result.sources))) {
+			return undefined;
+		}
 		const present = await Promise.all(resultBlobs(result).map((hash) => this.blobs.has(hash)));
 		if (!present.every(Boolean)) {
 			return undefined;
@@ -224,33 +218,38 @@ const isRunning = (pid: number): boolean => {
 	}
 };
 
-/** @returns a hash over the converter's code, the extractor's dependencies and Node's zstd */
+/**
+ * @returns a hash over the code that decides conversion results (the worker's workspace import graph), the
+ *   extractor's dependencies and Node's zstd
+ */
 const converterFingerprint = async (): Promise<string> => {
-	const hash = createHash('sha256');
-	const base = fileURLToPath(new URL('.', import.meta.url));
-	const files: string[] = [];
-	for (const source of CONVERTER_SOURCES) {
-		const path = fileURLToPath(new URL(source, import.meta.url));
-		// oxlint-disable-next-line no-await-in-loop -- a handful of paths
-		if ((await stat(path)).isDirectory()) {
-			// oxlint-disable-next-line no-await-in-loop
-			const entries = await readdir(path, { recursive: true });
-			files.push(
-				...entries
-					.filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
-					.map((name) => join(path, name)),
-			);
-		} else {
-			files.push(path);
+	const sources = new Map<string, Buffer>();
+	const visit = async (url: URL): Promise<void> => {
+		const path = fileURLToPath(url);
+		if (sources.has(path)) {
+			return;
 		}
+		const content = await readFile(path);
+		sources.set(path, content);
+		const imports: URL[] = [];
+		for (const [, specifier] of content.toString('utf8').matchAll(IMPORT_SPECIFIER)) {
+			if (specifier.startsWith('.')) {
+				imports.push(new URL(specifier, url));
+			} else if (specifier.startsWith('@endfield-noclip/')) {
+				const [name, ...rest] = specifier.slice('@endfield-noclip/'.length).split('/');
+				imports.push(new URL(`${name}/src/${rest.join('/')}.ts`, WORKSPACE_PACKAGES));
+			}
+			// anything else is a dependency, pinned by the extractor's package.json, or a node built-in
+		}
+		await Promise.all(imports.map(visit));
+	};
+	await visit(CONVERTER_ENTRY);
+
+	const hash = createHash('sha256');
+	const base = fileURLToPath(WORKSPACE_PACKAGES);
+	for (const path of [...sources.keys()].toSorted()) {
+		hash.update(`${relative(base, path)}\0`).update(sources.get(path)!);
 	}
-	const contents = await Promise.all(
-		files.toSorted().map(async (path) => [relative(base, path), await readFile(path)] as const),
-	);
-	for (const [path, content] of contents) {
-		hash.update(`${path}\0`).update(content);
-	}
-	// the extractor pins meshoptimizer exactly, so its manifest names the version in use
 	hash.update(await readFile(new URL('../../package.json', import.meta.url)));
 	hash.update(`zstd ${process.versions.zstd ?? 'unknown'}`);
 	return hash.digest('hex');

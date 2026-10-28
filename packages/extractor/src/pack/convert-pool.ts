@@ -32,7 +32,7 @@ export type ConvertJob =
 	| { kind: 'texture'; locator: ObjectLocator; zstdLevel: number };
 
 /** a converted asset; its blobs are in the blob directory */
-export type ConvertResult = (
+export type ConvertOutput =
 	| {
 			kind: 'geometry';
 			/** `CAB-<hex>:<path id>` of the mesh */
@@ -50,11 +50,17 @@ export type ConvertResult = (
 			contentKey: string;
 			/** coarse to fine */
 			pieces: { firstLevel: number; levelCount: number; blob: BlobMeta }[];
-	  }
-) & {
-	/** manifest indices of the bundles the asset's bytes were read from */
-	sources: number[];
-};
+	  };
+
+/** a bundle a conversion read, as the VFS catalog had it then */
+export interface BundleSource {
+	/** manifest bundle name, `main/<hex>.ab` */
+	bundle: string;
+	md5: string;
+}
+
+/** a conversion's output and what it read: it holds for as long as those bundles' md5s do */
+export type ConvertResult = ConvertOutput & { sources: BundleSource[] };
 
 /** a job's result type */
 export type ConvertResultOf<J extends ConvertJob> = Extract<ConvertResult, { kind: J['kind'] }>;

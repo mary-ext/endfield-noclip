@@ -1,5 +1,3 @@
-import { brotliDecompressSync } from 'node:zlib';
-
 import { readDynamicEntities, type DynamicEntity } from '@endfield-noclip/formats/endfield/dynamic-scene';
 import {
 	parseInitChunk,
@@ -16,13 +14,14 @@ import {
 } from '@endfield-noclip/formats/endfield/level-partition';
 import { parseMapConfig, type MapConfig } from '@endfield-noclip/formats/endfield/map-config';
 import { parseStreamAreas, type StreamAreaTable } from '@endfield-noclip/formats/endfield/stream-area';
-import { BundleManifest } from '@endfield-noclip/formats/hg/bundle-manifest';
+import type { BundleManifest } from '@endfield-noclip/formats/hg/bundle-manifest';
 import { unpackHgPayload } from '@endfield-noclip/formats/hg/payload';
 import { parseSparkTable, type SparkValue } from '@endfield-noclip/formats/hg/spark-buffer';
 import { StringPathHashTable } from '@endfield-noclip/formats/hg/string-path-hash';
 import { parseStringPoolBlock, StringPool } from '@endfield-noclip/formats/hg/string-pool';
 
 import { getOrInsert } from '../collections.ts';
+import { loadBundleManifest } from '../hg/bundles.ts';
 import { VfsGroup, type Vfs } from '../hg/vfs.ts';
 import { mapPool } from '../pool.ts';
 
@@ -30,7 +29,6 @@ import { mapPool } from '../pool.ts';
 
 const STRING_PATH_HASH = 'Data/ExtendData/Main/StringPathHash.bin';
 const INIT_STRING_PATH_HASH = 'Data/ExtendData/Initial/InitStringPathHash.bin';
-const MANIFEST = 'Data/Bundles/Windows/manifest.hgmmap';
 const STREAMING_ROOT = 'Data/Streaming/PC/';
 const DYNAMIC_SCENE_ROOT = 'Data/DynamicStreaming/PC/Scene/';
 const CHUNK_PATTERN =
@@ -106,9 +104,7 @@ export class WorldIndex {
 
 	/** @returns the bundle manifest */
 	manifest(): Promise<BundleManifest> {
-		this.#manifest ??= this.#read(VfsGroup.BundleManifest, MANIFEST).then(
-			(b) => new BundleManifest(b, { brotliDecompress: (data) => brotliDecompressSync(data) }),
-		);
+		this.#manifest ??= loadBundleManifest(this.vfs);
 		return this.#manifest;
 	}
 
