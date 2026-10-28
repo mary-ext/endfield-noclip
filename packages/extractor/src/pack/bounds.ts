@@ -1,5 +1,5 @@
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
-import type { Bounds } from '@endfield-noclip/package-format/format';
+import type { Bounds, Rect } from '@endfield-noclip/package-format/format';
 
 /** @returns the min/max form of a centre/extents box */
 export const aabbBounds = ({ center, extents }: Aabb): Bounds => ({
@@ -14,3 +14,9 @@ export const growBounds = (bounds: Bounds, { center, extents }: Aabb): void => {
 		bounds.max[axis] = Math.max(bounds.max[axis], center[axis] + extents[axis]);
 	}
 };
+
+/** @returns whether an x/z square overlaps a rect; touching edges don't count */
+export const squareOverlapsRect = (
+	{ minX, minZ, size }: { minX: number; minZ: number; size: number },
+	rect: Rect,
+): boolean => minX < rect.maxX && minX + size > rect.minX && minZ < rect.maxZ && minZ + size > rect.minZ;

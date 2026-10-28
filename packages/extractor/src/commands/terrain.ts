@@ -26,6 +26,7 @@ import {
 } from '../export/terrain-mosaic.ts';
 import { indexTerrain, loadTerrainSurface, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { Vfs, VfsFile } from '../hg/vfs.ts';
+import { squareOverlapsRect } from '../pack/bounds.ts';
 
 export const summary =
 	'inspect terrain: scenes | tiles <scene> | export-heights <scene> -o <dir> [--bounds xmin,xmax,zmin,zmax]';
@@ -259,10 +260,7 @@ const selectTiles = (
 	if (bounds === undefined) {
 		return tiles;
 	}
-	return tiles.filter(({ key }) => {
-		const { minX, minZ, size } = terrainTileFootprint(surface, key);
-		return minX < bounds.maxX && minX + size > bounds.minX && minZ < bounds.maxZ && minZ + size > bounds.minZ;
-	});
+	return tiles.filter(({ key }) => squareOverlapsRect(terrainTileFootprint(surface, key), bounds));
 };
 
 // #endregion

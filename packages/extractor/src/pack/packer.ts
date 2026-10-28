@@ -81,7 +81,7 @@ import {
 	type PlacedTexture,
 } from './assets.ts';
 import { BlobStore, type PutOptions } from './blob-store.ts';
-import { aabbBounds, growBounds } from './bounds.ts';
+import { aabbBounds, growBounds, squareOverlapsRect } from './bounds.ts';
 import { ChainTable } from './chains.ts';
 import { finishEnvironments, type LevelEnvironmentDebug, planEnvironments } from './environments.ts';
 import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
@@ -917,10 +917,7 @@ const buildSubset = (options: PackOptions, partition: LevelPartition | undefined
 				}
 			}
 			if (bounds !== null) {
-				const { minX, minZ, size } = tileFootprint(grid, key);
-				return (
-					minX < bounds.maxX && minX + size > bounds.minX && minZ < bounds.maxZ && minZ + size > bounds.minZ
-				);
+				return squareOverlapsRect(tileFootprint(grid, key), bounds);
 			}
 			return true;
 		},
