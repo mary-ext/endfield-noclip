@@ -1,0 +1,23 @@
+{
+	"compilerOptions": {
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.lib.tsbuildinfo",
+		"target": "esnext",
+		// decoders must stay runnable in browsers and workers, so no node types here
+		"lib": ["esnext", "webworker"],
+		"types": [],
+		"moduleDetection": "force",
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"noFallthroughCasesInSwitch": true,
+		"noEmit": true,
+		"isolatedModules": true,
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
+		"skipLibCheck": true
+	},
+	"include": ["src"],
+	"exclude": ["src/**/*.test.ts"]
+}

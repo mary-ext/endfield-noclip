@@ -1,0 +1,16 @@
+{
+	"name": "@endfield-noclip/formats",
+	"version": "0.0.0",
+	"private": true,
+	"description": "environment-agnostic decoders for Endfield's on-disk formats",
+	"type": "module",
+	"exports": {
+		"./*": "./src/*.ts"
+	},
+	"dependencies": {
+		"@noble/ciphers": "^2.4.0"
+	},
+	"devDependencies": {
+		"ktx-parse": "2.0.0"
+	}
+}

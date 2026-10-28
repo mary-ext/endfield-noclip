@@ -1,0 +1,10 @@
+{
+	"name": "@endfield-noclip/package-format",
+	"version": "0.0.0",
+	"private": true,
+	"description": "the viewer package format written by the extractor and read by the viewer",
+	"type": "module",
+	"exports": {
+		"./*": "./src/*.ts"
+	}
+}

@@ -1,1 +1,7 @@
+packages:
+  - packages/*
+
 minimumReleaseAgeExcludePrune: true
+minimumReleaseAgeExclude:
+  - '@mary-ext/*'
+  - '@oomfware/*'

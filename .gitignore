@@ -3,3 +3,7 @@ dist
 *.log
 .DS_Store
 .research
+
+# local-only: decryption keys and extracted game data must never be committed
+*.local.json
+/out

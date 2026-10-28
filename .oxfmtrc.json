@@ -11,8 +11,12 @@
 		"capitalizeDescriptions": false
 	},
 	"sortImports": {
-		"groups": [["builtin", "bun"], ["external"], ["parent"], ["sibling", "index"]],
+		"groups": [["builtin", "bun"], ["this"], ["external"], ["parent"], ["sibling", "index"]],
 		"customGroups": [
+			{
+				"groupName": "this",
+				"elementNamePattern": ["@endfield-noclip/**"]
+			},
 			{
 				"groupName": "bun",
 				"elementNamePattern": ["bun", "bun:*"]

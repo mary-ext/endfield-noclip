@@ -1,0 +1,16 @@
+{
+	"name": "@endfield-noclip/extractor",
+	"version": "0.0.0",
+	"private": true,
+	"description": "reads a local Endfield install and writes a viewer package",
+	"bin": {
+		"endfield-extract": "./src/cli.ts"
+	},
+	"type": "module",
+	"dependencies": {
+		"@endfield-noclip/formats": "workspace:*",
+		"@endfield-noclip/package-format": "workspace:*",
+		"@mary-ext/czar": "^0.1.1",
+		"meshoptimizer": "1.3.0"
+	}
+}

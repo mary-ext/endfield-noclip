@@ -1,13 +1,16 @@
 {
 	"compilerOptions": {
-		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
 		"target": "esnext",
-		"lib": ["esnext"],
-		"types": ["node"],
+		"lib": ["esnext", "dom", "dom.iterable", "dom.asynciterable"],
+		"types": ["vite/client", "@webgpu/types"],
 		"moduleDetection": "force",
 		"module": "preserve",
 		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
 		"allowImportingTsExtensions": true,
+		"allowArbitraryExtensions": true,
+		"jsx": "react-jsx",
 		"strict": true,
 		"noUnusedLocals": true,
 		"noFallthroughCasesInSwitch": true,
@@ -17,5 +20,5 @@
 		"verbatimModuleSyntax": true,
 		"skipLibCheck": true
 	},
-	"include": ["vite.config.ts"]
+	"include": ["src"]
 }
