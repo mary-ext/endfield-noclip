@@ -907,7 +907,7 @@ class Collector {
 	readonly hlodNodes = new Map<number, { key: TileKey; tier: number; bounds: Bounds }>();
 	/** resident rows by level tag */
 	readonly resident = new Map<number, Group>();
-	/** packed instance count by level tag */
+	/** packed instance count by level tag, without HLOD clusters */
 	readonly tagInstances = new Map<number, number>();
 	/** world bounds of packed instances by level tag */
 	readonly tagBounds = new Map<number, Bounds>();
@@ -920,6 +920,7 @@ class Collector {
 			this.detail.set(id, group);
 		}
 		push(group, row, 0, name, file);
+		this.#countInstance(level);
 	}
 
 	addHlod(level: number, tier: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
@@ -936,11 +937,16 @@ class Collector {
 
 	addResident(level: number, row: InstanceInput, name: string, file: number): void {
 		push(getOrInsert(this.resident, level, newGroup), row, 0, name, file);
+		this.#countInstance(level);
 	}
 
-	/** records a packed instance against its level */
+	// HLOD clusters stand in for instances that are counted already
+	#countInstance(level: number): void {
+		this.tagInstances.set(level, (this.tagInstances.get(level) ?? 0) + 1);
+	}
+
+	/** grows the bounds of a packed instance's level */
 	noteOwner(tag: number, bounds: Aabb): void {
-		this.tagInstances.set(tag, (this.tagInstances.get(tag) ?? 0) + 1);
 		const current = this.tagBounds.get(tag);
 		if (current === undefined) {
 			this.tagBounds.set(tag, aabbBounds(bounds));

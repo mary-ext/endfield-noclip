@@ -366,7 +366,7 @@ export interface LevelInfo {
 	playerInitPos: [x: number, y: number, z: number];
 	/** owned 128 m cells as tile coordinates at {@link TreeInfo.cellLevel} */
 	cells: [x: number, z: number][];
-	/** instances the level owns in this package */
+	/** instances the level owns in this package, not counting HLOD clusters */
 	instances: number;
 	/** world bounds of the instances the level owns in this package, or `null` if none were packed */
 	contentBounds: Bounds | null;
