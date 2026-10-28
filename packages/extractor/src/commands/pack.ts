@@ -1,10 +1,11 @@
 import { availableParallelism } from 'node:os';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
 
-import { parseBounds, parseZstdLevel } from '../cli-args.ts';
+import { parseBounds, parseInteger, parseZstdLevel } from '../cli-args.ts';
 import { withContext } from '../context.ts';
 import { packScene, type PackReport } from '../pack/packer.ts';
 
@@ -19,8 +20,8 @@ writes the package for one streaming scene (e.g. map02). --level keeps the conte
 terrain under its cells; --bounds keeps content whose centre lies in the world x, z rectangle. the output
 directory must be empty, absent, or hold a previous package; it defaults to out/<scene>[-<level>] at the
 repository root, which git ignores. --no-assets skips geometry, material and texture conversion, leaving
-their table entries pending. texture blobs use their own zstd level (default 9; 19 saves ~2% at 10× the time). --jobs sets the
-worker threads converting meshes and textures (default: one per core but one, at most 8).
+their table entries pending. texture blobs use their own zstd level (default 9; 19 saves ~2% at 10× the time).
+--jobs sets the worker threads converting meshes and textures (default: one per core but one, at most 8).
 
 converted meshes and textures, and every blob, are cached across packs (default out/.cache): a re-pack
 converts only what the install or the converter changed. the cache keeps what the packages it built hold and
@@ -65,9 +66,9 @@ export const run = async (args: string[]): Promise<void> => {
 			: resolve(values.output);
 	const zstdLevel = parseZstdLevel(values['zstd-level'], '--zstd-level');
 	const textureZstdLevel = parseZstdLevel(values['texture-zstd-level'], '--texture-zstd-level');
-	const jobs = Number(values.jobs);
-	if (!Number.isInteger(jobs) || jobs < 1) {
-		throw new Error(`--jobs must be a positive integer, got ${values.jobs}`);
+	const jobs = parseInteger(values.jobs, '--jobs');
+	if (jobs < 1) {
+		throw new Error(`--jobs must be at least 1, got ${values.jobs}`);
 	}
 
 	await withContext(values.config, async (context) => {
@@ -80,7 +81,9 @@ export const run = async (args: string[]): Promise<void> => {
 			zstdLevel,
 			textureZstdLevel,
 			jobs,
-			cacheDir: values['no-cache'] ? null : resolve(values.cache ?? new URL('.cache', DEFAULT_OUT).pathname),
+			cacheDir: values['no-cache']
+				? null
+				: resolve(values.cache ?? fileURLToPath(new URL('.cache', DEFAULT_OUT))),
 			convertAssets: !values['no-assets'],
 			log: (line) => console.error(line),
 		});

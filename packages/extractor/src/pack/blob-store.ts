@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -14,18 +14,12 @@ import { zstd } from '../zstd.ts';
 
 import { type BlobDir, type BlobMeta, storedBlob } from './blob-file.ts';
 
-// #region store
-
 /** archives written at once; a single stream doesn't saturate an SSD */
 const ARCHIVE_WRITES = 8;
 
-/** how to store one blob */
-export interface PutOptions {
+/** what a blob is and where it goes */
+export interface BlobPlacement {
 	kind: BlobKind;
-	/** compress with zstd (kept uncompressed unless that saves at least 1/32 of the bytes) */
-	compress: boolean;
-	/** zstd level for this blob, instead of the store's */
-	zstdLevel?: number;
 	/**
 	 * archive to place the blob in, relative to the package root. called once per new blob, at commit, with its
 	 * content hash and stored length. a blob that's already stored keeps its first archive
@@ -33,10 +27,18 @@ export interface PutOptions {
 	archive: (hash: string, length: number) => string;
 }
 
+/** how to store one blob */
+export interface PutOptions extends BlobPlacement {
+	/** offer a zstd frame; {@link storedBlob} keeps it only when it pays */
+	compress: boolean;
+	/** zstd level for this blob, instead of the store's */
+	zstdLevel?: number;
+}
+
 /** a blob whose bytes are in the store's directory, but which has no index yet; see {@link BlobStore.commit} */
 export interface PreparedBlob {
 	meta: BlobMeta;
-	options: Pick<PutOptions, 'kind' | 'archive'>;
+	options: BlobPlacement;
 }
 
 /** a blob as the store tracks it */
@@ -79,20 +81,18 @@ interface BlobSource {
 export class BlobStore {
 	readonly dir: BlobDir;
 	readonly #level: number;
-	readonly #temporary: boolean;
 	readonly #blobs: StoredBlob[] = [];
 	readonly #byHash = new Map<string, number>();
 	/** blob indices by archive, in first-use order; dropped whenever a blob is added */
 	#groupsCache: Map<string, number[]> | undefined;
 
 	/**
-	 * @param dir where blob bytes go: a scratch directory, or a cache that outlives the store
-	 * @param options zstd level for compressed blobs, and whether {@link BlobStore.dispose} removes `dir`
+	 * @param dir where blob bytes go; its owner removes it when it's scratch space
+	 * @param options zstd level for compressed blobs
 	 */
-	constructor(dir: BlobDir, options: { zstdLevel: number; temporary: boolean }) {
+	constructor(dir: BlobDir, options: { zstdLevel: number }) {
 		this.dir = dir;
 		this.#level = options.zstdLevel;
-		this.#temporary = options.temporary;
 	}
 
 	/** number of distinct blobs */
@@ -272,13 +272,6 @@ export class BlobStore {
 		return describe(core, plan, files.length);
 	}
 
-	/** removes the store's directory if it's a scratch one */
-	async dispose(): Promise<void> {
-		if (this.#temporary) {
-			await rm(this.dir.root, { recursive: true, force: true });
-		}
-	}
-
 	#groups(): Map<string, number[]> {
 		if (this.#groupsCache === undefined) {
 			const groups = new Map<string, number[]>();
@@ -309,5 +302,3 @@ export class BlobStore {
 const describe = <T>(name: string, plan: ArchivePlan<T>, members: number): WrittenArchive => {
 	return { name, size: plan.size, dataOffset: plan.head.length, headerLength: plan.headerLength, members };
 };
-
-// #endregion

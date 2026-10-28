@@ -39,6 +39,25 @@ export interface ObjectRef {
  */
 export const objectKey = (ref: ObjectRef): string => `${ref.file.node.path}:${ref.info.pathId}`;
 
+/** where an object lives, without holding its bundle open; see {@link AssetResolver.objectIn} */
+export interface ObjectLocator {
+	/** manifest bundle index */
+	bundleIndex: number;
+	/** SerializedFile name, `CAB-<hex>` */
+	file: string;
+	pathId: bigint;
+}
+
+/**
+ * @param ref an object
+ * @returns its locator
+ */
+export const locateObject = (ref: ObjectRef): ObjectLocator => ({
+	bundleIndex: ref.bundleIndex,
+	file: ref.file.node.path,
+	pathId: ref.info.pathId,
+});
+
 /** a game asset as InitChunkData names it */
 export interface AssetRef {
 	/** StringPathHash key */
@@ -319,13 +338,20 @@ export class AssetResolver {
 	 * @throws {Error} if the manifest doesn't know the hash
 	 */
 	async findAsset(path: string, pathHash: bigint, classId: number): Promise<ObjectRef[]> {
-		const assets = this.manifest.findAssets(pathHash);
-		if (assets.length === 0) {
+		const bundles = this.candidateBundles(pathHash);
+		if (bundles.length === 0) {
 			throw new Error(`${path} isn't in the bundle manifest`);
 		}
-		const bundles = [...new Set(assets.map((asset) => asset.bundleIndex))];
 		const found = await Promise.all(bundles.map((index) => this.findInBundle(index, path, classId)));
 		return found.flat();
+	}
+
+	/**
+	 * @param pathHash a StringPathHash key
+	 * @returns the bundles {@link findAsset} searches for it: those the manifest lists it in
+	 */
+	candidateBundles(pathHash: bigint): number[] {
+		return [...new Set(this.manifest.findAssets(pathHash).map((asset) => asset.bundleIndex))];
 	}
 
 	/**

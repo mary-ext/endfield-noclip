@@ -198,12 +198,9 @@ export const packScene = async (
 ): Promise<PackReport> => {
 	const timer = new PhaseTimer(options.log);
 	const cache = options.cacheDir === null ? null : await PackCache.open(options.cacheDir);
+	// scratch space for the debug log, and for blobs when there's no cache to hold them
 	const spool = join(options.outDir, '.spool');
-	// with a cache, blobs go straight into it
-	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), {
-		zstdLevel: options.zstdLevel,
-		temporary: cache === null,
-	});
+	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), { zstdLevel: options.zstdLevel });
 	try {
 		await prepareOutDir(options.outDir);
 		const scene = await indexScene(context, options);
@@ -282,7 +279,7 @@ export const packScene = async (
 					archives: pack.assetArchives,
 					geometryZstdLevel: options.zstdLevel,
 					textureZstdLevel: options.textureZstdLevel,
-					concurrency: MATERIAL_CONCURRENCY,
+					materialConcurrency: MATERIAL_CONCURRENCY,
 					log: options.log,
 				});
 			} finally {
@@ -382,7 +379,6 @@ export const packScene = async (
 			peakRss: process.resourceUsage().maxRSS * 1024,
 		};
 	} finally {
-		await store.dispose();
 		await rm(spool, { recursive: true, force: true });
 		await cache?.close();
 	}

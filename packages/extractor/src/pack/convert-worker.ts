@@ -10,7 +10,6 @@ import { parentPort, workerData } from 'node:worker_threads';
 
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 
-import type { Keys } from '../config.ts';
 import { errorText } from '../errors.ts';
 import { loadMesh, loadTexture } from '../game/asset-decode.ts';
 import { AssetResolver, objectKey } from '../game/assets.ts';
@@ -32,12 +31,11 @@ import { convertTexture } from './textures.ts';
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- set by ConvertPool
 const data = workerData as ConvertWorkerData;
 const port = parentPort!;
-const keys: Keys = data.keys;
-const vfs = new Vfs(data.gameData, keys.vfsKey);
+const vfs = new Vfs(data.gameData, data.keys.vfsKey);
 const blobs = new BlobDir(data.blobDir);
 const resolverReady = new WorldIndex(vfs)
 	.manifest()
-	.then((manifest) => new AssetResolver({ vfs, keys }, manifest));
+	.then((manifest) => new AssetResolver({ vfs, keys: data.keys }, manifest));
 
 const store = async (raw: Uint8Array, zstdLevel: number): Promise<BlobMeta> => {
 	const { meta, stored } = storedBlob(raw, zstdSync(raw, zstdLevel));

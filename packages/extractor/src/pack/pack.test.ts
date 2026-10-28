@@ -149,7 +149,7 @@ describe('BlobStore', () => {
 	it('dedupes, places blobs in archives and reports readable offsets', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3, temporary: true });
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3 });
 			const compressible = new Uint8Array(4096).fill(7);
 			const random = Uint8Array.from({ length: 333 }, (_, i) => (i * 2654435761) >>> 24);
 			const [a, b, c] = await store.putMany([
@@ -200,7 +200,6 @@ describe('BlobStore', () => {
 				assert.equal(core.dataOffset + records[b].offset, file.position);
 				assert.ok(archive.get('manifest.json'));
 			}
-			await store.dispose();
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}
@@ -209,7 +208,7 @@ describe('BlobStore', () => {
 	it('round-trips an instance block through compression', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3, temporary: true });
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3 });
 			const rows = new InstanceBlockBuilder();
 			rows.add(
 				{
@@ -236,7 +235,6 @@ describe('BlobStore', () => {
 				bytes = new Uint8Array(zstdDecompressSync(bytes));
 			}
 			assert.deepEqual(decodeInstanceBlock(bytes), block);
-			await store.dispose();
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}
@@ -245,7 +243,7 @@ describe('BlobStore', () => {
 	it('assigns indices in commit order and skips zstd that barely helps', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3, temporary: true });
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3 });
 			const archives: [string, number][] = [];
 			const options = {
 				kind: BlobKind.Texture,
@@ -277,7 +275,6 @@ describe('BlobStore', () => {
 				[early.meta.hash, 4096],
 				[late.meta.hash, late.meta.length],
 			]);
-			await store.dispose();
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}

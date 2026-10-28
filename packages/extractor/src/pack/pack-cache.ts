@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
-import { open, readdir, readFile, rename, rm, stat, writeFile, mkdir } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
 
-import { BlobDir } from './blob-file.ts';
+import { errorCode, ignoreMissing } from '../errors.ts';
+
+import { BlobDir, shortHash } from './blob-file.ts';
 import type { ConvertResult } from './convert-pool.ts';
 
 // a persistent cache for packing: converted meshes and textures, and every blob a pack stores. blobs live in
@@ -63,12 +65,15 @@ export class PackCache {
 	/** where the pack's blob store writes */
 	readonly blobs: BlobDir;
 	readonly hits = { geometries: 0, textures: 0 };
+	/** conversion results as JSON, by key */
+	readonly #memos: BlobDir;
 	readonly #fingerprint: string;
-	readonly #memos = new Set<string>();
+	readonly #used = new Set<string>();
 
 	private constructor(root: string, fingerprint: string) {
 		this.root = root;
 		this.blobs = new BlobDir(join(root, 'blobs'));
+		this.#memos = new BlobDir(join(root, 'memo'));
 		this.#fingerprint = fingerprint;
 	}
 
@@ -90,10 +95,11 @@ export class PackCache {
 	 * @returns the conversion's key
 	 */
 	key(parts: object): string {
-		const text = JSON.stringify([this.#fingerprint, parts], (_, value: unknown) =>
-			typeof value === 'bigint' ? value.toString() : value,
+		return shortHash(
+			JSON.stringify([this.#fingerprint, parts], (_, value: unknown) =>
+				typeof value === 'bigint' ? value.toString() : value,
+			),
 		);
-		return createHash('sha256').update(text).digest('hex').slice(0, 32);
 	}
 
 	/**
@@ -101,18 +107,17 @@ export class PackCache {
 	 * @returns its remembered result, or `undefined` if there's none or one of its blobs is gone
 	 */
 	async recall(key: string): Promise<ConvertResult | undefined> {
-		let result: ConvertResult;
-		try {
-			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by remember() under the same fingerprint
-			result = JSON.parse(await readFile(this.#memoPath(key), 'utf8')) as ConvertResult;
-		} catch {
+		const text = await ignoreMissing(readFile(this.#memos.path(key), 'utf8'), undefined);
+		if (text === undefined) {
 			return undefined;
 		}
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by remember() under the same fingerprint
+		const result = JSON.parse(text) as ConvertResult;
 		const present = await Promise.all(resultBlobs(result).map((hash) => this.blobs.has(hash)));
 		if (!present.every(Boolean)) {
 			return undefined;
 		}
-		this.#memos.add(key);
+		this.#used.add(key);
 		this.hits[result.kind === 'geometry' ? 'geometries' : 'textures']++;
 		return result;
 	}
@@ -124,8 +129,8 @@ export class PackCache {
 	 * @param result what it produced
 	 */
 	async remember(key: string, result: ConvertResult): Promise<void> {
-		await writeAtomically(this.#memoPath(key), JSON.stringify(result));
-		this.#memos.add(key);
+		await this.#memos.replace(key, JSON.stringify(result));
+		this.#used.add(key);
 	}
 
 	/**
@@ -136,37 +141,31 @@ export class PackCache {
 	 * @returns hits and what was deleted
 	 */
 	async finish(outDir: string, blobs: readonly string[]): Promise<CacheReport> {
-		const root: Root = { outDir, time: new Date().toISOString(), blobs: [...blobs], memos: [...this.#memos] };
-		const rootDir = join(this.root, 'roots');
-		await writeAtomically(join(rootDir, `${hashText(outDir)}.json`), JSON.stringify(root));
+		const roots = new BlobDir(join(this.root, 'roots'));
+		const root: Root = { outDir, time: new Date().toISOString(), blobs: [...blobs], memos: [...this.#used] };
+		await roots.replace(shortHash(outDir), JSON.stringify(root));
 
 		const liveBlobs = new Set<string>();
 		const liveMemos = new Set<string>();
-		for (const name of await readdir(rootDir)) {
-			const path = join(rootDir, name);
-			let other: Root;
-			try {
-				// oxlint-disable-next-line no-await-in-loop, typescript/no-unsafe-type-assertion -- roots are few; ours
-				other = JSON.parse(await readFile(path, 'utf8')) as Root;
-				// oxlint-disable-next-line no-await-in-loop -- roots are few
-				await stat(join(other.outDir, CORE_ARCHIVE));
-			} catch {
-				// unreadable, or its package is gone
-				// oxlint-disable-next-line no-await-in-loop -- roots are few
-				await rm(path, { force: true });
-				continue;
-			}
-			for (const hash of other.blobs) {
-				liveBlobs.add(hash);
-			}
-			for (const key of other.memos) {
-				liveMemos.add(key);
-			}
-		}
-		const blobSweep = await sweep(this.blobs.root, (name) => liveBlobs.has(name));
-		const memoSweep = await sweep(join(this.root, 'memo'), (name) =>
-			liveMemos.has(name.replace(/\.json$/, '')),
+		await Promise.all(
+			(await roots.names()).map(async (name) => {
+				// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written like the root above
+				const other = JSON.parse(await readFile(roots.path(name), 'utf8')) as Root;
+				if ((await ignoreMissing(stat(join(other.outDir, CORE_ARCHIVE)), undefined)) === undefined) {
+					// its package is gone
+					await rm(roots.path(name), { force: true });
+					return;
+				}
+				for (const hash of other.blobs) {
+					liveBlobs.add(hash);
+				}
+				for (const key of other.memos) {
+					liveMemos.add(key);
+				}
+			}),
 		);
+		const blobSweep = await this.blobs.sweep((hash) => liveBlobs.has(hash));
+		const memoSweep = await this.#memos.sweep((key) => liveMemos.has(key));
 		return {
 			dir: this.root,
 			hits: { ...this.hits },
@@ -178,10 +177,6 @@ export class PackCache {
 	async close(): Promise<void> {
 		await rm(join(this.root, 'lock'), { force: true });
 	}
-
-	#memoPath(key: string): string {
-		return join(this.root, 'memo', key.slice(0, 2), `${key}.json`);
-	}
 }
 
 /** @returns the hashes of a result's blobs */
@@ -189,33 +184,34 @@ const resultBlobs = (result: ConvertResult): string[] => {
 	return result.kind === 'geometry' ? [result.blob.hash] : result.pieces.map((piece) => piece.blob.hash);
 };
 
-const hashText = (text: string): string => createHash('sha256').update(text).digest('hex').slice(0, 32);
-
 /** takes a lock file holding our pid; a lock left by a process that's gone is taken over */
 const lock = async (path: string): Promise<void> => {
-	for (let attempt = 0; attempt < 2; attempt++) {
-		try {
-			// oxlint-disable-next-line no-await-in-loop -- retried once after clearing a stale lock
-			const handle = await open(path, 'wx');
-			// oxlint-disable-next-line no-await-in-loop
-			await handle.writeFile(String(process.pid));
-			// oxlint-disable-next-line no-await-in-loop
-			await handle.close();
-			return;
-		} catch (error) {
-			if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
-				throw error;
-			}
-		}
-		// oxlint-disable-next-line no-await-in-loop
-		const pid = Number(await readFile(path, 'utf8').catch(() => ''));
-		if (Number.isInteger(pid) && pid > 0 && isRunning(pid)) {
-			throw new Error(`the pack cache ${path} is in use by process ${pid}; wait for it, or pass --no-cache`);
-		}
-		// oxlint-disable-next-line no-await-in-loop
-		await rm(path, { force: true });
+	if (await tryCreate(path)) {
+		return;
 	}
-	throw new Error(`couldn't take the pack cache lock ${path}`);
+	const pid = Number(await ignoreMissing(readFile(path, 'utf8'), ''));
+	if (Number.isInteger(pid) && pid > 0 && isRunning(pid)) {
+		throw new Error(`the pack cache ${path} is in use by process ${pid}; wait for it, or pass --no-cache`);
+	}
+	await rm(path, { force: true });
+	if (!(await tryCreate(path))) {
+		throw new Error(`couldn't take the pack cache lock ${path}`);
+	}
+};
+
+/** @returns whether the lock file was created (false if it exists) */
+const tryCreate = async (path: string): Promise<boolean> => {
+	try {
+		const handle = await open(path, 'wx');
+		await handle.writeFile(String(process.pid));
+		await handle.close();
+		return true;
+	} catch (error) {
+		if (errorCode(error) === 'EEXIST') {
+			return false;
+		}
+		throw error;
+	}
 };
 
 const isRunning = (pid: number): boolean => {
@@ -224,43 +220,8 @@ const isRunning = (pid: number): boolean => {
 		return true;
 	} catch (error) {
 		// EPERM: it exists but isn't ours
-		return error instanceof Error && 'code' in error && error.code === 'EPERM';
+		return errorCode(error) === 'EPERM';
 	}
-};
-
-const writeAtomically = async (path: string, data: string): Promise<void> => {
-	await mkdir(join(path, '..'), { recursive: true });
-	const temp = `${path}.${process.pid}.tmp`;
-	await writeFile(temp, data);
-	await rename(temp, path);
-};
-
-/** deletes the files of a fanned-out directory that `keep` rejects, plus leftover temporary files */
-const sweep = async (
-	dir: string,
-	keep: (name: string) => boolean,
-): Promise<{ files: number; bytes: number }> => {
-	let files = 0;
-	let bytes = 0;
-	const fans = await readdir(dir).catch((): string[] => []);
-	await Promise.all(
-		fans.map(async (fan) => {
-			const names = await readdir(join(dir, fan)).catch((): string[] => []);
-			for (const name of names) {
-				if (keep(name)) {
-					continue;
-				}
-				const path = join(dir, fan, name);
-				// oxlint-disable-next-line no-await-in-loop -- one fan at a time per task bounds open files
-				const size = (await stat(path).catch(() => undefined))?.size ?? 0;
-				// oxlint-disable-next-line no-await-in-loop
-				await rm(path, { force: true });
-				files++;
-				bytes += size;
-			}
-		}),
-	);
-	return { files, bytes };
 };
 
 /** @returns a hash over the converter's code, the extractor's dependencies and Node's zstd */

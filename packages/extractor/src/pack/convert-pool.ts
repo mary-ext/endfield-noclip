@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import type { ReadyGeometry, ReadyTexture } from '@endfield-noclip/package-format/format';
 
 import type { Keys } from '../config.ts';
-import type { AssetRef } from '../game/assets.ts';
+import type { AssetRef, ObjectLocator } from '../game/assets.ts';
 
 import type { BlobMeta } from './blob-file.ts';
 
@@ -20,14 +20,6 @@ export interface ConvertWorkerData {
 	blobDir: string;
 }
 
-/** where a texture object lives, without holding its bundle open */
-export interface TextureLocator {
-	bundleIndex: number;
-	/** SerializedFile name, `CAB-<hex>` */
-	file: string;
-	pathId: bigint;
-}
-
 /** one asset to convert */
 export type ConvertJob =
 	| {
@@ -37,7 +29,7 @@ export type ConvertJob =
 			tangentUv: number | null;
 			zstdLevel: number;
 	  }
-	| { kind: 'texture'; locator: TextureLocator; zstdLevel: number };
+	| { kind: 'texture'; locator: ObjectLocator; zstdLevel: number };
 
 /** a converted asset; its blobs are in the blob directory */
 export type ConvertResult = (
@@ -63,6 +55,19 @@ export type ConvertResult = (
 	/** manifest indices of the bundles the asset's bytes were read from */
 	sources: number[];
 };
+
+/** a job's result type */
+export type ConvertResultOf<J extends ConvertJob> = Extract<ConvertResult, { kind: J['kind'] }>;
+
+/**
+ * @param job a job
+ * @param result a result said to be the job's
+ * @returns whether the result is of the job's kind
+ */
+export const resultMatches = <J extends ConvertJob>(
+	job: J,
+	result: ConvertResult,
+): result is ConvertResultOf<J> => result.kind === job.kind;
 
 export type WorkerRequest = { type: 'job'; id: number; job: ConvertJob } | { type: 'close' };
 

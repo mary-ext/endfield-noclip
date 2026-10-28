@@ -9,6 +9,8 @@ import {
 	type VfsFileEntry,
 } from '@endfield-noclip/formats/hg/vfs-catalog';
 
+import { ignoreMissing } from '../errors.ts';
+
 /** well-known VFS group hashes */
 export const VfsGroup = {
 	Bundle: '7064D8E2',
@@ -259,18 +261,6 @@ const openFirst = async (dirs: string[], name: string): Promise<FileHandle> => {
 		}
 	}
 	throw new Error(`chunk ${name} not found in any layer`);
-};
-
-/** @returns `fallback` if the file system operation failed with ENOENT */
-const ignoreMissing = async <T, F>(operation: Promise<T>, fallback: F): Promise<T | F> => {
-	try {
-		return await operation;
-	} catch (error) {
-		if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-			return fallback;
-		}
-		throw error;
-	}
 };
 
 const closeQuietly = async (handle: Promise<FileHandle>): Promise<void> => {

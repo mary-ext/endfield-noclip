@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 import { BlobCodec } from '@endfield-noclip/package-format/format';
 
+import { BlobDir } from './blob-file.ts';
 import type { ConvertResult } from './convert-pool.ts';
 import { PackCache } from './pack-cache.ts';
 
@@ -71,7 +72,7 @@ describe('PackCache', () => {
 			assert.equal(report.swept.blobs, 1);
 			assert.equal(report.swept.memos, 1);
 			assert.equal(await cache.recall(keyB), undefined);
-			assert.equal((await readdir(join(root, 'roots'))).length, 1);
+			assert.equal((await new BlobDir(join(root, 'roots')).names()).length, 1);
 			await cache.close();
 		} finally {
 			await rm(dir, { recursive: true, force: true });

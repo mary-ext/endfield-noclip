@@ -12,13 +12,26 @@ import {
 
 import { failureReason } from '../errors.ts';
 import { loadMaterial } from '../game/asset-decode.ts';
-import { type AssetRef, type AssetResolver, objectKey, type ObjectRef } from '../game/assets.ts';
+import {
+	type AssetRef,
+	type AssetResolver,
+	locateObject,
+	type ObjectLocator,
+	objectKey,
+	type ObjectRef,
+} from '../game/assets.ts';
 import { orderedPool } from '../pool.ts';
 
 import { type AssetArchives, type Place, mergePlaces } from './asset-placement.ts';
 import type { BlobMeta } from './blob-file.ts';
-import type { BlobStore, PutOptions } from './blob-store.ts';
-import type { ConvertJob, ConvertPool, ConvertResult, TextureLocator } from './convert-pool.ts';
+import type { BlobPlacement, BlobStore } from './blob-store.ts';
+import {
+	type ConvertJob,
+	type ConvertPool,
+	type ConvertResult,
+	type ConvertResultOf,
+	resultMatches,
+} from './convert-pool.ts';
 import { convertMaterial, ShaderTable } from './materials.ts';
 import type { PackCache } from './pack-cache.ts';
 import { PhaseTimer } from './phase-timer.ts';
@@ -82,7 +95,7 @@ export interface AssetConversionInput {
 	/** zstd level for texture blobs */
 	textureZstdLevel: number;
 	/** materials decoded at once */
-	concurrency: number;
+	materialConcurrency: number;
 	log: (line: string) => void;
 }
 
@@ -152,9 +165,15 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	 * converts on the pool, or recalls the conversion from the cache. a result is remembered only when every
 	 * byte came from `bundles`, whose md5s key it
 	 */
-	const convert = async (job: ConvertJob, bundles: number[]): Promise<ConvertResult> => {
+	const convert = async <J extends ConvertJob>(job: J, bundles: number[]): Promise<ConvertResultOf<J>> => {
+		const ofJob = (result: ConvertResult): ConvertResultOf<J> => {
+			if (!resultMatches(job, result)) {
+				throw new Error(`a ${job.kind} job returned a ${result.kind}`);
+			}
+			return result;
+		};
 		if (cache === null || bundles.length === 0) {
-			return pool.run(job);
+			return ofJob(await pool.run(job));
 		}
 		const md5s = await Promise.all(bundles.map((index) => resolver.bundleMd5(index)));
 		const key = cache.key({
@@ -163,13 +182,13 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 		});
 		const recalled = await cache.recall(key);
 		if (recalled !== undefined) {
-			return recalled;
+			return ofJob(recalled);
 		}
 		const result = await pool.run(job);
 		if (result.sources.every((index) => bundles.includes(index))) {
 			await cache.remember(key, result);
 		}
-		return result;
+		return ofJob(result);
 	};
 	const failures: Record<string, number> = {};
 	const fail = (kind: string, error: Error): string => {
@@ -185,7 +204,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	const materialDebug: AssetConversion['debug']['materials'] = [];
 	const normalMapUv: (number | null)[] = [];
 	/** texture objects in first-use order, with a provisional id each */
-	const textureObjects: { key: string; locator: TextureLocator; place: Place }[] = [];
+	const textureObjects: { key: string; locator: ObjectLocator; place: Place }[] = [];
 	const textureIndex = new Map<string, number>();
 	const useTexture = (ref: ObjectRef, place: Place): number => {
 		const key = objectKey(ref);
@@ -193,7 +212,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 		if (index === undefined) {
 			index = textureObjects.length;
 			textureIndex.set(key, index);
-			textureObjects.push({ key, locator: locate(ref), place });
+			textureObjects.push({ key, locator: locateObject(ref), place });
 		} else {
 			textureObjects[index].place = mergePlaces(textureObjects[index].place, place);
 		}
@@ -201,7 +220,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	};
 	await orderedPool(
 		input.materials,
-		input.concurrency,
+		input.materialConcurrency,
 		async (asset) => {
 			const ref = await resolver.findUnique(asset, UnityClass.Material);
 			return { ref, loaded: await loadMaterial(resolver, ref) };
@@ -264,22 +283,12 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	};
 	await orderedPool(
 		input.geometries,
-		jobsInFlight(pool),
-		async (asset, id) => {
-			const job: ConvertJob = {
-				kind: 'geometry',
-				asset,
-				tangentUv: tangentUv[id],
-				zstdLevel: input.geometryZstdLevel,
-			};
-			// the mesh is found among the bundles the manifest lists for its path hash
-			const bundles = [...new Set(resolver.manifest.findAssets(asset.hash).map((row) => row.bundleIndex))];
-			const result = await convert(job, bundles);
-			if (result.kind !== 'geometry') {
-				throw new Error(`a geometry job returned a ${result.kind}`);
-			}
-			return result;
-		},
+		CONVERSIONS_IN_FLIGHT,
+		(asset, id) =>
+			convert(
+				{ kind: 'geometry', asset, tangentUv: tangentUv[id], zstdLevel: input.geometryZstdLevel },
+				resolver.candidateBundles(asset.hash),
+			),
 		(result, _asset, id) => {
 			if (result instanceof Error) {
 				geometryEntries.push({ id, status: 'failed' });
@@ -319,15 +328,11 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	let textureDuplicates = 0;
 	await orderedPool(
 		textureObjects,
-		jobsInFlight(pool),
-		async (object) => {
-			const job: ConvertJob = { kind: 'texture', locator: object.locator, zstdLevel: input.textureZstdLevel };
-			const result = await convert(job, [object.locator.bundleIndex]);
-			if (result.kind !== 'texture') {
-				throw new Error(`a texture job returned a ${result.kind}`);
-			}
-			return result;
-		},
+		CONVERSIONS_IN_FLIGHT,
+		(object) =>
+			convert({ kind: 'texture', locator: object.locator, zstdLevel: input.textureZstdLevel }, [
+				object.locator.bundleIndex,
+			]),
 		(result, object) => {
 			if (result instanceof Error) {
 				textureIds.push(textureEntries.length);
@@ -352,7 +357,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 			byContent.set(result.contentKey, id);
 			textureIds.push(id);
 			textureFormats[result.entry.format] = (textureFormats[result.entry.format] ?? 0) + 1;
-			const placement: Pick<PutOptions, 'kind' | 'archive'> = {
+			const placement: BlobPlacement = {
 				kind: BlobKind.Texture,
 				archive: (_hash, length) => archives.archive(object.place, length),
 			};
@@ -431,24 +436,15 @@ export const pendingAssets = (
 
 // #region helpers
 
-const locate = (ref: ObjectRef): TextureLocator => ({
-	bundleIndex: ref.bundleIndex,
-	file: ref.file.node.path,
-	pathId: ref.info.pathId,
-});
-
-/** jobs queued per worker, so a worker always has its next job while it finishes one */
-const JOBS_PER_WORKER = 2;
-
-const jobsInFlight = (pool: ConvertPool): number => pool.size * JOBS_PER_WORKER;
+/**
+ * conversions started ahead of the one being committed. results are committed in order, so one slow job holds
+ * back the rest of the window; a wide window keeps the workers busy meanwhile. results are small (the blobs
+ * are on disk), so the width costs little memory
+ */
+const CONVERSIONS_IN_FLIGHT = 64;
 
 /** commits a blob a worker wrote, counting its bytes when it's new */
-const commit = (
-	store: BlobStore,
-	meta: BlobMeta,
-	options: Pick<PutOptions, 'kind' | 'archive'>,
-	tally: BlobTally,
-): number => {
+const commit = (store: BlobStore, meta: BlobMeta, options: BlobPlacement, tally: BlobTally): number => {
 	const before = store.size;
 	const index = store.commit({ meta, options });
 	if (store.size > before) {
