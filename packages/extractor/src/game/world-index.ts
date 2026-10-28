@@ -107,10 +107,7 @@ export class WorldIndex {
 	/** @returns the bundle manifest */
 	manifest(): Promise<BundleManifest> {
 		this.#manifest ??= this.#read(VfsGroup.BundleManifest, MANIFEST).then(
-			(b) =>
-				new BundleManifest(brotliDecompressSync(b), {
-					brotliDecompress: (data) => brotliDecompressSync(data),
-				}),
+			(b) => new BundleManifest(b, { brotliDecompress: (data) => brotliDecompressSync(data) }),
 		);
 		return this.#manifest;
 	}

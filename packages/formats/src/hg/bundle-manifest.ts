@@ -3,8 +3,8 @@ import { ByteView } from '../binary/byte-view.ts';
 
 import { hashSlot } from './hash-slots.ts';
 
-// `Data/Bundles/Windows/manifest.hgmmap` (BundleManifest group). the stored file is one Brotli stream; this
-// module reads the decompressed bytes. layout and field names per Variante/endfield_research_kit (MIT,
+// `Data/Bundles/Windows/manifest.hgmmap` (BundleManifest group). the stored file is one Brotli stream over
+// the layout below; asset paths inside it are Brotli-compressed again. layout and field names per Variante/endfield_research_kit (MIT,
 // `scripts/game_data/bundle_manifest{,_native}.py` + `contracts/bundle_manifest_native.json`):
 //
 //   header (156 bytes): u32 0xFF11FF11, u32 n, UTF-16 guid[n]; u32 0xF1F2F3F4, u32 n, UTF-16 hash[n]; u32 0
@@ -56,13 +56,13 @@ export interface AssetInfo {
 
 /** options for {@link BundleManifest} */
 export interface BundleManifestOptions {
-	/** Brotli decompressor for asset path strings */
+	/** Brotli decompressor, for the file and its asset path strings */
 	brotliDecompress: (data: Uint8Array) => Uint8Array;
 }
 
 // #endregion
 
-/** reader over a decompressed `manifest.hgmmap` */
+/** reader over a `manifest.hgmmap` */
 export class BundleManifest {
 	readonly #view: ByteView;
 	readonly #decompress: (data: Uint8Array) => Uint8Array;
@@ -79,13 +79,14 @@ export class BundleManifest {
 	readonly bundleCount: number;
 
 	/**
-	 * @param bytes decompressed manifest; not copied
-	 * @param options path decompressor
+	 * @param stored the file as stored in the VFS (Brotli-compressed)
+	 * @param options decompressor
 	 * @throws {FormatError} if the framing doesn't match
 	 */
-	constructor(bytes: Uint8Array, options: BundleManifestOptions) {
-		this.#view = new ByteView(bytes, 'bundle manifest');
+	constructor(stored: Uint8Array, options: BundleManifestOptions) {
 		this.#decompress = options.brotliDecompress;
+		const bytes = this.#decompress(stored);
+		this.#view = new ByteView(bytes, 'bundle manifest');
 
 		if (bytes.length < HEADER_SIZE || this.#view.u32(0) !== HEAD1) {
 			throw new FormatError('not a bundle manifest');

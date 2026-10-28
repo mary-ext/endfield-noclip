@@ -5,7 +5,7 @@ import { FormatError } from '../binary/binary-reader.ts';
 
 import { BundleManifest } from './bundle-manifest.ts';
 
-// paths are "compressed" with an identity codec so the test needs no Brotli implementation
+// the file and its paths are "compressed" with an identity codec so the test needs no Brotli implementation
 const identity = (data: Uint8Array): Uint8Array => data;
 
 const utf16 = (text: string): Uint8Array => {
