@@ -51,7 +51,8 @@ const ownBuffer = (bytes: Uint8Array<ArrayBuffer>): ArrayBuffer => {
 	return bytes.slice().buffer;
 };
 
-let wasmReady = false;
+/** the decoders compile their wasm asynchronously; requests wait for it */
+const wasmReady = Promise.all([MeshoptDecoder.ready, zstdReady]);
 
 const findStream = (blob: GeometryBlob, attribute: number): GeometryStream | undefined => {
 	return blob.streams.find((candidate) => candidate.attribute === attribute);
@@ -224,16 +225,9 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 	}
 };
 
-self.addEventListener('message', (event: MessageEvent<DecodeRequest>) => {
+self.addEventListener('message', async (event: MessageEvent<DecodeRequest>) => {
 	const request = event.data;
-	if (!wasmReady) {
-		// the decoders compile their wasm asynchronously; queue behind them
-		void Promise.all([MeshoptDecoder.ready, zstdReady]).then(() => {
-			wasmReady = true;
-			self.dispatchEvent(new MessageEvent('message', { data: request }));
-		});
-		return;
-	}
+	await wasmReady;
 	try {
 		const { response, transfer } = handle(request);
 		// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a worker posting to its owner
