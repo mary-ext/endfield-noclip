@@ -25,6 +25,8 @@ import type { WaterRenderer } from './water-renderer.ts';
 /** byte size of `Post` in post-common.wgsl */
 const POST_BYTES = 34 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
+/** the half-resolution view depth the AO marches */
+const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
 /** bloom levels at most, the first at half resolution */
 const BLOOM_LEVELS = 6;
 
@@ -96,7 +98,10 @@ interface Sized {
 	height: number;
 	version: number;
 	sceneTextures: SceneTextures;
+	/** half resolution: view depth, and the AO marched over it */
+	aoDepth: GPUTexture;
 	ao: GPUTexture;
+	/** full resolution */
 	aoBlurred: GPUTexture;
 	/** a copy of the composited scene for the water to refract */
 	background: GPUTexture;
@@ -107,6 +112,7 @@ interface Sized {
 	up: GPUTexture[];
 	bloomUniforms: GPUBuffer[];
 	passes: {
+		aoDepth: Pass;
 		gtao: Pass;
 		blur: Pass;
 		composite: Pass;
@@ -134,6 +140,7 @@ export class PostProcess {
 		multiScattering: GPURenderPipeline;
 		skyView: GPURenderPipeline;
 		skyMean: GPURenderPipeline;
+		aoDepth: GPURenderPipeline;
 		gtao: GPURenderPipeline;
 		blur: GPURenderPipeline;
 		composite: GPURenderPipeline;
@@ -223,6 +230,7 @@ export class PostProcess {
 			multiScattering: pipeline('multiple scattering', atmosphere, 'fs_multi_scattering', HDR_FORMAT),
 			skyView: pipeline('sky view', atmosphere, 'fs_sky_view', HDR_FORMAT),
 			skyMean: pipeline('sky mean', composite, 'fs_sky_mean', HDR_FORMAT),
+			aoDepth: pipeline('ao depth', gtao, 'fs_ao_depth', AO_DEPTH_FORMAT),
 			gtao: pipeline('gtao', gtao, 'fs_gtao', AO_FORMAT),
 			blur: pipeline('gtao blur', gtao, 'fs_blur', AO_FORMAT),
 			composite: pipeline('composite', composite, 'fs_composite', HDR_FORMAT),
@@ -292,8 +300,9 @@ export class PostProcess {
 			return 0;
 		}
 		const pixels = sized.width * sized.height;
-		// AO and its blur, the scene and the water's background, and the bloom chain (two quarter-size mips)
-		return pixels * (1 + 1 + 8 + 8) + pixels * 8 * (2 / 3);
+		// half-resolution AO depth and AO, the blurred AO, the scene and the water's background, and the bloom
+		// chain (two quarter-size mips)
+		return pixels * ((4 + 1) / 4 + 1 + 8 + 8) + pixels * 8 * (2 / 3);
 	}
 
 	/** the composite pass's group 2: the main pass's outputs, the blurred AO and the cloud panorama */
@@ -341,6 +350,7 @@ export class PostProcess {
 
 	#releaseSized(sized: Sized): void {
 		for (const texture of [
+			sized.aoDepth,
 			sized.ao,
 			sized.aoBlurred,
 			sized.scene,
@@ -375,7 +385,10 @@ export class PostProcess {
 					GPUTextureUsage.COPY_SRC |
 					GPUTextureUsage.COPY_DST,
 			});
-		const ao = texture('ao', width, height, AO_FORMAT);
+		const halfWidth = Math.max(1, Math.ceil(width / 2));
+		const halfHeight = Math.max(1, Math.ceil(height / 2));
+		const aoDepth = texture('ao depth', halfWidth, halfHeight, AO_DEPTH_FORMAT);
+		const ao = texture('ao', halfWidth, halfHeight, AO_FORMAT);
 		const aoBlurred = texture('ao blurred', width, height, AO_FORMAT);
 		const sceneTexture = texture('hdr scene', width, height, HDR_FORMAT);
 		const background = texture('hdr background', width, height, HDR_FORMAT);
@@ -460,6 +473,7 @@ export class PostProcess {
 			height,
 			version: scene.version,
 			sceneTextures: scene,
+			aoDepth,
 			ao,
 			aoBlurred,
 			scene: sceneTexture,
@@ -470,13 +484,24 @@ export class PostProcess {
 			up,
 			bloomUniforms,
 			passes: {
+				aoDepth: {
+					pipeline: p.aoDepth,
+					groups: [
+						this.#uniformsGroup(p.aoDepth),
+						device.createBindGroup({
+							layout: p.aoDepth.getBindGroupLayout(1),
+							entries: [{ binding: 0, resource: scene.depth }],
+						}),
+					],
+					target: aoDepth.createView(),
+				},
 				gtao: {
 					pipeline: p.gtao,
 					groups: [
 						this.#uniformsGroup(p.gtao),
 						device.createBindGroup({
 							layout: p.gtao.getBindGroupLayout(1),
-							entries: [{ binding: 0, resource: scene.depth }],
+							entries: [{ binding: 1, resource: aoDepth.createView() }],
 						}),
 					],
 					target: ao.createView(),
@@ -489,7 +514,8 @@ export class PostProcess {
 							layout: p.blur.getBindGroupLayout(1),
 							entries: [
 								{ binding: 0, resource: scene.depth },
-								{ binding: 1, resource: ao.createView() },
+								{ binding: 1, resource: aoDepth.createView() },
+								{ binding: 2, resource: ao.createView() },
 							],
 						}),
 					],
@@ -660,6 +686,7 @@ export class PostProcess {
 			this.#run(encoder, 'sky mean', luts.skyMean);
 		}
 		if (settings.ao && this.#environment.post.ao !== null) {
+			this.#run(encoder, 'ao depth', sized.passes.aoDepth);
 			this.#run(encoder, 'gtao', sized.passes.gtao);
 			this.#run(encoder, 'gtao blur', sized.passes.blur);
 		}
