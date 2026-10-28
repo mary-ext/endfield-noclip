@@ -9,11 +9,15 @@ import { blobPath, type BlobKind, type BlobRecord } from '@endfield-noclip/packa
 
 import { type ArchivePlan, encodeArchive, encodeArchiveStream, planArchive } from '@mary-ext/czar';
 
+import { mapPool } from '../pool.ts';
 import { zstd } from '../zstd.ts';
 
 import { type BlobDir, type BlobMeta, storedBlob } from './blob-file.ts';
 
 // #region store
+
+/** archives written at once; a single stream doesn't saturate an SSD */
+const ARCHIVE_WRITES = 8;
 
 /** how to store one blob */
 export interface PutOptions {
@@ -225,21 +229,16 @@ export class BlobStore {
 	 * @returns the written archives by name
 	 */
 	async writeShards(outDir: string, core: string): Promise<Map<string, WrittenArchive>> {
-		const written = new Map<string, WrittenArchive>();
-		for (const [name, indices] of this.#groups()) {
-			if (name === core) {
-				continue;
-			}
+		const shards = [...this.#groups()].filter(([name]) => name !== core);
+		const written = await mapPool(shards, ARCHIVE_WRITES, async ([name, indices]) => {
 			const plan = this.#plan(indices);
 			const target = join(outDir, name);
-			// oxlint-disable-next-line no-await-in-loop -- one archive at a time bounds open files
 			await mkdir(dirname(target), { recursive: true });
 			const stream = encodeArchiveStream(plan, (source) => createReadStream(this.#blobPath(source.index)));
-			// oxlint-disable-next-line no-await-in-loop -- one archive at a time bounds open files
 			await pipeline(Readable.fromWeb(stream), createWriteStream(target));
-			written.set(name, describe(name, plan, indices.length));
-		}
-		return written;
+			return describe(name, plan, indices.length);
+		});
+		return new Map(written.map((archive) => [archive.name, archive]));
 	}
 
 	/**

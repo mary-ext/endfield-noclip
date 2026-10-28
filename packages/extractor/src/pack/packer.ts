@@ -69,7 +69,7 @@ import { loadProgressions, progressionId } from '../game/scene-states.ts';
 import { indexTerrain, loadTerrainSurface, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
 import { orderedPool } from '../pool.ts';
-import { zstdSync } from '../zstd.ts';
+import { zstd } from '../zstd.ts';
 
 import { AssetArchives, AssetPlacement } from './asset-placement.ts';
 import {
@@ -796,12 +796,13 @@ const writePackage = async (
 	const tree = pack.builder.build((key) => (grid.rootSize / 2 ** key.level) * ERROR_PER_EDGE);
 	const treeBin = encodeTree(tree);
 	const chainsBin = encodeChains(pack.chains.chains);
-	const tables = {
-		geometries: zstdTable(json({ entries: assetTables.geometries } satisfies GeometryTable)),
-		materials: zstdTable(json(assetTables.materials satisfies MaterialTable)),
-		textures: zstdTable(json({ entries: assetTables.textures } satisfies TextureTable)),
-		water: zstdTable(json(states.water)),
-	};
+	// zstd-19 takes seconds per table, so they compress on the thread pool while the shards are written
+	const tablesReady = Promise.all([
+		zstdTable(json({ entries: assetTables.geometries } satisfies GeometryTable)),
+		zstdTable(json(assetTables.materials satisfies MaterialTable)),
+		zstdTable(json({ entries: assetTables.textures } satisfies TextureTable)),
+		zstdTable(json(states.water)),
+	]);
 
 	const shardNames = store
 		.archiveNames()
@@ -809,7 +810,11 @@ const writePackage = async (
 		.toSorted();
 	const archiveNames = [CORE_ARCHIVE, ...shardNames];
 	const blobsBin = encodeBlobTable(store.records(archiveNames));
-	const written = await store.writeShards(options.outDir, CORE_ARCHIVE);
+	const [written, [geometries, materials, textures, water]] = await Promise.all([
+		store.writeShards(options.outDir, CORE_ARCHIVE),
+		tablesReady,
+	]);
+	const tables = { geometries, materials, textures, water };
 
 	const generation = createHash('sha256');
 	for (const part of [
@@ -1279,6 +1284,6 @@ const blobTotals = (store: BlobStore): PackReport['blobs'] => {
 const json = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
 /** a `.zst` core member: one zstd frame */
-const zstdTable = (data: Uint8Array): Uint8Array => zstdSync(data, 19);
+const zstdTable = (data: Uint8Array): Promise<Uint8Array> => zstd(data, 19);
 
 // #endregion
