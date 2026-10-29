@@ -38,8 +38,8 @@ const xyz = (value: TypeTreeObject): [number, number, number] => [
 ];
 
 /**
- * walks a prefab's active hierarchy and resolves renderer dependencies through their exact PPtrs. only the
- * first authored LOD is emitted; other LOD renderers are excluded by identity, never by name
+ * walks a prefab's hierarchy and resolves the active renderers' dependencies through their exact PPtrs. only
+ * the first authored LOD is emitted; other LOD renderers are excluded by identity, never by name
  *
  * @param resolver bundle reader
  * @param root prefab GameObject
@@ -61,32 +61,36 @@ export const readPrefabRenderers = async (
 	const firstLod = new Set<string>();
 	const seen = new Set<string>();
 	const transforms = new Map<string, Float32Array>();
-	const visit = async (go: ObjectRef, parent: Float32Array, isRoot: boolean): Promise<void> => {
+	const visit = async (
+		go: ObjectRef,
+		parent: Float32Array,
+		isRoot: boolean,
+		active: boolean,
+	): Promise<void> => {
 		const key = objectKey(go);
 		if (seen.has(key)) {
 			throw new FormatError(`cyclic prefab hierarchy at ${key}`);
 		}
 		seen.add(key);
 		const data = await resolver.read(go);
-		if (!booleanField(data, 'm_IsActive')) {
-			return;
-		}
+		// inactive subtrees draw nothing, but active skinned meshes can still use their transforms as bones
+		const drawn = active && booleanField(data, 'm_IsActive');
+		const wanted = drawn
+			? [
+					UnityClass.Transform,
+					UnityClass.MeshFilter,
+					UnityClass.MeshRenderer,
+					UnityClass.SkinnedMeshRenderer,
+					205,
+				]
+			: [UnityClass.Transform];
 		const components: { ref: ObjectRef; data: TypeTreeObject }[] = [];
 		for (const item of arrayField(data, 'm_Component')) {
 			if (!isObject(item)) {
 				throw new FormatError('prefab component is not an object');
 			}
 			const ref = await resolver.resolve(go, pptrField(item, 'component'));
-			if (
-				ref !== null &&
-				[
-					UnityClass.Transform,
-					UnityClass.MeshFilter,
-					UnityClass.MeshRenderer,
-					UnityClass.SkinnedMeshRenderer,
-					205,
-				].includes(ref.info.classId)
-			) {
+			if (ref !== null && wanted.includes(ref.info.classId)) {
 				components.push({ ref, data: await resolver.read(ref) });
 			}
 		}
@@ -157,12 +161,12 @@ export const readPrefabRenderers = async (
 				const childData = await resolver.read(child);
 				const childGo = await resolver.resolve(child, pptrField(childData, 'm_GameObject'));
 				if (childGo !== null) {
-					await visit(childGo, matrix, false);
+					await visit(childGo, matrix, false, drawn);
 				}
 			}
 		}
 	};
-	await visit(root, trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]), true);
+	await visit(root, trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]), true, true);
 	const result: PrefabRenderer[] = [];
 	for (const candidate of candidates) {
 		const key = objectKey(candidate.ref);

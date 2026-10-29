@@ -242,3 +242,74 @@ test('prefab selection follows active hierarchy and LOD references, preserving m
 	assert.equal(rows[0].materials[0], null);
 	assert.equal(rows[0].materials[1]?.info.pathId, 60n);
 });
+
+test('skinned prefab meshes resolve bones under inactive GameObjects', async () => {
+	const values = new Map<bigint, TypeTreeObject>();
+	const objects: ObjectInfo[] = [];
+	const add = (id: bigint, classId: number, data: TypeTreeObject): void => {
+		objects.push(object(id, classId));
+		values.set(id, data);
+	};
+	const vector = (x: number, y: number, z: number) => ({ x, y, z });
+	const transform = (go: bigint, x: number, children: bigint[]) => ({
+		m_GameObject: pointer(go),
+		m_LocalPosition: vector(x, 0, 0),
+		m_LocalRotation: { x: 0, y: 0, z: 0, w: 1 },
+		m_LocalScale: vector(1, 1, 1),
+		m_Children: children.map((id) => pointer(id)),
+	});
+	const identity = Object.fromEntries(
+		Array.from({ length: 16 }, (_, k) => ['e' + (k % 4) + Math.floor(k / 4), k % 5 === 0 ? 1 : 0]),
+	);
+	add(1n, UnityClass.GameObject, {
+		m_Name: 'root',
+		m_IsActive: true,
+		m_Component: [{ component: pointer(2n) }],
+	});
+	add(2n, UnityClass.Transform, transform(1n, 0, [11n, 21n]));
+	add(10n, UnityClass.GameObject, {
+		m_Name: 'skin',
+		m_IsActive: true,
+		m_Component: [11n, 12n].map((id) => ({ component: pointer(id) })),
+	});
+	add(11n, UnityClass.Transform, transform(10n, 0, []));
+	add(12n, UnityClass.SkinnedMeshRenderer, {
+		m_Enabled: true,
+		m_CastShadows: 1,
+		m_Mesh: pointer(50n),
+		m_Bones: [pointer(31n)],
+		m_BlendShapeWeights: [],
+		m_Materials: [pointer(60n)],
+	});
+	// the inactive rig holds a bone and a renderer that must stay hidden
+	add(20n, UnityClass.GameObject, {
+		m_Name: 'rig',
+		m_IsActive: false,
+		m_Component: [21n, 22n].map((id) => ({ component: pointer(id) })),
+	});
+	add(21n, UnityClass.Transform, transform(20n, 5, [31n]));
+	add(22n, UnityClass.SkinnedMeshRenderer, { m_Enabled: true });
+	add(30n, UnityClass.GameObject, {
+		m_Name: 'bone',
+		m_IsActive: true,
+		m_Component: [{ component: pointer(31n) }],
+	});
+	add(31n, UnityClass.Transform, transform(30n, 2, []));
+	add(50n, UnityClass.Mesh, {
+		m_LocalAABB: { m_Center: vector(0, 0, 0), m_Extent: vector(1, 1, 1) },
+		m_SubMeshes: [{}],
+		m_BindPose: [identity],
+	});
+	add(60n, UnityClass.Material, {});
+	const owner = file('CAB-prefab', objects, values);
+	const rows = await readPrefabRenderers(resolver([owner]), {
+		bundleIndex: 0,
+		file: owner,
+		info: objects[0],
+	});
+	assert.deepEqual(
+		rows.map((row) => row.name),
+		['skin'],
+	);
+	assert.equal(rows[0].pose?.[0][12], 7);
+});
