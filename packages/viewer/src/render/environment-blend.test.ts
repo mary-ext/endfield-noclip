@@ -156,6 +156,30 @@ describe('eyeInLevelVolume', () => {
 		assert.ok(x > 20 && x <= 22, `x ${x}`);
 	});
 
+	it('counts only volumes the blend would apply', () => {
+		const elsewhere = {
+			...square,
+			points: [
+				[200, 0],
+				[300, 0],
+				[300, 100],
+				[200, 100],
+			],
+		} as const satisfies EnvironmentVolumeShape;
+		const m = manifest(
+			[phase('base', 1), phase('next door', 2)],
+			[
+				volume({ shape: elsewhere, blendMode: 3 }),
+				volume({ shape: square, blendDistance: 1 }),
+				volume({ level: 2, phase: 1, shape: square }),
+			],
+		);
+		// the scripted volume isn't the level's own, and the switched-off neighbour doesn't block the view
+		const eye = eyeInLevelVolume(m, 1, profile(0), target, [50, 30, 50], { enabled: { 2: false } });
+		assert.deepEqual(eye, [50, 30, 50]);
+		assert.equal(eyeInLevelVolume(m, 1, profile(0), target, [50, 30, 50], {}), null);
+	});
+
 	it('finds no viewpoint without a volume for the base phase', () => {
 		const m = manifest([phase('elsewhere', 1)], [volume({ shape: square })]);
 		assert.deepEqual(eyeInLevelVolume(m, 1, profile(0), target, [50, 210, 50], {}), null);

@@ -799,6 +799,7 @@ export class Viewer {
 		for (let i = 0; i < VIEW_HEADINGS; i++) {
 			const yaw = (i / VIEW_HEADINGS) * 2 * Math.PI;
 			const position = eyeInLevelVolume(manifest, level.tag, base, target, fromHeading(yaw), {
+				enabled: this.options.environmentEnabled,
 				// over the treetops and the cell's tallest scenery (Yinglung's chasm walls are meshes). holes in
 				// the terrain aren't clear; terrain that isn't resident yet is
 				clear: ([x, y, z]) => {

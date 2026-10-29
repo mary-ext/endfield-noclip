@@ -72,6 +72,33 @@ const volumesOf = (manifest: PackageManifest): { id: number; volume: Environment
 	return sorted;
 };
 
+/**
+ * @returns whether a volume applies where it holds the camera: scripted volumes (mode 3) only when previewed,
+ *   others unless switched off
+ */
+const volumeApplies = (
+	volume: EnvironmentVolumeInfo,
+	id: number,
+	enabled: BlendOptions['enabled'],
+): volume is EnvironmentVolumeInfo & { phase: number } => {
+	if (volume.phase === null || enabled?.[id] === false) {
+		return false;
+	}
+	switch (volume.blendMode) {
+		case 0:
+		case 1:
+		case 2: {
+			return true;
+		}
+		case 3: {
+			return enabled?.[id] === true;
+		}
+		default: {
+			return false;
+		}
+	}
+};
+
 /** a camera move longer than this in one frame (m) is a jump, and time fades snap */
 const JUMP_DISTANCE = 5;
 /** how much faster time fades run after a jump (the game's) */
@@ -172,7 +199,7 @@ export const blendEnvironment = (
 	} else {
 		const speed = time?.fades.step(eye) ?? JUMP_SPEED;
 		for (const { id, volume } of volumesOf(manifest)) {
-			if (volume.phase === null || options.enabled?.[id] === false) {
+			if (!volumeApplies(volume, id, options.enabled)) {
 				continue;
 			}
 			const distance = distanceInside(volume.shape, eye);
@@ -204,7 +231,7 @@ export const blendEnvironment = (
 					break;
 				}
 				case 3: {
-					factor = options.enabled?.[id] === true && inside ? 1 : 0;
+					factor = inside ? 1 : 0;
 					break;
 				}
 				default: {
@@ -244,7 +271,8 @@ const VIEW_STEPS = 64;
  * @param base the level's base profile; its volume is the level's (or scene-wide) one applying that phase
  * @param target the point the view looks at
  * @param eye the viewpoint
- * @param options optionally which points are clear to view from (off the ground and out of the scenery)
+ * @param options optionally which points are clear to view from (off the ground and out of the scenery), and
+ *   the blend's preview overrides, so only volumes the blend would apply count
  * @returns the point nearest `eye` on the segment from `target` that qualifies, or `null` when none does
  */
 export const eyeInLevelVolume = (
@@ -253,20 +281,20 @@ export const eyeInLevelVolume = (
 	base: EnvironmentProfile,
 	target: Vec3,
 	eye: Vec3,
-	options: { clear?: (point: Vec3) => boolean },
+	options: { clear?: (point: Vec3) => boolean; enabled?: BlendOptions['enabled'] },
 ): Vec3 | null => {
-	const own = manifest.environmentVolumes.find(
+	const applicable = manifest.environmentVolumes.filter((volume, id) =>
+		volumeApplies(volume, id, options.enabled),
+	);
+	const own = applicable.find(
 		(volume) =>
-			volume.phase !== null &&
 			(volume.level === level || volume.level === 0) &&
 			manifest.environmentPhases[volume.phase].name === base.name,
 	);
 	if (own === undefined) {
 		return null;
 	}
-	const others = manifest.environmentVolumes.filter(
-		(volume) => volume.phase !== null && volume.level !== 0 && volume.level !== level,
-	);
+	const others = applicable.filter((volume) => volume.level !== 0 && volume.level !== level);
 	// time-faded volumes apply fully anywhere inside; keep a metre off the edge
 	const margin = Math.max(own.blendMode === 1 ? own.blendDistance : 0, 1);
 	for (let step = VIEW_STEPS; step >= 0; step--) {
