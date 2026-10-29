@@ -29,6 +29,7 @@ const outpost: DynamicEntity = {
 	entityType: 16,
 	components: [15, 27, 30],
 	controllers: [{ kind: 'settlement', settlementId: 'stm_hongs_1', isMain: true }],
+	gates: [],
 	resourceGroups: [group(0, 0b00011), group(1, 0b00100), group(2, 0b11100), group(3, 0)],
 };
 
@@ -38,6 +39,7 @@ const tree: DynamicEntity = {
 	entityType: 19,
 	components: [15, 30],
 	controllers: [],
+	gates: [],
 	resourceGroups: [group(0, 0b01), group(1, 0b10)],
 };
 

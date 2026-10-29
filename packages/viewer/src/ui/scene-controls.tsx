@@ -5,6 +5,28 @@ import type { Viewer } from '../viewer.ts';
 
 import { useViewerState } from './use-viewer.ts';
 
+/** toggle kinds whose controls show the game's condition */
+const CONDITION_SECTIONS = [
+	{
+		kind: 'sceneState',
+		title: 'Scene states',
+		note: 'The game switches these by quest progress. Defaults assume the story is finished; states without a condition are only set by dungeons and scripts.',
+		open: true,
+	},
+	{
+		kind: 'mission',
+		title: 'Quest-gated scenery',
+		note: 'Loaded by quest and mission progress. Defaults assume the story is finished.',
+		open: false,
+	},
+	{
+		kind: 'variable',
+		title: 'Variable-gated scenery',
+		note: 'Loaded by server variables the viewer can’t read. Each variable is assumed to hold the highest value the scene compares it against.',
+		open: false,
+	},
+] as const;
+
 /**
  * @param viewer the loaded scene and its preview selections
  * @returns controls for authored progression and manual visibility previews
@@ -86,28 +108,29 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 				))}
 				{progressions.length === 0 && <p className="muted">No matching progression controls.</p>}
 			</details>
-			<details open>
-				<summary>Scene states ({toggles.filter((entry) => entry.kind === 'sceneState').length})</summary>
-				<p className="muted small">
-					The game switches these by quest progress. Defaults assume the story is finished; states without a
-					condition are only set by dungeons and scripts.
-				</p>
-				{toggles
-					.filter((entry) => entry.kind === 'sceneState')
-					.map((entry) => (
-						<label className="toggle scene-toggle" key={entry.id}>
-							<input
-								type="checkbox"
-								checked={viewer.sceneValues[entry.id] === 1}
-								onChange={(event) => viewer.setSceneValue(entry.id, Number(event.currentTarget.checked))}
-							/>
-							<span>
-								{entry.name}
-								<small className="muted">{entry.condition}</small>
-							</span>
-						</label>
-					))}
-			</details>
+			{CONDITION_SECTIONS.map(({ kind, title, note, open }) => (
+				<details key={kind} open={open}>
+					<summary>
+						{title} ({toggles.filter((entry) => entry.kind === kind).length})
+					</summary>
+					<p className="muted small">{note}</p>
+					{toggles
+						.filter((entry) => entry.kind === kind)
+						.map((entry) => (
+							<label className="toggle scene-toggle" key={entry.id}>
+								<input
+									type="checkbox"
+									checked={viewer.sceneValues[entry.id] === 1}
+									onChange={(event) => viewer.setSceneValue(entry.id, Number(event.currentTarget.checked))}
+								/>
+								<span>
+									{entry.name}
+									<small className="muted">{entry.condition}</small>
+								</span>
+							</label>
+						))}
+				</details>
+			))}
 			{(['script', 'state'] as const).map((kind) => (
 				<details key={kind}>
 					<summary>

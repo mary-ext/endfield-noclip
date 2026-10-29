@@ -440,16 +440,17 @@ export interface SceneToggleInfo {
 	id: string;
 	name: string;
 	/**
-	 * `sceneState`: a MapConfig scene state. `script`: a script-loaded entity group. `state`: a logic gate
-	 * whose condition is not recovered
+	 * `sceneState`: a MapConfig scene state. `mission` / `variable`: a dynamic entity load gate on quest and
+	 * mission states / on a map or global variable; on means the gate passes. `script`: a script-loaded entity
+	 * group. `state`: a logic gate whose condition is not recovered
 	 */
-	kind: 'sceneState' | 'script' | 'state';
+	kind: 'sceneState' | 'mission' | 'variable' | 'script' | 'state';
 	/** level tags whose controls list it; 0 lists it everywhere */
 	levels: number[];
 	defaultEnabled: boolean;
 	/**
-	 * for scene states, the game's condition in words and the assumption the default rests on; `null` for other
-	 * kinds
+	 * for scene states and gates, the game's condition in words and the assumption the default rests on; `null`
+	 * for other kinds
 	 */
 	condition: string | null;
 }

@@ -70,7 +70,9 @@ const ref = (type: number, index: number, num = 0) => [0, type, GRID, index, num
  *   (mask 0b00011, 0b10000, 0)
  * - entity 1: IdComp 7 and PoiControlComp (`INN_TABLE`)
  */
-const build = (options: { resType?: number; scriptDefault?: number } = {}): Uint8Array => {
+const build = (
+	options: { resType?: number; scriptDefault?: number; gates?: { compare: number } } = {},
+): Uint8Array => {
 	const w = new Writer();
 	const root = w.reserve(4);
 	const rootFields = w.table(5, [3, 4]);
@@ -83,7 +85,7 @@ const build = (options: { resType?: number; scriptDefault?: number } = {}): Uint
 	w.view.setUint32(strings, 2, true);
 	w.link(rootFields.get(4)!, strings);
 
-	const slots = [0, 3, 5, 7, 9, 12, 17, 29, 31, 32, 33, 55];
+	const slots = [0, 3, 5, 7, 9, 12, 16, 17, 27, 28, 29, 31, 32, 33, 52, 55];
 	const grid = w.table(56, slots);
 	w.link(gridVector + 4, grid.get(0)! - 4);
 	w.view.setUint32(grid.get(0)!, GRID, true);
@@ -95,8 +97,23 @@ const build = (options: { resType?: number; scriptDefault?: number } = {}): Uint
 		ref(DynamicData.IdComp, 1),
 		ref(DynamicData.PoiControlComp, 0),
 		ref(29, 0),
+		ref(DynamicData.MissionControlComp, 0),
+		ref(DynamicData.GlobalVarControlComp, 0),
+		ref(DynamicData.MapVarControlComp, 0),
 	].map((words) => words.slice(0, 4));
 	w.link(grid.get(5)!, w.structs(16, dataIndex));
+	// any of (quest `stm_hongs_3` = completed, mission `INN_TABLE` ≠ processing), loaded while false; global
+	// variable 79 ≠ 3 gating the load; a map variable that only drives the level
+	w.link(grid.get(27)!, w.structs(32, [[...ref(DynamicData.MissionCondition, 0, 2), 1, 0]]));
+	w.link(
+		grid.get(16)!,
+		w.structs(16, [
+			[0, 1, 3, 1],
+			[1, 0, 2, 0],
+		]),
+	);
+	w.link(grid.get(28)!, w.structs(40, [[79, 1, options.gates?.compare ?? 1, 0, 3, 0, -1, -1, -1, -1]]));
+	w.link(grid.get(52)!, w.structs(48, [[5, 0, 0, 0, 2, 0, -1, -1, -1, -1, 2, 0]]));
 	w.link(grid.get(31)!, w.structs(4, [[options.scriptDefault ?? 0]]));
 
 	const visibility = (count: number) => [count === 0 ? 1 : 0, 49, GRID, 0, count, 1];
@@ -130,7 +147,7 @@ const build = (options: { resType?: number; scriptDefault?: number } = {}): Uint
 		grid.get(33)!,
 		w.structs(84, [
 			[16, 0, ...ref(1, 0, 3), 0, ...visibility(0)],
-			[39, 0, ...ref(1, 3, 3), 0, ...visibility(1)],
+			[39, 0, ...ref(1, 3, options.gates ? 6 : 3), 0, ...visibility(1)],
 		]),
 	);
 	w.link(grid.get(55)!, w.structs(8, [[1, 161]]));
@@ -165,6 +182,24 @@ test('reads entity ids, controllers and resource groups', () => {
 	assert.equal(poi.uid, 7n);
 	assert.deepEqual(poi.controllers, [{ kind: 'poi', poiId: 'INN_TABLE', domainType: 161 }]);
 	assert.deepEqual(poi.resourceGroups, []);
+});
+
+test('reads mission and loading variable gates; level-only variables are not gates', () => {
+	const [settlement, poi] = readDynamicEntities(build({ gates: { compare: 1 } }));
+	assert.deepEqual(settlement.gates, []);
+	assert.deepEqual(poi.gates, [
+		{
+			kind: 'mission',
+			all: false,
+			loadWhen: false,
+			conditions: [
+				{ id: 'stm_hongs_3', isQuest: true, state: 3, same: true },
+				{ id: 'INN_TABLE', isQuest: false, state: 2, same: false },
+			],
+		},
+		{ kind: 'globalVar', key: 79, compare: 1, value: 3, mapId: null },
+	]);
+	assert.throws(() => readDynamicEntities(build({ gates: { compare: 6 } })), /globalVar control/);
 });
 
 test('a group is shown when its mask has the logic-state bit, or always when the mask is 0', () => {

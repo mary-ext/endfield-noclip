@@ -23,6 +23,20 @@ import { FlatBuffer } from '../binary/flatbuffer.ts';
 //     i32 compareValue @12, bool isMain @16
 //   FactoryRegionControlComp: i32 region (root string, a level id) @0, i32 @4
 //   PoiControlComp: i32 poi (root string) @0, i32 domainType @4
+//   16 [MissionCondition 16 B] = i32 id (root string), i32 isQuest, i32 state, i32 isSame
+//   27 [MissionControlComp 32 B] = Conditions DataGroup @0 (MissionCondition rows), i32 compareType @24,
+//     i32 toBeTrue @28
+//   28 [GlobalVarControlComp 40 B] = i32 globalKey @0 (a client game variable id, not a root string),
+//     u8 controlLoad @4, i32 compareType @8, i64 compareValue @16, i32 extra1–4 @24
+//   52 [MapVarControlComp 48 B] = i32 mapKey @0 (an id like globalKey), u8 controlLoad @4, i32 compareType @8,
+//     i64 compareValue @16, i32 extra1–4 @24, i32 mapId @40
+//
+// gate semantics (DynamicSceneMissionControlSystem._UpdateConditionValue / _GetCurrentConditionCompValue,
+// DynamicSceneVarControlSystemBase.EvaluateCompare): a mission condition holds when the quest/mission state
+// equals `state` (isSame 1) or differs from it (otherwise); compareType 0 needs all conditions, any other value
+// one; the entity loads while the result equals toBeTrue == 1. a variable gate with controlLoad loads while the
+// variable compares true (`CompareOperator` order) and not while it's unset; without controlLoad the variable
+// only drives the entity's level and animator state.
 
 // #region types
 
@@ -32,10 +46,14 @@ export const DynamicData = {
 	Effect: 6,
 	Ecs: 7,
 	ResourceGroupWithStateDesc: 10,
+	MissionCondition: 14,
 	IdComp: 15,
+	MissionControlComp: 25,
+	GlobalVarControlComp: 26,
 	SettlementControlComp: 27,
 	FactoryRegionControlComp: 28,
 	ResourceComp: 30,
+	MapVarControlComp: 51,
 	PoiControlComp: 55,
 } as const;
 
@@ -68,6 +86,38 @@ export type DynamicController =
 	| { kind: 'factoryRegion'; regionId: string }
 	| { kind: 'poi'; poiId: string; domainType: number };
 
+/** one quest or mission state test of a mission gate */
+export interface DynamicMissionCondition {
+	/** quest or mission id */
+	id: string;
+	isQuest: boolean;
+	/** `QuestState` / `MissionState` value */
+	state: number;
+	/** true: the state must equal `state`; false: it must differ */
+	same: boolean;
+}
+
+/** a condition the game loads an entity by */
+export type DynamicGate =
+	| {
+			kind: 'mission';
+			/** true: every condition must hold; false: one is enough */
+			all: boolean;
+			/** the entity loads while the combined result equals this */
+			loadWhen: boolean;
+			conditions: DynamicMissionCondition[];
+	  }
+	| {
+			kind: 'globalVar' | 'mapVar';
+			/** variable id; ids aren't names and the client tables that name them aren't read */
+			key: number;
+			/** `CompareOperator` (Equal 0 … LessEqual 5) applied as `variable <op> value` */
+			compare: number;
+			value: number;
+			/** MapVarControlComp mapId; `null` for global variables */
+			mapId: number | null;
+	  };
+
 /** a DynamicStreaming entity */
 export interface DynamicEntity {
 	/** grid unique id */
@@ -78,6 +128,8 @@ export interface DynamicEntity {
 	/** DataIndex types of its components */
 	components: number[];
 	controllers: DynamicController[];
+	/** load conditions; all must hold. variable components that don't control loading aren't listed */
+	gates: DynamicGate[];
 	resourceGroups: DynamicResourceGroup[];
 }
 
@@ -89,22 +141,30 @@ const Slot = {
 	GridUniqueId: 0,
 	DataIndex: 5,
 	ResourceGroupWithStateDesc: 12,
+	MissionCondition: 16,
 	IdComp: 17,
+	MissionControlComp: 27,
+	GlobalVarControlComp: 28,
 	SettlementControlComp: 29,
 	FactoryRegionControlComp: 30,
 	ResourceComp: 32,
 	RootComp: 33,
+	MapVarControlComp: 52,
 	PoiControlComp: 55,
 } as const;
 
 const Width = {
 	DataIndex: 16,
 	ResourceGroupWithStateDesc: 88,
+	MissionCondition: 16,
 	IdComp: 8,
+	MissionControlComp: 32,
+	GlobalVarControlComp: 40,
 	SettlementControlComp: 20,
 	FactoryRegionControlComp: 8,
 	ResourceComp: 132,
 	RootComp: 84,
+	MapVarControlComp: 48,
 	PoiControlComp: 8,
 } as const;
 
@@ -136,10 +196,47 @@ export const readDynamicEntities = (bytes: Uint8Array): DynamicEntity[] => {
 
 	const entities: DynamicEntity[] = [];
 	const grids = fb.vector(root, Slot.RootGrids);
+	const gridTables = new Map<number, number>();
 	for (let g = 0; g < grids.length; g++) {
 		const grid = fb.tableAt(grids.start, g);
 		const uniqueIdAt = fb.field(grid, Slot.GridUniqueId);
 		const gridId = uniqueIdAt === undefined ? 0 : fb.u32(uniqueIdAt);
+		if (gridTables.has(gridId)) {
+			throw new FormatError(`duplicate grid ${gridId}`);
+		}
+		gridTables.set(gridId, grid);
+	}
+	// gate components and their condition rows may live in another grid of the file
+	const rowIn = (gridId: number, slot: number, index: number, width: number, what: string): number => {
+		const grid = gridTables.get(gridId);
+		if (grid === undefined) {
+			throw new FormatError(`${what} in missing grid ${gridId}`);
+		}
+		const vector = fb.vector(grid, slot);
+		if (index < 0 || index >= vector.length) {
+			throw new FormatError(`${what} ${index} outside ${vector.length} in grid ${gridId}`);
+		}
+		return vector.start + index * width;
+	};
+	const variableGate = (kind: 'globalVar' | 'mapVar', at: number): DynamicGate | null => {
+		const controlLoad = fb.u8(at + 4);
+		const compare = fb.i32(at + 8);
+		if (controlLoad > 1 || compare < 0 || compare > 5) {
+			throw new FormatError(`invalid ${kind} control (load ${controlLoad}, compare ${compare})`);
+		}
+		if (controlLoad === 0) {
+			return null;
+		}
+		return {
+			kind,
+			key: fb.i32(at),
+			compare,
+			value: Number(fb.i64(at + 16)),
+			mapId: kind === 'mapVar' ? fb.i32(at + 40) : null,
+		};
+	};
+
+	for (const [gridId, grid] of gridTables) {
 		const vectors = {
 			dataIndex: fb.vector(grid, Slot.DataIndex),
 			groups: fb.vector(grid, Slot.ResourceGroupWithStateDesc),
@@ -166,6 +263,7 @@ export const readDynamicEntities = (bytes: Uint8Array): DynamicEntity[] => {
 				entityType: fb.u32(at),
 				components: [],
 				controllers: [],
+				gates: [],
 				resourceGroups: [],
 			};
 			for (let c = 0; c < comps.count; c++) {
@@ -174,6 +272,78 @@ export const readDynamicEntities = (bytes: Uint8Array): DynamicEntity[] => {
 				const index = fb.i32(di + 12);
 				entity.components.push(type);
 				switch (type) {
+					case DynamicData.MissionControlComp: {
+						const m = rowIn(
+							fb.u32(di + 8),
+							Slot.MissionControlComp,
+							index,
+							Width.MissionControlComp,
+							'MissionControlComp',
+						);
+						const list = dataRef(m);
+						const toBeTrue = fb.i32(m + 28);
+						if (list.count > 0 && list.type !== DynamicData.MissionCondition) {
+							throw new FormatError(`MissionControlComp ${index} has Conditions type ${list.type}`);
+						}
+						if (toBeTrue !== 0 && toBeTrue !== 1) {
+							throw new FormatError(`invalid MissionControlComp toBeTrue ${toBeTrue}`);
+						}
+						const conditions: DynamicMissionCondition[] = [];
+						for (let k = 0; k < list.count; k++) {
+							const q = rowIn(
+								list.grid,
+								Slot.MissionCondition,
+								list.index + k,
+								Width.MissionCondition,
+								'MissionCondition',
+							);
+							conditions.push({
+								id: rootString(fb.i32(q)),
+								isQuest: fb.i32(q + 4) !== 0,
+								state: fb.i32(q + 8),
+								same: fb.i32(q + 12) === 1,
+							});
+						}
+						entity.gates.push({
+							kind: 'mission',
+							all: fb.i32(m + 24) === 0,
+							loadWhen: toBeTrue === 1,
+							conditions,
+						});
+						break;
+					}
+					case DynamicData.GlobalVarControlComp: {
+						const gate = variableGate(
+							'globalVar',
+							rowIn(
+								fb.u32(di + 8),
+								Slot.GlobalVarControlComp,
+								index,
+								Width.GlobalVarControlComp,
+								'GlobalVarControlComp',
+							),
+						);
+						if (gate) {
+							entity.gates.push(gate);
+						}
+						break;
+					}
+					case DynamicData.MapVarControlComp: {
+						const gate = variableGate(
+							'mapVar',
+							rowIn(
+								fb.u32(di + 8),
+								Slot.MapVarControlComp,
+								index,
+								Width.MapVarControlComp,
+								'MapVarControlComp',
+							),
+						);
+						if (gate) {
+							entity.gates.push(gate);
+						}
+						break;
+					}
 					case DynamicData.IdComp: {
 						const id = row(vectors.ids, index, Width.IdComp, 'IdComp');
 						entity.uid = fb.u64(id);

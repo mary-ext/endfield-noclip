@@ -22,6 +22,7 @@ import type {
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';
 
+import { gateControl, gateToggles } from './dynamic-gates.ts';
 import { sceneStateControl } from './scene-conditions.ts';
 import { controllerKey, progressionId } from './scene-states.ts';
 
@@ -91,6 +92,7 @@ export const loadDynamicStructures = async (
 		counts: { owners: owners.length, ecsGroups: 0, models: 0, effects: 0 },
 	};
 	const toggles = new Map<string, SceneToggleInfo>();
+	const gates = gateToggles(owners.flatMap((owner) => owner.entity.gates));
 	const chunks = new Map<string, Map<number, ConditionalSetInfo>>();
 	const models = new Map<string, StructureModel>();
 	const ordinals = new Map<number, number>();
@@ -119,6 +121,13 @@ export const loadDynamicStructures = async (
 			if (owner.scriptDefaultLoad !== null) {
 				addToggle(scriptId, 'script', owner.scriptDefaultLoad, [tag]);
 				requirements.push({ control: scriptId, mask: 2 });
+			}
+			for (const gate of entity.gates) {
+				const id = gateControl(gate);
+				const toggle = gates.get(id)!;
+				const current = toggles.get(id);
+				toggles.set(id, { ...toggle, levels: [...new Set([...(current?.levels ?? []), tag])] });
+				requirements.push({ control: id, mask: 2 });
 			}
 			// visible-state lists hold MapConfig scene state indices; the entity and the group each need one of
 			// theirs active

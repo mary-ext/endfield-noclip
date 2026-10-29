@@ -82,9 +82,10 @@ export const unnamedSceneStateControl = (index: number): SceneToggleInfo => ({
 
 /**
  * @param condition a scene state condition
- * @returns its result for a player who finished the story (variables at {@link ASSUMED_VARIABLE})
+ * @param variable the value every map and global variable is taken to hold
+ * @returns its result for a player who finished the story
  */
-export const evaluate = (condition: SceneCondition): boolean => {
+export const evaluate = (condition: SceneCondition, variable = ASSUMED_VARIABLE): boolean => {
 	switch (condition.kind) {
 		case 'quest':
 		case 'mission': {
@@ -92,11 +93,11 @@ export const evaluate = (condition: SceneCondition): boolean => {
 		}
 		case 'mapVar':
 		case 'globalVar': {
-			return compare(ASSUMED_VARIABLE, condition.compare, condition.target);
+			return compare(variable, condition.compare, condition.target);
 		}
 		case 'all':
 		case 'any': {
-			const results = condition.conditions.map(evaluate);
+			const results = condition.conditions.map((child) => evaluate(child, variable));
 			const result = condition.kind === 'all' ? results.every(Boolean) : results.some(Boolean);
 			return result !== condition.reverse;
 		}
