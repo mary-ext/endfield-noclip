@@ -54,6 +54,7 @@ Endfield's game levels in the browser
 
 ### commit workflow
 
+- commit directly on `trunk`; this repo doesn't use feature branches
 - one logical change per commit; choose the type for the whole change, not each file category
 - accepted types:
   - `feat`: additions to the public API
@@ -84,3 +85,19 @@ Endfield's game levels in the browser
 - use root `.research/` for experiments, analysis, plans, and reference materials like cloned Git
   repositories; create it if absent. it is local and disposable: committed code, documentation, and
   commit messages must not reference paths inside it or depend on its contents
+- before building a decoder, dumper, or other reverse-engineering tool, search GitHub
+  (`gh search code '<identifier>'`, `gh search repos`) for existing Endfield tooling and build only
+  the missing part. MIT code can be adapted; GPL, AGPL, and non-commercial tools are reference only
+
+### what the repo holds
+
+the repo ships extractors and the viewer, never the game's keys or content. the game's ToS bans
+reverse engineering, and Hypergryph has had a VFS decryptor removed from GitHub by DMCA, so
+committed keys or game-derived files would expose the repo the same way.
+
+- keys are derived from the user's install by the extractor and stay in the gitignored
+  `endfield.local.json`; derive new ones the same way rather than copying them from third-party
+  tools
+- extracted output stays in the gitignored `out/` or outside the repo
+- decompiled shaders and C#, and other listings of Hypergryph's code, stay out of the repo
+- check each diff for keys and game-derived files before committing
