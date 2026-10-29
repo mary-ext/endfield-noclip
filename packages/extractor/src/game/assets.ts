@@ -109,6 +109,18 @@ const cabOf = (fileName: string): string => {
 	return dot < 0 ? fileName : fileName.slice(0, dot);
 };
 
+/**
+ * @returns whether a PPtr targets the bundle holding `file`; malformed pointers count, so resolving them
+ *   throws
+ */
+const inBundle = (file: BundleAssetFile, pptr: PPtr): boolean => {
+	if (pptr.fileId === 0) {
+		return true;
+	}
+	const external = file.file.externals[pptr.fileId - 1];
+	return external === undefined || file.bundle.node(archiveFileName(external.pathName)) !== undefined;
+};
+
 /** a small insertion-ordered LRU */
 class LruCache<K, V> {
 	readonly #limit: number;
@@ -411,8 +423,12 @@ export class AssetResolver {
 		const entries = (await this.#container(index)).get(containerPath) ?? [];
 		const matches = await Promise.all(
 			entries.map(async ({ from, entry }) => {
-				// preload ranges may include dependencies; only named sub-assets use them.
-				const pointers = subAsset === undefined ? [entry.asset] : [entry.asset, ...entry.preloads];
+				// preload ranges may include dependencies; only named sub-assets use them. a sub-asset ships in its
+				// container's bundle, so preloads into other bundles are skipped without opening them
+				const pointers =
+					subAsset === undefined
+						? [entry.asset]
+						: [entry.asset, ...entry.preloads.filter((pointer) => inBundle(from.file, pointer))];
 				return Promise.all(
 					pointers.map(async (pointer) => {
 						const ref = await this.resolve(from, pointer);

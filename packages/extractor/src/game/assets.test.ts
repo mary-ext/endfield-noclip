@@ -116,6 +116,23 @@ test('sub-assets are restricted to the container preload range and deduplicated'
 	assert.deepEqual(refs.map(objectKey), ['CAB-owner:2']);
 });
 
+test('sub-asset lookups skip preloads into other bundles without opening them', async () => {
+	const owner = file(
+		'CAB-owner',
+		[object(1n, UnityClass.AssetBundle), object(2n, UnityClass.Mesh)],
+		new Map<bigint, TypeTreeObject>([
+			[1n, container('model.fbx', pointer(2n), [pointer(2n), pointer(9n, 1)])],
+			[2n, { m_Name: 'mesh' }],
+		]),
+	);
+	owner.file.externals.push({ guid: new Uint8Array(16), type: 0, pathName: 'archive:/CAB-dep/CAB-dep' });
+	Object.assign(owner.bundle, { node: () => undefined });
+	const assets = resolver([owner]);
+	assets.bundleOfCab = () => assert.fail('opened a dependency bundle');
+	const refs = await assets.findInBundle(0, 'model.fbx##mesh', UnityClass.Mesh);
+	assert.deepEqual(refs.map(objectKey), ['CAB-owner:2']);
+});
+
 test('missing containers and mismatched main assets never fall back to bundle-wide class matches', async () => {
 	const owner = file(
 		'CAB-owner',
