@@ -1,4 +1,20 @@
-Endfield's game levels in the browser
+Endfield's game levels in the browser: an offline extractor turns a local game install into a
+package, and a WebGPU viewer streams that package one level at a time.
+
+Last verified: 2026-10-29
+
+## layout
+
+- `packages/formats`: environment-agnostic decoders for the game's containers and Unity/Endfield
+  formats
+- `packages/extractor`: the `pnpm extract` CLI; reads the install and writes packages to
+  `out/<map>/`
+- `packages/package-format`: the package contract shared by the packer and the viewer
+- `packages/viewer`: the WebGPU viewer (React, Vite)
+- `docs/`: how the game data and our code work. read the page for the area you're changing before
+  changing it, and update it in the same commit when behavior changes, because these pages are the
+  only durable record of the findings. start at [docs/architecture.md](docs/architecture.md); known
+  gaps are in [docs/status.md](docs/status.md)
 
 ## development notes
 
@@ -6,6 +22,8 @@ Endfield's game levels in the browser
 
 - manage tools like Node.js, Bun, and pnpm with mise
 - run the dev server with `pnpm run dev`, build with `pnpm run build` (Vite)
+- run tests with `pnpm test` (`node --test`), the extractor with `pnpm extract <command>` (no
+  arguments lists commands)
 - format with `pnpm run fmt` (oxfmt)
 - lint and typecheck with `pnpm run lint` (oxlint)
 - check `pnpm view <package>` before adding a new dependency
@@ -82,9 +100,12 @@ Endfield's game levels in the browser
 
 ### agentic coding
 
-- use root `.research/` for experiments, analysis, plans, and reference materials like cloned Git
+- use root `.research/` for experiments, probes, plans, and reference materials like cloned Git
   repositories; create it if absent. it is local and disposable: committed code, documentation, and
-  commit messages must not reference paths inside it or depend on its contents
+  commit messages must not reference paths inside it or depend on its contents. when a finding there
+  settles, write it into the matching `docs/` page, following that page's rules on what stays out
+- to see a change in the viewer, drive it with `agent-browser` as described in
+  [docs/viewer.md](docs/viewer.md)
 - before building a decoder, dumper, or other reverse-engineering tool, search GitHub
   (`gh search code '<identifier>'`, `gh search repos`) for existing Endfield tooling and build only
   the missing part. MIT code can be adapted; GPL, AGPL, and non-commercial tools are reference only
@@ -95,9 +116,10 @@ the repo ships extractors and the viewer, never the game's keys or content. the 
 reverse engineering, and Hypergryph has had a VFS decryptor removed from GitHub by DMCA, so
 committed keys or game-derived files would expose the repo the same way.
 
-- keys are derived from the user's install by the extractor and stay in the gitignored
-  `endfield.local.json`; derive new ones the same way rather than copying them from third-party
-  tools
+- keys come from the user's install: `init` derives what it can, takes the rest from `--keys-from`,
+  validates each against the install, and saves them to the gitignored `endfield.local.json`
 - extracted output stays in the gitignored `out/` or outside the repo
-- decompiled shaders and C#, and other listings of Hypergryph's code, stay out of the repo
+- decompiled shaders and C#, paraphrases of them, binary addresses, and other listings of
+  Hypergryph's code stay out of the repo, including `docs/`. describe the behavior our code
+  implements instead
 - check each diff for keys and game-derived files before committing
