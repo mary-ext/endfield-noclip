@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 6;
+export const PACKAGE_VERSION = 7;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -578,11 +578,8 @@ export interface EnvironmentVolumeInfo {
 	fadeOutDuration: number;
 	/** index into {@link PackageManifest.environmentPhases}, or `null` if the phase is unset or unreadable */
 	phase: number | null;
-	/**
-	 * whether the volume looks like a story or battle state the level scripts switch on (night, fights) rather
-	 * than the area's look; judged by name, since which volumes start enabled isn't known
-	 */
-	state: boolean;
+	/** activation conditions have not been recovered; previewing this volume assumes it is enabled */
+	activation: 'unknown';
 }
 
 /**

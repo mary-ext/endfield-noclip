@@ -91,8 +91,6 @@ export interface ViewerOptions {
 	irradiance: boolean;
 	/** blend the game's environment volumes at the camera; off shows the level's base environment */
 	environmentVolumes: boolean;
-	/** let volumes flagged as story or battle states apply (night, fights) */
-	environmentStates: boolean;
 	/** an environment phase to show over the base instead of the volumes, or `null` */
 	environmentPin: number | null;
 	/** a material channel instead of the lit image */
@@ -126,7 +124,6 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	vignette: true,
 	irradiance: true,
 	environmentVolumes: true,
-	environmentStates: false,
 	environmentPin: null,
 	debugView: 'lit',
 };
@@ -600,7 +597,7 @@ export class Viewer {
 	#blendEnvironment(force: boolean, dt: number): void {
 		const options = this.options;
 		const eye = this.camera.position;
-		const settings = `${options.environmentVolumes}|${options.environmentStates}|${options.environmentPin}`;
+		const settings = `${options.environmentVolumes}|${options.environmentPin}`;
 		const last = this.#blendEye;
 		if (
 			!force &&
@@ -628,7 +625,7 @@ export class Viewer {
 				manifest,
 				base,
 				eye,
-				{ states: options.environmentStates, pinnedPhase: options.environmentPin },
+				{ pinnedPhase: options.environmentPin },
 				{ fades: this.#fades, dt },
 			);
 			profile = blended.profile;
@@ -793,7 +790,6 @@ export class Viewer {
 		for (let i = 0; i < VIEW_HEADINGS; i++) {
 			const yaw = (i / VIEW_HEADINGS) * 2 * Math.PI;
 			const position = eyeInLevelVolume(manifest, level.tag, base, target, fromHeading(yaw), {
-				states: this.options.environmentStates,
 				// over the treetops and the cell's tallest scenery (Yinglung's chasm walls are meshes). holes in
 				// the terrain aren't clear; terrain that isn't resident yet is
 				clear: ([x, y, z]) => {

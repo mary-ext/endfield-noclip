@@ -46,8 +46,6 @@ export interface BlendedEnvironment {
 
 /** what the blend may use */
 export interface BlendOptions {
-	/** include volumes flagged as story or battle states */
-	states: boolean;
 	/** apply only this phase over the base, instead of the volumes */
 	pinnedPhase: number | null;
 }
@@ -172,7 +170,7 @@ export const blendEnvironment = (
 	} else {
 		const speed = time?.fades.step(eye) ?? JUMP_SPEED;
 		for (const { id, volume } of volumesOf(manifest)) {
-			if (volume.phase === null || (volume.state && !options.states)) {
+			if (volume.phase === null) {
 				continue;
 			}
 			const distance = distanceInside(volume.shape, eye);
@@ -240,8 +238,7 @@ const VIEW_STEPS = 64;
  * @param base the level's base profile; its volume is the level's (or scene-wide) one applying that phase
  * @param target the point the view looks at
  * @param eye the viewpoint
- * @param options whether state volumes apply, and optionally which points are clear to view from (off the
- *   ground and out of the scenery)
+ * @param options optionally which points are clear to view from (off the ground and out of the scenery)
  * @returns the point nearest `eye` on the segment from `target` that qualifies, or `null` when none does
  */
 export const eyeInLevelVolume = (
@@ -250,21 +247,19 @@ export const eyeInLevelVolume = (
 	base: EnvironmentProfile,
 	target: Vec3,
 	eye: Vec3,
-	options: Pick<BlendOptions, 'states'> & { clear?: (point: Vec3) => boolean },
+	options: { clear?: (point: Vec3) => boolean },
 ): Vec3 | null => {
-	const usable = (volume: EnvironmentVolumeInfo): boolean =>
-		volume.phase !== null && (!volume.state || options.states);
 	const own = manifest.environmentVolumes.find(
 		(volume) =>
-			usable(volume) &&
+			volume.phase !== null &&
 			(volume.level === level || volume.level === 0) &&
-			manifest.environmentPhases[volume.phase!].name === base.name,
+			manifest.environmentPhases[volume.phase].name === base.name,
 	);
 	if (own === undefined) {
 		return null;
 	}
 	const others = manifest.environmentVolumes.filter(
-		(volume) => usable(volume) && volume.level !== 0 && volume.level !== level,
+		(volume) => volume.phase !== null && volume.level !== 0 && volume.level !== level,
 	);
 	// time-faded volumes apply fully anywhere inside; keep a metre off the edge
 	const margin = Math.max(own.blendMode === 1 ? own.blendDistance : 0, 1);

@@ -38,7 +38,7 @@ const volume = (patch: Partial<EnvironmentVolumeInfo>): EnvironmentVolumeInfo =>
 	fadeInDuration: 0,
 	fadeOutDuration: 0,
 	phase: 0,
-	state: false,
+	activation: 'unknown',
 	...patch,
 });
 
@@ -61,7 +61,7 @@ const square = {
 	bottom: 0,
 	top: 50,
 } as const satisfies EnvironmentVolumeShape;
-const options = { states: false, pinnedPhase: null };
+const options = { pinnedPhase: null };
 
 describe('environment blend', () => {
 	it('applies volumes by priority, higher over lower', () => {
@@ -88,15 +88,16 @@ describe('environment blend', () => {
 		assert.equal(density(blendEnvironment(m, profile(0), [5, 25, 50], options)), 2);
 	});
 
-	it('skips state volumes unless asked', () => {
-		const m = manifest([phase('night', 9)], [volume({ state: true })]);
-		assert.equal(density(blendEnvironment(m, profile(0), [0, 0, 0], options)), 0);
-		assert.equal(density(blendEnvironment(m, profile(0), [0, 0, 0], { ...options, states: true })), 9);
+	it('previews volumes with unknown activation without classifying their names', () => {
+		for (const name of ['night', 'fight', 'ordinary']) {
+			const m = manifest([phase(name, 9)], [volume({ name, activation: 'unknown' })]);
+			assert.equal(density(blendEnvironment(m, profile(0), [0, 0, 0], options)), 9);
+		}
 	});
 
 	it('pins one phase instead of the volumes', () => {
 		const m = manifest([phase('a', 1), phase('b', 2)], [volume({ phase: 0 })]);
-		assert.equal(density(blendEnvironment(m, profile(0), [0, 0, 0], { states: false, pinnedPhase: 1 })), 2);
+		assert.equal(density(blendEnvironment(m, profile(0), [0, 0, 0], { pinnedPhase: 1 })), 2);
 	});
 
 	it('fades time-blended volumes over their durations, and snaps on a jump', () => {
@@ -123,12 +124,12 @@ describe('eyeInLevelVolume', () => {
 
 	it('keeps a viewpoint the level volume already holds', () => {
 		const m = manifest([phase('base', 1)], [volume({ shape: square })]);
-		assert.deepEqual(eyeInLevelVolume(m, 1, profile(0), target, [50, 30, 50], options), [50, 30, 50]);
+		assert.deepEqual(eyeInLevelVolume(m, 1, profile(0), target, [50, 30, 50], {}), [50, 30, 50]);
 	});
 
 	it('pulls a viewpoint above the height band down the view line, past the blend distance', () => {
 		const m = manifest([phase('base', 1)], [volume({ shape: square, blendDistance: 10 })]);
-		const eye = eyeInLevelVolume(m, 1, profile(0), target, [50, 210, 50], options);
+		const eye = eyeInLevelVolume(m, 1, profile(0), target, [50, 210, 50], {});
 		assert.ok(eye !== null);
 		const [x, y, z] = eye;
 		assert.deepEqual([x, z], [50, 50]);
@@ -149,7 +150,7 @@ describe('eyeInLevelVolume', () => {
 			[phase('base', 1), phase('next door', 2)],
 			[volume({ shape: square, blendDistance: 1 }), volume({ level: 2, phase: 1, shape: neighbour })],
 		);
-		const eye = eyeInLevelVolume(m, 1, profile(0), target, [-50, 10, 50], options);
+		const eye = eyeInLevelVolume(m, 1, profile(0), target, [-50, 10, 50], {});
 		assert.ok(eye !== null);
 		const [x] = eye;
 		assert.ok(x > 20 && x <= 22, `x ${x}`);
@@ -157,6 +158,6 @@ describe('eyeInLevelVolume', () => {
 
 	it('finds no viewpoint without a volume for the base phase', () => {
 		const m = manifest([phase('elsewhere', 1)], [volume({ shape: square })]);
-		assert.deepEqual(eyeInLevelVolume(m, 1, profile(0), target, [50, 210, 50], options), null);
+		assert.deepEqual(eyeInLevelVolume(m, 1, profile(0), target, [50, 210, 50], {}), null);
 	});
 });

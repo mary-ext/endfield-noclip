@@ -104,7 +104,6 @@ const EnvironmentControls = ({ viewer }: { viewer: Viewer }) => {
 		<fieldset>
 			<legend>environment</legend>
 			<Toggle viewer={viewer} name="environmentVolumes" label="volumes at camera" />
-			<Toggle viewer={viewer} name="environmentStates" label="story states" />
 			<div className="slider">
 				<label htmlFor={pinId}>pin</label>
 				<select

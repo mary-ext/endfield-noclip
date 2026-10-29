@@ -110,12 +110,6 @@ export interface FinishedEnvironments {
 }
 
 /**
- * volume names that read as story or battle states rather than an area's look: Snowy Forest's quest night,
- * boss fights, battles (`zhandou`)
- */
-const STATE_NAME = /night|fight|zhandou|battle/i;
-
-/**
  * resolves every level's environment and loads the phases and profiles involved
  *
  * @param context world index and asset resolver
@@ -250,7 +244,7 @@ export const planEnvironments = async (
 			fadeInDuration: volume.fadeInDuration,
 			fadeOutDuration: volume.fadeOutDuration,
 			phase: index,
-			state: STATE_NAME.test(volume.name),
+			activation: 'unknown',
 		});
 	}
 	return plan;
