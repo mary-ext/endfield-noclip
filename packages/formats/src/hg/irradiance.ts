@@ -12,11 +12,8 @@ import { decodeInvertedLz4Block } from '../binary/lz4.ts';
 /** `index.bytes` magic of the current scene format */
 export const IRRADIANCE_INDEX_MAGIC = 0x03000004;
 
-// both magics share one layout and differ in the volume's extent: the game stores cell keys from the volume's
-// minimum corner, and world 0 sits at half the key range. 0x03000003 (map01) spans 4096 m (keys 0–127, world 0 at
-// 64), 0x03000004 (map02) 8192 m (world 0 at 128). keys are shifted to the larger range on read, so every scene's
-// keys share one origin. the extent itself is set in native code; it's inferred here from where each index's
-// keys land (map01's level-0 cells cover its levels only with world 0 at 64).
+// the scene magics share one layout and differ in the volume's extent, which sets the key of world 0
+// (docs/game-data/lighting.md, "index.bytes")
 const SCENE_KEY_ORIGINS = new Map([
 	[0x03000003, 64],
 	[IRRADIANCE_INDEX_MAGIC, 128],
@@ -89,8 +86,7 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 	if (keyOrigin === undefined) {
 		throw new FormatError(`irradiance index: magic 0x${magic.toString(16)}`);
 	}
-	// a whole number of the coarsest cells (4 key units), so cell contents, which address probes within the cell,
-	// stay valid
+	// a whole number of the coarsest cells (4 key units), so the cells' contents stay valid
 	const keyShift = IRRADIANCE_KEY_ORIGIN - keyOrigin;
 	const rekey = (key: number): number => {
 		const axis = (shift: number) => ((((key >>> shift) & 255) + keyShift) & 255) << shift;

@@ -41,7 +41,7 @@ const NORMAL_ROUGHNESS = 32u;
 const FOLIAGE = 64u;
 const METALLIC_BASE_ALPHA = 128u;
 const NORMAL_OCCLUSION = 256u;
-// set per draw from the geometry's streams (mesh-renderer.ts)
+// set per draw from the geometry's streams (`GeometryFlags` in mesh-renderer.ts)
 const HAS_NORMALS = 512u;
 const HAS_TANGENTS = 1024u;
 
@@ -93,7 +93,6 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 		vec3f(row.t0.y, row.t1.y, row.t2.y),
 		vec3f(row.t0.z, row.t1.z, row.t2.z),
 	);
-	// presence comes from the draw, not the values: an octahedral (0, 0) is +z, not a missing normal
 	let flags = bitcast<u32>(draw.offset.w);
 	// no normals in the mesh: zero here, faceted in the fragment shader
 	var n = vec3f(0.0);

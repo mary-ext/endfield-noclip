@@ -1,9 +1,8 @@
 /**
  * per-instance selection for packages with geometry: frustum and small-feature culling, then LOD selection
  * with the game's LODGroup thresholds, bucketing visible instances by (geometry, submesh, material, mirrored)
- * for instanced draws. mirrored instances (negative determinant) flip their triangles' winding, so they need
- * the opposite face culled and get buckets of their own. instances whose chosen LOD isn't resident yet fall
- * back to their box, and request the geometry.
+ * for instanced draws; mirrored instances flip their winding, so they cull the opposite face. instances whose
+ * chosen LOD isn't resident yet fall back to their box, and request the geometry.
  *
  * this is the CPU version of the planned GPU cull pass: the output (an instance list plus per-bucket ranges)
  * is what a compute shader would write next to indirect draw arguments.

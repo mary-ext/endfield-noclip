@@ -191,8 +191,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	} else if (entry.normalLayout === 'RG' || foliage) {
 		look.flags |= LookFlags.NormalRoughness;
 	}
-	// the Lit family's metallic source follows `_BaseTextureMapCount`: 0 (MRO) the MRO map's R, 1 the base
-	// colour's alpha, 2 the `_Metallic` constant. without an MRO map the normal map's alpha is occlusion
+	// the two-texture layout's occlusion and metallic sources (module comment)
 	if (family === 'lit' && entry.normalLayout === 'RG') {
 		look.flags |= LookFlags.NormalOcclusion;
 		if (floatOf(entry, shader, '_BaseTextureMapCount', 1) < 1.5) {

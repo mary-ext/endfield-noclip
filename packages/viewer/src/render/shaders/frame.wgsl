@@ -333,9 +333,8 @@ fn ambient_irradiance(world: vec3f, n: vec3f) -> vec3f {
 
 const LUMINANCE = vec3f(0.2126729, 0.7151522, 0.0721750);
 
-// the game's scale on a sky reflection: the surface's diffuse irradiance luminance against the sky probe's own
-// (its L1, along the normal). about their ratio where the surface gets less light than the sky would give it
-// (interiors, under cover), slightly above 1 where it gets more, and 1 where they agree
+// the game's scale on a sky reflection, from the surface's diffuse irradiance against the sky probe's L1 along the
+// normal (docs/game-data/lighting.md, "ambient")
 fn reflection_normalisation(irradiance: vec3f, n: vec3f) -> f32 {
 	let d = dot(irradiance, LUMINANCE);
 	let sky = LUMINANCE.x * frame.sh[0] + LUMINANCE.y * frame.sh[1] + LUMINANCE.z * frame.sh[2];
