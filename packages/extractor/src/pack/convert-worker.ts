@@ -1,3 +1,4 @@
+import { parentPort, workerData } from 'node:worker_threads';
 /**
  * worker thread that converts meshes and textures: it reads the source bundles through its own VFS and asset
  * resolver, converts, compresses and hashes the blobs, and writes them to the blob directory, so only small
@@ -6,9 +7,8 @@
  * @module
  */
 
-import { parentPort, workerData } from 'node:worker_threads';
-
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
+import { bakeSkinPose } from '@endfield-noclip/formats/unity/skin-pose';
 
 import { errorText } from '../errors.ts';
 import { loadMesh, loadTexture } from '../game/asset-decode.ts';
@@ -62,7 +62,8 @@ const convertWith = async (resolver: AssetResolver, job: ConvertJob): Promise<Co
 			await geometryReady;
 			const ref = await resolver.findUnique(job.asset, UnityClass.Mesh);
 			const mesh = await loadMesh(resolver, ref);
-			const converted = convertMesh(mesh, job.tangentUv);
+			const posed = job.asset.pose ? bakeSkinPose(mesh, job.asset.pose) : mesh;
+			const converted = convertMesh(posed, job.tangentUv);
 			return {
 				kind: 'geometry',
 				object: objectKey(ref),

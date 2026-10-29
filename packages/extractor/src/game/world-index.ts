@@ -74,6 +74,7 @@ export class WorldIndex {
 	#initPathHash: Promise<StringPathHashTable> | undefined;
 	#manifest: Promise<BundleManifest> | undefined;
 	#levelConfigs: Promise<Map<string, LevelConfig>> | undefined;
+	#stringPool: Promise<StringPool> | undefined;
 	#names: Promise<Map<string, string>> | undefined;
 	#chunkFiles: Promise<ChunkFile[]> | undefined;
 	readonly #mapConfigs = new Map<string, Promise<MapConfig | undefined>>();
@@ -143,9 +144,9 @@ export class WorldIndex {
 		return hashes;
 	}
 
-	/** @returns every LevelConfig by id */
-	levelConfigs(): Promise<Map<string, LevelConfig>> {
-		this.#levelConfigs ??= (async () => {
+	/** @returns the install's pooled JsonData strings */
+	stringPool(): Promise<StringPool> {
+		this.#stringPool ??= (async () => {
 			const group = await this.vfs.group(VfsGroup.JsonData);
 			const poolFiles = [...group.files.keys()]
 				.map((name) => /^Data\/Json\/StringPool\/StringPool(\d+)\.byte$/.exec(name))
@@ -156,7 +157,16 @@ export class WorldIndex {
 					parseStringPoolBlock(await this.#read(VfsGroup.JsonData, match[0]), { first: match[1] === '0' }),
 				),
 			);
-			const pool = new StringPool(blocks);
+			return new StringPool(blocks);
+		})();
+		return this.#stringPool;
+	}
+
+	/** @returns every LevelConfig by id */
+	levelConfigs(): Promise<Map<string, LevelConfig>> {
+		this.#levelConfigs ??= (async () => {
+			const group = await this.vfs.group(VfsGroup.JsonData);
+			const pool = await this.stringPool();
 
 			const names = [...group.files.keys()].filter((name) => name.startsWith('Data/Json/LevelConfig/'));
 			const configs = await mapPool(names, READ_CONCURRENCY, async (name) =>

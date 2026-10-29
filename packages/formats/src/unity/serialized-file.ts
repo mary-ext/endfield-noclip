@@ -109,6 +109,7 @@ export const UnityClass = {
 	Transform: 4,
 	Material: 21,
 	MeshRenderer: 23,
+	SkinnedMeshRenderer: 137,
 	Texture2D: 28,
 	MeshFilter: 33,
 	Mesh: 43,

@@ -19,7 +19,16 @@ import type {
 import { linearRgb } from './colour.ts';
 
 /** shader families that aren't drawn as opaque surfaces (fog volumes, light beams, effects) */
-const SKIPPED_FAMILIES = new Set(['fogSimple', 'volumetricBeam', 'vfxFakeVolumeFog']);
+const SKIPPED_FAMILIES = new Set([
+	'fogSimple',
+	'volumetricBeam',
+	'vfxFakeVolumeFog',
+	'vfxBase',
+	'vfxAdvance',
+	'vfxRefract',
+	'vfxDitherAlpha',
+	'waterDecal',
+]);
 
 const FOLIAGE_FAMILIES = new Set(['leaf', 'grass', 'cardMesh']);
 
@@ -120,7 +129,13 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 			continue;
 		}
 		const shader = materials.shaders[entry.shader];
-		if (SKIPPED_FAMILIES.has(shader.family) || entry.blend === 'additive') {
+		// effect meshes need their own opacity, distortion and animation passes. the opaque mesh fallback
+		// turns their bounding surfaces into solid walls, including VFXDecal shaders without a family yet.
+		if (
+			SKIPPED_FAMILIES.has(shader.family) ||
+			shader.name.startsWith('HGRP/Effect/') ||
+			entry.blend === 'additive'
+		) {
 			looks[entry.id] = emptyLook({ drawn: false });
 			continue;
 		}

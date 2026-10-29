@@ -111,13 +111,15 @@ export interface MeshAttribute {
 	data: Float32Array;
 }
 
-/** skinning data presence; skinning itself isn't decoded */
+/** vertex influences for baking or animating a skinned mesh */
 export interface MeshSkinInfo {
 	bonesPerVertex: number;
 	bindPoseCount: number;
 	boneNameHashCount: number;
 	hasBlendWeights: boolean;
 	hasBlendIndices: boolean;
+	weights: MeshAttribute | null;
+	indices: MeshAttribute | null;
 }
 
 /** a mesh as engine-neutral typed arrays */
@@ -289,8 +291,21 @@ export const decodeMesh = (mesh: TypeTreeObject, streamData: Uint8Array | undefi
 
 	const bindPoseCount = arrayField(mesh, 'm_BindPose').length;
 	const boneNameHashCount = arrayField(mesh, 'm_BoneNameHashes').length;
-	const hasBlendWeights = present(VertexChannel.BlendWeight) !== undefined;
+	const weightChannel = present(VertexChannel.BlendWeight);
+	const indexChannel = present(VertexChannel.BlendIndices);
+	const hasBlendWeights = weightChannel !== undefined;
 	const hasBlendIndices = present(VertexChannel.BlendIndices) !== undefined;
+	const bonesPerVertex = optionalNumberField(mesh, 'm_BonesPerVertex') ?? 0;
+	let weights = weightChannel === undefined ? null : read(weightChannel);
+	const boneIndices = indexChannel === undefined ? null : read(indexChannel);
+	// a rigid skin stores only indices: the one declared influence has an implicit unit weight.
+	if (weights === null && boneIndices !== null && bonesPerVertex === 1) {
+		const implicitWeights = new Float32Array(vertexCount * boneIndices.dimension);
+		for (let v = 0; v < vertexCount; v++) {
+			implicitWeights[v * boneIndices.dimension] = 1;
+		}
+		weights = { dimension: boneIndices.dimension, format: VertexFormat.Float32, data: implicitWeights };
+	}
 	const skinned = bindPoseCount > 0 || boneNameHashCount > 0 || hasBlendWeights || hasBlendIndices;
 
 	return {
@@ -308,11 +323,13 @@ export const decodeMesh = (mesh: TypeTreeObject, streamData: Uint8Array | undefi
 		bounds: aabbField(mesh, 'm_LocalAABB'),
 		skin: skinned
 			? {
-					bonesPerVertex: optionalNumberField(mesh, 'm_BonesPerVertex') ?? 0,
+					bonesPerVertex,
 					bindPoseCount,
 					boneNameHashCount,
 					hasBlendWeights,
 					hasBlendIndices,
+					weights,
+					indices: boneIndices,
 				}
 			: null,
 	};

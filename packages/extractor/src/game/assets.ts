@@ -67,6 +67,10 @@ export interface AssetRef {
 	hash: bigint;
 	/** the path behind the hash (`<container>.fbx##<subasset>`, `.mesh`, `.mat`, …), or `null` if unknown */
 	path: string | null;
+	/** exact prefab dependency; bypasses path lookup when the asset was reached through a PPtr */
+	locator?: ObjectLocator;
+	/** mesh-space to prefab-space skinning matrices for a baked authored pose */
+	pose?: Float32Array[];
 }
 
 // #endregion
@@ -374,6 +378,14 @@ export class AssetResolver {
 	 * @throws {Error} if the path is unknown, or not exactly one object matches
 	 */
 	async findUnique(asset: AssetRef, classId: number): Promise<ObjectRef> {
+		if (asset.locator !== undefined) {
+			const { bundleIndex, file, pathId } = asset.locator;
+			const ref = await this.objectIn(bundleIndex, file, pathId);
+			if (ref.info.classId !== classId) {
+				throw new FormatError(`prefab dependency has class ${ref.info.classId}, expected ${classId}`);
+			}
+			return ref;
+		}
 		if (asset.path === null) {
 			throw new Error(`hash isn't in StringPathHash`);
 		}

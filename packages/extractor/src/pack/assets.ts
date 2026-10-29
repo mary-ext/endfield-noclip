@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import {
 	BlobKind,
@@ -67,6 +69,51 @@ export class AssetIds {
 	/** @returns the asset with the given id */
 	get(id: number): AssetRef {
 		return this.assets[id];
+	}
+
+	/**
+	 * interns an exact prefab dependency without inventing a game asset path
+	 *
+	 * @param ref resolved dependency
+	 * @returns its asset id; negative hashes occupy a namespace separate from unsigned game hashes
+	 */
+	internObject(ref: ObjectRef): number {
+		const key = objectKey(ref);
+		const hash = -BigInt(`0x${createHash('sha256').update(key).digest('hex')}`);
+		const existing = this.#ids.get(hash);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const id = this.assets.length;
+		this.#ids.set(hash, id);
+		this.assets.push({ hash, path: key, locator: locateObject(ref) });
+		return id;
+	}
+	/**
+	 * @param ref skinned mesh dependency
+	 * @param pose mesh-to-prefab bone matrices, including bind poses
+	 * @returns a geometry id distinct for each authored pose of the mesh
+	 */
+	internPosedObject(ref: ObjectRef, pose: Float32Array[]): number {
+		const key = objectKey(ref);
+		const digest = createHash('sha256').update(key).update('pose');
+		for (const matrix of pose) {
+			digest.update(new Uint8Array(matrix.buffer, matrix.byteOffset, matrix.byteLength));
+		}
+		const hash = -BigInt(`0x${digest.digest('hex')}`);
+		const existing = this.#ids.get(hash);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const id = this.assets.length;
+		this.#ids.set(hash, id);
+		this.assets.push({
+			hash,
+			path: key,
+			locator: locateObject(ref),
+			pose: pose.map((matrix) => matrix.slice()),
+		});
+		return id;
 	}
 }
 

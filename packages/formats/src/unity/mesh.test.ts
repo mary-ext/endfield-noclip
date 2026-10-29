@@ -210,6 +210,27 @@ describe('decodeMesh', () => {
 		);
 	});
 
+	it('decodes implicit unit weights only for explicitly single-influence skins', () => {
+		const data = new Uint8Array(20);
+		data[16] = 1;
+		const base = {
+			vertexCount: 1,
+			channels: {
+				0: channel(0, 0, VertexFormat.Float32, 3),
+				13: channel(1, 0, VertexFormat.UInt8, 0x14),
+			},
+			data,
+			indices: new Uint16Array(0),
+			submeshes: [],
+		};
+		const decoded = decodeMesh(mesh({ ...base, extra: { m_BonesPerVertex: 1 } }), undefined);
+		assert.deepEqual(Array.from(decoded.skin!.weights!.data), [1, 0, 0, 0]);
+		assert.deepEqual(Array.from(decoded.skin!.indices!.data), [1, 0, 0, 0]);
+		assert.equal(decoded.skin!.hasBlendWeights, false);
+		const multiple = decodeMesh(mesh({ ...base, extra: { m_BonesPerVertex: 2 } }), undefined);
+		assert.equal(multiple.skin!.weights, null);
+	});
+
 	it('rejects collision-only and compressed meshes, and reports skins', () => {
 		const { data, channels } = build();
 		const base = { vertexCount: 3, channels, data, indices: new Uint16Array(3), submeshes: [] };
@@ -237,6 +258,8 @@ describe('decodeMesh', () => {
 			boneNameHashCount: 0,
 			hasBlendWeights: false,
 			hasBlendIndices: false,
+			weights: null,
+			indices: null,
 		});
 	});
 });

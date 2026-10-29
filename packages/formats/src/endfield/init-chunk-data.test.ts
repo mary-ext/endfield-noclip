@@ -3,8 +3,15 @@ import { test } from 'node:test';
 
 import { FormatError } from '../binary/binary-reader.ts';
 import { FlatBufferWriter as Writer } from '../binary/flatbuffer-writer.ts';
+import { FlatBuffer } from '../binary/flatbuffer.ts';
 
-import { Component, DrawFlags, parseInitChunk, readChunkEntities } from './init-chunk-data.ts';
+import {
+	Component,
+	DrawFlags,
+	parseDynamicChunk,
+	parseInitChunk,
+	readChunkEntities,
+} from './init-chunk-data.ts';
 
 // #region synthetic chunk
 
@@ -189,4 +196,25 @@ test('parseInitChunk rejects unknown versions', () => {
 
 test('readChunkEntities rejects draw counts beyond capacity', () => {
 	assert.throws(() => readChunkEntities(parseInitChunk(buildChunk({ drawCount: 3 }))), FormatError);
+});
+
+test('dynamic chunks join components from init with group identities from streaming', () => {
+	const init = buildChunk();
+	const streaming = buildChunk();
+	const initFb = new FlatBuffer(init);
+	const streamFb = new FlatBuffer(streaming);
+	// these fields are absent in the real paired files; clearing their offsets makes accidental reads fail.
+	const erase = (bytes: Uint8Array, fb: FlatBuffer, slot: number): void => {
+		const root = fb.root();
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		const vtable = root - view.getInt32(root, true);
+		view.setUint16(vtable + 4 + slot * 2, 0, true);
+	};
+	erase(init, initFb, 6);
+	erase(streaming, streamFb, 7);
+	const entities = readChunkEntities(parseDynamicChunk(init, streaming));
+	assert.equal(entities.length, 2);
+	assert.equal(entities[1].id, (2 << 27) | 0x456);
+	assert.equal(entities[0].renderer?.draws.length, 2);
+	assert.throws(() => parseInitChunk(init), /group vectors differ/);
 });

@@ -41,14 +41,14 @@ const tree: DynamicEntity = {
 	resourceGroups: [group(0, 0b01), group(1, 0b10)],
 };
 
-test('summarizes progressions with their levels and defaults to the highest', () => {
+test('summarizes progressions with their levels and defaults to the lowest authored level', () => {
 	const [progression, ...rest] = summarizeProgressions([outpost, tree]);
 	assert.deepEqual(rest, []);
 	assert.deepEqual(progression, {
 		kind: 'settlement',
 		key: 'stm_hongs_1',
 		levels: [0, 1, 2, 3, 4],
-		defaultLevel: 4,
+		defaultLevel: 0,
 		entities: 1,
 		groupsPerLevel: { 0: 1, 1: 1, 2: 2, 3: 1, 4: 1 },
 		levelNum: 101,
@@ -66,7 +66,7 @@ test('selected levels pick resource groups; entities without a controller use lo
 	};
 	const indices = (entity: DynamicEntity, levels: Record<string, number>) =>
 		shownResourceGroups(entity, states, { areas: 'all', levels }).map((g) => g.resources.index);
-	assert.deepEqual(indices(outpost, {}), [2, 3]);
+	assert.deepEqual(indices(outpost, {}), [0, 3]);
 	assert.deepEqual(indices(outpost, { 'settlement:stm_hongs_1': 1 }), [0, 3]);
 	assert.deepEqual(indices(outpost, { 'settlement:stm_hongs_1': 2 }), [1, 2, 3]);
 	assert.deepEqual(indices(tree, {}), [0]);
@@ -108,4 +108,16 @@ test('area selections resolve to chunk files of state 0 plus the chosen areas', 
 	assert.deepEqual(loaded('all'), [0, 5, 6, 7]);
 	assert.deepEqual(loaded('root'), [0, 5]);
 	assert.deepEqual(loaded([7]), [0, 7]);
+});
+
+test('secondary progression entities do not choose their own later starting level', () => {
+	const secondary = { ...outpost, uid: 99n, resourceGroups: [group(5, 0b10000)] };
+	const states: SceneStates = {
+		map: 'map02',
+		areas: [],
+		progressions: summarizeProgressions([outpost, secondary]).map((summary) =>
+			labelProgression(summary, null, null),
+		),
+	};
+	assert.deepEqual(shownResourceGroups(secondary, states, { areas: 'all', levels: {} }), []);
 });

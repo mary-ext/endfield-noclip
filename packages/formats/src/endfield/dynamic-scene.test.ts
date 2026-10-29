@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { FormatError } from '../binary/binary-reader.ts';
+import { FlatBuffer } from '../binary/flatbuffer.ts';
 
+import { dynamicResourceSlice, readDynamicResources } from './dynamic-resources.ts';
 import { DynamicData, readDynamicEntities, resourceGroupShown } from './dynamic-scene.ts';
 
 // #region synthetic FlatBuffer writer
@@ -68,7 +70,7 @@ const ref = (type: number, index: number, num = 0) => [0, type, GRID, index, num
  *   (mask 0b00011, 0b10000, 0)
  * - entity 1: IdComp 7 and PoiControlComp (`INN_TABLE`)
  */
-const build = (options: { resType?: number } = {}): Uint8Array => {
+const build = (options: { resType?: number; scriptDefault?: number } = {}): Uint8Array => {
 	const w = new Writer();
 	const root = w.reserve(4);
 	const rootFields = w.table(5, [3, 4]);
@@ -81,7 +83,7 @@ const build = (options: { resType?: number } = {}): Uint8Array => {
 	w.view.setUint32(strings, 2, true);
 	w.link(rootFields.get(4)!, strings);
 
-	const slots = [0, 5, 12, 17, 29, 32, 33, 55];
+	const slots = [0, 3, 5, 7, 9, 12, 17, 29, 31, 32, 33, 55];
 	const grid = w.table(56, slots);
 	w.link(gridVector + 4, grid.get(0)! - 4);
 	w.view.setUint32(grid.get(0)!, GRID, true);
@@ -92,10 +94,26 @@ const build = (options: { resType?: number } = {}): Uint8Array => {
 		ref(DynamicData.ResourceComp, 0),
 		ref(DynamicData.IdComp, 1),
 		ref(DynamicData.PoiControlComp, 0),
+		ref(29, 0),
 	].map((words) => words.slice(0, 4));
 	w.link(grid.get(5)!, w.structs(16, dataIndex));
+	w.link(grid.get(31)!, w.structs(4, [[options.scriptDefault ?? 0]]));
 
-	const group = (model: number, logic: number) => [...ref(DynamicData.Model, model, 1), 0, logic, 102, -1];
+	const visibility = (count: number) => [count === 0 ? 1 : 0, 49, GRID, 0, count, 1];
+	w.link(grid.get(3)!, w.structs(4, [[42]]));
+	const models = w.structs(96, [[], [], []]);
+	w.view.setFloat32(models + 4 + 16, 12.5, true);
+	w.view.setBigUint64(models + 4 + 64, 0x123456789n, true);
+	w.link(grid.get(7)!, models);
+	w.link(grid.get(9)!, w.structs(36, [[123, 7, 0, 0, 0, 0, 0, 0, 2]]));
+	const group = (model: number, logic: number) => [
+		...ref(DynamicData.Model, model, 1),
+		0,
+		logic,
+		102,
+		-1,
+		...visibility(model === 1 ? 1 : 0),
+	];
 	w.link(grid.get(12)!, w.structs(88, [group(0, 0b00011), group(1, 0b10000), group(2, 0)]));
 
 	const ids = w.structs(8, [
@@ -111,8 +129,8 @@ const build = (options: { resType?: number } = {}): Uint8Array => {
 	w.link(
 		grid.get(33)!,
 		w.structs(84, [
-			[16, 0, ...ref(1, 0, 3)],
-			[39, 0, ...ref(1, 3, 2)],
+			[16, 0, ...ref(1, 0, 3), 0, ...visibility(0)],
+			[39, 0, ...ref(1, 3, 3), 0, ...visibility(1)],
 		]),
 	);
 	w.link(grid.get(55)!, w.structs(8, [[1, 161]]));
@@ -160,4 +178,43 @@ test('a group is shown when its mask has the logic-state bit, or always when the
 
 test('rejects a ResourceComp whose Res slice is not a ResourceGroupWithStateDesc slice', () => {
 	assert.throws(() => readDynamicEntities(build({ resType: DynamicData.Model })), FormatError);
+});
+
+test('dynamic resources preserve both visibility gates and exact model/ECS references', () => {
+	const result = readDynamicResources(build());
+	assert.deepEqual(
+		result.entities.map((row) => row.states),
+		[[], [42]],
+	);
+	assert.deepEqual(result.entities[0].groupStates, [[], [42], []]);
+	const grid = result.grids[0];
+	assert.equal(grid.models[0].pathHash, 0x123456789n);
+	assert.deepEqual(grid.models[0].position, [12.5, 0, 0]);
+	assert.deepEqual(grid.ecs, [{ chunk: 123, index: 7, sceneIndex: 2 }]);
+	assert.equal(
+		dynamicResourceSlice(grid.models, result.entities[0].entity.resourceGroups[0].resources)[0],
+		grid.models[0],
+	);
+	assert.throws(
+		() => dynamicResourceSlice(grid.models, { type: 5, grid: GRID, index: 2, count: 2 }),
+		FormatError,
+	);
+});
+
+test('dynamic visibility totals must match their owning grid', () => {
+	const bytes = build();
+	const fb = new FlatBuffer(bytes);
+	const grids = fb.vector(fb.root(), 3);
+	const roots = fb.vector(fb.tableAt(grids.start, 0), 33);
+	new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setInt32(roots.start + 36 + 20, 999, true);
+	assert.throws(() => readDynamicResources(bytes), /visibility span/);
+});
+
+test('script-controlled scenery retains its authored load default', () => {
+	assert.deepEqual(
+		readDynamicResources(build()).entities.map((e) => e.scriptDefaultLoad),
+		[null, false],
+	);
+	assert.equal(readDynamicResources(build({ scriptDefault: 1 })).entities[1].scriptDefaultLoad, true);
+	assert.throws(() => readDynamicResources(build({ scriptDefault: 2 })), /script default load/);
 });

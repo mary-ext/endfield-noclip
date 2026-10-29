@@ -15,6 +15,13 @@ import {
 	terrainNodeIndex,
 	type TerrainSurface,
 } from '@endfield-noclip/formats/hg/terrain';
+import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
+import {
+	multiplyMatrices,
+	transformBounds,
+	trsMatrix,
+	unityEulerQuaternion,
+} from '@endfield-noclip/formats/unity/transform';
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import {
 	encodeBlobTable,
@@ -69,6 +76,9 @@ import {
 
 import { getOrInsert } from '../collections.ts';
 import type { Context } from '../context.ts';
+import { loadDynamicStructures } from '../game/dynamic-structures.ts';
+import { loadInteractiveFacilities } from '../game/interactive-facilities.ts';
+import { readPrefabRenderers, type PrefabRenderer } from '../game/prefab.ts';
 import { loadProgressions, progressionId } from '../game/scene-states.ts';
 import { indexTerrain, loadTerrainSurface, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
@@ -225,7 +235,7 @@ export const packScene = async (
 			shardTiles: new Map(),
 		};
 
-		const entities = await collectEntities(context.world, pack);
+		const entities = await collectEntities(context, pack);
 		timer.end('entities');
 
 		const terrainLevels = await packTerrain(context, pack);
@@ -330,6 +340,7 @@ export const packScene = async (
 			conversion: conversion?.debug ?? null,
 			environments: environments.debug,
 			water: water.debug,
+			unsupportedInteractives: entities.unsupportedInteractives,
 		});
 		timer.end('debug');
 
@@ -488,10 +499,16 @@ const indexScene = async (
 
 /** reads every chunk file of the scene, interning chains and sorting instances into groups */
 const collectEntities = async (
-	world: WorldIndex,
+	context: Context,
 	pack: PackState,
-): Promise<{ collected: Collector; counts: Record<string, number>; hlodNameMatches: number }> => {
+): Promise<{
+	collected: Collector;
+	counts: Record<string, number>;
+	hlodNameMatches: number;
+	unsupportedInteractives: { path: string; reason: string }[];
+}> => {
 	const { scene } = pack;
+	const { world } = context;
 	const { grid, subset } = scene;
 	const collected = new Collector();
 	const counts: Record<string, number> = {
@@ -602,7 +619,134 @@ const collectEntities = async (
 			}
 		},
 	);
-	return { collected, counts, hlodNameMatches };
+	const dynamic = await loadDynamicStructures(context, scene.options.scene, scene.partition);
+	for (const [key, count] of Object.entries(dynamic.counts)) {
+		counts[`dynamic_${key}`] = count;
+	}
+	counts.dynamicRenderers = 0;
+	const addStructure = (row: InstanceInput, tag: number, name: string): void => {
+		const [x, , z] = row.bounds.center;
+		const key = tileAt(grid, grid.leafLevel, x, z);
+		collected.addDetail(tag, key, row, name, -1);
+		collected.noteOwner(tag, row.bounds);
+		pack.uses.note(row.chain, key);
+		counts.dynamicRenderers++;
+	};
+	for (const entity of dynamic.entities) {
+		if (
+			seen.has(entity.id) ||
+			entity.renderer === null ||
+			entity.matrix === null ||
+			entity.bounds === null ||
+			entity.decal
+		) {
+			continue;
+		}
+		seen.add(entity.id);
+		const [x, , z] = entity.bounds.center;
+		if (!subset.includesEntity(entity.levelTag, x, z)) {
+			continue;
+		}
+		addStructure(
+			{
+				chain: pack.chains.intern(
+					entity.renderer.lodCount,
+					entity.renderer.draws.map((draw) => chainDraw(draw, false)),
+				),
+				matrix: entity.matrix,
+				bounds: entity.bounds,
+				entityId: entity.id,
+				layer: 0,
+			},
+			entity.levelTag,
+			entity.name,
+		);
+	}
+	const facilities = await loadInteractiveFacilities(
+		context,
+		scene.options.scene,
+		scene.options.level,
+		scene.partition,
+	);
+	counts.interactiveFacilities = facilities.models.length;
+	counts.unsupportedInteractiveFiles = facilities.unsupported.length;
+	const resolver = await context.resolver();
+	const prefabs = new Map<bigint, Promise<PrefabRenderer[]>>();
+	let modelId = 0;
+	for (const placement of [...dynamic.models, ...facilities.models]) {
+		const { model, levelTag } = placement;
+		// ownership filters can reject a prefab before any of its bundles are read.
+		if (
+			scene.options.level !== null &&
+			!subset.includesEntity(levelTag, model.position[0], model.position[2])
+		) {
+			continue;
+		}
+		let prefab = prefabs.get(model.pathHash);
+		if (prefab === undefined) {
+			prefab = (async () => {
+				const paths = [
+					...new Set(
+						resolver.manifest.findAssets(model.pathHash).map((asset) => resolver.manifest.assetPath(asset)),
+					),
+				];
+				if (paths.length !== 1) {
+					throw new Error(`dynamic prefab ${model.pathHash} has ${paths.length} paths`);
+				}
+				const root = await resolver.findUnique(
+					{ hash: model.pathHash, path: paths[0] },
+					UnityClass.GameObject,
+				);
+				return readPrefabRenderers(resolver, root);
+			})();
+			prefabs.set(model.pathHash, prefab);
+		}
+		const rootMatrix = trsMatrix(model.position, unityEulerQuaternion(model.rotation), model.scale);
+		// oxlint-disable-next-line no-await-in-loop -- stable asset ids and bounded bundle cache
+		for (const renderer of await prefab) {
+			const matrix = multiplyMatrices(rootMatrix, renderer.matrix);
+			const bounds = transformBounds(renderer.bounds, matrix);
+			if (!subset.includesEntity(levelTag, bounds.center[0], bounds.center[2])) {
+				continue;
+			}
+			const geometry =
+				renderer.pose === null
+					? pack.geometries.internObject(renderer.mesh)
+					: pack.geometries.internPosedObject(renderer.mesh, renderer.pose);
+			const draws: ChainDraw[] = renderer.materials.flatMap((material, index): ChainDraw[] => {
+				if (material === null) {
+					return [];
+				}
+				return [
+					{
+						geometry,
+						material: pack.materials.internObject(material),
+						submesh: Math.min(index, renderer.submeshes - 1),
+						lod: 0,
+						role: renderer.shadowOnly ? DrawRole.ShadowOnly : DrawRole.Lit,
+						minSquared: -1,
+						maxSquared: 3.4028234663852886e38,
+						sourceFlags: renderer.shadowOnly ? DrawFlags.ShadowOnly : 0,
+					},
+				];
+			});
+			if (draws.length === 0) {
+				continue;
+			}
+			addStructure(
+				{
+					chain: pack.chains.intern(1, draws),
+					matrix,
+					bounds,
+					entityId: (0xf8000000 + modelId++) >>> 0,
+					layer: 0,
+				},
+				levelTag,
+				renderer.name,
+			);
+		}
+	}
+	return { collected, counts, hlodNameMatches, unsupportedInteractives: facilities.unsupported };
 };
 
 /**
@@ -1261,12 +1405,14 @@ const writeDebug = async (
 		conversion: AssetConversion['debug'] | null;
 		environments: LevelEnvironmentDebug[];
 		water: WaterDebug;
+		unsupportedInteractives: { path: string; reason: string }[];
 	},
 ): Promise<void> => {
 	const dir = join(outDir, 'debug');
 	await mkdir(dir, { recursive: true });
 	await writeFile(join(dir, 'environments.json'), json(debug.environments));
 	await writeFile(join(dir, 'water.json'), json(debug.water));
+	await writeFile(join(dir, 'unsupported-interactives.json'), json(debug.unsupportedInteractives));
 	await writeFile(
 		join(dir, 'assets.json'),
 		json({

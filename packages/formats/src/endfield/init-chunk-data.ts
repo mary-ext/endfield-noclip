@@ -159,7 +159,27 @@ export const DrawFlags = {
  */
 export const parseInitChunk = (data: Uint8Array): InitChunk => {
 	const fb = new FlatBuffer(data);
+	return parseChunk(fb, fb);
+};
+
+/**
+ * reads dynamic ECS renderer columns with the ids from their paired streaming payload
+ *
+ * @param init decompressed `fb_init` payload
+ * @param streaming decompressed matching `fb_streaming` payload
+ * @returns the paired chunk, with groups in ECS index order
+ * @throws {FormatError} if either root or the paired group counts are invalid
+ */
+export const parseDynamicChunk = (init: Uint8Array, streaming: Uint8Array): InitChunk => {
+	return parseChunk(new FlatBuffer(init), new FlatBuffer(streaming));
+};
+
+const parseChunk = (fb: FlatBuffer, idsFb: FlatBuffer): InitChunk => {
 	const root = fb.root();
+	const idsRoot = idsFb.root();
+	if (idsFb.fieldCount(idsRoot) !== 8) {
+		throw new FormatError('chunk ids root must have 8 fields');
+	}
 	if (fb.fieldCount(root) !== 8) {
 		throw new FormatError(`init chunk root has ${fb.fieldCount(root)} fields, expected 8`);
 	}
@@ -202,14 +222,14 @@ export const parseInitChunk = (data: Uint8Array): InitChunk => {
 
 	const groups: ComponentGroup[] = [];
 	{
-		const idWrappers = fb.vector(root, 6);
+		const idWrappers = idsFb.vector(idsRoot, 6);
 		const tables = fb.vector(root, 7);
 		if (idWrappers.length !== tables.length) {
 			throw new FormatError('init chunk group vectors differ in length');
 		}
 		for (let g = 0; g < tables.length; g++) {
 			const group = fb.tableAt(tables.start, g);
-			const idVector = fb.vector(fb.tableAt(idWrappers.start, g), 0);
+			const idVector = idsFb.vector(idsFb.tableAt(idWrappers.start, g), 0);
 
 			const countAt = fb.field(group, 1);
 			const count = countAt === undefined ? 0 : fb.u32(countAt);
@@ -218,7 +238,7 @@ export const parseInitChunk = (data: Uint8Array): InitChunk => {
 			}
 			const ids = new Uint32Array(count);
 			for (let i = 0; i < count; i++) {
-				ids[i] = fb.u32(idVector.start + i * 4);
+				ids[i] = idsFb.u32(idVector.start + i * 4);
 			}
 
 			let bounds: Aabb | null = null;
