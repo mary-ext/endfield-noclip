@@ -748,7 +748,7 @@ const collectEntities = async (
 					chain: pack.chains.intern(1, draws),
 					matrix,
 					bounds,
-					entityId: (0xf8000000 + modelId++) >>> 0,
+					entityId: syntheticEntityId(levelTag, modelId++),
 					layer: 0,
 				},
 				levelTag,
@@ -758,6 +758,20 @@ const collectEntities = async (
 		}
 	}
 	return { collected, counts, hlodNameMatches, unsupportedInteractives: facilities.unsupported };
+};
+
+/** the top of the 27-bit per-level id space, for ids the game doesn't assign */
+const SYNTHETIC_ID_TOP = 0x7ffffff;
+
+/**
+ * @returns an entity id for a prefab renderer: the owning level's tag, as every entity id carries, over an
+ *   index counted down from the top of the level's id space, away from the game's ids
+ */
+const syntheticEntityId = (levelTag: number, index: number): number => {
+	if (index > SYNTHETIC_ID_TOP) {
+		throw new Error(`more than ${SYNTHETIC_ID_TOP + 1} prefab renderers`);
+	}
+	return ((levelTag << 27) | (SYNTHETIC_ID_TOP - index)) >>> 0;
 };
 
 /**
