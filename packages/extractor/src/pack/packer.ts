@@ -1278,14 +1278,17 @@ class Collector {
 		name: string,
 		visibility: ConditionalSetInfo,
 	): void {
+		// canonical order at both levels, so equivalent expressions share one set
 		const alternatives = [
 			...new Map(
 				visibility.alternatives.map((requirements) => {
 					const sorted = requirements.toSorted((a, b) => a.control.localeCompare(b.control));
 					return [JSON.stringify(sorted), sorted];
 				}),
-			).values(),
-		];
+			),
+		]
+			.toSorted(([a], [b]) => Number(a > b) - Number(a < b))
+			.map(([, requirements]) => requirements);
 		const serialized = JSON.stringify(alternatives);
 		let condition = this.#conditionIds.get(serialized);
 		if (condition === undefined) {
