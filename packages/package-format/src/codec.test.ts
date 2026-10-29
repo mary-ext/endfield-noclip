@@ -7,12 +7,14 @@ import {
 	decodeGeometryBlob,
 	decodeHeightPage,
 	decodeInstanceBlock,
+	decodeIrradianceTable,
 	decodeTree,
 	encodeBlobTable,
 	encodeChains,
 	encodeGeometryBlob,
 	encodeHeightPage,
 	encodeInstanceBlock,
+	encodeIrradianceTable,
 	encodeTree,
 } from './codec.ts';
 import { PackageFormatError } from './errors.ts';
@@ -183,6 +185,24 @@ describe('blob table', () => {
 		const badKind = table.slice();
 		badKind[16 + 19] = 0xee;
 		assert.throws(() => decodeBlobTable(badKind), /unknown blob kind 238/);
+	});
+});
+
+describe('irradiance table', () => {
+	it('round-trips cells', () => {
+		const table = { keys: Uint32Array.of(1, 0x0108_8080, 0x0230_9040), blobs: Uint32Array.of(7, 0, 12) };
+		const decoded = decodeIrradianceTable(encodeIrradianceTable(table));
+		assert.deepEqual([...decoded.keys], [...table.keys]);
+		assert.deepEqual([...decoded.blobs], [...table.blobs]);
+	});
+
+	it('rejects unsorted keys and truncated input', () => {
+		assert.throws(
+			() => encodeIrradianceTable({ keys: Uint32Array.of(2, 1), blobs: Uint32Array.of(0, 1) }),
+			RangeError,
+		);
+		const encoded = encodeIrradianceTable({ keys: Uint32Array.of(1), blobs: Uint32Array.of(0) });
+		assert.throws(() => decodeIrradianceTable(encoded.subarray(0, encoded.length - 4)), PackageFormatError);
 	});
 });
 

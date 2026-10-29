@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 5;
+export const PACKAGE_VERSION = 6;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -37,6 +37,7 @@ export const CORE_PATHS = {
 	materials: 'tables/materials.json.zst',
 	textures: 'tables/textures.json.zst',
 	water: 'tables/water.json.zst',
+	irradiance: 'tables/irradiance.bin',
 } as const;
 
 // #endregion
@@ -59,6 +60,11 @@ export const BlobKind = {
 	Texture: 4,
 	/** anything else */
 	Other: 5,
+	/**
+	 * one cell of the baked irradiance volume, as the game's GPU reads it (`IrradianceCell` in the formats
+	 * package): a spatial hash over 4³-probe blocks, then 16-byte L1 probes
+	 */
+	Irradiance: 6,
 } as const;
 
 export type BlobKind = (typeof BlobKind)[keyof typeof BlobKind];
@@ -70,6 +76,7 @@ export const BLOB_EXTENSIONS: Record<BlobKind, string> = {
 	[BlobKind.Geometry]: 'mesh',
 	[BlobKind.Texture]: 'tex',
 	[BlobKind.Other]: 'bin',
+	[BlobKind.Irradiance]: 'iv',
 };
 
 /** human-readable blob kind names, for stats and debug output */
@@ -79,6 +86,7 @@ export const BLOB_KIND_NAMES: Record<BlobKind, string> = {
 	[BlobKind.Geometry]: 'geometry',
 	[BlobKind.Texture]: 'texture',
 	[BlobKind.Other]: 'other',
+	[BlobKind.Irradiance]: 'irradiance',
 };
 
 /** the outer compression of a stored blob */
@@ -438,12 +446,14 @@ export interface ArchiveInfo {
 	 * `assets/common.czar`. an asset archive over its size cap continues in `assets/<id>.<n>.czar`, n ≥ 1
 	 */
 	name: string;
-	role: 'core' | 'tiles' | 'assets';
+	role: 'core' | 'tiles' | 'assets' | 'irradiance';
 	/**
-	 * for `tiles` shards: the {@link TreeInfo.shardLevel} tile whose subtree content it holds. for `assets`
-	 * archives: the tile at or above the shard level whose subtree is the smallest one containing every use of
-	 * each asset in it, or `null` for `assets/common*` (resident content, or uses under different root tiles).
-	 * so everything a tile draws lives in the `assets` archives of that tile and its ancestors, plus common
+	 * `null` for `irradiance` archives (`irradiance/<x>_<z>.czar`: the cells over one 512 m square, see
+	 * {@link irradianceArchiveName}). for `tiles` shards: the {@link TreeInfo.shardLevel} tile whose subtree
+	 * content it holds. for `assets` archives: the tile at or above the shard level whose subtree is the
+	 * smallest one containing every use of each asset in it, or `null` for `assets/common*` (resident content,
+	 * or uses under different root tiles). so everything a tile draws lives in the `assets` archives of that
+	 * tile and its ancestors, plus common
 	 */
 	tile: TileKey | null;
 	/** total byte length; `null` for the core, whose size depends on this manifest */
@@ -1710,6 +1720,34 @@ export const assetArchiveName = (tile: TileKey | null, part: number): string => 
 	const id = tile === null ? 'common' : tileId(tile);
 	return part === 0 ? `assets/${id}.czar` : `assets/${id}.${part}.czar`;
 };
+
+/** world metres covered by one irradiance archive along x and z */
+export const IRRADIANCE_ARCHIVE_SIZE = 512;
+
+/**
+ * @param x world x (m) of a point in the archive's square
+ * @param z world z (m)
+ * @returns the package-relative path of the irradiance archive holding the cells over that point
+ */
+export const irradianceArchiveName = (x: number, z: number): string =>
+	`irradiance/${Math.floor(x / IRRADIANCE_ARCHIVE_SIZE)}_${Math.floor(z / IRRADIANCE_ARCHIVE_SIZE)}.czar`;
+
+// #region irradiance
+
+/**
+ * `tables/irradiance.bin`: the baked irradiance volume's cells (the base lighting scenario only), each a
+ * {@link BlobKind.Irradiance} blob. cell keys are the game's: `x | y << 8 | z << 16 | level << 24`, 8 bits
+ * per axis in 32 m units with 128 at world 0; a level-`n` cell spans `32 · 2^n` m (probes every `0.5 · 4^n`
+ * m) and its coordinates are multiples of `2^n`
+ */
+export interface IrradianceTable {
+	/** cell keys, ascending */
+	keys: Uint32Array;
+	/** blob index of each cell */
+	blobs: Uint32Array;
+}
+
+// #endregion
 
 /** how one mip level of a texture is laid out in its piece, in `GPUQueue.writeTexture` terms */
 export interface TextureLevelLayout {

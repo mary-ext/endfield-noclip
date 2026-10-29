@@ -23,6 +23,7 @@ import {
 	type GeometrySubmesh,
 	GeometryVertexFormat,
 	type InstanceBlock,
+	type IrradianceTable,
 	PACKAGE_VERSION,
 	type Tree,
 	type TreeNode,
@@ -36,6 +37,7 @@ const MAGIC_BLOBS = 0x58_42_46_45; // 'EFBX'
 const MAGIC_INSTANCES = 0x4e_49_46_45; // 'EFIN'
 const MAGIC_HEIGHTS = 0x54_48_46_45; // 'EFHT'
 const MAGIC_GEOMETRY = 0x4d_47_46_45; // 'EFGM'
+const MAGIC_IRRADIANCE = 0x56_49_46_45; // 'EFIV'
 
 const TABLE_HEADER_SIZE = 16;
 const NODE_SIZE = 48;
@@ -392,6 +394,59 @@ export const decodeBlobTable = (data: Uint8Array): BlobRecord[] => {
 		});
 	}
 	return blobs;
+};
+
+// #endregion
+
+// #region irradiance
+
+/**
+ * tables/irradiance.bin: 16-byte header (`'EFIV'`, u16 version, u16 0, u32 cellCount, u32 0), then the cell
+ * keys (u32 each, ascending), then their blob indices (u32 each).
+ *
+ * @param table the cells
+ * @returns the encoded table
+ * @throws {RangeError} if the two lists differ in length or the keys aren't ascending
+ */
+export const encodeIrradianceTable = (table: IrradianceTable): Uint8Array => {
+	const count = table.keys.length;
+	if (table.blobs.length !== count) {
+		throw new RangeError('irradiance table: keys and blobs differ in length');
+	}
+	for (let i = 1; i < count; i++) {
+		if (table.keys[i] <= table.keys[i - 1]) {
+			throw new RangeError('irradiance table: keys must be ascending');
+		}
+	}
+	const out = new Uint8Array(TABLE_HEADER_SIZE + count * 8);
+	const view = viewOf(out);
+	view.setUint32(0, MAGIC_IRRADIANCE, true);
+	view.setUint16(4, PACKAGE_VERSION, true);
+	view.setUint32(8, count, true);
+	for (let i = 0; i < count; i++) {
+		view.setUint32(TABLE_HEADER_SIZE + i * 4, table.keys[i], true);
+		view.setUint32(TABLE_HEADER_SIZE + (count + i) * 4, table.blobs[i], true);
+	}
+	return out;
+};
+
+/**
+ * @param data tables/irradiance.bin
+ * @returns the cells
+ * @throws {PackageFormatError} on a bad header or length
+ */
+export const decodeIrradianceTable = (data: Uint8Array): IrradianceTable => {
+	const view = viewOf(data);
+	checkHeader(view, { magic: MAGIC_IRRADIANCE, size: TABLE_HEADER_SIZE, label: 'irradiance table' });
+	const count = view.getUint32(8, true);
+	checkLength(data, TABLE_HEADER_SIZE + count * 8, 'irradiance table');
+	const keys = new Uint32Array(count);
+	const blobs = new Uint32Array(count);
+	for (let i = 0; i < count; i++) {
+		keys[i] = view.getUint32(TABLE_HEADER_SIZE + i * 4, true);
+		blobs[i] = view.getUint32(TABLE_HEADER_SIZE + (count + i) * 4, true);
+	}
+	return { keys, blobs };
 };
 
 // #endregion

@@ -21,6 +21,7 @@ import {
 	encodeChains,
 	encodeHeightPage,
 	encodeInstanceBlock,
+	encodeIrradianceTable,
 	encodeTree,
 } from '@endfield-noclip/package-format/codec';
 import {
@@ -41,6 +42,7 @@ import {
 	type EnvironmentVolumeInfo,
 	type GeometryTable,
 	type InstanceBlock,
+	type IrradianceTable,
 	isTerrainHole,
 	type LevelInfo,
 	type MaterialTable,
@@ -89,6 +91,7 @@ import { ChainTable } from './chains.ts';
 import { ConvertPool } from './convert-pool.ts';
 import { finishEnvironments, type LevelEnvironmentDebug, planEnvironments } from './environments.ts';
 import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
+import { type IrradianceReport, packIrradiance } from './irradiance.ts';
 import { type CacheReport, PackCache } from './pack-cache.ts';
 import { PhaseTimer } from './phase-timer.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
@@ -148,6 +151,8 @@ export interface PackReport {
 		errors: number;
 	};
 	hlod: { clusters: number; tierCounts: number[]; nameMatchesPosition: number };
+	/** the baked irradiance volume's packed cells, or `null` if the scene has none */
+	irradiance: IrradianceReport | null;
 	tree: { nodes: number; refs: number; byKind: Record<string, number> };
 	blobs: Record<string, { count: number; stored: number; raw: number }>;
 	/** byte length of each fixed core member (manifest, tree, tables) */
@@ -172,7 +177,7 @@ const MATERIAL_CONCURRENCY = 8;
 const HLOD_NAME = /^HLOD(\d)_(-?\d+)_(-?\d+)_Cluster_/;
 
 /** files and directories a package consists of; only these are removed when replacing a package */
-const PACKAGE_ENTRIES = new Set([CORE_ARCHIVE, 'shards', 'assets', 'debug', '.spool']);
+const PACKAGE_ENTRIES = new Set([CORE_ARCHIVE, 'shards', 'assets', 'irradiance', 'debug', '.spool']);
 
 /**
  * placeholder error model until the game's HLOD switch distances are known: a node's geometric error is this
@@ -243,6 +248,15 @@ export const packScene = async (
 			}),
 		]);
 		timer.end('environments and water');
+
+		const irradiance = await packIrradiance(context.vfs, store, {
+			scene: options.scene,
+			includes: (x, z) =>
+				scene.subset.info === null ||
+				scene.subset.includesTile(tileAt(scene.grid, scene.grid.cellLevel, x, z)),
+		});
+		timer.end('irradiance');
+
 		const extraTextures: PlacedTexture[][] = [
 			environments.textures.map((ref) => ({ ref, place: null })),
 			water.textures,
@@ -302,6 +316,7 @@ export const packScene = async (
 			...states,
 			...finishEnvironments(environments, environmentTextureIds),
 			water: finishWater(water, waterTextureIds),
+			irradiance: irradiance?.table ?? { keys: new Uint32Array(), blobs: new Uint32Array() },
 			resident: instances.resident,
 			terrainLevels,
 		});
@@ -367,6 +382,7 @@ export const packScene = async (
 				tierCounts: instances.tierCounts,
 				nameMatchesPosition: entities.hlodNameMatches / Math.max(1, instances.hlodClusters),
 			},
+			irradiance: irradiance?.report ?? null,
 			tree: {
 				nodes: written.tree.nodes.length,
 				refs: written.tree.refs.length,
@@ -787,6 +803,7 @@ const writePackage = async (
 		environmentPhases: EnvironmentPhaseInfo[];
 		environmentVolumes: EnvironmentVolumeInfo[];
 		water: WaterTable;
+		irradiance: IrradianceTable;
 		resident: ContentRef[];
 		terrainLevels: number[];
 	},
@@ -796,6 +813,7 @@ const writePackage = async (
 	const tree = pack.builder.build((key) => (grid.rootSize / 2 ** key.level) * ERROR_PER_EDGE);
 	const treeBin = encodeTree(tree);
 	const chainsBin = encodeChains(pack.chains.chains);
+	const irradianceBin = encodeIrradianceTable(states.irradiance);
 	// zstd-19 takes seconds per table, so they compress on the thread pool while the shards are written
 	const tablesReady = Promise.all([
 		zstdTable(json({ entries: assetTables.geometries } satisfies GeometryTable)),
@@ -825,6 +843,7 @@ const writePackage = async (
 		tables.materials,
 		tables.textures,
 		tables.water,
+		irradianceBin,
 	]) {
 		generation.update(part);
 	}
@@ -869,6 +888,7 @@ const writePackage = async (
 		{ path: CORE_PATHS.materials, data: tables.materials },
 		{ path: CORE_PATHS.textures, data: tables.textures },
 		{ path: CORE_PATHS.water, data: tables.water },
+		{ path: CORE_PATHS.irradiance, data: irradianceBin },
 	]);
 
 	return {
@@ -881,6 +901,7 @@ const writePackage = async (
 			[CORE_PATHS.materials]: tables.materials.length,
 			[CORE_PATHS.textures]: tables.textures.length,
 			[CORE_PATHS.water]: tables.water.length,
+			[CORE_PATHS.irradiance]: irradianceBin.length,
 		},
 		archives: [core, ...written.values()].map(({ name, size, headerLength, members }) => ({
 			name,
@@ -988,6 +1009,9 @@ const archiveForTile = (pack: PackState, key: TileKey): string => {
 const archivePlacement = (pack: PackState, name: string): Pick<ArchiveInfo, 'role' | 'tile'> => {
 	if (name === CORE_ARCHIVE) {
 		return { role: 'core', tile: null };
+	}
+	if (name.startsWith('irradiance/')) {
+		return { role: 'irradiance', tile: null };
 	}
 	const shard = pack.shardTiles.get(name);
 	if (shard !== undefined) {
