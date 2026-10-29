@@ -224,6 +224,70 @@ export const blendEnvironment = (
 	};
 };
 
+// #region viewpoints
+
+/** samples along a view line when looking for a point inside a level's volume */
+const VIEW_STEPS = 64;
+
+/**
+ * pulls a viewpoint towards what it looks at until the level's own look applies there: its base volume holds
+ * it fully (past the blend distance) and no other level's volume reaches it. volumes have height bands and
+ * neighbours' volumes overlap a level's rectangle, so a view framed from the rectangle alone often shows a
+ * neighbour's environment or only the scene's global one.
+ *
+ * @param manifest the loaded package's manifest
+ * @param level the shown level's tag
+ * @param base the level's base profile; its volume is the level's (or scene-wide) one applying that phase
+ * @param target the point the view looks at
+ * @param eye the viewpoint
+ * @param options whether state volumes apply, and optionally which points are clear to view from (off the
+ *   ground and out of the scenery)
+ * @returns the point nearest `eye` on the segment from `target` that qualifies, or `null` when none does
+ */
+export const eyeInLevelVolume = (
+	manifest: PackageManifest,
+	level: number,
+	base: EnvironmentProfile,
+	target: Vec3,
+	eye: Vec3,
+	options: Pick<BlendOptions, 'states'> & { clear?: (point: Vec3) => boolean },
+): Vec3 | null => {
+	const usable = (volume: EnvironmentVolumeInfo): boolean =>
+		volume.phase !== null && (!volume.state || options.states);
+	const own = manifest.environmentVolumes.find(
+		(volume) =>
+			usable(volume) &&
+			(volume.level === level || volume.level === 0) &&
+			manifest.environmentPhases[volume.phase!].name === base.name,
+	);
+	if (own === undefined) {
+		return null;
+	}
+	const others = manifest.environmentVolumes.filter(
+		(volume) => usable(volume) && volume.level !== 0 && volume.level !== level,
+	);
+	// time-faded volumes apply fully anywhere inside; keep a metre off the edge
+	const margin = Math.max(own.blendMode === 1 ? own.blendDistance : 0, 1);
+	for (let step = VIEW_STEPS; step >= 0; step--) {
+		const t = step / VIEW_STEPS;
+		const point: Vec3 = [
+			target[0] + (eye[0] - target[0]) * t,
+			target[1] + (eye[1] - target[1]) * t,
+			target[2] + (eye[2] - target[2]) * t,
+		];
+		if (
+			distanceInside(own.shape, point) >= margin &&
+			others.every((volume) => distanceInside(volume.shape, point) <= 0) &&
+			(options.clear?.(point) ?? true)
+		) {
+			return point;
+		}
+	}
+	return null;
+};
+
+// #endregion
+
 // #region shapes
 
 /** @returns how far inside the shape the point is (m), or ≤ 0 outside */

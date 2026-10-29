@@ -9,7 +9,7 @@ import type {
 	PackageManifest,
 } from '@endfield-noclip/package-format/format';
 
-import { blendEnvironment, EnvironmentFades } from './environment-blend.ts';
+import { blendEnvironment, EnvironmentFades, eyeInLevelVolume } from './environment-blend.ts';
 
 // only the fields the blend reads; sections are opaque records to it
 const profile = (density: number): EnvironmentProfile =>
@@ -115,5 +115,48 @@ describe('environment blend', () => {
 		assert.equal(at([102, 25, 50], 2), 0);
 		// walking back in fades in over 2 s
 		assert.ok(Math.abs(at([99, 25, 50], 1) - 3) < 1e-9);
+	});
+});
+
+describe('eyeInLevelVolume', () => {
+	const target: [number, number, number] = [50, 10, 50];
+
+	it('keeps a viewpoint the level volume already holds', () => {
+		const m = manifest([phase('base', 1)], [volume({ shape: square })]);
+		assert.deepEqual(eyeInLevelVolume(m, 1, profile(0), target, [50, 30, 50], options), [50, 30, 50]);
+	});
+
+	it('pulls a viewpoint above the height band down the view line, past the blend distance', () => {
+		const m = manifest([phase('base', 1)], [volume({ shape: square, blendDistance: 10 })]);
+		const eye = eyeInLevelVolume(m, 1, profile(0), target, [50, 210, 50], options);
+		assert.ok(eye !== null);
+		const [x, y, z] = eye;
+		assert.deepEqual([x, z], [50, 50]);
+		assert.ok(y <= 40 && y > 30, `y ${y}`);
+	});
+
+	it('pulls a viewpoint out of a neighbour level’s volume', () => {
+		const neighbour = {
+			...square,
+			points: [
+				[-100, 0],
+				[20, 0],
+				[20, 100],
+				[-100, 100],
+			],
+		} as const satisfies EnvironmentVolumeShape;
+		const m = manifest(
+			[phase('base', 1), phase('next door', 2)],
+			[volume({ shape: square, blendDistance: 1 }), volume({ level: 2, phase: 1, shape: neighbour })],
+		);
+		const eye = eyeInLevelVolume(m, 1, profile(0), target, [-50, 10, 50], options);
+		assert.ok(eye !== null);
+		const [x] = eye;
+		assert.ok(x > 20 && x <= 22, `x ${x}`);
+	});
+
+	it('finds no viewpoint without a volume for the base phase', () => {
+		const m = manifest([phase('elsewhere', 1)], [volume({ shape: square })]);
+		assert.deepEqual(eyeInLevelVolume(m, 1, profile(0), target, [50, 210, 50], options), null);
 	});
 });

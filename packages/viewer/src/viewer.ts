@@ -26,7 +26,12 @@ import { UniformRing } from './gfx/uniform-ring.ts';
 import { DecodePool } from './package/decode-pool.ts';
 import type { PackageSource } from './package/package-source.ts';
 import { CORE_ARCHIVE_INDEX, type ViewerPackage, openViewerPackage } from './package/viewer-package.ts';
-import { type AppliedVolume, blendEnvironment, EnvironmentFades } from './render/environment-blend.ts';
+import {
+	type AppliedVolume,
+	blendEnvironment,
+	EnvironmentFades,
+	eyeInLevelVolume,
+} from './render/environment-blend.ts';
 import { type Environment, deriveEnvironment } from './render/environment.ts';
 import { DEBUG_VIEWS, type DebugView, FRAME_UNIFORM_BYTES, FrameOffsets } from './render/frame-uniforms.ts';
 import { InstanceRenderer } from './render/instance-renderer.ts';
@@ -176,6 +181,10 @@ const SAMPLE_COUNT = 4;
 const TERRAIN_SLOTS = 4096;
 const INSTANCE_ROWS = 1_500_000;
 const STATS_INTERVAL = 250;
+/** how far over the terrain a level's first view stays (m) */
+const VIEW_CLEARANCE = 100;
+/** headings a level's first view tries, from the south round */
+const VIEW_HEADINGS = 8;
 
 interface LoadedScene {
 	pkg: ViewerPackage;
@@ -645,6 +654,21 @@ export class Viewer {
 	/**
 	 * @param x world x
 	 * @param z world z
+	 * @returns the top of the scenery in the 128 m cell over the point, or -∞ where there's none
+	 */
+	#sceneryTop(x: number, z: number): number {
+		const scene = this.scene;
+		if (scene === null) {
+			return -Infinity;
+		}
+		const info = scene.pkg.manifest.tree;
+		const cell = scene.tree.byId.get(tileId(tileAt(info, info.cellLevel, x, z)));
+		return cell?.bounds.max[1] ?? -Infinity;
+	}
+
+	/**
+	 * @param x world x
+	 * @param z world z
 	 * @returns terrain height from the always-resident coarse pages, `null` off the terrain or over a hole, or
 	 *   `undefined` while no page covering the point is resident yet
 	 */
@@ -707,25 +731,64 @@ export class Viewer {
 
 	/**
 	 * @returns a pose looking over the level's playable rectangle (over the terrain, or the spawn height off
-	 *   it), and whether it's settled: unsettled poses fell back to the spawn height while the coarse pages
-	 *   load
+	 *   it) from the heading that keeps the widest view where the level's own environment applies, and whether
+	 *   it's settled: unsettled poses fell back to the spawn height while the coarse pages load
 	 */
 	#levelPose(level: LevelInfo): { pose: CameraPose; settled: boolean } {
 		const { rect, playerInitPos } = level;
 		const cx = (rect.minX + rect.maxX) / 2;
 		const cz = (rect.minZ + rect.maxZ) / 2;
 		const extent = Math.max(rect.maxX - rect.minX, rect.maxZ - rect.minZ);
-		const ground = this.#groundHeight(cx, cz);
+		const terrain = this.#groundHeight(cx, cz);
+		const ground = terrain ?? playerInitPos[1];
 		const back = extent * 0.75;
 		const up = extent * 0.55;
-		return {
-			pose: {
-				position: [cx, (ground ?? playerInitPos[1]) + up, cz - back],
-				yaw: 0,
-				pitch: -Math.atan2(up, back),
-			},
-			settled: ground !== undefined,
-		};
+		const pitch = -Math.atan2(up, back);
+		const settled = terrain !== undefined;
+		// looking north from the south, unless the level's volume can't hold that view
+		const fromHeading = (yaw: number): Vec3 => [
+			cx - Math.sin(yaw) * back,
+			ground + up,
+			cz - Math.cos(yaw) * back,
+		];
+		const fallback = { pose: { position: fromHeading(0), yaw: 0, pitch }, settled };
+		const manifest = this.scene?.pkg.manifest;
+		const base = level.environment === null ? undefined : manifest?.environments[level.environment];
+		if (manifest === undefined || base === undefined || !this.options.environmentVolumes) {
+			return fallback;
+		}
+		const target: Vec3 = [cx, ground, cz];
+		let best: { position: Vec3; yaw: number; distance: number } | null = null;
+		for (let i = 0; i < VIEW_HEADINGS; i++) {
+			const yaw = (i / VIEW_HEADINGS) * 2 * Math.PI;
+			const position = eyeInLevelVolume(manifest, level.tag, base, target, fromHeading(yaw), {
+				states: this.options.environmentStates,
+				// over the treetops and the cell's tallest scenery (Yinglung's chasm walls are meshes). holes in
+				// the terrain aren't clear; terrain that isn't resident yet is
+				clear: ([x, y, z]) => {
+					const height = this.#groundHeight(x, z);
+					return (
+						height !== null && y >= (height ?? -Infinity) + VIEW_CLEARANCE && y >= this.#sceneryTop(x, z)
+					);
+				},
+			});
+			if (position === null) {
+				continue;
+			}
+			const distance = Math.hypot(position[0] - cx, position[1] - ground, position[2] - cz);
+			if (best === null || distance > best.distance + 1) {
+				best = { position, yaw, distance };
+			}
+			// the usual heading wins while it keeps half its reach: other headings can land inside scenery the
+			// terrain check doesn't see
+			if (i === 0 && distance >= Math.hypot(back, up) / 2) {
+				break;
+			}
+		}
+		if (best === null) {
+			return fallback;
+		}
+		return { pose: { position: best.position, yaw: best.yaw, pitch }, settled };
 	}
 
 	#setPose({ position, yaw, pitch }: CameraPose): void {
