@@ -105,7 +105,14 @@ export interface PostInput {
 	> | null;
 	ambientOcclusion: Pick<
 		AmbientOcclusionSettings,
-		'enable' | 'radius' | 'radiusMultiplier' | 'falloffRange' | 'sampleDistributionPower' | 'finalValuePower'
+		| 'enable'
+		| 'custom'
+		| 'radius'
+		| 'radiusMultiplier'
+		| 'falloffRange'
+		| 'sampleDistributionPower'
+		| 'thinOccluderCompensation'
+		| 'finalValuePower'
 	> | null;
 	vignette: Pick<
 		VignetteSettings,
@@ -221,7 +228,7 @@ export interface AtmosphereFog {
 /** post-processing in shader units; `null` sections are off */
 export interface PostLook {
 	bloom: { threshold: number; intensity: number; scatter: number; tint: Vec3 } | null;
-	ao: { radius: number; falloff: number; distribution: number; power: number } | null;
+	ao: { radius: number; falloff: number; distribution: number; thin: number; power: number } | null;
 	vignette: {
 		colour: Vec3;
 		centre: Vec2;
@@ -445,11 +452,13 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 		},
 		ambientOcclusion: {
 			enable: true,
-			radius: 5,
+			custom: false,
+			radius: 4,
 			radiusMultiplier: 1,
-			falloffRange: 0.8,
-			sampleDistributionPower: 2,
-			finalValuePower: 2,
+			falloffRange: 1,
+			sampleDistributionPower: 1,
+			thinOccluderCompensation: 2,
+			finalValuePower: 2.2,
 		},
 		vignette: {
 			color: [0, 0, 0, 1],
@@ -467,6 +476,22 @@ const scaled = (c: Color, scale: number): Vec3 => [c[0] * scale, c[1] * scale, c
 /** @returns the vector of `f` over the three channels */
 const map3 = (f: (i: number) => number): Vec3 => [f(0), f(1), f(2)];
 
+/** the game's march settings unless the volume opts into its own; the exponent always comes from the volume */
+const AO_PRESET = { radius: 4, falloff: 1, distribution: 1, thin: 2 } as const;
+
+const aoLook = (ao: NonNullable<PostInput['ambientOcclusion']>): NonNullable<PostLook['ao']> => {
+	if (!ao.custom) {
+		return { ...AO_PRESET, power: ao.finalValuePower };
+	}
+	return {
+		radius: ao.radius * ao.radiusMultiplier,
+		falloff: ao.falloffRange,
+		distribution: ao.sampleDistributionPower,
+		thin: ao.thinOccluderCompensation,
+		power: ao.finalValuePower,
+	};
+};
+
 const postLook = (post: PostInput | null): PostLook => {
 	const bloom = post?.bloom ?? null;
 	const ao = post?.ambientOcclusion ?? null;
@@ -482,15 +507,7 @@ const postLook = (post: PostInput | null): PostLook => {
 						scatter: bloom.scatterHighQuality,
 						tint: linearRgb(bloom.tint),
 					},
-		ao:
-			ao === null || !ao.enable
-				? null
-				: {
-						radius: ao.radius * ao.radiusMultiplier,
-						falloff: ao.falloffRange,
-						distribution: ao.sampleDistributionPower,
-						power: ao.finalValuePower,
-					},
+		ao: ao === null || !ao.enable ? null : aoLook(ao),
 		vignette:
 			vignette === null
 				? null

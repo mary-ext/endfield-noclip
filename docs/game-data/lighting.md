@@ -117,13 +117,24 @@ the game's froxel volumetric fog, local fog volumes and flow noise are not drawn
 
 [`render/post-process.ts`](../../packages/viewer/src/render/post-process.ts), after the main pass:
 
-| pass                                                                                                                                      | inputs                                                                                                             |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| GTAO, half resolution, depth-aware upsample ([`gtao.wgsl`](../../packages/viewer/src/render/shaders/gtao.wgsl))                           | post `ambientOcclusion`: `radius × radiusMultiplier`, `falloffRange`, `sampleDistributionPower`, `finalValuePower` |
-| composite: AO on the ambient part, sky, fog                                                                                               | as above                                                                                                           |
-| water                                                                                                                                     | see [water.md](water.md)                                                                                           |
-| bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                    | post `bloom`: the high-quality tier's threshold (sRGB → linear, as URP does), intensity, scatter, tint             |
-| tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode | post `vignette`; `colorGrading`; the viewer's exposure compensation                                                |
+| pass                                                                                                                                      | inputs                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| GTAO, half resolution, depth-aware upsample ([`gtao.wgsl`](../../packages/viewer/src/render/shaders/gtao.wgsl))                           | post `ambientOcclusion`: see [below](#ambient-occlusion)                                               |
+| composite: AO on the ambient part, sky, fog                                                                                               | as above                                                                                               |
+| water                                                                                                                                     | see [water.md](water.md)                                                                               |
+| bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                    | post `bloom`: the high-quality tier's threshold (sRGB → linear, as URP does), intensity, scatter, tint |
+| tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode | post `vignette`; `colorGrading`; the viewer's exposure compensation                                    |
+
+### ambient occlusion
+
+the game's GTAO is XeGTAO, and the viewer's march follows it at the game's high tier (3 slices × 3
+steps, reach capped at 48 half-resolution pixels with the falloff radius shrunk to match). unless
+`ambientOcclusion.custom` is set, the game ignores the volume's march settings for a fixed preset:
+radius 4 m, falloff range 1, sample distribution power 1, thin-occluder compensation 2; only
+`finalValuePower` comes from the volume (6 on map02). thin-occluder compensation scales depth
+differences by `1 + thin` in the falloff distance. the viewer still derives normals from depth and
+filters with one depth-aware blur, where the game reads GBuffer normals and filters temporally and
+twice spatially.
 
 colour grading ([`render/color-grading.ts`](../../packages/viewer/src/render/color-grading.ts))
 packs `colorGradingConfig` the way URP's colour utilities do (white balance, colour adjustments,

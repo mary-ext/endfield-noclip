@@ -55,7 +55,7 @@ struct Post {
 	grade: vec4f,
 	// x = sky, y = height fog, z = aerial perspective, w = bloom
 	flags: vec4u,
-	// ambient occlusion falloff (fraction of the radius), sample distribution power
+	// ambient occlusion falloff (fraction of the radius), sample distribution power, thin-occluder compensation
 	ao_shape: vec4f,
 	// vignette colour (linear), w = roundness
 	vignette_colour: vec4f,

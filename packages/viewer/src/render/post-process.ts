@@ -599,7 +599,7 @@ export class PostProcess {
 		const threshold = bloom?.threshold ?? 1;
 		set(24, [threshold, threshold * 0.5, bloom?.intensity ?? 0, bloom?.scatter ?? 0]);
 		set(25, [...(bloom?.tint ?? [1, 1, 1]), 1]);
-		set(28, [ao?.falloff ?? 1, ao?.distribution ?? 1, 0, 0]);
+		set(28, [ao?.falloff ?? 1, ao?.distribution ?? 1, ao?.thin ?? 0, 0]);
 		set(29, [...(vignette?.colour ?? [0, 0, 0]), vignette?.roundness ?? 1]);
 		set(30, [...(vignette?.centre ?? [0.5, 0.5]), vignette?.rounded ? 1 : 0, 0]);
 		const cloud = environment.cloud;
