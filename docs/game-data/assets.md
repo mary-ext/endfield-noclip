@@ -154,7 +154,7 @@ Unity's queue boundaries (≥2450 alpha test, ≥3000 transparent) are refined b
 blend, alpha-test and cull properties. a texture slot whose PPtr can't be followed is recorded with
 its error and left empty; the material still converts.
 
-how families map to shading is in [../viewer.md](../viewer.md).
+the viewer maps families to shading in `packages/viewer/src/render/materials.ts`.
 
 ### transform
 
