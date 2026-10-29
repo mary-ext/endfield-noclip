@@ -16,6 +16,7 @@ import type {
 	DecodedGeometry,
 	DecodedHeights,
 	DecodedInstances,
+	DecodedIrradiance,
 	DecodedTexture,
 } from '../package/decode-protocol.ts';
 import { CORE_ARCHIVE_INDEX, type ViewerPackage } from '../package/viewer-package.ts';
@@ -80,8 +81,22 @@ export interface ResidentTexture {
 	bytes: number;
 }
 
+/** GPU residency of an irradiance cell in the volume's cell buffer */
+export interface ResidentIrradiance {
+	kind: 'irradiance';
+	/** GPU bytes */
+	bytes: number;
+	/** u32 words of the cell buffer */
+	alloc: RangeAllocation;
+}
+
 /** what a ready blob holds on the GPU */
-export type Resident = ResidentHeights | ResidentInstances | ResidentGeometry | ResidentTexture;
+export type Resident =
+	| ResidentHeights
+	| ResidentInstances
+	| ResidentGeometry
+	| ResidentTexture
+	| ResidentIrradiance;
 
 /** a blob the viewer has asked for at some point */
 export interface ContentItem {
@@ -113,6 +128,8 @@ export interface ContentStores {
 	uploadGeometry(blob: number, decoded: DecodedGeometry): ResidentGeometry;
 	/** @returns the residency */
 	uploadTexture(blob: number, decoded: DecodedTexture): ResidentTexture;
+	/** @returns the residency, or `null` if there was no room */
+	uploadIrradiance(blob: number, decoded: DecodedIrradiance): ResidentIrradiance | null;
 	/** frees a blob's GPU resources */
 	release(blob: number, resident: Resident): void;
 }
@@ -563,6 +580,10 @@ export class StreamManager {
 				job = this.#pool.run({ kind: 'texture', ...base });
 				break;
 			}
+			case BlobKind.Irradiance: {
+				job = this.#pool.run({ kind: 'irradiance', ...base });
+				break;
+			}
 			default: {
 				this.#fail(item, new Error(`blob kind ${record.kind} isn't supported yet`));
 				return;
@@ -650,6 +671,9 @@ export class StreamManager {
 			}
 			case 'texture': {
 				return this.#stores.uploadTexture(item.blob, decoded);
+			}
+			case 'irradiance': {
+				return this.#stores.uploadIrradiance(item.blob, decoded);
 			}
 		}
 	}

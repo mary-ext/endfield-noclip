@@ -21,7 +21,8 @@ export type DecodeRequest =
 	| (RequestBase & { kind: 'heights' })
 	| (RequestBase & { kind: 'instances'; rowKinds: RowKinds })
 	| (RequestBase & { kind: 'geometry' })
-	| (RequestBase & { kind: 'texture' });
+	| (RequestBase & { kind: 'texture' })
+	| (RequestBase & { kind: 'irradiance' });
 
 /** a decoded height page */
 export interface DecodedHeights {
@@ -67,8 +68,20 @@ export interface DecodedTexture {
 	data: ArrayBuffer;
 }
 
+/** an irradiance cell as the GPU reads it (u32 words; see `IrradianceCell` in the formats package) */
+export interface DecodedIrradiance {
+	id: number;
+	kind: 'irradiance';
+	data: ArrayBuffer;
+}
+
 /** a successfully decoded blob */
-export type Decoded = DecodedHeights | DecodedInstances | DecodedGeometry | DecodedTexture;
+export type Decoded =
+	| DecodedHeights
+	| DecodedInstances
+	| DecodedGeometry
+	| DecodedTexture
+	| DecodedIrradiance;
 
 /** a worker's answer */
 export type DecodeResponse = Decoded | { id: number; kind: 'error'; message: string };

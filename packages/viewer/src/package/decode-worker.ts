@@ -222,6 +222,10 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 			const data = ownBuffer(raw);
 			return { response: { id: request.id, kind: 'texture', data }, transfer: [data] };
 		}
+		case 'irradiance': {
+			const data = ownBuffer(raw);
+			return { response: { id: request.id, kind: 'irradiance', data }, transfer: [data] };
+		}
 	}
 };
 

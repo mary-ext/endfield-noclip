@@ -5,13 +5,19 @@
  * @module
  */
 
-import { decodeBlobTable, decodeChains, decodeTree } from '@endfield-noclip/package-format/codec';
+import {
+	decodeBlobTable,
+	decodeChains,
+	decodeIrradianceTable,
+	decodeTree,
+} from '@endfield-noclip/package-format/codec';
 import {
 	type BlobRecord,
 	type Chain,
 	CORE_ARCHIVE,
 	CORE_PATHS,
 	type GeometryTable,
+	type IrradianceTable,
 	type MaterialTable,
 	PACKAGE_FORMAT,
 	PACKAGE_VERSION,
@@ -50,6 +56,8 @@ export interface ViewerPackage {
 	textures: TextureTable;
 	/** the scene's water */
 	water: WaterTable;
+	/** the baked irradiance volume's cells (empty without one) */
+	irradiance: IrradianceTable;
 	/**
 	 * @param index index of a blob in the core archive
 	 * @returns the blob's stored bytes (codec not undone), in a buffer of their own
@@ -124,6 +132,7 @@ export const openViewerPackage = async (
 	const textures = (await json(CORE_PATHS.textures)) as TextureTable;
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
 	const water = (await json(CORE_PATHS.water)) as WaterTable;
+	const irradiance = decodeIrradianceTable(await member(CORE_PATHS.irradiance));
 
 	return {
 		source,
@@ -135,6 +144,7 @@ export const openViewerPackage = async (
 		materials,
 		textures,
 		water,
+		irradiance,
 		readCoreBlob(index) {
 			const blob = blobs[index];
 			const file =

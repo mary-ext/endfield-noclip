@@ -52,6 +52,14 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 			{ binding: 2, visibility: FRAGMENT, sampler: { type: 'comparison' } },
 			{ binding: 3, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: 'cube' } },
 			{ binding: 4, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			// the irradiance clipmaps, A and B per level, and their repeating and clamping samplers
+			...[5, 6, 7, 8, 9, 10].map((binding): GPUBindGroupLayoutEntry => ({
+				binding,
+				visibility: FRAGMENT,
+				texture: { sampleType: 'float', viewDimension: '3d' },
+			})),
+			{ binding: 11, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			{ binding: 12, visibility: FRAGMENT, sampler: { type: 'filtering' } },
 		],
 	});
 	const terrain = device.createBindGroupLayout({

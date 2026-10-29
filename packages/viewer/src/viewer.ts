@@ -36,6 +36,7 @@ import { type Environment, deriveEnvironment } from './render/environment.ts';
 import { DEBUG_VIEWS, type DebugView, FRAME_UNIFORM_BYTES, FrameOffsets } from './render/frame-uniforms.ts';
 import { InstanceRenderer } from './render/instance-renderer.ts';
 import { RowKind, type RowKinds, type TierSpan } from './render/instance-rows.ts';
+import { IrradianceVolume } from './render/irradiance-volume.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
 import { PostProcess, type Tonemapper } from './render/post-process.ts';
@@ -86,6 +87,8 @@ export interface ViewerOptions {
 	ao: boolean;
 	bloom: boolean;
 	vignette: boolean;
+	/** light ambient from the baked irradiance volume; off uses the environment's ambient probe alone */
+	irradiance: boolean;
 	/** blend the game's environment volumes at the camera; off shows the level's base environment */
 	environmentVolumes: boolean;
 	/** let volumes flagged as story or battle states apply (night, fights) */
@@ -121,6 +124,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	ao: true,
 	bloom: true,
 	vignette: true,
+	irradiance: true,
 	environmentVolumes: true,
 	environmentStates: false,
 	environmentPin: null,
@@ -181,6 +185,8 @@ const SAMPLE_COUNT = 4;
 const TERRAIN_SLOTS = 4096;
 const INSTANCE_ROWS = 1_500_000;
 const STATS_INTERVAL = 250;
+/** the irradiance volume of a package without one */
+const EMPTY_IRRADIANCE = { keys: new Uint32Array(), blobs: new Uint32Array() };
 /** how far over the terrain a level's first view stays (m) */
 const VIEW_CLEARANCE = 100;
 /** headings a level's first view tries, from the south round */
@@ -258,6 +264,8 @@ export class Viewer {
 	#instances: InstanceRenderer;
 	#meshes: MeshRenderer;
 	#post: PostProcess;
+	/** the loaded package's irradiance volume; an empty one without a package */
+	#irradiance: IrradianceVolume;
 	#water: WaterRenderer;
 	/** the shown level's look */
 	#environment: Environment = deriveEnvironment(null);
@@ -326,6 +334,7 @@ export class Viewer {
 			version: -1,
 		};
 		this.#reflection = this.#noReflection;
+		this.#irradiance = new IrradianceVolume(device, EMPTY_IRRADIANCE);
 		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(this.#noReflection);
 		this.#profiler = new GpuProfiler(device, gfx.features.timestampQuery);
 		const format = this.#targets.format;
@@ -379,6 +388,8 @@ export class Viewer {
 		const textures = new TextureStore(this.#gfx.device, pkg.textures, {
 			bc: this.#gfx.features.textureCompressionBc,
 		});
+		const irradiance = new IrradianceVolume(this.#gfx.device, pkg.irradiance);
+		this.#setIrradiance(irradiance);
 		const stream = new StreamManager(
 			pkg,
 			this.#pool,
@@ -387,6 +398,7 @@ export class Viewer {
 				uploadInstances: (decoded) => this.#instances.upload(decoded),
 				uploadGeometry: (blob, decoded) => this.#meshes.upload(blob, decoded),
 				uploadTexture: (blob, decoded) => textures.upload(blob, decoded),
+				uploadIrradiance: (_blob, decoded) => irradiance.upload(decoded),
 				release: (blob, resident) => {
 					switch (resident.kind) {
 						case 'heights': {
@@ -403,6 +415,10 @@ export class Viewer {
 						}
 						case 'texture': {
 							textures.release(blob);
+							break;
+						}
+						case 'irradiance': {
+							irradiance.release(resident);
 							break;
 						}
 					}
@@ -490,6 +506,7 @@ export class Viewer {
 		this.#post.setCloud(null);
 		this.#setReflection(this.#noReflection, 1);
 		this.scene = null;
+		this.#setIrradiance(new IrradianceVolume(this.#gfx.device, EMPTY_IRRADIANCE));
 		this.#water.setTable(null);
 		this.#level = null;
 		this.#unsettledPose = null;
@@ -512,9 +529,23 @@ export class Viewer {
 					{ binding: 2, resource: this.#shadows.sampler },
 					{ binding: 3, resource: reflection.view },
 					{ binding: 4, resource: reflection.sampler },
+					...irradiance.flatMap(({ a, b }, level) => [
+						{ binding: 5 + level * 2, resource: a },
+						{ binding: 6 + level * 2, resource: b },
+					]),
+					{ binding: 11, resource: this.#irradiance.sampler },
+					{ binding: 12, resource: this.#irradiance.clampSampler },
 				],
 			});
+		const irradiance = this.#irradiance.views();
 		return [group('frame', this.#shadows.view), group('shadow frame', this.#shadowPlaceholder)];
+	}
+
+	/** swaps in a package's irradiance volume and rebinds the frame groups */
+	#setIrradiance(irradiance: IrradianceVolume): void {
+		this.#irradiance.destroy();
+		this.#irradiance = irradiance;
+		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(this.#reflection);
 	}
 
 	/** streams the level's sky textures (reflection cubemap, cloud panorama) and binds them as they arrive */
@@ -1035,6 +1066,7 @@ export class Viewer {
 			this.#water.clear();
 		}
 		this.#span('sky, water');
+		this.#irradiance.prepare(stream, this.camera.position);
 		stream.update();
 		scene.textures.commit();
 		this.#span('stream');
@@ -1083,6 +1115,7 @@ export class Viewer {
 		this.#span('uniforms');
 
 		const encoder = this.#profiler.instrument(device.createCommandEncoder({ label: 'frame' }));
+		this.#irradiance.encode(encoder);
 		let draws = 0;
 		cascadeOffsets.forEach((offset, i) => {
 			const pass = encoder.beginRenderPass({
@@ -1203,6 +1236,11 @@ export class Viewer {
 		});
 		f32.set(this.#shadows.splits, FrameOffsets.shadowSplits);
 		f32[FrameOffsets.shadowSplits + 3] = shadows ? 1 : 0;
+		this.#irradiance.centres().forEach((centre, i) => {
+			const at = FrameOffsets.irradiance + i * 4;
+			f32.set(centre ?? [0, 0, 0], at);
+			f32[at + 3] = centre !== null && this.options.irradiance ? 1 : 0;
+		});
 	}
 
 	/** refreshes {@link stats}, notifying subscribers only if something changed */

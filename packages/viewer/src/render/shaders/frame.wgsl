@@ -30,6 +30,8 @@ struct Frame {
 	shadow_splits: vec4f,
 	// world-space texel size of each cascade (m), w reserved
 	shadow_params: vec4f,
+	// world position of each irradiance clipmap level's centre (0.5 m, 2 m, 8 m probes), w = 1 once filled
+	irradiance: array<vec4f, 3>,
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -39,6 +41,16 @@ struct Frame {
 // until it streams in, flagged by ambient.z
 @group(0) @binding(3) var reflection_map: texture_cube<f32>;
 @group(0) @binding(4) var reflection_sampler: sampler;
+// the baked irradiance volume's clipmaps (see irradiance-volume.ts): per level, L0 rgb (A), and three slabs
+// along y holding the red, green and blue L1 directions · 0.25 + 0.5 with the probe's validity in alpha (B)
+@group(0) @binding(5) var irradiance_a0: texture_3d<f32>;
+@group(0) @binding(6) var irradiance_b0: texture_3d<f32>;
+@group(0) @binding(7) var irradiance_a1: texture_3d<f32>;
+@group(0) @binding(8) var irradiance_b1: texture_3d<f32>;
+@group(0) @binding(9) var irradiance_a2: texture_3d<f32>;
+@group(0) @binding(10) var irradiance_b2: texture_3d<f32>;
+@group(0) @binding(11) var irradiance_repeat: sampler;
+@group(0) @binding(12) var irradiance_clamp: sampler;
 
 // the sun's visibility at a camera-relative position: 3×3 PCF in the nearest cascade that covers it
 fn sun_shadow(rel: vec3f, normal: vec3f) -> f32 {
@@ -129,6 +141,95 @@ fn ambient_probe(n: vec3f) -> vec3f {
 	return max(c, vec3f(0.0));
 }
 
+// the L1 probe of one clipmap level at a world position, per channel as (L1 · L0, L0), times `weight`; w of
+// the result's fourth vector is the probe's validity times `weight`
+struct IrradianceSample {
+	r: vec4f,
+	g: vec4f,
+	b: vec4f,
+	validity: f32,
+}
+
+const IRRADIANCE_TEXELS = vec3f(128.0, 64.0, 128.0);
+
+fn irradiance_level(a: texture_3d<f32>, b: texture_3d<f32>, uvw_in: vec3f, clamp_all: bool, weight: f32) -> IrradianceSample {
+	var uvw = uvw_in - floor(uvw_in);
+	let half = 0.5 / IRRADIANCE_TEXELS;
+	if (clamp_all) {
+		uvw = clamp(uvw, half, vec3f(1.0) - half);
+	}
+	let l0 = textureSampleLevel(a, irradiance_repeat, uvw, 0.0).xyz;
+	let v = clamp(uvw.y, half.y, 1.0 - half.y) / 3.0;
+	let br = textureSampleLevel(b, irradiance_clamp, vec3f(uvw.x, v, uvw.z), 0.0);
+	let bg = textureSampleLevel(b, irradiance_clamp, vec3f(uvw.x, v + 1.0 / 3.0, uvw.z), 0.0);
+	let bb = textureSampleLevel(b, irradiance_clamp, vec3f(uvw.x, v + 2.0 / 3.0, uvw.z), 0.0);
+	var s: IrradianceSample;
+	s.r = vec4f((br.xyz * 4.0 - 2.0) * l0.x, l0.x) * weight;
+	s.g = vec4f((bg.xyz * 4.0 - 2.0) * l0.y, l0.y) * weight;
+	s.b = vec4f((bb.xyz * 4.0 - 2.0) * l0.z, l0.z) * weight;
+	s.validity = br.w * weight;
+	return s;
+}
+
+// how far a position is outside a clipmap level's box (half extents h metres, fading over 1/fade metres)
+fn irradiance_outside(d: vec3f, h: vec2f, fade: f32) -> f32 {
+	return max(clamp((max(abs(d.x), abs(d.z)) - h.x) * fade, 0.0, 1.0), clamp((abs(d.y) - h.y) * fade, 0.0, 1.0));
+}
+
+// diffuse ambient: the irradiance volume's L1 probes blended over the clipmap levels, with the ambient probe
+// where they don't reach or are invalid (HGRP DeferredLighting's indirect pass, without its jitter)
+fn ambient_irradiance(world: vec3f, n: vec3f) -> vec3f {
+	let base = ambient_probe(n);
+	if (frame.irradiance[2].w < 0.5) {
+		return base;
+	}
+	let p = world + n * 0.25;
+	let outside = irradiance_outside(p - frame.irradiance[2].xyz, vec2f(464.0, 208.0), 0.03125);
+	if (outside >= 1.0) {
+		return base;
+	}
+	var r = vec4f(0.0);
+	var g = vec4f(0.0);
+	var b = vec4f(0.0);
+	var validity = outside;
+	// a level not filled yet counts as out of reach
+	let f0 = select(1.0, irradiance_outside(p - frame.irradiance[0].xyz, vec2f(29.0, 13.0), 0.5), frame.irradiance[0].w > 0.5);
+	if (f0 < 1.0) {
+		let s = irradiance_level(irradiance_a0, irradiance_b0, (p * 2.0 + 0.5) / IRRADIANCE_TEXELS, false, 1.0 - f0);
+		r += s.r;
+		g += s.g;
+		b += s.b;
+		validity += s.validity;
+	}
+	let f1 = select(1.0, irradiance_outside(p - frame.irradiance[1].xyz, vec2f(116.0, 52.0), 0.125), frame.irradiance[1].w > 0.5);
+	if (f1 < 1.0) {
+		let s = irradiance_level(irradiance_a1, irradiance_b1, (p * 0.5 + 0.5) / IRRADIANCE_TEXELS, false, f0 * (1.0 - f1));
+		r += s.r;
+		g += s.g;
+		b += s.b;
+		validity += s.validity;
+	}
+	if (f1 > 0.0) {
+		let s = irradiance_level(irradiance_a2, irradiance_b2, (p * 0.125 + 0.5) / IRRADIANCE_TEXELS, true, f1 * (1.0 - outside));
+		r += s.r;
+		g += s.g;
+		b += s.b;
+		validity += s.validity;
+	}
+	// the ambient probe fills in for missing validity; `band` is the game's vertical correction term
+	let valid = clamp(validity * 2.0 - 1.0, 0.0, 1.0);
+	let band = valid - outside;
+	let fallback = (valid + outside) * 0.5;
+	let sh = array<vec4f, 3>(r, g, b);
+	var c = vec3f(0.0);
+	for (var i = 0; i < 3; i++) {
+		let d = frame.sh[i];
+		let corrected = sh[i] + vec4f(0.0, d.w * band * 0.5, 0.0, d.y * band * 0.375);
+		c[i] = dot(corrected.xyz, n) + corrected.w;
+	}
+	return max(c + base * fallback, vec3f(0.0));
+}
+
 // height-correlated Smith visibility (Heitz), V = G / (4 n·l n·v)
 fn smith_visibility(n_dot_v: f32, n_dot_l: f32, a2: f32) -> f32 {
 	let v = n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - a2) + a2);
@@ -179,7 +280,7 @@ fn shade_surface(s: Surface, rel: vec3f) -> Shaded {
 		direct *= frame.sun_colour.rgb * visibility * frame.sun.w;
 	}
 
-	var ambient = diffuse_colour * ambient_probe(n);
+	var ambient = diffuse_colour * ambient_irradiance(frame.eye.xyz + rel, n);
 	{
 		let r = normalize(mix(reflect(-v, n), n, roughness * roughness));
 		// without the cubemap, reflect the ambient probe (the sky's low-frequency radiance)
