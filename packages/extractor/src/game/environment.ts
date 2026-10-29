@@ -39,13 +39,18 @@ import type { WorldIndex } from './world-index.ts';
 
 // #region scene volumes
 
-/** a volume with the level tag of its entity id */
+/** a volume with the level tag of its entity id and the scene states it loads with */
 export interface TaggedVolume<T> {
 	tag: number;
+	/**
+	 * MapConfig scene state indices of the chunk files holding it, any of which loads it; empty if always
+	 * loaded
+	 */
+	sceneStates: number[];
 	volume: T;
 }
 
-/** every environment and post-processing volume of a scene's default state */
+/** every environment and post-processing volume of a scene's default stream area, in any scene state */
 export interface SceneVolumes {
 	environment: TaggedVolume<EnvironmentVolume>[];
 	post: TaggedVolume<PostVolume>[];
@@ -57,15 +62,15 @@ const READ_CONCURRENCY = 16;
 const VOLUME_COMPONENTS = BigInt(MonoComponentType.HGEnvironmentVolume | MonoComponentType.Volume);
 
 /**
- * reads the environment and post volumes of a scene's default-state chunks (Init with its paired Streaming
- * file), each once
+ * reads the environment and post volumes of a scene's default-area chunks (Init with its paired Streaming
+ * file), each once, with the scene states whose files hold them
  *
  * @param world world index
  * @param scene streaming scene
  * @returns the volumes, in chunk-file order
  */
 export const loadSceneVolumes = async (world: WorldIndex, scene: string): Promise<SceneVolumes> => {
-	const files = (await world.chunkFiles()).filter((file) => file.scene === scene && file.state === 0);
+	const files = (await world.chunkFiles()).filter((file) => file.scene === scene && file.area === 0);
 	const perFile = await mapPool(files, READ_CONCURRENCY, async (file) => {
 		const init = await world.readInitPayload(file);
 		if (!hasMonoComponents(init, VOLUME_COMPONENTS)) {
@@ -75,29 +80,50 @@ export const loadSceneVolumes = async (world: WorldIndex, scene: string): Promis
 	});
 
 	const volumes: SceneVolumes = { environment: [], post: [] };
-	// a volume is repeated in every cell chunk it overlaps
-	const seen = new Set<number>();
-	for (const objects of perFile) {
+	// a volume is repeated in every cell chunk it overlaps; the files' scene state ids are collected per volume
+	const fileStates = new Map<number, Set<number>>();
+	for (const [i, objects] of perFile.entries()) {
 		for (const object of objects) {
-			if (seen.has(object.id)) {
+			const known = fileStates.get(object.id);
+			if (known !== undefined) {
+				known.add(files[i].sceneState);
 				continue;
 			}
 			const environment = readEnvironmentVolume(object);
 			const post = readPostVolume(object);
+			if (environment === undefined && post === undefined) {
+				continue;
+			}
+			const states = new Set([files[i].sceneState]);
+			fileStates.set(object.id, states);
 			const tag = levelTagOf(object.id);
+			// scene states are filled in below, once every file was seen
 			if (environment !== undefined) {
-				volumes.environment.push({ tag, volume: environment });
+				volumes.environment.push({ tag, sceneStates: [], volume: environment });
 			}
 			if (post !== undefined) {
-				volumes.post.push({ tag, volume: post });
+				volumes.post.push({ tag, sceneStates: [], volume: post });
 			}
-			if (environment !== undefined || post !== undefined) {
-				seen.add(object.id);
-			}
+		}
+	}
+	for (const entry of [...volumes.environment, ...volumes.post]) {
+		const states = fileStates.get(entry.volume.id)!;
+		if (!states.has(0)) {
+			entry.sceneStates.push(...[...states].map((id) => id - 1).toSorted((a, b) => a - b));
 		}
 	}
 	return volumes;
 };
+
+/**
+ * @param entry a volume
+ * @param enabled MapConfig scene state indices taken as active
+ * @returns whether the volume is loaded with those states
+ */
+export const volumeLoaded = (
+	entry: Pick<TaggedVolume<unknown>, 'sceneStates'>,
+	enabled: ReadonlySet<number>,
+): boolean => entry.sceneStates.length === 0 || entry.sceneStates.some((index) => enabled.has(index));
 
 // #endregion
 
@@ -133,22 +159,25 @@ export interface LevelEnvironmentChoice {
  * broad one: of the volumes the level owns (by entity tag) and the game shows somewhere on a 32 m grid over
  * the level's cells, the one covering most points, the lower priority on a tie. a volume is shown where it
  * has the highest priority of those containing the point (the smaller footprint on equal priority, an
- * assumption). the scene's global volume stands in when the level has none. heights are ignored, and every
- * volume is taken as enabled (level scripts can toggle them)
+ * assumption). the scene's global volume stands in when the level has none. heights are ignored. volumes of
+ * scene states outside `enabled` aren't loaded; every loaded volume is taken as enabled (level scripts can
+ * toggle them)
  *
  * @param level the level
  * @param volumes the scene's volumes
+ * @param enabled MapConfig scene state indices taken as active
  * @returns the choice and the per-volume coverage
  */
 export const resolveLevelEnvironment = (
 	level: Pick<PartitionLevel, 'tag'> & { config: Pick<PartitionLevel['config'], 'levelGrids'> },
 	volumes: SceneVolumes,
+	enabled: ReadonlySet<number>,
 ): LevelEnvironmentChoice => {
+	const loaded = volumes.environment.filter((entry) => volumeLoaded(entry, enabled));
 	const global =
-		volumes.environment.find(
-			({ tag, volume }) => tag === 0 && volume.volumeType === EnvironmentVolumeType.Global,
-		)?.volume ?? null;
-	const candidates = volumes.environment
+		loaded.find(({ tag, volume }) => tag === 0 && volume.volumeType === EnvironmentVolumeType.Global)
+			?.volume ?? null;
+	const candidates = loaded
 		.filter(({ tag }) => tag === level.tag)
 		.flatMap(({ volume }) => {
 			const shape = footprint(volume);
@@ -204,13 +233,17 @@ export const resolveLevelEnvironment = (
  *
  * @param level the level
  * @param volumes the scene's volumes
+ * @param enabled MapConfig scene state indices taken as active
  * @returns the volume, or `null` if neither exists
  */
 export const resolveLevelPost = (
 	level: Pick<PartitionLevel, 'tag'>,
 	volumes: SceneVolumes,
+	enabled: ReadonlySet<number>,
 ): PostVolume | null => {
-	const globals = volumes.post.filter(({ volume }) => volume.isGlobal && volume.profile !== null);
+	const globals = volumes.post.filter(
+		(entry) => entry.volume.isGlobal && entry.volume.profile !== null && volumeLoaded(entry, enabled),
+	);
 	const pick = (tag: number) =>
 		globals.filter((entry) => entry.tag === tag).toSorted((a, b) => b.volume.priority - a.volume.priority)[0]
 			?.volume;

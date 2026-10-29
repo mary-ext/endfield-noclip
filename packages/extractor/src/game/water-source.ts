@@ -24,7 +24,10 @@ import type { ChunkFile, WorldIndex } from './world-index.ts';
 
 /** a water surface with the chunk file it was read from */
 export interface SourcedWaterSurface extends WaterSurface {
+	/** the first file holding it */
 	source: ChunkFile;
+	/** MapConfig scene state indices of the files holding it, any of which loads it; empty if always loaded */
+	sceneStates: number[];
 }
 
 /** a scene's water placements */
@@ -80,14 +83,19 @@ export const readSceneWater = async (
 	const surfaces: SourcedWaterSurface[] = [];
 	const globals: WaterGlobalBinding[] = [];
 	const seen = new Set<number>();
+	// scene state ids of the files holding each surface
+	const fileStates = new Map<number, Set<number>>();
 	for (const read of perFile) {
 		if (read === null) {
 			continue;
 		}
 		for (const surface of read.surfaces) {
-			if (!seen.has(surface.id)) {
-				seen.add(surface.id);
-				surfaces.push(Object.assign(surface, { source: read.file }));
+			const states = fileStates.get(surface.id);
+			if (states === undefined) {
+				fileStates.set(surface.id, new Set([read.file.sceneState]));
+				surfaces.push(Object.assign(surface, { source: read.file, sceneStates: [] }));
+			} else {
+				states.add(read.file.sceneState);
 			}
 		}
 		for (const binding of read.globals) {
@@ -95,6 +103,12 @@ export const readSceneWater = async (
 				seen.add(binding.id);
 				globals.push(binding);
 			}
+		}
+	}
+	for (const surface of surfaces) {
+		const states = fileStates.get(surface.id)!;
+		if (!states.has(0)) {
+			surface.sceneStates = [...states].map((id) => id - 1).toSorted((a, b) => a - b);
 		}
 	}
 	return { surfaces, globals };

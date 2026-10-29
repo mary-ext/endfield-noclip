@@ -125,7 +125,7 @@ describe('InstanceBlockBuilder', () => {
 				{
 					chain,
 					entityId,
-					layer: 1,
+					sceneState: 1,
 					matrix: matrix(100 + entityId, 50, -200),
 					bounds: { center: [100, 50, -200], extents: [1, 2, 3] },
 				},
@@ -214,7 +214,7 @@ describe('BlobStore', () => {
 				{
 					chain: 1,
 					entityId: 42,
-					layer: 0,
+					sceneState: 0,
 					matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 6, 7, 1]),
 					bounds: { center: [5, 6, 7], extents: [1, 1, 1] },
 				},

@@ -11,14 +11,16 @@ import { mapPool } from '../pool.ts';
 
 import type { ChunkFile, WorldIndex } from './world-index.ts';
 
-// scenery variants of an open-world map come from two independent mechanisms:
+// scenery variants of an open-world map come from three independent mechanisms:
 //
-// - stream areas: static InitChunkData files whose `<sceneStateId>` suffix is non-zero belong to that stream
+// - stream areas: static InitChunkData files whose `<areaId>` (last) suffix is non-zero belong to that stream
 //   area. which areas are shown depends on where the camera is (FBStreamArea triggers), not on progress. they
-//   only add entities to state 0; none of their ids or placements repeat a state-0 entity.
+//   only add entities to area 0; none of their ids or placements repeat an area-0 entity.
 // - progression controllers: DynamicStreaming entities whose resource groups carry LogicState bitmasks. the
 //   entity's logic state is its level (outpost/settlement level, POI facility level, factory region level), so a
 //   group with bit n set is shown at level n. all variants are stored side by side; nothing is a file swap.
+// - scene states: MapConfig states switched by quest/mission/variable conditions (see `scene-conditions.ts`).
+//   static files carry them as the `<sceneStateId>` suffix, dynamic entities as state-index lists.
 
 // #region types
 
@@ -37,7 +39,7 @@ interface AreaLabel {
 
 /** a stream area and what the static scenery of that area holds */
 export interface StreamAreaInfo extends AreaLabel {
-	/** the `<sceneStateId>` of its chunk files */
+	/** the `<areaId>` of its chunk files */
 	id: number;
 	levelName: string | null;
 	chunkFiles: number;
@@ -92,8 +94,8 @@ export interface StateSelection {
 const READ_CONCURRENCY = 16;
 
 /**
- * catalogues a map's stream areas and progression controllers. reads every non-zero-state chunk file and
- * every `fb_main` file of the scene, so it takes a few seconds
+ * catalogues a map's stream areas and progression controllers. reads every non-zero-area chunk file and every
+ * `fb_main` file of the scene, so it takes a few seconds
  *
  * @param world world index
  * @param scene streaming scene, e.g. `map02`
@@ -106,10 +108,10 @@ export const loadSceneStates = async (world: WorldIndex, scene: string): Promise
 
 	const areaFiles = new Map<number, ChunkFile[]>();
 	for (const file of await world.chunkFiles()) {
-		if (file.scene === scene && file.state !== 0) {
-			const list = areaFiles.get(file.state) ?? [];
+		if (file.scene === scene && file.area !== 0) {
+			const list = areaFiles.get(file.area) ?? [];
 			list.push(file);
-			areaFiles.set(file.state, list);
+			areaFiles.set(file.area, list);
 		}
 	}
 	const allFiles = [...areaFiles.values()].flat();
@@ -368,7 +370,7 @@ export const resolveChunkFiles = (
 	scene: string,
 	areas: ReadonlySet<number>,
 ): ChunkFile[] => {
-	return files.filter((file) => file.scene === scene && areas.has(file.state));
+	return files.filter((file) => file.scene === scene && areas.has(file.area));
 };
 
 /**

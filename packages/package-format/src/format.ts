@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 8;
+export const PACKAGE_VERSION = 9;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -404,16 +404,18 @@ export interface Bounds {
 }
 
 /**
- * scenery variants. the game's stream areas (`<sceneStateId>` chunk suffixes: interiors, caves, off-map
- * places) aren't kept apart: their content is merged into the levels that own it, so a level is drawn whole.
- * progressions (outpost/settlement levels, POI facility levels, factory regions) are selected per
- * progression, with mutually exclusive levels, and manual gates for unrecovered script/state conditions
+ * scenery variants. the game's stream areas (`<areaId>` chunk suffixes: interiors, caves, off-map places)
+ * aren't kept apart: their content is merged into the levels that own it, so a level is drawn whole. scene
+ * states (MapConfig states, the `<sceneStateId>` chunk suffix and dynamic state lists) are toggles whose
+ * defaults evaluate the game's conditions for a player who finished the story. progressions
+ * (outpost/settlement levels, POI facility levels, factory regions) are selected per progression, with
+ * mutually exclusive levels, and manual gates for unrecovered script/logic conditions
  */
 export interface StatesInfo {
 	progressions: ProgressionInfo[];
-	/** independent controls for script and scene-state visibility */
+	/** independent controls for scene states, scripts and logic gates */
 	toggles: SceneToggleInfo[];
-	/** instance visibility expressions */
+	/** visibility expressions of conditional instances, environment volumes and water surfaces */
 	conditionalSets: ConditionalSetInfo[];
 }
 
@@ -432,13 +434,24 @@ export interface ProgressionInfo {
 	defaultLevel: number;
 }
 
-/** a manual preview control; no runtime script or server condition is simulated */
+/** an on/off scene control; no runtime script or server condition is simulated */
 export interface SceneToggleInfo {
+	/** `sceneState:<MapConfig index>` for scene states; other ids are install-specific */
 	id: string;
 	name: string;
-	kind: 'script' | 'state';
+	/**
+	 * `sceneState`: a MapConfig scene state. `script`: a script-loaded entity group. `state`: a logic gate
+	 * whose condition is not recovered
+	 */
+	kind: 'sceneState' | 'script' | 'state';
+	/** level tags whose controls list it; 0 lists it everywhere */
 	levels: number[];
 	defaultEnabled: boolean;
+	/**
+	 * for scene states, the game's condition in words and the assumption the default rests on; `null` for other
+	 * kinds
+	 */
+	condition: string | null;
 }
 
 /** one required value of a scene control */
@@ -592,7 +605,12 @@ export interface EnvironmentVolumeInfo {
 	fadeOutDuration: number;
 	/** index into {@link PackageManifest.environmentPhases}, or `null` if the phase is unset or unreadable */
 	phase: number | null;
-	/** activation conditions have not been recovered; previewing this volume assumes it is enabled */
+	/**
+	 * index into {@link StatesInfo.conditionalSets} when the volume only loads with some scene states, `null`
+	 * when it's always loaded
+	 */
+	condition: number | null;
+	/** script activation has not been recovered; previewing this volume assumes it is enabled */
 	activation: 'unknown';
 }
 
@@ -1163,10 +1181,10 @@ export interface WaterSurfaceEntry {
 	/** the owning level's tag (`id >>> 27`), matching {@link LevelInfo.tag} */
 	level: number;
 	/**
-	 * the game's StreamingLayer of the chunk the surface came from. 6 and 7 hold almost only paddy-field pools;
-	 * whether they need progression gating is open
+	 * index into {@link StatesInfo.conditionalSets} when the surface only loads with some scene states (map02's
+	 * paddy-field pools), `null` when it's always loaded
 	 */
-	layer: number;
+	condition: number | null;
 	/**
 	 * geometry-table id. only positions are needed (the shading works in world x, z), and some meshes have no
 	 * UVs; no tangents are generated
@@ -1311,8 +1329,8 @@ export interface InstanceBlock {
 	bounds: Float32Array;
 	/** the game's entity id per row; `id >>> 27` is the owning level's tag */
 	entityIds: Uint32Array;
-	/** the game's StreamingLayer per row (names unknown; 0 is most scenery) */
-	layers: Uint8Array;
+	/** the chunk file's scene state id per row: 0 always loaded, `n` with MapConfig scene state `n − 1` */
+	sceneStates: Uint8Array;
 }
 
 /**

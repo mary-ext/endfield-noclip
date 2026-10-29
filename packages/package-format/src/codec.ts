@@ -468,7 +468,7 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 		block.transforms.length !== count * 12 ||
 		block.bounds.length !== count * 6 ||
 		block.entityIds.length !== count ||
-		block.layers.length !== count
+		block.sceneStates.length !== count
 	) {
 		throw new RangeError('instance block sections differ in length');
 	}
@@ -482,7 +482,7 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 		view.setFloat32(12 + i * 4, block.origin[i], true);
 	}
 	let at = INSTANCE_HEADER_SIZE;
-	for (const section of [block.chains, block.transforms, block.bounds, block.entityIds, block.layers]) {
+	for (const section of [block.chains, block.transforms, block.bounds, block.entityIds, block.sceneStates]) {
 		out.set(new Uint8Array(section.buffer, section.byteOffset, section.byteLength), at);
 		at += align4(section.byteLength);
 	}
@@ -513,7 +513,7 @@ export const decodeInstanceBlock = (data: Uint8Array): InstanceBlock => {
 	at += count * 24;
 	const entityIds = u32Section(data, at, count);
 	at += count * 4;
-	const layers = data.slice(at, at + count);
+	const sceneStates = data.slice(at, at + count);
 	return {
 		flags: view.getUint16(6, true),
 		origin: [view.getFloat32(12, true), view.getFloat32(16, true), view.getFloat32(20, true)],
@@ -521,7 +521,7 @@ export const decodeInstanceBlock = (data: Uint8Array): InstanceBlock => {
 		transforms,
 		bounds,
 		entityIds,
-		layers,
+		sceneStates,
 	};
 };
 

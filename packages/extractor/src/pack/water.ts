@@ -46,8 +46,13 @@ export interface WaterDebug {
 
 /** water planned before asset conversion */
 export interface WaterPlan {
-	/** texture fields hold indices into {@link textures} until {@link finishWater} */
+	/**
+	 * texture fields hold indices into {@link textures} until {@link finishWater}; surface conditions are `null`
+	 * until the packer interns {@link surfaceStates}
+	 */
 	table: WaterTable;
+	/** per table surface: the MapConfig scene state indices that load it, empty if always loaded */
+	surfaceStates: number[][];
 	textures: PlacedTexture[];
 	debug: WaterDebug;
 }
@@ -83,6 +88,7 @@ export const planWater = async (
 	const selected = selectSurfaces(water.surfaces, options.includes);
 	const plan: WaterPlan = {
 		table: { global: null, configs: [], surfaces: [] },
+		surfaceStates: [],
 		textures: [],
 		debug: {
 			surfaces: { scene: water.surfaces.length, packed: 0 },
@@ -125,6 +131,7 @@ export const planWater = async (
 			continue;
 		}
 		plan.table.surfaces.push(surfaceEntry(surface, options.geometry(surface.meshHash), config));
+		plan.surfaceStates.push(surface.sceneStates);
 		plan.debug.rows.push({
 			id: surface.id,
 			name: surface.name,
@@ -361,7 +368,7 @@ const surfaceEntry = (surface: SourcedWaterSurface, geometry: number, config: nu
 	return {
 		id: surface.id,
 		level: surface.levelTag,
-		layer: surface.source.layer,
+		condition: null,
 		geometry,
 		// top three rows of the column-major matrix, row-major
 		transform: [m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14]],

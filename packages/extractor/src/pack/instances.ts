@@ -9,7 +9,8 @@ export interface InstanceInput {
 	/** world AABB */
 	bounds: Aabb;
 	entityId: number;
-	layer: number;
+	/** scene state id of the chunk file the row came from (0 for always-loaded and dynamic content) */
+	sceneState: number;
 }
 
 /** growable struct-of-arrays rows, encoded into an {@link InstanceBlock} at the end */
@@ -19,7 +20,7 @@ export class InstanceBlockBuilder {
 	readonly #matrices: number[] = [];
 	readonly #bounds: number[] = [];
 	readonly #entityIds: number[] = [];
-	readonly #layers: number[] = [];
+	readonly #sceneStates: number[] = [];
 
 	/** number of rows */
 	get length(): number {
@@ -42,7 +43,7 @@ export class InstanceBlockBuilder {
 		this.#chains.push(row.chain);
 		this.#groups.push(group);
 		this.#entityIds.push(row.entityId);
-		this.#layers.push(row.layer);
+		this.#sceneStates.push(row.sceneState);
 		return this.#chains.length - 1;
 	}
 
@@ -61,12 +62,12 @@ export class InstanceBlockBuilder {
 		const transforms = new Float32Array(count * 12);
 		const bounds = new Float32Array(count * 6);
 		const entityIds = new Uint32Array(count);
-		const layers = new Uint8Array(count);
+		const sceneStates = new Uint8Array(count);
 		for (let out = 0; out < count; out++) {
 			const i = order[out];
 			chains[out] = this.#chains[i];
 			entityIds[out] = this.#entityIds[i];
-			layers[out] = this.#layers[i];
+			sceneStates[out] = this.#sceneStates[i];
 			for (let k = 0; k < 12; k++) {
 				transforms[out * 12 + k] = this.#matrices[i * 12 + k];
 			}
@@ -88,7 +89,7 @@ export class InstanceBlockBuilder {
 				transforms,
 				bounds,
 				entityIds,
-				layers,
+				sceneStates,
 			},
 			order,
 		};

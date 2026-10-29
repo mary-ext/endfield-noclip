@@ -22,6 +22,7 @@ import type {
 	EnvironmentVolumeInfo,
 	EnvironmentVolumeShape,
 	PackageManifest,
+	Rect,
 } from '@endfield-noclip/package-format/format';
 
 import type { Vec3 } from '../scene/camera.ts';
@@ -48,8 +49,13 @@ export interface BlendedEnvironment {
 export interface BlendOptions {
 	/** apply only this phase over the base, instead of the volumes */
 	pinnedPhase: number | null;
-	/** manual preview overrides, keyed by manifest volume index */
+	/** manual preview overrides, keyed by manifest volume index; they win over scene states */
 	enabled?: Readonly<Record<number, boolean>>;
+	/**
+	 * per `states.conditionalSets` entry of the manifest, whether the selected scene values satisfy it; a
+	 * volume whose condition is unsatisfied isn't loaded. without it, every volume counts as loaded
+	 */
+	loaded?: readonly boolean[];
 }
 
 /** shape order among equal priorities, as `HGEnvironmentVolumeBase.CompareTo` falls back to the volume type */
@@ -73,15 +79,19 @@ const volumesOf = (manifest: PackageManifest): { id: number; volume: Environment
 };
 
 /**
- * @returns whether a volume applies where it holds the camera: scripted volumes (mode 3) only when previewed,
- *   others unless switched off
+ * @returns whether a volume applies where it holds the camera: a manual override decides; else scripted
+ *   volumes (mode 3) don't, and others do when their scene states load them
  */
 const volumeApplies = (
 	volume: EnvironmentVolumeInfo,
 	id: number,
-	enabled: BlendOptions['enabled'],
+	{ enabled, loaded }: Pick<BlendOptions, 'enabled' | 'loaded'>,
 ): volume is EnvironmentVolumeInfo & { phase: number } => {
-	if (volume.phase === null || enabled?.[id] === false) {
+	const manual = enabled?.[id];
+	if (volume.phase === null || manual === false) {
+		return false;
+	}
+	if (manual !== true && volume.condition !== null && loaded !== undefined && !loaded[volume.condition]) {
 		return false;
 	}
 	switch (volume.blendMode) {
@@ -91,7 +101,7 @@ const volumeApplies = (
 			return true;
 		}
 		case 3: {
-			return enabled?.[id] === true;
+			return manual ?? false;
 		}
 		default: {
 			return false;
@@ -199,7 +209,7 @@ export const blendEnvironment = (
 	} else {
 		const speed = time?.fades.step(eye) ?? JUMP_SPEED;
 		for (const { id, volume } of volumesOf(manifest)) {
-			if (!volumeApplies(volume, id, options.enabled)) {
+			if (!volumeApplies(volume, id, options)) {
 				continue;
 			}
 			const distance = distanceInside(volume.shape, eye);
@@ -281,11 +291,9 @@ export const eyeInLevelVolume = (
 	base: EnvironmentProfile,
 	target: Vec3,
 	eye: Vec3,
-	options: { clear?: (point: Vec3) => boolean; enabled?: BlendOptions['enabled'] },
+	options: { clear?: (point: Vec3) => boolean } & Pick<BlendOptions, 'enabled' | 'loaded'>,
 ): Vec3 | null => {
-	const applicable = manifest.environmentVolumes.filter((volume, id) =>
-		volumeApplies(volume, id, options.enabled),
-	);
+	const applicable = manifest.environmentVolumes.filter((volume, id) => volumeApplies(volume, id, options));
 	const own = applicable.find(
 		(volume) =>
 			(volume.level === level || volume.level === 0) &&
@@ -318,6 +326,41 @@ export const eyeInLevelVolume = (
 // #endregion
 
 // #region shapes
+
+/**
+ * @param volume an environment volume
+ * @param rect a world x, z rectangle
+ * @returns whether the volume's footprint may reach into the rectangle (boxes are bounded by their rotated
+ *   extents' circle, so this can be true just outside a box's corners)
+ */
+export const volumeReaches = (volume: EnvironmentVolumeInfo, rect: Rect): boolean => {
+	const { shape } = volume;
+	switch (shape.kind) {
+		case 'global': {
+			return true;
+		}
+		case 'box': {
+			const radius = Math.hypot(shape.scale[0], shape.scale[1], shape.scale[2]) / 2;
+			const [x, , z] = shape.position;
+			return (
+				x + radius >= rect.minX &&
+				x - radius <= rect.maxX &&
+				z + radius >= rect.minZ &&
+				z - radius <= rect.maxZ
+			);
+		}
+		case 'prism': {
+			const xs = shape.points.map(([x]) => x);
+			const zs = shape.points.map(([, z]) => z);
+			return (
+				Math.max(...xs) >= rect.minX &&
+				Math.min(...xs) <= rect.maxX &&
+				Math.max(...zs) >= rect.minZ &&
+				Math.min(...zs) <= rect.maxZ
+			);
+		}
+	}
+};
 
 /** @returns how far inside the shape the point is (m), or ≤ 0 outside */
 const distanceInside = (shape: EnvironmentVolumeShape, [x, y, z]: Vec3): number => {

@@ -73,12 +73,12 @@ test('selected levels pick resource groups; entities without a controller use lo
 });
 
 test('area selections resolve to chunk files of state 0 plus the chosen areas', () => {
-	const file = (state: number, scene = 'map02'): ChunkFile => ({
-		name: `Data/Streaming/PC/${scene}/Streaming/InitChunkData_0_0_0_${state}.bytes`,
+	const file = (area: number, scene = 'map02'): ChunkFile => ({
+		name: `Data/Streaming/PC/${scene}/Streaming/InitChunkData_0_0_0_${area}.bytes`,
 		scene,
 		cell: { x: 0, z: 0 },
-		layer: 0,
-		state,
+		sceneState: 0,
+		area,
 	});
 	const files = [file(0), file(5), file(6), file(7), file(5, 'map01')];
 	const table: StreamAreaTable = {
@@ -102,9 +102,7 @@ test('area selections resolve to chunk files of state 0 plus the chosen areas', 
 		progressions: [],
 	};
 	const loaded = (areas: 'all' | 'root' | number[]) =>
-		resolveChunkFiles(files, 'map02', selectedAreas(states, table, { areas, levels: {} })).map(
-			(f) => f.state,
-		);
+		resolveChunkFiles(files, 'map02', selectedAreas(states, table, { areas, levels: {} })).map((f) => f.area);
 	assert.deepEqual(loaded('all'), [0, 5, 6, 7]);
 	assert.deepEqual(loaded('root'), [0, 5]);
 	assert.deepEqual(loaded([7]), [0, 7]);

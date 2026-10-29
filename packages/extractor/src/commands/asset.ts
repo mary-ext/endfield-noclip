@@ -32,7 +32,7 @@ const USAGE = `usage:
   asset material <bundle> --path-id=N                 material record, classification and its textures
   asset entity <map> <x> <z> <index|id> [-o file.glb] [--lod n]
                                                       follows an entity's draws to decoded summaries
-  asset cell <map> <x> <z> -o file.glb [--lod n] [--layer n] [--state n]
+  asset cell <map> <x> <z> -o file.glb [--lod n] [--scene-state n] [--area n]
                                                       exports every entity's draws of one LOD as glTF
 
 <bundle> is a bundle hex id, main/<hex>.ab or initial/<hex>.ab. glTF output mirrors Unity's X axis and uses
@@ -44,8 +44,8 @@ const OPTIONS = {
 	output: { type: 'string', short: 'o' },
 	zstd: { type: 'string' },
 	lod: { type: 'string', default: '0' },
-	layer: { type: 'string' },
-	state: { type: 'string' },
+	'scene-state': { type: 'string' },
+	area: { type: 'string' },
 } as const;
 
 export const run = async (args: string[]): Promise<void> => {
@@ -129,8 +129,8 @@ export const run = async (args: string[]): Promise<void> => {
 					throw new Error(USAGE);
 				}
 				const entities = await cellEntities(world, map, x, z, {
-					layer: parseOptionalInteger(values.layer, '--layer'),
-					state: parseOptionalInteger(values.state, '--state'),
+					sceneState: parseOptionalInteger(values['scene-state'], '--scene-state'),
+					area: parseOptionalInteger(values.area, '--area'),
 				});
 				const scene = newScene();
 				const failures = new Map<string, number>();
@@ -277,7 +277,7 @@ const cellEntities = async (
 	map: string,
 	xArg: string,
 	zArg: string,
-	filter: { layer?: number; state?: number },
+	filter: { sceneState?: number; area?: number },
 ): Promise<IndexedEntity[]> => {
 	const x = parseInteger(xArg, 'cell x');
 	const z = parseInteger(zArg, 'cell z');

@@ -82,6 +82,12 @@ import type { Context } from '../context.ts';
 import { loadDynamicStructures } from '../game/dynamic-structures.ts';
 import { loadInteractiveFacilities } from '../game/interactive-facilities.ts';
 import { readPrefabRenderers, type PrefabRenderer } from '../game/prefab.ts';
+import {
+	defaultSceneStates,
+	loadSceneStateControls,
+	sceneStateControl,
+	unnamedSceneStateControl,
+} from '../game/scene-conditions.ts';
 import { loadProgressions, progressionId } from '../game/scene-states.ts';
 import { indexTerrain, loadTerrainSurface, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
@@ -102,13 +108,18 @@ import { BlobStore, type PutOptions } from './blob-store.ts';
 import { aabbBounds, growBounds, squareOverlapsRect } from './bounds.ts';
 import { ChainTable } from './chains.ts';
 import { ConvertPool } from './convert-pool.ts';
-import { finishEnvironments, type LevelEnvironmentDebug, planEnvironments } from './environments.ts';
+import {
+	type EnvironmentPlan,
+	finishEnvironments,
+	type LevelEnvironmentDebug,
+	planEnvironments,
+} from './environments.ts';
 import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
 import { type IrradianceReport, packIrradiance } from './irradiance.ts';
 import { type CacheReport, PackCache } from './pack-cache.ts';
 import { PhaseTimer } from './phase-timer.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
-import { finishWater, planWater, type WaterDebug } from './water.ts';
+import { finishWater, planWater, type WaterDebug, type WaterPlan } from './water.ts';
 
 // #region options and report
 
@@ -246,7 +257,12 @@ export const packScene = async (
 
 		// independent; only water interns geometries, so ids stay deterministic
 		const [environments, water] = await Promise.all([
-			planEnvironments(context, options.scene, scene.partition?.levels ?? []),
+			planEnvironments(
+				context,
+				options.scene,
+				scene.partition?.levels ?? [],
+				defaultSceneStates(scene.sceneStates),
+			),
 			planWater(context, options.scene, {
 				includes: (tag, x, z) => scene.subset.includesEntity(tag, x, z),
 				subset: scene.subset.info !== null,
@@ -261,6 +277,7 @@ export const packScene = async (
 			}),
 		]);
 		timer.end('environments and water');
+		gateByScene(entities.collected, scene.sceneStates, environments, water);
 
 		const irradiance = await packIrradiance(context.vfs, store, {
 			scene: options.scene,
@@ -437,6 +454,8 @@ interface SceneIndex {
 	subset: Subset;
 	/** the scene's chunk files in processing order; debug rows index into it */
 	files: ChunkFile[];
+	/** one control per MapConfig scene state, with its story-completed default */
+	sceneStates: SceneToggleInfo[];
 	pathOf: (hash: bigint) => string | undefined;
 	source: PackageManifest['source'];
 }
@@ -460,15 +479,17 @@ const indexScene = async (
 	options: PackOptions,
 ): Promise<SceneIndex> => {
 	const { world } = context;
-	const [pathOf, bundleManifest, names, partition, terrainIndex, surface, chunkFiles] = await Promise.all([
-		world.pathLookup(),
-		world.manifest(),
-		world.names(),
-		world.partition(options.scene),
-		indexTerrain(context.vfs),
-		loadTerrainSurface(context, options.scene),
-		world.chunkFiles(),
-	]);
+	const [pathOf, bundleManifest, names, partition, terrainIndex, surface, chunkFiles, sceneStates] =
+		await Promise.all([
+			world.pathLookup(),
+			world.manifest(),
+			world.names(),
+			world.partition(options.scene),
+			indexTerrain(context.vfs),
+			loadTerrainSurface(context, options.scene),
+			world.chunkFiles(),
+			loadSceneStateControls(world, options.scene),
+		]);
 	const terrainScene = terrainIndex.get(options.scene);
 	if (terrainScene !== undefined && surface === undefined) {
 		throw new Error(`${options.scene} has terrain tiles but no HGTerrainSurfacesData`);
@@ -494,8 +515,15 @@ const indexScene = async (
 		subset: buildSubset(options, partition, grid),
 		files: chunkFiles
 			.filter((file) => file.scene === options.scene)
-			// base-state files first, then stream areas: a fixed order for the first-wins dedupe
-			.toSorted((a, b) => Number(a.state !== 0) - Number(b.state !== 0) || (a.name < b.name ? -1 : 1)),
+			// always-loaded files first, then scene states; the default area before stream areas: a fixed order
+			// for the first-wins dedupe, in which an entity of an always-loaded file stays unconditional
+			.toSorted(
+				(a, b) =>
+					Number(a.sceneState !== 0) - Number(b.sceneState !== 0) ||
+					Number(a.area !== 0) - Number(b.area !== 0) ||
+					(a.name < b.name ? -1 : 1),
+			),
+		sceneStates,
 		pathOf,
 		source: { buildGuid: bundleManifest.guid, contentHash: bundleManifest.contentHash },
 	};
@@ -527,6 +555,12 @@ const collectEntities = async (
 	};
 	// stream areas share some entities, and a level is drawn with all of its areas, so one copy is enough
 	const seen = new Set<number>();
+	// rows of scene-state files, by entity id, with the state ids of every file holding them; added as
+	// conditional instances once all files are read
+	const stateRows = new Map<
+		number,
+		{ row: InstanceInput; tag: number; name: string; file: number; states: Set<number> }
+	>();
 	/** per geometry id: whether its path names a card mesh */
 	const cards: boolean[] = [];
 	let hlodNameMatches = 0;
@@ -566,6 +600,7 @@ const collectEntities = async (
 			for (const entity of entities) {
 				counts.read++;
 				if (seen.has(entity.id)) {
+					stateRows.get(entity.id)?.states.add(file.sceneState);
 					continue;
 				}
 				seen.add(entity.id);
@@ -600,10 +635,19 @@ const collectEntities = async (
 					matrix: entity.matrix,
 					bounds,
 					entityId: entity.id,
-					layer: file.layer,
+					sceneState: file.sceneState,
 				};
 
-				if (hlod !== null) {
+				// HLOD clusters only occur in always-loaded files; scene-state content streams as detail
+				if (file.sceneState !== 0) {
+					stateRows.set(entity.id, {
+						row,
+						tag: entity.levelTag,
+						name: entity.name,
+						file: fileIndex,
+						states: new Set([file.sceneState]),
+					});
+				} else if (hlod !== null) {
 					const tier = Number(hlod[1]);
 					const key = { level: grid.hlodLevels[tier], x: Number(hlod[2]), z: Number(hlod[3]) };
 					const at = tileAt(grid, key.level, x, z);
@@ -624,12 +668,28 @@ const collectEntities = async (
 			}
 		},
 	);
+	counts.sceneStateRenderers = stateRows.size;
+	for (const { row, tag, name, file, states } of stateRows.values()) {
+		const key = tileAt(grid, grid.leafLevel, row.bounds.center[0], row.bounds.center[2]);
+		collected.addConditional(
+			tag,
+			key,
+			row,
+			name,
+			collected.stateVisibility([...states].map((id) => id - 1)),
+			file,
+		);
+		pack.uses.note(row.chain, key);
+	}
 	const dynamic = await loadDynamicStructures(context, scene.options.scene, scene.partition);
 	for (const [key, count] of Object.entries(dynamic.counts)) {
 		counts[`dynamic_${key}`] = count;
 	}
 	counts.dynamicRenderers = 0;
 	collected.toggles = dynamic.toggles;
+	for (const index of dynamic.sceneStates) {
+		collected.sceneStates.add(index);
+	}
 	const addStructure = (
 		row: InstanceInput,
 		tag: number,
@@ -638,7 +698,7 @@ const collectEntities = async (
 	): void => {
 		const [x, , z] = row.bounds.center;
 		const key = tileAt(grid, grid.leafLevel, x, z);
-		collected.addConditional(tag, key, row, name, visibility);
+		collected.addConditional(tag, key, row, name, visibility, -1);
 		collected.noteOwner(tag, row.bounds);
 		pack.uses.note(row.chain, key);
 		counts.dynamicRenderers++;
@@ -667,7 +727,7 @@ const collectEntities = async (
 				matrix: entity.matrix,
 				bounds: entity.bounds,
 				entityId: entity.id,
-				layer: 0,
+				sceneState: 0,
 			},
 			entity.levelTag,
 			entity.name,
@@ -761,7 +821,7 @@ const collectEntities = async (
 					matrix,
 					bounds,
 					entityId: syntheticEntityId(levelTag, modelId++),
-					layer: 0,
+					sceneState: 0,
 				},
 				levelTag,
 				renderer.name,
@@ -777,6 +837,38 @@ const collectEntities = async (
 		unsupportedInteractives: facilities.unsupported,
 		unsupportedPrefabs,
 	};
+};
+
+/**
+ * gives environment volumes and water surfaces of scene-state files their conditions, and puts the scene
+ * state controls (one per MapConfig state, plus any state an expression requires that the MapConfig doesn't
+ * name) ahead of the other toggles
+ *
+ * @param collected the entity pass's collector; its conditions and toggles are extended
+ * @param controls the MapConfig scene state controls
+ * @param environments planned environments; volume conditions are filled in
+ * @param water planned water; surface conditions are filled in
+ */
+const gateByScene = (
+	collected: Collector,
+	controls: readonly SceneToggleInfo[],
+	environments: EnvironmentPlan,
+	water: WaterPlan,
+): void => {
+	const conditionOf = (states: readonly number[]): number | null =>
+		states.length === 0 ? null : collected.condition(collected.stateVisibility(states));
+	for (const [i, volume] of environments.volumes.entries()) {
+		volume.condition = conditionOf(environments.volumeStates[i]);
+	}
+	for (const [i, surface] of water.table.surfaces.entries()) {
+		surface.condition = conditionOf(water.surfaceStates[i]);
+	}
+	const named = new Set(controls.map((control) => control.id));
+	const unnamed = [...collected.sceneStates]
+		.filter((index) => !named.has(sceneStateControl(index)))
+		.toSorted((a, b) => a - b)
+		.map(unnamedSceneStateControl);
+	collected.toggles = [...controls, ...unnamed, ...collected.toggles];
 };
 
 /** the top of the 27-bit per-level id space, for ids the game doesn't assign */
@@ -1269,7 +1361,20 @@ class Collector {
 	readonly conditions: ConditionalSetInfo[] = [];
 	toggles: SceneToggleInfo[] = [];
 	facilities: ProgressionInfo[] = [];
+	/** MapConfig scene state indices some visibility expression requires */
+	readonly sceneStates = new Set<number>();
 	readonly #conditionIds = new Map<string, number>();
+
+	/**
+	 * @param indices MapConfig scene state indices
+	 * @returns visibility while any of them is active
+	 */
+	stateVisibility(indices: readonly number[]): ConditionalSetInfo {
+		for (const index of indices) {
+			this.sceneStates.add(index);
+		}
+		return { alternatives: indices.map((index) => [{ control: sceneStateControl(index), mask: 2 }]) };
+	}
 
 	addConditional(
 		level: number,
@@ -1277,7 +1382,24 @@ class Collector {
 		row: InstanceInput,
 		name: string,
 		visibility: ConditionalSetInfo,
+		file: number,
 	): void {
+		const condition = this.condition(visibility);
+		const id = `${tileId(key)}/${level}/${condition}`;
+		let group = this.detail.get(id);
+		if (!group) {
+			group = { ...newGroup(), key, level, condition };
+			this.detail.set(id, group);
+		}
+		push(group, row, 0, name, file);
+		this.#countInstance(level);
+	}
+
+	/**
+	 * @param visibility a visibility expression
+	 * @returns its index in {@link conditions}, shared by equivalent expressions
+	 */
+	condition(visibility: ConditionalSetInfo): number {
 		// canonical order at both levels, so equivalent expressions share one set
 		const alternatives = [
 			...new Map(
@@ -1296,14 +1418,7 @@ class Collector {
 			this.conditions.push({ alternatives });
 			this.#conditionIds.set(serialized, condition);
 		}
-		const id = `${tileId(key)}/${level}/${condition}`;
-		let group = this.detail.get(id);
-		if (!group) {
-			group = { ...newGroup(), key, level, condition };
-			this.detail.set(id, group);
-		}
-		push(group, row, 0, name, -1);
-		this.#countInstance(level);
+		return condition;
 	}
 
 	addHlod(level: number, tier: number, key: TileKey, row: InstanceInput, name: string, file: number): void {

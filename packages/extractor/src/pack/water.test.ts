@@ -68,6 +68,7 @@ describe('finishWater', () => {
 			surfaces: [],
 		};
 		const plan: WaterPlan = {
+			surfaceStates: [],
 			table,
 			textures: [],
 			debug: {
@@ -101,6 +102,7 @@ describe('finishWater', () => {
 
 	it('passes a table without global water through', () => {
 		const plan: WaterPlan = {
+			surfaceStates: [],
 			table: { global: null, configs: [], surfaces: [] },
 			textures: [],
 			debug: {

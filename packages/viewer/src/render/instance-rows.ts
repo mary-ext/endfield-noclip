@@ -90,7 +90,7 @@ export const buildInstanceRows = (block: InstanceBlock, kinds: RowKinds): Instan
 		f32[at + 16] = ex;
 		f32[at + 17] = ey;
 		f32[at + 18] = ez;
-		rows[at + 19] = entityTag(block.entityIds[i]) | (rowKinds[i] << 8) | (block.layers[i] << 16);
+		rows[at + 19] = entityTag(block.entityIds[i]) | (rowKinds[i] << 8) | (block.sceneStates[i] << 16);
 		// from the f32-rounded extents, as the GPU sees them
 		const fx = f32[at + 16];
 		const fy = f32[at + 17];

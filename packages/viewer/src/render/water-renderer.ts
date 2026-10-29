@@ -155,6 +155,16 @@ export class WaterRenderer {
 		this.#device.queue.writeBuffer(this.#configs, 0, data);
 	}
 
+	#conditions: readonly boolean[] = [];
+
+	/**
+	 * @param results per conditional set of the package, whether the selected scene values satisfy it; surfaces
+	 *   whose condition is unsatisfied aren't drawn
+	 */
+	setConditions(results: readonly boolean[]): void {
+		this.#conditions = results;
+	}
+
 	/** draws nothing until the next {@link prepare} */
 	clear(): void {
 		this.#draws.length = 0;
@@ -185,6 +195,9 @@ export class WaterRenderer {
 		for (const surface of table.surfaces) {
 			// level 0 surfaces belong to no level and show with every one
 			if (level !== null && surface.level !== level && surface.level !== 0) {
+				continue;
+			}
+			if (surface.condition !== null && !this.#conditions[surface.condition]) {
 				continue;
 			}
 			const entry = geometries[surface.geometry];

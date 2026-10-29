@@ -77,7 +77,10 @@ export interface EnvironmentPlan {
 	profiles: PendingProfile[];
 	/** every phase a volume applies, uncomposed */
 	phases: PendingPhase[];
+	/** owned; `condition` is `null` until the packer interns {@link volumeStates} */
 	volumes: EnvironmentVolumeInfo[];
+	/** per volume: the MapConfig scene state indices that load it, empty if always loaded */
+	volumeStates: number[][];
 	/** textures the profiles and phases reference; slots index this list */
 	textures: ObjectRef[];
 	debug: LevelEnvironmentDebug[];
@@ -115,18 +118,22 @@ export interface FinishedEnvironments {
  * @param context world index and asset resolver
  * @param scene streaming scene
  * @param levels the scene's levels
+ * @param enabled MapConfig scene state indices active by default; level base environments are chosen among
+ *   the volumes they load
  * @returns the deduplicated profiles, per-level indices and the textures to convert
  */
 export const planEnvironments = async (
 	context: Pick<Context, 'world' | 'resolver'>,
 	scene: string,
 	levels: readonly PartitionLevel[],
+	enabled: ReadonlySet<number>,
 ): Promise<EnvironmentPlan> => {
 	const plan: EnvironmentPlan = {
 		levels: [],
 		profiles: [],
 		phases: [],
 		volumes: [],
+		volumeStates: [],
 		textures: [],
 		debug: [],
 	};
@@ -148,8 +155,8 @@ export const planEnvironments = async (
 		getOrInsert(postLoads, hash, () => loadVolumeProfile(resolver, hash, pathOf));
 	const loaded = await Promise.all(
 		levels.map(async (level) => {
-			const choice = resolveLevelEnvironment(level, volumes);
-			const profile = resolveLevelPost(level, volumes)?.profile ?? null;
+			const choice = resolveLevelEnvironment(level, volumes, enabled);
+			const profile = resolveLevelPost(level, volumes, enabled)?.profile ?? null;
 			try {
 				const phases = await loadLevelPhases(choice, phase);
 				// the post profile is only used with a phase
@@ -222,7 +229,7 @@ export const planEnvironments = async (
 		}),
 	);
 	const phaseIndex = new Map<string, number>();
-	for (const [i, { tag, volume }] of volumes.environment.entries()) {
+	for (const [i, { tag, sceneStates, volume }] of volumes.environment.entries()) {
 		const shape = volumeShape(volume);
 		if (shape === null) {
 			continue;
@@ -244,8 +251,10 @@ export const planEnvironments = async (
 			fadeInDuration: volume.fadeInDuration,
 			fadeOutDuration: volume.fadeOutDuration,
 			phase: index,
+			condition: null,
 			activation: 'unknown',
 		});
+		plan.volumeStates.push(sceneStates);
 	}
 	return plan;
 };

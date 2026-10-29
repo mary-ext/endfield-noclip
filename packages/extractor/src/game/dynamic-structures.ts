@@ -22,6 +22,7 @@ import type {
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';
 
+import { sceneStateControl } from './scene-conditions.ts';
 import { controllerKey, progressionId } from './scene-states.ts';
 
 /** a prefab placement and its owning level */
@@ -36,6 +37,8 @@ export interface StructureModel {
 export interface DynamicStructures {
 	entities: { entity: ChunkEntity; visibility: ConditionalSetInfo }[];
 	toggles: SceneToggleInfo[];
+	/** MapConfig scene state indices the visibility expressions require, as `sceneStateControl` controls */
+	sceneStates: Set<number>;
 	models: StructureModel[];
 	/** selections and exclusions, for the pack report */
 	counts: Record<string, number>;
@@ -84,6 +87,7 @@ export const loadDynamicStructures = async (
 		entities: [],
 		models: [],
 		toggles: [],
+		sceneStates: new Set(),
 		counts: { owners: owners.length, ecsGroups: 0, models: 0, effects: 0 },
 	};
 	const toggles = new Map<string, SceneToggleInfo>();
@@ -95,7 +99,7 @@ export const loadDynamicStructures = async (
 		if (current) {
 			current.levels = [...new Set([...current.levels, ...tags])];
 		} else {
-			toggles.set(id, { id, name: id, kind, levels: tags, defaultEnabled: enabled });
+			toggles.set(id, { id, name: id, kind, levels: tags, defaultEnabled: enabled, condition: null });
 		}
 	};
 	for (const owner of owners) {
@@ -116,14 +120,13 @@ export const loadDynamicStructures = async (
 				addToggle(scriptId, 'script', owner.scriptDefaultLoad, [tag]);
 				requirements.push({ control: scriptId, mask: 2 });
 			}
-			// the complete scene-state expression is not recovered; preserve each authored gate as one manual override.
-			for (const states of [owner.states, owner.groupStates[i]]) {
-				if (states.length === 0) {
-					continue;
+			// visible-state lists hold MapConfig scene state indices; the entity and the group each need one of
+			// theirs active
+			const stateLists = [owner.states, owner.groupStates[i]].filter((states) => states.length > 0);
+			for (const states of stateLists) {
+				for (const index of states) {
+					result.sceneStates.add(index);
 				}
-				const id = `state:${states.join(',')}`;
-				addToggle(id, 'state', false, [tag]);
-				requirements.push({ control: id, mask: 2 });
 			}
 			if (group.logicState !== 0) {
 				if (controller) {
@@ -137,6 +140,13 @@ export const loadDynamicStructures = async (
 					requirements.push({ control: id, mask: 2 });
 				}
 			}
+			const alternatives = stateLists.reduce<SceneRequirement[][]>(
+				(partial, states) =>
+					partial.flatMap((chosen) =>
+						states.map((index) => [...chosen, { control: sceneStateControl(index), mask: 2 }]),
+					),
+				[requirements],
+			);
 			const grid = grids.get(ref.grid);
 			if (!grid) {
 				throw new FormatError(`missing dynamic grid ${ref.grid}`);
@@ -147,13 +157,13 @@ export const loadDynamicStructures = async (
 						const key = `${ref.grid}/${ref.index + index}`;
 						const current = models.get(key);
 						if (current) {
-							current.visibility.alternatives.push(requirements);
+							current.visibility.alternatives.push(...alternatives);
 						} else {
 							models.set(key, {
 								model,
 								levelTag: tag,
 								source: key,
-								visibility: { alternatives: [requirements] },
+								visibility: { alternatives: [...alternatives] },
 							});
 						}
 					}
@@ -164,7 +174,7 @@ export const loadDynamicStructures = async (
 						const key = `${ecs.sceneIndex.toString().padStart(2, '0')}_${ecs.chunk.toString().padStart(8, '0')}`;
 						const indices = chunks.get(key) ?? new Map<number, ConditionalSetInfo>();
 						const visibility = indices.get(ecs.index) ?? { alternatives: [] };
-						visibility.alternatives.push(requirements);
+						visibility.alternatives.push(...alternatives);
 						indices.set(ecs.index, visibility);
 						chunks.set(key, indices);
 					}

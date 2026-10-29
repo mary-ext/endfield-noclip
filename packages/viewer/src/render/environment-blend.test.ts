@@ -9,7 +9,9 @@ import type {
 	PackageManifest,
 } from '@endfield-noclip/package-format/format';
 
-import { blendEnvironment, EnvironmentFades, eyeInLevelVolume } from './environment-blend.ts';
+import type { Vec3 } from '../scene/camera.ts';
+
+import { blendEnvironment, EnvironmentFades, eyeInLevelVolume, volumeReaches } from './environment-blend.ts';
 
 // only the fields the blend reads; sections are opaque records to it
 const profile = (density: number): EnvironmentProfile =>
@@ -38,6 +40,7 @@ const volume = (patch: Partial<EnvironmentVolumeInfo>): EnvironmentVolumeInfo =>
 	fadeInDuration: 0,
 	fadeOutDuration: 0,
 	phase: 0,
+	condition: null,
 	activation: 'unknown',
 	...patch,
 });
@@ -93,6 +96,31 @@ describe('environment blend', () => {
 			const m = manifest([phase(name, 9)], [volume({ name, activation: 'unknown' })]);
 			assert.equal(density(blendEnvironment(m, profile(0), [0, 0, 0], options)), 9);
 		}
+	});
+
+	it('skips volumes whose scene states are off, unless previewed by hand', () => {
+		const m = manifest([phase('night', 5)], [volume({ condition: 0, blendMode: 0 })]);
+		const at: Vec3 = [0, 0, 0];
+		assert.equal(density(blendEnvironment(m, profile(0), at, { ...options, loaded: [false] })), 0);
+		assert.equal(density(blendEnvironment(m, profile(0), at, { ...options, loaded: [true] })), 5);
+		assert.equal(
+			density(blendEnvironment(m, profile(0), at, { ...options, loaded: [false], enabled: { 0: true } })),
+			5,
+		);
+	});
+
+	it('reaches a level by footprint, whichever level owns the volume', () => {
+		const rect = { minX: 50, minZ: 50, maxX: 200, maxZ: 200 };
+		assert.equal(volumeReaches(volume({ shape: square }), rect), true);
+		assert.equal(volumeReaches(volume({ shape: square }), { ...rect, minX: 150 }), false);
+		assert.equal(volumeReaches(volume({}), rect), true);
+		const box: EnvironmentVolumeShape = {
+			kind: 'box',
+			position: [300, 0, 100],
+			rotation: [0, 0, 0],
+			scale: [10, 10, 10],
+		};
+		assert.equal(volumeReaches(volume({ shape: box }), rect), false);
 	});
 
 	it('pins one phase instead of the volumes', () => {

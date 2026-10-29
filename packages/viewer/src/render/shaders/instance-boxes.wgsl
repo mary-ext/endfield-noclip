@@ -9,7 +9,7 @@ struct Row {
 	centre: vec3f,
 	block: u32,
 	extent: vec3f,
-	// tag | kind << 8 | layer << 16
+	// tag | kind << 8 | scene state << 16
 	info: u32,
 }
 

@@ -48,10 +48,13 @@ export interface ChunkFile {
 	scene: string;
 	/** cell coordinate; `null` for the Global chunk */
 	cell: { x: number; z: number } | null;
-	/** StreamingLayer; 0 holds most scenery */
-	layer: number;
-	/** scene state id; 0 is the default state */
-	state: number;
+	/**
+	 * scene state id: 0 is always loaded, `n` only while MapConfig scene state `n − 1` is active
+	 * (`BaseGameScene.FlushStreamingSceneState`)
+	 */
+	sceneState: number;
+	/** stream area id; 0 is the default area */
+	area: number;
 }
 
 /** an entity read from a chunk, with its membership */
@@ -240,13 +243,13 @@ export class WorldIndex {
 			for (const name of (await this.vfs.group(VfsGroup.Streaming)).files.keys()) {
 				const match = CHUNK_PATTERN.exec(name);
 				if (match) {
-					const [, scene, x, z, layer, state] = match;
+					const [, scene, x, z, sceneState, area] = match;
 					files.push({
 						name,
 						scene,
 						cell: x === undefined ? null : { x: Number(x), z: Number(z) },
-						layer: Number(layer),
-						state: Number(state),
+						sceneState: Number(sceneState),
+						area: Number(area),
 					});
 				}
 			}
@@ -258,20 +261,20 @@ export class WorldIndex {
 	/**
 	 * @param scene streaming scene
 	 * @param cell a cell coordinate, or `'global'` for the Global chunks
-	 * @param filter optional StreamingLayer and scene state to keep
+	 * @param filter optional scene state and stream area to keep
 	 * @returns the cell's chunk files, in name order
 	 */
 	async cellChunkFiles(
 		scene: string,
 		cell: { x: number; z: number } | 'global',
-		filter: { layer?: number; state?: number },
+		filter: { sceneState?: number; area?: number },
 	): Promise<ChunkFile[]> {
 		return (await this.chunkFiles()).filter(
 			(file) =>
 				file.scene === scene &&
 				(cell === 'global' ? file.cell === null : file.cell?.x === cell.x && file.cell.z === cell.z) &&
-				(filter.layer === undefined || file.layer === filter.layer) &&
-				(filter.state === undefined || file.state === filter.state),
+				(filter.sceneState === undefined || file.sceneState === filter.sceneState) &&
+				(filter.area === undefined || file.area === filter.area),
 		);
 	}
 

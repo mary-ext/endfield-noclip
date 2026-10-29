@@ -606,7 +606,7 @@ export class Viewer {
 	#blendEnvironment(force: boolean, dt: number): void {
 		const options = this.options;
 		const eye = this.camera.position;
-		const settings = `${options.environmentVolumes}|${options.environmentPin}|${JSON.stringify(options.environmentEnabled)}`;
+		const settings = `${options.environmentVolumes}|${options.environmentPin}|${JSON.stringify(options.environmentEnabled)}|${this.#conditionResults.join()}`;
 		const last = this.#blendEye;
 		if (
 			!force &&
@@ -634,7 +634,11 @@ export class Viewer {
 				manifest,
 				base,
 				eye,
-				{ pinnedPhase: options.environmentPin, enabled: options.environmentEnabled },
+				{
+					pinnedPhase: options.environmentPin,
+					enabled: options.environmentEnabled,
+					loaded: this.#conditionResults,
+				},
 				{ fades: this.#fades, dt },
 			);
 			profile = blended.profile;
@@ -800,6 +804,7 @@ export class Viewer {
 			const yaw = (i / VIEW_HEADINGS) * 2 * Math.PI;
 			const position = eyeInLevelVolume(manifest, level.tag, base, target, fromHeading(yaw), {
 				enabled: this.options.environmentEnabled,
+				loaded: this.#conditionResults,
 				// over the treetops and the cell's tallest scenery (Yinglung's chasm walls are meshes). holes in
 				// the terrain aren't clear; terrain that isn't resident yet is
 				clear: ([x, y, z]) => {
@@ -941,15 +946,24 @@ export class Viewer {
 		this.#emitState();
 	}
 
+	/** per conditional set of the loaded package, whether the selected scene values satisfy it */
+	#conditionResults: boolean[] = [];
+
+	/** @returns per conditional set of the loaded package, whether the selected scene values satisfy it */
+	get conditionResults(): readonly boolean[] {
+		return this.#conditionResults;
+	}
+
 	#updateConditions(): void {
 		const scene = this.scene;
+		this.#conditionResults =
+			scene?.pkg.manifest.states.conditionalSets.map((condition) =>
+				conditionVisible(condition, this.#sceneValues),
+			) ?? [];
 		if (scene) {
-			scene.selector.setConditions(
-				scene.pkg.manifest.states.conditionalSets.map((condition) =>
-					conditionVisible(condition, this.#sceneValues),
-				),
-			);
+			scene.selector.setConditions(this.#conditionResults);
 		}
+		this.#water.setConditions(this.#conditionResults);
 		this.#dirty = true;
 	}
 

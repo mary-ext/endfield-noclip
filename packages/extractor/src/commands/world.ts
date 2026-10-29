@@ -26,6 +26,7 @@ import {
 	resolveLevelEnvironment,
 	resolveLevelPost,
 } from '../game/environment.ts';
+import { defaultSceneStates, loadSceneStateControls } from '../game/scene-conditions.ts';
 import type { IndexedEntity, WorldIndex } from '../game/world-index.ts';
 
 export const summary =
@@ -35,7 +36,7 @@ const USAGE = `usage:
   world maps                               streaming scenes, with level counts for open-world maps
   world levels <map> [--verify]            levels with tag, cells and names; --verify votes tags against cells
   world cells <level>                      cells a level owns and their chunk files
-  world entities <map> <x> <z> [--json]    entities in one cell's chunks (or 'global'); --layer/--state filter
+  world entities <map> <x> <z> [--json]    entities in one cell's chunks (or 'global'); --scene-state/--area filter
   world members <level> [--json]           every entity the level owns, bucketed by placement
   world env <map|level>                    base environment per level (a map lists all), and why
   world resolve <path|hash>                path ↔ hash, then asset → bundle + dependencies`;
@@ -44,8 +45,8 @@ const OPTIONS = {
 	config: { type: 'string' },
 	json: { type: 'boolean', default: false },
 	verify: { type: 'boolean', default: false },
-	layer: { type: 'string' },
-	state: { type: 'string' },
+	'scene-state': { type: 'string' },
+	area: { type: 'string' },
 } as const;
 
 export const run = async (args: string[]): Promise<void> => {
@@ -74,8 +75,8 @@ export const run = async (args: string[]): Promise<void> => {
 			case 'entities': {
 				await listEntities(world, need(rest[0], 'map'), need(rest[1], 'x'), rest[2], {
 					json: values.json,
-					layer: parseOptionalInteger(values.layer, '--layer'),
-					state: parseOptionalInteger(values.state, '--state'),
+					sceneState: parseOptionalInteger(values['scene-state'], '--scene-state'),
+					area: parseOptionalInteger(values.area, '--area'),
 				});
 				break;
 			}
@@ -148,9 +149,12 @@ const listLevels = async (world: WorldIndex, mapId: string, verify: boolean): Pr
 	}
 
 	if (verify) {
-		// tag votes over layer-0 default-state scenery: which level's cells hold each tag's pivots
+		// tag votes over always-loaded (scene state 0) scenery: which level's cells hold each tag's pivots
 		const samples: { tag: number; x: number; z: number }[] = [];
-		for await (const entity of world.sceneEntities(mapId, (file) => file.cell !== null && file.layer === 0)) {
+		for await (const entity of world.sceneEntities(
+			mapId,
+			(file) => file.cell !== null && file.sceneState === 0,
+		)) {
 			if (entity.pivot !== null) {
 				samples.push({ tag: entity.id >>> 27, x: entity.pivot.x, z: entity.pivot.z });
 			}
@@ -186,14 +190,14 @@ const listCells = async (world: WorldIndex, levelId: string): Promise<void> => {
 			const key = cellKey(file.cell.x, file.cell.z);
 			if (level.cells.has(key)) {
 				const list = byCell.get(key) ?? [];
-				list.push(`${file.layer}/${file.state}`);
+				list.push(`${file.sceneState}/${file.area}`);
 				byCell.set(key, list);
 			}
 		}
 	}
 	const cells = (level.config.levelGrids ?? []).toSorted((a, b) => a.z - b.z || a.x - b.x);
 	console.log(`${level.id} (tag ${level.tag}): ${cells.length} cells`);
-	console.log('   x    z   world x,z min        chunk files (layer/state)');
+	console.log('   x    z   world x,z min        chunk files (scene state/area)');
 	for (const cell of cells) {
 		const files = byCell.get(cellKey(cell.x, cell.z)) ?? [];
 		const origin = `${cell.x * CELL_SIZE},${cell.z * CELL_SIZE}`;
@@ -208,7 +212,7 @@ const listEntities = async (
 	mapId: string,
 	xArg: string,
 	zArg: string | undefined,
-	options: { json: boolean; layer: number | undefined; state: number | undefined },
+	options: { json: boolean; sceneState: number | undefined; area: number | undefined },
 ): Promise<void> => {
 	const cell =
 		xArg === 'global' ? 'global' : { x: parseInteger(xArg, 'cell x'), z: parseInteger(zArg ?? '', 'cell z') };
@@ -277,12 +281,27 @@ const showEnvironment = async (context: Context, target: string): Promise<void> 
 		scene = found.partition;
 		levels = [found.level];
 	}
-	const [volumes, pathOf, names, resolver] = await Promise.all([
+	const [volumes, pathOf, names, resolver, controls] = await Promise.all([
 		loadSceneVolumes(world, scene.mapId),
 		world.pathLookup(),
 		world.names(),
 		context.resolver(),
+		loadSceneStateControls(world, scene.mapId),
 	]);
+	const enabled = defaultSceneStates(controls);
+	console.log(
+		`scene states (default: ${
+			controls
+				.filter((c) => c.defaultEnabled)
+				.map((c) => c.name)
+				.join(', ') || 'none'
+		})`,
+	);
+	for (const control of controls) {
+		console.log(
+			`  ${control.defaultEnabled ? 'on ' : 'off'} ${control.id.padEnd(14)} ${control.name}: ${control.condition}`,
+		);
+	}
 	const assetName = (hash: bigint | null): string =>
 		hash === null
 			? '(none)'
@@ -294,7 +313,7 @@ const showEnvironment = async (context: Context, target: string): Promise<void> 
 	const loadPhase = (hash: bigint) =>
 		getOrInsert(phaseLoads, hash, () => loadEnvironmentPhase(resolver, hash, pathOf));
 
-	const choices = levels.map((level) => resolveLevelEnvironment(level, volumes));
+	const choices = levels.map((level) => resolveLevelEnvironment(level, volumes, enabled));
 	const phases = await Promise.all(choices.map((choice) => loadLevelPhases(choice, loadPhase)));
 	for (const [i, level] of levels.entries()) {
 		const choice = choices[i];
@@ -322,7 +341,7 @@ const showEnvironment = async (context: Context, target: string): Promise<void> 
 				`  scene global under it: ${choice.global?.name ?? '(none)'} → ${assetName(choice.global?.envPhase ?? null)}`,
 			);
 		}
-		const post = resolveLevelPost(level, volumes);
+		const post = resolveLevelPost(level, volumes, enabled);
 		console.log(`  post: ${post === null ? '(none)' : `${post.name} → ${assetName(post.profile)}`}`);
 	}
 };

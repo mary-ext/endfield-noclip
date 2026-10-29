@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 
+import { volumeReaches } from '../render/environment-blend.ts';
 import type { Viewer } from '../viewer.ts';
 
 import { useViewerState } from './use-viewer.ts';
@@ -26,9 +27,27 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 			(entry.levels.includes(0) || entry.levels.includes(level?.tag ?? 0)) &&
 			matches(`${entry.name} ${entry.id}`),
 	);
+	// volumes apply wherever they hold the camera, so a neighbour's volume reaching into this level is listed too
 	const volumes = manifest.environmentVolumes
 		.map((volume, id) => ({ volume, id }))
-		.filter(({ volume }) => (volume.level === 0 || volume.level === level?.tag) && matches(volume.name));
+		.filter(
+			({ volume }) =>
+				(volume.level === 0 ||
+					volume.level === level?.tag ||
+					(level !== undefined && volumeReaches(volume, level.rect))) &&
+				matches(volume.name),
+		);
+	const levelNames = new Map(manifest.levels.map((entry) => [entry.tag, entry.name ?? entry.id]));
+	const toggleNames = new Map(manifest.states.toggles.map((entry) => [entry.id, entry.name]));
+	/** @returns the scene states a volume loads with, by name */
+	const loadingStates = (condition: number): string =>
+		[
+			...new Set(
+				manifest.states.conditionalSets[condition].alternatives.flatMap((requirements) =>
+					requirements.map(({ control }) => toggleNames.get(control) ?? control),
+				),
+			),
+		].join(' or ');
 	return (
 		<section className="panel scene-controls" aria-label="scene conditions">
 			<header>
@@ -67,10 +86,32 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 				))}
 				{progressions.length === 0 && <p className="muted">No matching progression controls.</p>}
 			</details>
+			<details open>
+				<summary>Scene states ({toggles.filter((entry) => entry.kind === 'sceneState').length})</summary>
+				<p className="muted small">
+					The game switches these by quest progress. Defaults assume the story is finished; states without a
+					condition are only set by dungeons and scripts.
+				</p>
+				{toggles
+					.filter((entry) => entry.kind === 'sceneState')
+					.map((entry) => (
+						<label className="toggle scene-toggle" key={entry.id}>
+							<input
+								type="checkbox"
+								checked={viewer.sceneValues[entry.id] === 1}
+								onChange={(event) => viewer.setSceneValue(entry.id, Number(event.currentTarget.checked))}
+							/>
+							<span>
+								{entry.name}
+								<small className="muted">{entry.condition}</small>
+							</span>
+						</label>
+					))}
+			</details>
 			{(['script', 'state'] as const).map((kind) => (
 				<details key={kind}>
 					<summary>
-						{kind === 'script' ? 'Script / event scenery' : 'Scene-state previews'} (
+						{kind === 'script' ? 'Script / event scenery' : 'Logic-gate previews'} (
 						{toggles.filter((entry) => entry.kind === kind).length})
 					</summary>
 					<p className="muted small">Manual previews; runtime conditions are unavailable.</p>
@@ -96,15 +137,19 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 			<details>
 				<summary>Lighting / environment volumes ({volumes.length})</summary>
 				<p className="muted small">
-					Preview activation is manual. Enabled volumes still follow camera bounds and priority. A pinned
-					phase overrides these choices.
+					Volumes follow the scene states that load them; ticking one here overrides that. Enabled volumes
+					still follow camera bounds and priority. A pinned phase overrides these choices.
 				</p>
 				{volumes.map(({ volume, id }) => (
 					<label className="toggle scene-toggle" key={id}>
 						<input
 							type="checkbox"
 							disabled={volume.phase === null}
-							checked={viewer.options.environmentEnabled[id] ?? volume.blendMode !== 3}
+							checked={
+								viewer.options.environmentEnabled[id] ??
+								(volume.blendMode !== 3 &&
+									(volume.condition === null || viewer.conditionResults[volume.condition]))
+							}
 							onChange={(event) =>
 								viewer.setOptions({
 									environmentEnabled: {
@@ -122,6 +167,10 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 									: volume.blendMode === 3
 										? 'Scripted blend · preview at full strength'
 										: `Priority ${volume.priority}`}
+								{volume.condition !== null && ` · with ${loadingStates(volume.condition)}`}
+								{volume.level !== 0 &&
+									volume.level !== level?.tag &&
+									` · from ${levelNames.get(volume.level) ?? `level ${volume.level}`}`}
 							</small>
 						</span>
 					</label>

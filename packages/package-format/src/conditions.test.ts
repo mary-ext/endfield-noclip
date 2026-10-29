@@ -16,7 +16,16 @@ it('selects mutually exclusive upgrades while preserving shared and script-gated
 				defaultLevel: 0,
 			},
 		],
-		toggles: [{ id: 'script:course', name: 'course', kind: 'script', levels: [1], defaultEnabled: false }],
+		toggles: [
+			{
+				id: 'script:course',
+				name: 'course',
+				kind: 'script',
+				levels: [1],
+				defaultEnabled: false,
+				condition: null,
+			},
+		],
 		conditionalSets: [],
 	};
 	const initial = defaultSceneValues(states);

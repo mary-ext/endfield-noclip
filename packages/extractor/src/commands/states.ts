@@ -45,7 +45,7 @@ export const run = async (args: string[]): Promise<void> => {
 			console.log(
 				`\n${files.length} InitChunkData files for areas ${[...ids].toSorted((a, b) => a - b).join(',')}`,
 			);
-			for (const file of files.filter((f) => f.state !== 0)) {
+			for (const file of files.filter((f) => f.area !== 0)) {
 				console.log(`  ${file.name}`);
 			}
 		}

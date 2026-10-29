@@ -214,7 +214,7 @@ describe('instance blocks', () => {
 		transforms: Float32Array.from({ length: count * 12 }, (_, i) => i / 4),
 		bounds: Float32Array.from({ length: count * 6 }, (_, i) => -i),
 		entityIds: Uint32Array.from({ length: count }, (_, i) => 0xf000_0000 + i),
-		layers: Uint8Array.from({ length: count }, (_, i) => i % 12),
+		sceneStates: Uint8Array.from({ length: count }, (_, i) => i % 12),
 	});
 
 	it('round-trips counts that need layer padding', () => {
@@ -229,7 +229,7 @@ describe('instance blocks', () => {
 	});
 
 	it('rejects mismatched sections', () => {
-		assert.throws(() => encodeInstanceBlock({ ...block(2), layers: new Uint8Array(1) }), RangeError);
+		assert.throws(() => encodeInstanceBlock({ ...block(2), sceneStates: new Uint8Array(1) }), RangeError);
 	});
 });
 

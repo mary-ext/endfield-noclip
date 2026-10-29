@@ -45,6 +45,9 @@ const globalVolume: EnvironmentVolume = {
 	shape: null,
 };
 
+/** no scene state active */
+const none: ReadonlySet<number> = new Set();
+
 /** a level of two 128 m cells side by side, (0, 0) and (1, 0) */
 const level = {
 	tag: 3,
@@ -64,14 +67,14 @@ test('the base is the broadest volume the level shows, not the one shown most', 
 	const foreign = rect(12, 400, [0, 0, 256, 128]);
 	const volumes: SceneVolumes = {
 		environment: [
-			{ tag: 0, volume: globalVolume },
-			{ tag: 3, volume: broad },
-			{ tag: 3, volume: local },
-			{ tag: 4, volume: foreign },
+			{ tag: 0, sceneStates: [], volume: globalVolume },
+			{ tag: 3, sceneStates: [], volume: broad },
+			{ tag: 3, sceneStates: [], volume: local },
+			{ tag: 4, sceneStates: [], volume: foreign },
 		],
 		post: [],
 	};
-	const choice = resolveLevelEnvironment(level, volumes);
+	const choice = resolveLevelEnvironment(level, volumes, none);
 	assert.equal(choice.volume, broad);
 	assert.equal(choice.global, globalVolume);
 	assert.equal(choice.samples, 32);
@@ -90,17 +93,38 @@ test('a volume that is never shown is skipped; without volumes the scene global 
 	const overlay = rect(21, 300, [0, 0, 256, 128]);
 	const volumes: SceneVolumes = {
 		environment: [
-			{ tag: 0, volume: globalVolume },
-			{ tag: 3, volume: hidden },
-			{ tag: 3, volume: overlay },
+			{ tag: 0, sceneStates: [], volume: globalVolume },
+			{ tag: 3, sceneStates: [], volume: hidden },
+			{ tag: 3, sceneStates: [], volume: overlay },
 		],
 		post: [],
 	};
-	assert.equal(resolveLevelEnvironment(level, volumes).volume, overlay);
+	assert.equal(resolveLevelEnvironment(level, volumes, none).volume, overlay);
 	assert.equal(
-		resolveLevelEnvironment({ tag: 5, config: { levelGrids: level.config.levelGrids } }, volumes).volume,
+		resolveLevelEnvironment({ tag: 5, config: { levelGrids: level.config.levelGrids } }, volumes, none)
+			.volume,
 		globalVolume,
 	);
+});
+
+test('volumes of inactive scene states are not candidates', () => {
+	const base = rect(30, 200, [0, 0, 256, 128]);
+	// The Hub's map-wide night: only loaded with scene state 8
+	const night = rect(31, 320, [-4096, -4096, 4096, 4096]);
+	// the normal look of a level that a story state hides: loaded with state 7 or 10
+	const hidden = rect(32, 250, [0, 0, 256, 128]);
+	const volumes: SceneVolumes = {
+		environment: [
+			{ tag: 0, sceneStates: [], volume: globalVolume },
+			{ tag: 3, sceneStates: [], volume: base },
+			{ tag: 3, sceneStates: [8], volume: night },
+			{ tag: 3, sceneStates: [7, 10], volume: hidden },
+		],
+		post: [],
+	};
+	assert.equal(resolveLevelEnvironment(level, volumes, none).volume, base);
+	assert.equal(resolveLevelEnvironment(level, volumes, new Set([10])).volume, hidden);
+	assert.equal(resolveLevelEnvironment(level, volumes, new Set([8, 10])).volume, night);
 });
 
 const phase = (name: string, inactive: EnvironmentSectionName[]): EnvironmentPhase => {
