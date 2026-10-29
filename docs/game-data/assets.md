@@ -264,8 +264,8 @@ viewer doesn't use it.
 
 ## open
 
-- the packed tangent frame in normal bits 20–31, and the meaning of the uv dimension byte's high
-  nibble 2
+- decoding the packed tangent frame in normal bits 20–31 (its layout is identified; tangents are
+  regenerated), and the meaning of the uv dimension byte's high nibble 2
 - animated poses and non-zero blend shapes
 - LevelData members after the interactive list, and the facility layouts not yet supported
 - the per-controller meaning of progression bit 0 ("unbuilt" versus level 1)

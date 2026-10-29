@@ -220,12 +220,11 @@ from word 7, never from filename order.
 
 cell keys are `x | y << 8 | z << 16 | level << 24`, 8 bits per axis in 32 m units from the volume's
 minimum corner, with world 0 at the middle of its extent: 8192 m for `0x03000004` (world 0 at 128)
-and 4096 m for `0x03000003` (world 0 at 64). the extent is set in native code; these are inferred
-from where each index's keys land, since map01's cells line up with its levels only with world 0
-at 64. the parser moves every key to the 8192 m layout, so the package and viewer use one origin;
-the shift is a whole number of the coarsest cells, so cell contents don't change. a level-`n` cell
-spans `32 · 2^n` m, its coordinates are multiples of `2^n`, and its probes are `0.5 · 4^n` m apart.
-levels 1 and 2 cover the map; level 0 (0.5 m probes) is sparse.
+and 4096 m for `0x03000003` (world 0 at 64). the extents are inferred from the data: map01's cells
+line up with its levels only with world 0 at 64. the parser moves every key to the 8192 m layout, so
+the package and viewer share one origin. a level-`n` cell spans `32 · 2^n` m, its coordinates are
+multiples of `2^n`, and its probes are `0.5 · 4^n` m apart. levels 1 and 2 cover the map; level 0
+(0.5 m probes) is sparse.
 
 ### cells and probes
 

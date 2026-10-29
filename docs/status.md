@@ -24,7 +24,8 @@ or renders correctly.
 ## look and lighting
 
 - baked GI brightness is unverified against in-game shots; the native ambient scale is missing, and
-  the lighting lookup has no jitter or forward-shifted clipmap centres
+  the lighting lookup has no jitter or forward-shifted clipmap centres. next: compare GPU clipmap
+  samples with the bake at one point, and check clipmap seams (L0 repeats, L1 clamps)
 - several ambient, sky-LUT and exposure constants are computed in native engine code and not yet
   recovered
 - irradiance: only the base scenario is packed; scenario overlays, partial clipmap updates, the
@@ -36,7 +37,17 @@ or renders correctly.
   preview
 - environment volume initial enablement and `EnvironmentEnable` script conditions, needed before any
   automatic gating
-- auto exposure, froxel volumetric fog, local lights, interior lighting validation
+- auto exposure, froxel volumetric fog
+- interiors, in order of impact:
+  - emissive ceiling panels render dark: trace one panel's keywords, slots, UV set and colour
+  - normal-map roughness is read only when the mesh has tangents; normals are transformed by the
+    model matrix rather than its inverse transpose, and every material lights the side facing the
+    camera
+  - shadow casters are only what's on screen and shadow-only proxies are skipped, so the sun leaks
+    through roofs behind the camera
+  - local point and spot lights and light beams aren't drawn
+  - local reflection probes, GTAO in specular occlusion, contact shadows
+- the packed tangent frame isn't decoded; tangents are regenerated
 - terrain textures and blending, foliage wind and transmission, grass instancing, decals, layered
   materials
 - water foam, caustics, flow tiles (packed but unread) and geometry reflections; other fluid types
@@ -87,7 +98,6 @@ or renders correctly.
 ## open unknowns
 
 - HLOD switch distances (the package uses a placeholder error) and the HLOD material/atlas mapping
-- the game's packed tangent encoding (tangents are regenerated)
 - per-controller meaning of progression bit 0 ("unbuilt" versus "level 1")
 - weather/time state ids
 - runtime: BC texture support in Safari, the texture-array layer limit on Apple GPUs
