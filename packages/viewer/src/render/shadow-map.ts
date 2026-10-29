@@ -1,8 +1,9 @@
 /**
- * cascaded sun shadows: three depth layers, each an orthographic view along the sunlight fitted to a slice of
- * the camera frustum (a bounding sphere, so the fit doesn't change as the camera turns) and snapped to whole
- * texels in world space, so shadow edges don't crawl as the camera moves. matrices are camera-relative like
- * everything else.
+ * sun shadows in the game's PC high layout: three sharp cascades out to 80 m, fading into one coarse far
+ * layer out to 800 m that stands in for the game's cached shadow map there. each layer is an orthographic
+ * view along the sunlight fitted to a slice of the camera frustum (a bounding sphere, so the fit doesn't
+ * change as the camera turns) and snapped to whole texels in world space, so shadow edges don't crawl as the
+ * camera moves. matrices are camera-relative like everything else.
  *
  * casters are what the main pass draws this frame, so geometry outside the view doesn't cast yet.
  *
@@ -14,10 +15,21 @@ import type { Camera, Vec3 } from '../scene/camera.ts';
 /** shadow map edge, texels */
 export const SHADOW_SIZE = 2048;
 export const SHADOW_FORMAT: GPUTextureFormat = 'depth32float';
-export const CASCADES = 3;
-/** far distance of each cascade, m */
-const SPLITS = [40, 160, 640];
-/** how far towards the sun casters are kept beyond the cascade's sphere, m */
+/** depth layers: the sharp cascades, then the far layer */
+export const SHADOW_LAYERS = 4;
+/** far distance of each layer, m; the first three are the game's cascades (ratios 0.15 and 0.375 of 80 m) */
+const SPLITS = [12, 30, 80, 800];
+/** the sharp cascades fade into the far layer between these distances, m */
+const SHARP_REACH = 80;
+const SHARP_FADE_START = 0.8 * SHARP_REACH;
+/**
+ * the shadow's softness, the game's `shadowConfig.csmShadowSoftness`: each sharp cascade's filter radius is
+ * it over the cascade's split distance (12, 30 m and, as the game computes it, 40 m for the third) in uv of
+ * the game's 2 × 2 atlas, so twice that in one layer's uv
+ */
+const SOFTNESS = 0.01;
+const PENUMBRA_SPLITS = [12, 30, 40];
+/** how far towards the sun casters are kept beyond the layer's sphere, m */
 const CASTER_REACH = 1500;
 
 /** depth state of the shadow pass's pipelines: standard depth, biased along the slope against acne */
@@ -28,14 +40,14 @@ export const SHADOW_DEPTH_STATE: GPUDepthStencilState = {
 	depthBiasSlopeScale: 1.5,
 };
 
-/** one cascade's matrices, column-major */
-export interface Cascade {
+/** one layer's matrices (column-major) and bounds */
+export interface ShadowLayer {
 	/** camera-relative position → clip space of the shadow pass */
 	render: Float32Array;
 	/** camera-relative position → shadow map uv (v down) and depth */
 	sample: Float32Array;
-	/** world-space size of a texel, m */
-	texel: number;
+	/** bounding sphere: camera-relative centre and radius squared */
+	sphere: [number, number, number, number];
 }
 
 const dot = (a: readonly number[], b: readonly number[]): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -51,28 +63,36 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
 	a[0] * b[1] - a[1] * b[0],
 ];
 
-/** owns the shadow map and fits the cascades */
+/** owns the shadow map and fits its layers */
 export class ShadowMap {
 	readonly texture: GPUTexture;
 	/** sampled view of all layers */
 	readonly view: GPUTextureView;
-	/** attachment view per cascade */
-	readonly layers: GPUTextureView[];
+	/** attachment view per layer */
+	readonly views: GPUTextureView[];
+	/** depth comparison, for the far layer's grid */
 	readonly sampler: GPUSampler;
-	readonly cascades: Cascade[];
-	/** far distance per cascade, m */
-	readonly splits: readonly number[] = SPLITS;
+	/** raw depth reads, for the sharp cascades' gathers */
+	readonly gatherSampler: GPUSampler;
+	readonly layers: ShadowLayer[];
+	/** the sharp cascades' reach squared and the reciprocal of their fade span in squared distance */
+	readonly fade: readonly [number, number] = [
+		SHARP_REACH ** 2,
+		1 / (SHARP_REACH ** 2 - SHARP_FADE_START ** 2),
+	];
+	/** each sharp cascade's filter radius, layer uv */
+	readonly penumbra: readonly number[] = PENUMBRA_SPLITS.map((split) => (2 * SOFTNESS) / split);
 
 	/** @param device the device */
 	constructor(device: GPUDevice) {
 		this.texture = device.createTexture({
 			label: 'shadow map',
-			size: [SHADOW_SIZE, SHADOW_SIZE, CASCADES],
+			size: [SHADOW_SIZE, SHADOW_SIZE, SHADOW_LAYERS],
 			format: SHADOW_FORMAT,
 			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
 		});
 		this.view = this.texture.createView({ dimension: '2d-array' });
-		this.layers = Array.from({ length: CASCADES }, (_, i) =>
+		this.views = Array.from({ length: SHADOW_LAYERS }, (_, i) =>
 			this.texture.createView({ dimension: '2d', baseArrayLayer: i, arrayLayerCount: 1 }),
 		);
 		this.sampler = device.createSampler({
@@ -83,20 +103,25 @@ export class ShadowMap {
 			addressModeU: 'clamp-to-edge',
 			addressModeV: 'clamp-to-edge',
 		});
-		this.cascades = Array.from({ length: CASCADES }, () => ({
+		this.gatherSampler = device.createSampler({
+			label: 'shadow gather',
+			addressModeU: 'clamp-to-edge',
+			addressModeV: 'clamp-to-edge',
+		});
+		this.layers = Array.from({ length: SHADOW_LAYERS }, () => ({
 			render: new Float32Array(16),
 			sample: new Float32Array(16),
-			texel: 1,
+			sphere: [0, 0, 0, 0],
 		}));
 	}
 
 	/** @returns bytes of the shadow map */
 	get bytes(): number {
-		return SHADOW_SIZE * SHADOW_SIZE * 4 * CASCADES;
+		return SHADOW_SIZE * SHADOW_SIZE * 4 * SHADOW_LAYERS;
 	}
 
 	/**
-	 * fits the cascades to the camera.
+	 * fits the layers to the camera.
 	 *
 	 * @param camera the camera
 	 * @param aspect viewport width / height
@@ -113,7 +138,7 @@ export class ShadowMap {
 		const y = cross(z, x);
 		const eye = camera.position;
 		let near = camera.near;
-		for (let i = 0; i < CASCADES; i++) {
+		for (let i = 0; i < SHADOW_LAYERS; i++) {
 			const far = SPLITS[i];
 			// the slice's bounding sphere, centred on the view axis
 			const cornerSquared = 1 + tanX * tanX + tanY * tanY;
@@ -141,9 +166,9 @@ export class ShadowMap {
 			];
 			const back = radius + CASTER_REACH;
 			const depthRange = back + radius;
-			const cascade = this.cascades[i];
-			cascade.texel = texel;
-			const m = cascade.render;
+			const layer = this.layers[i];
+			layer.sphere = [c[0], c[1], c[2], radius * radius];
+			const m = layer.render;
 			// rows: x / r, y / r, (z + back) / range, 1
 			const rows = [
 				[x[0] / radius, x[1] / radius, x[2] / radius, -dot(c, x) / radius],
@@ -156,7 +181,7 @@ export class ShadowMap {
 					m[k * 4 + r] = rows[r][k];
 				}
 			}
-			const s = cascade.sample;
+			const s = layer.sample;
 			for (let k = 0; k < 4; k++) {
 				s[k * 4] = 0.5 * rows[0][k] + 0.5 * rows[3][k];
 				s[k * 4 + 1] = -0.5 * rows[1][k] + 0.5 * rows[3][k];

@@ -60,6 +60,8 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 			})),
 			{ binding: 11, visibility: FRAGMENT, sampler: { type: 'filtering' } },
 			{ binding: 12, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			// raw shadow-map depth reads
+			{ binding: 13, visibility: FRAGMENT, sampler: { type: 'non-filtering' } },
 		],
 	});
 	const terrain = device.createBindGroupLayout({

@@ -109,7 +109,7 @@ fn fs_main(in: VertexOut) -> Shaded {
 	let n = normalize(in.normal);
 	var s = default_surface(albedo(in, n), n);
 	s.roughness = 0.9;
-	return shade_surface(s, in.rel);
+	return shade_surface(s, in.rel, in.position.xy);
 }
 
 @fragment

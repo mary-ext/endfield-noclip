@@ -24,12 +24,14 @@ struct Frame {
 	flags: vec4u,
 	// boxes larger than x metres (max half extent) draw as outlines only; y, z, w reserved
 	params: vec4f,
-	// camera-relative position → shadow map [0, 1]² × depth, per cascade
-	shadow_matrices: array<mat4x4f, 3>,
-	// far distance (m) of each cascade, w = 1 when shadows are on
-	shadow_splits: vec4f,
-	// world-space texel size of each cascade (m), w reserved
-	shadow_params: vec4f,
+	// camera-relative position → shadow map [0, 1]² × depth, per layer: three sharp cascades, then the far layer
+	shadow_matrices: array<mat4x4f, 4>,
+	// x = the sharp cascades' reach squared (m²), y = 1 / (reach² − fade start²), z reserved, w = 1 when shadows are on
+	shadow_fade: vec4f,
+	// xyz = each sharp cascade's filter radius (shadow map uv), w reserved
+	shadow_penumbra: vec4f,
+	// each layer's bounding sphere: camera-relative centre, w = radius squared
+	shadow_spheres: array<vec4f, 4>,
 	// world position of each irradiance clipmap level's centre (0.5 m, 2 m, 8 m probes), w = 1 once filled
 	irradiance: array<vec4f, 3>,
 }
@@ -37,6 +39,8 @@ struct Frame {
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(0) @binding(1) var shadow_map: texture_depth_2d_array;
 @group(0) @binding(2) var shadow_sampler: sampler_comparison;
+// raw depth reads (gathers) of the shadow map
+@group(0) @binding(13) var shadow_gather_sampler: sampler;
 // the level's sky reflection, prefiltered by roughness over its mips (Unity's convention); a black cube
 // until it streams in, flagged by ambient.z
 @group(0) @binding(3) var reflection_map: texture_cube<f32>;
@@ -52,47 +56,118 @@ struct Frame {
 @group(0) @binding(11) var irradiance_repeat: sampler;
 @group(0) @binding(12) var irradiance_clamp: sampler;
 
-// the sun's visibility at a camera-relative position: 3×3 PCF in the nearest cascade that covers it
-fn sun_shadow(rel: vec3f, normal: vec3f) -> f32 {
-	if (frame.shadow_splits.w < 0.5) {
-		return 1.0;
-	}
-	let distance = length(rel);
-	var cascade = 3u;
-	for (var i = 0u; i < 3u; i++) {
-		if (distance < frame.shadow_splits[i]) {
-			cascade = i;
-			break;
-		}
-	}
-	if (cascade > 2u) {
-		return 1.0;
-	}
-	// push the lookup off the surface by about a texel of this cascade
-	let texel = frame.shadow_params[cascade];
+// #region sun shadow
+
+// the classic 16-point Poisson disk
+const POISSON = array<vec2f, 16>(
+	vec2f(-0.94201624, -0.39906216), vec2f(0.94558609, -0.76890725), vec2f(-0.09418410, -0.92938870),
+	vec2f(0.34495938, 0.29387760), vec2f(-0.91588581, 0.45771432), vec2f(-0.81544232, -0.87912464),
+	vec2f(-0.38277543, 0.27676845), vec2f(0.97484398, 0.75648379), vec2f(0.44323325, -0.97511554),
+	vec2f(0.53742981, -0.47373420), vec2f(-0.26496911, -0.41893023), vec2f(0.79197514, 0.19090188),
+	vec2f(-0.24188840, 0.99706507), vec2f(-0.81409955, 0.91437590), vec2f(0.19984126, 0.78641367),
+	vec2f(0.14383161, -0.14100790),
+);
+
+// interleaved gradient noise (Jimenez) at a pixel
+fn gradient_noise(px: vec2f) -> f32 {
+	return fract(52.9829189 * fract(dot(px, vec2f(0.06711056, 0.00583715))));
+}
+
+// the position pushed off the surface by about a texel of the layer, against acne
+fn shadow_receiver(rel: vec3f, normal: vec3f, layer: u32) -> vec3f {
+	let texel = 2.0 * sqrt(frame.shadow_spheres[layer].w) / f32(textureDimensions(shadow_map).x);
 	let n_dot_l = dot(normal, frame.sun.xyz);
-	let offset = normal * texel * 1.5 * (1.0 - max(n_dot_l, 0.0) * 0.5);
-	let p = frame.shadow_matrices[cascade] * vec4f(rel + offset, 1.0);
-	let uv = p.xy;
-	if (any(uv < vec2f(0.0)) || any(uv > vec2f(1.0)) || p.z > 1.0) {
+	return rel + normal * texel * 1.5 * (1.0 - max(n_dot_l, 0.0) * 0.5);
+}
+
+// a sharp cascade's visibility, or -1 outside it: the game's filter, 64 depths on a Poisson disk rotated per 4×4
+// pixel cell, shaped by how far the blockers are. near blockers harden the edge, far ones leave plain PCF
+fn cascade_shadow(rel: vec3f, normal: vec3f, cascade: u32, px: vec2f) -> f32 {
+	let p = frame.shadow_matrices[cascade] * vec4f(shadow_receiver(rel, normal, cascade), 1.0);
+	if (any(p.xyz <= vec3f(0.0)) || any(p.xyz >= vec3f(1.0))) {
+		return -1.0;
+	}
+	let cell = vec2u(px) % 4u;
+	let angle = f32(cell.x * 4u + cell.y) * (2.0 * PI / 16.0);
+	let rotation = mat2x2f(cos(angle), sin(angle), -sin(angle), cos(angle));
+	let radius = frame.shadow_penumbra[cascade];
+	var gap = 0.0;
+	var blockers = 0.0;
+	for (var k = 0; k < 16; k++) {
+		let depths = textureGather(shadow_map, shadow_gather_sampler, p.xy + rotation * POISSON[k] * radius, cascade);
+		let blocked = step(depths, vec4f(p.z));
+		gap += dot(vec4f(p.z) - depths, blocked);
+		blockers += dot(blocked, vec4f(1.0));
+	}
+	if (blockers == 0.0) {
+		return 1.0;
+	}
+	let t = 2.0 * clamp(blockers / 64.0, 0.0, 1.0) - 1.0;
+	let s = sign(t);
+	let u = 1.0 - s * t;
+	let k = clamp((gap / blockers) / max(1.0 - p.z, 1e-5), 0.0, 1.0);
+	return 0.5 - 0.5 * s * (1.0 - mix(u * u * u, u, k));
+}
+
+// the far layer's visibility (1 outside it): a 3×3 grid of bilinear comparisons
+fn far_shadow(rel: vec3f, normal: vec3f) -> f32 {
+	let p = frame.shadow_matrices[3] * vec4f(shadow_receiver(rel, normal, 3u), 1.0);
+	if (any(p.xyz <= vec3f(0.0)) || any(p.xyz >= vec3f(1.0))) {
 		return 1.0;
 	}
 	let size = vec2f(textureDimensions(shadow_map));
 	var sum = 0.0;
 	for (var y = -1; y <= 1; y++) {
 		for (var x = -1; x <= 1; x++) {
-			let st = uv + vec2f(f32(x), f32(y)) / size;
-			sum += textureSampleCompareLevel(shadow_map, shadow_sampler, st, i32(cascade), p.z);
+			sum += textureSampleCompareLevel(shadow_map, shadow_sampler, p.xy + vec2f(f32(x), f32(y)) / size, 3, p.z);
 		}
 	}
-	var visibility = sum / 9.0;
-	// fade out over the last tenth of the far cascade
-	if (cascade == 2u) {
-		let fade = clamp((frame.shadow_splits.z - distance) / (frame.shadow_splits.z * 0.1), 0.0, 1.0);
-		visibility = mix(1.0, visibility, fade);
-	}
-	return visibility;
+	// fade out towards the layer's edge
+	let d = rel - frame.shadow_spheres[3].xyz;
+	let edge = clamp((1.0 - dot(d, d) / frame.shadow_spheres[3].w) * 5.0, 0.0, 1.0);
+	return mix(1.0, sum / 9.0, edge);
 }
+
+// the sun's visibility at a camera-relative position. as in the game: sharp cascades out to a reach, dithered
+// between neighbours over the outer tenth of each one's sphere, fading into the coarse far layer before the reach
+fn sun_shadow(rel: vec3f, normal: vec3f, px: vec2f) -> f32 {
+	if (frame.shadow_fade.w < 0.5) {
+		return 1.0;
+	}
+	let near = clamp((frame.shadow_fade.x - dot(rel, rel)) * frame.shadow_fade.y, 0.0, 1.0);
+	var sharp = -1.0;
+	if (near > 0.0) {
+		var cascade = 3u;
+		for (var i = 0u; i < 3u; i++) {
+			let d = rel - frame.shadow_spheres[i].xyz;
+			if (dot(d, d) < frame.shadow_spheres[i].w) {
+				cascade = i;
+				break;
+			}
+		}
+		if (cascade < 2u) {
+			let d = rel - frame.shadow_spheres[cascade].xyz;
+			let next = rel - frame.shadow_spheres[cascade + 1u].xyz;
+			if (dot(next, next) < frame.shadow_spheres[cascade + 1u].w) {
+				let outer = (sqrt(dot(d, d) / frame.shadow_spheres[cascade].w) - 0.9) * 12.0;
+				cascade += u32(step(gradient_noise(px), outer));
+			}
+		}
+		if (cascade < 3u) {
+			sharp = cascade_shadow(rel, normal, cascade, px);
+		}
+	}
+	if (near >= 1.0 && sharp >= 0.0) {
+		return sharp;
+	}
+	let far = far_shadow(rel, normal);
+	if (sharp < 0.0) {
+		return far;
+	}
+	return mix(far, sharp, near);
+}
+
+// #endregion
 
 // the main pass writes the full radiance and, separately, its diffuse ambient part, so ambient occlusion
 // computed from the depth buffer afterwards can darken only the light that it occludes. the radiance carries
@@ -252,7 +327,7 @@ fn environment_brdf(f0: vec3f, roughness: f32, n_dot_v: f32) -> vec3f {
 }
 
 // sun (shadowed) plus ambient probe; `rel` is the camera-relative position
-fn shade_surface(s: Surface, rel: vec3f) -> Shaded {
+fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	let n = s.normal;
 	let v = -normalize(rel);
 	let l = frame.sun.xyz;
@@ -279,7 +354,7 @@ fn shade_surface(s: Surface, rel: vec3f) -> Shaded {
 		// the shadow lookup only where the sun can reach
 		var visibility = 0.0;
 		if (n_dot_l > 0.0 || s.transmission * back > 0.0) {
-			visibility = sun_shadow(rel, n);
+			visibility = sun_shadow(rel, n, px);
 		}
 		direct *= frame.sun_colour.rgb * visibility * frame.sun.w;
 	}

@@ -38,11 +38,26 @@ proxies) isn't reproduced.
 
 ## shadows
 
-three cascades of 2048² `depth32float`, out to 40, 160 and 640 m, fitted to bounding spheres of
-frustum slices and snapped to world texels so edges don't crawl
-([`render/shadow-map.ts`](../../packages/viewer/src/render/shadow-map.ts)). 3×3 PCF with a normal
-offset; the far cascade fades out over its last tenth. these are viewer constants; the game's
-`shadowConfig` is not extracted. casters are what the main pass draws that frame.
+the game's PC high layout: three sharp cascades out to 12, 30 and 80 m, then a coarse layer the game
+keeps as a cached shadow map out to 800 m. the viewer draws all four as 2048² `depth32float` layers
+fitted to bounding spheres of frustum slices and snapped to world texels so edges don't crawl
+([`render/shadow-map.ts`](../../packages/viewer/src/render/shadow-map.ts)); casters are what the
+main pass draws that frame.
+
+- a point uses the first cascade sphere containing it, dithered with the next one over the outer
+  tenth of the sphere's radius.
+- the sharp cascades filter like the game: 16 gathers (64 depths) on a Poisson disk rotated per 4×4
+  pixel cell, at a radius of `csmShadowSoftness / split` (splits 12, 30 and, as the game computes
+  it, 40 m) in the game's 2 × 2 atlas uv. the blocked fraction goes through a curve that hardens
+  edges where blockers are close in depth and leaves plain PCF where they're far.
+- the sharp cascades fade into the far layer between 64 and 80 m by squared distance to the camera.
+  the far layer is a 3×3 grid of bilinear comparisons, standing in for the game's tent-filtered
+  cached map.
+- receivers move along the normal by about a texel, against acne. the game instead pushes them
+  towards the sun by its contact-shadow pass's clear ray length, and biases casters in hardware.
+- softness is the map02 value 0.01 for now; the game reads it, the strength, a penumbra tint ramp
+  and a sun-off switch for caves from each phase's `shadowConfig`, which isn't packed yet. contact
+  and cloud shadows aren't drawn.
 
 ## ambient
 

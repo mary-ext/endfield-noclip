@@ -189,7 +189,7 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 | #   | pass                                           | when                                                                                                                              |
 | --- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | `irradiance update 0–2` (compute)              | a clipmap level re-centred or got new cells ([`render/irradiance-volume.ts`](../packages/viewer/src/render/irradiance-volume.ts)) |
-| 2   | `shadow cascade 0–2`                           | `shadows` on, a package loaded, `debugView` is `lit`                                                                              |
+| 2   | `shadow layer 0–3`                             | `shadows` on, a package loaded, `debugView` is `lit`                                                                              |
 | 3   | `main`                                         | always (empty without a package)                                                                                                  |
 | 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                              |
 | 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                          |
@@ -211,11 +211,13 @@ details:
   the pass; the MSAA colour is discarded and depth is stored for post. draw order: terrain, meshes
   (opaque, then alpha-tested), instance boxes, box outlines (boxes larger than `outlineMetres`),
   terrain wireframe.
-- **shadows.** three 2048² `depth32float` cascades out to 40/160/640 m, each fitted to a bounding
-  sphere of its frustum slice (so turning doesn't change the fit) and snapped to whole texels so
-  edges don't crawl ([`render/shadow-map.ts`](../packages/viewer/src/render/shadow-map.ts)). casters
-  are this frame's main-pass selection, so geometry outside the view doesn't cast. each cascade gets
-  its own copy of the frame uniforms with its view-projection.
+- **shadows.** four 2048² `depth32float` layers, three sharp cascades out to 12/30/80 m and a far
+  layer out to 800 m, each fitted to a bounding sphere of its frustum slice (so turning doesn't
+  change the fit) and snapped to whole texels so edges don't crawl
+  ([`render/shadow-map.ts`](../packages/viewer/src/render/shadow-map.ts); filtering in
+  [lighting.md](game-data/lighting.md#shadows)). casters are this frame's main-pass selection, so
+  geometry outside the view doesn't cast. each layer gets its own copy of the frame uniforms with
+  its view-projection.
 - **post** ([`render/post-process.ts`](../packages/viewer/src/render/post-process.ts)) is fullscreen
   triangles with `auto` layouts. composite applies AO, sky, aerial perspective and height fog; `fog`
   and `aerialPerspective` change what composite does, not which passes run. water draws over a copy
@@ -240,7 +242,7 @@ details:
 - **uniform ring** ([`gfx/uniform-ring.ts`](../packages/viewer/src/gfx/uniform-ring.ts)): one
   uniform buffer in 3 per-frame regions, sub-allocated at `minUniformBufferOffsetAlignment`. callers
   fill CPU views; `flush` uploads the frame's region in one `writeBuffer`, and draws bind group 0 at
-  a dynamic offset. a frame needs the main block plus one per cascade.
+  a dynamic offset. a frame needs the main block plus one per shadow layer.
 - **bind layouts** ([`gfx/bind-layouts.ts`](../packages/viewer/src/gfx/bind-layouts.ts)): group 0 is
   the frame (uniforms, shadow map, reflection cubemap, irradiance clipmaps) for every family, so a
   pass binds it once; group 1 is per family; meshes add group 2 (per-draw parameters) and group 3
@@ -267,7 +269,7 @@ details:
   settings or a fade changed.
 - **stats** publish every 250 ms and notify subscribers only when the JSON differs, so the React
   panels don't re-render on a still view.
-- **one traversal, many passes.** selection runs once per frame; shadow cascades reuse its buckets.
+- **one traversal, many passes.** selection runs once per frame; shadow layers reuse its buckets.
 - **few draws.** terrain is one draw; each mesh bucket is one instanced `drawIndexed` over its slice
   of the visible list; draws are sorted by geometry then material so runs share bindings
   ([`render/mesh-renderer.ts`](../packages/viewer/src/render/mesh-renderer.ts)).
@@ -352,7 +354,7 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
 
 - per-instance culling and LOD selection run on the CPU and dominate CPU time at dense views; a
   compute cull pass writing the visible list plus indirect arguments is the planned replacement.
-- shadows redraw every on-screen caster into all three cascades on every rendered frame. per-cascade
+- shadows redraw every on-screen caster into all four layers on every rendered frame. per-layer
   culling and caching a cascade while its snapped fit doesn't move are unbuilt, and off-screen
   casters don't cast.
 - composite and water read the 4× MSAA depth; the half-resolution depth or a full-resolution resolve

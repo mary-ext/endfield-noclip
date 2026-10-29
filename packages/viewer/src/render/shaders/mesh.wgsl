@@ -178,7 +178,7 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 	if ((flags & FOLIAGE) != 0u) {
 		s.transmission = draw.surface2.z;
 	}
-	return shade_surface(s, in.rel);
+	return shade_surface(s, in.rel, in.position.xy);
 }
 
 // the depth of alpha-tested materials, in the main pass and the shadow passes (opaque ones have no fragment

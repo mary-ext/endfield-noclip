@@ -40,7 +40,7 @@ import { IrradianceVolume } from './render/irradiance-volume.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
 import { PostProcess, type Tonemapper } from './render/post-process.ts';
-import { CASCADES, SHADOW_FORMAT, ShadowMap } from './render/shadow-map.ts';
+import { SHADOW_FORMAT, SHADOW_LAYERS, ShadowMap } from './render/shadow-map.ts';
 import { PAGE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
 import { type TextureBinding, TextureStore, placeholderView } from './render/texture-store.ts';
 import { WaterRenderer } from './render/water-renderer.ts';
@@ -314,11 +314,11 @@ export class Viewer {
 		this.#targets = new RenderTargets(device, canvas, gfx.presentationFormat, SAMPLE_COUNT);
 		this.#layouts = createBindLayouts(device);
 		this.#pipelines = new PipelineCache(device);
-		// the main pass's frame plus one per shadow cascade
+		// the main pass's frame plus one per shadow layer
 		const alignment = device.limits.minUniformBufferOffsetAlignment;
 		this.#ring = new UniformRing(
 			device,
-			Math.ceil(FRAME_UNIFORM_BYTES / alignment) * alignment * (1 + CASCADES),
+			Math.ceil(FRAME_UNIFORM_BYTES / alignment) * alignment * (1 + SHADOW_LAYERS),
 			3,
 		);
 		this.#shadows = new ShadowMap(device);
@@ -541,6 +541,7 @@ export class Viewer {
 					]),
 					{ binding: 11, resource: this.#irradiance.sampler },
 					{ binding: 12, resource: this.#irradiance.clampSampler },
+					{ binding: 13, resource: this.#shadows.gatherSampler },
 				],
 			});
 		const irradiance = this.#irradiance.views();
@@ -1176,10 +1177,10 @@ export class Viewer {
 		// each cascade's frame: the main one with the cascade's view-projection
 		const cascadeOffsets: number[] = [];
 		if (shadows) {
-			for (const cascade of this.#shadows.cascades) {
+			for (const layer of this.#shadows.layers) {
 				const block = ring.allocate(FRAME_UNIFORM_BYTES);
 				block.f32.set(uniforms.f32);
-				block.f32.set(cascade.render, FrameOffsets.viewProj);
+				block.f32.set(layer.render, FrameOffsets.viewProj);
 				cascadeOffsets.push(block.offset);
 			}
 		}
@@ -1191,10 +1192,10 @@ export class Viewer {
 		let draws = 0;
 		cascadeOffsets.forEach((offset, i) => {
 			const pass = encoder.beginRenderPass({
-				label: `shadow cascade ${i}`,
+				label: `shadow layer ${i}`,
 				colorAttachments: [],
 				depthStencilAttachment: {
-					view: this.#shadows.layers[i],
+					view: this.#shadows.views[i],
 					depthClearValue: 1,
 					depthLoadOp: 'clear',
 					depthStoreOp: 'store',
@@ -1301,13 +1302,13 @@ export class Viewer {
 			u32[at + 3] = 0;
 		}
 		f32[FrameOffsets.params] = this.options.outlineMetres;
-		const cascades = this.#shadows.cascades;
-		cascades.forEach((cascade, i) => {
-			f32.set(cascade.sample, FrameOffsets.shadowMatrices + i * 16);
-			f32[FrameOffsets.shadowParams + i] = cascade.texel;
+		this.#shadows.layers.forEach((layer, i) => {
+			f32.set(layer.sample, FrameOffsets.shadowMatrices + i * 16);
+			f32.set(layer.sphere, FrameOffsets.shadowSpheres + i * 4);
 		});
-		f32.set(this.#shadows.splits, FrameOffsets.shadowSplits);
-		f32[FrameOffsets.shadowSplits + 3] = shadows ? 1 : 0;
+		f32.set(this.#shadows.fade, FrameOffsets.shadowFade);
+		f32[FrameOffsets.shadowFade + 3] = shadows ? 1 : 0;
+		f32.set(this.#shadows.penumbra, FrameOffsets.shadowPenumbra);
 		this.#irradiance.centres().forEach((centre, i) => {
 			const at = FrameOffsets.irradiance + i * 4;
 			f32.set(centre ?? [0, 0, 0], at);
