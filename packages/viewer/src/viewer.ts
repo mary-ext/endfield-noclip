@@ -777,22 +777,6 @@ export class Viewer {
 		this.#dirty = true;
 	}
 
-	/**
-	 * flies to a level's player spawn, at eye height.
-	 *
-	 * @param id level id
-	 */
-	flyToSpawn(id: string): void {
-		const level = this.#levelInfo(id);
-		if (level === undefined) {
-			return;
-		}
-		const [x, y, z] = level.playerInitPos;
-		this.controls.flyTo({ position: [x, y + 1.7, z], yaw: this.camera.yaw, pitch: -0.05 });
-		this.#focusCells = this.#cellIds(level);
-		this.#dirty = true;
-	}
-
 	/** @returns the shown level's id, or `null` when the package has no level with content */
 	get level(): string | null {
 		return this.#level?.id ?? null;

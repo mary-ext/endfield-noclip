@@ -2,7 +2,7 @@ import type { Viewer } from '../viewer.ts';
 
 import { useViewerState } from './use-viewer.ts';
 
-/** the package's levels: pick the one to show, fly over it or to its spawn point */
+/** the package's levels: pick the one to show, or fly back over it */
 export const LevelsPanel = ({ viewer }: { viewer: Viewer }) => {
 	useViewerState(viewer);
 	const levels = viewer.levels();
@@ -31,17 +31,6 @@ export const LevelsPanel = ({ viewer }: { viewer: Viewer }) => {
 								<span className="muted small">
 									{level.id} · {level.instances.toLocaleString()} instances
 								</span>
-							</button>
-							<button
-								type="button"
-								title="show this level and fly to its player spawn"
-								disabled={level.instances === 0}
-								onClick={() => {
-									viewer.showLevel(level.id);
-									viewer.flyToSpawn(level.id);
-								}}
-							>
-								spawn
 							</button>
 						</li>
 					);
