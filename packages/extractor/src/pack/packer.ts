@@ -3,6 +3,7 @@ import { createWriteStream, type WriteStream } from 'node:fs';
 import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import { DrawFlags, type RendererDraw } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import type { LevelPartition, PartitionLevel } from '@endfield-noclip/formats/endfield/level-partition';
 import { CELL_SIZE } from '@endfield-noclip/formats/endfield/map-config';
@@ -343,6 +344,7 @@ export const packScene = async (
 			environments: environments.debug,
 			water: water.debug,
 			unsupportedInteractives: entities.unsupportedInteractives,
+			unsupportedPrefabs: entities.unsupportedPrefabs,
 		});
 		timer.end('debug');
 
@@ -508,6 +510,7 @@ const collectEntities = async (
 	counts: Record<string, number>;
 	hlodNameMatches: number;
 	unsupportedInteractives: { path: string; reason: string }[];
+	unsupportedPrefabs: { path: string; reason: string }[];
 }> => {
 	const { scene } = pack;
 	const { world } = context;
@@ -682,6 +685,7 @@ const collectEntities = async (
 	counts.unsupportedInteractiveFiles = facilities.unsupported.length;
 	const resolver = await context.resolver();
 	const prefabs = new Map<bigint, Promise<PrefabRenderer[]>>();
+	const unsupportedPrefabs: { path: string; reason: string }[] = [];
 	let modelId = 0;
 	for (const placement of [...dynamic.models, ...facilities.models]) {
 		const { model, levelTag } = placement;
@@ -694,21 +698,29 @@ const collectEntities = async (
 		}
 		let prefab = prefabs.get(model.pathHash);
 		if (prefab === undefined) {
+			const paths = [
+				...new Set(
+					resolver.manifest.findAssets(model.pathHash).map((asset) => resolver.manifest.assetPath(asset)),
+				),
+			];
+			const label = paths.length === 1 ? paths[0] : `0x${model.pathHash.toString(16)}`;
+			// one malformed prefab skips its placements instead of failing the scene
 			prefab = (async () => {
-				const paths = [
-					...new Set(
-						resolver.manifest.findAssets(model.pathHash).map((asset) => resolver.manifest.assetPath(asset)),
-					),
-				];
 				if (paths.length !== 1) {
-					throw new Error(`dynamic prefab ${model.pathHash} has ${paths.length} paths`);
+					throw new FormatError(`prefab has ${paths.length} manifest paths`);
 				}
 				const root = await resolver.findUnique(
 					{ hash: model.pathHash, path: paths[0] },
 					UnityClass.GameObject,
 				);
 				return readPrefabRenderers(resolver, root);
-			})();
+			})().catch((error: unknown) => {
+				if (!(error instanceof FormatError)) {
+					throw error;
+				}
+				unsupportedPrefabs.push({ path: label, reason: error.message });
+				return [];
+			});
 			prefabs.set(model.pathHash, prefab);
 		}
 		const rootMatrix = trsMatrix(model.position, unityEulerQuaternion(model.rotation), model.scale);
@@ -757,7 +769,14 @@ const collectEntities = async (
 			);
 		}
 	}
-	return { collected, counts, hlodNameMatches, unsupportedInteractives: facilities.unsupported };
+	counts.unsupportedPrefabs = unsupportedPrefabs.length;
+	return {
+		collected,
+		counts,
+		hlodNameMatches,
+		unsupportedInteractives: facilities.unsupported,
+		unsupportedPrefabs,
+	};
 };
 
 /** the top of the 27-bit per-level id space, for ids the game doesn't assign */
@@ -1476,6 +1495,7 @@ const writeDebug = async (
 		environments: LevelEnvironmentDebug[];
 		water: WaterDebug;
 		unsupportedInteractives: { path: string; reason: string }[];
+		unsupportedPrefabs: { path: string; reason: string }[];
 	},
 ): Promise<void> => {
 	const dir = join(outDir, 'debug');
@@ -1483,6 +1503,7 @@ const writeDebug = async (
 	await writeFile(join(dir, 'environments.json'), json(debug.environments));
 	await writeFile(join(dir, 'water.json'), json(debug.water));
 	await writeFile(join(dir, 'unsupported-interactives.json'), json(debug.unsupportedInteractives));
+	await writeFile(join(dir, 'unsupported-prefabs.json'), json(debug.unsupportedPrefabs));
 	await writeFile(
 		join(dir, 'assets.json'),
 		json({
