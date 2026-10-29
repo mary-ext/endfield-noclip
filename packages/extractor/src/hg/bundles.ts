@@ -19,7 +19,14 @@ import {
 	readObject,
 	type TypeTreeObject,
 } from '@endfield-noclip/formats/unity/type-tree';
-import { asPPtr, isObject, mapEntries, type PPtr } from '@endfield-noclip/formats/unity/values';
+import {
+	arrayField,
+	asPPtr,
+	isObject,
+	mapEntries,
+	numberField,
+	type PPtr,
+} from '@endfield-noclip/formats/unity/values';
 
 import type { Keys } from '../config.ts';
 
@@ -130,10 +137,14 @@ const NAME_PREFIX_SIZE = 4096;
 export interface ContainerEntry {
 	path: string;
 	asset: PPtr;
+	/** references in this container entry's preload range */
+	preloads: PPtr[];
 }
 
 /** an AssetBundle object's name and container */
 export interface AssetBundleInfo {
+	/** the owning AssetBundle object; pointers are relative to its SerializedFile */
+	info: ObjectInfo;
 	name: string | undefined;
 	container: ContainerEntry[];
 }
@@ -252,13 +263,26 @@ export class BundleAssetFile {
 			}
 			// oxlint-disable-next-line no-await-in-loop -- a file holds at most one AssetBundle in practice
 			const value = await this.read(info);
+			const preloads = arrayField(value, 'm_PreloadTable').map(asPPtr);
 			const container: ContainerEntry[] = [];
 			for (const [path, entry] of mapEntries(value.m_Container)) {
 				if (typeof path === 'string' && isObject(entry)) {
-					container.push({ path, asset: asPPtr(entry.asset) });
+					const start = numberField(entry, 'preloadIndex');
+					const size = numberField(entry, 'preloadSize');
+					if (
+						!Number.isInteger(start) ||
+						!Number.isInteger(size) ||
+						start < 0 ||
+						size < 0 ||
+						start + size > preloads.length
+					) {
+						throw new Error(`invalid preload range for ${path}`);
+					}
+					container.push({ path, asset: asPPtr(entry.asset), preloads: preloads.slice(start, start + size) });
 				}
 			}
 			bundles.push({
+				info,
 				name: typeof value.m_AssetBundleName === 'string' ? value.m_AssetBundleName : undefined,
 				container,
 			});

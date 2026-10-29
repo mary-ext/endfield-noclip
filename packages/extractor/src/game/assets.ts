@@ -12,6 +12,7 @@ import {
 	archiveFileName,
 	BUNDLE_PREFIX,
 	type BundleAssetFile,
+	type ContainerEntry,
 	bundlePath,
 	findBundleFile,
 	openAssetFiles,
@@ -145,8 +146,11 @@ export class AssetResolver {
 	readonly manifest: BundleManifest;
 	readonly #bundles = new LruCache<number, Promise<UnityBundle>>(BUNDLE_CACHE_SIZE);
 	readonly #files = new LruCache<number, Promise<BundleAssetFile[]>>(FILE_CACHE_SIZE);
-	/** per bundle: lowercase container path → objects of the bundle's own files it names */
-	readonly #containers = new LruCache<number, Promise<Map<string, PPtr[]>>>(FILE_CACHE_SIZE);
+	/** per bundle: lowercase container path → entries and their owning objects */
+	readonly #containers = new LruCache<
+		number,
+		Promise<Map<string, { from: ObjectRef; entry: ContainerEntry }[]>>
+	>(FILE_CACHE_SIZE);
 	/** CAB name (without extension) → bundle index, for every bundle directory seen */
 	readonly #cabs = new Map<string, number>();
 	/** bundles whose directory has been registered in {@link #cabs} */
@@ -392,54 +396,50 @@ export class AssetResolver {
 	 */
 	async findInBundle(index: number, path: string, classId: number): Promise<ObjectRef[]> {
 		const [containerPath, subAsset] = path.toLowerCase().split('##');
-		const files = await this.assetFiles(index);
-		const listed: ObjectRef[] = [];
-		for (const pptr of (await this.#container(index)).get(containerPath) ?? []) {
-			for (const file of files) {
-				const info = file.file.objectsByPathId.get(pptr.pathId);
-				if (info !== undefined && info.classId === classId) {
-					listed.push({ bundleIndex: index, file, info });
-				}
-			}
-		}
-		let found = listed;
-		if (subAsset !== undefined) {
-			const names = await Promise.all(listed.map((ref) => ref.file.peekName(ref.info)));
-			found = listed.filter((_, i) => names[i]?.toLowerCase() === subAsset);
-		}
-		if (found.length > 0) {
-			return found;
-		}
-		// FBX sub-assets aren't listed in the container (it names the model's root); match objects by name
-		const perFile = await Promise.all(
-			files.map(async (file) => {
-				const infos =
-					subAsset === undefined
-						? file.file.objects.filter((info) => info.classId === classId)
-						: await file.objectsNamed(classId, subAsset);
-				return infos.map((info): ObjectRef => ({ bundleIndex: index, file, info }));
+		const entries = (await this.#container(index)).get(containerPath) ?? [];
+		const matches = await Promise.all(
+			entries.map(async ({ from, entry }) => {
+				// preload ranges may include dependencies; only named sub-assets use them.
+				const pointers = subAsset === undefined ? [entry.asset] : [entry.asset, ...entry.preloads];
+				return Promise.all(
+					pointers.map(async (pointer) => {
+						const ref = await this.resolve(from, pointer);
+						if (ref === null || ref.info.classId !== classId) {
+							return null;
+						}
+						if (subAsset !== undefined && (await ref.file.peekName(ref.info))?.toLowerCase() !== subAsset) {
+							return null;
+						}
+						return ref;
+					}),
+				);
 			}),
 		);
-		return perFile.flat();
+		const found = new Map<string, ObjectRef>();
+		for (const ref of matches.flat()) {
+			if (ref !== null) {
+				found.set(objectKey(ref), ref);
+			}
+		}
+		return [...found.values()];
 	}
 
-	/** @returns the bundle's `m_Container`, by path, keeping only entries into its own files */
-	#container(index: number): Promise<Map<string, PPtr[]>> {
+	/** @returns container entries with the owning file needed to resolve their pointers */
+	#container(index: number): Promise<Map<string, { from: ObjectRef; entry: ContainerEntry }[]>> {
 		let cached = this.#containers.get(index);
 		if (cached === undefined) {
 			cached = (async () => {
-				const byPath = new Map<string, PPtr[]>();
+				const byPath = new Map<string, { from: ObjectRef; entry: ContainerEntry }[]>();
 				const files = await this.assetFiles(index);
 				const perFile = await Promise.all(files.map((file) => file.assetBundles()));
-				for (const bundles of perFile) {
+				for (const [i, bundles] of perFile.entries()) {
 					for (const bundle of bundles) {
+						const from = { bundleIndex: index, file: files[i], info: bundle.info };
 						for (const entry of bundle.container) {
-							if (entry.asset.fileId !== 0) {
-								continue;
-							}
-							const list = byPath.get(entry.path) ?? [];
-							list.push(entry.asset);
-							byPath.set(entry.path, list);
+							const path = entry.path.toLowerCase();
+							const list = byPath.get(path) ?? [];
+							list.push({ from, entry });
+							byPath.set(path, list);
 						}
 					}
 				}
