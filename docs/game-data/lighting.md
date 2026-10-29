@@ -92,9 +92,13 @@ elsewhere.
 
 specular ambient samples `sky.reflectionMap` (a BC6H cubemap, prefiltered by roughness across its
 mips) along the roughness-bent reflection vector, or the ambient probe until the cubemap streams in;
-it's weighted by an analytic split-sum environment BRDF and `light.indirectSpecularFactor`. the
-game's clustered local reflection probes, its normalisation of probe samples by the diffuse
-luminance, and SSR are not implemented.
+it's weighted by an analytic split-sum environment BRDF and `light.indirectSpecularFactor`.
+
+as in the game, the reflection is scaled by how the surface's diffuse light compares with the sky
+probe's: with `d` the luminance of the diffuse irradiance (above) and `p` the ambient probe's
+luminance L1 along the normal, the factor is `(2 · min(d / p, 1) + d) / (2 + p)`. that's about
+`d / p` under cover, so interiors don't mirror the bright sky, and about 1 in the open. the game's
+clustered local reflection probes (normalised the same way) and SSR are not implemented.
 
 ## sky
 

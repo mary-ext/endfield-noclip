@@ -331,6 +331,18 @@ fn ambient_irradiance(world: vec3f, n: vec3f) -> vec3f {
 	return max(c + base * fallback, vec3f(0.0));
 }
 
+const LUMINANCE = vec3f(0.2126729, 0.7151522, 0.0721750);
+
+// the game's scale on a sky reflection: the surface's diffuse irradiance luminance against the sky probe's own
+// (its L1, along the normal). about their ratio where the surface gets less light than the sky would give it
+// (interiors, under cover), slightly above 1 where it gets more, and 1 where they agree
+fn reflection_normalisation(irradiance: vec3f, n: vec3f) -> f32 {
+	let d = dot(irradiance, LUMINANCE);
+	let sky = LUMINANCE.x * frame.sh[0] + LUMINANCE.y * frame.sh[1] + LUMINANCE.z * frame.sh[2];
+	let p = max(1e-4, dot(sky, vec4f(n, 1.0)));
+	return (2.0 * clamp(d / p, 0.0, 1.0) + d) / (2.0 + p);
+}
+
 // height-correlated Smith visibility (Heitz), V = G / (4 n·l n·v)
 fn smith_visibility(n_dot_v: f32, n_dot_l: f32, a2: f32) -> f32 {
 	let v = n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - a2) + a2);
@@ -381,7 +393,8 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		direct *= frame.sun_colour.rgb * visibility * frame.sun.w;
 	}
 
-	let diffuse_ambient = diffuse_colour * ambient_irradiance(frame.eye.xyz + rel, n);
+	let irradiance = ambient_irradiance(frame.eye.xyz + rel, n);
+	let diffuse_ambient = diffuse_colour * irradiance;
 	var specular_ambient: vec3f;
 	{
 		let r = normalize(mix(reflect(-v, n), n, roughness * roughness));
@@ -390,7 +403,7 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		if (frame.ambient.z > 0.5) {
 			reflected = textureSampleLevel(reflection_map, reflection_sampler, r, roughness * frame.ambient.w).rgb;
 		}
-		specular_ambient = reflected * environment_brdf(f0, roughness, n_dot_v) * frame.ambient.x;
+		specular_ambient = reflected * reflection_normalisation(irradiance, n) * environment_brdf(f0, roughness, n_dot_v) * frame.ambient.x;
 	}
 	// specular sees only the material occlusion, through Lagarde's specular occlusion
 	let specular_occlusion = clamp(pow(n_dot_v + s.occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + s.occlusion, 0.0, 1.0);
