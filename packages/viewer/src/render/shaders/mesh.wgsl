@@ -41,6 +41,9 @@ const NORMAL_ROUGHNESS = 32u;
 const FOLIAGE = 64u;
 const METALLIC_BASE_ALPHA = 128u;
 const NORMAL_OCCLUSION = 256u;
+// set per draw from the geometry's streams (mesh-renderer.ts)
+const HAS_NORMALS = 512u;
+const HAS_TANGENTS = 1024u;
 
 @group(1) @binding(0) var<storage, read> rows: array<Row>;
 @group(1) @binding(1) var<storage, read> blocks: array<vec4f>;
@@ -90,15 +93,17 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 		vec3f(row.t0.y, row.t1.y, row.t2.y),
 		vec3f(row.t0.z, row.t1.z, row.t2.z),
 	);
+	// presence comes from the draw, not the values: an octahedral (0, 0) is +z, not a missing normal
+	let flags = bitcast<u32>(draw.offset.w);
 	// no normals in the mesh: zero here, faceted in the fragment shader
 	var n = vec3f(0.0);
-	if (any(v.normal != vec2f(0.0))) {
+	if ((flags & HAS_NORMALS) != 0u) {
 		// strictly the inverse transpose; scenery is scaled close to uniformly, so the matrix does once
 		// renormalized
 		n = m * oct_decode(v.normal);
 	}
 	var t = vec4f(0.0);
-	if (any(v.tangent.xy != vec2f(0.0))) {
+	if ((flags & HAS_TANGENTS) != 0u) {
 		let sign = select(-1.0, 1.0, v.tangent.z >= 0.0) * select(-1.0, 1.0, determinant(m) >= 0.0);
 		t = vec4f(m * oct_decode(v.tangent.xy), sign);
 	}

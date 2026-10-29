@@ -30,6 +30,16 @@ const DRAW_FLOATS = 8 + LOOK_FLOATS;
 const MAX_DRAWS = 16_384;
 /** bytes per vertex of the zero buffer bound in place of missing streams (the widest is UV set 0) */
 const ZERO_STRIDE = 8;
+/**
+ * draw flags of the geometry, next to the material's `LookFlags` (`HAS_*` in mesh.wgsl). the shader can't
+ * tell a missing stream from its values: the zero buffer bound in its place reads as an octahedral (0, 0),
+ * which is +z
+ */
+const GeometryFlags = {
+	HasNormals: 1 << 9,
+	HasTangents: 1 << 10,
+} as const;
+
 /** one run over a pass's opaque or alpha-tested draws with one pipeline */
 interface DrawPhase {
 	key: string;
@@ -369,7 +379,10 @@ export class MeshRenderer {
 			}
 			const at = d * DRAW_FLOATS;
 			params.set(resident.positionOffset, at);
-			words[at + 3] = flags;
+			words[at + 3] =
+				flags |
+				(resident.normalOffset === null ? 0 : GeometryFlags.HasNormals) |
+				(resident.tangentOffset === null ? 0 : GeometryFlags.HasTangents);
 			params.set(resident.positionScale, at + 4);
 			params[at + 7] = 0;
 			params.set(look.params, at + 8);
