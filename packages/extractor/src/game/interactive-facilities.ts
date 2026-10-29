@@ -16,9 +16,24 @@ import type { StructureModel } from './dynamic-structures.ts';
 // these facility templates share the validated base-model component prefix. other interactive
 // systems need their own component and visibility contracts before their models can be included.
 const TEMPLATES = new Map([
-	['int_system_domain_shop', 'Data/Json/Interactive/InteractiveData/data_int_system_domain_shop.json'],
-	['int_system_domain_depot', 'Data/Json/Interactive/InteractiveData/data_int_system_domain_depot.json'],
-	['int_doodad_core_recycle', 'Data/Json/Interactive/InteractiveData/data_int_doodad_core_recycle.json'],
+	[
+		'int_system_domain_shop',
+		{
+			name: 'Stock redistribution facility',
+			data: 'Data/Json/Interactive/InteractiveData/data_int_system_domain_shop.json',
+		},
+	],
+	[
+		'int_system_domain_depot',
+		{ name: 'Depot', data: 'Data/Json/Interactive/InteractiveData/data_int_system_domain_depot.json' },
+	],
+	[
+		'int_doodad_core_recycle',
+		{
+			name: 'Recycling station',
+			data: 'Data/Json/Interactive/InteractiveData/data_int_doodad_core_recycle.json',
+		},
+	],
 ]);
 
 /**
@@ -59,25 +74,53 @@ export const loadInteractiveFacilities = async (
 		throw new FormatError('invalid model table');
 	}
 	const modelData = objectField(table, 'data');
-	const manifest = await world.manifest();
-	const paths = new Map<string, bigint>();
-	for (const asset of manifest.assets()) {
-		paths.set(manifest.assetPath(asset), asset.pathHash);
-	}
-	const templates = new Map<string, { initial: number; forms: { hash: bigint; scale: number }[] }>();
-	for (const [id, path] of TEMPLATES) {
+	const authored: {
+		id: string;
+		name: string;
+		initial: number;
+		forms: { prefab: string; scale: number }[];
+	}[] = [];
+	for (const [id, template] of TEMPLATES) {
 		// oxlint-disable-next-line no-await-in-loop -- small facility templates, read once per map
-		const model = readInteractiveModel(await read(path), string);
+		const model = readInteractiveModel(await read(template.data), string);
 		const forms = model.levels.map((modelId) => {
 			const data = objectField(modelData, modelId);
-			const prefab = stringField(data, 'path').toLowerCase();
-			const hash = paths.get(prefab);
-			if (hash === undefined) {
-				throw new FormatError(`missing facility prefab ${prefab}`);
-			}
-			return { hash, scale: model.scale * numberField(data, 'scaleFactor') };
+			return {
+				prefab: stringField(data, 'path').toLowerCase(),
+				scale: model.scale * numberField(data, 'scaleFactor'),
+			};
 		});
-		templates.set(id, { initial: model.levels.indexOf(model.id), forms });
+		authored.push({ id, name: template.name, initial: model.levels.indexOf(model.id), forms });
+	}
+	// the manifest maps hashes to paths only, and each path decompresses on read: stop once all are found
+	const wanted = new Set(authored.flatMap((template) => template.forms.map((form) => form.prefab)));
+	const hashes = new Map<string, bigint>();
+	const manifest = await world.manifest();
+	for (const asset of manifest.assets()) {
+		if (hashes.size === wanted.size) {
+			break;
+		}
+		const path = manifest.assetPath(asset);
+		if (wanted.has(path)) {
+			hashes.set(path, asset.pathHash);
+		}
+	}
+	const templates = new Map<
+		string,
+		{ name: string; initial: number; forms: { hash: bigint; scale: number }[] }
+	>();
+	for (const { id, name, initial, forms } of authored) {
+		templates.set(id, {
+			name,
+			initial,
+			forms: forms.map(({ prefab, scale }) => {
+				const hash = hashes.get(prefab);
+				if (hash === undefined) {
+					throw new FormatError(`missing facility prefab ${prefab}`);
+				}
+				return { hash, scale };
+			}),
+		});
 	}
 	const pathOf = await world.pathLookup();
 	const models: StructureModel[] = [];
@@ -112,16 +155,11 @@ export const loadInteractiveFacilities = async (
 				}
 				seen.add(row.id);
 				const id = `facility:${row.id}`;
-				const names: Record<string, string> = {
-					int_system_domain_shop: 'Stock redistribution facility',
-					int_system_domain_depot: 'Depot',
-					int_doodad_core_recycle: 'Recycling station',
-				};
 				progressions.push({
 					id,
 					kind: 'facility',
 					key: row.template,
-					name: `${names[row.template]} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
+					name: `${template.name} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
 					levelId: config.id,
 					levels: template.forms.map((_, i) => i),
 					defaultLevel: template.initial,
