@@ -53,6 +53,7 @@ const SECTION_KEYS = {
 	lightShaftConfig: 'lightShaft',
 	colorGradingConfig: 'colorGrading',
 	autoExposureConfig: 'autoExposure',
+	shadowConfig: 'shadow',
 } as const satisfies Record<EnvironmentSectionName, keyof EnvironmentProfile>;
 
 /** what a level resolved to, for the pack report and debug index */

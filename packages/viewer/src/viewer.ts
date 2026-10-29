@@ -259,6 +259,10 @@ export class Viewer {
 	#reflection: TextureBinding;
 	/** mip levels of the bound reflection cubemap, minus one */
 	#reflectionMips = 0;
+	/** black: bound while the environment has no shadow ramp, or it hasn't streamed in */
+	#noShadowRamp: GPUTextureView;
+	/** the shadow ramp view the frame groups were built with */
+	#shadowRamp: GPUTextureView;
 	#profiler: GpuProfiler;
 	#terrain: TerrainRenderer;
 	#instances: InstanceRenderer;
@@ -334,8 +338,10 @@ export class Viewer {
 			version: -1,
 		};
 		this.#reflection = this.#noReflection;
+		this.#noShadowRamp = placeholderView(device, { label: 'no shadow ramp', dimension: '2d' });
+		this.#shadowRamp = this.#noShadowRamp;
 		this.#irradiance = new IrradianceVolume(device, EMPTY_IRRADIANCE);
-		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(this.#noReflection);
+		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups();
 		this.#profiler = new GpuProfiler(device, gfx.features.timestampQuery);
 		const format = this.#targets.format;
 		this.#terrain = new TerrainRenderer(device, this.#layouts, this.#pipelines, format, TERRAIN_SLOTS);
@@ -507,6 +513,7 @@ export class Viewer {
 		// the destroyed store's sky textures
 		this.#post.setCloud(null);
 		this.#setReflection(this.#noReflection, 1);
+		this.#setShadowRamp(null);
 		this.scene = null;
 		this.#sceneValues = {};
 		this.options.environmentEnabled = {};
@@ -522,9 +529,10 @@ export class Viewer {
 		this.#emitState();
 	}
 
-	/** @returns group 0 for the main pass and for the shadow passes, with this reflection cubemap */
-	#frameGroups(reflection: TextureBinding): [main: GPUBindGroup, shadow: GPUBindGroup] {
+	/** @returns group 0 for the main pass and for the shadow passes, with the bound sky and shadow textures */
+	#frameGroups(): [main: GPUBindGroup, shadow: GPUBindGroup] {
 		const device = this.#gfx.device;
+		const reflection = this.#reflection;
 		const group = (label: string, shadowView: GPUTextureView): GPUBindGroup =>
 			device.createBindGroup({
 				label,
@@ -542,6 +550,7 @@ export class Viewer {
 					{ binding: 11, resource: this.#irradiance.sampler },
 					{ binding: 12, resource: this.#irradiance.clampSampler },
 					{ binding: 13, resource: this.#shadows.gatherSampler },
+					{ binding: 14, resource: this.#shadowRamp },
 				],
 			});
 		const irradiance = this.#irradiance.views();
@@ -552,7 +561,7 @@ export class Viewer {
 	#setIrradiance(irradiance: IrradianceVolume): void {
 		this.#irradiance.destroy();
 		this.#irradiance = irradiance;
-		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(this.#reflection);
+		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups();
 	}
 
 	/** streams the level's sky textures (reflection cubemap, cloud panorama) and binds them as they arrive */
@@ -576,6 +585,24 @@ export class Viewer {
 			priority: 1e6,
 		});
 		this.#setReflection(reflection?.binding ?? this.#noReflection, reflection?.entry.mipCount ?? 1);
+
+		const ramp = streamWholeTexture({
+			stream,
+			textures,
+			id: environment.shadow.ramp,
+			kind: '2d',
+			priority: 1e6,
+		});
+		this.#setShadowRamp(ramp?.binding?.view ?? null);
+	}
+
+	/** rebinds the frame groups when the shadow ramp's view changed; `null` binds the black placeholder */
+	#setShadowRamp(view: GPUTextureView | null): void {
+		const next = view ?? this.#noShadowRamp;
+		if (next !== this.#shadowRamp) {
+			this.#shadowRamp = next;
+			[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups();
+		}
 	}
 
 	/** rebinds the frame groups when the reflection's binding changed (the store hands out a new one then) */
@@ -583,7 +610,7 @@ export class Viewer {
 		if (binding !== this.#reflection) {
 			this.#reflection = binding;
 			this.#reflectionMips = mipCount - 1;
-			[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups(binding);
+			[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups();
 		}
 	}
 
@@ -1308,7 +1335,15 @@ export class Viewer {
 		});
 		f32.set(this.#shadows.fade, FrameOffsets.shadowFade);
 		f32[FrameOffsets.shadowFade + 3] = shadows ? 1 : 0;
-		f32.set(this.#shadows.penumbra, FrameOffsets.shadowPenumbra);
+		{
+			const shadow = this.#environment.shadow;
+			f32.set(this.#shadows.penumbra(shadow.softness), FrameOffsets.shadowPenumbra);
+			const at = FrameOffsets.shadowLook;
+			f32[at] = shadow.strength;
+			f32[at + 1] = shadow.override;
+			f32[at + 2] = shadow.attenuation;
+			f32[at + 3] = this.#shadowRamp === this.#noShadowRamp ? 0 : 1;
+		}
 		this.#irradiance.centres().forEach((centre, i) => {
 			const at = FrameOffsets.irradiance + i * 4;
 			f32.set(centre ?? [0, 0, 0], at);

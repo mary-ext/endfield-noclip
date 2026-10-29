@@ -23,11 +23,10 @@ const SPLITS = [12, 30, 80, 800];
 const SHARP_REACH = 80;
 const SHARP_FADE_START = 0.8 * SHARP_REACH;
 /**
- * the shadow's softness, the game's `shadowConfig.csmShadowSoftness`: each sharp cascade's filter radius is
- * it over the cascade's split distance (12, 30 m and, as the game computes it, 40 m for the third) in uv of
- * the game's 2 × 2 atlas, so twice that in one layer's uv
+ * each sharp cascade's filter radius is the environment's shadow softness over these distances (the cascades'
+ * splits, and as the game computes it, 40 m for the third) in uv of the game's 2 × 2 atlas, so twice that in
+ * one layer's uv
  */
-const SOFTNESS = 0.01;
 const PENUMBRA_SPLITS = [12, 30, 40];
 /** how far towards the sun casters are kept beyond the layer's sphere, m */
 const CASTER_REACH = 1500;
@@ -80,8 +79,13 @@ export class ShadowMap {
 		SHARP_REACH ** 2,
 		1 / (SHARP_REACH ** 2 - SHARP_FADE_START ** 2),
 	];
-	/** each sharp cascade's filter radius, layer uv */
-	readonly penumbra: readonly number[] = PENUMBRA_SPLITS.map((split) => (2 * SOFTNESS) / split);
+	/**
+	 * @param softness the environment's shadow softness (`shadowConfig.csmShadowSoftness`)
+	 * @returns each sharp cascade's filter radius, layer uv
+	 */
+	penumbra(softness: number): number[] {
+		return PENUMBRA_SPLITS.map((split) => (2 * softness) / split);
+	}
 
 	/** @param device the device */
 	constructor(device: GPUDevice) {

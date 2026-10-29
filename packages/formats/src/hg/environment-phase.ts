@@ -23,6 +23,7 @@ export const ENVIRONMENT_SECTIONS = [
 	'lightShaftConfig',
 	'colorGradingConfig',
 	'autoExposureConfig',
+	'shadowConfig',
 ] as const;
 
 /** a section's field name */
@@ -109,4 +110,5 @@ export const mapSections = <T>(
 	lightShaftConfig: fn('lightShaftConfig'),
 	colorGradingConfig: fn('colorGradingConfig'),
 	autoExposureConfig: fn('autoExposureConfig'),
+	shadowConfig: fn('shadowConfig'),
 });

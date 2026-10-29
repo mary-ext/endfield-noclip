@@ -16,7 +16,7 @@ free of node APIs and of other workspace packages so both sides can import it.
 
 ## versioning
 
-`PACKAGE_VERSION` (9) is written to `manifest.version` and to the header of every binary encoding
+`PACKAGE_VERSION` (10) is written to `manifest.version` and to the header of every binary encoding
 (tree, chains, blob table, irradiance table, instance blocks, height pages, geometry blobs). readers
 accept exactly that version and reject any other, and nothing migrates old packages: a package from
 another version is re-extracted. bump the version on any incompatible change to the manifest, a

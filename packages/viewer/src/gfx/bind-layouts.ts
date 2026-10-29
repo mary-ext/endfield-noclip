@@ -62,6 +62,8 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 			{ binding: 12, visibility: FRAGMENT, sampler: { type: 'filtering' } },
 			// raw shadow-map depth reads
 			{ binding: 13, visibility: FRAGMENT, sampler: { type: 'non-filtering' } },
+			// the shadow's penumbra ramp
+			{ binding: 14, visibility: FRAGMENT, texture: { sampleType: 'float' } },
 		],
 	});
 	const terrain = device.createBindGroupLayout({

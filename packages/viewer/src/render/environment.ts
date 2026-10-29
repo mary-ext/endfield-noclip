@@ -20,6 +20,7 @@ import type {
 	HeightFogLayers,
 	LightConfig,
 	Quat,
+	ShadowConfig,
 	SkyConfig,
 	Vec2,
 	VignetteSettings,
@@ -136,10 +137,21 @@ export type CloudInput = Pick<
 	| 'rotation'
 >;
 
+/** the parts of the game's shadow config the viewer reads */
+export type ShadowInput = Pick<
+	ShadowConfig,
+	| 'csmIntensity'
+	| 'csmRampTexture'
+	| 'csmShadowSoftness'
+	| 'disableCsmBlendFactor'
+	| 'csmSimulatedAttenuation'
+>;
+
 /** what the viewer reads of an environment profile; extra fields are ignored */
 export interface EnvironmentInput {
 	name: string;
 	light: LightInput;
+	shadow: ShadowInput;
 	sky: SkyInput;
 	atmosphere: AtmosphereInput;
 	fog: FogInput;
@@ -250,6 +262,18 @@ export interface Environment {
 	/** pre-exposed illuminance, linear rgb */
 	sunIlluminance: Vec3;
 	sunSpecular: number;
+	/** the sun shadow's look */
+	shadow: {
+		/** how far shadow darkens the sun, 0–1 */
+		strength: number;
+		/** filter radius numerator (see `shadow-map.ts`) */
+		softness: number;
+		/** how far the shadow is replaced by `attenuation`: 1 where the game keeps the sun out of caves */
+		override: number;
+		attenuation: number;
+		/** texture-table id of the penumbra tint ramp, or `null` for none (black) */
+		ramp: number | null;
+	};
 	/** unit vector towards the sun the sky is lit by (art direction can move it away from the light's) */
 	skySunDirection: Vec3;
 	/** the sky's sun illuminance, pre-exposed */
@@ -396,6 +420,13 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 		atmospherePitchYaw: [38, 35],
 		rotationAtmosphere: IDENTITY,
 		rotationHeightFogDirectionalInscattering: IDENTITY,
+	},
+	shadow: {
+		csmIntensity: 1,
+		csmRampTexture: null,
+		csmShadowSoftness: 0.01,
+		disableCsmBlendFactor: 0,
+		csmSimulatedAttenuation: 0,
 	},
 	sky: {
 		// a sky brighter overhead than at the horizon, and a darker ground
@@ -627,6 +658,13 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 		sunDirection,
 		sunIlluminance,
 		sunSpecular: light.directSpecularIntensity,
+		shadow: {
+			strength: source.shadow.csmIntensity,
+			softness: source.shadow.csmShadowSoftness,
+			override: source.shadow.disableCsmBlendFactor,
+			attenuation: source.shadow.csmSimulatedAttenuation,
+			ramp: source.shadow.csmRampTexture,
+		},
 		skySunDirection,
 		skyIlluminance: [skyScale, skyScale, skyScale],
 		sh: shaderSh(sky.skyAmbientSH, light.indirectDiffuseFactor),

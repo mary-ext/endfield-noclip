@@ -32,9 +32,10 @@ the extractor reads these sections
 | `lightShaftConfig`    | `lightShaft`    | packed, not used                                        |
 | `colorGradingConfig`  | `colorGrading`  | grading                                                 |
 | `autoExposureConfig`  | `autoExposure`  | packed, not used                                        |
+| `shadowConfig`        | `shadow`        | sun shadow softness, strength, penumbra ramp, sun-off   |
 
-other sections the phase has (`rainConfig`, `snowConfig`, `shadowConfig`, `celestialConfig`,
-`starConfig`, `volumetricCloudConfig`, `lensFlareConfig`, …) are not extracted. to add one, extend
+other sections the phase has (`rainConfig`, `snowConfig`, `celestialConfig`, `starConfig`,
+`volumetricCloudConfig`, `lensFlareConfig`, …) are not extracted. to add one, extend
 `ENVIRONMENT_SECTIONS` and `mapSections`, the `SECTION_KEYS` map in
 [`pack/environments.ts`](../../packages/extractor/src/pack/environments.ts), and the matching
 interface in [`package-format/src/format.ts`](../../packages/package-format/src/format.ts).

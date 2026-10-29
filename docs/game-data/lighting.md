@@ -55,9 +55,19 @@ main pass draws that frame.
   cached map.
 - receivers move along the normal by about a texel, against acne. the game instead pushes them
   towards the sun by its contact-shadow pass's clear ray length, and biases casters in hardware.
-- softness is the map02 value 0.01 for now; the game reads it, the strength, a penumbra tint ramp
-  and a sun-off switch for caves from each phase's `shadowConfig`, which isn't packed yet. contact
-  and cloud shadows aren't drawn.
+- the environment's `shadow` section (the phase's `shadowConfig`) sets the rest, blended across
+  volumes like any other section. map02 has softness 0.01 and strength 1 everywhere:
+
+  | input                                              | effect                                                                    |
+  | -------------------------------------------------- | ------------------------------------------------------------------------- |
+  | `csmShadowSoftness`                                | the filter radius numerator above                                         |
+  | `disableCsmBlendFactor`, `csmSimulatedAttenuation` | the shadow is replaced by the attenuation by the factor (caves: 1 and 0)  |
+  | `csmIntensity`                                     | sun visibility `mix(1, shadow, intensity)`                                |
+  | `csmRampTexture`                                   | penumbra tint: the sun times `1 − (1 − ramp(v)) · (1 − v)`, black if none |
+
+  without a ramp the sun is multiplied by the visibility `v`. on map02, Yinglung Pass's phases tint
+  penumbrae purple, and ten cave and interior volumes keep the sun out entirely. the cached map's,
+  contact shadows' and other fields are packed but unused; contact and cloud shadows aren't drawn.
 
 ## ambient
 
@@ -262,4 +272,5 @@ are sampled toroidally in `ambient_irradiance`.
   and 8.
 - not rendered: froxel volumetric fog, light shafts, lens flare, cloud shadows, celestial bodies,
   stars and aurora, local reflection probes, SSR, punctual lights, precipitation and wetness.
-- interiors receive the outdoor sun wherever no drawn geometry shadows them.
+- interiors outside the game's sun-off volumes receive the outdoor sun wherever no drawn geometry
+  shadows them.

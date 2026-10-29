@@ -32,6 +32,8 @@ struct Frame {
 	shadow_penumbra: vec4f,
 	// each layer's bounding sphere: camera-relative centre, w = radius squared
 	shadow_spheres: array<vec4f, 4>,
+	// x = strength, y = how far the shadow is replaced by z (a fixed attenuation), w = 1 with a penumbra ramp
+	shadow_look: vec4f,
 	// world position of each irradiance clipmap level's centre (0.5 m, 2 m, 8 m probes), w = 1 once filled
 	irradiance: array<vec4f, 3>,
 }
@@ -41,6 +43,8 @@ struct Frame {
 @group(0) @binding(2) var shadow_sampler: sampler_comparison;
 // raw depth reads (gathers) of the shadow map
 @group(0) @binding(13) var shadow_gather_sampler: sampler;
+// the penumbra tint, sampled at the shadow value (u) with irradiance_clamp; black without one
+@group(0) @binding(14) var shadow_ramp: texture_2d<f32>;
 // the level's sky reflection, prefiltered by roughness over its mips (Unity's convention); a black cube
 // until it streams in, flagged by ambient.z
 @group(0) @binding(3) var reflection_map: texture_cube<f32>;
@@ -165,6 +169,24 @@ fn sun_shadow(rel: vec3f, normal: vec3f, px: vec2f) -> f32 {
 		return far;
 	}
 	return mix(far, sharp, near);
+}
+
+// what reaches a surface of the sun's light, per channel: the shadow, replaced by the environment's fixed
+// attenuation where it keeps the sun out (caves), weakened by its strength and tinted through its penumbra ramp
+fn sun_visibility(rel: vec3f, normal: vec3f, px: vec2f) -> vec3f {
+	if (frame.shadow_fade.w < 0.5) {
+		return vec3f(1.0);
+	}
+	var shadow = frame.shadow_look.z;
+	if (frame.shadow_look.y < 0.99) {
+		shadow = mix(sun_shadow(rel, normal, px), frame.shadow_look.z, frame.shadow_look.y);
+	}
+	let sh = mix(1.0, min(1.0, shadow), frame.shadow_look.x);
+	if (frame.shadow_look.w < 0.5) {
+		return vec3f(sh);
+	}
+	let ramp = textureSampleLevel(shadow_ramp, irradiance_clamp, vec2f(sh, 0.5), 0.0).rgb;
+	return vec3f(1.0) - (vec3f(1.0) - ramp) * (1.0 - sh);
 }
 
 // #endregion
@@ -352,9 +374,9 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		let back = clamp(dot(-n, l), 0.0, 1.0);
 		direct += diffuse_colour / PI * s.transmission * back;
 		// the shadow lookup only where the sun can reach
-		var visibility = 0.0;
+		var visibility = vec3f(0.0);
 		if (n_dot_l > 0.0 || s.transmission * back > 0.0) {
-			visibility = sun_shadow(rel, n, px);
+			visibility = sun_visibility(rel, n, px);
 		}
 		direct *= frame.sun_colour.rgb * visibility * frame.sun.w;
 	}

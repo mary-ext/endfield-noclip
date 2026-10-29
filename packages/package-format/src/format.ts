@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 9;
+export const PACKAGE_VERSION = 10;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -559,6 +559,7 @@ export interface EnvironmentProfile {
 	lightShaft: LightShaftConfig;
 	colorGrading: ColorGradingConfig;
 	autoExposure: AutoExposureConfig;
+	shadow: ShadowConfig;
 	/** the level's global post-processing volume, or `null` if it has none */
 	post: PostProfile | null;
 }
@@ -849,6 +850,38 @@ export interface CloudConfig {
 	enableCloudShadow: boolean;
 	cloudShadowConfig: CloudShadowConfig;
 	cloudFadeAlpha: number;
+}
+
+/** `HGShadowConfig`: the sun shadow's look and the cached and contact shadows' settings */
+export interface ShadowConfig {
+	csmDepthBiasV2: number;
+	csmNormalBiasV2: number;
+	/** how far shadows darken the sun, 0–1 */
+	csmIntensity: number;
+	/** penumbra tint, sampled at the shadow value; black when `null` */
+	csmRampTexture: TextureRef;
+	/** filter radius numerator: over each cascade's split distance, in the game's shadow atlas uv */
+	csmShadowSoftness: number;
+	asmCasterMinY: number;
+	asmCasterMaxY: number;
+	contactShadowIntensity: number;
+	contactShadowSurfaceThickness: number;
+	contactShadowBilinearThreshold: number;
+	contactShadowContract: number;
+	contactShadowIgnoreEdgePixels: boolean;
+	overrideCsmFarDistanceEnabled: boolean;
+	overrideCsmFarDistance: number;
+	manualOverrideCsmRendering: boolean;
+	overrideCsmSpherePosition: Vec3;
+	overrideCsmSphereRadius: number;
+	disableCsm: boolean;
+	/** how far the shadow is replaced by `csmSimulatedAttenuation` (1 in caves that keep the sun out) */
+	disableCsmBlendFactor: number;
+	csmSimulatedAttenuation: number;
+	disableAsm: boolean;
+	rhodesModeEnabled: boolean;
+	rhodesShipCenter: Vec3;
+	rhodesShipRadius: number;
 }
 
 /** `HGWindConfig`: foliage and cloth wind */
