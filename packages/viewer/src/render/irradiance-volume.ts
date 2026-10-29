@@ -264,7 +264,7 @@ export class IrradianceVolume {
 	 */
 	encode(encoder: GPUCommandEncoder): void {
 		const device = this.#device;
-		// coarse to fine: a finer level's texels without probes copy the coarser level, so it refills after it
+		// coarse to fine, since finer levels copy coarser ones
 		let coarserChanged = false;
 		for (let index = this.#levels.length - 1; index >= 0; index--) {
 			const level = this.#levels[index];

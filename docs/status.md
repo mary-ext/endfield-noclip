@@ -23,9 +23,8 @@ or renders correctly.
 
 ## look and lighting
 
-- baked GI brightness is unverified against the game since probe-less texels began falling back to
-  coarser levels; the native ambient scale is still missing, and the lighting lookup has no jitter
-  or forward-shifted clipmap centres
+- baked GI brightness is unverified against in-game shots; the native ambient scale is missing, and
+  the lighting lookup has no jitter or forward-shifted clipmap centres
 - several ambient, sky-LUT and exposure constants are computed in native engine code and not yet
   recovered
 - irradiance: only the base scenario is packed; scenario overlays, partial clipmap updates, the

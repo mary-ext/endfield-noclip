@@ -41,8 +41,9 @@ proxies) isn't reproduced.
 the game's PC high layout: three sharp cascades out to 12, 30 and 80 m, then a coarse layer the game
 keeps as a cached shadow map out to 800 m. the viewer draws all four as 2048² `depth32float` layers
 fitted to bounding spheres of frustum slices and snapped to world texels so edges don't crawl
-([`render/shadow-map.ts`](../../packages/viewer/src/render/shadow-map.ts)); casters are what the
-main pass draws that frame.
+([`render/shadow-map.ts`](../../packages/viewer/src/render/shadow-map.ts)). turning the camera
+doesn't change a sphere's fit. casters are what the main pass draws that frame, so geometry outside
+the view doesn't cast.
 
 - a point uses the first cascade sphere containing it, dithered with the next one over the outer
   tenth of the sphere's radius.
@@ -157,9 +158,9 @@ steps, reach capped at 48 half-resolution pixels with the falloff radius shrunk 
 `ambientOcclusion.custom` is set, the game ignores the volume's march settings for a fixed preset:
 radius 4 m, falloff range 1, sample distribution power 1, thin-occluder compensation 2; only
 `finalValuePower` comes from the volume (6 on map02). thin-occluder compensation scales depth
-differences by `1 + thin` in the falloff distance. the viewer still derives normals from depth and
-filters with one depth-aware blur, where the game reads GBuffer normals and filters temporally and
-twice spatially.
+differences by `1 + thin` in the falloff distance. the viewer derives normals from depth and filters
+with one depth-aware blur; the game reads GBuffer normals and filters temporally and twice
+spatially.
 
 colour grading ([`render/color-grading.ts`](../../packages/viewer/src/render/color-grading.ts))
 packs `colorGradingConfig` the way URP's colour utilities do (white balance, colour adjustments,

@@ -22,7 +22,7 @@ struct Update {
 @group(0) @binding(3) var out_a: texture_storage_3d<rgba16float, write>;
 // three slabs along y (red, green, blue): the L1 direction · 0.25 + 0.5, alpha the probe's validity
 @group(0) @binding(4) var out_b: texture_storage_3d<rgba8unorm, write>;
-// the next coarser level's A and B, which fill texels with no probe of their own; unread at the coarsest level
+// the next coarser level's A and B; unread at the coarsest level
 @group(0) @binding(5) var coarse_a: texture_3d<f32>;
 @group(0) @binding(6) var coarse_b: texture_3d<f32>;
 @group(0) @binding(7) var coarse_repeat: sampler;

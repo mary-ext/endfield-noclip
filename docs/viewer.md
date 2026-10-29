@@ -211,13 +211,11 @@ details:
   the pass; the MSAA colour is discarded and depth is stored for post. draw order: terrain, meshes
   (opaque, then alpha-tested), instance boxes, box outlines (boxes larger than `outlineMetres`),
   terrain wireframe.
-- **shadows.** four 2048² `depth32float` layers, three sharp cascades out to 12/30/80 m and a far
-  layer out to 800 m, each fitted to a bounding sphere of its frustum slice (so turning doesn't
-  change the fit) and snapped to whole texels so edges don't crawl
-  ([`render/shadow-map.ts`](../packages/viewer/src/render/shadow-map.ts); filtering in
-  [lighting.md](game-data/lighting.md#shadows)). casters are this frame's main-pass selection, so
-  geometry outside the view doesn't cast. each layer gets its own copy of the frame uniforms with
-  its view-projection.
+- **shadows.** four depth layers, laid out and filtered as in
+  [lighting.md](game-data/lighting.md#shadows)
+  ([`render/shadow-map.ts`](../packages/viewer/src/render/shadow-map.ts)). each layer's pass reuses
+  this frame's main-pass selection and gets its own copy of the frame uniforms with its
+  view-projection.
 - **post** ([`render/post-process.ts`](../packages/viewer/src/render/post-process.ts)) is fullscreen
   triangles with `auto` layouts. composite applies AO, sky, aerial perspective and height fog; `fog`
   and `aerialPerspective` change what composite does, not which passes run. water draws over a copy
