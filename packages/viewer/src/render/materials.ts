@@ -4,7 +4,8 @@
  *
  * the HGRP Lit family has two texture layouts (`_BaseTextureMapCount`): with an MRO map (R metallic, G
  * roughness, B occlusion) the normal map is `RAG`; without one (`_TWO_BASEMAP`, most materials) the normal
- * map's B channel holds roughness. foliage normal maps hold roughness in B the same way.
+ * map's B channel holds roughness and A occlusion, and metallic is the base colour's alpha
+ * (`_BaseTextureMapCount` 1) or `_Metallic` (2). foliage normal maps hold roughness in B the same way.
  *
  * @module
  */
@@ -51,6 +52,10 @@ export const LookFlags = {
 	NormalRoughness: 1 << 5,
 	/** thin foliage: transmission, two-sided lighting */
 	Foliage: 1 << 6,
+	/** metallic is the base colour's alpha instead of the surface row's constant */
+	MetallicBaseAlpha: 1 << 7,
+	/** the normal map's alpha is the material occlusion */
+	NormalOcclusion: 1 << 8,
 } as const;
 
 /** the slot flags of {@link LookFlags}, which are cleared while a slot's texture isn't resident */
@@ -173,6 +178,14 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		look.flags |= LookFlags.NormalRag;
 	} else if (entry.normalLayout === 'RG' || foliage) {
 		look.flags |= LookFlags.NormalRoughness;
+	}
+	// the Lit family's metallic source follows `_BaseTextureMapCount`: 0 (MRO) the MRO map's R, 1 the base
+	// colour's alpha, 2 the `_Metallic` constant. without an MRO map the normal map's alpha is occlusion
+	if (family === 'lit' && entry.normalLayout === 'RG') {
+		look.flags |= LookFlags.NormalOcclusion;
+		if (floatOf(entry, shader, '_BaseTextureMapCount', 1) < 1.5) {
+			look.flags |= LookFlags.MetallicBaseAlpha;
+		}
 	}
 	if (foliage) {
 		look.flags |= LookFlags.Foliage;

@@ -39,6 +39,8 @@ const EMISSIVE_MAP = 8u;
 const NORMAL_RAG = 16u;
 const NORMAL_ROUGHNESS = 32u;
 const FOLIAGE = 64u;
+const METALLIC_BASE_ALPHA = 128u;
+const NORMAL_OCCLUSION = 256u;
 
 @group(1) @binding(0) var<storage, read> rows: array<Row>;
 @group(1) @binding(1) var<storage, read> blocks: array<vec4f>;
@@ -166,6 +168,13 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 	s.roughness = roughness;
 	s.metallic = draw.surface.z;
 	s.f0 = draw.surface2.y;
+	if ((flags & METALLIC_BASE_ALPHA) != 0u) {
+		// dielectric until the base colour streams in
+		s.metallic = select(0.0, base.a, (flags & BASE_MAP) != 0u);
+	}
+	if ((flags & (NORMAL_MAP | NORMAL_OCCLUSION)) == (NORMAL_MAP | NORMAL_OCCLUSION)) {
+		s.occlusion = mix(1.0, packed.a, draw.surface2.x);
+	}
 	if ((flags & MASK_MAP) != 0u) {
 		s.metallic = mask.r;
 		s.roughness = mix(draw.surface.x, draw.surface.y, mask.g);
