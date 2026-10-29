@@ -455,7 +455,7 @@ export const decodeIrradianceTable = (data: Uint8Array): IrradianceTable => {
 
 /**
  * instance block: 32-byte header (`'EFIN'`, u16 version, u16 flags, u32 count, f32×3 origin, u32×2 0), then
- * sections of `count` elements each: u32 chain, f32×12 transform, f32×6 bounds, u32 entity id, u8 layer
+ * sections of `count` elements each: u32 chain, f32×12 transform, f32×6 bounds, u32 entity id, u8 scene state
  * (padded to 4 bytes).
  *
  * @param block rows

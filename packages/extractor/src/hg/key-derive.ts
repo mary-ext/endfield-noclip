@@ -34,9 +34,9 @@ import { Vfs, vfsCatalogPath, VfsGroup, vfsLayerDirs } from './vfs.ts';
  *
  * - **bundle sbox/key/iv** are embedded as plain bytes in `UnityPlayer.dll`'s `.data` and are recovered by
  *   scanning for the cipher's 256-byte substitution box.
- * - **vfsKey** and the bundle **chainXor** are assembled at runtime by VM-protected code and are _not_ present
- *   as plain constants, so they can't be scanned out. they're taken from {@link DeriveOptions.fallback} (i.e.
- *   `--keys-from`) when supplied, and are still validated here against the install.
+ * - **vfsKey** and the bundle **chainXor** are computed at runtime and are _not_ present as plain constants, so
+ *   they can't be scanned out. they're taken from {@link DeriveOptions.fallback} (i.e. `--keys-from`) when
+ *   supplied, and are still validated here against the install.
  *
  * every recovered or supplied key is checked against the real install before being returned, so a wrong key
  * fails here rather than deep in extraction.
@@ -125,8 +125,8 @@ const resolveInstall = (installRoot: string): InstallPaths => {
 // #region vfs key
 
 /**
- * the vfsKey is VM-protected in this build, so we validate a supplied key rather than scanning for it. the
- * oracle: a `.blc` catalog decrypts to a recognizable layout.
+ * the vfsKey isn't stored as a constant in this build, so we validate a supplied key rather than scanning for
+ * it. the oracle: a `.blc` catalog decrypts to a recognizable layout.
  */
 const deriveVfsKey = async (
 	gameData: string,
@@ -142,7 +142,7 @@ const deriveVfsKey = async (
 		}
 		throw new Error('supplied vfsKey does not decrypt the install catalogs');
 	}
-	throw new Error('vfsKey is VM-protected in this build and must be supplied via --keys-from');
+	throw new Error('vfsKey is not stored in this build and must be supplied via --keys-from');
 };
 
 /** reads the first `.blc` catalog found in any VFS layer */
@@ -366,9 +366,9 @@ const decryptWithBlock0 = (
 // #region chainXor
 
 /**
- * recovers the 64-bit chainXor. it's VM-computed in this build, so we first try any 64-bit immediate present
- * in the binary (robust if a future/other build keeps it as a plain `movabs` or data constant), then fall
- * back to a supplied value. either way it's validated by a full bundle decode.
+ * recovers the 64-bit chainXor. it's computed at runtime in this build, so we first try any 64-bit immediate
+ * present in the binary (robust if a future/other build keeps it as a plain `movabs` or data constant), then
+ * fall back to a supplied value. either way it's validated by a full bundle decode.
  *
  * @throws {Error} if neither a scanned nor a supplied value validates
  */
@@ -401,7 +401,7 @@ const deriveChainXor = (
 		}
 		throw new Error('supplied chainXor does not decrypt the install bundles');
 	}
-	throw new Error('chainXor is VM-computed in this build and must be supplied via --keys-from');
+	throw new Error('chainXor is not stored in this build and must be supplied via --keys-from');
 };
 
 /** fully decrypts and decompresses a bundle's first block and checks the SerializedFile signature */

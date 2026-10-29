@@ -1,6 +1,6 @@
 /**
  * the viewer package: what the extractor's `pack` command writes and the viewer streams. shared by both, so
- * it stays free of node APIs. the binary parts are encoded and decoded by `package-codec.ts`.
+ * it stays free of node APIs. the binary parts are encoded and decoded by `codec.ts`.
  *
  * blob offsets in `tables/blobs.bin` are relative to each archive's data section, so the viewer range-reads a
  * blob without parsing the archive's JSON header; czar provides the container, CRCs and tooling.

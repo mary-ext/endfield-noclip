@@ -4,7 +4,7 @@
 // the grading and curve are the game's (HGRP's LutBuilder2D, TONEMAPPING_ACES_MODIFIED): URP's grading in
 // ACEScg with a luminance contrast, then a rational fit of ACES. the game bakes them into a 32³ LogC LUT; here
 // they run per pixel, with the colour curves left out (the package doesn't carry them; neutral curves cancel).
-// matrices multiply row vectors (`v * m` dots v with each column), as in the decompiled shader.
+// matrices multiply row vectors (`v * m` dots v with each column).
 
 @group(1) @binding(0) var scene_texture: texture_2d<f32>;
 @group(1) @binding(1) var bloom_texture: texture_2d<f32>;
