@@ -57,7 +57,12 @@ elsewhere.
   validity decides how much of the ambient probe fills in, including the game's vertical correction
   term at the volume's boundary. the game also jitters the lookup and shifts the clipmaps along the
   view; the viewer does neither.
-- ambient occlusion (GTAO, below) and material occlusion darken only the ambient part.
+- diffuse ambient is darkened by the lower of ambient occlusion (GTAO, below) and material
+  occlusion, through Jimenez's multi-bounce fit so bright surfaces darken less. the game fits per
+  channel; the viewer uses the albedo's luminance. with AO off, material occlusion applies alone and
+  linearly, as in the game.
+- specular ambient gets Lagarde's specular occlusion from material occlusion only; the game also
+  feeds GTAO into it.
 
 specular ambient samples `sky.reflectionMap` (a BC6H cubemap, prefiltered by roughness across its
 mips) along the roughness-bent reflection vector, or the ambient probe until the cubemap streams in;

@@ -94,10 +94,14 @@ fn sun_shadow(rel: vec3f, normal: vec3f) -> f32 {
 	return visibility;
 }
 
-// the main pass writes the full radiance and, separately, its ambient part, so ambient occlusion computed
-// from the depth buffer afterwards can darken only the light that it occludes
+// the main pass writes the full radiance and, separately, its diffuse ambient part, so ambient occlusion
+// computed from the depth buffer afterwards can darken only the light that it occludes. the radiance carries
+// the diffuse ambient times the material occlusion; the composite swaps that for the multi-bounce of the
+// lower of both occlusions, as the game does
 struct Shaded {
+	// rgb: radiance, a: albedo luminance (for the multi-bounce)
 	@location(0) radiance: vec4f,
+	// rgb: diffuse ambient before any occlusion, a: material occlusion
 	@location(1) ambient: vec4f,
 }
 
@@ -280,7 +284,8 @@ fn shade_surface(s: Surface, rel: vec3f) -> Shaded {
 		direct *= frame.sun_colour.rgb * visibility * frame.sun.w;
 	}
 
-	var ambient = diffuse_colour * ambient_irradiance(frame.eye.xyz + rel, n);
+	let diffuse_ambient = diffuse_colour * ambient_irradiance(frame.eye.xyz + rel, n);
+	var specular_ambient: vec3f;
 	{
 		let r = normalize(mix(reflect(-v, n), n, roughness * roughness));
 		// without the cubemap, reflect the ambient probe (the sky's low-frequency radiance)
@@ -288,9 +293,12 @@ fn shade_surface(s: Surface, rel: vec3f) -> Shaded {
 		if (frame.ambient.z > 0.5) {
 			reflected = textureSampleLevel(reflection_map, reflection_sampler, r, roughness * frame.ambient.w).rgb;
 		}
-		ambient += reflected * environment_brdf(f0, roughness, n_dot_v) * frame.ambient.x;
+		specular_ambient = reflected * environment_brdf(f0, roughness, n_dot_v) * frame.ambient.x;
 	}
-	ambient *= s.occlusion;
+	// specular sees only the material occlusion, through Lagarde's specular occlusion
+	let specular_occlusion = clamp(pow(n_dot_v + s.occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + s.occlusion, 0.0, 1.0);
+	let ambient = diffuse_ambient * s.occlusion + specular_ambient * specular_occlusion;
+	let albedo_luminance = dot(diffuse_colour, vec3f(0.2126, 0.7152, 0.0722));
 
 	var out: Shaded;
 	switch frame.flags.y {
@@ -310,14 +318,14 @@ fn shade_surface(s: Surface, rel: vec3f) -> Shaded {
 			return out;
 		}
 		case 4u: {
-			out.radiance = vec4f(ambient, 1.0);
-			out.ambient = vec4f(ambient, 1.0);
+			out.radiance = vec4f(ambient, albedo_luminance);
+			out.ambient = vec4f(diffuse_ambient, s.occlusion);
 			return out;
 		}
 		default: {}
 	}
-	out.radiance = vec4f(direct + ambient + s.emission, 1.0);
-	out.ambient = vec4f(ambient, 1.0);
+	out.radiance = vec4f(direct + ambient + s.emission, albedo_luminance);
+	out.ambient = vec4f(diffuse_ambient, s.occlusion);
 	return out;
 }
 
