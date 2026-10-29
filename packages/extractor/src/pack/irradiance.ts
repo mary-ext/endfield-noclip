@@ -21,9 +21,6 @@ import type { BlobStore } from './blob-store.ts';
 /** VFS group of `Data/IrradianceVolume` */
 const IRRADIANCE_GROUP = 'A63D7E6A';
 
-/** payload files of the base scenario are `iv_0_<part>.bytes`; the others carry a scenario hash */
-const BASE_FILE = /^iv_0_\d+\.bytes$/;
-
 /** zstd level of cells: 1.6 GB of them on map02 are compressed on every pack, too slow at the blob default */
 const ZSTD_LEVEL = 9;
 
@@ -56,10 +53,26 @@ export const packIrradiance = async (
 		return null;
 	}
 	const index = parseIrradianceIndex(await vfs.readVerified(indexFile));
+	// validate every file before filtering by region or scenario, including files we won't read.
+	const payloads = await Promise.all(
+		index.files.map(async (name, file) => {
+			const payload = await vfs.find(IRRADIANCE_GROUP, `${directory}${name}`);
+			const records = index.records.filter((record) => record.file === file);
+			const end = records.reduce(
+				(length, record) => Math.max(length, record.offset + record.storedLength),
+				0,
+			);
+			if (payload === undefined || payload.entry.length !== end) {
+				throw new Error(`irradiance payload ${name} is missing or its length disagrees with the index`);
+			}
+			return payload;
+		}),
+	);
+	const keys = new Set<number>();
 	const cells: { key: number; blob: number }[] = [];
 	const report: IrradianceReport = { cells: 0, rawBytes: 0, levels: [0, 0, 0] };
 	for (const [file, name] of index.files.entries()) {
-		if (!BASE_FILE.test(name)) {
+		if (index.scenarioGroups[index.fileGroups[file]].hash !== 0) {
 			continue;
 		}
 		const records = index.records.filter((record) => {
@@ -73,11 +86,7 @@ export const packIrradiance = async (
 		if (records.length === 0) {
 			continue;
 		}
-		// oxlint-disable-next-line no-await-in-loop -- payloads are read one at a time to bound memory
-		const payloadFile = await vfs.find(IRRADIANCE_GROUP, `${directory}${name}`);
-		if (payloadFile === undefined) {
-			throw new Error(`irradiance payload ${name} is missing`);
-		}
+		const payloadFile = payloads[file];
 		// oxlint-disable-next-line no-await-in-loop -- one ~67 MB payload in memory at a time
 		const payload = await vfs.readVerified(payloadFile);
 		const items = records.map((record) => {
@@ -87,6 +96,10 @@ export const packIrradiance = async (
 			if (record.offset + record.storedLength > payload.length) {
 				throw new Error(`irradiance payload ${name} is shorter than its index says`);
 			}
+			if (level > 2 || keys.has(record.key)) {
+				throw new Error(`irradiance cell ${record.key} has an unsupported level or duplicate base key`);
+			}
+			keys.add(record.key);
 			report.levels[level] = (report.levels[level] ?? 0) + 1;
 			report.rawBytes += record.size;
 			return {

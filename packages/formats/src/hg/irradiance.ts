@@ -28,13 +28,24 @@ export interface IrradianceRecord {
 	size: number;
 }
 
+/** a stored scenario combination; hash 0 with no members is the base bake */
+export interface IrradianceScenarioGroup {
+	hash: number;
+	/** indices into {@link IrradianceIndex.scenarios} */
+	scenarios: number[];
+}
+
 /** a parsed `index.bytes` */
 export interface IrradianceIndex {
 	/** lighting scenario names, e.g. `Map02_lv002_sunny` */
 	scenarios: string[];
 	/** payload file names, e.g. `iv_0_0.bytes` (scenario hash, part); records index this list */
 	files: string[];
-	/** every cell of every payload, grouped by file in {@link files} order */
+	/** scenario combinations indexed by the hashes in payload filenames */
+	scenarioGroups: IrradianceScenarioGroup[];
+	/** per payload file, its index into {@link scenarioGroups} */
+	fileGroups: number[];
+	/** every cell of every payload, in stored order, with explicit indices into {@link files} */
 	records: IrradianceRecord[];
 }
 
@@ -66,11 +77,49 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 	if (magic !== IRRADIANCE_INDEX_MAGIC) {
 		throw new FormatError(`irradiance index: magic 0x${magic.toString(16)}`);
 	}
-	const utf16 = () => new TextDecoder('utf-16le').decode(r.bytesView(r.u32()));
-	const scenarios = Array.from({ length: r.u32() }, utf16);
-	// a scenario table follows whose layout isn't known; the filename table after it is found by its shape
-	r.offset = findFileTable(data, r.offset);
-	const files = Array.from({ length: r.u32() }, utf16);
+	const countOf = (stride: number): number => {
+		const count = r.u32();
+		if (count > Math.floor(r.remaining / stride)) {
+			throw new FormatError('irradiance index: count exceeds remaining bytes');
+		}
+		return count;
+	};
+	const utf16 = (): string => {
+		const length = r.u32();
+		if (length % 2 !== 0) {
+			throw new FormatError('irradiance index: odd UTF-16 byte length');
+		}
+		return new TextDecoder('utf-16le', { fatal: true }).decode(r.bytesView(length));
+	};
+	const scenarios = Array.from({ length: countOf(4) }, utf16);
+	// counted (hash, counted scenario-index list) entries precede the filenames.
+	const scenarioGroups = Array.from({ length: countOf(8) }, () => {
+		const hash = r.u32();
+		const members = Array.from({ length: countOf(4) }, () => r.u32());
+		if (members.some((member) => member >= scenarios.length) || new Set(members).size !== members.length) {
+			throw new FormatError('irradiance index: invalid scenario group');
+		}
+		return { hash, scenarios: members };
+	});
+	const groupByHash = new Map(scenarioGroups.map((group, i) => [group.hash, i]));
+	if (
+		groupByHash.size !== scenarioGroups.length ||
+		scenarioGroups.some((group) => (group.hash === 0) !== (group.scenarios.length === 0))
+	) {
+		throw new FormatError('irradiance index: invalid scenario hashes');
+	}
+	const files = Array.from({ length: countOf(4) }, utf16);
+	if (files.length === 0 || new Set(files).size !== files.length) {
+		throw new FormatError('irradiance index: empty or duplicate payload filenames');
+	}
+	const fileGroups = files.map((name) => {
+		const match = /^iv_(0|[1-9]\d*)_(0|[1-9]\d*)\.bytes$/.exec(name);
+		const group = match === null ? undefined : groupByHash.get(Number(match[1]));
+		if (group === undefined) {
+			throw new FormatError(`irradiance index: payload ${name} has no scenario group`);
+		}
+		return group;
+	});
 
 	// the scene's top-level spatial hash over cells (table size, offset-table size, offsets), then a table of
 	// (value, scenario) pairs; neither is needed to read the cells
@@ -79,39 +128,28 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 	r.skip(offsetTableSize ** 3 * 4);
 	r.skip(r.u32() * 8);
 
-	const count = r.u32();
+	const count = countOf(RECORD_WORDS * 4);
 	const records: IrradianceRecord[] = [];
-	let file = 0;
+	const ends = Array.from({ length: files.length }, () => 0);
 	for (let i = 0; i < count; i++) {
 		const w = Array.from({ length: RECORD_WORDS }, () => r.u32());
-		// each file's records tile it from offset 0
-		if (i > 0 && w[2] === 0) {
-			file++;
-		}
-		if (w[4] !== w[5] + w[6] || w[3] > w[4] || file >= files.length) {
+		// word 7 packs the payload index in its low u16; its upper bits have a separate meaning.
+		const file = w[7] & 0xffff;
+		if (w[4] !== w[5] + w[6] || w[3] === 0 || w[3] > w[4] || file >= files.length || w[2] !== ends[file]) {
 			throw new FormatError(`irradiance index: record ${i} doesn't hold together`);
 		}
+		ends[file] = w[2] + w[3];
 		records.push({ key: w[0], file, offset: w[2], storedLength: w[3], size: w[4] });
 	}
-	if (file !== files.length - 1) {
-		throw new FormatError(`irradiance index: records cover ${file + 1} of ${files.length} files`);
+	if (ends.some((end) => end === 0)) {
+		throw new FormatError('irradiance index: payload without records');
 	}
-	return { scenarios, files, records };
-};
-
-/** @returns the offset of the filename table: a count followed by length-prefixed UTF-16 `iv…` names */
-const findFileTable = (data: Uint8Array, from: number): number => {
-	const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-	for (let at = from; at + 14 <= data.length && at < from + 4096; at += 4) {
-		const count = view.getUint32(at, true);
-		const length = view.getUint32(at + 4, true);
-		if (count > 0 && count < 4096 && length > 4 && length < 512 && view.getUint16(at + 8, true) === 0x69) {
-			if (view.getUint16(at + 10, true) === 0x76) {
-				return at;
-			}
-		}
+	// the final table has five words per entry; their renderer meaning is not yet established.
+	r.skip(countOf(20) * 20);
+	if (r.remaining !== 0) {
+		throw new FormatError('irradiance index: trailing bytes');
 	}
-	throw new FormatError('irradiance index: no filename table');
+	return { scenarios, scenarioGroups, files, fileGroups, records };
 };
 
 /**
