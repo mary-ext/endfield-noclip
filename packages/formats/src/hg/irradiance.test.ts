@@ -92,6 +92,22 @@ test('irradiance rejects missing files, gaps, overlaps and empty records', () =>
 	}
 });
 
+test('irradiance accepts the older scene magic and rejects others', () => {
+	for (const [magic, accepted] of [
+		[0x03000003, true],
+		[0x03000002, false],
+		[0x01000043, false],
+	] as const) {
+		const { bytes } = fixture();
+		new DataView(bytes.buffer).setUint32(0, magic, true);
+		if (accepted) {
+			assert.equal(parseIrradianceIndex(bytes).records.length, 3);
+		} else {
+			assert.throws(() => parseIrradianceIndex(bytes), FormatError);
+		}
+	}
+});
+
 test('irradiance requires the final table and exact EOF', () => {
 	const { bytes } = fixture();
 	assert.throws(() => parseIrradianceIndex(bytes.subarray(0, bytes.length - 4)), FormatError);

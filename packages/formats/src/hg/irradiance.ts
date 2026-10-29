@@ -12,6 +12,9 @@ import { decodeInvertedLz4Block } from '../binary/lz4.ts';
 /** `index.bytes` magic of the current scene format */
 export const IRRADIANCE_INDEX_MAGIC = 0x03000004;
 
+// 0x03000003 (map01) has the same layout as 0x03000004 (map02); every section tiles to EOF the same way.
+const SCENE_INDEX_MAGICS = new Set([0x03000003, IRRADIANCE_INDEX_MAGIC]);
+
 /** a cell's byte range in its payload file */
 export interface IrradianceRecord {
 	/**
@@ -69,12 +72,12 @@ const RECORD_WORDS = 9;
 /**
  * @param data `index.bytes`
  * @returns the scenarios, payload files and cell ranges
- * @throws {FormatError} on another magic or a layout that doesn't hold together
+ * @throws {FormatError} on a magic other than the scene formats' or a layout that doesn't hold together
  */
 export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 	const r = new BinaryReader(data, { littleEndian: true });
 	const magic = r.u32();
-	if (magic !== IRRADIANCE_INDEX_MAGIC) {
+	if (!SCENE_INDEX_MAGICS.has(magic)) {
 		throw new FormatError(`irradiance index: magic 0x${magic.toString(16)}`);
 	}
 	const countOf = (stride: number): number => {
