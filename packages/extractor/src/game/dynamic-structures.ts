@@ -13,30 +13,36 @@ import {
 } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import { unpackHgPayload } from '@endfield-noclip/formats/hg/payload';
+import type {
+	ConditionalSetInfo,
+	SceneRequirement,
+	SceneToggleInfo,
+} from '@endfield-noclip/package-format/format';
 
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';
 
-import { shownResourceGroups, summarizeProgressions, labelProgression } from './scene-states.ts';
+import { controllerKey, progressionId } from './scene-states.ts';
 
-/** an initial prefab placement and its owning level */
+/** a prefab placement and its owning level */
 export interface StructureModel {
 	model: DynamicModel;
 	levelTag: number;
 	source: string;
+	visibility: ConditionalSetInfo;
 }
 
-/** initial structures decoded from dynamic resources */
+/** structures and their visibility decoded from dynamic resources */
 export interface DynamicStructures {
-	entities: ChunkEntity[];
+	entities: { entity: ChunkEntity; visibility: ConditionalSetInfo }[];
+	toggles: SceneToggleInfo[];
 	models: StructureModel[];
 	/** selections and exclusions, for the pack report */
 	counts: Record<string, number>;
 }
 
 /**
- * resolves initial dynamic scenery from a scene's main grids and paired ECS chunks. story-gated resources
- * remain excluded until an authored initial story selection can be evaluated
+ * resolves dynamic scenery and preserves progression masks and manual script/state gates
  *
  * @param context install readers
  * @param scene streaming scene id
@@ -77,60 +83,77 @@ export const loadDynamicStructures = async (
 	const result: DynamicStructures = {
 		entities: [],
 		models: [],
-		counts: {
-			owners: owners.length,
-			storyGated: 0,
-			scriptGated: 0,
-			laterForms: 0,
-			effects: 0,
-			ecsGroups: 0,
-			models: 0,
-		},
+		toggles: [],
+		counts: { owners: owners.length, ecsGroups: 0, models: 0, effects: 0 },
 	};
-	const chunks = new Map<string, Set<number>>();
-	const selectedModels = new Set<string>();
-	const states = {
-		map: scene,
-		areas: [],
-		progressions: summarizeProgressions(owners.map(({ entity }) => entity)).map((summary) =>
-			labelProgression(summary, null, null),
-		),
+	const toggles = new Map<string, SceneToggleInfo>();
+	const chunks = new Map<string, Map<number, ConditionalSetInfo>>();
+	const models = new Map<string, StructureModel>();
+	const ordinals = new Map<number, number>();
+	const addToggle = (id: string, kind: SceneToggleInfo['kind'], enabled: boolean, tags: number[]): void => {
+		const current = toggles.get(id);
+		if (current) {
+			current.levels = [...new Set([...current.levels, ...tags])];
+		} else {
+			toggles.set(id, { id, name: id, kind, levels: tags, defaultEnabled: enabled });
+		}
 	};
 	for (const owner of owners) {
 		const { entity } = owner;
-		// scripted scenery is not initially loaded unless its stored default says so.
-		if (owner.scriptDefaultLoad === false) {
-			result.counts.scriptGated += entity.resourceGroups.length;
-			continue;
-		}
-		const shown = new Set(shownResourceGroups(entity, states, { areas: 'all', levels: {} }));
+		const ordinal = ordinals.get(entity.grid) ?? 0;
+		ordinals.set(entity.grid, ordinal + 1);
+		const scriptId = `script:${entity.grid}:${ordinal}`;
+		const controller = entity.controllers[0];
 		for (const [i, group] of entity.resourceGroups.entries()) {
-			if (owner.states.length > 0 || owner.groupStates[i].length > 0) {
-				result.counts.storyGated++;
-				continue;
-			}
-			if (!shown.has(group)) {
-				result.counts.laterForms++;
-				continue;
-			}
 			const ref = group.resources;
-			if (ref.count === 0) {
+			if (ref.count === 0 || ref.type === 6) {
+				result.counts.effects += ref.type === 6 ? ref.count : 0;
 				continue;
+			}
+			const tag = partition?.levels.find((level) => level.idNum === group.levelNum)?.tag ?? 0;
+			const requirements: SceneRequirement[] = [];
+			if (owner.scriptDefaultLoad !== null) {
+				addToggle(scriptId, 'script', owner.scriptDefaultLoad, [tag]);
+				requirements.push({ control: scriptId, mask: 2 });
+			}
+			// the complete scene-state expression is not recovered; preserve each authored gate as one manual override.
+			for (const states of [owner.states, owner.groupStates[i]]) {
+				if (states.length === 0) {
+					continue;
+				}
+				const id = `state:${states.join(',')}`;
+				addToggle(id, 'state', false, [tag]);
+				requirements.push({ control: id, mask: 2 });
+			}
+			if (group.logicState !== 0) {
+				if (controller) {
+					requirements.push({
+						control: progressionId(controller.kind, controllerKey(controller)),
+						mask: group.logicState,
+					});
+				} else if ((group.logicState & 1) === 0) {
+					const id = `state:logic:${entity.grid}:${ordinal}:${group.logicState}`;
+					addToggle(id, 'state', false, [tag]);
+					requirements.push({ control: id, mask: 2 });
+				}
 			}
 			const grid = grids.get(ref.grid);
-			if (grid === undefined) {
+			if (!grid) {
 				throw new FormatError(`missing dynamic grid ${ref.grid}`);
 			}
 			switch (ref.type) {
 				case 5: {
 					for (const [index, model] of dynamicResourceSlice(grid.models, ref).entries()) {
 						const key = `${ref.grid}/${ref.index + index}`;
-						if (!selectedModels.has(key)) {
-							selectedModels.add(key);
-							result.models.push({
+						const current = models.get(key);
+						if (current) {
+							current.visibility.alternatives.push(requirements);
+						} else {
+							models.set(key, {
 								model,
-								levelTag: partition?.levels.find((level) => level.idNum === group.levelNum)?.tag ?? 0,
+								levelTag: tag,
 								source: key,
+								visibility: { alternatives: [requirements] },
 							});
 						}
 					}
@@ -139,14 +162,12 @@ export const loadDynamicStructures = async (
 				case 7: {
 					for (const ecs of dynamicResourceSlice(grid.ecs, ref)) {
 						const key = `${ecs.sceneIndex.toString().padStart(2, '0')}_${ecs.chunk.toString().padStart(8, '0')}`;
-						const indices = chunks.get(key) ?? new Set<number>();
-						indices.add(ecs.index);
+						const indices = chunks.get(key) ?? new Map<number, ConditionalSetInfo>();
+						const visibility = indices.get(ecs.index) ?? { alternatives: [] };
+						visibility.alternatives.push(requirements);
+						indices.set(ecs.index, visibility);
 						chunks.set(key, indices);
 					}
-					break;
-				}
-				case 6: {
-					result.counts.effects += ref.count;
 					break;
 				}
 				default: {
@@ -155,31 +176,55 @@ export const loadDynamicStructures = async (
 			}
 		}
 	}
-	const seen = new Set<number>();
+	const entities = new Map<number, { entity: ChunkEntity; visibility: ConditionalSetInfo }>();
 	for (const [key, indices] of chunks) {
-		// oxlint-disable-next-line no-await-in-loop -- paired chunks are released after selected rows are decoded
+		// oxlint-disable-next-line no-await-in-loop -- release each pair after its renderer groups are decoded
 		const [init, streaming] = await Promise.all([
 			read(`${prefix}fb_init_${key}.bytes`),
 			read(`${prefix}fb_streaming_${key}.bytes`),
 		]);
 		const chunk = parseDynamicChunk(unpackHgPayload(init), unpackHgPayload(streaming));
-		const groups = [...indices]
-			.toSorted((a, b) => a - b)
-			.map((index) => {
-				const group = chunk.groups[index];
-				if (group === undefined) {
-					throw new FormatError(`missing ECS group ${key}/${index}`);
+		for (const [index, visibility] of indices) {
+			const group = chunk.groups[index];
+			if (!group) {
+				throw new FormatError(`missing ECS group ${key}/${index}`);
+			}
+			result.counts.ecsGroups++;
+			for (const entity of readChunkEntities({ ...chunk, groups: [group] })) {
+				const current = entities.get(entity.id);
+				if (current) {
+					current.visibility.alternatives.push(...visibility.alternatives);
+				} else {
+					entities.set(entity.id, { entity, visibility: { alternatives: [...visibility.alternatives] } });
 				}
-				return group;
-			});
-		result.counts.ecsGroups += groups.length;
-		for (const entity of readChunkEntities({ ...chunk, groups })) {
-			if (!seen.has(entity.id)) {
-				seen.add(entity.id);
-				result.entities.push(entity);
 			}
 		}
 	}
+	// representative renderer names identify manual groups without assigning an invented event condition.
+	const labels = new Map<string, Map<string, number>>();
+	for (const { entity, visibility } of entities.values()) {
+		const name = entity.name.replace(/#.*$/, '').replace(/ \(\d+\)(?:_ECSMerged)?$/, '');
+		for (const control of new Set(
+			visibility.alternatives.flatMap((requirements) =>
+				requirements.map((requirement) => requirement.control),
+			),
+		)) {
+			const frequencies = labels.get(control) ?? new Map<string, number>();
+			frequencies.set(name, (frequencies.get(name) ?? 0) + 1);
+			labels.set(control, frequencies);
+		}
+	}
+	for (const toggle of toggles.values()) {
+		const ranked = [...(labels.get(toggle.id) ?? [])].toSorted((a, b) => b[1] - a[1]);
+		toggle.name =
+			ranked
+				.slice(0, 2)
+				.map(([name]) => name)
+				.join(' / ') || toggle.id;
+	}
+	result.entities = [...entities.values()];
+	result.models = [...models.values()];
+	result.toggles = [...toggles.values()];
 	result.counts.models = result.models.length;
 	return result;
 };

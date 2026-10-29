@@ -74,12 +74,13 @@ const OFFSCREEN_PRIORITY = 0.1;
 export class Selector {
 	readonly selection: Selection = { patches: [], instances: [], visited: 0 };
 	#tree: TileTree;
-	#stream: StreamManager;
+	#stream: Pick<StreamManager, 'want' | 'get' | 'markUsed' | 'isReady'>;
 	#resident: readonly ContentRef[];
 	#pageQuads: number;
 	#rootSize: number;
 	#focusCells: ReadonlySet<string> | null = null;
 	#level: number | null = null;
+	#conditions: readonly boolean[] = [];
 
 	/**
 	 * @param tree the linked tree
@@ -90,7 +91,7 @@ export class Selector {
 	 */
 	constructor(
 		tree: TileTree,
-		stream: StreamManager,
+		stream: Pick<StreamManager, 'want' | 'get' | 'markUsed' | 'isReady'>,
 		resident: readonly ContentRef[],
 		pageSide: number,
 		rootSize: number,
@@ -133,6 +134,9 @@ export class Selector {
 			}
 			if (options.instances) {
 				this.#instances(root, view, options);
+				if (options.detail) {
+					this.#conditional(root, view);
+				}
 			}
 		}
 		return selection;
@@ -147,6 +151,32 @@ export class Selector {
 	 */
 	setLevel(tag: number | null): void {
 		this.#level = tag;
+	}
+
+	/** @param conditions visibility of each manifest conditional set */
+	setConditions(conditions: readonly boolean[]): void {
+		this.#conditions = [...conditions];
+	}
+
+	#conditional(node: TileNode, view: SelectionView): void {
+		if (!boxInFrustum(view.planes, node.bounds.min, node.bounds.max, view.camera.position)) {
+			return;
+		}
+		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, view.camera.position), 1);
+		for (const ref of node.conditional) {
+			if (!this.#shows(ref) || !this.#conditions[ref.param]) {
+				continue;
+			}
+			const item = this.#stream.want(ref.blob, this.#priority(node, view.pixelFactor / distance, true));
+			if (item !== null) {
+				this.selection.instances.push({ item, first: ref.first, count: ref.count });
+			}
+		}
+		for (const child of node.quadrants) {
+			if (child !== null) {
+				this.#conditional(child, view);
+			}
+		}
 	}
 
 	#shows(ref: ContentRef): boolean {

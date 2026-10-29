@@ -161,3 +161,26 @@ describe('eyeInLevelVolume', () => {
 		assert.deepEqual(eyeInLevelVolume(m, 1, profile(0), target, [50, 210, 50], {}), null);
 	});
 });
+
+it('overrides unknown activation without bypassing volume bounds or pinned phases', () => {
+	const m = manifest([phase('scripted', 9)], [volume({ shape: square, blendMode: 3 })]);
+	const base = profile(1);
+	assert.equal(density(blendEnvironment(m, base, [50, 25, 50], { pinnedPhase: null })), 1);
+	assert.equal(
+		density(blendEnvironment(m, base, [50, 25, 50], { pinnedPhase: null, enabled: { 0: true } })),
+		9,
+	);
+	assert.equal(
+		density(blendEnvironment(m, base, [150, 25, 50], { pinnedPhase: null, enabled: { 0: true } })),
+		1,
+	);
+	assert.equal(
+		density(blendEnvironment(m, base, [50, 25, 50], { pinnedPhase: 0, enabled: { 0: false } })),
+		9,
+	);
+	const automatic = manifest([phase('regular', 5)], [volume({})]);
+	assert.equal(
+		density(blendEnvironment(automatic, base, [0, 0, 0], { pinnedPhase: null, enabled: { 0: false } })),
+		1,
+	);
+});

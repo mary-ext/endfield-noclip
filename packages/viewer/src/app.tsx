@@ -5,6 +5,7 @@ import { CameraReadout } from './ui/camera-readout.tsx';
 import { LevelsPanel } from './ui/levels-panel.tsx';
 import { type OpenPackage, PackagePanel } from './ui/package-panel.tsx';
 import { sourceFromParam } from './ui/package-param.ts';
+import { SceneControls } from './ui/scene-controls.tsx';
 import { SettingsPanel } from './ui/settings-panel.tsx';
 import { StatsPanel } from './ui/stats-panel.tsx';
 import { Viewer } from './viewer.ts';
@@ -113,6 +114,7 @@ export const App = () => {
 					</div>
 					<div className="dock right">
 						<LevelsPanel viewer={viewer} />
+						<SceneControls viewer={viewer} />
 						<SettingsPanel viewer={viewer} />
 					</div>
 					<div className="dock bottom">

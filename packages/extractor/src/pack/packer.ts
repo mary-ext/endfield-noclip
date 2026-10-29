@@ -40,6 +40,8 @@ import {
 	CONTENT_KIND_NAMES,
 	ContentKind,
 	type ContentRef,
+	type ConditionalSetInfo,
+	type SceneToggleInfo,
 	COORDINATE_CONVENTIONS,
 	CORE_ARCHIVE,
 	CORE_PATHS,
@@ -624,15 +626,21 @@ const collectEntities = async (
 		counts[`dynamic_${key}`] = count;
 	}
 	counts.dynamicRenderers = 0;
-	const addStructure = (row: InstanceInput, tag: number, name: string): void => {
+	collected.toggles = dynamic.toggles;
+	const addStructure = (
+		row: InstanceInput,
+		tag: number,
+		name: string,
+		visibility: ConditionalSetInfo,
+	): void => {
 		const [x, , z] = row.bounds.center;
 		const key = tileAt(grid, grid.leafLevel, x, z);
-		collected.addDetail(tag, key, row, name, -1);
+		collected.addConditional(tag, key, row, name, visibility);
 		collected.noteOwner(tag, row.bounds);
 		pack.uses.note(row.chain, key);
 		counts.dynamicRenderers++;
 	};
-	for (const entity of dynamic.entities) {
+	for (const { entity, visibility } of dynamic.entities) {
 		if (
 			seen.has(entity.id) ||
 			entity.renderer === null ||
@@ -660,6 +668,7 @@ const collectEntities = async (
 			},
 			entity.levelTag,
 			entity.name,
+			visibility,
 		);
 	}
 	const facilities = await loadInteractiveFacilities(
@@ -668,7 +677,8 @@ const collectEntities = async (
 		scene.options.level,
 		scene.partition,
 	);
-	counts.interactiveFacilities = facilities.models.length;
+	counts.interactiveFacilities = facilities.progressions.length;
+	collected.facilities = facilities.progressions;
 	counts.unsupportedInteractiveFiles = facilities.unsupported.length;
 	const resolver = await context.resolver();
 	const prefabs = new Map<bigint, Promise<PrefabRenderer[]>>();
@@ -743,6 +753,7 @@ const collectEntities = async (
 				},
 				levelTag,
 				renderer.name,
+				placement.visibility,
 			);
 		}
 	}
@@ -836,13 +847,13 @@ const packInstances = async (
 			builder.addRef(
 				group.key,
 				{
-					kind: ContentKind.Detail,
+					kind: group.condition === null ? ContentKind.Detail : ContentKind.Conditional,
 					tier: 0,
 					level: group.level,
 					blob: blobs[i],
 					first: 0,
 					count: group.rows.length,
-					param: 0,
+					param: group.condition ?? 0,
 				},
 				NodeFlags.HasDetail,
 			);
@@ -912,6 +923,8 @@ const packInstances = async (
 interface SceneStateInfo {
 	levels: LevelInfo[];
 	progressions: ProgressionInfo[];
+	conditionalSets: ConditionalSetInfo[];
+	toggles: SceneToggleInfo[];
 }
 
 const sceneStates = async (
@@ -935,7 +948,12 @@ const sceneStates = async (
 	const levels = (partition?.levels ?? []).map((level, i) =>
 		levelInfo(level, scene, collected, environments[i] ?? null),
 	);
-	return { levels, progressions };
+	return {
+		levels,
+		progressions: [...progressions, ...collected.facilities],
+		conditionalSets: collected.conditions,
+		toggles: collected.toggles,
+	};
 };
 
 /** builds the tree and tables, then writes every archive */
@@ -1016,7 +1034,8 @@ const writePackage = async (
 		environmentVolumes: states.environmentVolumes,
 		states: {
 			progressions: states.progressions,
-			conditionalSets: [],
+			conditionalSets: states.conditionalSets,
+			toggles: states.toggles,
 		},
 		archives,
 		resident: states.resident,
@@ -1191,7 +1210,7 @@ const nodeSortKey = (key: TileKey): number =>
 /** gathers instances by destination while the entity pass runs */
 class Collector {
 	/** detail rows by `tileId/levelTag` */
-	readonly detail = new Map<string, Group & { key: TileKey; level: number }>();
+	readonly detail = new Map<string, Group & { key: TileKey; level: number; condition: number | null }>();
 	/** HLOD rows by level tag */
 	readonly hlod = new Map<number, Group>();
 	/** HLOD nodes by sort key */
@@ -1207,10 +1226,47 @@ class Collector {
 		const id = `${tileId(key)}/${level}`;
 		let group = this.detail.get(id);
 		if (group === undefined) {
-			group = { ...newGroup(), key, level };
+			group = { ...newGroup(), key, level, condition: null };
 			this.detail.set(id, group);
 		}
 		push(group, row, 0, name, file);
+		this.#countInstance(level);
+	}
+
+	readonly conditions: ConditionalSetInfo[] = [];
+	toggles: SceneToggleInfo[] = [];
+	facilities: ProgressionInfo[] = [];
+	readonly #conditionIds = new Map<string, number>();
+
+	addConditional(
+		level: number,
+		key: TileKey,
+		row: InstanceInput,
+		name: string,
+		visibility: ConditionalSetInfo,
+	): void {
+		const alternatives = [
+			...new Map(
+				visibility.alternatives.map((requirements) => {
+					const sorted = requirements.toSorted((a, b) => a.control.localeCompare(b.control));
+					return [JSON.stringify(sorted), sorted];
+				}),
+			).values(),
+		];
+		const serialized = JSON.stringify(alternatives);
+		let condition = this.#conditionIds.get(serialized);
+		if (condition === undefined) {
+			condition = this.conditions.length;
+			this.conditions.push({ alternatives });
+			this.#conditionIds.set(serialized, condition);
+		}
+		const id = `${tileId(key)}/${level}/${condition}`;
+		let group = this.detail.get(id);
+		if (!group) {
+			group = { ...newGroup(), key, level, condition };
+			this.detail.set(id, group);
+		}
+		push(group, row, 0, name, -1);
 		this.#countInstance(level);
 	}
 

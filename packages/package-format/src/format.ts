@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 7;
+export const PACKAGE_VERSION = 8;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -106,10 +106,7 @@ export const ContentKind = {
 	Hlod: 1,
 	/** detail instances of one level: a whole instance block */
 	Detail: 2,
-	/**
-	 * reserved: instances shown only at some levels of a progression (outpost level, POI facility level).
-	 * `level` holds the index into {@link StatesInfo.conditionalSets}. not written yet
-	 */
+	/** independently streamed dynamic instances; `param` indexes {@link StatesInfo.conditionalSets} */
 	Conditional: 3,
 	/** reserved: baked terrain pages (albedo, normal, tint, splat, cliff); `tier` names the channel */
 	TerrainPages: 4,
@@ -410,11 +407,13 @@ export interface Bounds {
  * scenery variants. the game's stream areas (`<sceneStateId>` chunk suffixes: interiors, caves, off-map
  * places) aren't kept apart: their content is merged into the levels that own it, so a level is drawn whole.
  * progressions (outpost/settlement levels, POI facility levels, factory regions) are selected per
- * progression, with mutually exclusive levels, and reserved here as conditional instance sets
+ * progression, with mutually exclusive levels, and manual gates for unrecovered script/state conditions
  */
 export interface StatesInfo {
 	progressions: ProgressionInfo[];
-	/** reserved: instance sets gated by a progression level. empty until dynamic entities are decoded */
+	/** independent controls for script and scene-state visibility */
+	toggles: SceneToggleInfo[];
+	/** instance visibility expressions */
 	conditionalSets: ConditionalSetInfo[];
 }
 
@@ -422,21 +421,36 @@ export interface StatesInfo {
 export interface ProgressionInfo {
 	/** `${kind}:${key}`, e.g. `settlement:stm_hongs_1` */
 	id: string;
-	kind: 'settlement' | 'poi' | 'factoryRegion';
+	kind: 'settlement' | 'poi' | 'factoryRegion' | 'facility';
+	/** display label when resolved */
+	name?: string;
 	key: string;
 	levelId: string | null;
 	/** levels at least one variant is shown at, ascending */
 	levels: number[];
-	/** the level shown unless the user picks another (the fully upgraded look) */
+	/** the authored initial visual form, or lowest progression level, shown unless the user picks another */
 	defaultLevel: number;
 }
 
-/** reserved: a set of instances shown when its progression's selected level is in `levelMask` */
+/** a manual preview control; no runtime script or server condition is simulated */
+export interface SceneToggleInfo {
+	id: string;
+	name: string;
+	kind: 'script' | 'state';
+	levels: number[];
+	defaultEnabled: boolean;
+}
+
+/** one required value of a scene control */
+export interface SceneRequirement {
+	control: string;
+	/** bit n set means selected value n satisfies this requirement */
+	mask: number;
+}
+
+/** a resource is visible if any alternative has all its requirements satisfied */
 export interface ConditionalSetInfo {
-	/** a {@link ProgressionInfo.id} */
-	progression: string;
-	/** bit n set = shown at level n */
-	levelMask: number;
+	alternatives: SceneRequirement[][];
 }
 
 /** one archive of the package */
@@ -1188,7 +1202,7 @@ export interface ContentRef {
 	tier: number;
 	/**
 	 * the instances' level tag (`entityId >>> 27`, matching {@link LevelInfo.tag}) for instance content; 0 for
-	 * terrain; for {@link ContentKind.Conditional}, the conditional set index
+	 * terrain
 	 */
 	level: number;
 	/** blob index */

@@ -48,6 +48,8 @@ export interface BlendedEnvironment {
 export interface BlendOptions {
 	/** apply only this phase over the base, instead of the volumes */
 	pinnedPhase: number | null;
+	/** manual preview overrides, keyed by manifest volume index */
+	enabled?: Readonly<Record<number, boolean>>;
 }
 
 /** shape order among equal priorities, as `HGEnvironmentVolumeBase.CompareTo` falls back to the volume type */
@@ -170,7 +172,7 @@ export const blendEnvironment = (
 	} else {
 		const speed = time?.fades.step(eye) ?? JUMP_SPEED;
 		for (const { id, volume } of volumesOf(manifest)) {
-			if (volume.phase === null) {
+			if (volume.phase === null || options.enabled?.[id] === false) {
 				continue;
 			}
 			const distance = distanceInside(volume.shape, eye);
@@ -199,6 +201,10 @@ export const blendEnvironment = (
 								? 1
 								: 0
 							: time.fades.fade(id, inside, Number.isNaN(change) ? 1 : change);
+					break;
+				}
+				case 3: {
+					factor = options.enabled?.[id] === true && inside ? 1 : 0;
 					break;
 				}
 				default: {

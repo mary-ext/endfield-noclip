@@ -35,6 +35,7 @@ export interface TileNode {
 	terrain: ContentRef | null;
 	hlod: ContentRef[];
 	detail: ContentRef[];
+	conditional: ContentRef[];
 	/** {@link tileId} of the cellLevel ancestor (or self), for focus lookups; `null` above cellLevel */
 	cellId: string | null;
 }
@@ -70,6 +71,7 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 		let terrain: ContentRef | null = null;
 		const hlod: ContentRef[] = [];
 		const detail: ContentRef[] = [];
+		const conditional: ContentRef[] = [];
 		for (let i = raw.refFirst; i < raw.refFirst + raw.refCount; i++) {
 			const ref = tree.refs[i];
 			switch (ref.kind) {
@@ -85,8 +87,12 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 					detail.push(ref);
 					break;
 				}
+				case ContentKind.Conditional: {
+					conditional.push(ref);
+					break;
+				}
 				default: {
-					// conditional sets and baked terrain pages aren't drawn yet
+					// baked terrain pages are not drawn yet
 					break;
 				}
 			}
@@ -105,6 +111,7 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 			terrain,
 			hlod,
 			detail,
+			conditional,
 			cellId: raw.level >= info.cellLevel ? tileId(tileAncestor(raw, info.cellLevel)) : null,
 		};
 		byId.set(tileId(raw), node);

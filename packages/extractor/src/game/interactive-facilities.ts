@@ -6,6 +6,7 @@ import {
 } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import { isObject, numberField, objectField, stringField } from '@endfield-noclip/formats/unity/values';
+import type { ProgressionInfo } from '@endfield-noclip/package-format/format';
 
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';
@@ -21,8 +22,8 @@ const TEMPLATES = new Map([
 ]);
 
 /**
- * resolves initial shop, depot and recycling-station prefabs from referenced LevelData and the install's
- * model table
+ * resolves shop, depot and recycling-station visual forms from referenced LevelData and the install's model
+ * table
  *
  * @param context install readers
  * @param scene owning map
@@ -36,7 +37,11 @@ export const loadInteractiveFacilities = async (
 	scene: string,
 	level: string | null,
 	partition: LevelPartition | undefined,
-): Promise<{ models: StructureModel[]; unsupported: { path: string; reason: string }[] }> => {
+): Promise<{
+	models: StructureModel[];
+	progressions: ProgressionInfo[];
+	unsupported: { path: string; reason: string }[];
+}> => {
 	const { vfs, world } = context;
 	const read = async (name: string): Promise<Uint8Array> => {
 		const file = await vfs.find(VfsGroup.JsonData, name);
@@ -59,20 +64,24 @@ export const loadInteractiveFacilities = async (
 	for (const asset of manifest.assets()) {
 		paths.set(manifest.assetPath(asset), asset.pathHash);
 	}
-	const templates = new Map<string, { hash: bigint; scale: number }>();
+	const templates = new Map<string, { initial: number; forms: { hash: bigint; scale: number }[] }>();
 	for (const [id, path] of TEMPLATES) {
 		// oxlint-disable-next-line no-await-in-loop -- small facility templates, read once per map
 		const model = readInteractiveModel(await read(path), string);
-		const data = objectField(modelData, model.id);
-		const prefab = stringField(data, 'path').toLowerCase();
-		const hash = paths.get(prefab);
-		if (hash === undefined) {
-			throw new FormatError(`missing facility prefab ${prefab}`);
-		}
-		templates.set(id, { hash, scale: model.scale * numberField(data, 'scaleFactor') });
+		const forms = model.levels.map((modelId) => {
+			const data = objectField(modelData, modelId);
+			const prefab = stringField(data, 'path').toLowerCase();
+			const hash = paths.get(prefab);
+			if (hash === undefined) {
+				throw new FormatError(`missing facility prefab ${prefab}`);
+			}
+			return { hash, scale: model.scale * numberField(data, 'scaleFactor') };
+		});
+		templates.set(id, { initial: model.levels.indexOf(model.id), forms });
 	}
 	const pathOf = await world.pathLookup();
 	const models: StructureModel[] = [];
+	const progressions: ProgressionInfo[] = [];
 	const unsupported: { path: string; reason: string }[] = [];
 	const seen = new Set<bigint>();
 	for (const config of (await world.levelConfigs()).values()) {
@@ -102,20 +111,38 @@ export const loadInteractiveFacilities = async (
 					continue;
 				}
 				seen.add(row.id);
-				// zero is the authored "no scale override" sentinel on LevelInteractiveData.
-				const scale = row.modelScale > 0 ? row.modelScale : template.scale;
-				models.push({
-					model: {
-						pathHash: template.hash,
-						position: row.position,
-						rotation: row.rotation,
-						scale: [row.scale[0] * scale, row.scale[1] * scale, row.scale[2] * scale],
-					},
-					levelTag,
-					source: `${path}#${row.id}`,
+				const id = `facility:${row.id}`;
+				const names: Record<string, string> = {
+					int_system_domain_shop: 'Stock redistribution facility',
+					int_system_domain_depot: 'Depot',
+					int_doodad_core_recycle: 'Recycling station',
+				};
+				progressions.push({
+					id,
+					kind: 'facility',
+					key: row.template,
+					name: `${names[row.template]} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
+					levelId: config.id,
+					levels: template.forms.map((_, i) => i),
+					defaultLevel: template.initial,
 				});
+				for (const [form, model] of template.forms.entries()) {
+					// zero is the authored "no scale override" sentinel on LevelInteractiveData.
+					const scale = row.modelScale > 0 ? row.modelScale : model.scale;
+					models.push({
+						model: {
+							pathHash: model.hash,
+							position: row.position,
+							rotation: row.rotation,
+							scale: [row.scale[0] * scale, row.scale[1] * scale, row.scale[2] * scale],
+						},
+						levelTag,
+						source: `${path}#${row.id}`,
+						visibility: { alternatives: [[{ control: id, mask: (1 << form) >>> 0 }]] },
+					});
+				}
 			}
 		}
 	}
-	return { models, unsupported };
+	return { models, progressions, unsupported };
 };

@@ -1,3 +1,4 @@
+import { conditionVisible, defaultSceneValues } from '@endfield-noclip/package-format/conditions';
 /**
  * the viewer: owns the device, the frame loop, the camera and the loaded package, and wires traversal →
  * streaming → renderers. the React UI drives it through {@link Viewer.setOptions} and the level actions, and
@@ -5,7 +6,6 @@
  *
  * @module
  */
-
 import {
 	BlobKind,
 	type ContentRef,
@@ -93,6 +93,8 @@ export interface ViewerOptions {
 	environmentVolumes: boolean;
 	/** an environment phase to show over the base instead of the volumes, or `null` */
 	environmentPin: number | null;
+	/** per-volume preview overrides; absent entries keep the default preview */
+	environmentEnabled: Readonly<Record<number, boolean>>;
 	/** a material channel instead of the lit image */
 	debugView: DebugView;
 }
@@ -125,6 +127,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	irradiance: true,
 	environmentVolumes: true,
 	environmentPin: null,
+	environmentEnabled: {},
 	debugView: 'lit',
 };
 
@@ -219,7 +222,7 @@ const instanceRowKinds = (tree: TileTree, resident: readonly ContentRef[]): Map<
 			}
 			list.push({ first: ref.first, count: ref.count, tier: ref.tier });
 		}
-		for (const ref of node.detail) {
+		for (const ref of [...node.detail, ...node.conditional]) {
 			kinds.set(ref.blob, RowKind.Detail);
 		}
 	}
@@ -469,6 +472,8 @@ export class Viewer {
 				instances: level.instances,
 			})),
 		};
+		this.#sceneValues = defaultSceneValues(manifest.states);
+		this.#updateConditions();
 		const showable = manifest.levels.filter((level) => level.instances > 0);
 		this.#level = showable.find((level) => level.id === initialLevel) ?? showable[0] ?? null;
 		selector.setLevel(this.#level?.tag ?? null);
@@ -503,6 +508,10 @@ export class Viewer {
 		this.#post.setCloud(null);
 		this.#setReflection(this.#noReflection, 1);
 		this.scene = null;
+		this.#sceneValues = {};
+		this.options.environmentEnabled = {};
+		this.options.environmentPin = null;
+		this.#fades.reset();
 		this.#setIrradiance(new IrradianceVolume(this.#gfx.device, EMPTY_IRRADIANCE));
 		this.#water.setTable(null);
 		this.#level = null;
@@ -597,7 +606,7 @@ export class Viewer {
 	#blendEnvironment(force: boolean, dt: number): void {
 		const options = this.options;
 		const eye = this.camera.position;
-		const settings = `${options.environmentVolumes}|${options.environmentPin}`;
+		const settings = `${options.environmentVolumes}|${options.environmentPin}|${JSON.stringify(options.environmentEnabled)}`;
 		const last = this.#blendEye;
 		if (
 			!force &&
@@ -625,7 +634,7 @@ export class Viewer {
 				manifest,
 				base,
 				eye,
-				{ pinnedPhase: options.environmentPin },
+				{ pinnedPhase: options.environmentPin, enabled: options.environmentEnabled },
 				{ fades: this.#fades, dt },
 			);
 			profile = blended.profile;
@@ -894,9 +903,61 @@ export class Viewer {
 
 	// #region options and stats
 
+	#sceneValues: Record<string, number> = {};
+
+	/** @returns selected scene control values, including authored defaults */
+	get sceneValues(): Readonly<Record<string, number>> {
+		return this.#sceneValues;
+	}
+
+	/**
+	 * @param id exported progression or manual gate identifier
+	 * @param value an authored progression level, or 0/1 for a manual gate
+	 */
+	setSceneValue(id: string, value: number): void {
+		const states = this.scene?.pkg.manifest.states;
+		if (!states) {
+			return;
+		}
+		const progression = states.progressions.find((entry) => entry.id === id);
+		const toggle = states.toggles.find((entry) => entry.id === id);
+		if (!(progression?.levels.includes(value) || (toggle && (value === 0 || value === 1)))) {
+			return;
+		}
+		this.#sceneValues = { ...this.#sceneValues, [id]: value };
+		this.#updateConditions();
+		this.#emitState();
+	}
+
+	/** restores progression, script and environment preview defaults for the current package */
+	resetSceneValues(): void {
+		const states = this.scene?.pkg.manifest.states;
+		this.#sceneValues = states ? defaultSceneValues(states) : {};
+		this.options.environmentEnabled = {};
+		this.options.environmentPin = null;
+		this.#fades.reset();
+		this.#updateConditions();
+		this.#emitState();
+	}
+
+	#updateConditions(): void {
+		const scene = this.scene;
+		if (scene) {
+			scene.selector.setConditions(
+				scene.pkg.manifest.states.conditionalSets.map((condition) =>
+					conditionVisible(condition, this.#sceneValues),
+				),
+			);
+		}
+		this.#dirty = true;
+	}
+
 	/** @param patch options to change */
 	setOptions(patch: Partial<ViewerOptions>): void {
 		Object.assign(this.options, patch);
+		if (patch.environmentEnabled !== undefined) {
+			this.#fades.reset();
+		}
 		if (this.scene !== null) {
 			this.scene.stream.options.budgetBytes = this.options.budgetMiB * 2 ** 20;
 		}

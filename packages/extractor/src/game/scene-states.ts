@@ -215,8 +215,11 @@ const revealingAreas = (table: StreamAreaTable, area: number): number[] => {
  */
 export const progressionId = (kind: ProgressionKind, key: string): string => `${kind}:${key}`;
 
-/** @returns the key of the progression a controller drives, within its kind */
-const controllerKey = (controller: DynamicController): string => {
+/**
+ * @param controller a decoded progression controller
+ * @returns the key of the progression it drives, within its kind
+ */
+export const controllerKey = (controller: DynamicController): string => {
 	switch (controller.kind) {
 		case 'settlement': {
 			return controller.settlementId;
