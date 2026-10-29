@@ -108,6 +108,20 @@ test('irradiance accepts the older scene magic and rejects others', () => {
 	}
 });
 
+test("irradiance moves the older magic's keys to the shared origin", () => {
+	const key = ((2 << 24) | (60 << 16) | (67 << 8) | 62) >>> 0;
+	for (const [magic, expected] of [
+		[0x03000003, ((2 << 24) | (124 << 16) | (131 << 8) | 126) >>> 0],
+		[IRRADIANCE_INDEX_MAGIC, key],
+	] as const) {
+		const { bytes, rows } = fixture();
+		const view = new DataView(bytes.buffer);
+		view.setUint32(0, magic, true);
+		view.setUint32(rows[0], key, true);
+		assert.equal(parseIrradianceIndex(bytes).records[0].key, expected);
+	}
+});
+
 test('irradiance requires the final table and exact EOF', () => {
 	const { bytes } = fixture();
 	assert.throws(() => parseIrradianceIndex(bytes.subarray(0, bytes.length - 4)), FormatError);

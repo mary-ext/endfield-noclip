@@ -12,14 +12,22 @@ import { decodeInvertedLz4Block } from '../binary/lz4.ts';
 /** `index.bytes` magic of the current scene format */
 export const IRRADIANCE_INDEX_MAGIC = 0x03000004;
 
-// 0x03000003 (map01) has the same layout as 0x03000004 (map02); every section tiles to EOF the same way.
-const SCENE_INDEX_MAGICS = new Set([0x03000003, IRRADIANCE_INDEX_MAGIC]);
+// both magics share one layout and differ in the volume's extent: the game stores cell keys from the volume's
+// minimum corner, and world 0 sits at half the key range. 0x03000003 (map01) spans 4096 m (keys 0–127, world 0 at
+// 64), 0x03000004 (map02) 8192 m (world 0 at 128). keys are shifted to the larger range on read, so every scene's
+// keys share one origin. the extent itself is set in native code; it's inferred here from where each index's
+// keys land (map01's level-0 cells cover its levels only with world 0 at 64).
+const SCENE_KEY_ORIGINS = new Map([
+	[0x03000003, 64],
+	[IRRADIANCE_INDEX_MAGIC, 128],
+]);
 
 /** a cell's byte range in its payload file */
 export interface IrradianceRecord {
 	/**
-	 * `x | y << 8 | z << 16 | level << 24`, 8 bits per axis in 32 m units with 128 at world 0. a level-`n` cell
-	 * spans `32 · 2^n` m and its coordinates are multiples of `2^n`
+	 * `x | y << 8 | z << 16 | level << 24`, 8 bits per axis in 32 m units with {@link IRRADIANCE_KEY_ORIGIN} at
+	 * world 0, whatever the index stores. a level-`n` cell spans `32 · 2^n` m and its coordinates are multiples
+	 * of `2^n`
 	 */
 	key: number;
 	/** index into {@link IrradianceIndex.files} */
@@ -77,9 +85,17 @@ const RECORD_WORDS = 9;
 export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 	const r = new BinaryReader(data, { littleEndian: true });
 	const magic = r.u32();
-	if (!SCENE_INDEX_MAGICS.has(magic)) {
+	const keyOrigin = SCENE_KEY_ORIGINS.get(magic);
+	if (keyOrigin === undefined) {
 		throw new FormatError(`irradiance index: magic 0x${magic.toString(16)}`);
 	}
+	// a whole number of the coarsest cells (4 key units), so cell contents, which address probes within the cell,
+	// stay valid
+	const keyShift = IRRADIANCE_KEY_ORIGIN - keyOrigin;
+	const rekey = (key: number): number => {
+		const axis = (shift: number) => ((((key >>> shift) & 255) + keyShift) & 255) << shift;
+		return (axis(0) | axis(8) | axis(16) | (key & 0xff000000)) >>> 0;
+	};
 	const countOf = (stride: number): number => {
 		const count = r.u32();
 		if (count > Math.floor(r.remaining / stride)) {
@@ -142,7 +158,7 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 			throw new FormatError(`irradiance index: record ${i} doesn't hold together`);
 		}
 		ends[file] = w[2] + w[3];
-		records.push({ key: w[0], file, offset: w[2], storedLength: w[3], size: w[4] });
+		records.push({ key: rekey(w[0]), file, offset: w[2], storedLength: w[3], size: w[4] });
 	}
 	if (ends.some((end) => end === 0)) {
 		throw new FormatError('irradiance index: payload without records');

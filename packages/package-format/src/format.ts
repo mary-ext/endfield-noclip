@@ -1799,9 +1799,10 @@ export const irradianceArchiveName = (x: number, z: number): string =>
 
 /**
  * `tables/irradiance.bin`: the baked irradiance volume's cells (the base lighting scenario only), each a
- * {@link BlobKind.Irradiance} blob. cell keys are the game's: `x | y << 8 | z << 16 | level << 24`, 8 bits
- * per axis in 32 m units with 128 at world 0; a level-`n` cell spans `32 · 2^n` m (probes every `0.5 · 4^n`
- * m) and its coordinates are multiples of `2^n`
+ * {@link BlobKind.Irradiance} blob. cell keys are the game's layout: `x | y << 8 | z << 16 | level << 24`, 8
+ * bits per axis in 32 m units with 128 at world 0 for every scene (smaller volumes' keys are shifted to it);
+ * a level-`n` cell spans `32 · 2^n` m (probes every `0.5 · 4^n` m) and its coordinates are multiples of
+ * `2^n`
  */
 export interface IrradianceTable {
 	/** cell keys, ascending */
