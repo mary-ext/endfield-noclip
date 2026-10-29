@@ -16,7 +16,7 @@ import type {
 	ShaderEntry,
 } from '@endfield-noclip/package-format/format';
 
-import { linearRgb } from './environment.ts';
+import { linearRgb } from './colour.ts';
 
 /** shader families that aren't drawn as opaque surfaces (fog volumes, light beams, effects) */
 const SKIPPED_FAMILIES = new Set(['fogSimple', 'volumetricBeam', 'vfxFakeVolumeFog']);
