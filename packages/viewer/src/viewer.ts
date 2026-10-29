@@ -107,7 +107,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	budgetMiB: 384,
 	continuous: false,
 	exposure: 0,
-	tonemapper: 'aces',
+	tonemapper: 'game',
 	sky: true,
 	fog: true,
 	aerialPerspective: true,

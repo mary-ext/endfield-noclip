@@ -27,6 +27,7 @@ import type {
 
 import type { Vec3 } from '../scene/camera.ts';
 
+import { type ColorGradingInput, type Grading, NEUTRAL_GRADING, gradingLook } from './color-grading.ts';
 import { linearRgb, srgbToLinear } from './colour.ts';
 
 // #region profile input
@@ -139,6 +140,7 @@ export interface EnvironmentInput {
 	/** the volumetric fog's own height-fog set, which the game uses while volumetric fog is on */
 	volumetricFog: HeightFogInput;
 	cloud: CloudInput | null;
+	colorGrading: ColorGradingInput;
 	post: PostInput | null;
 }
 
@@ -257,6 +259,7 @@ export interface Environment {
 	/** metres to the sky dome, for fogging the sky */
 	skyDistance: number;
 	post: PostLook;
+	grading: Grading;
 	/** the panoramic cloud layer, or `null` without one */
 	cloud: {
 		texture: number;
@@ -432,6 +435,7 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 	heightFog: DEFAULT_HEIGHT_FOG,
 	volumetricFog: { ...DEFAULT_HEIGHT_FOG, enable: false },
 	cloud: null,
+	colorGrading: NEUTRAL_GRADING,
 	post: {
 		bloom: {
 			thresholdHighQuality: 0.95,
@@ -635,6 +639,7 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 		},
 		skyDistance: sky.skyDistance,
 		post: postLook(source.post ?? DEFAULT_PROFILE.post),
+		grading: gradingLook(source.colorGrading),
 		cloud: cloudLook(source.cloud),
 	};
 };

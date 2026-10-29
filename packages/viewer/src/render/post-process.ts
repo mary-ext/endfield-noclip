@@ -23,7 +23,7 @@ import { type TextureBinding, placeholderView } from './texture-store.ts';
 import type { WaterRenderer } from './water-renderer.ts';
 
 /** byte size of `Post` in post-common.wgsl */
-const POST_BYTES = 41 * 16;
+const POST_BYTES = 56 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
@@ -32,8 +32,11 @@ const AO_SCALE = 2;
 /** bloom levels at most, the first at half resolution */
 const BLOOM_LEVELS = 6;
 
-/** the tonemapping curves the final pass offers, in the order of their `Post.grade.w` codes */
-export const TONEMAPPERS = ['aces', 'neutral', 'none'] as const;
+/**
+ * the tonemapping curves the final pass offers, in the order of their `Post.grade.w` codes: the game's
+ * modified ACES, Khronos PBR Neutral, or a clamp. the game's colour grading applies under the first two
+ */
+export const TONEMAPPERS = ['game', 'neutral', 'none'] as const;
 
 export type Tonemapper = (typeof TONEMAPPERS)[number];
 
@@ -603,6 +606,22 @@ export class PostProcess {
 		set(31, [cloud?.rotation ?? 0, cloud?.contrast ?? 1, cloud?.singleChannel ? 1 : 0, 0]);
 		set(32, cloud?.tint ?? [1, 1, 1, 1]);
 		set(33, [cloud?.opacity[0] ?? 1, cloud?.opacity[1] ?? 1, 0, 0]);
+		const g = environment.grading;
+		set(41, [...g.colourBalance, g.postExposure]);
+		set(42, [...g.colourFilter, 0]);
+		set(43, [g.hueShift, g.saturation, g.contrast, 0]);
+		set(44, [...g.channelMixer[0], 0]);
+		set(45, [...g.channelMixer[1], 0]);
+		set(46, [...g.channelMixer[2], 0]);
+		set(47, [...g.shadows, 0]);
+		set(48, [...g.midtones, 0]);
+		set(49, [...g.highlights, 0]);
+		set(50, g.limits);
+		set(51, [...g.lift, 0]);
+		set(52, [...g.gamma, 0]);
+		set(53, [...g.gain, 0]);
+		set(54, [...g.splitShadows, g.splitBalance]);
+		set(55, [...g.splitHighlights, 0]);
 	}
 
 	/** writes the per-frame uniforms (camera, settings) over the environment's and uploads them all */

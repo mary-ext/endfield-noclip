@@ -51,7 +51,7 @@ struct Post {
 	// bloom: threshold, knee, intensity, scatter
 	bloom: vec4f,
 	bloom_tint: vec4f,
-	// exposure multiplier, vignette intensity, vignette smoothness, tonemapper (0 ACES, 1 neutral, 2 none)
+	// exposure multiplier, vignette intensity, vignette smoothness, tonemapper (0 game, 1 neutral, 2 none)
 	grade: vec4f,
 	// x = sky, y = height fog, z = aerial perspective, w = bloom
 	flags: vec4u,
@@ -81,6 +81,27 @@ struct Post {
 	atmo_ambient: vec4f,
 	// sky dome distance (m), atmosphere fog on, unused, unused
 	sky_fog: vec4f,
+	// colour grading (the game's _ColorGradingCB): white balance (LMS), w = post exposure multiplier
+	colour_balance: vec4f,
+	// linear colour filter
+	colour_filter: vec4f,
+	// hue shift (turns), saturation, contrast
+	hue_sat_con: vec4f,
+	// rows of the channel mixer
+	mixer_red: vec4f,
+	mixer_green: vec4f,
+	mixer_blue: vec4f,
+	shadows: vec4f,
+	midtones: vec4f,
+	highlights: vec4f,
+	// shadows start and end, highlights start and end
+	sha_hi_limits: vec4f,
+	lift: vec4f,
+	gamma: vec4f,
+	gain: vec4f,
+	// split toning tints; w = balance
+	split_shadows: vec4f,
+	split_highlights: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> post: Post;
