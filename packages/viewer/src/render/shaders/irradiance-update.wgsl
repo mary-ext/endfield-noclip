@@ -1,7 +1,8 @@
 // fills one level of the irradiance clipmap from the resident cells: the game's IrradianceVolumeUpdateV3CS
 // (FullUpdateClipmap0..2), with a window of resident cells in place of its top-level hash. one invocation per
 // texel; texel t holds the probe whose index along each axis is congruent to t modulo the clipmap's size, so
-// the clipmap is toroidal and the lighting samples it with a repeating sampler.
+// the clipmap is toroidal and the lighting samples it with a repeating sampler. a texel without a probe takes
+// the next coarser level's value, so levels are filled coarse to fine.
 
 struct Update {
 	// xyz: probe index (in this level's spacing) of the clipmap's centre, w: level
@@ -21,8 +22,14 @@ struct Update {
 @group(0) @binding(3) var out_a: texture_storage_3d<rgba16float, write>;
 // three slabs along y (red, green, blue): the L1 direction · 0.25 + 0.5, alpha the probe's validity
 @group(0) @binding(4) var out_b: texture_storage_3d<rgba8unorm, write>;
+// the next coarser level's A and B, which fill texels with no probe of their own; unread at the coarsest level
+@group(0) @binding(5) var coarse_a: texture_3d<f32>;
+@group(0) @binding(6) var coarse_b: texture_3d<f32>;
+@group(0) @binding(7) var coarse_repeat: sampler;
+@group(0) @binding(8) var coarse_clamp: sampler;
 
 const SIZE = vec3i(128, 64, 128);
+const COARSEST = 2;
 // probe units are 0.5 m with world 0 at 8192 (the game's half extent, 4096 m)
 const ORIGIN = 8192;
 
@@ -72,30 +79,48 @@ fn cs_update(@builtin(global_invocation_id) id: vec3u) {
 	let index = lowest + modulo(texel - lowest, SIZE);
 	let p = index * (1 << u32(2 * level)) + vec3i(ORIGIN);
 
-	var a = vec4f(0.0);
-	var b0 = vec4f(0.0);
-	var b1 = vec4f(0.0);
-	var b2 = vec4f(0.0);
+	var at = -1;
 	let w = (p >> vec3u(u32(6 + level))) - update.window.xyz;
 	let size = update.window_size.xyz;
 	if (all(p >= vec3i(0)) && all(w >= vec3i(0)) && all(w < size)) {
 		let slot = windows[u32(update.window.w + w.x + w.y * size.x + w.z * size.x * size.y)];
 		if (slot != 0u) {
-			let at = find_probe(slot - 1u, p, level);
-			if (at >= 0) {
-				let word = cells[at];
-				// R11G11B10F through half floats, as the game does
-				a = vec4f(
-					unpack2x16float((word << 4u) & 0x7ff0u).x,
-					unpack2x16float((word >> 7u) & 0x7ff0u).x,
-					unpack2x16float((word >> 17u) & 0x7fe0u).x,
-					0.0,
-				);
-				b0 = unpack4x8unorm(cells[at + 1]);
-				b1 = unpack4x8unorm(cells[at + 2]);
-				b2 = unpack4x8unorm(cells[at + 3]);
-			}
+			at = find_probe(slot - 1u, p, level);
 		}
+	}
+
+	var a: vec4f;
+	var b0: vec4f;
+	var b1: vec4f;
+	var b2: vec4f;
+	if (at >= 0) {
+		let word = cells[at];
+		// R11G11B10F through half floats, as the game does
+		a = vec4f(
+			unpack2x16float((word << 4u) & 0x7ff0u).x,
+			unpack2x16float((word >> 7u) & 0x7ff0u).x,
+			unpack2x16float((word >> 17u) & 0x7fe0u).x,
+			0.0,
+		);
+		b0 = unpack4x8unorm(cells[at + 1]);
+		b1 = unpack4x8unorm(cells[at + 2]);
+		b2 = unpack4x8unorm(cells[at + 3]);
+	} else if (level < COARSEST) {
+		// the coarser level at this probe's position, addressed as the lighting samples it (probes are 4× as far
+		// apart there). level 0 is sparse, so most of it comes from here
+		let uvw = fract((vec3f(index) * 0.25 + 0.5) / vec3f(SIZE));
+		let half_y = 0.5 / f32(SIZE.y);
+		let v = clamp(uvw.y, half_y, 1.0 - half_y) / 3.0;
+		a = textureSampleLevel(coarse_a, coarse_repeat, uvw, 0.0);
+		b0 = textureSampleLevel(coarse_b, coarse_clamp, vec3f(uvw.x, v, uvw.z), 0.0);
+		b1 = textureSampleLevel(coarse_b, coarse_clamp, vec3f(uvw.x, v + 1.0 / 3.0, uvw.z), 0.0);
+		b2 = textureSampleLevel(coarse_b, coarse_clamp, vec3f(uvw.x, v + 2.0 / 3.0, uvw.z), 0.0);
+	} else {
+		// no light but full validity, as in the game: the lighting then adds half the ambient probe here
+		a = vec4f(0.0);
+		b0 = vec4f(0.0, 0.0, 0.0, 1.0);
+		b1 = vec4f(0.0);
+		b2 = vec4f(0.0);
 	}
 	textureStore(out_a, texel, a);
 	textureStore(out_b, texel, b0);

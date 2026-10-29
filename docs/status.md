@@ -23,10 +23,9 @@ or renders correctly.
 
 ## look and lighting
 
-- baked GI reads too dark: shade with irradiance enabled sits near black where the game shows a
-  mid-tone. suspects are the missing native ambient scale, probes inside geometry pulling the
-  trilinear blend down (the game offsets samples along the normal and jitters), and AO darkening an
-  already-occluded bake
+- baked GI brightness is unverified against the game since probe-less texels began falling back to
+  coarser levels; the native ambient scale is still missing, and the lighting lookup has no jitter
+  or forward-shifted clipmap centres
 - several ambient, sky-LUT and exposure constants are computed in native engine code and not yet
   recovered
 - irradiance: only the base scenario is packed; scenario overlays, partial clipmap updates, the

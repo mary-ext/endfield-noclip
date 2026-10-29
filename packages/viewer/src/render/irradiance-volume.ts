@@ -1,8 +1,8 @@
 /**
  * the baked irradiance volume around the camera, as the game's renderer keeps it: three toroidal clipmaps of
  * L1 probes (0.5 m, 2 m and 8 m apart, 128 × 64 × 128 each) filled by a compute pass from the streamed cells.
- * the lighting (`frame.wgsl`) samples them and falls back to the environment's ambient probe where they don't
- * reach or hold no probe.
+ * a texel without a probe of its own copies the next coarser level. the lighting (`frame.wgsl`) samples them
+ * and adds the environment's ambient probe by their validity and reach.
  *
  * @module
  */
@@ -111,8 +111,7 @@ export class IrradianceVolume {
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 		});
 		const empty = table.keys.length === 0;
-		let windowBase = 0;
-		this.#levels = SPACING.map((_, level) => {
+		const textures = SPACING.map((_, level) => {
 			const texture = (label: string, height: number): GPUTexture =>
 				device.createTexture({
 					label: `irradiance ${label} ${level}`,
@@ -121,13 +120,17 @@ export class IrradianceVolume {
 					format: label === 'a' ? 'rgba16float' : 'rgba8unorm',
 					usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
 				});
-			const a = texture('a', SIZE[1]);
-			const b = texture('b', SIZE[1] * 3);
+			return { a: texture('a', SIZE[1]), b: texture('b', SIZE[1] * 3) };
+		});
+		let windowBase = 0;
+		this.#levels = textures.map(({ a, b }, level) => {
 			const uniforms = device.createBuffer({
 				label: `irradiance update ${level}`,
 				size: 48,
 				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 			});
+			// the coarsest level has no coarser one and never reads it; any other level's textures fill the slot
+			const coarse = textures[level + 1] ?? textures[level - 1];
 			const group = device.createBindGroup({
 				layout: this.#pipeline.getBindGroupLayout(0),
 				entries: [
@@ -136,6 +139,10 @@ export class IrradianceVolume {
 					{ binding: 2, resource: { buffer: this.#windows } },
 					{ binding: 3, resource: a.createView() },
 					{ binding: 4, resource: b.createView() },
+					{ binding: 5, resource: coarse.a.createView() },
+					{ binding: 6, resource: coarse.b.createView() },
+					{ binding: 7, resource: this.sampler },
+					{ binding: 8, resource: this.clampSampler },
 				],
 			});
 			const size = windowSizes[level];
@@ -251,17 +258,24 @@ export class IrradianceVolume {
 	}
 
 	/**
-	 * refills the levels {@link prepare} found changed.
+	 * refills the levels {@link prepare} found changed, and every finer level after them.
 	 *
 	 * @param encoder this frame's encoder, before the main pass
 	 */
 	encode(encoder: GPUCommandEncoder): void {
 		const device = this.#device;
-		for (const [index, level] of this.#levels.entries()) {
+		// coarse to fine: a finer level's texels without probes copy the coarser level, so it refills after it
+		let coarserChanged = false;
+		for (let index = this.#levels.length - 1; index >= 0; index--) {
+			const level = this.#levels[index];
+			if (coarserChanged) {
+				level.dirty = true;
+			}
 			if (!level.dirty || level.centre === null) {
 				continue;
 			}
 			level.dirty = false;
+			coarserChanged = true;
 			const [sx, sy, sz] = level.windowSize;
 			device.queue.writeBuffer(this.#windows, level.windowBase * 4, level.slots);
 			device.queue.writeBuffer(

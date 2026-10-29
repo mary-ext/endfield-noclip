@@ -191,8 +191,9 @@ decompressed, it is the structure the game's GPU update pass reads (all `u32`):
   and blue (unpacked as `· 4 − 2`, relative to that channel's L0) with the probe's validity in
   alpha.
 
-where a block has no probe, the game falls back to two global 3D textures that the viewer doesn't
-have; the viewer's validity fallback is the ambient probe.
+where a level has no probe (no cell, no block, or a clear mask bit), the clipmap texel takes the
+next coarser level's filtered value at that position; at the coarsest level it is zero light with
+full validity. level 0 is sparse, so most of the finest clipmap comes from level 1.
 
 ### packing
 
@@ -214,9 +215,10 @@ along y for the L1 of each channel). per level it wants the window of cells its 
 streams them into one storage buffer (coarse levels first, ahead of scenery), and refills the level
 with
 [`shaders/irradiance-update.wgsl`](../../packages/viewer/src/render/shaders/irradiance-update.wgsl)
-when the camera moves more than 4 texels from its centre or a cell arrives or leaves. the update
-pass looks cells up in that window instead of the game's top-level hash. the clipmaps are sampled
-toroidally in `ambient_irradiance`.
+when the camera moves more than 4 texels from its centre or a cell arrives or leaves. levels refill
+coarse to fine, and a refilled level refills every finer one, because their probe-less texels copy
+it. the update pass looks cells up in that window instead of the game's top-level hash. the clipmaps
+are sampled toroidally in `ambient_irradiance`.
 
 ## open
 
