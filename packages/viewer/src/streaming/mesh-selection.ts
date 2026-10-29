@@ -1,8 +1,9 @@
 /**
  * per-instance selection for packages with geometry: frustum and small-feature culling, then LOD selection
- * with the game's LODGroup thresholds, bucketing visible instances by (geometry, submesh, material) for
- * instanced draws. instances whose chosen LOD isn't resident yet fall back to their box, and request the
- * geometry.
+ * with the game's LODGroup thresholds, bucketing visible instances by (geometry, submesh, material, mirrored)
+ * for instanced draws. mirrored instances (negative determinant) flip their triangles' winding, so they need
+ * the opposite face culled and get buckets of their own. instances whose chosen LOD isn't resident yet fall
+ * back to their box, and request the geometry.
  *
  * this is the CPU version of the planned GPU cull pass: the output (an instance list plus per-bucket ranges)
  * is what a compute shader would write next to indirect draw arguments.
@@ -25,12 +26,14 @@ import type { Plane, Vec3 } from '../scene/camera.ts';
 import type { InstanceRange } from './selection.ts';
 import type { ContentItem, StreamManager } from './stream-manager.ts';
 
-/** instances sharing one geometry submesh and material */
+/** instances sharing one geometry submesh, material and handedness */
 export interface MeshBucket {
 	geometry: ContentItem;
 	submesh: number;
 	material: number;
 	look: MaterialLook;
+	/** whether the instances' transforms mirror them (negative determinant) */
+	mirrored: boolean;
 	/** global row indices; reset every frame */
 	rows: number[];
 	/** largest projected size of an instance this frame, px */
@@ -78,8 +81,8 @@ interface ChainSlot {
 	geometry: number;
 	submesh: number;
 	material: number;
-	/** the slot's bucket, once it had rows */
-	bucket: MeshBucket | null;
+	/** the slot's buckets for unmirrored and mirrored instances, once they had rows */
+	buckets: [MeshBucket | null, MeshBucket | null];
 }
 
 /** buckets without rows for this many frames are dropped */
@@ -230,9 +233,17 @@ export class MeshSelector {
 						boxes.push(row);
 						continue;
 					}
+					// the sign of the transform's determinant (its rows are the matrix rows)
+					const mirrored =
+						f32[at] * (f32[at + 5] * f32[at + 10] - f32[at + 6] * f32[at + 9]) -
+							f32[at + 1] * (f32[at + 4] * f32[at + 10] - f32[at + 6] * f32[at + 8]) +
+							f32[at + 2] * (f32[at + 4] * f32[at + 9] - f32[at + 5] * f32[at + 8]) <
+						0
+							? 1
+							: 0;
 					for (let p = 0; p < pendingCount; p++) {
 						const slot = pending[p];
-						const bucket = slot.bucket ?? this.#bucketOf(slot);
+						const bucket = slot.buckets[mirrored] ?? this.#bucketOf(slot, mirrored);
 						if (bucket.frame !== frame) {
 							bucket.frame = frame;
 							bucket.rows.length = 0;
@@ -296,7 +307,7 @@ export class MeshSelector {
 					geometry: draw.geometry,
 					submesh: draw.submesh,
 					material: draw.material,
-					bucket: null,
+					buckets: [null, null],
 				});
 			}
 			this.#slots[chain] = slots;
@@ -304,9 +315,9 @@ export class MeshSelector {
 		return slots;
 	}
 
-	#bucketOf(slot: ChainSlot): MeshBucket {
+	#bucketOf(slot: ChainSlot, mirrored: 0 | 1): MeshBucket {
 		const { geometry, submesh, material } = slot;
-		const key = (geometry * 256 + submesh) * 65_536 + material;
+		const key = ((geometry * 256 + submesh) * 65_536 + material) * 2 + mirrored;
 		let bucket = this.#buckets.get(key);
 		if (bucket === undefined) {
 			const entry = this.#geometries[geometry];
@@ -319,6 +330,7 @@ export class MeshSelector {
 				submesh,
 				material,
 				look: this.#looks[material],
+				mirrored: mirrored === 1,
 				rows: [],
 				pixels: 0,
 				first: 0,
@@ -327,7 +339,7 @@ export class MeshSelector {
 			};
 			this.#buckets.set(key, bucket);
 		}
-		slot.bucket = bucket;
+		slot.buckets[mirrored] = bucket;
 		return bucket;
 	}
 
@@ -343,7 +355,8 @@ export class MeshSelector {
 		if (pruned) {
 			for (const slots of this.#slots) {
 				for (const slot of slots ?? []) {
-					slot.bucket = null;
+					slot.buckets[0] = null;
+					slot.buckets[1] = null;
 				}
 			}
 		}

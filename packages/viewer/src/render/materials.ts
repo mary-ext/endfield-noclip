@@ -12,6 +12,7 @@
 
 import type {
 	Color,
+	MaterialCull,
 	MaterialTable,
 	ReadyMaterial,
 	ShaderEntry,
@@ -77,6 +78,8 @@ export interface MaterialLook {
 	 * bound; such draws need pipelines that can discard
 	 */
 	cutout: boolean;
+	/** the faces the game culls, for unmirrored instances */
+	cull: MaterialCull;
 	/** texture id per {@link SLOTS} entry, or -1 */
 	textures: [number, number, number, number];
 	/** largest UV scale of each slot, for picking the mip level to stream */
@@ -107,7 +110,15 @@ const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => {
 	for (let i = 0; i < SLOTS.length; i++) {
 		params.set([1, 1, 0, 0], LookRow.uv + i * 4);
 	}
-	return { drawn, cutout: false, textures: [-1, -1, -1, -1], uvScales: [1, 1, 1, 1], flags: 0, params };
+	return {
+		drawn,
+		cutout: false,
+		cull: 'none',
+		textures: [-1, -1, -1, -1],
+		uvScales: [1, 1, 1, 1],
+		flags: 0,
+		params,
+	};
 };
 
 /** a material's value of a float property: its override, else the shader's default */
@@ -151,6 +162,7 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 
 const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	const look = emptyLook({ drawn: true });
+	look.cull = entry.cull;
 	const family = shader.family;
 	const foliage = FOLIAGE_FAMILIES.has(family);
 	const params = look.params;

@@ -40,7 +40,32 @@ const GeometryFlags = {
 	HasTangents: 1 << 10,
 } as const;
 
-/** one run over a pass's opaque or alpha-tested draws with one pipeline */
+/** the face culling a draw's pipeline uses; each phase has a pipeline per value */
+const FACE_CULLS = ['none', 'back', 'front'] as const satisfies readonly GPUCullMode[];
+type FaceCull = (typeof FACE_CULLS)[number];
+
+/**
+ * the winding of front faces of unmirrored instances, as the game's meshes reach the rasterizer through
+ * `view_proj` (Unity's left-handed, clockwise-front convention, like the terrain's)
+ */
+const FRONT_FACE: GPUFrontFace = 'cw';
+
+/** @returns the faces a bucket's draws cull: the material's, swapped for mirrored instances */
+const faceCullOf = (bucket: MeshBucket): FaceCull => {
+	switch (bucket.look.cull) {
+		case 'none': {
+			return 'none';
+		}
+		case 'back': {
+			return bucket.mirrored ? 'front' : 'back';
+		}
+		case 'front': {
+			return bucket.mirrored ? 'back' : 'front';
+		}
+	}
+};
+
+/** one run over a pass's opaque or alpha-tested draws, with a pipeline per face culling */
 interface DrawPhase {
 	key: string;
 	/** over the alpha-tested draws, else the opaque ones */
@@ -62,6 +87,7 @@ interface PreparedDraw {
 	first: number;
 	count: number;
 	material: GPUBindGroup;
+	cull: FaceCull;
 }
 
 interface MaterialBinding {
@@ -70,9 +96,15 @@ interface MaterialBinding {
 	group: GPUBindGroup;
 }
 
-/** draw order within the opaque and the alpha-tested draws: geometry, then material and submesh */
+/**
+ * draw order within the opaque and the alpha-tested draws: face culling (one pipeline each), then geometry,
+ * material and submesh
+ */
 const byBindings = (a: MeshBucket, b: MeshBucket): number =>
-	a.geometry.blob - b.geometry.blob || a.material - b.material || a.submesh - b.submesh;
+	FACE_CULLS.indexOf(faceCullOf(a)) - FACE_CULLS.indexOf(faceCullOf(b)) ||
+	a.geometry.blob - b.geometry.blob ||
+	a.material - b.material ||
+	a.submesh - b.submesh;
 
 /** owns geometry buffers, material bind groups and the mesh pipelines */
 export class MeshRenderer {
@@ -179,13 +211,14 @@ export class MeshRenderer {
 			key: string,
 			stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil' | 'multisample'>,
 		): void => {
-			void pipelines.prepare(key, () => ({
-				layout: layouts.meshPipeline,
-				vertex,
-				// instances may be mirrored (negative determinant), which flips winding per instance
-				primitive: { topology: 'triangle-list', cullMode: 'none' },
-				...stages,
-			}));
+			for (const cullMode of FACE_CULLS) {
+				void pipelines.prepare(`${key}/${cullMode}`, () => ({
+					layout: layouts.meshPipeline,
+					vertex,
+					primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
+					...stages,
+				}));
+			}
 		};
 		const samples = format.sampleCount;
 		const multisample: GPUMultisampleState = { count: samples };
@@ -391,6 +424,7 @@ export class MeshRenderer {
 			listEnd = Math.max(listEnd, bucket.first + bucket.count);
 
 			const material = this.#materialGroup(bucket.material, slots);
+			const cull = faceCullOf(bucket);
 			const draw = this.#draws[d];
 			if (draw === undefined) {
 				this.#draws[d] = {
@@ -401,6 +435,7 @@ export class MeshRenderer {
 					first: bucket.first,
 					count: bucket.count,
 					material,
+					cull,
 				};
 			} else {
 				draw.geometry = resident;
@@ -410,6 +445,7 @@ export class MeshRenderer {
 				draw.first = bucket.first;
 				draw.count = bucket.count;
 				draw.material = material;
+				draw.cull = cull;
 			}
 			d++;
 
@@ -453,9 +489,13 @@ export class MeshRenderer {
 		if (this.#drawCount === 0) {
 			return 0;
 		}
+		// cutout depth and depth-equal shading must rasterize identically, so nothing draws until every variant
+		// is ready
 		for (const phase of phases) {
-			if (this.#pipelines.get(phase.key) === undefined) {
-				return 0;
+			for (const cull of FACE_CULLS) {
+				if (this.#pipelines.get(`${phase.key}/${cull}`) === undefined) {
+					return 0;
+				}
 			}
 		}
 		pass.setBindGroup(1, this.#instances);
@@ -464,15 +504,22 @@ export class MeshRenderer {
 		for (const phase of phases) {
 			const from = phase.cutout ? this.#cutoutStart : 0;
 			const to = phase.cutout ? this.#drawCount : this.#cutoutStart;
-			const pipeline = this.#pipelines.get(phase.key);
-			if (from === to || pipeline === undefined) {
+			if (from === to) {
 				continue;
 			}
-			pass.setPipeline(pipeline);
+			let cull: FaceCull | null = null;
 			let geometry: ResidentGeometry | null = null;
 			let material: GPUBindGroup | null = null;
 			for (let i = from; i < to; i++) {
 				const draw = this.#draws[i];
+				if (draw.cull !== cull) {
+					cull = draw.cull;
+					const pipeline = this.#pipelines.get(`${phase.key}/${cull}`);
+					if (pipeline === undefined) {
+						return draws;
+					}
+					pass.setPipeline(pipeline);
+				}
 				if ((phase.textured || material === null) && draw.material !== material) {
 					material = draw.material;
 					pass.setBindGroup(3, material);

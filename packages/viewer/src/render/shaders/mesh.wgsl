@@ -143,7 +143,8 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 		n = faceted;
 	}
 	n = normalize(n);
-	// culling is off (mirrored instances flip winding, foliage is two-sided): light the side facing us
+	// two-sided materials (foliage) show both faces, and smooth normals can face away at silhouettes: light the
+	// side facing us
 	let towards_viewer = dot(n, in.rel) <= 0.0;
 	if (!towards_viewer) {
 		n = -n;

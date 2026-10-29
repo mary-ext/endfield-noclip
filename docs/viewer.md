@@ -140,8 +140,13 @@ over the selected row ranges. per instance it:
    draw whose `(minSquared, maxSquared]` band contains it. an instance past the chain's smallest
    threshold is culled, matching the game;
 3. if all picked geometries are resident, appends the row to a bucket keyed by (geometry, submesh,
-   material); otherwise draws its box and requests the geometry at a priority of its projected pixel
-   height.
+   material, mirrored); otherwise draws its box and requests the geometry at a priority of its
+   projected pixel height. an instance is mirrored when its transform's determinant is negative,
+   which flips its triangles' winding.
+
+meshes cull the faces their material culls (front faces are clockwise, as Unity's are), with front
+and back swapped for mirrored buckets. each mesh phase, shadows included, has a pipeline per face
+culling, and draws are sorted by it.
 
 shadow-only draws and materials that aren't drawn are dropped from the chain once, when it's first
 used. textures are then requested per bucket, coarse to fine, down to the mip that gives about one
