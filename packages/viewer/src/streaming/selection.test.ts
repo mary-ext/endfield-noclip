@@ -94,4 +94,10 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 	wanted.length = 0;
 	selector.run(view, { ...options, detail: false }, null);
 	assert.deepEqual(wanted, [9]);
+	wanted.length = 0;
+	// 50 m tiles 1 km away span 5 px at this pixel factor: under maxSse, so nothing conditional is requested
+	const far = new Camera();
+	far.position = [1050, 0, 0];
+	selector.run({ ...view, camera: far }, options, null);
+	assert.deepEqual(wanted, [9]);
 });

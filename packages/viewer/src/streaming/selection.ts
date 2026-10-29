@@ -135,7 +135,7 @@ export class Selector {
 			if (options.instances) {
 				this.#instances(root, view, options);
 				if (options.detail) {
-					this.#conditional(root, view);
+					this.#conditional(root, view, options);
 				}
 			}
 		}
@@ -158,11 +158,22 @@ export class Selector {
 		this.#conditions = [...conditions];
 	}
 
-	#conditional(node: TileNode, view: SelectionView): void {
-		if (!boxInFrustum(view.planes, node.bounds.min, node.bounds.max, view.camera.position)) {
+	/**
+	 * conditional content has no HLOD stand-in, so it doesn't follow the HLOD refinement. it's dropped once its
+	 * tile spans no more than `maxSse` pixels instead; children are smaller and no nearer, so they're skipped
+	 * too
+	 */
+	#conditional(node: TileNode, view: SelectionView, options: SelectionOptions): void {
+		this.selection.visited++;
+		const eye = view.camera.position;
+		if (!boxInFrustum(view.planes, node.bounds.min, node.bounds.max, eye)) {
 			return;
 		}
-		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, view.camera.position), 1);
+		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, eye), 1);
+		const sse = (node.size * view.pixelFactor) / distance;
+		if (sse <= options.maxSse) {
+			return;
+		}
 		for (const ref of node.conditional) {
 			if (!this.#shows(ref) || !this.#conditions[ref.param]) {
 				continue;
@@ -174,7 +185,7 @@ export class Selector {
 		}
 		for (const child of node.quadrants) {
 			if (child !== null) {
-				this.#conditional(child, view);
+				this.#conditional(child, view, options);
 			}
 		}
 	}
