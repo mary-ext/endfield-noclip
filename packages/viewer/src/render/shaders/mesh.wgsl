@@ -30,6 +30,9 @@ struct Draw {
 	surface2: vec4f,
 	// emissive colour (linear), w = how much the tint covers the base colour
 	emissive: vec4f,
+	// x = how little the albedo tints emission (1: not at all), y = the emission mask channel, z = 1 when
+	// emission ignores the post exposure
+	emission2: vec4f,
 }
 
 const BASE_MAP = 1u;
@@ -41,6 +44,7 @@ const NORMAL_ROUGHNESS = 32u;
 const FOLIAGE = 64u;
 const METALLIC_BASE_ALPHA = 128u;
 const NORMAL_OCCLUSION = 256u;
+const EMISSIVE_MASK = 2048u;
 // set per draw from the geometry's streams (`GeometryFlags` in mesh-renderer.ts)
 const HAS_NORMALS = 512u;
 const HAS_TANGENTS = 1024u;
@@ -185,10 +189,30 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 		s.roughness = mix(draw.surface.x, draw.surface.y, mask.g);
 		s.occlusion = mix(1.0, mask.b, draw.surface2.x);
 	}
+	var emission = 0.0;
 	if ((flags & EMISSIVE_MAP) != 0u) {
-		// emission is authored in nits; pre-expose it like the light
-		s.emission = glow.rgb * draw.emissive.rgb * frame.ambient.y;
+		emission = glow.r;
 	}
+	if ((flags & EMISSIVE_MASK) != 0u) {
+		// mask channel 1 is the base colour's alpha. in the two-texture layout 2 is the normal map's B and 3 its
+		// alpha; with an MRO map 2 is the base alpha too and 3 the MRO map's alpha. a map still streaming reads 0
+		let channel = draw.emission2.y;
+		let base_a = select(0.0, base.a, (flags & BASE_MAP) != 0u);
+		var m: f32;
+		if ((flags & NORMAL_OCCLUSION) != 0u) {
+			let has_normal = (flags & NORMAL_MAP) != 0u;
+			let b = select(0.0, packed.b, has_normal);
+			let a = select(0.0, packed.a, has_normal);
+			m = mix(mix(base_a, b, saturate(channel - 1.0)), a, saturate(channel - 2.0));
+		} else {
+			m = mix(base_a, select(0.0, mask.a, (flags & MASK_MAP) != 0u), saturate(channel - 2.0));
+		}
+		emission = saturate((m - 0.05) / 0.9);
+	}
+	// emission is in the pre-exposed units of the light already. emitters that ignore the post exposure divide
+	// it out, so they keep their brightness however the exposure adapts
+	let tint = mix(albedo, vec3f(1.0), draw.emission2.x);
+	s.emission = draw.emissive.rgb * emission * tint * mix(1.0, frame.ambient.y, draw.emission2.z);
 	if ((flags & FOLIAGE) != 0u) {
 		s.transmission = draw.surface2.z;
 	}

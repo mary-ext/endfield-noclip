@@ -1303,7 +1303,9 @@ export class Viewer {
 			f32[FrameOffsets.sunColour + 3] = environment.sunSpecular;
 			f32.set(environment.sh, FrameOffsets.sh);
 			f32[FrameOffsets.ambient] = environment.indirectSpecular;
-			f32[FrameOffsets.ambient + 1] = environment.preExposure;
+			// the exposure option stands in for the game's adapted exposure, which emitters marked
+			// `_IgnorePostExposure` divide out
+			f32[FrameOffsets.ambient + 1] = 2 ** -this.options.exposure;
 			f32[FrameOffsets.ambient + 2] = this.#reflection === this.#noReflection ? 0 : 1;
 			f32[FrameOffsets.ambient + 3] = this.#reflectionMips;
 		}

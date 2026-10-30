@@ -257,8 +257,6 @@ export interface Environment {
 	name: string | null;
 	/** unit vector towards the sun */
 	sunDirection: Vec3;
-	/** the exposure light is pre-multiplied by: `1 / (1.2 · 2^EV100)` */
-	preExposure: number;
 	/** pre-exposed illuminance, linear rgb */
 	sunIlluminance: Vec3;
 	sunSpecular: number;
@@ -654,7 +652,6 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 	const skyScale = intensity * sky.skyDirectIntensity;
 	return {
 		name: profile === null ? null : source.name,
-		preExposure,
 		sunDirection,
 		sunIlluminance,
 		sunSpecular: light.directSpecularIntensity,

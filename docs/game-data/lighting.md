@@ -7,10 +7,10 @@ in [viewer.md](../viewer.md) and [assets.md](assets.md).
 
 the game (HGRP, a deferred PBR pipeline in Hypergryph's Unity fork) lights in physical units with a
 fixed exposure. the viewer does the same: `preExposure = 1 / (1.2 · 2^directEV100)`, and the sun,
-ambient probe, fog colours and emission are all pre-exposed, so shaded values reach the tonemapper
-around 0–2. the game packs most profile fields into shader constants on the CPU; where that packing
-is known, the viewer follows it, and where it isn't, the viewer substitutes and the gap is listed
-under [open](#open).
+ambient probe and fog colours are all pre-exposed, so shaded values reach the tonemapper around 0–2.
+emission is authored in those units already ([below](#emission)). the game packs most profile fields
+into shader constants on the CPU; where that packing is known, the viewer follows it, and where it
+isn't, the viewer substitutes and the gap is listed under [open](#open).
 
 [`render/environment.ts`](../../packages/viewer/src/render/environment.ts) (`deriveEnvironment`)
 turns a blended profile into the renderer's `Environment`; packages without profiles get a built-in
@@ -99,6 +99,31 @@ probe's: with `d` the luminance of the diffuse irradiance (above) and `p` the am
 luminance L1 along the normal, the factor is `(2 · min(d / p, 1) + d) / (2 + p)`. that's about
 `d / p` under cover, so interiors don't mirror the bright sky, and about 1 in the open. the game's
 clustered local reflection probes (normalised the same way) and SSR are not implemented.
+
+## emission
+
+HGRP Lit materials emit through one of their `_EMISSIVE_*` keywords
+([`render/materials.ts`](../../packages/viewer/src/render/materials.ts)). `_EmissiveColor` is an HDR
+colour, decoded from gamma like Unity's (values above 1 by `x^2.2`), and the result is added to the
+lit colour without pre-exposure: panels authored around 20–30 land in the hundreds and read as
+white.
+
+| keyword           | emission                                                                                |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| `_EMISSIVE_MAP`   | the colour times `_EmissiveMap`'s R channel                                             |
+| `_EMISSIVE_MASK`  | the colour times a channel of the material's own maps, picked by `_EmissiveMaskChannel` |
+| `_EMISSIVE_NOMAP` | only ships with the sweep animation (`_EMISSIVE_ANIM_SWEEP`); not drawn                 |
+
+the mask channel is 0 for no emission, 1 for the base colour's alpha, 2 for the normal map's B
+(two-texture layout) or the base alpha (MRO layout), and 3 or more for the normal map's alpha
+(two-texture) or the MRO map's alpha; the channel is remapped by `saturate((m − 0.05) / 0.9)`. the
+Hub's ceiling panels use mask channel 3. emission is multiplied by the albedo unless
+`_AlbedoAffectEmissive` is 1. `_IgnorePostExposure` emitters (nearly all) divide out the post
+exposure, so they keep their brightness however the exposure adapts; the viewer's exposure option
+stands in for the game's adapted exposure.
+
+not drawn: the animated variants' motion (they're drawn still), `_EmissiveType`'s extra G/B/A
+colours, the Fresnel term, emissive UV set 1, and per-instance emission overrides.
 
 ## sky
 
@@ -273,10 +298,12 @@ are sampled toroidally in `ambient_irradiance`.
 ## open
 
 - the CPU packing of the diffuse-ambient scale, the irradiance volume's default SH (`skyAmbientSH`
-  vs `customIVDefaultSH`), the sky's absolute brightness, and the exposure misc factor. these live
-  in native engine code; the viewer's ambient and sky brightness are approximations.
-- auto exposure: profiles set a brightening-only EV clamp and a per-level histogram range; not
-  implemented.
+  vs `customIVDefaultSH`), and the sky's absolute brightness. these live in native engine code; the
+  viewer's ambient and sky brightness are approximations.
+- auto exposure: profiles meter a luminance histogram and allow brightening only (EV clamp 0 to 8 on
+  most), which lifts dark interiors in the game; the viewer keeps a fixed exposure, so interiors
+  read too dark while `_IgnorePostExposure` emitters keep their brightness.
+- the viewer's bloom spreads very bright emitters (ceiling panels) far wider than the game's.
 - irradiance scenarios, the index's pair table and trailing rows, directory words 1, 7 (high bits)
   and 8.
 - not rendered: froxel volumetric fog, light shafts, lens flare, cloud shadows, celestial bodies,

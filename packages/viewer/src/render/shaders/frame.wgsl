@@ -13,7 +13,7 @@ struct Frame {
 	sun_colour: vec4f,
 	// the ambient probe in Unity's shader form: SHAr, SHAg, SHAb, SHBr, SHBg, SHBb, SHC
 	sh: array<vec4f, 7>,
-	// x = indirect specular factor, y = pre-exposure (scales emission), z = 1 with a reflection cubemap, w = its finest mip count - 1
+	// x = indirect specular factor, y = 1 / post exposure (scales emission that ignores it), z = 1 with a reflection cubemap, w = its finest mip count - 1
 	ambient: vec4f,
 	// width, height (px), pixel factor (px per metre at 1 m), minimum projected instance size (px)
 	viewport: vec4f,

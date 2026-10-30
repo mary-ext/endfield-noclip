@@ -39,7 +39,10 @@ or renders correctly.
   automatic gating
 - auto exposure, froxel volumetric fog
 - interiors, in order of impact:
-  - emissive ceiling panels render dark: trace one panel's keywords, slots, UV set and colour
+  - no auto exposure: the game brightens dark interiors by up to 8 EV, the viewer keeps the level's
+    fixed exposure
+  - bloom spreads bright emitters far wider than the game's; some thin emissive strips show as lines
+    at silhouettes
   - normal-map roughness is read only when the mesh has tangents; normals are transformed by the
     model matrix rather than its inverse transpose, and every material lights the side facing the
     camera

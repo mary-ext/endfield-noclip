@@ -57,17 +57,21 @@ export const LookFlags = {
 	MetallicBaseAlpha: 1 << 7,
 	/** the normal map's alpha is the material occlusion */
 	NormalOcclusion: 1 << 8,
+	// bits 9 and 10 are the geometry's flags (mesh-renderer.ts)
+	/** emission is the emissive colour times a channel of the material's own maps (`_EMISSIVE_MASK`) */
+	EmissiveMask: 1 << 11,
 } as const;
 
 /** the slot flags of {@link LookFlags}, which are cleared while a slot's texture isn't resident */
 export const SLOT_FLAGS = [LookFlags.BaseMap, LookFlags.NormalMap, LookFlags.MaskMap, LookFlags.EmissiveMap];
 
 /**
- * floats of a material's draw parameters, eight vec4s (`Draw` in mesh.wgsl after the dequantization): tint
+ * floats of a material's draw parameters, nine vec4s (`Draw` in mesh.wgsl after the dequantization): tint
  * (rgb, alpha-test threshold), the four slots' UV transforms, surface (roughness min, max, metallic, normal
- * scale), surface 2 (occlusion strength, f0, transmission, brighter scale), emission (rgb, tint cover)
+ * scale), surface 2 (occlusion strength, f0, transmission, brighter scale), emission (rgb, tint cover),
+ * emission 2 (albedo affect, mask channel, ignore post exposure)
  */
-export const LOOK_FLOATS = 32;
+export const LOOK_FLOATS = 36;
 
 /** one material as the mesh shader draws it */
 export interface MaterialLook {
@@ -102,6 +106,11 @@ const LookRow = {
 	surface2: 24,
 	/** emissive colour (linear), how much the tint covers the base colour */
 	emissive: 28,
+	/**
+	 * `_AlbedoAffectEmissive` (1: emission ignores the albedo), `_EmissiveMaskChannel`, `_IgnorePostExposure`
+	 * (1: emission keeps its brightness whatever the exposure)
+	 */
+	emission2: 32,
 } as const;
 
 /** a look with no textures and identity UV transforms */
@@ -167,14 +176,10 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	const foliage = FOLIAGE_FAMILIES.has(family);
 	const params = look.params;
 
-	// the slots: HLOD normal maps aren't tangent-space maps we understand yet, and the MRO map is only
-	// sampled where the material's layout uses it
-	const used = [
-		true,
-		family !== 'hlod',
-		entry.usesMro,
-		entry.keywords.some((k) => k.startsWith('_EMISSIVE')),
-	];
+	// the slots: HLOD normal maps aren't tangent-space maps we understand yet, and the MRO and emissive maps
+	// are only sampled where the material's layout and keywords use them
+	const emissiveMap = entry.keywords.includes('_EMISSIVE_MAP');
+	const used = [true, family !== 'hlod', entry.usesMro, emissiveMap];
 	SLOTS.forEach((name, i) => {
 		const slot = entry.slots[name];
 		if (slot === undefined || !used[i] || slot.uv !== 0) {
@@ -229,11 +234,30 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		params.set([occlusion, 0.08 * specular, transmission], LookRow.surface2);
 	}
 
-	// emission: the map times `_EmissiveColor` (HDR, authored gamma-encoded)
+	// emission: `_EmissiveColor` (HDR, authored gamma-encoded) times the emissive map's R channel
+	// (`_EMISSIVE_MAP`), or times a channel of the base, normal or MRO map that `_EmissiveMaskChannel` picks
+	// (`_EMISSIVE_MASK`, where 0 turns emission off; mesh.wgsl reads the channel). the animated variants are
+	// drawn still, and `_EMISSIVE_NOMAP` only comes with the sweep animation, so it stays dark
 	{
 		const emissive = colourOf(entry, shader, '_EmissiveColor');
-		if (look.textures[3] >= 0 && emissive !== undefined) {
+		const channel = floatOf(entry, shader, '_EmissiveMaskChannel', 0);
+		let emits = false;
+		if (emissiveMap) {
+			emits = look.textures[3] >= 0;
+		} else if (entry.keywords.includes('_EMISSIVE_MASK') && channel > 0) {
+			look.flags |= LookFlags.EmissiveMask;
+			emits = true;
+		}
+		if (emits && emissive !== undefined) {
 			params.set(linearRgb(emissive), LookRow.emissive);
+			params.set(
+				[
+					floatOf(entry, shader, '_AlbedoAffectEmissive', 1),
+					channel,
+					floatOf(entry, shader, '_IgnorePostExposure', 1),
+				],
+				LookRow.emission2,
+			);
 		}
 	}
 	return look;
