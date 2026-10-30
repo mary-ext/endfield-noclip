@@ -102,6 +102,13 @@ packs or renders correctly.
 
 - cache material conversion; remember failed conversions so a warm pack starts no worker; skip
   compressing duplicate textures
+- the entities pass (~7 s on map02) re-reads every chunk file on a warm pack; it could be remembered
+  like terrain and irradiance
+- prefab renderers keep only LOD 0, with unbounded thresholds, so prefab content never switches LOD
+  or culls by size
+- a mesh or material reached both by path hash (static entities) and by object (prefabs) gets two
+  table entries and converts twice
+- a level's base environment is found by matching phase names; `LevelInfo` could name its volume
 - texture zstd level and a max-texture-size option for a lite package (textures dominate package
   size)
 - place global scenery by its own bounds instead of pulling it all into `assets/common`
