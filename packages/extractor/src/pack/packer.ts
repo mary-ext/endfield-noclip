@@ -65,6 +65,7 @@ import {
 	type IrradianceTable,
 	isTerrainHole,
 	type LevelInfo,
+	type LightsTable,
 	type MaterialTable,
 	NodeFlags,
 	PACKAGE_FORMAT,
@@ -134,6 +135,7 @@ import {
 import { mayBeClamped, resolveClampedHlodCell } from './hlod-cells.ts';
 import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
 import { type IrradianceReport, packIrradiance } from './irradiance.ts';
+import { LightCollector } from './lights.ts';
 import { type CacheReport, PackCache } from './pack-cache.ts';
 import { PhaseTimer } from './phase-timer.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
@@ -308,7 +310,11 @@ export const packScene = async (
 			}),
 		]);
 		timer.end('environments and water');
-		gateByScene(entities.collected, scene.sceneStates, environments, water);
+		const lights = gateByScene(entities.collected, scene.sceneStates, environments, water, entities.lights);
+		entities.counts.lights = lights.lights.length;
+		for (const [reason, count] of Object.entries(entities.lights.skipped)) {
+			entities.counts[`lightsSkipped ${reason}`] = count;
+		}
 
 		const irradiance = await packIrradiance(context.vfs, store, {
 			scene: options.scene,
@@ -377,6 +383,7 @@ export const packScene = async (
 			...states,
 			...finishEnvironments(environments, environmentTextureIds),
 			water: finishWater(water, waterTextureIds),
+			lights,
 			irradiance: irradiance?.table ?? { keys: new Uint32Array(), blobs: new Uint32Array() },
 			resident: instances.resident,
 			terrainLevels: terrainPacked.levels,
@@ -569,6 +576,7 @@ const collectEntities = async (
 	pack: PackState,
 ): Promise<{
 	collected: Collector;
+	lights: LightCollector;
 	counts: Record<string, number>;
 	hlodNameMatches: number;
 	unsupportedInteractives: { path: string; reason: string }[];
@@ -578,6 +586,7 @@ const collectEntities = async (
 	const { world } = context;
 	const { grid, subset } = scene;
 	const collected = new Collector();
+	const lights = new LightCollector();
 	const counts: Record<string, number> = {
 		read: 0,
 		unique: 0,
@@ -639,12 +648,17 @@ const collectEntities = async (
 	await orderedPool(
 		scene.files,
 		READ_AHEAD + 1,
-		(file) => world.readChunk(file, scene.partition),
-		(entities, file, fileIndex) => {
-			if (entities instanceof Error) {
-				throw entities;
+		(file) => world.readChunkContent(file, scene.partition),
+		(content, file, fileIndex) => {
+			if (content instanceof Error) {
+				throw content;
 			}
-			for (const entity of entities) {
+			for (const light of content.lights) {
+				if (subset.includesEntity(light.levelTag, light.position[0], light.position[2])) {
+					lights.add(light, file.sceneState);
+				}
+			}
+			for (const entity of content.entities) {
 				counts.read++;
 				if (seen.has(entity.id)) {
 					stateRows.get(entity.id)?.states.add(file.sceneState);
@@ -891,6 +905,7 @@ const collectEntities = async (
 	counts.unsupportedPrefabs = unsupportedPrefabs.length;
 	return {
 		collected,
+		lights,
 		counts,
 		hlodNameMatches,
 		unsupportedInteractives: facilities.unsupported,
@@ -899,21 +914,24 @@ const collectEntities = async (
 };
 
 /**
- * gives environment volumes and water surfaces of scene-state files their conditions, and puts the scene
- * state controls (one per MapConfig state, plus any state an expression requires that the MapConfig doesn't
- * name) ahead of the other toggles
+ * gives environment volumes, water surfaces and lights of scene-state files their conditions, and puts the
+ * scene state controls (one per MapConfig state, plus any state an expression requires that the MapConfig
+ * doesn't name) ahead of the other toggles
  *
  * @param collected the entity pass's collector; its conditions and toggles are extended
  * @param controls the MapConfig scene state controls
  * @param environments planned environments; volume conditions are filled in
  * @param water planned water; surface conditions are filled in
+ * @param lights the entity pass's lights
+ * @returns the lights table
  */
 const gateByScene = (
 	collected: Collector,
 	controls: readonly SceneToggleInfo[],
 	environments: EnvironmentPlan,
 	water: WaterPlan,
-): void => {
+	lights: LightCollector,
+): LightsTable => {
 	const conditionOf = (states: readonly number[]): number | null =>
 		states.length === 0 ? null : collected.condition(collected.stateVisibility(states));
 	for (const [i, volume] of environments.volumes.entries()) {
@@ -922,12 +940,14 @@ const gateByScene = (
 	for (const [i, surface] of water.table.surfaces.entries()) {
 		surface.condition = conditionOf(water.surfaceStates[i]);
 	}
+	const lightsTable = lights.finish(conditionOf);
 	const named = new Set(controls.map((control) => control.id));
 	const unnamed = [...collected.sceneStates]
 		.filter((index) => !named.has(sceneStateControl(index)))
 		.toSorted((a, b) => a - b)
 		.map(unnamedSceneStateControl);
 	collected.toggles = [...controls, ...unnamed, ...collected.toggles];
+	return lightsTable;
 };
 
 /** the top of the 27-bit per-level id space, for ids the game doesn't assign */
@@ -1331,6 +1351,7 @@ const writePackage = async (
 		environmentPhases: EnvironmentPhaseInfo[];
 		environmentVolumes: EnvironmentVolumeInfo[];
 		water: WaterTable;
+		lights: LightsTable;
 		irradiance: IrradianceTable;
 		resident: ContentRef[];
 		terrainLevels: number[];
@@ -1349,6 +1370,7 @@ const writePackage = async (
 		zstdTable(json(assetTables.materials satisfies MaterialTable)),
 		zstdTable(json({ entries: assetTables.textures } satisfies TextureTable)),
 		zstdTable(json(states.water)),
+		zstdTable(json(states.lights)),
 	]);
 
 	const shardNames = store
@@ -1357,11 +1379,11 @@ const writePackage = async (
 		.toSorted();
 	const archiveNames = [CORE_ARCHIVE, ...shardNames];
 	const blobsBin = encodeBlobTable(store.records(archiveNames));
-	const [written, [geometries, materials, textures, water]] = await Promise.all([
+	const [written, [geometries, materials, textures, water, lights]] = await Promise.all([
 		store.writeShards(options.outDir, CORE_ARCHIVE),
 		tablesReady,
 	]);
-	const tables = { geometries, materials, textures, water };
+	const tables = { geometries, materials, textures, water, lights };
 
 	const generation = createHash('sha256');
 	for (const part of [
@@ -1372,6 +1394,7 @@ const writePackage = async (
 		tables.materials,
 		tables.textures,
 		tables.water,
+		tables.lights,
 		irradianceBin,
 	]) {
 		generation.update(part);
@@ -1421,6 +1444,7 @@ const writePackage = async (
 		{ path: CORE_PATHS.materials, data: tables.materials },
 		{ path: CORE_PATHS.textures, data: tables.textures },
 		{ path: CORE_PATHS.water, data: tables.water },
+		{ path: CORE_PATHS.lights, data: tables.lights },
 		{ path: CORE_PATHS.irradiance, data: irradianceBin },
 	]);
 
@@ -1434,6 +1458,7 @@ const writePackage = async (
 			[CORE_PATHS.materials]: tables.materials.length,
 			[CORE_PATHS.textures]: tables.textures.length,
 			[CORE_PATHS.water]: tables.water.length,
+			[CORE_PATHS.lights]: tables.lights.length,
 			[CORE_PATHS.irradiance]: irradianceBin.length,
 		},
 		archives: [core, ...written.values()].map(({ name, size, headerLength, members }) => ({

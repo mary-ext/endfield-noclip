@@ -125,6 +125,8 @@ column selectors; the ones with established meaning:
 | 18    | 256-byte instance constants starting with the object-to-world matrix                                            |
 | 21    | 64-byte name prefix (root object names win when present)                                                        |
 | 27    | rect decal constants; the decal's material is in StreamingChunkData                                             |
+| 42    | a local light's runtime data, zero-filled in the file (244 bytes); the values are in the object row (below)     |
+| 63    | the same light's settings, zero-filled (448 bytes)                                                              |
 | 67    | LOD ranges: LOD count and cumulative draw count per LOD                                                         |
 | 68–74 | draw refs for capacity `2^(id − 68)`: `(u64 material hash, u64 mesh hash, …)`                                   |
 
@@ -134,10 +136,15 @@ range). the decoder throws on any stride or count disagreement instead of skippi
 change can't silently drop draws.
 
 object row kinds by census: 1 = GameObjects the client rebuilds as MonoBehaviours (environment and
-post volumes, probes, lights, water, terrain root), 2 = component-group entities, 3 = audio, grass
-grids and surface data. kind 1 is read by
+post volumes, probes, water, terrain root), 2 = component-group entities, 3 = audio, grass grids and
+surface data. kind 1 is read by
 [mono-objects.ts](../../packages/formats/src/endfield/mono-objects.ts) and consumed by
 [environment.md](environment.md) and [water.md](water.md).
+
+local lights are kind-2 entities in groups with columns 42 and 63. their row's slot 3 is a keyed
+property table in kind 1's layout, holding two blobs, a 236-byte runtime block and a 448-byte
+settings block, which [chunk-lights.ts](../../packages/formats/src/endfield/chunk-lights.ts) lays
+out. map01 has 1,025 and map02 2,153; [lighting.md](lighting.md#local-lights) covers how they shade.
 
 ### StreamingChunkData
 

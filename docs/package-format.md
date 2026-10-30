@@ -16,7 +16,7 @@ free of node APIs and of other workspace packages so both sides can import it.
 
 ## versioning
 
-`PACKAGE_VERSION` (10) is written to `manifest.version` and to the header of every binary encoding
+`PACKAGE_VERSION` (13) is written to `manifest.version` and to the header of every binary encoding
 (tree, chains, blob table, irradiance table, instance blocks, height pages, geometry blobs). readers
 accept exactly that version and reject any other, and nothing migrates old packages: a package from
 another version is re-extracted. bump the version on any incompatible change to the manifest, a
@@ -41,6 +41,7 @@ invalidates cached conversions.
     tables/materials.json.zst     shader defaults + material table
     tables/textures.json.zst      texture table
     tables/water.json.zst         water table
+    tables/lights.json.zst        local lights
     tables/irradiance.bin         irradiance cell keys → blobs
     tree.bin                      tile nodes + content refs
   shards/<l>_<x>_<z>.czar         content of one shard-level tile's subtree
@@ -300,6 +301,7 @@ fast iteration on the instance side.
 | `materials`  | `shaders`: each shader's declared properties and defaults (floats, colours as authored: gamma-encoded, or linear for HDR colours, vectors, texture built-in defaults, `[Normal]` slots) and its `ShaderFamily`. `entries`: `ReadyMaterial` with shader index, keywords, render queue, blend, cull, `zWrite`, alpha clip, normal layout, bound `slots` (texture id, UV set, `_ST` scale/offset) and only the floats/colours/vectors that differ from the shader's defaults |
 | `textures`   | `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler as `GPUSamplerDescriptor` fields plus Unity's `lodBias`, `pieces` coarse to fine                                                                                                                                                                                                                                                                                                      |
 | `water`      | see [water.md](game-data/water.md)                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `lights`     | `LightEntry`: kind (spot, point), entity id, level tag, condition, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                            |
 
 materials store overrides only because lit materials declare ~190 floats each; undeclared (stale)
 properties Unity keeps from earlier shaders are dropped
@@ -338,10 +340,10 @@ majority placement would give smaller per-tile archives but lose the ancestor gu
 
 ## conditions
 
-conditional content (conditional instance blocks, environment volumes, water surfaces) references
-`StatesInfo.conditionalSets` by index. a `ConditionalSetInfo` is a list of alternatives, each a list
-of `{ control, mask }` requirements; the content is visible when any alternative has every
-requirement met, and a requirement is met when bit `value` of `mask` is set for the control's
+conditional content (conditional instance blocks, environment volumes, water surfaces, lights)
+references `StatesInfo.conditionalSets` by index. a `ConditionalSetInfo` is a list of alternatives,
+each a list of `{ control, mask }` requirements; the content is visible when any alternative has
+every requirement met, and a requirement is met when bit `value` of `mask` is set for the control's
 selected value. controls are `ProgressionInfo` ids (value = progression level) and `SceneToggleInfo`
 ids (value 0/1). unknown controls fail closed. equivalent expressions are interned to one set by the
 packer. [conditions.ts](../packages/package-format/src/conditions.ts) holds `conditionVisible` and

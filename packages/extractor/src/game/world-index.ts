@@ -1,3 +1,4 @@
+import { type ChunkLight, readChunkLights } from '@endfield-noclip/formats/endfield/chunk-lights';
 import { readDynamicEntities, type DynamicEntity } from '@endfield-noclip/formats/endfield/dynamic-scene';
 import {
 	parseInitChunk,
@@ -297,8 +298,24 @@ export class WorldIndex {
 	 * @returns its entities
 	 */
 	async readChunk(file: ChunkFile, partition: LevelPartition | undefined): Promise<IndexedEntity[]> {
-		const chunk = parseInitChunk(await this.readInitPayload(file));
-		return readChunkEntities(chunk).map((entity) => {
+		return (await this.readChunkContent(file, partition)).entities;
+	}
+
+	/**
+	 * like {@link readChunk}, with the chunk's local lights too
+	 *
+	 * @param file chunk file
+	 * @param partition the scene's partition, or `undefined` for scenes without levels
+	 * @returns its entities and lights
+	 */
+	async readChunkContent(
+		file: ChunkFile,
+		partition: LevelPartition | undefined,
+	): Promise<{ entities: IndexedEntity[]; lights: ChunkLight[] }> {
+		const data = await this.readInitPayload(file);
+		const chunk = parseInitChunk(data);
+		const lights = readChunkLights(data, chunk);
+		const entities = readChunkEntities(chunk).map((entity) => {
 			const pivot = pivotOf(entity);
 			const membership: Membership =
 				partition === undefined
@@ -307,6 +324,7 @@ export class WorldIndex {
 			// the decoded rows are fresh objects owned here, so extend them in place
 			return Object.assign(entity, { source: file, membership, pivot });
 		});
+		return { entities, lights };
 	}
 
 	/**
