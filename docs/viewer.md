@@ -165,8 +165,9 @@ into the draw's per-slot UV transforms on the CPU, so the shaders see one kind o
 
 shadow-only draws and materials that aren't drawn are dropped from the chain once, when it's first
 used. textures are then requested per bucket, coarse to fine, down to the mip that gives about one
-texel per pixel across the largest on-screen use, scaled by the UV tiling. sky, reflection and water
-textures are streamed whole (`streamWholeTexture`).
+texel per pixel across the largest on-screen use, scaled by the UV tiling, then `textureBias` levels
+coarser (0 by default; each level quarters the textures' memory). sky, reflection and water textures
+are streamed whole (`streamWholeTexture`).
 
 the output (a visible row list plus per-bucket ranges) has the shape a GPU cull pass would write
 next to indirect draw arguments; that pass isn't built yet.

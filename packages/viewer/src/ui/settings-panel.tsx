@@ -39,6 +39,7 @@ const Slider = ({
 		| 'minBoxPixels'
 		| 'outlineMetres'
 		| 'budgetMiB'
+		| 'textureBias'
 		| 'exposure'
 		| 'renderScale';
 	label: string;
@@ -239,6 +240,15 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				max={1024}
 				step={16}
 				unit="MiB"
+			/>
+			<Slider
+				viewer={viewer}
+				name="textureBias"
+				label="texture mip bias"
+				min={0}
+				max={2}
+				step={1}
+				unit="levels"
 			/>
 			<Toggle viewer={viewer} name="continuous" label="render every frame" />
 		</section>

@@ -59,6 +59,8 @@ export interface MeshView {
 	viewportHeight: number;
 	/** cull instances smaller than this, px */
 	minPixels: number;
+	/** mip levels coarser than needed to stream material textures at (0 for full detail; each halves them) */
+	textureBias: number;
 }
 
 /** what the selector reads */
@@ -258,11 +260,12 @@ export class MeshSelector {
 			}
 		}
 
+		const texturePixels = 2 ** -view.textureBias;
 		for (const bucket of buckets) {
 			const look = bucket.look;
 			for (let i = 0; i < look.textures.length; i++) {
 				if (look.textures[i] >= 0) {
-					this.#streamTexture(look.textures[i], bucket.pixels, look.uvScales[i]);
+					this.#streamTexture(look.textures[i], bucket.pixels * texturePixels, look.uvScales[i]);
 				}
 			}
 		}

@@ -79,6 +79,8 @@ export interface ViewerOptions {
 	outlineMetres: number;
 	/** streamed content budget, MiB */
 	budgetMiB: number;
+	/** stream material textures this many mip levels coarser than the view needs (each quarters their memory) */
+	textureBias: number;
 	/** render every frame instead of only on change (for measuring) */
 	continuous: boolean;
 	/** temporal antialiasing; off shows each frame as rendered */
@@ -126,6 +128,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	minBoxPixels: 1.5,
 	outlineMetres: 60,
 	budgetMiB: 384,
+	textureBias: 0,
 	continuous: false,
 	antialiasing: true,
 	renderScale: 1,
@@ -1239,6 +1242,7 @@ export class Viewer {
 				pixelFactor: view.pixelFactor,
 				viewportHeight: this.#targets.outputHeight,
 				minPixels: options.minBoxPixels,
+				textureBias: options.textureBias,
 			});
 		}
 		this.#span('mesh select');
