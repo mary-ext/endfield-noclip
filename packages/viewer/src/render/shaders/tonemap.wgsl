@@ -139,11 +139,19 @@ fn srgb_encode(c: vec3f) -> vec3f {
 fn fs_tonemap(in: FullscreenOut) -> @location(0) vec4f {
 	let px = vec2i(in.position.xy);
 	var colour = textureLoad(scene_texture, px, 0).rgb;
-	if (post.flags.w != 0u) {
-		let bloom = textureSampleLevel(bloom_texture, bilinear, in.uv, 0.0).rgb;
-		colour += bloom * post.bloom.z * post.bloom_tint.rgb;
-	}
 	colour *= post.grade.x;
+	// the game's composite: towards the bloom by its intensity, optionally taking the thresholded part out of
+	// the scene; in add mode, bloom past 0.3 is compressed
+	if (post.flags.w != 0u) {
+		let subtract = post.bloom_shape.x;
+		let brightness = max(colour.r, max(colour.g, colour.b));
+		let soft = clamp(brightness - post.bloom.y, 0.0, post.bloom.z);
+		let above = colour * max(post.bloom.w * soft * soft, brightness - post.bloom.x) / max(brightness, 1e-4);
+		var bloom = textureSampleLevel(bloom_texture, bilinear, in.uv, 0.0).rgb;
+		let compressed = pow(bloom, vec3f(0.33)) * 1.4938 - 0.7;
+		bloom = select(bloom, compressed, bloom * (1.0 - subtract) > vec3f(0.3));
+		colour += (bloom * post.bloom_tint.rgb - above * subtract) * post.bloom_tint.w;
+	}
 	// URP's vignette, in HDR before grading as the game's uber pass applies it
 	if (post.grade.y > 0.0) {
 		var d = abs(in.uv - post.vignette_centre.xy) * post.grade.y * 3.0;

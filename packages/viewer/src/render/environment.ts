@@ -99,11 +99,19 @@ export type HeightFogInput = Pick<
 	| 'heightFogDirectionalInscattering'
 >;
 
-/** the parts of the game's post volume the viewer reads (URP-style bloom and vignette, XeGTAO's settings) */
+/**
+ * the parts of the game's post volume the viewer reads (HDRP-style bloom, URP-style vignette, XeGTAO's
+ * settings)
+ */
 export interface PostInput {
 	bloom: Pick<
 		BloomSettings,
-		'thresholdHighQuality' | 'intensityHighQuality' | 'scatterHighQuality' | 'tint'
+		| 'resolutionHighQuality'
+		| 'thresholdHighQuality'
+		| 'intensityHighQuality'
+		| 'scatterHighQuality'
+		| 'tint'
+		| 'blendMode'
 	> | null;
 	ambientOcclusion: Pick<
 		AmbientOcclusionSettings,
@@ -241,7 +249,20 @@ export interface AtmosphereFog {
 
 /** post-processing in shader units; `null` sections are off */
 export interface PostLook {
-	bloom: { threshold: number; intensity: number; scatter: number; tint: Vec3 } | null;
+	bloom: {
+		/** linear */
+		threshold: number;
+		/** how far the composite moves towards the bloomed colour, `2^intensity − 1` */
+		intensity: number;
+		/** each upsample's blend towards the coarser level */
+		scatter: number;
+		/** linear, normalised to luminance 1 */
+		tint: Vec3;
+		/** 1 when the composite takes the thresholded part out of the scene (blend modes other than add) */
+		subtract: number;
+		/** `BloomResolution.Half`, which gives the chain one more level than quarter resolution */
+		half: boolean;
+	} | null;
 	ao: { radius: number; falloff: number; distribution: number; thin: number; power: number } | null;
 	vignette: {
 		colour: Vec3;
@@ -477,10 +498,12 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 	colorGrading: NEUTRAL_GRADING,
 	post: {
 		bloom: {
+			resolutionHighQuality: 2,
 			thresholdHighQuality: 0.95,
 			intensityHighQuality: 0.5,
 			scatterHighQuality: 0.4,
 			tint: [1, 1, 1, 1],
+			blendMode: 2,
 		},
 		ambientOcclusion: {
 			enable: true,
@@ -537,21 +560,26 @@ const aoLook = (ao: NonNullable<PostInput['ambientOcclusion']>): NonNullable<Pos
 	};
 };
 
+/** the game's bloom packing (HDRP's, with a linear threshold as URP's) */
+const bloomLook = (bloom: NonNullable<PostInput['bloom']>): NonNullable<PostLook['bloom']> => {
+	const tint = linearRgb(bloom.tint);
+	const luma = tint[0] * 0.2126729 + tint[1] * 0.7151522 + tint[2] * 0.072175;
+	return {
+		threshold: srgbToLinear(bloom.thresholdHighQuality),
+		intensity: 2 ** bloom.intensityHighQuality - 1,
+		scatter: 0.05 + 0.9 * Math.min(Math.max(bloom.scatterHighQuality, 0), 1),
+		tint: luma > 0 ? [tint[0] / luma, tint[1] / luma, tint[2] / luma] : [1, 1, 1],
+		subtract: bloom.blendMode !== 0 ? 1 : 0,
+		half: bloom.resolutionHighQuality < 3,
+	};
+};
+
 const postLook = (post: PostInput | null): PostLook => {
 	const bloom = post?.bloom ?? null;
 	const ao = post?.ambientOcclusion ?? null;
 	const vignette = post?.vignette ?? null;
 	return {
-		bloom:
-			bloom === null
-				? null
-				: {
-						// URP converts its gamma-space threshold to linear
-						threshold: srgbToLinear(bloom.thresholdHighQuality),
-						intensity: bloom.intensityHighQuality,
-						scatter: bloom.scatterHighQuality,
-						tint: linearRgb(bloom.tint),
-					},
+		bloom: bloom === null ? null : bloomLook(bloom),
 		ao: ao === null || !ao.enable ? null : aoLook(ao),
 		vignette:
 			vignette === null

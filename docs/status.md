@@ -30,8 +30,8 @@ or renders correctly.
 - irradiance: only the base scenario is packed; scenario overlays, partial clipmap updates, the
   game's forward-shifted centres and jitter, fallback textures for cells without probes, the meaning
   of two index tables, and other index magics
-- the game's own bloom and vignette variants (the viewer uses URP's, whose bloom spreads bright
-  emitters such as ceiling panels far wider than the game's); colour curves are not packed
+- the game's own vignette (the viewer uses URP's); bloom dirt, additive upsampling and character
+  bloom; colour curves are not packed
 - weather: rain/snow configs are not packed, and precipitation and wetness don't render. the
   weather-script activation and property initialization are unknown, so weather stays a manual
   preview

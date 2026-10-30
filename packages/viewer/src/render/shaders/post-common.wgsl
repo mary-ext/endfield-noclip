@@ -48,8 +48,9 @@ struct Post {
 	sky_horizon: vec4f,
 	// ambient occlusion: radius (m), intensity, power, enabled
 	ao: vec4f,
-	// bloom: threshold, knee, intensity, scatter
+	// bloom threshold: linear threshold t, t − knee, 2 · knee, 1 / (4 · knee)
 	bloom: vec4f,
+	// bloom tint (luminance 1), w = intensity (2^intensity − 1)
 	bloom_tint: vec4f,
 	// exposure multiplier, vignette intensity, vignette smoothness, tonemapper (0 game, 1 neutral, 2 none)
 	grade: vec4f,
@@ -102,6 +103,8 @@ struct Post {
 	// split toning tints; w = balance
 	split_shadows: vec4f,
 	split_highlights: vec4f,
+	// bloom: 1 to take the thresholded part out of the scene, scatter
+	bloom_shape: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> post: Post;

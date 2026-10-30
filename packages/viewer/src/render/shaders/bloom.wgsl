@@ -1,13 +1,12 @@
-// bloom over a mip chain: a thresholded 13-tap downsample (Jimenez, "Next Generation Post Processing in Call
-// of Duty"), further downsamples, then tent-filtered upsamples blended by the scatter factor, like URP's
-// bloom that the game's settings follow. needs post-common.wgsl.
+// the game's bloom: a thresholded prefilter into the first level, a separable Gaussian per further level (each
+// halving the size), then bicubic upsamples blended towards the coarser level by the scatter factor. needs
+// post-common.wgsl.
 
 struct BloomPass {
 	// texel size of the source
 	texel: vec2f,
-	// 1 on the first downsample: threshold and average by luma against fireflies
-	first: f32,
-	unused: f32,
+	// upsamples: size of the coarser level in texels
+	low_size: vec2f,
 }
 
 @group(1) @binding(0) var source: texture_2d<f32>;
@@ -20,69 +19,79 @@ fn tap(uv: vec2f, offset: vec2f) -> vec3f {
 	return textureSampleLevel(source, bilinear, uv + offset * pass_info.texel, 0.0).rgb;
 }
 
-fn threshold(c: vec3f) -> vec3f {
-	let t = post.bloom.x;
-	let knee = post.bloom.y;
+// the exposed colour above the threshold, with a quadratic knee
+fn thresholded(uv: vec2f, offset: vec2f) -> vec3f {
+	let c = tap(uv, offset);
 	let brightness = max(c.r, max(c.g, c.b));
-	var soft = clamp(brightness - t + knee, 0.0, 2.0 * knee);
-	soft = soft * soft / (4.0 * knee + 1e-4);
-	let multiplier = max(brightness - t, soft) / max(brightness, 1e-4);
-	return c * multiplier;
+	let soft = clamp(brightness - post.bloom.y, 0.0, post.bloom.z);
+	let multiplier = max(post.bloom.w * soft * soft, brightness - post.bloom.x) / max(brightness, 1e-4);
+	return c * multiplier * post.grade.x;
 }
 
-fn karis(c: vec3f) -> f32 {
-	return 1.0 / (1.0 + luminance(c));
-}
-
+// five taps around the centre, each weighted by its inverse luma against fireflies
 @fragment
-fn fs_down(in: FullscreenOut) -> @location(0) vec4f {
-	let uv = in.uv;
-	let a = tap(uv, vec2f(-2.0, -2.0));
-	let b = tap(uv, vec2f(0.0, -2.0));
-	let c = tap(uv, vec2f(2.0, -2.0));
-	let d = tap(uv, vec2f(-1.0, -1.0));
-	let e = tap(uv, vec2f(1.0, -1.0));
-	let f = tap(uv, vec2f(-2.0, 0.0));
-	let g = tap(uv, vec2f(0.0, 0.0));
-	let h = tap(uv, vec2f(2.0, 0.0));
-	let i = tap(uv, vec2f(-1.0, 1.0));
-	let j = tap(uv, vec2f(1.0, 1.0));
-	let k = tap(uv, vec2f(-2.0, 2.0));
-	let l = tap(uv, vec2f(0.0, 2.0));
-	let m = tap(uv, vec2f(2.0, 2.0));
-	var result: vec3f;
-	if (pass_info.first > 0.5) {
-		// five 2×2 groups, each weighted by its inverse luma
-		let g0 = (d + e + i + j) * 0.25;
-		let g1 = (a + b + f + g) * 0.25;
-		let g2 = (b + c + g + h) * 0.25;
-		let g3 = (f + g + k + l) * 0.25;
-		let g4 = (g + h + l + m) * 0.25;
-		let w0 = karis(g0) * 0.5;
-		let w1 = karis(g1) * 0.125;
-		let w2 = karis(g2) * 0.125;
-		let w3 = karis(g3) * 0.125;
-		let w4 = karis(g4) * 0.125;
-		result = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);
-		result = threshold(min(result, vec3f(60000.0)));
-	} else {
-		result = (d + e + i + j) * 0.125;
-		result += (a + b + f + g) * 0.03125;
-		result += (b + c + g + h) * 0.03125;
-		result += (f + g + k + l) * 0.03125;
-		result += (g + h + l + m) * 0.03125;
+fn fs_prefilter(in: FullscreenOut) -> @location(0) vec4f {
+	let offsets = array<vec2f, 5>(
+		vec2f(0.0, 0.0),
+		vec2f(0.9, -0.4),
+		vec2f(-0.9, 0.4),
+		vec2f(0.4, 0.9),
+		vec2f(-0.4, -0.9),
+	);
+	var sum = vec3f(0.0);
+	var weights = 0.0;
+	for (var i = 0; i < 5; i++) {
+		let c = thresholded(in.uv, offsets[i]);
+		let w = 1.0 / (luminance(c) + 1.0);
+		sum += c * w;
+		weights += w;
 	}
-	return vec4f(result, 1.0);
+	return vec4f(sum / weights, 1.0);
+}
+
+// nine taps two source texels apart, into a target half the source's width
+@fragment
+fn fs_blur_h(in: FullscreenOut) -> @location(0) vec4f {
+	var c = tap(in.uv, vec2f(0.0, 0.0)) * 0.22702703;
+	c += (tap(in.uv, vec2f(-2.0, 0.0)) + tap(in.uv, vec2f(2.0, 0.0))) * 0.19459459;
+	c += (tap(in.uv, vec2f(-4.0, 0.0)) + tap(in.uv, vec2f(4.0, 0.0))) * 0.12162162;
+	c += (tap(in.uv, vec2f(-6.0, 0.0)) + tap(in.uv, vec2f(6.0, 0.0))) * 0.05405405;
+	c += (tap(in.uv, vec2f(-8.0, 0.0)) + tap(in.uv, vec2f(8.0, 0.0))) * 0.01621622;
+	return vec4f(c, 1.0);
+}
+
+// the same Gaussian in five bilinear taps
+@fragment
+fn fs_blur_v(in: FullscreenOut) -> @location(0) vec4f {
+	var c = tap(in.uv, vec2f(0.0, 0.0)) * 0.22702703;
+	c += (tap(in.uv, vec2f(0.0, -1.38461538)) + tap(in.uv, vec2f(0.0, 1.38461538))) * 0.31621622;
+	c += (tap(in.uv, vec2f(0.0, -3.23076923)) + tap(in.uv, vec2f(0.0, 3.23076923))) * 0.07027027;
+	return vec4f(c, 1.0);
+}
+
+// cubic B-spline over the coarser level in four bilinear taps
+fn bicubic(uv: vec2f) -> vec3f {
+	let p = uv * pass_info.low_size + 0.5;
+	let i = floor(p);
+	let f = fract(p);
+	let w0 = (1.0 / 6.0) + f * (-0.5 + f * (0.5 - f * (1.0 / 6.0)));
+	let w1 = (2.0 / 3.0) + f * f * (-1.0 + 0.5 * f);
+	let w2 = (1.0 / 6.0) + f * (0.5 + f * (0.5 - 0.5 * f));
+	let w3 = f * f * f * (1.0 / 6.0);
+	let g0 = w0 + w1;
+	let g1 = w2 + w3;
+	let h0 = -1.0 + w1 / g0;
+	let h1 = 1.0 + w3 / g1;
+	let texel = 1.0 / pass_info.low_size;
+	let s = textureSampleLevel(source, bilinear, (i + vec2f(h0.x, h0.y) - 0.5) * texel, 0.0).rgb * g0.x
+		+ textureSampleLevel(source, bilinear, (i + vec2f(h1.x, h0.y) - 0.5) * texel, 0.0).rgb * g1.x;
+	let t = textureSampleLevel(source, bilinear, (i + vec2f(h0.x, h1.y) - 0.5) * texel, 0.0).rgb * g0.x
+		+ textureSampleLevel(source, bilinear, (i + vec2f(h1.x, h1.y) - 0.5) * texel, 0.0).rgb * g1.x;
+	return s * g0.y + t * g1.y;
 }
 
 @fragment
 fn fs_up(in: FullscreenOut) -> @location(0) vec4f {
-	let uv = in.uv;
-	// 3×3 tent over the coarser level
-	var low = tap(uv, vec2f(0.0, 0.0)) * 4.0;
-	low += (tap(uv, vec2f(-1.0, 0.0)) + tap(uv, vec2f(1.0, 0.0)) + tap(uv, vec2f(0.0, -1.0)) + tap(uv, vec2f(0.0, 1.0))) * 2.0;
-	low += tap(uv, vec2f(-1.0, -1.0)) + tap(uv, vec2f(1.0, -1.0)) + tap(uv, vec2f(-1.0, 1.0)) + tap(uv, vec2f(1.0, 1.0));
-	low /= 16.0;
-	let near = textureSampleLevel(high, bilinear, uv, 0.0).rgb;
-	return vec4f(mix(near, low, post.bloom.w), 1.0);
+	let near = textureSampleLevel(high, bilinear, in.uv, 0.0).rgb;
+	return vec4f(mix(near, bicubic(in.uv), post.bloom_shape.y), 1.0);
 }

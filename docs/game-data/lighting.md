@@ -173,13 +173,13 @@ the game's froxel volumetric fog, local fog volumes and flow noise are not drawn
 
 [`render/post-process.ts`](../../packages/viewer/src/render/post-process.ts), after the main pass:
 
-| pass                                                                                                                                      | inputs                                                                                                 |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| GTAO, half resolution, depth-aware upsample ([`gtao.wgsl`](../../packages/viewer/src/render/shaders/gtao.wgsl))                           | post `ambientOcclusion`: see [below](#ambient-occlusion)                                               |
-| composite: AO on the ambient part, sky, fog                                                                                               | as above                                                                                               |
-| water                                                                                                                                     | see [water.md](water.md)                                                                               |
-| bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                    | post `bloom`: the high-quality tier's threshold (sRGB → linear, as URP does), intensity, scatter, tint |
-| tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode | post `vignette`; `colorGrading`; the auto exposure and the viewer's exposure compensation              |
+| pass                                                                                                                                      | inputs                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| GTAO, half resolution, depth-aware upsample ([`gtao.wgsl`](../../packages/viewer/src/render/shaders/gtao.wgsl))                           | post `ambientOcclusion`: see [below](#ambient-occlusion)                                  |
+| composite: AO on the ambient part, sky, fog                                                                                               | as above                                                                                  |
+| water                                                                                                                                     | see [water.md](water.md)                                                                  |
+| bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                    | post `bloom`: see [below](#bloom)                                                         |
+| tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode | post `vignette`; `colorGrading`; the auto exposure and the viewer's exposure compensation |
 
 ### auto exposure
 
@@ -205,6 +205,28 @@ profile's `autoExposure` section (blended across volumes like the rest)
 the viewer reads the histogram back a frame or two late, as the game does, renders while the
 exposure moves, and jumps straight to the first reading after loading or switching levels. the stats
 panel shows the adjustment; the "auto exposure" toggle holds it at 0 EV.
+
+### bloom
+
+the game's bloom is HDRP's in structure, and the viewer follows it with the profile's high-quality
+tier:
+
+- the chain is sized as if the view were at most 1080 px tall. its first level is half that size,
+  and each further level halves again, down to `log2(longest side) − 2` levels
+  (`resolutionHighQuality` quarter gives one fewer).
+- the prefilter averages five taps around each texel of the exposed scene, each weighted by
+  `1 / (1 + luma)` against fireflies, keeping what's above `thresholdHighQuality` (sRGB → linear)
+  with a soft knee of half the threshold.
+- each further level is a 9-tap horizontal Gaussian that halves the width, then a 5-tap vertical
+  one. upsamples go from the coarsest level, each a cubic B-spline of the coarser result blended
+  over the level by `lerp(0.05, 0.95, scatterHighQuality)`.
+- the composite adds `(2^intensityHighQuality − 1) · (bloom · tint)`, with the tint's luminance
+  normalised to 1. blend modes other than add (`blendMode` 2 everywhere on map01 and map02) also
+  subtract the scene's own above-threshold part by the same factor; add mode compresses bloom past
+  0.3 instead.
+
+the game's compute-shader variant of the chain isn't decoded; the viewer follows the pixel-shader
+one. dirt, the additive upsample mode, character bloom and anamorphic stretch aren't drawn.
 
 ### ambient occlusion
 
@@ -326,7 +348,6 @@ are sampled toroidally in `ambient_irradiance`.
 - the CPU packing of the diffuse-ambient scale, the irradiance volume's default SH (`skyAmbientSH`
   vs `customIVDefaultSH`), and the sky's absolute brightness. these live in native engine code; the
   viewer's ambient and sky brightness are approximations.
-- the viewer's bloom spreads very bright emitters (ceiling panels) far wider than the game's.
 - irradiance scenarios, the index's pair table and trailing rows, directory words 1, 7 (high bits)
   and 8.
 - not rendered: froxel volumetric fog, light shafts, lens flare, cloud shadows, celestial bodies,

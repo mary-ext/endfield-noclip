@@ -24,14 +24,27 @@ import { type TextureBinding, placeholderView } from './texture-store.ts';
 import type { WaterRenderer } from './water-renderer.ts';
 
 /** byte size of `Post` in post-common.wgsl */
-const POST_BYTES = 56 * 16;
+const POST_BYTES = 57 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
 /** full-resolution pixels per AO pixel along each axis; matches `AO_SCALE` in gtao.wgsl */
 const AO_SCALE = 2;
-/** bloom levels at most, the first at half resolution */
-const BLOOM_LEVELS = 6;
+/** the game's cap on bloom levels */
+const BLOOM_MAX_LEVELS = 16;
+/** the game sizes the bloom chain as if the view were at most this many pixels tall */
+const BLOOM_REFERENCE_HEIGHT = 1080;
+
+/**
+ * @param width the chain's reference width (px)
+ * @param height the chain's reference height (px)
+ * @param half whether the profile asks for half-resolution bloom
+ * @returns how many levels the game's bloom chain has
+ */
+const bloomLevelCount = (width: number, height: number, half: boolean): number => {
+	const levels = Math.floor(Math.log2(Math.max(width, height)) - 2 - (half ? 0 : 1));
+	return Math.min(Math.max(levels, 1), BLOOM_MAX_LEVELS);
+};
 
 /**
  * the tonemapping curves the final pass offers, in the order of their `Post.grade.w` codes: the game's
@@ -125,7 +138,10 @@ interface Sized {
 	backgroundView: GPUTextureView;
 	scene: GPUTexture;
 	sceneView: GPUTextureView;
+	/** the bloom levels, each half the previous one's size */
 	down: GPUTexture[];
+	/** each level's horizontal blur (none for the first) */
+	blurred: GPUTexture[];
 	up: GPUTexture[];
 	bloomUniforms: GPUBuffer[];
 	passes: {
@@ -133,8 +149,10 @@ interface Sized {
 		gtao: Pass;
 		blur: Pass;
 		composite: Pass;
+		/** the prefilter, then two blurs per further level */
 		down: Pass[];
-		up: Pass[];
+		/** upsamples from the coarsest level, for the full chain and for one level fewer */
+		up: { full: Pass[]; short: Pass[] };
 	};
 	/** the tonemap pass's groups; its target is the swapchain's current texture */
 	tonemapGroups: GPUBindGroup[];
@@ -163,7 +181,9 @@ export class PostProcess {
 		gtao: GPURenderPipeline;
 		blur: GPURenderPipeline;
 		composite: GPURenderPipeline;
-		down: GPURenderPipeline;
+		prefilter: GPURenderPipeline;
+		blurH: GPURenderPipeline;
+		blurV: GPURenderPipeline;
 		up: GPURenderPipeline;
 		tonemap: GPURenderPipeline;
 	};
@@ -254,7 +274,9 @@ export class PostProcess {
 			gtao: pipeline('gtao', gtao, 'fs_gtao', AO_FORMAT),
 			blur: pipeline('gtao blur', gtao, 'fs_blur', AO_FORMAT),
 			composite: pipeline('composite', composite, 'fs_composite', HDR_FORMAT),
-			down: pipeline('bloom down', bloom, 'fs_down', HDR_FORMAT),
+			prefilter: pipeline('bloom prefilter', bloom, 'fs_prefilter', HDR_FORMAT),
+			blurH: pipeline('bloom blur h', bloom, 'fs_blur_h', HDR_FORMAT),
+			blurV: pipeline('bloom blur v', bloom, 'fs_blur_v', HDR_FORMAT),
 			up: pipeline('bloom up', bloom, 'fs_up', HDR_FORMAT),
 			tonemap: pipeline('tonemap', tonemap, 'fs_tonemap', swapchainFormat),
 		};
@@ -379,6 +401,7 @@ export class PostProcess {
 			sized.scene,
 			sized.background,
 			...sized.down,
+			...sized.blurred,
 			...sized.up,
 		]) {
 			texture.destroy();
@@ -415,16 +438,22 @@ export class PostProcess {
 		const aoBlurred = texture('ao blurred', width, height, AO_FORMAT);
 		const sceneTexture = texture('hdr scene', width, height, HDR_FORMAT);
 		const background = texture('hdr background', width, height, HDR_FORMAT);
+		// the game's chain: sized as if the view were at most 1080 px tall, the first level at half that size,
+		// with as many levels as half-resolution bloom gets (quarter resolution runs one fewer)
 		const down: GPUTexture[] = [];
+		const blurred: GPUTexture[] = [];
 		const up: GPUTexture[] = [];
 		{
-			let w = Math.max(1, width >> 1);
-			let h = Math.max(1, height >> 1);
-			for (let i = 0; i < BLOOM_LEVELS && Math.min(w, h) >= 8; i++) {
+			const scale = height > BLOOM_REFERENCE_HEIGHT ? BLOOM_REFERENCE_HEIGHT / height : 1;
+			const count = bloomLevelCount(width * scale, height * scale, true);
+			for (let i = 0; i < count; i++) {
+				const w = Math.max(1, Math.round((width * scale) / 2 ** (i + 1)));
+				const h = Math.max(1, Math.round((height * scale) / 2 ** (i + 1)));
 				down.push(texture(`bloom down ${i}`, w, h, HDR_FORMAT));
 				up.push(texture(`bloom up ${i}`, w, h, HDR_FORMAT));
-				w = Math.max(1, w >> 1);
-				h = Math.max(1, h >> 1);
+				if (i > 0) {
+					blurred.push(texture(`bloom blurred ${i}`, w, h, HDR_FORMAT));
+				}
 			}
 		}
 		const p = this.#pipelines;
@@ -432,13 +461,11 @@ export class PostProcess {
 		const bloomPass = (pass: {
 			pipeline: GPURenderPipeline;
 			source: GPUTexture;
-			/** the first downsample: threshold and average by luma */
-			prefilter: boolean;
 			/** upsamples: the matching level of the downsample chain */
 			high: GPUTexture | null;
 			target: GPUTexture;
 		}): Pass => {
-			const { pipeline, source, prefilter, high, target } = pass;
+			const { pipeline, source, high, target } = pass;
 			const buffer = device.createBuffer({
 				label: 'bloom pass',
 				size: 16,
@@ -447,7 +474,7 @@ export class PostProcess {
 			device.queue.writeBuffer(
 				buffer,
 				0,
-				new Float32Array([1 / source.width, 1 / source.height, prefilter ? 1 : 0, 0]),
+				new Float32Array([1 / source.width, 1 / source.height, source.width, source.height]),
 			);
 			bloomUniforms.push(buffer);
 			const entries: GPUBindGroupEntry[] = [
@@ -458,32 +485,39 @@ export class PostProcess {
 			if (high !== null) {
 				entries.push({ binding: 3, resource: high.createView() });
 			}
+			// the blurs don't read the shared uniforms, so their group 0 is empty
+			const uniforms =
+				pipeline === p.blurH || pipeline === p.blurV
+					? device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [] })
+					: this.#uniformsGroup(pipeline);
 			return {
 				pipeline,
-				groups: [
-					this.#uniformsGroup(pipeline),
-					device.createBindGroup({ layout: pipeline.getBindGroupLayout(1), entries }),
-				],
+				groups: [uniforms, device.createBindGroup({ layout: pipeline.getBindGroupLayout(1), entries })],
 				target: target.createView(),
 			};
 		};
-		const downPasses = down.map((target, i) =>
-			bloomPass({
-				pipeline: p.down,
-				source: i === 0 ? sceneTexture : down[i - 1],
-				prefilter: i === 0,
-				high: null,
-				target,
-			}),
-		);
-		const upPasses: Pass[] = [];
-		for (let i = down.length - 2; i >= 0; i--) {
-			const low = i === down.length - 2 ? down[i + 1] : up[i + 1];
-			upPasses.push(
-				bloomPass({ pipeline: p.up, source: low, prefilter: false, high: down[i], target: up[i] }),
+		const downPasses: Pass[] = [];
+		if (down.length > 0) {
+			downPasses.push(
+				bloomPass({ pipeline: p.prefilter, source: sceneTexture, high: null, target: down[0] }),
 			);
 		}
-		// the last upsample, or the only downsample (or nothing, on a tiny canvas)
+		for (let i = 1; i < down.length; i++) {
+			const temp = blurred[i - 1];
+			downPasses.push(bloomPass({ pipeline: p.blurH, source: down[i - 1], high: null, target: temp }));
+			downPasses.push(bloomPass({ pipeline: p.blurV, source: temp, high: null, target: down[i] }));
+		}
+		const upPasses = (count: number): Pass[] => {
+			const passes: Pass[] = [];
+			for (let i = count - 2; i >= 0; i--) {
+				const low = i === count - 2 ? down[i + 1] : up[i + 1];
+				passes.push(bloomPass({ pipeline: p.up, source: low, high: down[i], target: up[i] }));
+			}
+			return passes;
+		};
+		const fullUp = upPasses(down.length);
+		const shortUp = down.length > 2 ? upPasses(down.length - 1) : fullUp;
+		// the last upsample, or the only level (or nothing, on a tiny canvas)
 		let bloomResult = sceneTexture;
 		if (down.length > 1) {
 			bloomResult = up[0];
@@ -504,6 +538,7 @@ export class PostProcess {
 			background,
 			backgroundView: background.createView(),
 			down,
+			blurred,
 			up,
 			bloomUniforms,
 			passes: {
@@ -550,7 +585,7 @@ export class PostProcess {
 					target: sceneView,
 				},
 				down: downPasses,
-				up: upPasses,
+				up: { full: fullUp, short: shortUp },
 			},
 			tonemapGroups: [
 				this.#uniformsGroup(p.tonemap),
@@ -611,9 +646,14 @@ export class PostProcess {
 		set(21, [...evaluateSh(environment.sh, [0, 1, 0]), 0]);
 		set(22, [...evaluateSh(environment.sh, [Math.SQRT1_2, 0, Math.SQRT1_2]), 0]);
 		const { bloom, ao, vignette } = environment.post;
-		const threshold = bloom?.threshold ?? 1;
-		set(24, [threshold, threshold * 0.5, bloom?.intensity ?? 0, bloom?.scatter ?? 0]);
-		set(25, [...(bloom?.tint ?? [1, 1, 1]), 1]);
+		{
+			// the game's threshold packing: a knee of half the threshold
+			const threshold = bloom?.threshold ?? 1;
+			const knee = threshold * 0.5 + 1e-5;
+			set(24, [threshold, threshold - knee, 2 * knee, 0.25 / knee]);
+			set(25, [...(bloom?.tint ?? [1, 1, 1]), bloom?.intensity ?? 0]);
+			set(56, [bloom?.subtract ?? 0, bloom?.scatter ?? 0, 0, 0]);
+		}
 		set(28, [ao?.falloff ?? 1, ao?.distribution ?? 1, ao?.thin ?? 0, 0]);
 		set(29, [...(vignette?.colour ?? [0, 0, 0]), vignette?.roundness ?? 1]);
 		set(30, [...(vignette?.centre ?? [0.5, 0.5]), vignette?.rounded ? 1 : 0, 0]);
@@ -758,7 +798,8 @@ export class PostProcess {
 			for (const pass of sized.passes.down) {
 				this.#run(encoder, 'bloom down', pass);
 			}
-			for (const pass of sized.passes.up) {
+			const half = this.#environment.post.bloom?.half ?? true;
+			for (const pass of half ? sized.passes.up.full : sized.passes.up.short) {
 				this.#run(encoder, 'bloom up', pass);
 			}
 		}
