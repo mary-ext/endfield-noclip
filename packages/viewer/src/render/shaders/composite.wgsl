@@ -1,4 +1,4 @@
-// composites the main pass into the HDR scene: ambient occlusion on the ambient part, the sky where nothing
+// composites the main pass into the HDR scene: screen-space reflections, ambient occlusion on the ambient part, the sky where nothing
 // was drawn, the atmosphere fog and the two-layer height fog. needs post-common.wgsl, atmosphere.wgsl and
 // sky.wgsl.
 
@@ -8,6 +8,8 @@
 @group(2) @binding(3) var depth_texture: texture_depth_2d;
 @group(2) @binding(4) var cloud_texture: texture_2d<f32>;
 @group(2) @binding(5) var cloud_sampler: sampler;
+// what the screen-space reflections change in the radiance (ssr.wgsl)
+@group(2) @binding(6) var ssr_texture: texture_2d<f32>;
 
 // Jimenez et al.'s multi-bounce fit: occluded light that bounces off a bright surface comes back, so bright
 // surfaces darken less than `ao`. per channel in the game; here from the albedo's luminance
@@ -33,7 +35,7 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 		return vec4f(fogged_sky(direction, painted, froxels), 1.0);
 	}
 	let radiance = textureLoad(radiance_texture, px, 0);
-	var color = radiance.rgb;
+	var color = max(radiance.rgb + textureLoad(ssr_texture, px, 0).rgb, vec3f(0.0));
 	// the AO passes don't run while it's off, and the radiance then keeps the material occlusion alone
 	if (post.ao.w > 0.5) {
 		let ambient = textureLoad(ambient_texture, px, 0);

@@ -21,8 +21,19 @@ export const DEPTH_COMPARE: GPUCompareFunction = 'greater';
 /** HDR colour format of the main pass and the post chain */
 export const HDR_FORMAT: GPUTextureFormat = 'rgba16float';
 
-/** the main pass's colour targets, in `@location` order: radiance, then its ambient part */
-export const MAIN_TARGETS: GPUColorTargetState[] = [{ format: HDR_FORMAT }, { format: HDR_FORMAT }];
+/** what glossy surfaces hand the screen-space reflections: octahedral normal, roughness */
+export const REFLECTION_NORMAL_FORMAT: GPUTextureFormat = 'rgba8unorm';
+
+/**
+ * the main pass's colour targets, in `@location` order: radiance, its ambient part, the sky reflection the
+ * radiance holds (with how much of a screen-space hit replaces it), and the reflecting surface's normal
+ */
+export const MAIN_TARGETS: GPUColorTargetState[] = [
+	{ format: HDR_FORMAT },
+	{ format: HDR_FORMAT },
+	{ format: HDR_FORMAT },
+	{ format: REFLECTION_NORMAL_FORMAT },
+];
 
 /** what a main-pass pipeline needs to know of the targets */
 export interface MainPassFormat {
@@ -35,6 +46,10 @@ export interface SceneTextures {
 	/** the texture behind {@link radiance}; unused once composited, so post passes may copy into it */
 	radianceTexture: GPUTexture;
 	ambient: GPUTextureView;
+	/** rgb: the sky reflection in {@link radiance}, a: the weight of a screen-space hit (0: none) */
+	reflection: GPUTextureView;
+	/** xy: octahedral normal · 0.5 + 0.5, z: perceptual roughness */
+	reflectionNormal: GPUTextureView;
 	depth: GPUTextureView;
 	/** bumped whenever the views or the output size change (resize, render scale) */
 	version: number;
@@ -61,7 +76,7 @@ export class RenderTargets {
 	#devicePixelSize: [width: number, height: number] | null = null;
 	#textures: GPUTexture[] = [];
 	#depth: GPUTexture | null = null;
-	#colors: [GPUTexture, GPUTexture] | null = null;
+	#colors: GPUTexture[] | null = null;
 	#scene: SceneTextures | null = null;
 	#version = 0;
 
@@ -154,12 +169,16 @@ export class RenderTargets {
 				usage: usage | GPUTextureUsage.COPY_DST,
 			}),
 			create({ label: 'ambient', size: [width, height], format: HDR_FORMAT, usage }),
+			create({ label: 'reflection', size: [width, height], format: HDR_FORMAT, usage }),
+			create({ label: 'reflection normal', size: [width, height], format: REFLECTION_NORMAL_FORMAT, usage }),
 		];
 		this.#version++;
 		this.#scene = {
 			radiance: this.#colors[0].createView(),
 			radianceTexture: this.#colors[0],
 			ambient: this.#colors[1].createView(),
+			reflection: this.#colors[2].createView(),
+			reflectionNormal: this.#colors[3].createView(),
 			depth: this.#depth.createView(),
 			version: this.#version,
 		};
@@ -168,7 +187,7 @@ export class RenderTargets {
 
 	/** @returns bytes held by the targets (estimate; the swapchain counts as two buffers) */
 	get bytes(): number {
-		return this.width * this.height * (4 + 8 * 2) + this.outputWidth * this.outputHeight * 4 * 2;
+		return this.width * this.height * (4 + 8 * 3 + 4) + this.outputWidth * this.outputHeight * 4 * 2;
 	}
 
 	/** @returns the main pass's outputs */

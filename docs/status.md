@@ -57,6 +57,8 @@ packs or renders correctly.
 - the packed tangent frame isn't decoded; tangents are regenerated
 - terrain close up: smooth triplanar replaces the game's random plane choice, and the cliff
   projection, cone-map parallax and wetness aren't drawn; the blend's GPU cost is unprofiled
+- screen-space reflections are the viewer's own (unprofiled, single ray, no blur for rough
+  surfaces); off-screen reflections fall back to the sky cubemap
 - foliage wind and transmission, grass instancing, decals, layered materials
 - Lit layers ([lit layers](game-data/lighting.md#lit-layers)): tri-channel switch textures, the
   parallax glow's global highlight and its world-space, PBR and deform variants

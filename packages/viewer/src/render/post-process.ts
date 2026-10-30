@@ -20,6 +20,7 @@ import compositeWgsl from './shaders/composite.wgsl?raw';
 import gtaoWgsl from './shaders/gtao.wgsl?raw';
 import commonWgsl from './shaders/post-common.wgsl?raw';
 import skyWgsl from './shaders/sky.wgsl?raw';
+import ssrWgsl from './shaders/ssr.wgsl?raw';
 import taaWgsl from './shaders/taa.wgsl?raw';
 import tonemapWgsl from './shaders/tonemap.wgsl?raw';
 import { TemporalAA } from './temporal-aa.ts';
@@ -28,7 +29,7 @@ import type { VolumetricFog } from './volumetric-fog.ts';
 import type { WaterRenderer } from './water-renderer.ts';
 
 /** byte size of `Post` in post-common.wgsl */
-const POST_BYTES = 60 * 16;
+const POST_BYTES = 61 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
@@ -70,6 +71,8 @@ export interface PostSettings {
 	heightFog: boolean;
 	atmosphereFog: boolean;
 	ao: boolean;
+	/** screen-space reflections on glossy surfaces */
+	reflections: boolean;
 	bloom: boolean;
 	vignette: boolean;
 	/** anything but `lit` shows the main pass as it is: no exposure, tonemapping, effects or water */
@@ -89,6 +92,7 @@ const effectiveSettings = (settings: PostSettings): PostSettings => {
 		heightFog: false,
 		atmosphereFog: false,
 		ao: false,
+		reflections: false,
 		bloom: false,
 		vignette: false,
 	};
@@ -138,6 +142,8 @@ interface Sized {
 	ao: GPUTexture;
 	/** full resolution */
 	aoBlurred: GPUTexture;
+	/** what the screen-space reflections add to the radiance */
+	ssr: GPUTexture;
 	/** the composited scene at the render size, which the temporal resolve reads */
 	scene: GPUTexture;
 	sceneView: GPUTextureView;
@@ -153,6 +159,7 @@ interface Sized {
 		aoDepth: Pass;
 		gtao: Pass;
 		blur: Pass;
+		ssr: Pass;
 		composite: Pass;
 		/** group 0 of the temporal resolve */
 		taa: GPUBindGroup;
@@ -191,6 +198,7 @@ export class PostProcess {
 		aoDepth: GPURenderPipeline;
 		gtao: GPURenderPipeline;
 		blur: GPURenderPipeline;
+		ssr: GPURenderPipeline;
 		composite: GPURenderPipeline;
 		prefilter: GPURenderPipeline;
 		blurH: GPURenderPipeline;
@@ -264,6 +272,7 @@ export class PostProcess {
 		this.taa = new TemporalAA(device, module('taa', [taaWgsl]));
 		const atmosphere = module('atmosphere', [atmosphereWgsl]);
 		const gtao = module('gtao', [gtaoWgsl]);
+		const ssr = module('ssr', [ssrWgsl]);
 		const composite = module('composite', [atmosphereWgsl, skyWgsl, compositeWgsl]);
 		const bloom = module('bloom', [bloomWgsl]);
 		const tonemap = module('tonemap', [tonemapWgsl]);
@@ -288,6 +297,7 @@ export class PostProcess {
 			aoDepth: pipeline('ao depth', gtao, 'fs_ao_depth', AO_DEPTH_FORMAT),
 			gtao: pipeline('gtao', gtao, 'fs_gtao', AO_FORMAT),
 			blur: pipeline('gtao blur', gtao, 'fs_blur', AO_FORMAT),
+			ssr: pipeline('ssr', ssr, 'fs_ssr', HDR_FORMAT),
 			composite: pipeline('composite', composite, 'fs_composite', HDR_FORMAT),
 			prefilter: pipeline('bloom prefilter', bloom, 'fs_prefilter', HDR_FORMAT),
 			blurH: pipeline('bloom blur h', bloom, 'fs_blur_h', HDR_FORMAT),
@@ -362,13 +372,13 @@ export class PostProcess {
 		}
 		const pixels = sized.width * sized.height;
 		const outputPixels = sized.outputWidth * sized.outputHeight;
-		// at the render size the reduced AO depth and AO, the blurred AO and the scene; at the output size the
-		// temporal history and the bloom chain (two quarter-size mips)
-		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8) + outputPixels * 8 * (2 / 3) + this.taa.bytes;
+		// at the render size the reduced AO depth and AO, the blurred AO, the reflections and the scene; at the
+		// output size the temporal history and the bloom chain (two quarter-size mips)
+		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) + outputPixels * 8 * (2 / 3) + this.taa.bytes;
 	}
 
-	/** the composite pass's group 2: the main pass's outputs, the blurred AO and the cloud panorama */
-	#sceneGroup(scene: SceneTextures, aoBlurred: GPUTexture): GPUBindGroup {
+	/** the composite pass's group 2: the main pass's outputs, the blurred AO, the cloud panorama and reflections */
+	#sceneGroup(scene: SceneTextures, aoBlurred: GPUTexture, ssr: GPUTexture): GPUBindGroup {
 		return this.#device.createBindGroup({
 			layout: this.#pipelines.composite.getBindGroupLayout(2),
 			entries: [
@@ -378,6 +388,7 @@ export class PostProcess {
 				{ binding: 3, resource: scene.depth },
 				{ binding: 4, resource: this.#cloud.view },
 				{ binding: 5, resource: this.#cloud.sampler },
+				{ binding: 6, resource: ssr.createView() },
 			],
 		});
 	}
@@ -395,7 +406,7 @@ export class PostProcess {
 		this.#cloud = next;
 		const sized = this.#sized;
 		if (sized !== null) {
-			sized.passes.composite.groups[2] = this.#sceneGroup(sized.sceneTextures, sized.aoBlurred);
+			sized.passes.composite.groups[2] = this.#sceneGroup(sized.sceneTextures, sized.aoBlurred, sized.ssr);
 		}
 	}
 
@@ -415,6 +426,7 @@ export class PostProcess {
 			sized.aoDepth,
 			sized.ao,
 			sized.aoBlurred,
+			sized.ssr,
 			sized.scene,
 			...sized.down,
 			...sized.blurred,
@@ -456,6 +468,7 @@ export class PostProcess {
 		const aoDepth = texture('ao depth', aoWidth, aoHeight, AO_DEPTH_FORMAT);
 		const ao = texture('ao', aoWidth, aoHeight, AO_FORMAT);
 		const aoBlurred = texture('ao blurred', width, height, AO_FORMAT);
+		const ssrTexture = texture('ssr', width, height, HDR_FORMAT);
 		const sceneTexture = texture('hdr scene', width, height, HDR_FORMAT);
 		const sceneView = sceneTexture.createView();
 		this.taa.resize({ scene: sceneView, depth: scene.depth, width, height, outputWidth, outputHeight });
@@ -568,6 +581,7 @@ export class PostProcess {
 			aoDepth,
 			ao,
 			aoBlurred,
+			ssr: ssrTexture,
 			scene: sceneTexture,
 			sceneView,
 			historyViews: [histories[0].createView(), histories[1].createView()],
@@ -613,9 +627,25 @@ export class PostProcess {
 					],
 					target: aoBlurred.createView(),
 				},
+				ssr: {
+					pipeline: p.ssr,
+					groups: [
+						this.#uniformsGroup(p.ssr),
+						device.createBindGroup({
+							layout: p.ssr.getBindGroupLayout(1),
+							entries: [
+								{ binding: 0, resource: scene.radiance },
+								{ binding: 1, resource: scene.reflection },
+								{ binding: 2, resource: scene.reflectionNormal },
+								{ binding: 3, resource: scene.depth },
+							],
+						}),
+					],
+					target: ssrTexture.createView(),
+				},
 				composite: {
 					pipeline: p.composite,
-					groups: [...this.#skyGroups(p.composite), this.#sceneGroup(scene, aoBlurred)],
+					groups: [...this.#skyGroups(p.composite), this.#sceneGroup(scene, aoBlurred, ssrTexture)],
 					target: sceneView,
 				},
 				taa: this.#uniformsGroup(this.taa.pipeline),
@@ -758,6 +788,7 @@ export class PostProcess {
 			set(58, sampling?.slices ?? [0, 0, 0, 0]);
 			set(59, [sampling?.start ?? 0, 0, 0, 0]);
 		}
+		set(60, [settings.reflections ? 1 : 0, 0, 0, 0]);
 		f[31 * 4 + 3] = environment.cloud !== null && this.#cloud !== this.#noCloud ? 1 : 0;
 		f[33 * 4 + 3] = settings.debugView === 'clouds' ? 1 : 0;
 		this.#device.queue.writeBuffer(this.#uniforms, 0, f);
@@ -818,6 +849,8 @@ export class PostProcess {
 			this.#run(encoder, 'gtao', sized.passes.gtao);
 			this.#run(encoder, 'gtao blur', sized.passes.blur);
 		}
+		// with reflections off the pass still clears what composite reads
+		this.#run(encoder, 'ssr', sized.passes.ssr);
 		this.#run(encoder, 'composite', sized.passes.composite);
 		const water = input.water;
 		if (settings.debugView === 'lit' && water.active) {

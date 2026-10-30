@@ -227,6 +227,7 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 | 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                                                             |
 | 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                                                         |
 | 6   | `ao depth`, `gtao`, `gtao blur`                | `ao` on and the environment has AO settings                                                                                                                      |
+| 6b  | `ssr`                                          | always; writes nothing with `reflections` off or in debug views                                                                                                  |
 | 7   | `composite`                                    | always                                                                                                                                                           |
 | 8   | scene copy + `water`                           | `water` on, `lit`, and visible water surfaces                                                                                                                    |
 | 9   | `taa`                                          | always ([`render/temporal-aa.ts`](../packages/viewer/src/render/temporal-aa.ts)); with `antialiasing` off it only scales to the output size                      |
@@ -245,9 +246,11 @@ details:
   [`scene/camera.ts`](../packages/viewer/src/scene/camera.ts)). everything renders camera-relative:
   instance block origins are rebased to the eye on the CPU in f64 each frame, so f32 precision holds
   at any distance.
-- **main pass.** one sample per pixel into two `rgba16float` targets, radiance and its ambient part,
-  with depth stored for post. draw order: terrain, meshes (opaque, then alpha-tested), instance
-  boxes, box outlines (boxes larger than `outlineMetres`), terrain wireframe.
+- **main pass.** one sample per pixel into radiance and its ambient part (`rgba16float`), plus what
+  glossy surfaces hand the screen-space reflections: the sky reflection the radiance holds with the
+  weight of a screen-space hit (`rgba16float`) and the normal and roughness (`rgba8unorm`), with
+  depth stored for post. draw order: terrain, meshes (opaque, then alpha-tested), instance boxes,
+  box outlines (boxes larger than `outlineMetres`), terrain wireframe.
 - **antialiasing** is temporal with upsampling, as in the game, which has no MSAA. the main pass's
   projection is offset by a Halton (2, 3) subpixel jitter each frame (8 positions per cycle, more
   when upsampling), and the post passes that reconstruct view rays undo it. `taa` reconstructs each
@@ -267,9 +270,10 @@ details:
   this frame's main-pass selection and gets its own copy of the frame uniforms with its
   view-projection.
 - **post** ([`render/post-process.ts`](../packages/viewer/src/render/post-process.ts)) is fullscreen
-  triangles with `auto` layouts. composite applies AO, sky, atmosphere fog and height fog;
-  `heightFog` and `atmosphereFog` change what composite does, not which passes run. water draws over
-  a copy of the composited scene so it can refract it
+  triangles with `auto` layouts. `ssr` marches glossy pixels' reflections through the depth buffer
+  ([lighting.md](game-data/lighting.md#ambient)). composite adds them, then applies AO, sky,
+  atmosphere fog and height fog; `heightFog` and `atmosphereFog` change what composite does, not
+  which passes run. water draws over a copy of the composited scene so it can refract it
   ([`render/water-renderer.ts`](../packages/viewer/src/render/water-renderer.ts),
   [game-data/water.md](game-data/water.md)).
 - **debug views** (`albedo`, `normals`, `roughness`, `ambient`, `clouds`) show the main pass as it

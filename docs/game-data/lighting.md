@@ -99,7 +99,14 @@ as in the game, the reflection is scaled by how the surface's diffuse light comp
 probe's: with `d` the luminance of the diffuse irradiance (above) and `p` the ambient probe's
 luminance L1 along the normal, the factor is `(2 · min(d / p, 1) + d) / (2 + p)`. that's about
 `d / p` under cover, so interiors don't mirror the bright sky, and about 1 in the open. the game's
-clustered local reflection probes (normalised the same way) and SSR are not implemented.
+clustered local reflection probes (normalised the same way) are not implemented.
+
+glossy surfaces (perceptual roughness below 0.15, fading out by 0.3) get screen-space reflections on
+top: the mirror ray is marched through the depth buffer, and where it hits something on screen, that
+radiance times the same environment BRDF and specular occlusion replaces the sky reflection, fading
+at the screen edges and for rays heading back towards the camera
+([`ssr.wgsl`](../../packages/viewer/src/render/shaders/ssr.wgsl)). the hit's radiance is the main
+pass's, before ambient occlusion and fog. this is the viewer's own SSR, not a port of the game's.
 
 ## local lights
 
@@ -516,7 +523,7 @@ are sampled toroidally in `ambient_irradiance`.
   recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without
   the native diffuse-ambient scale.
 - not rendered: light shafts, lens flare, cloud shadows, celestial bodies, stars and aurora, local
-  reflection probes, SSR, local light shadows and light beams, precipitation and wetness.
+  reflection probes, the game's own SSR, local light shadows and light beams, precipitation and wetness.
 - the sun's units: the game shades its sun with the same lobe as local lights (no 1/π on diffuse),
   while the viewer treats the sun's colour as illuminance and divides diffuse by π. unless the CPU
   folds a 1/π into the sun's colour, the viewer's sun is π too dark. unchecked against a shot.

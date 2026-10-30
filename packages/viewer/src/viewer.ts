@@ -101,6 +101,8 @@ export interface ViewerOptions {
 	shadows: boolean;
 	water: boolean;
 	ao: boolean;
+	/** screen-space reflections on glossy surfaces, such as puddles */
+	reflections: boolean;
 	bloom: boolean;
 	vignette: boolean;
 	/** light ambient from the baked irradiance volume; off uses the environment's ambient probe alone */
@@ -147,6 +149,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	shadows: true,
 	water: true,
 	ao: true,
+	reflections: true,
 	bloom: true,
 	vignette: true,
 	irradiance: true,
@@ -1410,6 +1413,7 @@ export class Viewer {
 			heightFog: options.heightFog,
 			atmosphereFog: options.atmosphereFog,
 			ao: options.ao,
+			reflections: options.reflections,
 			bloom: options.bloom,
 			vignette: options.vignette,
 			debugView: options.debugView,

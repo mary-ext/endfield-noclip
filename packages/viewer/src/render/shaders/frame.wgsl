@@ -211,7 +211,16 @@ struct Shaded {
 	@location(0) radiance: vec4f,
 	// rgb: diffuse ambient before any occlusion, a: material occlusion
 	@location(1) ambient: vec4f,
+	// rgb: the sky reflection the radiance holds, which a screen-space hit replaces; a: the hit's weight (0: no
+	// screen-space reflection)
+	@location(2) reflection: vec4f,
+	// xy: octahedral normal · 0.5 + 0.5, z: perceptual roughness
+	@location(3) reflection_normal: vec4f,
 }
+
+// screen-space reflections fade out over this perceptual roughness range
+const SSR_ROUGHNESS_START = 0.15;
+const SSR_ROUGHNESS_END = 0.3;
 
 // what a material family hands to the lighting
 struct Surface {
@@ -584,6 +593,9 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 
 	let irradiance = ambient_irradiance(frame.eye.xyz + rel, n);
 	let diffuse_ambient = diffuse_color * irradiance;
+	// specular sees only the material occlusion, through Lagarde's specular occlusion
+	let specular_occlusion = clamp(pow(n_dot_v + s.occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + s.occlusion, 0.0, 1.0);
+	let specular_weight = environment_brdf(f0, roughness, n_dot_v) * specular_occlusion * frame.ambient.x;
 	var specular_ambient: vec3f;
 	{
 		let r = normalize(mix(reflect(-v, n), n, roughness * roughness));
@@ -592,14 +604,14 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		if (frame.ambient.z > 0.5) {
 			reflected = textureSampleLevel(reflection_map, reflection_sampler, r, roughness * frame.ambient.w).rgb;
 		}
-		specular_ambient = reflected * reflection_normalisation(irradiance, n) * environment_brdf(f0, roughness, n_dot_v) * frame.ambient.x;
+		specular_ambient = reflected * reflection_normalisation(irradiance, n) * specular_weight;
 	}
-	// specular sees only the material occlusion, through Lagarde's specular occlusion
-	let specular_occlusion = clamp(pow(n_dot_v + s.occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + s.occlusion, 0.0, 1.0);
-	let ambient = diffuse_ambient * s.occlusion + specular_ambient * specular_occlusion;
+	let ambient = diffuse_ambient * s.occlusion + specular_ambient;
 	let albedo_luminance = dot(diffuse_color, vec3f(0.2126, 0.7152, 0.0722));
 
 	var out: Shaded;
+	out.reflection = vec4f(0.0);
+	out.reflection_normal = vec4f(0.0);
 	switch frame.flags.y {
 		case 1u: {
 			out.radiance = vec4f(s.albedo, 1.0);
@@ -625,6 +637,11 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	}
 	out.radiance = vec4f(direct + ambient + s.emission, albedo_luminance);
 	out.ambient = vec4f(diffuse_ambient, s.occlusion);
+	let glossy = 1.0 - smoothstep(SSR_ROUGHNESS_START, SSR_ROUGHNESS_END, roughness);
+	if (glossy > 0.0) {
+		out.reflection = vec4f(specular_ambient * glossy, dot(specular_weight, LUMINANCE) * glossy);
+		out.reflection_normal = vec4f(oct_encode(n) * 0.5 + 0.5, roughness, 0.0);
+	}
 	return out;
 }
 
@@ -633,12 +650,22 @@ fn unlit(color: vec3f) -> Shaded {
 	var out: Shaded;
 	out.radiance = vec4f(color, 1.0);
 	out.ambient = vec4f(0.0);
+	out.reflection = vec4f(0.0);
+	out.reflection_normal = vec4f(0.0);
 	return out;
 }
 
 fn hue(h: f32) -> vec3f {
 	let k = vec3f(0.0, 2.0 / 3.0, 1.0 / 3.0);
 	return clamp(abs(fract(vec3f(h) + k) * 6.0 - 3.0) - 1.0, vec3f(0.0), vec3f(1.0));
+}
+
+fn oct_encode(n: vec3f) -> vec2f {
+	let p = n.xy / (abs(n.x) + abs(n.y) + abs(n.z));
+	if (n.z < 0.0) {
+		return (1.0 - abs(p.yx)) * select(vec2f(-1.0), vec2f(1.0), p >= vec2f(0.0));
+	}
+	return p;
 }
 
 fn oct_decode(e: vec2f) -> vec3f {

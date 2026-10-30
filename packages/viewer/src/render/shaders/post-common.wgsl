@@ -111,6 +111,8 @@ struct Post {
 	froxel_slices: vec4f,
 	// x = view depth (m) nearer than which there is no volumetric fog, yzw unused
 	froxel_range: vec4f,
+	// x = 1 with screen-space reflections, yzw unused
+	reflections: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> post: Post;
