@@ -9,7 +9,7 @@ import {
 	parseIrradianceIndex,
 } from '@endfield-noclip/formats/hg/irradiance';
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
-import { type IrradianceTable, irradianceArchiveName } from '@endfield-noclip/package-format/irradiance';
+import { type IrradianceTable, irradianceStem } from '@endfield-noclip/package-format/irradiance';
 
 import type { Context } from '../context.ts';
 
@@ -89,7 +89,7 @@ export const packIrradiance = async (
 		const items = records.map((record) => {
 			const { level, origin } = irradianceCellOrigin(record.key);
 			const half = (IRRADIANCE_CELL_SIZE << level) / 2;
-			const archive = irradianceArchiveName(origin[0] + half, origin[2] + half);
+			const stem = irradianceStem(origin[0] + half, origin[2] + half);
 			if (record.offset + record.storedLength > payload.length) {
 				throw new Error(`irradiance payload ${name} is shorter than its index says`);
 			}
@@ -108,7 +108,7 @@ export const packIrradiance = async (
 					kind: BlobKind.Irradiance,
 					compress: true,
 					zstdLevel: ZSTD_LEVEL,
-					archive: () => archive,
+					stem,
 				},
 			};
 		});

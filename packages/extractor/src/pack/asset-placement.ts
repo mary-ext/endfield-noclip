@@ -1,6 +1,6 @@
 import type { Chain } from '@endfield-noclip/package-format/instances';
-import { assetArchiveName } from '@endfield-noclip/package-format/manifest';
-import { type TileKey, tileAncestor, tileId } from '@endfield-noclip/package-format/tiles';
+import { assetStem } from '@endfield-noclip/package-format/manifest';
+import { type TileKey, tileAncestor } from '@endfield-noclip/package-format/tiles';
 
 // where geometry and texture blobs go. an asset lives in the archive of the smallest tile (at or above the
 // shard level) whose subtree contains every use of it, so fetching a region means its tile archives and their
@@ -108,47 +108,27 @@ export class AssetPlacement {
 	}
 }
 
-/** names asset archives, starting a new part whenever one would pass its size cap */
+/** names the asset archive groups (stems) blobs go to, remembering each one's tile */
 export class AssetArchives {
-	readonly #cap: number;
-	/** by placement tile id, or `common` */
-	readonly #parts = new Map<string, { tile: TileKey | null; part: number; size: number }>();
-	/** every archive name handed out, with its tile */
+	/** every stem handed out, with its tile */
 	readonly #tiles = new Map<string, TileKey | null>();
-
-	/** @param cap byte size an archive's blobs may reach before the next part starts */
-	constructor(cap: number) {
-		this.#cap = cap;
-	}
 
 	/**
 	 * @param place the asset's placement; unused assets (none, in practice) go to common too
-	 * @param length the blob's stored length
-	 * @returns the archive to put a new blob in
+	 * @returns the archive group to put its blobs in; the blob store splits large groups into parts
 	 */
-	archive(place: Place, length: number): string {
+	stem(place: Place): string {
 		const tile = place ?? null;
-		const stem = tile === null ? 'common' : tileId(tile);
-		let part = this.#parts.get(stem);
-		if (part === undefined) {
-			part = { tile, part: 0, size: 0 };
-			this.#parts.set(stem, part);
-		}
-		if (part.size > 0 && part.size + length > this.#cap) {
-			part.part++;
-			part.size = 0;
-		}
-		part.size += length;
-		const name = assetArchiveName(part.tile, part.part);
-		this.#tiles.set(name, part.tile);
-		return name;
+		const stem = assetStem(tile);
+		this.#tiles.set(stem, tile);
+		return stem;
 	}
 
 	/**
-	 * @param name an archive name
+	 * @param stem an archive group
 	 * @returns its placement tile (`null` for common), or `undefined` if this didn't name it
 	 */
-	tileOf(name: string): TileKey | null | undefined {
-		return this.#tiles.get(name);
+	tileOf(stem: string): TileKey | null | undefined {
+		return this.#tiles.get(stem);
 	}
 }

@@ -49,25 +49,39 @@ the manifest, the tree or instance blocks leaves cached mesh and texture convers
     tables/lights.json.zst        local lights
     tables/irradiance.bin         irradiance cell keys → blobs
     tree.bin                      tile nodes + content refs
-  shards/<l>_<x>_<z>.czar         content of one shard-level tile's subtree
-    blobs/<hash>.hgt              terrain height pages at the cell level and finer
-    blobs/<hash>.tsp              terrain surface pages, likewise
-    blobs/<hash>.tsl              terrain splat pages (leaves)
-    blobs/<hash>.inst             detail and conditional instance blocks
-  assets/<l>_<x>_<z>[.<n>].czar   geometry and texture blobs whose uses all lie under that tile
-  assets/common[.<n>].czar        ... used by global content or under several root tiles
-  assets/terrain-layers.czar      terrain layer textures (.tly)
-    blobs/<hash>.mesh             one mesh
-    blobs/<hash>.tex              mip levels of one texture
-  irradiance/<x>_<z>.czar         irradiance cells over one 512 m square
+  shards/<l>_<x>_<z>-<id>.czar        content of one shard-level tile's subtree
+    blobs/<hash>.hgt                  terrain height pages at the cell level and finer
+    blobs/<hash>.tsp                  terrain surface pages, likewise
+    blobs/<hash>.tsl                  terrain splat pages (leaves)
+    blobs/<hash>.inst                 detail and conditional instance blocks
+  assets/<l>_<x>_<z>[.<n>]-<id>.czar  geometry and texture blobs whose uses all lie under that tile
+  assets/common[.<n>]-<id>.czar       ... used by global content or under several root tiles
+  assets/terrain-layers-<id>.czar     terrain layer textures (.tly)
+    blobs/<hash>.mesh                 one mesh
+    blobs/<hash>.tex                  mip levels of one texture
+  irradiance/<x>_<z>-<id>.czar        irradiance cells over one 512 m square
     blobs/<hash>.iv
-  debug/                          never loaded by the viewer (and skipped by the OPFS import)
+  debug/                              never loaded by the viewer (and skipped by the OPFS import)
 ```
 
-`CORE_PATHS` names the core's fixed members; `shardArchiveName`, `assetArchiveName` and
-`irradianceArchiveName` name the others. `manifest.archives` lists every archive with its `role`
-(`core`, `shards`, `assets`, `irradiance`) and `tile`; the core is entry 0, the rest follow sorted
-by name.
+`CORE_PATHS` names the core's fixed members. every other archive is named by its content,
+`<stem>[.<part>]-<id>.czar` (`archiveName`): the stem is its group (`shardStem`, `assetStem`,
+`irradianceStem`), and the id is 16 hex digits of the SHA-256 of its czar head, which lists every
+member's path (a blob hash), offset, size and CRC. so a name changes exactly when the archive's
+bytes do. `manifest.archives` lists every archive with its `role` (`core`, `shards`, `assets`,
+`irradiance`) and `tile`; the core is entry 0, the rest follow sorted by name.
+
+**parts**: a group whose blobs total more than 1 GiB is split into a power-of-two number of parts by
+the top bits of each blob's hash, so parts land at 0.5–1 GiB (u32 offsets allow 4 GiB, and the size
+suits HTTP and OPFS). splitting by hash rather than by fill order keeps each part's membership
+stable: adding or changing an asset changes one part, and the split itself only changes when a group
+doubles.
+
+**reuse**: content names make a re-pack cheap. the packer clones each archive whose name (and size)
+the package it replaces already has, instead of streaming it from the cache again; on APFS and Btrfs
+that's a copy-on-write clone, elsewhere a kernel copy. a warm map02 re-pack writes the core and
+nothing else (20 s → 5 s for the write phase). it also means a reader caching archives by name can't
+pair a stale archive with a newer core.
 
 the packer replaces a previous package in its output directory but refuses a directory holding
 anything else, so a mistyped `-o` can't wipe unrelated files. it writes the new package into a
@@ -94,8 +108,8 @@ view uncompressed members as typed arrays.
   textures, terrain surface pages, layer textures and irradiance cells (19 saves about 2 % more at
   roughly 10× the time). the viewer decodes zstd with zstddec's wasm build, because browsers'
   `DecompressionStream` can't be relied on for zstd.
-- **offsets** are u32, so every archive stays below 4 GiB; asset archives roll over to a `.<n>` part
-  at 1 GiB, which also suits HTTP and OPFS.
+- **offsets** are u32, so every archive stays below 4 GiB; groups over 1 GiB split into parts (see
+  [layout](#layout)).
 - **the core's offsets**: `ArchiveInfo.dataOffset` is `null` for the core, because the core's header
   holds the sizes and CRCs of the tables that contain the offsets. the viewer reads the core whole
   and gets core blobs through czar. blob paths (`blobs/…`) sort before every fixed member, so blob
@@ -391,9 +405,6 @@ per-asset provenance lives here rather than in the manifest, which only identifi
 ## open
 
 - **geometricError** is a placeholder; calibrate against the game's HLOD switch distances.
-- **content-named shards**: shard and asset archives are named by tile, so a stale cached archive
-  can pair with a newer core. naming them `<tile>-<hash8>.czar` would close that, since archives are
-  written before the core.
 - **instance compression**: meshopt filters or quantized rows could roughly halve instance blobs.
 - **detail placement by centre**: a very large object at a leaf disappears while that leaf shows its
   HLOD, unless the HLOD covers it, as the game assumes.

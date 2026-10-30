@@ -94,7 +94,13 @@ export const run = async (args: string[]): Promise<void> => {
 const mb = (bytes: number): string => `${(bytes / 1e6).toFixed(2)} MB`;
 
 const formatReport = (report: PackReport): string => {
-	const lines = [`package ${report.outDir}: ${mb(report.totalBytes)} in ${report.archives.length} archives`];
+	const reused = report.archives.filter((archive) => archive.reused);
+	const lines = [
+		`package ${report.outDir}: ${mb(report.totalBytes)} in ${report.archives.length} archives` +
+			(reused.length === 0
+				? ''
+				: `, ${reused.length} (${mb(reused.reduce((sum, archive) => sum + archive.size, 0))}) reused from the previous package`),
+	];
 	const total = Object.values(report.timings).reduce((sum, ms) => sum + ms, 0);
 	lines.push(
 		`timings: ${Object.entries(report.timings)

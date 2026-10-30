@@ -87,14 +87,14 @@ describe('AssetPlacement', () => {
 });
 
 describe('AssetArchives', () => {
-	it('names archives by placement and starts parts at the cap', () => {
-		const archives = new AssetArchives(100);
+	it('names archive groups by placement and remembers their tiles', () => {
+		const archives = new AssetArchives();
 		const tile = { level: 3, x: 2, z: -1 };
-		assert.equal(archives.archive(tile, 60), 'assets/3_2_-1.czar');
-		assert.equal(archives.archive(tile, 40), 'assets/3_2_-1.czar');
-		assert.equal(archives.archive(tile, 1), 'assets/3_2_-1.1.czar');
-		// a blob larger than the cap still gets an archive of its own
-		assert.equal(archives.archive(tile, 500), 'assets/3_2_-1.2.czar');
-		assert.equal(archives.archive(null, 10), 'assets/common.czar');
+		assert.equal(archives.stem(tile), 'assets/3_2_-1');
+		assert.equal(archives.stem(null), 'assets/common');
+		assert.equal(archives.stem(undefined), 'assets/common');
+		assert.deepEqual(archives.tileOf('assets/3_2_-1'), tile);
+		assert.equal(archives.tileOf('assets/common'), null);
+		assert.equal(archives.tileOf('assets/0_0_0'), undefined);
 	});
 });

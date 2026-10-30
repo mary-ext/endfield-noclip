@@ -13,10 +13,10 @@ export const IRRADIANCE_ARCHIVE_SIZE = 512;
 /**
  * @param x world x (m) of a point in the archive's square
  * @param z world z (m)
- * @returns the package-relative path of the irradiance archive holding the cells over that point
+ * @returns the stem (see `archiveName`) of the irradiance archive holding the cells over that point
  */
-export const irradianceArchiveName = (x: number, z: number): string =>
-	`irradiance/${Math.floor(x / IRRADIANCE_ARCHIVE_SIZE)}_${Math.floor(z / IRRADIANCE_ARCHIVE_SIZE)}.czar`;
+export const irradianceStem = (x: number, z: number): string =>
+	`irradiance/${Math.floor(x / IRRADIANCE_ARCHIVE_SIZE)}_${Math.floor(z / IRRADIANCE_ARCHIVE_SIZE)}`;
 
 /**
  * `tables/irradiance.bin`: the baked irradiance volume's cells (the base bake only, without scene-state

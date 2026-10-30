@@ -100,7 +100,6 @@ packs or renders correctly.
 
 ## packaging
 
-- reuse unchanged archives from the previous package instead of rewriting all of them
 - cache material conversion; remember failed conversions so a warm pack starts no worker; skip
   compressing duplicate textures
 - texture zstd level and a max-texture-size option for a lite package (textures dominate package

@@ -131,7 +131,7 @@ the phases run in this order and are timed individually in the report:
 | instances              | encode and store instance blocks, attaching detail and HLOD blocks to the tile tree                                                                                                                                            |
 | assets                 | convert materials, then meshes, then textures (below)                                                                                                                                                                          |
 | states                 | build the manifest's levels and scene controls                                                                                                                                                                                 |
-| write                  | build the tree and tables and write every archive                                                                                                                                                                              |
+| write                  | build the tree and tables and write the archives, cloning those the replaced package already has (archives are content-named, see [package-format.md](package-format.md#layout))                                               |
 | debug                  | write `debug/`                                                                                                                                                                                                                 |
 | cache sweep            | record this package in the cache and delete what no package uses                                                                                                                                                               |
 
@@ -202,8 +202,6 @@ to entities and chunk files, and `assets.json` says why an asset didn't convert.
 
 - path → hash lookups reverse-scan StringPathHash because the game's path hash isn't ported; it
   diverges from XXH3 at 128 UTF-8 bytes (see AnimeStudio's `EndfieldVfsHash`).
-- warm packs still rewrite every archive from the cache; unchanged archives of the previous package
-  aren't reused.
 - material conversion isn't cached, and failed conversions aren't remembered, so a warm pack can
   still start workers.
 - interactive LevelData decoding covers the supported facility layouts only; other files are listed

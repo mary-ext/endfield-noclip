@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { open, mkdtemp, rm } from 'node:fs/promises';
+import { open, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -187,39 +187,38 @@ describe('BlobStore', () => {
 	it('dedupes, places blobs in archives and reports readable offsets', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3 });
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), {
+				zstdLevel: 3,
+				archiveCap: 1 << 20,
+				core: 'core.czar',
+			});
 			const compressible = new Uint8Array(4096).fill(7);
 			const random = Uint8Array.from({ length: 333 }, (_, i) => (i * 2654435761) >>> 24);
 			const [a, b, c] = await store.putMany([
-				{
-					raw: compressible,
-					options: { kind: BlobKind.Instances, compress: true, archive: () => 'shards/x.czar' },
-				},
-				{ raw: random, options: { kind: BlobKind.Other, compress: false, archive: () => 'core.czar' } },
-				{
-					raw: compressible,
-					options: { kind: BlobKind.Instances, compress: true, archive: () => 'other.czar' },
-				},
+				{ raw: compressible, options: { kind: BlobKind.Instances, compress: true, stem: 'shards/x' } },
+				{ raw: random, options: { kind: BlobKind.Other, compress: false, stem: 'core.czar' } },
+				{ raw: compressible, options: { kind: BlobKind.Instances, compress: true, stem: 'other' } },
 			]);
 			assert.equal(c, a);
 			assert.equal(store.size, 2);
 
-			const archives = ['core.czar', ...store.archiveNames().filter((name) => name !== 'core.czar')];
+			const [shardName] = store.archives().map(({ name }) => name);
+			assert.match(shardName, /^shards\/x-[0-9a-f]{16}\.czar$/);
+			const archives = ['core.czar', shardName];
 			const records = store.records(archives);
 			assert.equal(records[a].codec, BlobCodec.Zstd);
 			assert.equal(records[b].codec, BlobCodec.None);
-			assert.equal(archives[records[a].archive], 'shards/x.czar');
+			assert.equal(archives[records[a].archive], shardName);
 
-			const shards = await store.writeShards(dir, 'core.czar');
-			const core = await store.writeCore(dir, 'core.czar', [
-				{ path: 'manifest.json', data: new Uint8Array([123, 125]) },
-			]);
+			const shards = await store.writeArchives(dir, null);
+			const core = await store.writeCore(dir, [{ path: 'manifest.json', data: new Uint8Array([123, 125]) }]);
 
 			// a shard blob, read by range from the table alone
 			{
-				const shard = shards.get('shards/x.czar')!;
+				const shard = shards.get(shardName)!;
+				assert.equal(shard.reused, false);
 				const record = records[a];
-				await using handle = await open(join(dir, 'shards/x.czar'));
+				await using handle = await open(join(dir, shardName));
 				const stored = new Uint8Array(record.length);
 				await handle.read(stored, 0, record.length, shard.dataOffset + record.offset);
 				assert.deepEqual(new Uint8Array(zstdDecompressSync(stored)), compressible);
@@ -246,7 +245,11 @@ describe('BlobStore', () => {
 	it('round-trips an instance block through compression', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3 });
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), {
+				zstdLevel: 3,
+				archiveCap: 1 << 20,
+				core: 'core.czar',
+			});
 			const rows = new InstanceBlockBuilder();
 			rows.add(
 				{
@@ -261,9 +264,9 @@ describe('BlobStore', () => {
 			const index = await store.put(encodeInstanceBlock(block), {
 				kind: BlobKind.Instances,
 				compress: true,
-				archive: () => 'core.czar',
+				stem: 'core.czar',
 			});
-			await store.writeCore(dir, 'core.czar', []);
+			await store.writeCore(dir, []);
 			await using handle = await open(join(dir, 'core.czar'));
 			const archive = await openArchive(await fromFileHandle(handle));
 			const record = store.records(['core.czar'])[index];
@@ -280,17 +283,12 @@ describe('BlobStore', () => {
 	it('assigns indices in commit order and skips zstd that barely helps', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
-			const store = new BlobStore(new BlobDir(join(dir, '.spool')), { zstdLevel: 3 });
-			const archives: [string, number][] = [];
-			const options = {
-				kind: BlobKind.Texture,
-				compress: true,
-				zstdLevel: 1,
-				archive: (hash: string, length: number) => {
-					archives.push([hash, length]);
-					return 'assets/common.czar';
-				},
-			};
+			const store = new BlobStore(new BlobDir(join(dir, '.spool')), {
+				zstdLevel: 3,
+				archiveCap: 1 << 20,
+				core: 'core.czar',
+			});
+			const options = { kind: BlobKind.Texture, compress: true, zstdLevel: 1, stem: 'assets/common' };
 			// pseudo-random bytes: zstd can't save 1/32 of them
 			let seed = 1;
 			const noise = Uint8Array.from({ length: 4096 }, () => {
@@ -307,11 +305,48 @@ describe('BlobStore', () => {
 			assert.equal(store.commit(await store.prepare(noise, options)), 0);
 			assert.equal(early.meta.codec, BlobCodec.None);
 			assert.equal(late.meta.codec, BlobCodec.Zstd);
-			// the placement callback runs once per new blob, with the stored length
-			assert.deepEqual(archives, [
-				[early.meta.hash, 4096],
-				[late.meta.hash, late.meta.length],
-			]);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('splits large groups by blob hash and clones unchanged archives from the previous package', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
+		try {
+			const blobs = new BlobDir(join(dir, '.spool'));
+			const fill = async (count: number) => {
+				const store = new BlobStore(blobs, { zstdLevel: 3, archiveCap: 4096, core: 'core.czar' });
+				await store.putMany(
+					Array.from({ length: count }, (_, i) => ({
+						raw: Uint8Array.from({ length: 1024 }, (_, j) => (i * 31 + j * 7) & 0xff),
+						options: { kind: BlobKind.Texture, compress: false, stem: 'assets/common' },
+					})),
+				);
+				return store;
+			};
+			// 12 KiB over a 4 KiB cap: four parts named by bucket, each holding blobs whose hashes start alike
+			const first = await fill(12);
+			const parts = first.archives();
+			assert.ok(parts.length > 1 && parts.length <= 4);
+			for (const { name, stem } of parts) {
+				assert.equal(stem, 'assets/common');
+				assert.match(name, /^assets\/common\.[0-3]-[0-9a-f]{16}\.czar$/);
+			}
+			const previous = join(dir, 'previous');
+			await first.writeArchives(previous, null);
+
+			// the same blobs again: every archive is reused, byte for byte
+			const again = await fill(12);
+			const reused = await again.writeArchives(join(dir, 'next'), previous);
+			assert.ok([...reused.values()].every((archive) => archive.reused));
+			for (const { name } of parts) {
+				assert.deepEqual(await readFile(join(dir, 'next', name)), await readFile(join(previous, name)));
+			}
+
+			// one more blob changes only the part it hashes into
+			const grown = await fill(13);
+			const written = await grown.writeArchives(join(dir, 'grown'), previous);
+			assert.equal([...written.values()].filter((archive) => !archive.reused).length, 1);
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}

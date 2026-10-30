@@ -150,18 +150,19 @@ export interface LevelInfo {
 /** one archive of the package */
 export interface ArchiveInfo {
 	/**
-	 * path relative to the package root, e.g. `core.czar`, `shards/3_2_5.czar`, `assets/2_1_2.czar`,
-	 * `assets/common.czar`. an asset archive over its size cap continues in `assets/<id>.<n>.czar`, n ≥ 1
+	 * path relative to the package root: `core.czar`, or a content-named archive (see {@link archiveName}) such
+	 * as `shards/3_2_5-<id>.czar`, `assets/2_1_2-<id>.czar` or `assets/common.1-<id>.czar`. a group over the
+	 * size cap is split by blob hash into a power-of-two number of parts, so adding a blob changes one part
 	 */
 	name: string;
 	role: 'core' | 'shards' | 'assets' | 'irradiance';
 	/**
-	 * `null` for `irradiance` archives (`irradiance/<x>_<z>.czar`: the cells over one 512 m square, see
-	 * {@link irradianceArchiveName}). for `shards` archives: the {@link TreeInfo.shardLevel} tile whose subtree
-	 * content it holds. for `assets` archives: the tile at or above the shard level whose subtree is the
-	 * smallest one containing every use of each asset in it, or `null` for `assets/common*` (global content, or
-	 * uses under different root tiles). so everything a tile draws lives in the `assets` archives of that tile
-	 * and its ancestors, plus common
+	 * `null` for `irradiance` archives (`irradiance/<x>_<z>-<id>.czar`: the cells over one 512 m square, see
+	 * `irradianceStem`). for `shards` archives: the {@link TreeInfo.shardLevel} tile whose subtree content it
+	 * holds. for `assets` archives: the tile at or above the shard level whose subtree is the smallest one
+	 * containing every use of each asset in it, or `null` for `assets/common*` (global content, or uses under
+	 * different root tiles). so everything a tile draws lives in the `assets` archives of that tile and its
+	 * ancestors, plus common
 	 */
 	tile: TileKey | null;
 	/** total byte length; `null` for the core, whose size depends on this manifest */
@@ -191,16 +192,30 @@ export interface SourceFingerprint {
 
 /**
  * @param tile the shard-level tile whose subtree content the archive holds
- * @returns the archive's package-relative path
+ * @returns the stem of the archive (see {@link archiveName})
  */
-export const shardArchiveName = (tile: TileKey): string => `shards/${tileId(tile)}.czar`;
+export const shardStem = (tile: TileKey): string => `shards/${tileId(tile)}`;
 
 /**
  * @param tile the tile the archive's assets are placed at, or `null` for the common archive
- * @param part overflow part; 0 for the first archive
- * @returns the archive's package-relative path
+ * @returns the stem of the archives (see {@link archiveName})
  */
-export const assetArchiveName = (tile: TileKey | null, part: number): string => {
-	const id = tile === null ? 'common' : tileId(tile);
-	return part === 0 ? `assets/${id}.czar` : `assets/${id}.${part}.czar`;
-};
+export const assetStem = (tile: TileKey | null): string =>
+	`assets/${tile === null ? 'common' : tileId(tile)}`;
+
+/** hex digits of the content id in an archive name */
+export const ARCHIVE_ID_LENGTH = 16;
+
+/**
+ * names an archive by what it holds, so an archive's name changes exactly when its bytes do: a reader can't
+ * pair a cached archive with a newer core, and a re-pack reuses unchanged archives of the previous package
+ *
+ * @param stem the group the archive belongs to: `shards/<tile>`, `assets/<tile>`, `assets/common`,
+ *   `assets/terrain-layers` or `irradiance/<x>_<z>`
+ * @param part the archive's bucket when its group is split over several, else `null`
+ * @param id the first {@link ARCHIVE_ID_LENGTH} hex digits of the SHA-256 of the archive's czar head (prelude
+ *   and header: every member's path, offset, size and CRC)
+ * @returns the archive's package-relative path, `<stem>[.<part>]-<id>.czar`
+ */
+export const archiveName = (stem: string, part: number | null, id: string): string =>
+	`${stem}${part === null ? '' : `.${part}`}-${id}.czar`;

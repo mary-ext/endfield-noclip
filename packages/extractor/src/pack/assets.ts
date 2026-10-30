@@ -341,7 +341,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				result.blob,
 				{
 					kind: BlobKind.Geometry,
-					archive: (_hash, length) => archives.archive(input.places.geometries[id], length),
+					stem: archives.stem(input.places.geometries[id]),
 				},
 				geometry,
 			);
@@ -397,7 +397,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 			textureFormats[result.entry.format] = (textureFormats[result.entry.format] ?? 0) + 1;
 			const placement: BlobPlacement = {
 				kind: BlobKind.Texture,
-				archive: (_hash, length) => archives.archive(object.place, length),
+				stem: archives.stem(object.place),
 			};
 			textureEntries.push({
 				id,

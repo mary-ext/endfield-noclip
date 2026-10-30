@@ -58,7 +58,7 @@ import {
 	PACKAGE_FORMAT,
 	PACKAGE_VERSION,
 	type PackageManifest,
-	shardArchiveName,
+	shardStem,
 	type SubsetInfo,
 } from '@endfield-noclip/package-format/manifest';
 import type { MaterialTable } from '@endfield-noclip/package-format/materials';
@@ -210,7 +210,8 @@ export interface PackReport {
 	blobs: Record<string, { count: number; stored: number; raw: number }>;
 	/** byte length of each fixed core member (manifest, tree, tables) */
 	coreMembers: Record<string, number>;
-	archives: { name: string; size: number; headerLength: number; members: number }[];
+	/** every archive; `reused` ones were cloned from the package this one replaced */
+	archives: { name: string; size: number; headerLength: number; members: number; reused: boolean }[];
 	totalBytes: number;
 	/** cache hits and sweep, or `null` without a cache */
 	cache: CacheReport | null;
@@ -218,8 +219,11 @@ export interface PackReport {
 	peakRss: number;
 }
 
-/** asset archives stop growing at this size and continue in a next part */
-const ASSET_ARCHIVE_CAP = 1024 ** 3;
+/**
+ * an archive group whose blobs pass this size is split into parts by blob hash. parts land around 0.5–1× the
+ * cap, well under the 4 GiB that u32 offsets allow, and sized for HTTP and OPFS
+ */
+const ARCHIVE_CAP = 1024 ** 3;
 
 /** materials decoded concurrently */
 const MATERIAL_CONCURRENCY = 8;
@@ -270,7 +274,8 @@ export const packScene = async (
 	options: PackOptions,
 ): Promise<PackReport> => {
 	const timer = new PhaseTimer(options.log);
-	await checkOutDir(options.outDir);
+	// a package being replaced lends its unchanged archives to the new one
+	const previous = (await checkOutDir(options.outDir)) ? options.outDir : null;
 	// the package is written here and swapped in when complete, so a viewer never reads a partial one
 	const stage = siblingDir(options.outDir, 'staging');
 	await rm(stage, { recursive: true, force: true });
@@ -278,7 +283,11 @@ export const packScene = async (
 	const cache = options.cacheDir === null ? null : await PackCache.open(options.cacheDir);
 	// scratch space for the debug log, and for blobs when there's no cache to hold them
 	const spool = join(stage, '.spool');
-	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), { zstdLevel: options.zstdLevel });
+	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), {
+		zstdLevel: options.zstdLevel,
+		archiveCap: ARCHIVE_CAP,
+		core: CORE_ARCHIVE,
+	});
 	try {
 		const scene = await indexScene(context, options);
 		timer.end('setup');
@@ -291,7 +300,7 @@ export const packScene = async (
 			geometries: new AssetIds(),
 			materials: new AssetIds(),
 			uses: new AssetPlacement(scene.grid.shardLevel),
-			assetArchives: new AssetArchives(ASSET_ARCHIVE_CAP),
+			assetArchives: new AssetArchives(),
 			shardTiles: new Map(),
 		};
 
@@ -392,16 +401,21 @@ export const packScene = async (
 		timer.end('states');
 
 		const [environmentTextureIds, waterTextureIds] = assetTables.extraTextureIds;
-		const written = await writePackage(pack, assetTables, stage, {
-			...states,
-			...finishEnvironments(environments, environmentTextureIds),
-			water: finishWater(water, waterTextureIds),
-			lights,
-			irradiance: irradiance?.table ?? { keys: new Uint32Array(), blobs: new Uint32Array() },
-			global: instances.global,
-			terrainLevels: terrainPacked.levels,
-			terrainSplat: terrainPacked.splat,
-		});
+		const written = await writePackage(
+			pack,
+			assetTables,
+			{ dir: stage, previous },
+			{
+				...states,
+				...finishEnvironments(environments, environmentTextureIds),
+				water: finishWater(water, waterTextureIds),
+				lights,
+				irradiance: irradiance?.table ?? { keys: new Uint32Array(), blobs: new Uint32Array() },
+				global: instances.global,
+				terrainLevels: terrainPacked.levels,
+				terrainSplat: terrainPacked.splat,
+			},
+		);
 		timer.end('write');
 
 		await writeDebug(stage, {
@@ -526,7 +540,7 @@ interface PackState {
 	materials: AssetIds;
 	uses: AssetPlacement;
 	assetArchives: AssetArchives;
-	/** shard archive name → its shard-level tile */
+	/** shard archive stem → its shard-level tile */
 	shardTiles: Map<string, TileKey>;
 }
 
@@ -1096,7 +1110,7 @@ const packTerrain = async (
 };
 
 /** the archive holding the terrain layer textures, which every splat page draws from */
-const TERRAIN_LAYER_ARCHIVE = 'assets/terrain-layers.czar';
+const TERRAIN_LAYER_STEM = 'assets/terrain-layers';
 
 /**
  * layer texture levels skipped from the top: the game's 1024² textures repeat every 2–9 m, so 512² still
@@ -1180,7 +1194,7 @@ const packTerrainLayers = async (
 		raws.map((raw) => ({
 			raw,
 			options: {
-				...placement(BlobKind.TerrainLayer, TERRAIN_LAYER_ARCHIVE),
+				...placement(BlobKind.TerrainLayer, TERRAIN_LAYER_STEM),
 				zstdLevel: pack.scene.options.textureZstdLevel,
 			},
 		})),
@@ -1370,7 +1384,8 @@ const sceneStates = async (
 const writePackage = async (
 	pack: PackState,
 	assetTables: AssetTables,
-	dir: string,
+	/** where to write, and the package being replaced (whose unchanged archives are cloned), or `null` */
+	{ dir, previous }: { dir: string; previous: string | null },
 	states: SceneStateInfo & {
 		environments: EnvironmentProfile[];
 		environmentPhases: EnvironmentPhaseInfo[];
@@ -1398,14 +1413,14 @@ const writePackage = async (
 		zstdTable(json(states.lights)),
 	]);
 
-	const shardNames = store
-		.archiveNames()
-		.filter((name) => name !== CORE_ARCHIVE)
-		.toSorted();
-	const archiveNames = [CORE_ARCHIVE, ...shardNames];
+	const stems = new Map([
+		[CORE_ARCHIVE, CORE_ARCHIVE],
+		...store.archives().map(({ name, stem }): [string, string] => [name, stem]),
+	]);
+	const archiveNames = [...stems.keys()];
 	const blobsBin = encodeBlobTable(store.records(archiveNames));
 	const [written, [geometries, materials, textures, water, lights]] = await Promise.all([
-		store.writeShards(dir, CORE_ARCHIVE),
+		store.writeArchives(dir, previous),
 		tablesReady,
 	]);
 	const tables = { geometries, materials, textures, water, lights };
@@ -1426,7 +1441,7 @@ const writePackage = async (
 	}
 	const archives = archiveNames.map((name): ArchiveInfo => {
 		const archive = written.get(name);
-		const { role, tile } = archivePlacement(pack, name);
+		const { role, tile } = archivePlacement(pack, stems.get(name)!);
 		return {
 			name,
 			role,
@@ -1461,7 +1476,7 @@ const writePackage = async (
 		subset: scene.subset.info,
 		source: scene.source,
 	};
-	const core = await store.writeCore(dir, CORE_ARCHIVE, [
+	const core = await store.writeCore(dir, [
 		{ path: CORE_PATHS.manifest, data: json(manifest) },
 		{ path: CORE_PATHS.tree, data: treeBin },
 		{ path: CORE_PATHS.blobs, data: blobsBin },
@@ -1487,11 +1502,12 @@ const writePackage = async (
 			[CORE_PATHS.lights]: tables.lights.length,
 			[CORE_PATHS.irradiance]: irradianceBin.length,
 		},
-		archives: [core, ...written.values()].map(({ name, size, headerLength, members }) => ({
+		archives: [core, ...written.values()].map(({ name, size, headerLength, members, reused }) => ({
 			name,
 			size,
 			headerLength,
 			members,
+			reused,
 		})),
 	};
 };
@@ -1575,7 +1591,7 @@ const cellTile = (grid: TreeGrid, cell: { x: number; z: number }): TileKey =>
 	tileAt(grid, grid.cellLevel, (cell.x + 0.5) * CELL_SIZE, (cell.z + 0.5) * CELL_SIZE);
 
 /**
- * @returns the archive for a tile's content: the core for tiles coarser than the 128 m cells (the
+ * @returns the archive group for a tile's content: the core for tiles coarser than the 128 m cells (the
  *   always-resident coarse layer), else the shard of its {@link TreeInfo.shardLevel} ancestor
  */
 const archiveForTile = (pack: PackState, key: TileKey): string => {
@@ -1584,31 +1600,27 @@ const archiveForTile = (pack: PackState, key: TileKey): string => {
 		return CORE_ARCHIVE;
 	}
 	const tile = tileAncestor(key, grid.shardLevel);
-	const name = shardArchiveName(tile);
-	pack.shardTiles.set(name, tile);
-	return name;
+	const stem = shardStem(tile);
+	pack.shardTiles.set(stem, tile);
+	return stem;
 };
 
-/** @returns an archive's role and tile, as recorded when its name was handed out */
-const archivePlacement = (pack: PackState, name: string): Pick<ArchiveInfo, 'role' | 'tile'> => {
-	if (name === CORE_ARCHIVE) {
+/** @returns the role and tile of an archive group, as recorded when its stem was handed out */
+const archivePlacement = (pack: PackState, stem: string): Pick<ArchiveInfo, 'role' | 'tile'> => {
+	if (stem === CORE_ARCHIVE) {
 		return { role: 'core', tile: null };
 	}
-	if (name.startsWith('irradiance/')) {
+	if (stem.startsWith('irradiance/')) {
 		return { role: 'irradiance', tile: null };
 	}
-	const shard = pack.shardTiles.get(name);
+	const shard = pack.shardTiles.get(stem);
 	if (shard !== undefined) {
 		return { role: 'shards', tile: shard };
 	}
-	return { role: 'assets', tile: pack.assetArchives.tileOf(name) ?? null };
+	return { role: 'assets', tile: pack.assetArchives.tileOf(stem) ?? null };
 };
 
-const placement = (kind: BlobKind, archive: string): PutOptions => ({
-	kind,
-	compress: true,
-	archive: () => archive,
-});
+const placement = (kind: BlobKind, stem: string): PutOptions => ({ kind, compress: true, stem });
 
 // #endregion
 
@@ -1880,11 +1892,14 @@ const terrainBounds = (
 
 // #region output
 
-/** @throws {Error} unless `outDir` is absent, empty, or holds only a package */
-const checkOutDir = async (outDir: string): Promise<void> => {
+/**
+ * @returns whether `outDir` holds a package (to be replaced)
+ * @throws {Error} unless `outDir` is absent, empty, or holds only a package
+ */
+const checkOutDir = async (outDir: string): Promise<boolean> => {
 	const entries = (await ignoreMissing(readdir(outDir), null)) ?? [];
 	if (entries.length === 0) {
-		return;
+		return false;
 	}
 	if (!entries.includes(CORE_ARCHIVE)) {
 		throw new Error(`${outDir} isn't empty and doesn't hold a package; refusing to replace it`);
@@ -1893,6 +1908,7 @@ const checkOutDir = async (outDir: string): Promise<void> => {
 	if (foreign.length > 0) {
 		throw new Error(`${outDir} holds files that aren't part of a package: ${foreign.join(', ')}`);
 	}
+	return true;
 };
 
 /** @returns a hidden directory next to `dir`, on the same file system so it can be renamed into place */
