@@ -254,8 +254,13 @@ tinted by about 0.3. `HGRP/LitHLOD` ignores the tint.
 
 three optional Lit layers come from the game's shader for these keywords
 ([`render/materials.ts`](../../packages/viewer/src/render/materials.ts), `shaders/mesh.wgsl`). each
-texture slot samples UV set 0 or 1, as its `m_UVSetIndex` says; the originium crystals' base colour
-and detail map tile ×5 over UV set 1.
+map samples UV set 0 or 1 as a float of its own says: `_BaseUVSet` for the base colour,
+`_BasePbrMapUVSet` for the normal and MRO maps, `_DetailUVSet`, `_MaskUVSet` and `_EmissiveUVSet`.
+the slot's `m_UVSetIndex` stays 0 on hundreds of materials whose maps sample UV set 1, such as Power
+Plateau's concrete walls, whose tri-channel mask spreads weathering streaks over UV set 1. the
+originium crystals' base colour and detail map tile ×5 over UV set 1. not drawn:
+`_UseMaskRUVSetAndTilingScale`, which samples the mask's R from `_MaskRUVSet` tiled by
+`_MaskRTilingScale` (no map01 material sets it).
 
 - **`_TRI_CHANNEL_MASK`** (~450 map01 materials, mostly rock): each channel of `_MaskMap` becomes a
   weight `saturate(s/2 + mix(−s, 1, m + offset)) · _MaskAlbedo*.a`, with contrast `s` from

@@ -83,6 +83,19 @@ export class ShaderTable {
 /** slot names treated as normal maps when the shader doesn't flag them `[Normal]` */
 const NORMAL_SLOT = /normal|bump/i;
 
+/**
+ * `HGRP/Lit` picks each map's UV set with a float of its own and ignores the slot's `m_UVSetIndex`, which
+ * stays 0 on hundreds of materials whose maps sample UV set 1
+ */
+const LIT_UV_SET_PROPERTIES: Record<string, string> = {
+	_BaseColorMap: '_BaseUVSet',
+	_NormalMap: '_BasePbrMapUVSet',
+	_MROMap: '_BasePbrMapUVSet',
+	_DetailMap: '_DetailUVSet',
+	_MaskMap: '_MaskUVSet',
+	_EmissiveMap: '_EmissiveUVSet',
+};
+
 /** a material converted for the table */
 export interface ConvertedMaterial {
 	material: Omit<ReadyMaterial, 'id' | 'status'>;
@@ -145,9 +158,17 @@ export const convertMaterial = (
 		if (texture === undefined) {
 			continue;
 		}
-		slots[name] = { texture, uv: slot.uvSet, scale: slot.scale, offset: slot.offset };
+		let uv = slot.uvSet;
+		{
+			const property = defaults.family === 'lit' ? LIT_UV_SET_PROPERTIES[name] : undefined;
+			const fallback = property === undefined ? undefined : defaults.floats[property];
+			if (property !== undefined && fallback !== undefined) {
+				uv = Math.round(record.floats[property] ?? record.ints[property] ?? fallback);
+			}
+		}
+		slots[name] = { texture, uv, scale: slot.scale, offset: slot.offset };
 		if (defaults.normalMaps.includes(name) || NORMAL_SLOT.test(name)) {
-			normalMapUv = normalMapUv === null ? slot.uvSet : Math.min(normalMapUv, slot.uvSet);
+			normalMapUv = normalMapUv === null ? uv : Math.min(normalMapUv, uv);
 		}
 	}
 

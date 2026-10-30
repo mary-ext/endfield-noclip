@@ -99,6 +99,30 @@ describe('convertMaterial', () => {
 		assert.equal(material.blend, 'opaque');
 	});
 
+	it('takes a Lit map’s UV set from its UV-set property over the slot’s index', () => {
+		const withUvSets: ShaderSummary = {
+			...shader,
+			properties: [
+				...shader.properties,
+				property('_BaseUVSet', ShaderPropertyType.Float, [0]),
+				property('_BasePbrMapUVSet', ShaderPropertyType.Float, [0]),
+			],
+		};
+		const interned = new ShaderTable().intern(withUvSets, 'lit');
+		const { material, normalMapUv } = convertMaterial(
+			{ ...record, floats: { ...record.floats, _BaseUVSet: 1 } },
+			classifyHgrpMaterial(record, withUvSets),
+			interned,
+			() => 7,
+		);
+		// the property's default wins over the slot's index too
+		assert.deepEqual(
+			Object.fromEntries(Object.entries(material.slots).map(([name, slot]) => [name, slot.uv])),
+			{ _BaseColorMap: 1, _NormalMap: 0 },
+		);
+		assert.equal(normalMapUv, 0);
+	});
+
 	it('drops slots whose texture couldn’t be located', () => {
 		const interned = new ShaderTable().intern(shader, 'lit');
 		const { material, normalMapUv } = convertMaterial(
