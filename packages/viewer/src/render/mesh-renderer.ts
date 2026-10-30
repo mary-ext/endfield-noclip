@@ -19,7 +19,7 @@ import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
-import { LOOK_FLOATS, SLOTS, SLOT_FLAGS } from './materials.ts';
+import { LOOK_FLOATS, LookRow, SLOTS, SLOT_FLAGS } from './materials.ts';
 import meshWgsl from './shaders/mesh.wgsl?raw';
 import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
 import type { TextureBinding, TextureStore } from './texture-store.ts';
@@ -49,6 +49,14 @@ type FaceCull = (typeof FACE_CULLS)[number];
  * `view_proj` (Unity's left-handed, clockwise-front convention, like the terrain's)
  */
 const FRONT_FACE: GPUFrontFace = 'cw';
+
+/** the vertex formats of UV set 0: as the package stores 16-bit UVs, else dequantized floats */
+const UV_FORMATS = ['unorm16x2', 'float32x2'] as const;
+type UvFormat = (typeof UV_FORMATS)[number];
+
+/** @returns the cache key of a phase's pipeline for a face culling and UV format */
+const pipelineKey = (phase: string, cull: FaceCull, uvFormat: UvFormat): string =>
+	`${phase}/${cull}/${uvFormat}`;
 
 /** @returns the faces a bucket's draws cull: the material's, swapped for mirrored instances */
 const faceCullOf = (bucket: MeshBucket): FaceCull => {
@@ -94,6 +102,7 @@ interface PreparedDraw {
 	count: number;
 	material: GPUBindGroup;
 	cull: FaceCull;
+	uvFormat: UvFormat;
 }
 
 interface MaterialBinding {
@@ -102,12 +111,19 @@ interface MaterialBinding {
 	group: GPUBindGroup;
 }
 
+/** @returns the UV format of a bucket's geometry */
+const uvFormatOf = (bucket: MeshBucket): UvFormat => {
+	const resident = bucket.geometry.resident;
+	return resident?.kind === 'geometry' ? resident.uvFormat : 'float32x2';
+};
+
 /**
- * draw order within the opaque and the alpha-tested draws: face culling (one pipeline each), then geometry,
- * material and submesh
+ * draw order within the opaque and the alpha-tested draws: face culling and UV format (one pipeline each),
+ * then geometry, material and submesh
  */
 const byBindings = (a: MeshBucket, b: MeshBucket): number =>
 	FACE_CULLS.indexOf(faceCullOf(a)) - FACE_CULLS.indexOf(faceCullOf(b)) ||
+	UV_FORMATS.indexOf(uvFormatOf(a)) - UV_FORMATS.indexOf(uvFormatOf(b)) ||
 	a.geometry.blob - b.geometry.blob ||
 	a.material - b.material ||
 	a.submesh - b.submesh;
@@ -203,27 +219,32 @@ export class MeshRenderer {
 			mipmapFilter: 'linear',
 		});
 		const module = pipelines.module('mesh', FRAME_WGSL + meshWgsl);
-		const vertex: GPUVertexState = {
+		const vertex = (uvFormat: UvFormat): GPUVertexState => ({
 			module,
 			entryPoint: 'vs_main',
 			buffers: [
 				{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }] },
 				{ arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'snorm16x2' }] },
-				{ arrayStride: 8, attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }] },
+				{
+					arrayStride: uvFormat === 'unorm16x2' ? 4 : 8,
+					attributes: [{ shaderLocation: 2, offset: 0, format: uvFormat }],
+				},
 				{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
 			],
-		};
+		});
 		const prepare = (
 			key: string,
 			stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil'>,
 		): void => {
 			for (const cullMode of FACE_CULLS) {
-				void pipelines.prepare(`${key}/${cullMode}`, () => ({
-					layout: layouts.meshPipeline,
-					vertex,
-					primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
-					...stages,
-				}));
+				for (const uvFormat of UV_FORMATS) {
+					void pipelines.prepare(pipelineKey(key, cullMode, uvFormat), () => ({
+						layout: layouts.meshPipeline,
+						vertex: vertex(uvFormat),
+						primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
+						...stages,
+					}));
+				}
 			}
 		};
 		const depthWrite: GPUDepthStencilState = {
@@ -302,6 +323,8 @@ export class MeshRenderer {
 			positionBytes: decoded.positions.byteLength,
 			normalOffset: offsets[1],
 			uvOffset: offsets[2],
+			uvFormat: decoded.uvFormat,
+			uvTransform: [decoded.uvScale[0], decoded.uvScale[1], decoded.uvOffset[0], decoded.uvOffset[1]],
 			tangentOffset: offsets[3],
 			indices,
 			indexFormat: decoded.indexSize === 4 ? 'uint32' : 'uint16',
@@ -416,6 +439,18 @@ export class MeshRenderer {
 			params.set(resident.positionScale, at + 4);
 			params[at + 7] = 0;
 			params.set(look.params, at + 8);
+			{
+				// fold the UVs' dequantization into each slot's transform: (value · s + o) · S + O
+				const [su, sv, ou, ov] = resident.uvTransform;
+				for (let slot = 0; slot < SLOTS.length; slot++) {
+					const uv = at + 8 + LookRow.uv + slot * 4;
+					const [scaleU, scaleV] = [params[uv], params[uv + 1]];
+					params[uv + 2] += ou * scaleU;
+					params[uv + 3] += ov * scaleV;
+					params[uv] = su * scaleU;
+					params[uv + 1] = sv * scaleV;
+				}
+			}
 			ids.fill(d, bucket.first, bucket.first + bucket.count);
 			listStart = Math.min(listStart, bucket.first);
 			listEnd = Math.max(listEnd, bucket.first + bucket.count);
@@ -433,6 +468,7 @@ export class MeshRenderer {
 					count: bucket.count,
 					material,
 					cull,
+					uvFormat: resident.uvFormat,
 				};
 			} else {
 				draw.geometry = resident;
@@ -443,6 +479,7 @@ export class MeshRenderer {
 				draw.count = bucket.count;
 				draw.material = material;
 				draw.cull = cull;
+				draw.uvFormat = resident.uvFormat;
 			}
 			d++;
 
@@ -490,8 +527,10 @@ export class MeshRenderer {
 		// is ready
 		for (const phase of phases) {
 			for (const cull of FACE_CULLS) {
-				if (this.#pipelines.get(`${phase.key}/${cull}`) === undefined) {
-					return 0;
+				for (const uvFormat of UV_FORMATS) {
+					if (this.#pipelines.get(pipelineKey(phase.key, cull, uvFormat)) === undefined) {
+						return 0;
+					}
 				}
 			}
 		}
@@ -505,13 +544,15 @@ export class MeshRenderer {
 				continue;
 			}
 			let cull: FaceCull | null = null;
+			let uvFormat: UvFormat | null = null;
 			let geometry: ResidentGeometry | null = null;
 			let material: GPUBindGroup | null = null;
 			for (let i = from; i < to; i++) {
 				const draw = this.#draws[i];
-				if (draw.cull !== cull) {
+				if (draw.cull !== cull || draw.uvFormat !== uvFormat) {
 					cull = draw.cull;
-					const pipeline = this.#pipelines.get(`${phase.key}/${cull}`);
+					uvFormat = draw.uvFormat;
+					const pipeline = this.#pipelines.get(pipelineKey(phase.key, cull, uvFormat));
 					if (pipeline === undefined) {
 						return draws;
 					}

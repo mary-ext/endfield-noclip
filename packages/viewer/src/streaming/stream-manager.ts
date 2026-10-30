@@ -94,6 +94,10 @@ export interface ResidentGeometry {
 	positionBytes: number;
 	normalOffset: number | null;
 	uvOffset: number | null;
+	/** the UV stream's vertex format */
+	uvFormat: 'unorm16x2' | 'float32x2';
+	/** the UVs' dequantization as a `_ST` transform: `uv = value · xy + zw` */
+	uvTransform: [scaleU: number, scaleV: number, offsetU: number, offsetV: number];
 	tangentOffset: number | null;
 	indices: GPUBuffer;
 	indexFormat: GPUIndexFormat;

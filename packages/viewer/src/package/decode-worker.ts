@@ -109,25 +109,41 @@ const decodeNormals = (blob: GeometryBlob): ArrayBuffer | null => {
 	return raw.buffer;
 };
 
-/** decodes UV set 0 to `float32x2` whatever its stored format, so one pipeline layout fits every mesh */
-const decodeUvs = (blob: GeometryBlob): ArrayBuffer | null => {
+type DecodedUvs = Pick<DecodedGeometry, 'uvs' | 'uvFormat' | 'uvOffset' | 'uvScale'>;
+
+/**
+ * decodes UV set 0: 16-bit UVs as stored, with their dequantization (most meshes; the shader applies it), and
+ * anything else as `float32x2`
+ */
+const decodeUvs = (blob: GeometryBlob): DecodedUvs => {
 	const stream = findStream(blob, VertexAttribute.TexCoord0);
 	if (stream === undefined) {
-		return null;
+		return { uvs: null, uvFormat: 'float32x2', uvOffset: [0, 0], uvScale: [1, 1] };
 	}
-	const vertexCount = blob.vertexCount;
 	const raw = decodeVertices(blob, stream);
+	if (stream.format === GeometryVertexFormat.Unorm16x2) {
+		const dequantize = (stream.flags & GeometryStreamFlags.Dequantize) !== 0;
+		return {
+			uvs: ownBuffer(raw),
+			uvFormat: 'unorm16x2',
+			uvOffset: dequantize ? [stream.offset[0], stream.offset[1]] : [0, 0],
+			uvScale: dequantize ? [stream.scale[0], stream.scale[1]] : [1, 1],
+		};
+	}
+	return { uvs: decodeFloatUvs(blob, stream, raw), uvFormat: 'float32x2', uvOffset: [0, 0], uvScale: [1, 1] };
+};
+
+/** @returns UV set 0 as dequantized `float32x2`, or `null` for a format the viewer doesn't read */
+const decodeFloatUvs = (
+	blob: GeometryBlob,
+	stream: GeometryStream,
+	raw: Uint8Array<ArrayBuffer>,
+): ArrayBuffer | null => {
+	const vertexCount = blob.vertexCount;
 	const out = new Float32Array(vertexCount * 2);
 	switch (stream.format) {
 		case GeometryVertexFormat.Float32x2: {
-			out.set(new Float32Array(raw.buffer));
-			break;
-		}
-		case GeometryVertexFormat.Unorm16x2: {
-			const values = new Uint16Array(raw.buffer);
-			for (let i = 0; i < values.length; i++) {
-				out[i] = values[i] / 65_535;
-			}
+			out.set(new Float32Array(raw.buffer, raw.byteOffset, vertexCount * 2));
 			break;
 		}
 		case GeometryVertexFormat.Snorm8x4: {
@@ -162,7 +178,7 @@ const decodeGeometry = (
 		throw new Error('geometry has no positions');
 	}
 	const normals = decodeNormals(blob);
-	const uvs = decodeUvs(blob);
+	const { uvs, uvFormat, uvOffset, uvScale } = decodeUvs(blob);
 	const tangents = decodeAttribute(blob, VertexAttribute.Tangent, GeometryVertexFormat.Snorm8x4);
 	const indexSize = blob.flags & GeometryFlags.IndexU32 ? 4 : 2;
 	// index buffers are bound whole and must be a multiple of 4 bytes
@@ -186,6 +202,9 @@ const decodeGeometry = (
 			positions,
 			normals,
 			uvs,
+			uvFormat,
+			uvOffset,
+			uvScale,
 			tangents,
 			submeshes: blob.submeshes.map(({ firstIndex, indexCount, baseVertex }) => ({
 				firstIndex,

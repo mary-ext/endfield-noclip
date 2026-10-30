@@ -95,7 +95,7 @@ export interface MaterialLook {
 }
 
 /** float offsets of the rows of {@link MaterialLook.params} */
-const LookRow = {
+export const LookRow = {
 	/** linear tint, alpha-test threshold */
 	tint: 0,
 	/** one UV transform per slot */

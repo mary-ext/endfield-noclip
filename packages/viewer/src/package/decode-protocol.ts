@@ -90,8 +90,15 @@ export interface DecodedGeometry {
 	positions: ArrayBuffer;
 	/** `snorm16x2` octahedral normals, or `null` if the mesh has none */
 	normals: ArrayBuffer | null;
-	/** UV set 0 as `float32x2` (dequantized), or `null` if the mesh has none */
+	/**
+	 * UV set 0 as {@link uvFormat}, or `null` if the mesh has none. 16-bit UVs stay as the package stores them
+	 * (the game's own quantization), at half the size
+	 */
 	uvs: ArrayBuffer | null;
+	uvFormat: 'unorm16x2' | 'float32x2';
+	/** `uv = uvOffset + value · uvScale`, per component (identity for `float32x2`) */
+	uvOffset: [u: number, v: number];
+	uvScale: [u: number, v: number];
 	/** `snorm8x4` tangents (octahedral xy, bitangent sign z), or `null` if the mesh has none */
 	tangents: ArrayBuffer | null;
 	submeshes: { firstIndex: number; indexCount: number; baseVertex: number }[];
