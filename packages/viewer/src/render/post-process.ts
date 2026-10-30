@@ -1,7 +1,8 @@
 /**
  * the passes after the main pass: sky LUTs, ground-truth AO, compositing (AO, sky, aerial perspective, height
- * fog), water, bloom and tonemapping into the swapchain. every pass is a fullscreen triangle; pipelines use
- * `auto` layouts, so each bind group holds exactly the bindings its pass reads.
+ * fog), water, temporal antialiasing, bloom and tonemapping into the swapchain. everything up to the temporal
+ * resolve runs at the render size, everything after it at the output size. every pass is a fullscreen
+ * triangle; pipelines use `auto` layouts, so each bind group holds exactly the bindings its pass reads.
  *
  * @module
  */
@@ -19,12 +20,14 @@ import compositeWgsl from './shaders/composite.wgsl?raw';
 import gtaoWgsl from './shaders/gtao.wgsl?raw';
 import commonWgsl from './shaders/post-common.wgsl?raw';
 import skyWgsl from './shaders/sky.wgsl?raw';
+import taaWgsl from './shaders/taa.wgsl?raw';
 import tonemapWgsl from './shaders/tonemap.wgsl?raw';
+import { TemporalAA } from './temporal-aa.ts';
 import { type TextureBinding, placeholderView } from './texture-store.ts';
 import type { WaterRenderer } from './water-renderer.ts';
 
 /** byte size of `Post` in post-common.wgsl */
-const POST_BYTES = 57 * 16;
+const POST_BYTES = 58 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
@@ -99,13 +102,9 @@ export const postExposure = (settings: PostSettings, autoExposure: AutoExposure)
 
 /**
  * @param parts WGSL sources after the shared post ones
- * @param sampleCount the main pass's sample count, which decides the depth texture's type
  * @returns a post pass's shader source: the shared BRDF terms and `Post` uniforms, then `parts`
  */
-export const postShaderSource = (parts: string[], sampleCount: number): string =>
-	[brdfWgsl, commonWgsl, ...parts]
-		.join('\n')
-		.replaceAll('DEPTH_TEXTURE', sampleCount > 1 ? 'texture_depth_multisampled_2d' : 'texture_depth_2d');
+export const postShaderSource = (parts: string[]): string => [brdfWgsl, commonWgsl, ...parts].join('\n');
 
 /** a fullscreen pass into one target */
 interface Pass {
@@ -124,8 +123,11 @@ const Lut = {
 } as const;
 
 interface Sized {
+	/** the render size */
 	width: number;
 	height: number;
+	outputWidth: number;
+	outputHeight: number;
 	version: number;
 	sceneTextures: SceneTextures;
 	/** half resolution: view depth, and the AO marched over it */
@@ -136,9 +138,12 @@ interface Sized {
 	/** a copy of the composited scene for the water to refract */
 	background: GPUTexture;
 	backgroundView: GPUTextureView;
+	/** the composited scene at the render size, which the temporal resolve reads */
 	scene: GPUTexture;
 	sceneView: GPUTextureView;
-	/** the bloom levels, each half the previous one's size */
+	/** views of the temporal histories, the antialiased scene at the output size */
+	historyViews: [GPUTextureView, GPUTextureView];
+	/** the bloom levels at the output size, each half the previous one's size */
 	down: GPUTexture[];
 	/** each level's horizontal blur (none for the first) */
 	blurred: GPUTexture[];
@@ -149,19 +154,25 @@ interface Sized {
 		gtao: Pass;
 		blur: Pass;
 		composite: Pass;
-		/** the prefilter, then two blurs per further level */
+		/** group 0 of the temporal resolve */
+		taa: GPUBindGroup;
+		/** the bloom prefilter from each temporal history, or `null` on a canvas too small for bloom */
+		prefilter: [Pass, Pass] | null;
+		/** two blurs per level after the first */
 		down: Pass[];
 		/** upsamples from the coarsest level, for the full chain and for one level fewer */
 		up: { full: Pass[]; short: Pass[] };
 	};
-	/** the tonemap pass's groups; its target is the swapchain's current texture */
-	tonemapGroups: GPUBindGroup[];
+	/** the tonemap pass's groups reading each temporal history; its target is the swapchain's current texture */
+	tonemapGroups: [GPUBindGroup[], GPUBindGroup[]];
 }
 
 /** owns the post chain's targets, pipelines and uniforms */
 export class PostProcess {
 	/** the post exposure the game's auto exposure picks; the caller steps it each frame */
 	readonly autoExposure: AutoExposure;
+	/** the antialiasing; the caller jitters the main pass with it */
+	readonly taa: TemporalAA;
 	#device: GPUDevice;
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(POST_BYTES / 4);
@@ -198,15 +209,9 @@ export class PostProcess {
 	/**
 	 * @param device the device
 	 * @param swapchainFormat the canvas format the final pass writes
-	 * @param sampleCount the main pass's sample count
 	 * @param environment the environment to start with
 	 */
-	constructor(
-		device: GPUDevice,
-		swapchainFormat: GPUTextureFormat,
-		sampleCount: number,
-		environment: Environment,
-	) {
+	constructor(device: GPUDevice, swapchainFormat: GPUTextureFormat, environment: Environment) {
 		this.#device = device;
 		this.autoExposure = new AutoExposure(device);
 		this.#uniforms = device.createBuffer({
@@ -246,7 +251,8 @@ export class PostProcess {
 		this.#cloud = this.#noCloud;
 
 		const module = (label: string, parts: string[]): GPUShaderModule =>
-			device.createShaderModule({ label, code: postShaderSource(parts, sampleCount) });
+			device.createShaderModule({ label, code: postShaderSource(parts) });
+		this.taa = new TemporalAA(device, module('taa', [taaWgsl]));
 		const atmosphere = module('atmosphere', [atmosphereWgsl]);
 		const gtao = module('gtao', [gtaoWgsl]);
 		const composite = module('composite', [atmosphereWgsl, skyWgsl, compositeWgsl]);
@@ -345,9 +351,10 @@ export class PostProcess {
 			return 0;
 		}
 		const pixels = sized.width * sized.height;
-		// the reduced AO depth and AO, the blurred AO, the scene and the water's background, and the bloom chain
-		// (two quarter-size mips)
-		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) + pixels * 8 * (2 / 3);
+		const outputPixels = sized.outputWidth * sized.outputHeight;
+		// at the render size the reduced AO depth and AO, the blurred AO, the scene and the water's background; at
+		// the output size the temporal history and the bloom chain (two quarter-size mips)
+		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) + outputPixels * 8 * (2 / 3) + this.taa.bytes;
 	}
 
 	/** the composite pass's group 2: the main pass's outputs, the blurred AO and the cloud panorama */
@@ -411,7 +418,11 @@ export class PostProcess {
 		}
 	}
 
-	#ensureSized(scene: SceneTextures, width: number, height: number): Sized {
+	#ensureSized(
+		scene: SceneTextures,
+		size: { width: number; height: number; outputWidth: number; outputHeight: number },
+	): Sized {
+		const { width, height, outputWidth, outputHeight } = size;
 		const current = this.#sized;
 		if (current !== null && current.version === scene.version) {
 			return current;
@@ -438,17 +449,20 @@ export class PostProcess {
 		const aoBlurred = texture('ao blurred', width, height, AO_FORMAT);
 		const sceneTexture = texture('hdr scene', width, height, HDR_FORMAT);
 		const background = texture('hdr background', width, height, HDR_FORMAT);
+		const sceneView = sceneTexture.createView();
+		this.taa.resize({ scene: sceneView, depth: scene.depth, width, height, outputWidth, outputHeight });
+		const histories = this.taa.histories;
 		// the game's chain: sized as if the view were at most 1080 px tall, the first level at half that size,
 		// with as many levels as half-resolution bloom gets (quarter resolution runs one fewer)
 		const down: GPUTexture[] = [];
 		const blurred: GPUTexture[] = [];
 		const up: GPUTexture[] = [];
 		{
-			const scale = height > BLOOM_REFERENCE_HEIGHT ? BLOOM_REFERENCE_HEIGHT / height : 1;
-			const count = bloomLevelCount(width * scale, height * scale, true);
+			const scale = outputHeight > BLOOM_REFERENCE_HEIGHT ? BLOOM_REFERENCE_HEIGHT / outputHeight : 1;
+			const count = bloomLevelCount(outputWidth * scale, outputHeight * scale, true);
 			for (let i = 0; i < count; i++) {
-				const w = Math.max(1, Math.round((width * scale) / 2 ** (i + 1)));
-				const h = Math.max(1, Math.round((height * scale) / 2 ** (i + 1)));
+				const w = Math.max(1, Math.round((outputWidth * scale) / 2 ** (i + 1)));
+				const h = Math.max(1, Math.round((outputHeight * scale) / 2 ** (i + 1)));
 				down.push(texture(`bloom down ${i}`, w, h, HDR_FORMAT));
 				up.push(texture(`bloom up ${i}`, w, h, HDR_FORMAT));
 				if (i > 0) {
@@ -496,12 +510,13 @@ export class PostProcess {
 				target: target.createView(),
 			};
 		};
-		const downPasses: Pass[] = [];
+		let prefilter: [Pass, Pass] | null = null;
 		if (down.length > 0) {
-			downPasses.push(
-				bloomPass({ pipeline: p.prefilter, source: sceneTexture, high: null, target: down[0] }),
-			);
+			const from = (history: GPUTexture): Pass =>
+				bloomPass({ pipeline: p.prefilter, source: history, high: null, target: down[0] });
+			prefilter = [from(histories[0]), from(histories[1])];
 		}
+		const downPasses: Pass[] = [];
 		for (let i = 1; i < down.length; i++) {
 			const temp = blurred[i - 1];
 			downPasses.push(bloomPass({ pipeline: p.blurH, source: down[i - 1], high: null, target: temp }));
@@ -518,16 +533,28 @@ export class PostProcess {
 		const fullUp = upPasses(down.length);
 		const shortUp = down.length > 2 ? upPasses(down.length - 1) : fullUp;
 		// the last upsample, or the only level (or nothing, on a tiny canvas)
-		let bloomResult = sceneTexture;
+		let bloomResult: GPUTexture | null = null;
 		if (down.length > 1) {
 			bloomResult = up[0];
 		} else if (down.length === 1) {
 			bloomResult = down[0];
 		}
-		const sceneView = sceneTexture.createView();
+		const tonemapGroups = (history: GPUTexture): GPUBindGroup[] => [
+			this.#uniformsGroup(p.tonemap),
+			device.createBindGroup({
+				layout: p.tonemap.getBindGroupLayout(1),
+				entries: [
+					{ binding: 0, resource: history.createView() },
+					{ binding: 1, resource: (bloomResult ?? history).createView() },
+					{ binding: 2, resource: this.#sampler },
+				],
+			}),
+		];
 		const sized: Sized = {
 			width,
 			height,
+			outputWidth,
+			outputHeight,
 			version: scene.version,
 			sceneTextures: scene,
 			aoDepth,
@@ -535,6 +562,7 @@ export class PostProcess {
 			aoBlurred,
 			scene: sceneTexture,
 			sceneView,
+			historyViews: [histories[0].createView(), histories[1].createView()],
 			background,
 			backgroundView: background.createView(),
 			down,
@@ -584,20 +612,12 @@ export class PostProcess {
 					groups: [...this.#skyGroups(p.composite), this.#sceneGroup(scene, aoBlurred)],
 					target: sceneView,
 				},
+				taa: this.#uniformsGroup(this.taa.pipeline),
+				prefilter,
 				down: downPasses,
 				up: { full: fullUp, short: shortUp },
 			},
-			tonemapGroups: [
-				this.#uniformsGroup(p.tonemap),
-				device.createBindGroup({
-					layout: p.tonemap.getBindGroupLayout(1),
-					entries: [
-						{ binding: 0, resource: sceneView },
-						{ binding: 1, resource: bloomResult.createView() },
-						{ binding: 2, resource: this.#sampler },
-					],
-				}),
-			],
+			tonemapGroups: [tonemapGroups(histories[0]), tonemapGroups(histories[1])],
 		};
 		this.#sized = sized;
 		return sized;
@@ -702,6 +722,7 @@ export class PostProcess {
 		set(2, [up[0] * tanHalf, up[1] * tanHalf, up[2] * tanHalf, performance.now() / 1000]);
 		set(3, [...camera.position, frame % 1024]);
 		set(4, [width, height, 1 / width, 1 / height]);
+		set(57, [...this.taa.jitter, 0, 0]);
 		const { bloom, ao, vignette } = environment.post;
 		set(23, [ao?.radius ?? 1, 1, ao?.power ?? 1, settings.ao && ao !== null ? 1 : 0]);
 		set(26, [
@@ -739,7 +760,7 @@ export class PostProcess {
 	 * encodes the chain from the main pass's outputs to the swapchain.
 	 *
 	 * @param encoder this frame's encoder, after the main pass
-	 * @param input the resolved main-pass textures, the camera, sizes and settings
+	 * @param input the main pass's textures, the camera (unjittered), the render and output sizes and settings
 	 */
 	encode(
 		encoder: GPUCommandEncoder,
@@ -749,15 +770,17 @@ export class PostProcess {
 			camera: Camera;
 			width: number;
 			height: number;
+			outputWidth: number;
+			outputHeight: number;
 			settings: PostSettings;
 			frame: number;
 			/** drawn after compositing, when it has surfaces */
 			water: WaterRenderer;
 		},
 	): void {
-		const { scene, swapchain, camera, width, height, frame } = input;
+		const { scene, swapchain, camera, width, height, outputWidth, outputHeight, frame } = input;
 		const settings = effectiveSettings(input.settings);
-		const sized = this.#ensureSized(scene, width, height);
+		const sized = this.#ensureSized(scene, { width, height, outputWidth, outputHeight });
 		this.#writeFrame(camera, width, height, settings, frame);
 		const luts = this.#lutPasses;
 		if (!this.#lutsReady) {
@@ -787,14 +810,17 @@ export class PostProcess {
 				version: sized.version,
 			});
 		}
+		const resolved = this.taa.encode(encoder, { camera, postGroup: sized.passes.taa });
 		if (settings.autoExposure) {
 			this.autoExposure.encode(
 				encoder,
-				{ view: sized.sceneView, width, height },
+				{ view: sized.historyViews[resolved], width: outputWidth, height: outputHeight },
 				this.#environment.autoExposure,
 			);
 		}
-		if (settings.bloom) {
+		const prefilter = sized.passes.prefilter;
+		if (settings.bloom && prefilter !== null) {
+			this.#run(encoder, 'bloom down', prefilter[resolved]);
 			for (const pass of sized.passes.down) {
 				this.#run(encoder, 'bloom down', pass);
 			}
@@ -805,7 +831,7 @@ export class PostProcess {
 		}
 		this.#run(encoder, 'tonemap', {
 			pipeline: this.#pipelines.tonemap,
-			groups: sized.tonemapGroups,
+			groups: sized.tonemapGroups[resolved],
 			target: swapchain,
 		});
 	}
@@ -821,5 +847,6 @@ export class PostProcess {
 		this.#skyMean.destroy();
 		this.#uniforms.destroy();
 		this.autoExposure.destroy();
+		this.taa.destroy();
 	}
 }

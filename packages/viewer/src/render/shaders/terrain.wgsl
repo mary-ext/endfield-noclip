@@ -264,8 +264,10 @@ fn detail_surface(in: VertexOut, base: Surface, f: Footprint) -> Surface {
 fn fs_main(in: VertexOut) -> Shaded {
 	var f: Footprint;
 	f.world = in.world;
-	f.dx = dpdx(in.world);
-	f.dy = dpdy(in.world);
+	// the layers' footprint at the output's pixel density (the mip bias, as gradients)
+	let bias = exp2(frame.params.y);
+	f.dx = dpdx(in.world) * bias;
+	f.dy = dpdy(in.world) * bias;
 	if (in.hole > 0.01) {
 		discard;
 	}

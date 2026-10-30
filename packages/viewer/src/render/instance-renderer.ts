@@ -118,10 +118,9 @@ export class InstanceRenderer {
 		});
 
 		const module = pipelines.module('instance-boxes', FRAME_WGSL + boxesWgsl);
-		const suffix = `x${format.sampleCount}`;
 		this.#keys = {
-			ranges: { fill: `boxes/fill/${suffix}`, wire: `boxes/wire/${suffix}` },
-			list: { fill: `boxes/list-fill/${suffix}`, wire: `boxes/list-wire/${suffix}` },
+			ranges: { fill: 'boxes/fill', wire: 'boxes/wire' },
+			list: { fill: 'boxes/list-fill', wire: 'boxes/list-wire' },
 		};
 		const describe = (lines: boolean, list: boolean): GPURenderPipelineDescriptor => {
 			const constants = { USE_LIST: list ? 1 : 0 };
@@ -140,7 +139,6 @@ export class InstanceRenderer {
 					depthWriteEnabled: !lines,
 					depthCompare: lines ? 'greater-equal' : DEPTH_COMPARE,
 				},
-				multisample: { count: format.sampleCount },
 			};
 		};
 		void pipelines.prepare(this.#keys.ranges.fill, () => describe(false, false));

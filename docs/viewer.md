@@ -216,9 +216,13 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 | 6   | `ao depth`, `gtao`, `gtao blur`                | `ao` on and the environment has AO settings                                                                                                               |
 | 7   | `composite`                                    | always                                                                                                                                                    |
 | 8   | scene copy + `water`                           | `water` on, `lit`, and visible water surfaces                                                                                                             |
-| 9   | `auto exposure histogram` (compute)            | `autoExposure` on, `lit`, the profile meters, and a readback buffer is free ([`render/auto-exposure.ts`](../packages/viewer/src/render/auto-exposure.ts)) |
-| 10  | `bloom down` ×n, `bloom up` ×n                 | `bloom` on                                                                                                                                                |
-| 11  | `tonemap`                                      | always, into the swapchain                                                                                                                                |
+| 9   | `taa`                                          | always ([`render/temporal-aa.ts`](../packages/viewer/src/render/temporal-aa.ts)); with `antialiasing` off it only scales to the output size               |
+| 10  | `auto exposure histogram` (compute)            | `autoExposure` on, `lit`, the profile meters, and a readback buffer is free ([`render/auto-exposure.ts`](../packages/viewer/src/render/auto-exposure.ts)) |
+| 11  | `bloom down` ×n, `bloom up` ×n                 | `bloom` on                                                                                                                                                |
+| 12  | `tonemap`                                      | always, into the swapchain                                                                                                                                |
+
+passes 3–8 run at the render size, the canvas's device-pixel size times `renderScale`; `taa` and
+everything after it run at the output (canvas) size.
 
 details:
 
@@ -228,10 +232,22 @@ details:
   [`scene/camera.ts`](../packages/viewer/src/scene/camera.ts)). everything renders camera-relative:
   instance block origins are rebased to the eye on the CPU in f64 each frame, so f32 precision holds
   at any distance.
-- **main pass.** 4× MSAA into two `rgba16float` targets, radiance and its ambient part, resolved by
-  the pass; the MSAA colour is discarded and depth is stored for post. draw order: terrain, meshes
-  (opaque, then alpha-tested), instance boxes, box outlines (boxes larger than `outlineMetres`),
-  terrain wireframe.
+- **main pass.** one sample per pixel into two `rgba16float` targets, radiance and its ambient part,
+  with depth stored for post. draw order: terrain, meshes (opaque, then alpha-tested), instance
+  boxes, box outlines (boxes larger than `outlineMetres`), terrain wireframe.
+- **antialiasing** is temporal with upsampling, as in the game, which has no MSAA. the main pass's
+  projection is offset by a Halton (2, 3) subpixel jitter each frame (8 positions per cycle, more
+  when upsampling), and the post passes that reconstruct view rays undo it. `taa` reconstructs each
+  output pixel from the 3×3 render-size samples around it (a Gaussian fit to Blackman-Harris),
+  reprojects the previous output through the depth buffer and the previous camera (the scenery is
+  static, so there are no motion vectors), samples it with Catmull-Rom, clips it to the
+  neighbourhood's colour box in YCoCg and blends in 10% of the new frame, less where upsampling
+  leaves no sample near the pixel. colours are weighted by `1 / (1 + luminance · exposure)` while
+  filtering. two output-size histories alternate. a cut (load, level pose, debug view or
+  antialiasing toggle) drops the history. below the output size, material textures sample with a mip
+  bias of `log2(renderScale)` (terrain layers by scaling their gradients), and selection, LOD and
+  texture streaming measure screen sizes in output pixels, so `renderScale` trades shading cost
+  only.
 - **shadows.** four depth layers, laid out and filtered as in
   [lighting.md](game-data/lighting.md#shadows)
   ([`render/shadow-map.ts`](../packages/viewer/src/render/shadow-map.ts)). each layer's pass reuses
@@ -244,7 +260,7 @@ details:
   ([`render/water-renderer.ts`](../packages/viewer/src/render/water-renderer.ts),
   [game-data/water.md](game-data/water.md)).
 - **debug views** (`albedo`, `normals`, `roughness`, `ambient`, `clouds`) show the main pass as it
-  is: no shadows, exposure, tonemapping, AO, bloom or water.
+  is: no shadows, exposure, tonemapping, AO, bloom or water. temporal antialiasing still applies.
 
 ## GPU resource management
 
@@ -286,10 +302,11 @@ details:
 
 - **redraw only when dirty.** `#tick` renders when the camera moved, the canvas resized, an option
   or scene value changed (`#dirty`), the stream's `version` changed, the auto exposure is still
-  moving (or waiting on its first histogram), or `continuous` is on. it traverses without rendering
-  while streaming is in progress (`!stream.idle`), and does nothing at all when the view is still
-  and streaming is idle. the environment re-blends only when the eye, its settings or a fade
-  changed.
+  moving (or waiting on its first histogram), or `continuous` is on. after any of those it renders
+  32 more frames of the same view (`SETTLE_FRAMES`, reusing the last selection) so the temporal
+  antialiasing converges, unless `antialiasing` is off. it traverses without rendering while
+  streaming is in progress (`!stream.idle`), and does nothing at all when the view is still and
+  streaming is idle. the environment re-blends only when the eye, its settings or a fade changed.
 - **stats** publish every 250 ms and notify subscribers only when the JSON differs, so the React
   panels don't re-render on a still view.
 - **one traversal, many passes.** selection runs once per frame; shadow layers reuse its buckets.
@@ -302,9 +319,11 @@ details:
   shade with `depthCompare: 'equal'` and a non-discarding shader, so overlapping leaf cards shade
   each pixel once. an alpha-tested material draws as opaque until its base colour has streamed,
   since there's no alpha to test yet.
-- **AO at half resolution.** `ao depth` resolves the MSAA depth once into half-resolution view
-  depth; GTAO marches that (keeping its scattered reads in cache) and the blur upsamples with depth
-  weights.
+- **no MSAA.** at 2560×1600 on an Apple M-series GPU, a dense Wuling City view took ~46 ms of GPU
+  time with 4× MSAA and ~16 ms with temporal antialiasing (the `taa` pass is under 1 ms), and the
+  render targets shrank from ~440 to ~200 MiB. `renderScale` 0.5 brought the same view to ~5 ms.
+- **AO at half resolution.** `ao depth` reduces the depth once into half-resolution view depth; GTAO
+  marches that (keeping its scattered reads in cache) and the blur upsamples with depth weights.
 - **cached work.** the transmittance and multiple-scattering LUTs render once per environment;
   irradiance clipmaps update only on re-centre or new cells.
 - **no per-frame allocation on hot paths.** selections, buckets and plane arrays are reused across
@@ -382,8 +401,12 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
 - shadows redraw every on-screen caster into all four layers on every rendered frame. per-layer
   culling and caching a cascade while its snapped fit doesn't move are unbuilt, and off-screen
   casters don't cast.
-- composite and water read the 4× MSAA depth; the half-resolution depth or a full-resolution resolve
-  could serve them.
+- the temporal antialiasing has no sharpening, and nothing handles moving surfaces beyond the
+  neighbourhood clip: water waves and the GTAO noise pattern rely on it. with temporal smoothing in
+  place, the terrain's close-up layers could sample one projection plane per pixel at random, as the
+  game does, instead of blending all three.
+- composite writes a separate `hdr scene` target, though the main pass's radiance target is free by
+  then.
 - the AO blur's loads per pixel could be cut by packing depth with AO or using `textureGather`.
 - terrain's GPU cost at high resolution is unexamined.
 - the profiler times every pass whenever `timestamp-query` exists; gate it on the stats panel if it

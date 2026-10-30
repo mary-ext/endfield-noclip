@@ -1,9 +1,10 @@
 /**
  * the canvas swapchain and the targets the main pass renders into, kept at the canvas's device-pixel size.
  *
- * the main pass renders HDR radiance and its ambient part into multisampled targets that resolve into
- * single-sample textures; depth is kept for the post passes (ambient occlusion, fog, sky). post-processing
- * then writes the swapchain.
+ * the main pass renders HDR radiance and its ambient part, one sample per pixel at the render size (the
+ * canvas size times the render scale); depth is kept for the post passes (ambient occlusion, fog, sky).
+ * temporal antialiasing resolves the render size up to the output (canvas) size, and post-processing then
+ * writes the swapchain. the game has no MSAA either; its antialiasing is temporal.
  *
  * @module
  */
@@ -26,16 +27,14 @@ export const MAIN_TARGETS: GPUColorTargetState[] = [{ format: HDR_FORMAT }, { fo
 /** what a main-pass pipeline needs to know of the targets */
 export interface MainPassFormat {
 	targets: GPUColorTargetState[];
-	sampleCount: number;
 }
 
-/** the resolved targets the post passes read */
+/** the main pass's outputs, which the post passes read */
 export interface SceneTextures {
 	radiance: GPUTextureView;
 	ambient: GPUTextureView;
-	/** multisampled when the main pass is; read sample 0 */
 	depth: GPUTextureView;
-	/** bumped whenever the views change (resize) */
+	/** bumped whenever the views or the output size change (resize, render scale) */
 	version: number;
 }
 
@@ -44,12 +43,14 @@ export class RenderTargets {
 	readonly context: GPUCanvasContext;
 	/** swapchain format */
 	readonly colorFormat: GPUTextureFormat;
-	readonly sampleCount: number;
-	/** device pixels of the drawing buffer */
+	/** the main pass's size, px */
 	width = 1;
 	height = 1;
-	/** multiplier on the device pixel ratio (render scale) */
-	scale = 1;
+	/** device pixels of the drawing buffer */
+	outputWidth = 1;
+	outputHeight = 1;
+	/** the render size relative to the output size, (0, 1]; applied at the next {@link update} */
+	renderScale = 1;
 
 	#device: GPUDevice;
 	#canvas: HTMLCanvasElement;
@@ -58,8 +59,7 @@ export class RenderTargets {
 	#devicePixelSize: [width: number, height: number] | null = null;
 	#textures: GPUTexture[] = [];
 	#depth: GPUTexture | null = null;
-	#msaa: [GPUTexture, GPUTexture] | null = null;
-	#resolved: [GPUTexture, GPUTexture] | null = null;
+	#colours: [GPUTexture, GPUTexture] | null = null;
 	#scene: SceneTextures | null = null;
 	#version = 0;
 
@@ -67,18 +67,11 @@ export class RenderTargets {
 	 * @param device the device
 	 * @param canvas the canvas to present to; observed for size changes
 	 * @param colorFormat swapchain format
-	 * @param sampleCount 1 or 4
 	 */
-	constructor(
-		device: GPUDevice,
-		canvas: HTMLCanvasElement,
-		colorFormat: GPUTextureFormat,
-		sampleCount: number,
-	) {
+	constructor(device: GPUDevice, canvas: HTMLCanvasElement, colorFormat: GPUTextureFormat) {
 		this.#device = device;
 		this.#canvas = canvas;
 		this.colorFormat = colorFormat;
-		this.sampleCount = sampleCount;
 		const context = canvas.getContext('webgpu');
 		if (context === null) {
 			throw new Error(`couldn't get a WebGPU canvas context`);
@@ -104,30 +97,41 @@ export class RenderTargets {
 
 	/** @returns the main pass's target formats */
 	get format(): MainPassFormat {
-		return { targets: MAIN_TARGETS, sampleCount: this.sampleCount };
+		return { targets: MAIN_TARGETS };
 	}
 
 	/**
-	 * resizes the drawing buffer and the targets to the canvas's current size. call once per frame before
-	 * rendering.
+	 * resizes the drawing buffer to the canvas's current size, and the targets to that times the render scale.
+	 * call once per frame before rendering.
 	 *
-	 * @returns whether the size changed
+	 * @returns whether either size changed
 	 */
 	update(): boolean {
 		const max = this.#device.limits.maxTextureDimension2D;
-		let [width, height] = this.#devicePixelSize ?? [
-			this.#cssSize[0] * devicePixelRatio,
-			this.#cssSize[1] * devicePixelRatio,
+		const [cssWidth, cssHeight] = this.#cssSize;
+		const [devicePixelWidth, devicePixelHeight] = this.#devicePixelSize ?? [
+			cssWidth * devicePixelRatio,
+			cssHeight * devicePixelRatio,
 		];
-		width = Math.max(1, Math.min(max, Math.round(width * this.scale)));
-		height = Math.max(1, Math.min(max, Math.round(height * this.scale)));
-		if (width === this.width && height === this.height && this.#depth !== null) {
+		const outputWidth = Math.max(1, Math.min(max, Math.round(devicePixelWidth)));
+		const outputHeight = Math.max(1, Math.min(max, Math.round(devicePixelHeight)));
+		const width = Math.max(1, Math.round(outputWidth * this.renderScale));
+		const height = Math.max(1, Math.round(outputHeight * this.renderScale));
+		if (
+			width === this.width &&
+			height === this.height &&
+			outputWidth === this.outputWidth &&
+			outputHeight === this.outputHeight &&
+			this.#depth !== null
+		) {
 			return false;
 		}
+		this.outputWidth = outputWidth;
+		this.outputHeight = outputHeight;
+		this.#canvas.width = outputWidth;
+		this.#canvas.height = outputHeight;
 		this.width = width;
 		this.height = height;
-		this.#canvas.width = width;
-		this.#canvas.height = height;
 
 		for (const texture of this.#textures) {
 			texture.destroy();
@@ -138,33 +142,16 @@ export class RenderTargets {
 			this.#textures.push(texture);
 			return texture;
 		};
-		const multisampled = this.sampleCount > 1;
-		this.#depth = create({
-			label: 'depth',
-			size: [width, height],
-			format: DEPTH_FORMAT,
-			sampleCount: this.sampleCount,
-			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-		});
-		const hdr = (label: string, sampleCount: number): GPUTexture =>
-			create({
-				label,
-				size: [width, height],
-				format: HDR_FORMAT,
-				sampleCount,
-				usage:
-					sampleCount > 1
-						? GPUTextureUsage.RENDER_ATTACHMENT
-						: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-			});
-		this.#resolved = [hdr('radiance', 1), hdr('ambient', 1)];
-		this.#msaa = multisampled
-			? [hdr('radiance msaa', this.sampleCount), hdr('ambient msaa', this.sampleCount)]
-			: null;
+		const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
+		this.#depth = create({ label: 'depth', size: [width, height], format: DEPTH_FORMAT, usage });
+		this.#colours = [
+			create({ label: 'radiance', size: [width, height], format: HDR_FORMAT, usage }),
+			create({ label: 'ambient', size: [width, height], format: HDR_FORMAT, usage }),
+		];
 		this.#version++;
 		this.#scene = {
-			radiance: this.#resolved[0].createView(),
-			ambient: this.#resolved[1].createView(),
+			radiance: this.#colours[0].createView(),
+			ambient: this.#colours[1].createView(),
 			depth: this.#depth.createView(),
 			version: this.#version,
 		};
@@ -173,12 +160,10 @@ export class RenderTargets {
 
 	/** @returns bytes held by the targets (estimate; the swapchain counts as two buffers) */
 	get bytes(): number {
-		const pixels = this.width * this.height;
-		const samples = this.sampleCount;
-		return pixels * (4 * samples + (samples > 1 ? 16 * samples : 0) + 16 + 4 * 2);
+		return this.width * this.height * (4 + 8 * 2) + this.outputWidth * this.outputHeight * 4 * 2;
 	}
 
-	/** @returns the resolved main-pass outputs */
+	/** @returns the main pass's outputs */
 	get scene(): SceneTextures {
 		if (this.#scene === null) {
 			throw new Error('render targets used before update()');
@@ -191,23 +176,16 @@ export class RenderTargets {
 		colors: GPURenderPassColorAttachment[];
 		depth: GPURenderPassDepthStencilAttachment;
 	} {
-		if (this.#depth === null || this.#resolved === null) {
+		if (this.#depth === null || this.#colours === null) {
 			throw new Error('render targets used before update()');
 		}
 		const clear: GPUColor = { r: 0, g: 0, b: 0, a: 0 };
-		const resolved = this.#resolved;
-		const msaa = this.#msaa;
-		const colors = resolved.map((texture, i): GPURenderPassColorAttachment =>
-			msaa === null
-				? { view: texture.createView(), clearValue: clear, loadOp: 'clear', storeOp: 'store' }
-				: {
-						view: msaa[i].createView(),
-						resolveTarget: texture.createView(),
-						clearValue: clear,
-						loadOp: 'clear',
-						storeOp: 'discard',
-					},
-		);
+		const colors = this.#colours.map((texture): GPURenderPassColorAttachment => ({
+			view: texture.createView(),
+			clearValue: clear,
+			loadOp: 'clear',
+			storeOp: 'store',
+		}));
 		return {
 			colors,
 			depth: {

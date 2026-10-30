@@ -74,6 +74,12 @@ interface DrawPhase {
 	textured: boolean;
 }
 
+const MAIN_PHASES: readonly DrawPhase[] = [
+	{ key: 'mesh/opaque', cutout: false, textured: true },
+	{ key: 'mesh/cutout-depth', cutout: true, textured: true },
+	{ key: 'mesh/cutout-shade', cutout: true, textured: true },
+];
+
 const SHADOW_PHASES: readonly DrawPhase[] = [
 	{ key: 'mesh/shadow/opaque', cutout: false, textured: false },
 	{ key: 'mesh/shadow/cutout', cutout: true, textured: true },
@@ -118,7 +124,6 @@ export class MeshRenderer {
 	#device: GPUDevice;
 	#layouts: BindLayouts;
 	#pipelines: PipelineCache;
-	#mainPhases: readonly DrawPhase[];
 	#instances: GPUBindGroup;
 	#params: GPUBuffer;
 	#paramData = new Float32Array(MAX_DRAWS * DRAW_FLOATS);
@@ -209,7 +214,7 @@ export class MeshRenderer {
 		};
 		const prepare = (
 			key: string,
-			stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil' | 'multisample'>,
+			stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil'>,
 		): void => {
 			for (const cullMode of FACE_CULLS) {
 				void pipelines.prepare(`${key}/${cullMode}`, () => ({
@@ -220,21 +225,14 @@ export class MeshRenderer {
 				}));
 			}
 		};
-		const samples = format.sampleCount;
-		const multisample: GPUMultisampleState = { count: samples };
 		const depthWrite: GPUDepthStencilState = {
 			format: DEPTH_FORMAT,
 			depthWriteEnabled: true,
 			depthCompare: DEPTH_COMPARE,
 		};
 		const shade: GPUFragmentState = { module, entryPoint: 'fs_opaque', targets: format.targets };
-		this.#mainPhases = [
-			{ key: `mesh/opaque/x${samples}`, cutout: false, textured: true },
-			{ key: `mesh/cutout-depth/x${samples}`, cutout: true, textured: true },
-			{ key: `mesh/cutout-shade/x${samples}`, cutout: true, textured: true },
-		];
-		const [opaque, cutoutDepth, cutoutShade] = this.#mainPhases;
-		prepare(opaque.key, { fragment: shade, depthStencil: depthWrite, multisample });
+		const [opaque, cutoutDepth, cutoutShade] = MAIN_PHASES;
+		prepare(opaque.key, { fragment: shade, depthStencil: depthWrite });
 		prepare(cutoutDepth.key, {
 			fragment: {
 				module,
@@ -242,12 +240,10 @@ export class MeshRenderer {
 				targets: format.targets.map((target) => ({ ...target, writeMask: 0 })),
 			},
 			depthStencil: depthWrite,
-			multisample,
 		});
 		prepare(cutoutShade.key, {
 			fragment: shade,
 			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: 'equal' },
-			multisample,
 		});
 		const [shadowOpaque, shadowCutout] = SHADOW_PHASES;
 		prepare(shadowOpaque.key, { depthStencil: SHADOW_DEPTH_STATE });
@@ -471,7 +467,7 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encode(pass: GPURenderPassEncoder): number {
-		return this.#encode(pass, this.#mainPhases);
+		return this.#encode(pass, MAIN_PHASES);
 	}
 
 	/**

@@ -41,6 +41,7 @@ import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
 import { type PostSettings, PostProcess, type Tonemapper, postExposure } from './render/post-process.ts';
 import { SHADOW_FORMAT, SHADOW_LAYERS, ShadowMap } from './render/shadow-map.ts';
+import { SETTLE_FRAMES } from './render/temporal-aa.ts';
 import { PAGE_SIDE, SURFACE_BORDER, SURFACE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
 import { type TextureBinding, TextureStore, placeholderView } from './render/texture-store.ts';
 import { WaterRenderer } from './render/water-renderer.ts';
@@ -80,6 +81,10 @@ export interface ViewerOptions {
 	budgetMiB: number;
 	/** render every frame instead of only on change (for measuring) */
 	continuous: boolean;
+	/** temporal antialiasing; off shows each frame as rendered */
+	antialiasing: boolean;
+	/** the render size relative to the canvas, (0, 1]; temporal antialiasing upsamples to the canvas */
+	renderScale: number;
 	/** exposure compensation on top of the level's exposure, EV */
 	exposure: number;
 	/** adapt the exposure to the view as the game's auto exposure does */
@@ -122,6 +127,8 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	outlineMetres: 60,
 	budgetMiB: 384,
 	continuous: false,
+	antialiasing: true,
+	renderScale: 1,
 	exposure: 0,
 	autoExposure: true,
 	tonemapper: 'game',
@@ -192,7 +199,6 @@ export interface LevelEntry {
 
 // #endregion
 
-const SAMPLE_COUNT = 4;
 const TERRAIN_SLOTS = 4096;
 const INSTANCE_ROWS = 1_500_000;
 const STATS_INTERVAL = 250;
@@ -322,11 +328,13 @@ export class Viewer {
 	#unsettledPose: CameraPose | null = null;
 	#lastDraws = 0;
 	#viewProj = new Float32Array(16);
+	/** frames still to render so the temporal antialiasing settles after the view stopped changing */
+	#settleFrames = 0;
 
 	private constructor(gfx: GfxDevice, canvas: HTMLCanvasElement) {
 		this.#gfx = gfx;
 		const device = gfx.device;
-		this.#targets = new RenderTargets(device, canvas, gfx.presentationFormat, SAMPLE_COUNT);
+		this.#targets = new RenderTargets(device, canvas, gfx.presentationFormat);
 		this.#layouts = createBindLayouts(device);
 		this.#pipelines = new PipelineCache(device);
 		// the main pass's frame plus one per shadow layer
@@ -367,8 +375,8 @@ export class Viewer {
 			this.#instances.bindGroup,
 			format,
 		);
-		this.#post = new PostProcess(device, gfx.presentationFormat, SAMPLE_COUNT, this.#environment);
-		this.#water = new WaterRenderer(device, SAMPLE_COUNT);
+		this.#post = new PostProcess(device, gfx.presentationFormat, this.#environment);
+		this.#water = new WaterRenderer(device);
 		this.#pool = new DecodePool(Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) >> 1)));
 		this.controls = new NoclipControls(this.camera, canvas);
 		this.stats = this.#emptyStats();
@@ -921,6 +929,8 @@ export class Viewer {
 		this.camera.position = [...position];
 		this.camera.yaw = yaw;
 		this.camera.pitch = pitch;
+		// a cut: the last frames show somewhere else
+		this.#post.taa.reset();
 	}
 
 	/** re-poses the first view over the ground once the coarse terrain lands; drops it if the camera moved */
@@ -1058,6 +1068,11 @@ export class Viewer {
 		if (patch.environmentEnabled !== undefined) {
 			this.#fades.reset();
 		}
+		this.#targets.renderScale = Math.min(1, Math.max(0.25, this.options.renderScale));
+		this.#post.taa.enabled = this.options.antialiasing;
+		if (patch.debugView !== undefined || patch.antialiasing !== undefined) {
+			this.#post.taa.reset();
+		}
 		if (this.scene !== null) {
 			this.scene.stream.options.budgetBytes = this.options.budgetMiB * 2 ** 20;
 		}
@@ -1159,6 +1174,14 @@ export class Viewer {
 			this.#frame++;
 			this.#traverseAndPrepare(scene, { prepare: render });
 		}
+		// the temporal antialiasing converges over a few more jittered frames of the same view, which reuse the
+		// last frame's selection
+		if (render) {
+			this.#settleFrames = options.antialiasing ? SETTLE_FRAMES : 0;
+		} else if (this.#settleFrames > 0) {
+			this.#settleFrames--;
+			render = true;
+		}
 		if (render) {
 			this.#lastDraws = this.#render(scene !== null);
 			this.#frameMs = this.#frameMs * 0.9 + dt * 1000 * 0.1;
@@ -1195,11 +1218,12 @@ export class Viewer {
 		const stream = scene.stream;
 		stream.beginFrame(this.#frame);
 		this.#seenVersion = stream.version;
-		const aspect = this.#targets.width / this.#targets.height;
+		// screen-space sizes are measured in output pixels, so the render scale trades shading only, not detail
+		const aspect = this.#targets.outputWidth / this.#targets.outputHeight;
 		const view = {
 			camera: this.camera,
 			planes: this.camera.frustumPlanes(aspect),
-			pixelFactor: this.camera.pixelFactor(this.#targets.height),
+			pixelFactor: this.camera.pixelFactor(this.#targets.outputHeight),
 		};
 		const selection = scene.selector.run(
 			view,
@@ -1219,7 +1243,7 @@ export class Viewer {
 				eye: this.camera.position,
 				planes: view.planes,
 				pixelFactor: view.pixelFactor,
-				viewportHeight: this.#targets.height,
+				viewportHeight: this.#targets.outputHeight,
 				minPixels: options.minBoxPixels,
 			});
 		}
@@ -1330,6 +1354,8 @@ export class Viewer {
 			camera: this.camera,
 			width: this.#targets.width,
 			height: this.#targets.height,
+			outputWidth: this.#targets.outputWidth,
+			outputHeight: this.#targets.outputHeight,
 			settings: this.#postSettings(),
 			frame: this.#frame,
 			water: this.#water,
@@ -1363,9 +1389,17 @@ export class Viewer {
 	#writeFrameUniforms(f32: Float32Array, u32: Uint32Array, { shadows }: { shadows: boolean }): void {
 		const camera = this.camera;
 		const eye = camera.position;
-		const width = this.#targets.width;
-		const height = this.#targets.height;
+		const { width, height, outputWidth, outputHeight } = this.#targets;
 		camera.writeViewProjection(width / height, this.#viewProj);
+		{
+			// shift the image by this frame's subpixel jitter: clip.xy += jitter · clip.w
+			const viewProj = this.#viewProj;
+			const [jx, jy] = this.#post.taa.nextJitter(width, height, outputHeight);
+			for (let column = 0; column < 4; column++) {
+				viewProj[column * 4] += jx * viewProj[column * 4 + 3];
+				viewProj[column * 4 + 1] += jy * viewProj[column * 4 + 3];
+			}
+		}
 		f32.set(this.#viewProj, FrameOffsets.viewProj);
 		{
 			const at = FrameOffsets.eye;
@@ -1389,9 +1423,9 @@ export class Viewer {
 		}
 		{
 			const at = FrameOffsets.viewport;
-			f32[at] = width;
-			f32[at + 1] = height;
-			f32[at + 2] = camera.pixelFactor(height);
+			f32[at] = outputWidth;
+			f32[at + 1] = outputHeight;
+			f32[at + 2] = camera.pixelFactor(outputHeight);
 			f32[at + 3] = this.options.minBoxPixels;
 		}
 		const terrain = this.scene?.pkg.manifest.terrain;
@@ -1409,6 +1443,8 @@ export class Viewer {
 			u32[at + 3] = 0;
 		}
 		f32[FrameOffsets.params] = this.options.outlineMetres;
+		// below the output size, textures sample as sharp as the output needs; the history gathers the detail
+		f32[FrameOffsets.params + 1] = Math.log2(height / outputHeight);
 		this.#shadows.layers.forEach((layer, i) => {
 			f32.set(layer.sample, FrameOffsets.shadowMatrices + i * 16);
 			f32.set(layer.sphere, FrameOffsets.shadowSpheres + i * 4);

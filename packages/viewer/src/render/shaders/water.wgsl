@@ -38,7 +38,7 @@ struct Config {
 @group(2) @binding(0) var<storage, read> surfaces: array<Surface>;
 @group(2) @binding(1) var<storage, read> configs: array<Config>;
 @group(2) @binding(2) var background: texture_2d<f32>;
-@group(2) @binding(3) var depth_texture: DEPTH_TEXTURE;
+@group(2) @binding(3) var depth_texture: texture_depth_2d;
 @group(2) @binding(4) var cloud_texture: texture_2d<f32>;
 @group(2) @binding(5) var cloud_sampler: sampler;
 @group(2) @binding(6) var wave_normals: texture_2d_array<f32>;
@@ -58,12 +58,12 @@ fn vs_water(@location(0) position: vec4f, @builtin(instance_index) ii: u32) -> V
 	let s = surfaces[ii];
 	let p = s.offset.xyz + position.xyz * s.scale.xyz;
 	let rel = vec3f(dot(s.t0.xyz, p) + s.t0.w, dot(s.t1.xyz, p) + s.t1.w, dot(s.t2.xyz, p) + s.t2.w);
-	// the post passes' camera: clip = (ndc · z, z) with reversed-Z depth near / z
+	// the post passes' camera: clip = (ndc · z, z) with reversed-Z depth near / z, jittered as the main pass is
 	let z = dot(rel, post.forward.xyz);
 	let right = post.right.xyz / dot(post.right.xyz, post.right.xyz);
 	let up = post.up.xyz / dot(post.up.xyz, post.up.xyz);
 	var out: VertexOut;
-	out.position = vec4f(dot(rel, right), dot(rel, up), post.forward.w, z);
+	out.position = vec4f(vec2f(dot(rel, right), dot(rel, up)) + post.jitter.xy * z, post.forward.w, z);
 	out.rel = rel;
 	out.config = bitcast<u32>(s.offset.w);
 	return out;

@@ -105,6 +105,8 @@ struct Post {
 	split_highlights: vec4f,
 	// bloom: 1 to take the thresholded part out of the scene, scatter
 	bloom_shape: vec4f,
+	// xy = the main pass's subpixel jitter (NDC) for temporal antialiasing, zw unused
+	jitter: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> post: Post;
@@ -125,10 +127,14 @@ fn vs_fullscreen(@builtin(vertex_index) vi: u32) -> FullscreenOut {
 	return out;
 }
 
-// the camera-relative direction through a target position, scaled so its forward component is 1
-fn view_ray(uv: vec2f) -> vec3f {
-	let ndc = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+// the camera-relative direction through an unjittered NDC position, scaled so its forward component is 1
+fn view_ray_ndc(ndc: vec2f) -> vec3f {
 	return post.forward.xyz + ndc.x * post.right.xyz + ndc.y * post.up.xyz;
+}
+
+// the direction through a position of the main pass's (jittered) targets
+fn view_ray(uv: vec2f) -> vec3f {
+	return view_ray_ndc(vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) - post.jitter.xy);
 }
 
 // reversed-Z, infinite far plane: depth = near / view distance

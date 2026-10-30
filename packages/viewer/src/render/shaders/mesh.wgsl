@@ -130,10 +130,11 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 	let flags = bitcast<u32>(draw.offset.w);
 	// derivatives (and implicit-LOD sampling) must happen in uniform control flow
 	let faceted = cross(dpdy(in.rel), dpdx(in.rel));
-	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
-	let packed = textureSample(normal_map, detail_sampler, in.uv * draw.normal_uv.xy + draw.normal_uv.zw);
-	let mask = textureSample(mask_map, detail_sampler, in.uv * draw.mask_uv.xy + draw.mask_uv.zw);
-	let glow = textureSample(emissive_map, base_sampler, in.uv * draw.emissive_uv.xy + draw.emissive_uv.zw);
+	let bias = frame.params.y;
+	let base = textureSampleBias(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw, bias);
+	let packed = textureSampleBias(normal_map, detail_sampler, in.uv * draw.normal_uv.xy + draw.normal_uv.zw, bias);
+	let mask = textureSampleBias(mask_map, detail_sampler, in.uv * draw.mask_uv.xy + draw.mask_uv.zw, bias);
+	let glow = textureSampleBias(emissive_map, base_sampler, in.uv * draw.emissive_uv.xy + draw.emissive_uv.zw, bias);
 
 	var albedo = clamp(base.rgb * draw.surface2.w, vec3f(0.0), vec3f(1.0));
 	if ((flags & BASE_MAP) == 0u) {
@@ -225,7 +226,7 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 @fragment
 fn fs_cutout_depth(in: VertexOut) {
 	let draw = draws[in.draw];
-	let base = textureSample(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw);
+	let base = textureSampleBias(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw, frame.params.y);
 	if (base.a < draw.tint.w) {
 		discard;
 	}

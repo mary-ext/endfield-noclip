@@ -248,9 +248,8 @@ export class TerrainRenderer {
 
 		const module = pipelines.module('terrain', FRAME_WGSL + terrainWgsl);
 		const constants = { SIDE: PAGE_SIDE };
-		const suffix = `x${format.sampleCount}`;
-		this.#fillKey = `terrain/fill/${suffix}`;
-		this.#wireKey = `terrain/wire/${suffix}`;
+		this.#fillKey = 'terrain/fill';
+		this.#wireKey = 'terrain/wire';
 		const describe = (lines: boolean): GPURenderPipelineDescriptor => ({
 			layout: layouts.terrainPipeline,
 			vertex: { module, entryPoint: 'vs_main', constants },
@@ -267,7 +266,6 @@ export class TerrainRenderer {
 				depthWriteEnabled: !lines,
 				depthCompare: lines ? 'greater-equal' : DEPTH_COMPARE,
 			},
-			multisample: { count: format.sampleCount },
 		});
 		void pipelines.prepare(this.#fillKey, () => describe(false));
 		void pipelines.prepare(this.#wireKey, () => describe(true));

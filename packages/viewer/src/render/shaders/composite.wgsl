@@ -5,7 +5,7 @@
 @group(2) @binding(0) var radiance_texture: texture_2d<f32>;
 @group(2) @binding(1) var ambient_texture: texture_2d<f32>;
 @group(2) @binding(2) var ao_texture: texture_2d<f32>;
-@group(2) @binding(3) var depth_texture: DEPTH_TEXTURE;
+@group(2) @binding(3) var depth_texture: texture_depth_2d;
 @group(2) @binding(4) var cloud_texture: texture_2d<f32>;
 @group(2) @binding(5) var cloud_sampler: sampler;
 

@@ -90,15 +90,12 @@ export class WaterRenderer {
 	/** what {@link #groups} were built from */
 	#groupKey: unknown[] = [];
 
-	/**
-	 * @param device the device
-	 * @param sampleCount the main pass's sample count (its depth is read)
-	 */
-	constructor(device: GPUDevice, sampleCount: number) {
+	/** @param device the device */
+	constructor(device: GPUDevice) {
 		this.#device = device;
 		const module = device.createShaderModule({
 			label: 'water',
-			code: postShaderSource([atmosphereWgsl, skyWgsl, waterWgsl], sampleCount),
+			code: postShaderSource([atmosphereWgsl, skyWgsl, waterWgsl]),
 		});
 		this.#pipeline = device.createRenderPipeline({
 			label: 'water',

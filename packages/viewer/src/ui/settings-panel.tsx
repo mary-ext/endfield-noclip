@@ -33,7 +33,14 @@ const Slider = ({
 	unit,
 }: {
 	viewer: Viewer;
-	name: 'maxSse' | 'terrainPixels' | 'minBoxPixels' | 'outlineMetres' | 'budgetMiB' | 'exposure';
+	name:
+		| 'maxSse'
+		| 'terrainPixels'
+		| 'minBoxPixels'
+		| 'outlineMetres'
+		| 'budgetMiB'
+		| 'exposure'
+		| 'renderScale';
 	label: string;
 	min: number;
 	max: number;
@@ -168,9 +175,19 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<Toggle viewer={viewer} name="vignette" label="vignette" />
 				<Toggle viewer={viewer} name="autoExposure" label="auto exposure" />
 				<Toggle viewer={viewer} name="irradiance" label="baked GI" />
+				<Toggle viewer={viewer} name="antialiasing" label="temporal AA" />
 			</fieldset>
 			<EnvironmentControls viewer={viewer} />
 			<Slider viewer={viewer} name="exposure" label="exposure" min={-4} max={4} step={0.25} unit="EV" />
+			<Slider
+				viewer={viewer}
+				name="renderScale"
+				label="render scale"
+				min={0.5}
+				max={1}
+				step={0.05}
+				unit="×"
+			/>
 			<Choice viewer={viewer} name="tonemapper" label="tonemapper" choices={TONEMAPPERS} />
 			<Choice viewer={viewer} name="debugView" label="show" choices={DEBUG_VIEWS} />
 			<fieldset>

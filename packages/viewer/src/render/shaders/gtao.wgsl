@@ -2,11 +2,11 @@
 // resolution: three slices per pixel, rotated by a 4×4 interleaved pattern that the upsampling blur averages away.
 // needs post-common.wgsl.
 //
-// three passes: fs_ao_depth reduces the (multisampled) depth buffer to half-resolution view depth, fs_gtao
-// marches it, and fs_blur filters and upsamples the result to full resolution, weighted by depth so edges stay
-// sharp. the half-resolution single-sample source keeps the march's wide, scattered reads in cache.
+// three passes: fs_ao_depth reduces the depth buffer to half-resolution view depth, fs_gtao marches it, and
+// fs_blur filters and upsamples the result to full resolution, weighted by depth so edges stay sharp. the
+// half-resolution source keeps the march's wide, scattered reads in cache.
 
-@group(1) @binding(0) var depth_texture: DEPTH_TEXTURE;
+@group(1) @binding(0) var depth_texture: texture_depth_2d;
 // half resolution, view depth in metres (0 for the sky)
 @group(1) @binding(1) var half_depth: texture_2d<f32>;
 @group(1) @binding(2) var ao_texture: texture_2d<f32>;
@@ -34,7 +34,7 @@ fn half_depth_at(px: vec2i) -> f32 {
 // view space: x right, y up, z forward (m)
 fn view_position(px: vec2i, z: f32) -> vec3f {
 	let uv = (vec2f(px) + 0.5) / vec2f(textureDimensions(half_depth));
-	let ndc = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+	let ndc = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) - post.jitter.xy;
 	return vec3f(ndc.x * length(post.right.xyz), ndc.y * length(post.up.xyz), 1.0) * z;
 }
 

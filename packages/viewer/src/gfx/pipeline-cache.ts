@@ -34,7 +34,7 @@ export class PipelineCache {
 	/**
 	 * creates (once) the pipeline for `key`.
 	 *
-	 * @param key unique key of the pipeline's state, e.g. `terrain/fill/msaa4`
+	 * @param key unique key of the pipeline's state, e.g. `terrain/fill`
 	 * @param describe builds the descriptor; only called on a miss
 	 * @returns the pipeline
 	 */

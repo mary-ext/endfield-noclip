@@ -15,14 +15,15 @@ struct Frame {
 	sh: array<vec4f, 7>,
 	// x = indirect specular factor, y = 1 / post exposure (scales emission that ignores it), z = 1 with a reflection cubemap, w = its finest mip count - 1
 	ambient: vec4f,
-	// width, height (px), pixel factor (px per metre at 1 m), minimum projected instance size (px)
+	// output width, height (px), pixel factor (output px per metre at 1 m), minimum projected instance size (px)
 	viewport: vec4f,
 	// terrain: zero-sample height relative to the eye, metres per height unit, hole bit (u32 bits), 0
 	terrain: vec4f,
 	// x = wireframe, y = debug view (0 lit, 1 albedo, 2 normals, 3 roughness, 4 ambient only; 5, the raw
 	// cloud panorama, is lit here and shown by the post chain), z, w reserved
 	flags: vec4u,
-	// boxes larger than x metres (max half extent) draw as outlines only; y, z, w reserved
+	// boxes larger than x metres (max half extent) draw as outlines only; y = material texture mip bias (log2 of
+	// the render scale, so upsampled frames sample at the output's density); z, w reserved
 	params: vec4f,
 	// camera-relative position → shadow map [0, 1]² × depth, per layer: three sharp cascades, then the far layer
 	shadow_matrices: array<mat4x4f, 4>,
