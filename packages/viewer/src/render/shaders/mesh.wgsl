@@ -57,6 +57,8 @@ struct Draw {
 	parallax_color: vec4f,
 	// dark colour
 	parallax_dark: vec4f,
+	// brightening near the player: outer radius, inner radius, strength
+	parallax_bright: vec4f,
 }
 
 const BASE_MAP = 1u;
@@ -391,7 +393,8 @@ fn map_channel(flags: u32, channel: f32, base_a: f32, packed: vec4f, mask: vec4f
 }
 
 // `_PARALLAX_MAP` (materials.ts): march the view ray down through the noise map as a height field, refine the
-// hit between the last two steps, and colour it from the pattern's G; then the Fresnel power and the pulse.
+// hit between the last two steps, and colour it from the pattern's G; then the Fresnel power and the pulse,
+// plus the brightening near the player.
 // the result is HDR emission before the mask
 fn parallax_glow(
 	draw: Draw,
@@ -446,7 +449,12 @@ fn parallax_glow(
 
 	let fresnel = pow(max(saturate(dot(v, n)), 0.001), draw.parallax.z);
 	let pulse = cos(frame.eye.w * draw.parallax2.x + draw.parallax2.y * in.phase) * draw.parallax.w + draw.parallax2.w;
-	let color = mix(draw.parallax_dark.rgb, draw.parallax_color.rgb, pattern) * fresnel * pulse;
+	// the player stands at the camera. a smoothstep from the outer radius down to the inner one, written out
+	// because WGSL's smoothstep wants its edges in ascending order
+	let bright = draw.parallax_bright;
+	let near_t = saturate((length(in.rel) - bright.x) / (bright.y - bright.x));
+	let near = near_t * near_t * (3.0 - 2.0 * near_t) * bright.z;
+	let color = mix(draw.parallax_dark.rgb, draw.parallax_color.rgb, pattern) * fresnel * (pulse + near);
 	return clamp(color, vec3f(0.0), vec3f(1000.0)) * mix(1.0, frame.ambient.y, draw.parallax2.z);
 }
 

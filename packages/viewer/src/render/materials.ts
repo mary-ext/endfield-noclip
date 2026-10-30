@@ -111,7 +111,7 @@ export const SLOT_FLAGS = [
  * floats of a material's draw parameters (`Draw` in mesh.wgsl after the dequantization); rows in
  * {@link LookRow}
  */
-export const LOOK_FLOATS = 104;
+export const LOOK_FLOATS = 108;
 
 /** one material as the mesh shader draws it */
 export interface MaterialLook {
@@ -178,6 +178,8 @@ export const LookRow = {
 	parallaxColor: 96,
 	/** `_ParallaxColorDark` */
 	parallaxDark: 100,
+	/** the glow's brightening near the player: outer and inner radius, strength (0 without `_ParallaxCharPos`) */
+	parallaxBright: 104,
 } as const;
 
 /**
@@ -459,7 +461,7 @@ const maskSlotOf = (entry: ReadyMaterial, triChannel: boolean): string | null =>
  * a channel of the material's own maps (squared), a Fresnel power, and a pulse over time whose phase follows
  * the object's position. both maps ignore their `_ST` and tile by their own scale.
  *
- * the bright-near-character term (`_ParallaxCharPos`) and a global highlight aren't drawn
+ * with `_ParallaxCharPos`, the glow brightens near the player. a global highlight isn't drawn
  */
 const parallaxParams = (look: MaterialLook, entry: ReadyMaterial, shader: ShaderEntry): void => {
 	const params = look.params;
@@ -512,6 +514,18 @@ const parallaxParams = (look: MaterialLook, entry: ReadyMaterial, shader: Shader
 		LookRow.parallaxColor,
 	);
 	params.set([dark[0] * intensity, dark[1] * intensity, dark[2] * intensity], LookRow.parallaxDark);
+	// added to the pulse: up to `_ParallaxBrightStrength` more within the radii of the player, whom the
+	// viewer places at the camera
+	params.set(
+		[
+			floatOf(entry, shader, '_ParallaxBrightOuterRadius', 20),
+			floatOf(entry, shader, '_ParallaxBrightInnerRadius', 10),
+			floatOf(entry, shader, '_ParallaxCharPos', 0) !== 0
+				? floatOf(entry, shader, '_ParallaxBrightStrength', 1)
+				: 0,
+		],
+		LookRow.parallaxBright,
+	);
 };
 
 /**

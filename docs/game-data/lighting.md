@@ -200,11 +200,16 @@ and detail map tile ×5 over UV set 1.
   minus one), times `N·V` to the power `floor(_ParallaxFresnelStrength)`, and times a pulse
   `cos(0.05 · _ParallaxAnimSpeed · t + _ParallaxAnimRandom · (x + y + z))` remapped to
   `[_ParallaxMinBrightness, 1]`, where `x + y + z` is the object's world position. the pulse moves
-  only while frames render (the `continuous` option); its clock is assumed to tick in seconds.
+  only while frames render (the `continuous` option); its clock is assumed to tick in seconds. with
+  `_ParallaxCharPos` set, `_ParallaxBrightStrength` times a smoothstep from
+  `_ParallaxBrightOuterRadius` down to `…InnerRadius` of the distance to the player is added to the
+  pulse; the viewer puts the player at the camera. on map01 seven crystal materials use it, mostly
+  with strength 20 within 3–25 m; one stores a glow colour of only 0.75, so it glows almost only
+  near the player.
 
-not drawn: the parallax brightening near the player (`_ParallaxCharPos`), a global highlight term, a
-separate parallax mask texture (`_UseParallaxMask`; such materials don't glow), and the
-`_PARALLAX_MAP_WORLDSPACE`, `_PBR` and `_DEFORM` variants.
+not drawn: a global highlight term around a point on the ground, a separate parallax mask texture
+(`_UseParallaxMask`; such materials don't glow), and the `_PARALLAX_MAP_WORLDSPACE`, `_PBR` and
+`_DEFORM` variants.
 
 ## alpha testing
 

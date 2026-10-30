@@ -59,7 +59,7 @@ packs or renders correctly.
   projection, cone-map parallax and wetness aren't drawn; the blend's GPU cost is unprofiled
 - foliage wind and transmission, grass instancing, decals, layered materials
 - Lit layers ([lit layers](game-data/lighting.md#lit-layers)): tri-channel switch textures, the
-  parallax glow's near-player brightening and its world-space, PBR and deform variants
+  parallax glow's global highlight and its world-space, PBR and deform variants
 - erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
 - water foam, caustics, flow tiles (packed but unread) and geometry reflections; other fluid types

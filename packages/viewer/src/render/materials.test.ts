@@ -211,6 +211,10 @@ test('originium crystals: UV set 1 base colour, tri-channel tint, detail and par
 			_ParallaxNoiseMapTilling: 3,
 			_ParallaxMinBrightness: 0.2,
 			_ParallaxMaskChannel: 2,
+			_ParallaxCharPos: 1,
+			_ParallaxBrightOuterRadius: 25,
+			_ParallaxBrightInnerRadius: 3,
+			_ParallaxBrightStrength: 20,
 		},
 		colors: { _MaskAlbedoR: [1, 0.5, 0, 0.5], _ParallaxColor: [2.8, 0.7, 0, 1] },
 		vectors: {},
@@ -229,6 +233,7 @@ test('originium crystals: UV set 1 base colour, tri-channel tint, detail and par
 	assert.deepEqual(row(LookRow.parallax), [0.314, 3, 1, 0.4].map(Math.fround));
 	assert.equal(look.params[LookRow.parallax2 + 3], Math.fround(0.6));
 	assert.deepEqual(row(LookRow.parallaxColor), [2.8, 0.7, 0, 2].map(Math.fround));
+	assert.deepEqual(row(LookRow.parallaxBright).slice(0, 3), [25, 3, 20]);
 
 	// switch-texture variants take G and B from textures without a slot: they don't blend
 	const [switched] = materialLooks({
