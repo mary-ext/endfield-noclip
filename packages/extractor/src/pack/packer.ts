@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import { DrawFlags, type RendererDraw } from '@endfield-noclip/formats/endfield/init-chunk-data';
@@ -91,6 +91,7 @@ import {
 
 import { getOrInsert } from '../collections.ts';
 import type { Context } from '../context.ts';
+import { ignoreMissing } from '../errors.ts';
 import { loadDynamicStructures } from '../game/dynamic-structures.ts';
 import { loadInteractiveFacilities } from '../game/interactive-facilities.ts';
 import { readPrefabRenderers, type PrefabRenderer } from '../game/prefab.ts';
@@ -261,12 +262,16 @@ export const packScene = async (
 	options: PackOptions,
 ): Promise<PackReport> => {
 	const timer = new PhaseTimer(options.log);
+	await checkOutDir(options.outDir);
+	// the package is written here and swapped in when complete, so a viewer never reads a partial one
+	const stage = siblingDir(options.outDir, 'staging');
+	await rm(stage, { recursive: true, force: true });
+	await mkdir(stage, { recursive: true });
 	const cache = options.cacheDir === null ? null : await PackCache.open(options.cacheDir);
 	// scratch space for the debug log, and for blobs when there's no cache to hold them
-	const spool = join(options.outDir, '.spool');
+	const spool = join(stage, '.spool');
 	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), { zstdLevel: options.zstdLevel });
 	try {
-		await prepareOutDir(options.outDir);
 		const scene = await indexScene(context, options);
 		timer.end('setup');
 
@@ -379,7 +384,7 @@ export const packScene = async (
 		timer.end('states');
 
 		const [environmentTextureIds, waterTextureIds] = assetTables.extraTextureIds;
-		const written = await writePackage(pack, assetTables, {
+		const written = await writePackage(pack, assetTables, stage, {
 			...states,
 			...finishEnvironments(environments, environmentTextureIds),
 			water: finishWater(water, waterTextureIds),
@@ -391,7 +396,7 @@ export const packScene = async (
 		});
 		timer.end('write');
 
-		await writeDebug(options.outDir, {
+		await writeDebug(stage, {
 			files: scene.files,
 			instances: debugLog.path,
 			geometries: pack.geometries.assets,
@@ -404,6 +409,9 @@ export const packScene = async (
 		});
 		timer.end('debug');
 
+		await rm(spool, { recursive: true, force: true });
+		await swapIn(stage, options.outDir);
+		// after the swap: the cache keeps blobs only for roots whose package exists
 		const cacheReport = (await cache?.finish(options.outDir, store.hashes())) ?? null;
 		if (cacheReport !== null) {
 			timer.end('cache sweep');
@@ -468,7 +476,8 @@ export const packScene = async (
 			peakRss: process.resourceUsage().maxRSS * 1024,
 		};
 	} finally {
-		await rm(spool, { recursive: true, force: true });
+		// gone after a successful swap; a failed pack leaves the previous package untouched
+		await rm(stage, { recursive: true, force: true });
 		await cache?.close();
 	}
 };
@@ -1346,6 +1355,7 @@ const sceneStates = async (
 const writePackage = async (
 	pack: PackState,
 	assetTables: AssetTables,
+	dir: string,
 	states: SceneStateInfo & {
 		environments: EnvironmentProfile[];
 		environmentPhases: EnvironmentPhaseInfo[];
@@ -1380,7 +1390,7 @@ const writePackage = async (
 	const archiveNames = [CORE_ARCHIVE, ...shardNames];
 	const blobsBin = encodeBlobTable(store.records(archiveNames));
 	const [written, [geometries, materials, textures, water, lights]] = await Promise.all([
-		store.writeShards(options.outDir, CORE_ARCHIVE),
+		store.writeShards(dir, CORE_ARCHIVE),
 		tablesReady,
 	]);
 	const tables = { geometries, materials, textures, water, lights };
@@ -1435,7 +1445,7 @@ const writePackage = async (
 		subset: scene.subset.info,
 		source: scene.source,
 	};
-	const core = await store.writeCore(options.outDir, CORE_ARCHIVE, [
+	const core = await store.writeCore(dir, CORE_ARCHIVE, [
 		{ path: CORE_PATHS.manifest, data: json(manifest) },
 		{ path: CORE_PATHS.tree, data: treeBin },
 		{ path: CORE_PATHS.blobs, data: blobsBin },
@@ -1803,25 +1813,42 @@ const terrainBounds = (
 
 // #region output
 
-const prepareOutDir = async (outDir: string): Promise<void> => {
-	let entries: string[];
-	try {
-		entries = await readdir(outDir);
-	} catch {
-		await mkdir(outDir, { recursive: true });
-		return;
-	}
+/** @throws {Error} unless `outDir` is absent, empty, or holds only a package */
+const checkOutDir = async (outDir: string): Promise<void> => {
+	const entries = (await ignoreMissing(readdir(outDir), null)) ?? [];
 	if (entries.length === 0) {
 		return;
 	}
 	if (!entries.includes(CORE_ARCHIVE)) {
-		throw new Error(`${outDir} isn't empty and doesn't hold a package; refusing to write into it`);
+		throw new Error(`${outDir} isn't empty and doesn't hold a package; refusing to replace it`);
 	}
 	const foreign = entries.filter((entry) => !PACKAGE_ENTRIES.has(entry));
 	if (foreign.length > 0) {
 		throw new Error(`${outDir} holds files that aren't part of a package: ${foreign.join(', ')}`);
 	}
-	await Promise.all(entries.map((entry) => rm(join(outDir, entry), { recursive: true, force: true })));
+};
+
+/** @returns a hidden directory next to `dir`, on the same file system so it can be renamed into place */
+const siblingDir = (dir: string, suffix: string): string => {
+	const resolved = resolvePath(dir);
+	return join(dirname(resolved), `.${basename(resolved)}.${suffix}`);
+};
+
+/**
+ * replaces `outDir` with the finished package in `stage`. each step is a rename, so readers see the old
+ * package, briefly nothing, or the new package, never a mix
+ */
+const swapIn = async (stage: string, outDir: string): Promise<void> => {
+	const old = siblingDir(outDir, 'old');
+	await rm(old, { recursive: true, force: true });
+	const hadPackage = await ignoreMissing(
+		rename(outDir, old).then(() => true),
+		false,
+	);
+	await rename(stage, outDir);
+	if (hadPackage) {
+		await rm(old, { recursive: true, force: true });
+	}
 };
 
 /**

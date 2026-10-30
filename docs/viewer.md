@@ -42,6 +42,7 @@ the repo's `out/`; set `NOCLIP_PACKAGES=/path` to point it elsewhere
   shard archives.
 - responses carry `cache-control: no-cache` plus `Last-Modified`, because archives keep their names
   across re-packs and a cached copy would be read at the new package's offsets.
+- hidden directories (the packer's staging and replaced packages) aren't listed.
 - paths are confined to the root.
 
 ### opening

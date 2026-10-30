@@ -59,7 +59,8 @@ const listPackages = async (root: string, res: ServerResponse): Promise<void> =>
 	const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
 	const found = await Promise.all(
 		entries
-			.filter((entry) => entry.isDirectory())
+			// hidden directories are the packer's staging and replaced packages
+			.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
 			.map(async (entry): Promise<DevPackage | null> => {
 				const core = await stat(join(root, entry.name, CORE_ARCHIVE)).catch(() => null);
 				return core?.isFile() ? { name: entry.name, coreSize: core.size } : null;

@@ -65,7 +65,9 @@ invalidates cached conversions.
 name.
 
 the packer replaces a previous package in its output directory but refuses a directory holding
-anything else, so a mistyped `-o` can't wipe unrelated files.
+anything else, so a mistyped `-o` can't wipe unrelated files. it writes the new package into a
+hidden sibling (`.<out>.staging`) and renames it into place once complete, so the previous package
+stays readable during a pack and survives a failed one, and a reader never sees a mix of the two.
 
 ## containers and blobs
 

@@ -160,7 +160,8 @@ unless `--no-cache` is given, packs share a cache (default `out/.cache`, `--cach
 it), implemented in `pack/pack-cache.ts`:
 
 - `blobs/` is the pack's blob store: every blob is written there once and archives are streamed from
-  it. without a cache the same store lives in `<out>/.spool` and is deleted after the pack.
+  it. without a cache the same store lives in the staging package's `.spool` (see
+  [package-format.md](package-format.md#layout)) and is deleted after the pack.
 - `memo/` holds conversion results keyed by the job (asset, tangent UV, zstd level) and a
   fingerprint of the converter: every workspace module `convert-worker.ts` transitively imports, the
   extractor's `package.json` and node's zstd version. each memo records the bundles the conversion
