@@ -21,8 +21,12 @@ const MAX_PHASES = 64;
 /** byte size of `Taa` in taa.wgsl */
 const UNIFORM_BYTES = 112;
 
-/** @returns element `index` (from 1) of the Halton sequence in `base`, in [0, 1) */
-const halton = (index: number, base: number): number => {
+/**
+ * @param index the element, from 1
+ * @param base the sequence's base, a prime
+ * @returns element `index` of the Halton sequence in `base`, in [0, 1)
+ */
+export const halton = (index: number, base: number): number => {
 	let result = 0;
 	let fraction = 1 / base;
 	for (let i = index; i > 0; i = Math.floor(i / base)) {

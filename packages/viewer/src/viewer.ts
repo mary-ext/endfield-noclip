@@ -1017,6 +1017,7 @@ export class Viewer {
 		this.camera.pitch = pitch;
 		// a cut: the last frames show somewhere else
 		this.#post.taa.reset();
+		this.#fog.reset();
 	}
 
 	/** re-poses the first view over the ground once the coarse terrain lands; drops it if the camera moved */

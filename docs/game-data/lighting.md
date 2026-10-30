@@ -412,9 +412,13 @@ fog over it, then the froxels.
     nothing nearer than the start distance is fogged.
   - so the height-fog set's start distance and inscatter colour are the far fog's, not the near
     fog's: drawing them alone puts a hard, bright fog wall at the start distance inside caves.
-  - each froxel is lit at a point that moves through it from frame to frame, and the temporal
-    antialiasing averages them; the game also reprojects the grid's history, which the viewer
-    doesn't.
+  - each froxel is lit at a point that moves through its cell from frame to frame (a Halton sequence
+    shared by every froxel), and is blended with the last frame's lit medium (scattered light and
+    extinction) reprojected to the froxel's centre, at 90 % history, as the game does. where the
+    last frame's grid didn't cover the froxel, it takes this frame's sample alone; the game averages
+    several jittered samples there instead. without the history, a sun shadow edge turns each froxel
+    (a dozen pixels across on a 2000-pixel-wide view) fully lit or fully dark, and the temporal
+    antialiasing can't average a pattern that coarse.
 
 the volumetric fog's local fog volumes and flow noise are not drawn; its local lights are (see
 [local lights](#local-lights)), unshadowed.
@@ -603,9 +607,9 @@ are sampled toroidally in `ambient_irradiance`.
   viewer's ambient and sky brightness are approximations.
 - irradiance scene-state bakes, the index's pair table and trailing rows, directory words 1, 7 (high
   bits) and 8.
-- the volumetric fog's grid size and depth distribution come from quality presets that aren't
-  recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without
-  the native diffuse-ambient scale.
+- the volumetric fog's grid size, depth distribution and history weight come from quality presets
+  that aren't recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient
+  probe without the native diffuse-ambient scale.
 - not rendered: light shafts, lens flare, cloud shadows in the volumetric fog, the moon's sky-wide
   ring (`HG_RING`), the sun disc, aurora, local reflection probes, the game's own SSR, local light
   shadows and light beams, precipitation and rain wetness (terrain puddles do render).

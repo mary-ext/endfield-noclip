@@ -41,8 +41,8 @@ packs or renders correctly.
   preview
 - environment volume initial enablement and `EnvironmentEnable` script conditions, needed before any
   automatic gating
-- volumetric fog: local fog volumes, flow noise and history reprojection aren't drawn, and the grid
-  size is Unreal's default rather than the game's quality preset
+- volumetric fog: local fog volumes and flow noise aren't drawn, and the grid size and history
+  weight are Unreal's defaults rather than the game's quality preset
 - local lights ([lighting](game-data/lighting.md#local-lights)): no shadows, shadow-only lights,
   flicker or multiple-scattering term; light beams aren't drawn; lights inside prefabs and dynamic
   structures aren't packed
