@@ -5,7 +5,7 @@ import { FormatError } from '../binary/binary-reader.ts';
 
 import { readLevelInteractives, UnsupportedLevelData } from './level-interactives.ts';
 
-const fixture = (options: { gated: boolean; unsupported: boolean }): Uint8Array => {
+const fixture = (options: { gated: boolean; unsupported: boolean; areas: boolean }): Uint8Array => {
 	const bytes = new Uint8Array(1024);
 	const view = new DataView(bytes.buffer);
 	let at = 0;
@@ -41,9 +41,30 @@ const fixture = (options: { gated: boolean; unsupported: boolean }): Uint8Array 
 	i32(0);
 	i32(0);
 	u8(4);
-	for (let i = 0; i < 6; i++) {
+	for (let i = 0; i < 3; i++) {
 		i32(0);
 	}
+	if (options.areas) {
+		// a scene toast (union tag 14) with two titles and a null one, then an AI bark block (tag 2)
+		i32(2);
+		u8(14);
+		u8(6);
+		i32(-1);
+		u8(255);
+		u8(1);
+		i32(8);
+		i32(0);
+		i32(232);
+		u8(1);
+		i32(8);
+		u8(2);
+		u8(1);
+		u8(1);
+	} else {
+		i32(0);
+	}
+	i32(0);
+	i32(0);
 	i32(2);
 	for (let n = 0; n < 2; n++) {
 		u8(25);
@@ -90,7 +111,7 @@ const string = (id: number): string => {
 };
 
 test('reads the complete interactive list through nullable properties and quest locks', () => {
-	const rows = readLevelInteractives(fixture({ gated: true, unsupported: false }), string);
+	const rows = readLevelInteractives(fixture({ gated: true, unsupported: false, areas: false }), string);
 	assert.equal(rows.length, 2);
 	assert.deepEqual(
 		rows.map((r) => [r.id, r.createState]),
@@ -106,12 +127,17 @@ test('reads the complete interactive list through nullable properties and quest 
 
 test('an unsupported prefix cannot be bypassed to find a plausible placement later in the file', () => {
 	assert.throws(
-		() => readLevelInteractives(fixture({ gated: false, unsupported: true }), string),
+		() => readLevelInteractives(fixture({ gated: false, unsupported: true, areas: false }), string),
 		UnsupportedLevelData,
 	);
 });
 
 test('a truncated second placement rejects the whole list', () => {
-	const bytes = fixture({ gated: false, unsupported: false });
+	const bytes = fixture({ gated: false, unsupported: false, areas: false });
 	assert.throws(() => readLevelInteractives(bytes.subarray(0, bytes.length - 2), string), FormatError);
+});
+
+test('reads past scene toast and AI bark function areas', () => {
+	const rows = readLevelInteractives(fixture({ gated: false, unsupported: false, areas: true }), string);
+	assert.equal(rows.length, 2);
 });

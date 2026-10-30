@@ -253,7 +253,10 @@ placement per visual form, each visible under its form's bit of a per-facility p
 LevelData is a sequential format: an unread field's length is unknown, so scanning past it would
 misframe every later row. the reader fails closed with `UnsupportedLevelData` on any populated field
 or condition it doesn't implement, and the whole file is omitted and listed in the pack's
-unsupported-interactives report. never decode a partial file.
+unsupported-interactives report. never decode a partial file. polymorphic fields are MemoryPack
+unions whose tag indexes the subclasses in name order, with each subclass's members also in name
+order: the function areas' specific data reads tags 2 (AI bark block), 12 (repatriate zone), 14
+(scene toast) and 15.
 
 code: [interactive-model.ts](../../packages/formats/src/endfield/interactive-model.ts),
 [level-interactives.ts](../../packages/formats/src/endfield/level-interactives.ts),

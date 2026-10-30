@@ -365,6 +365,11 @@ export const readLevelInteractives = (
 			);
 		}),
 	);
+	const lang = (): void => {
+		nullable(1, () => {
+			str();
+		});
+	};
 	field = 'functionArea';
 	nullable(4, () => {
 		// two shipped layouts differ by the factory-hide fields; neither is a byte-pattern search.
@@ -405,9 +410,16 @@ export const readLevelInteractives = (
 			}),
 		);
 		list(bound);
+		// area-specific data: a union whose tag indexes the subclasses in name order, members also in name order
 		list(() => {
 			switch (r.u8()) {
 				case 255: {
+					return;
+				}
+				case 2: {
+					// block AI bark: defaultOn
+					marker(1);
+					bool();
 					return;
 				}
 				case 12: {
@@ -425,6 +437,17 @@ export const readLevelInteractives = (
 					r.skip(count() * 12);
 					return;
 				}
+				case 14: {
+					// scene toast: conditionalEntries, depthText, mainTitle, priority, saveId, subTitle
+					marker(6);
+					empty();
+					lang();
+					lang();
+					r.i32();
+					r.i32();
+					lang();
+					return;
+				}
 				default: {
 					unsupported();
 				}
@@ -434,11 +457,6 @@ export const readLevelInteractives = (
 	field = 'guideHints';
 	empty();
 	field = 'interactiveLockData';
-	const lang = (): void => {
-		nullable(1, () => {
-			str();
-		});
-	};
 	list(() =>
 		nullable(2, () => {
 			list(() =>
