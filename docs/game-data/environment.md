@@ -58,23 +58,23 @@ level tag of the entity id says which level owns it (0 = scene-wide).
 `HGEnvironmentVolume` component fields
 ([`endfield/environment-volume.ts`](../../packages/formats/src/endfield/environment-volume.ts)):
 
-| field | type  | meaning                                                                    |
-| ----- | ----- | -------------------------------------------------------------------------- |
-| 0     | int   | `volumeType`: 0 global, 1 box, 3 polyline prism (4 occurs once, unhandled) |
-| 1     | int   | `blendMode`: 0 none, 1 distance, 2 time, 3 manual                          |
-| 2     | int   | priority                                                                   |
-| 3     | float | blend distance (m)                                                         |
-| 4, 5  | float | fade-in / fade-out duration (s)                                            |
-| 6     | asset | the `HGEnvironmentPhase` (Streaming half only)                             |
-| 7     | blob  | polyline shape                                                             |
+| field | type  | meaning                                                                            |
+| ----- | ----- | ---------------------------------------------------------------------------------- |
+| 0     | int   | `volumeType` (`EnvVolumeType`): 0 global, 1 box, 2 sphere, 3 poly area, 4 cylinder |
+| 1     | int   | `blendMode` (`EnvBlendMode`): 0 none, 1 distance, 2 time, 3 manual                 |
+| 2     | int   | priority                                                                           |
+| 3     | float | blend distance (m)                                                                 |
+| 4, 5  | float | fade-in / fade-out duration (s)                                                    |
+| 6     | asset | the `HGEnvironmentPhase` (Streaming half only)                                     |
+| 7     | blob  | polyline shape                                                                     |
 
 shapes:
 
 - **global**: applies everywhere.
 - **box**: a unit cube under the object's transform (position, Euler rotation, scale). it has no
   shape blob.
-- **prism**: the polyline blob is `u32 byteLength`, `f32×3` position, `f32×3` Euler rotation,
-  `u32 n`, `n × (x, z)` relative to the position, an edge BVH, then `f32 height` and
+- **prism** (`PolyArea`): the polyline blob is `u32 byteLength`, `f32×3` position, `f32×3` Euler
+  rotation, `u32 n`, `n × (x, z)` relative to the position, an edge BVH, then `f32 height` and
   `f32 baseHeightOffset` as the last eight bytes. points are rotated by the yaw and made absolute at
   parse time. the prism spans `y ∈ [position.y + baseHeightOffset, + height]`; volumes are 3D, so a
   cave volume under a hill doesn't apply on the hilltop.
@@ -224,7 +224,8 @@ dry there.
   story state.
 - extraction of `rainConfig`/`snowConfig` and dynamic LevelData volumes, and a weather render
   (streaks, splashes, wetness, snow) with the game's enable/disable transition rules.
-- `volumeType` 4 (probably a sphere) and the game's equal-priority order beyond shape kind.
+- `volumeType` 4 (cylinder; one map02 waterfall volume, no shape blob) and the game's equal-priority
+  order beyond shape kind.
 - scenes without levels (indoor and instance scenes) get no environment; their global volume could
   serve.
 - local post `Volume`s are read but not applied.

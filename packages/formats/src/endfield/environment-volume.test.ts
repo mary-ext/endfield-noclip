@@ -170,7 +170,7 @@ test('merges an environment volume from its Init and Streaming rows', () => {
 			id,
 			name: 'Env_test#1_3688DB4',
 			transform: { position: [1, 2, 3], rotation: [0, 90, 0], scale: [1, 1, 1] },
-			volumeType: EnvironmentVolumeType.PolyLine,
+			volumeType: EnvironmentVolumeType.PolyArea,
 			blendMode: EnvironmentBlendMode.Time,
 			priority: 200,
 			blendDistance: 5,

@@ -66,8 +66,9 @@ be:
   [`dynamic-resources.ts`](../../packages/formats/src/endfield/dynamic-resources.ts) as `states` and
   `groupStates`. the resource group's separate `sceneState` field (offset 24) is a different value;
   use the visible-state lists, never that field, for gating.
-- **irradiance scenarios** are named after combinations of these states; only the base scenario is
-  packed (see [lighting.md](lighting.md)).
+- **irradiance volume**: besides the base bake, the irradiance index stores bakes for these states
+  and combinations of them, which the game selects by its active scene-state mask; only the base
+  bake is packed (see [lighting.md](lighting.md)).
 
 ### what they gate
 
@@ -282,7 +283,7 @@ below the screen error threshold.
 - `ActivityControlComp` gates (many map02 owners; those inspected have no conditions)
 - variable-driven entity levels and animator states (`controlLoad` 0), e.g. the bridge between The
   Hub and Valley Pass
-- irradiance scenario overlays selected by the active states
+- irradiance scene-state bakes selected by the active states
 - the gameplay-level → visual-form mapping for shops and depots, and interactive templates beyond
   the three supported
 - meaning of progression bit 0 per controller kind, and which entity's state the server sets

@@ -55,11 +55,11 @@ const fixture = () => {
 	return { bytes: Uint8Array.from(bytes), rows, member };
 };
 
-test('irradiance frames scenario groups and uses explicit file indices', () => {
+test('irradiance frames scene-state groups and uses explicit file indices', () => {
 	const index = parseIrradianceIndex(fixture().bytes);
-	assert.deepEqual(index.scenarioGroups, [
-		{ hash: 0, scenarios: [] },
-		{ hash: 123, scenarios: [0] },
+	assert.deepEqual(index.stateGroups, [
+		{ hash: 0, sceneStates: [] },
+		{ hash: 123, sceneStates: [0] },
 	]);
 	assert.deepEqual(index.fileGroups, [1, 0]);
 	assert.deepEqual(
@@ -72,7 +72,7 @@ test('irradiance frames scenario groups and uses explicit file indices', () => {
 	);
 });
 
-test('irradiance rejects invalid scenario indices without scanning ahead for filenames', () => {
+test('irradiance rejects invalid scene-state indices without scanning ahead for filenames', () => {
 	const { bytes, member } = fixture();
 	new DataView(bytes.buffer).setUint32(member, 1, true);
 	assert.throws(() => parseIrradianceIndex(bytes), FormatError);

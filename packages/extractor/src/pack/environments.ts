@@ -272,7 +272,7 @@ const volumeShape = (volume: EnvironmentVolume): EnvironmentVolumeShape | null =
 				? null
 				: { kind: 'box', position: transform.position, rotation: transform.rotation, scale: transform.scale };
 		}
-		case EnvironmentVolumeType.PolyLine: {
+		case EnvironmentVolumeType.PolyArea: {
 			const shape = volume.shape;
 			if (shape === null || shape.points.length < 3) {
 				return null;

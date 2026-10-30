@@ -18,7 +18,7 @@ const rect = (id: number, priority: number, [x0, z0, x1, z1]: number[]): Environ
 	id,
 	name: `volume ${id}`,
 	transform: null,
-	volumeType: EnvironmentVolumeType.PolyLine,
+	volumeType: EnvironmentVolumeType.PolyArea,
 	blendMode: 2,
 	priority,
 	blendDistance: 5,

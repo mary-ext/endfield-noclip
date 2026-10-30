@@ -36,22 +36,25 @@ export interface IrradianceRecord {
 	size: number;
 }
 
-/** a stored scenario combination; hash 0 with no members is the base bake */
-export interface IrradianceScenarioGroup {
+/** a stored scene-state combination; hash 0 with no members is the base bake */
+export interface IrradianceStateGroup {
 	hash: number;
-	/** indices into {@link IrradianceIndex.scenarios} */
-	scenarios: number[];
+	/** indices into {@link IrradianceIndex.sceneStates} */
+	sceneStates: number[];
 }
 
 /** a parsed `index.bytes` */
 export interface IrradianceIndex {
-	/** lighting scenario names, e.g. `Map02_lv002_sunny` */
-	scenarios: string[];
-	/** payload file names, e.g. `iv_0_0.bytes` (scenario hash, part); records index this list */
+	/**
+	 * names of the scene states baked separately, e.g. `Map02_lv002_sunny`; the game selects bakes by its
+	 * active scene-state mask
+	 */
+	sceneStates: string[];
+	/** payload file names, e.g. `iv_0_0.bytes` (state-group hash, part); records index this list */
 	files: string[];
-	/** scenario combinations indexed by the hashes in payload filenames */
-	scenarioGroups: IrradianceScenarioGroup[];
-	/** per payload file, its index into {@link scenarioGroups} */
+	/** scene-state combinations indexed by the hashes in payload filenames */
+	stateGroups: IrradianceStateGroup[];
+	/** per payload file, its index into {@link stateGroups} */
 	fileGroups: number[];
 	/** every cell of every payload, in stored order, with explicit indices into {@link files} */
 	records: IrradianceRecord[];
@@ -76,7 +79,7 @@ const RECORD_WORDS = 9;
 
 /**
  * @param data `index.bytes`
- * @returns the scenarios, payload files and cell ranges
+ * @returns the scene states, payload files and cell ranges
  * @throws {FormatError} on a magic other than the scene formats' or a layout that doesn't hold together
  */
 export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
@@ -106,22 +109,22 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 		}
 		return new TextDecoder('utf-16le', { fatal: true }).decode(r.bytesView(length));
 	};
-	const scenarios = Array.from({ length: countOf(4) }, utf16);
-	// counted (hash, counted scenario-index list) entries precede the filenames.
-	const scenarioGroups = Array.from({ length: countOf(8) }, () => {
+	const sceneStates = Array.from({ length: countOf(4) }, utf16);
+	// counted (hash, counted scene-state index list) entries precede the filenames.
+	const stateGroups = Array.from({ length: countOf(8) }, () => {
 		const hash = r.u32();
 		const members = Array.from({ length: countOf(4) }, () => r.u32());
-		if (members.some((member) => member >= scenarios.length) || new Set(members).size !== members.length) {
-			throw new FormatError('irradiance index: invalid scenario group');
+		if (members.some((member) => member >= sceneStates.length) || new Set(members).size !== members.length) {
+			throw new FormatError('irradiance index: invalid scene-state group');
 		}
-		return { hash, scenarios: members };
+		return { hash, sceneStates: members };
 	});
-	const groupByHash = new Map(scenarioGroups.map((group, i) => [group.hash, i]));
+	const groupByHash = new Map(stateGroups.map((group, i) => [group.hash, i]));
 	if (
-		groupByHash.size !== scenarioGroups.length ||
-		scenarioGroups.some((group) => (group.hash === 0) !== (group.scenarios.length === 0))
+		groupByHash.size !== stateGroups.length ||
+		stateGroups.some((group) => (group.hash === 0) !== (group.sceneStates.length === 0))
 	) {
-		throw new FormatError('irradiance index: invalid scenario hashes');
+		throw new FormatError('irradiance index: invalid scene-state hashes');
 	}
 	const files = Array.from({ length: countOf(4) }, utf16);
 	if (files.length === 0 || new Set(files).size !== files.length) {
@@ -131,13 +134,13 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 		const match = /^iv_(0|[1-9]\d*)_(0|[1-9]\d*)\.bytes$/.exec(name);
 		const group = match === null ? undefined : groupByHash.get(Number(match[1]));
 		if (group === undefined) {
-			throw new FormatError(`irradiance index: payload ${name} has no scenario group`);
+			throw new FormatError(`irradiance index: payload ${name} has no scene-state group`);
 		}
 		return group;
 	});
 
 	// the scene's top-level spatial hash over cells (table size, offset-table size, offsets), then a table of
-	// (value, scenario) pairs; neither is needed to read the cells
+	// (value, state-group hash) pairs; neither is needed to read the cells
 	r.u32();
 	const offsetTableSize = r.u32();
 	r.skip(offsetTableSize ** 3 * 4);
@@ -164,7 +167,7 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 	if (r.remaining !== 0) {
 		throw new FormatError('irradiance index: trailing bytes');
 	}
-	return { scenarios, scenarioGroups, files, fileGroups, records };
+	return { sceneStates, stateGroups, files, fileGroups, records };
 };
 
 /**

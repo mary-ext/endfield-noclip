@@ -12,7 +12,7 @@ import {
 //
 // `HGEnvironmentVolume` (component 0x4000) fields, named after the IL2CPP properties of
 // `HGEnvironmentVolumeBase` / `HGEnvironmentVolume`:
-//   0 int volumeType (EnvironmentVolumeType)   1 int blendMode (EnvironmentBlendMode)
+//   0 int volumeType (EnvVolumeType)   1 int blendMode (EnvBlendMode)
 //   2 int priority   3 float blendDistance   4 float fadeInDuration   5 float fadeOutDuration
 //   6 asset _envPhase (an `HGEnvironmentPhase`, from StreamingChunkData)   7 blob polyLineShape
 //
@@ -26,18 +26,21 @@ import {
 
 // #region types
 
-/** `HGEnvironmentVolumeBase.volumeType` values seen in map02 */
+/** `HGEnvironmentVolumeBase.volumeType` values (the game's `EnvVolumeType`) */
 export const EnvironmentVolumeType = {
 	/** everywhere */
 	Global: 0,
 	/** a unit cube under the object's transform; no shape blob (by the placements' scales and names) */
 	Box: 1,
+	/** not seen in map02 */
+	Sphere: 2,
 	/** a vertical prism over {@link EnvironmentVolume.shape} */
-	PolyLine: 3,
-	// 4 occurs once (a waterfall), without a shape blob; probably a sphere
+	PolyArea: 3,
+	/** occurs once in map02 (a waterfall), without a shape blob; not handled */
+	Cylinder: 4,
 } as const;
 
-/** `HGEnvironmentVolumeBase.blendMode` values */
+/** `HGEnvironmentVolumeBase.blendMode` values (the game's `EnvBlendMode`) */
 export const EnvironmentBlendMode = {
 	None: 0,
 	Distance: 1,

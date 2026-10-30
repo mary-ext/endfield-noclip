@@ -1,4 +1,4 @@
-// the baked irradiance volume: every cell of the scene's base lighting scenario becomes a blob in the 512 m
+// the baked irradiance volume: every cell of the scene's base bake becomes a blob in the 512 m
 // irradiance archive over it, listed in tables/irradiance.bin. cells are stored decompressed (the game's GPU
 // layout) and zstd-compressed like other blobs.
 
@@ -53,7 +53,7 @@ export const packIrradiance = async (
 		return null;
 	}
 	const index = parseIrradianceIndex(await vfs.readVerified(indexFile));
-	// validate every file before filtering by region or scenario, including files we won't read.
+	// validate every file before filtering by region or scene state, including files we won't read.
 	const payloads = await Promise.all(
 		index.files.map(async (name, file) => {
 			const payload = await vfs.find(IRRADIANCE_GROUP, `${directory}${name}`);
@@ -72,7 +72,7 @@ export const packIrradiance = async (
 	const cells: { key: number; blob: number }[] = [];
 	const report: IrradianceReport = { cells: 0, rawBytes: 0, levels: [0, 0, 0] };
 	for (const [file, name] of index.files.entries()) {
-		if (index.scenarioGroups[index.fileGroups[file]].hash !== 0) {
+		if (index.stateGroups[index.fileGroups[file]].hash !== 0) {
 			continue;
 		}
 		const records = index.records.filter((record) => {

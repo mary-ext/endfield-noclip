@@ -375,8 +375,9 @@ profile.
 ## irradiance volume format
 
 the game's GI is a baked probe volume, not lightmaps or Unity APV. files live under
-`Data/IrradianceVolume/PC/<scene>/v3/`: an `index.bytes` and payloads `iv_<scenarioHash>_<n>.bytes`.
-parser: [`hg/irradiance.ts`](../../packages/formats/src/hg/irradiance.ts).
+`Data/IrradianceVolume/PC/<scene>/v3/`: an `index.bytes` and payloads
+`iv_<stateGroupHash>_<n>.bytes`. parser:
+[`hg/irradiance.ts`](../../packages/formats/src/hg/irradiance.ts).
 
 ### index.bytes
 
@@ -384,13 +385,14 @@ little-endian, read front to back to EOF:
 
 1. `u32` magic: `0x03000004` (map02) or `0x03000003` (map01), same layout. other magics (gacha and
    legacy indices) are rejected. the magic sets the volume's extent (below).
-2. lighting scenario names: `u32` count, each a `u32` byte length + UTF-16LE (e.g.
-   `Map02_lv002_sunny`).
-3. scenario groups: `u32` count, each `u32 hash` + counted `u32` scenario indices. hash 0 with no
+2. scene-state names: `u32` count, each a `u32` byte length + UTF-16LE (e.g. `Map02_lv002_sunny`).
+   these are MapConfig scene states ([scene-states.md](scene-states.md)); the game picks bakes by
+   its active scene-state mask.
+3. state groups: `u32` count, each `u32 hash` + counted `u32` indices into the names. hash 0 with no
    members is the base bake; payload filenames carry these hashes.
 4. payload filenames: counted, length-prefixed UTF-16LE.
 5. the scene's top-level spatial hash header (`u32` table size, `u32 O`, `O³` offset words), then a
-   counted table of `(u32 value, u32 scenario hash)` pairs. neither is needed to read cells; both
+   counted table of `(u32 value, u32 state-group hash)` pairs. neither is needed to read cells; both
    are skipped.
 6. the cell directory: `u32` count, each nine `u32`:
 
@@ -441,14 +443,14 @@ full validity. level 0 is sparse, so most of the finest clipmap comes from level
 ### packing
 
 [`pack/irradiance.ts`](../../packages/extractor/src/pack/irradiance.ts) stores every **base-bake**
-cell (scenario group hash 0) whose centre the package covers as one decompressed `Irradiance` blob,
+cell (state group hash 0) whose centre the package covers as one decompressed `Irradiance` blob,
 zstd-compressed, in the 512 m archive `irradiance/<x>_<z>.czar` over it. `tables/irradiance.bin`
 lists cell keys ascending with their blob indices (see [package-format.md](../package-format.md)).
 cells stay in the game's GPU layout so the viewer uploads them unchanged.
 
-scenario bakes (e.g. sunny, sunrise, night variants, or map01's damaged and overcast-rainy states)
-are not packed, because how a scenario overlays the base bake and which environment state selects it
-are unknown.
+scene-state bakes (e.g. sunny, sunrise, night variants, or map01's damaged and overcast-rainy
+states) are not packed. the game selects them by its active scene-state mask; how a state's cells
+replace or overlay the base bake is unchecked.
 
 ### the viewer's clipmaps
 
@@ -468,8 +470,8 @@ are sampled toroidally in `ambient_irradiance`.
 - the CPU packing of the diffuse-ambient scale, the irradiance volume's default SH (`skyAmbientSH`
   vs `customIVDefaultSH`), and the sky's absolute brightness. these live in native engine code; the
   viewer's ambient and sky brightness are approximations.
-- irradiance scenarios, the index's pair table and trailing rows, directory words 1, 7 (high bits)
-  and 8.
+- irradiance scene-state bakes, the index's pair table and trailing rows, directory words 1, 7 (high
+  bits) and 8.
 - the froxel fog's grid size and depth distribution come from quality presets that aren't recovered
   (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without the native
   diffuse-ambient scale.

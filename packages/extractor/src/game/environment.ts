@@ -262,7 +262,7 @@ const footprint = (volume: EnvironmentVolume): Footprint | null => {
 		case EnvironmentVolumeType.Global: {
 			return { area: Infinity, contains: () => true };
 		}
-		case EnvironmentVolumeType.PolyLine: {
+		case EnvironmentVolumeType.PolyArea: {
 			const points = volume.shape?.points;
 			if (points === undefined || points.length < 3) {
 				return null;

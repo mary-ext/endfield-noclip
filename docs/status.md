@@ -19,8 +19,8 @@ or renders correctly.
   manual preview controls with stored defaults ([scene states](game-data/scene-states.md))
 - terrain heights, baked surface pages and the close-up layer blend
   ([world](game-data/world.md#terrain))
-- environment profiles and volume blending, water, post-processing, base-scenario irradiance and
-  local point, spot and tube lights ([environment](game-data/environment.md),
+- environment profiles and volume blending, water, post-processing, base-bake irradiance and local
+  point, spot and tube lights ([environment](game-data/environment.md),
   [lighting](game-data/lighting.md), [water](game-data/water.md))
 
 ## look and lighting
@@ -29,9 +29,9 @@ or renders correctly.
   the lighting lookup has no jitter or forward-shifted clipmap centres. next: compare GPU clipmap
   samples with the bake at one point, and check clipmap seams (L0 repeats, L1 clamps)
 - several ambient and sky-LUT constants are computed in native engine code and not yet recovered
-- irradiance: only the base scenario is packed; scenario overlays, partial clipmap updates, the
-  game's forward-shifted centres and jitter, fallback textures for cells without probes, the meaning
-  of two index tables, and other index magics
+- irradiance: only the base bake is packed; scene-state bakes, partial clipmap updates, the game's
+  forward-shifted centres and jitter, fallback textures for cells without probes, the meaning of two
+  index tables, and other index magics
 - the game's own vignette (the viewer uses URP's); bloom dirt, additive upsampling and character
   bloom; colour curves are not packed
 - weather: rain/snow configs are not packed, and precipitation and wetness don't render. the
@@ -82,8 +82,8 @@ or renders correctly.
 - separate scenes (interiors, offices, arenas) are unvalidated
 - interactive LevelData decoding is strict: files with unsupported layouts are reported in
   `out/<map>/debug/unsupported-interactives.json` and omitted rather than partially scanned
-- irradiance scenarios are not selected by active scene state; map and global variables are assumed
-  0
+- irradiance scene-state bakes are not selected by the active scene states; map and global variables
+  are assumed 0
 - variable ids are unnamed; variables that drive entity level or animator state need a view-state
   controller and animation playback
 - story-state expressions and script relationships beyond what client data proves; event and server
