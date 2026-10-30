@@ -35,7 +35,7 @@ import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import {
 	encodeBlobTable,
 	encodeChains,
-	encodeDetailPage,
+	encodeSplatPage,
 	encodeHeightPage,
 	encodeInstanceBlock,
 	encodeIrradianceTable,
@@ -75,7 +75,7 @@ import {
 	type Rect,
 	shardArchiveName,
 	type SubsetInfo,
-	type TerrainDetailInfo,
+	type TerrainSplatInfo,
 	type TerrainInfo,
 	terrainHeight,
 	type TextureTable,
@@ -173,7 +173,7 @@ export interface PackReport {
 	outDir: string;
 	timings: Record<string, number>;
 	entities: Record<string, number>;
-	instances: { detail: number; hlod: number; resident: number };
+	instances: { detail: number; hlod: number; global: number };
 	chains: { count: number; draws: number; instancesPerChain: number };
 	assets: {
 		geometries: number;
@@ -390,9 +390,9 @@ export const packScene = async (
 			water: finishWater(water, waterTextureIds),
 			lights,
 			irradiance: irradiance?.table ?? { keys: new Uint32Array(), blobs: new Uint32Array() },
-			resident: instances.resident,
+			global: instances.global,
 			terrainLevels: terrainPacked.levels,
-			terrainDetail: terrainPacked.detail,
+			terrainSplat: terrainPacked.splat,
 		});
 		timer.end('write');
 
@@ -426,7 +426,7 @@ export const packScene = async (
 			chains: {
 				count: pack.chains.chains.length,
 				draws: pack.chains.chains.reduce((sum, chain) => sum + chain.draws.length, 0),
-				instancesPerChain: (rows.detail + rows.hlod + rows.resident) / Math.max(1, pack.chains.chains.length),
+				instancesPerChain: (rows.detail + rows.hlod + rows.global) / Math.max(1, pack.chains.chains.length),
 			},
 			assets: {
 				geometries: pack.geometries.assets.length,
@@ -497,7 +497,7 @@ interface SceneIndex {
 	terrainScene: TerrainSceneIndex | undefined;
 	surface: TerrainSurfacesData | undefined;
 	/** the manifest's terrain section without its levels, or `null` without terrain */
-	terrain: Omit<TerrainInfo, 'levels' | 'detail'> | null;
+	terrain: Omit<TerrainInfo, 'levels' | 'splat'> | null;
 	grid: TreeGrid;
 	subset: Subset;
 	/** the scene's chunk files in processing order; debug rows index into it */
@@ -728,7 +728,7 @@ const collectEntities = async (
 						addHlod(cluster, named);
 					}
 				} else if (file.cell === null) {
-					collected.addResident(entity.levelTag, row, entity.name, fileIndex);
+					collected.addGlobal(entity.levelTag, row, entity.name, fileIndex);
 					pack.uses.note(row.chain, null);
 				} else {
 					const key = tileAt(grid, grid.leafLevel, x, z);
@@ -976,7 +976,7 @@ const syntheticEntityId = (levelTag: number, index: number): number => {
 /**
  * stores the subset's terrain height pages, baked surface pages and close-up detail and attaches them to the
  * tree. a tile missing its albedo or normal page gets no surface page; a leaf missing its control or tint
- * page gets no detail page
+ * page gets no splat page
  *
  * @returns the levels that have height pages, ascending, and the detail section, `null` when the scene's
  *   layers can't be packed
@@ -984,10 +984,10 @@ const syntheticEntityId = (levelTag: number, index: number): number => {
 const packTerrain = async (
 	context: Pick<Context, 'vfs' | 'world' | 'resolver'>,
 	pack: PackState,
-): Promise<{ levels: number[]; detail: TerrainDetailInfo | null }> => {
+): Promise<{ levels: number[]; splat: TerrainSplatInfo | null }> => {
 	const { terrainScene, surface, terrain, subset, grid } = pack.scene;
 	if (terrainScene === undefined || surface === undefined || terrain === null) {
-		return { levels: [], detail: null };
+		return { levels: [], splat: null };
 	}
 	const readTexture = async (file: VfsFile) => readTerrainTexture(await context.vfs.readVerified(file));
 	const readPage = async (file: VfsFile): Promise<Uint8Array> => readTerrainBc3Page(await readTexture(file));
@@ -1026,7 +1026,7 @@ const packTerrain = async (
 					channels.T !== undefined
 				) {
 					const [control, tint] = await Promise.all([readTexture(channels.S), readTexture(channels.T)]);
-					detail = encodeDetailPage({
+					detail = encodeSplatPage({
 						side: TERRAIN_PAGE_SIZE,
 						cells,
 						control: readTerrainControlPage(control),
@@ -1067,7 +1067,7 @@ const packTerrain = async (
 		const details = await pack.store.putMany(
 			withDetail.map(({ key, detail }) => ({
 				raw: detail,
-				options: placement(BlobKind.TerrainDetail, archiveForTile(pack, key)),
+				options: placement(BlobKind.TerrainSplat, archiveForTile(pack, key)),
 			})),
 		);
 		const whole = { tier: 0, levelTag: 0, first: 0, count: 1 };
@@ -1084,13 +1084,13 @@ const packTerrain = async (
 			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSurface, blob: pages[i], param: 0 }, 0);
 		}
 		for (const [i, { key }] of withDetail.entries()) {
-			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainDetail, blob: details[i], param: 0 }, 0);
+			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSplat, blob: details[i], param: 0 }, 0);
 		}
 	}
-	return { levels: [...new Set(tiles.map(({ key }) => key.level))], detail: layers?.info ?? null };
+	return { levels: [...new Set(tiles.map(({ key }) => key.level))], splat: layers?.info ?? null };
 };
 
-/** the archive holding the terrain layer textures, which every detail page draws from */
+/** the archive holding the terrain layer textures, which every splat page draws from */
 const TERRAIN_LAYER_ARCHIVE = 'assets/terrain-layers.czar';
 
 /**
@@ -1110,17 +1110,17 @@ const packTerrainLayers = async (
 	pack: PackState,
 	terrainScene: TerrainSceneIndex,
 	surface: TerrainSurfacesData,
-): Promise<{ info: TerrainDetailInfo; index: Uint8Array } | null> => {
+): Promise<{ info: TerrainSplatInfo; index: Uint8Array } | null> => {
 	const log = pack.scene.options.log;
 	const scene = pack.scene.options.scene;
 	const { layers } = surface;
 	if (layers === undefined || layers.length === 0) {
-		log(`terrain detail: ${scene} has no terrain layers`);
+		log(`terrain splat: ${scene} has no terrain layers`);
 		return null;
 	}
 	const index = await loadTerrainSplatIndex(context, { ...surface, layers }, scene);
 	if (index === undefined) {
-		log(`terrain detail: ${scene} has no splat index map`);
+		log(`terrain splat: ${scene} has no splat index map`);
 		return null;
 	}
 	const textureCount = Math.max(...layers.map((layer) => layer.texture)) + 1;
@@ -1129,7 +1129,7 @@ const packTerrainLayers = async (
 		const diffuse = terrainScene.layers.D.get(texture);
 		const normal = terrainScene.layers.N.get(texture);
 		if (diffuse === undefined || normal === undefined) {
-			log(`terrain detail: ${scene} is missing layer texture ${texture}`);
+			log(`terrain splat: ${scene} is missing layer texture ${texture}`);
 			return null;
 		}
 		files.push({ D: diffuse, N: normal });
@@ -1165,7 +1165,7 @@ const packTerrainLayers = async (
 			// oxlint-disable-next-line no-await-in-loop -- one texture's levels at a time bounds memory
 			const raw = await levelsOf(pair[role], role);
 			if (typeof raw === 'string') {
-				log(`terrain detail: ${scene} layer texture ${role} ${texture} ${raw}`);
+				log(`terrain splat: ${scene} layer texture ${role} ${texture} ${raw}`);
 				return null;
 			}
 			raws.push(raw);
@@ -1211,7 +1211,7 @@ const packInstances = async (
 	debugLog: DebugLog,
 ): Promise<{
 	rows: PackReport['instances'];
-	resident: ContentRef[];
+	global: ContentRef[];
 	hlodClusters: number;
 	tierCounts: number[];
 }> => {
@@ -1219,7 +1219,7 @@ const packInstances = async (
 	const rows = {
 		detail: countRows(collected.detail.values()),
 		hlod: countRows(collected.hlod.values()),
-		resident: countRows(collected.resident.values()),
+		global: countRows(collected.global.values()),
 	};
 
 	const detailGroups = [...collected.detail.values()].toSorted(
@@ -1258,7 +1258,7 @@ const packInstances = async (
 		}
 	}
 
-	// HLOD and resident rows form one block per level, in the core
+	// HLOD and global rows form one block per level, in the core
 	const coreBlocks = async (groups: Map<number, Group>) => {
 		const encoded = [...groups]
 			.toSorted((a, b) => a[0] - b[0])
@@ -1310,7 +1310,7 @@ const packInstances = async (
 		}
 	}
 
-	const resident = (await coreBlocks(collected.resident)).map(({ level, group, blob }): ContentRef => ({
+	const global = (await coreBlocks(collected.global)).map(({ level, group, blob }): ContentRef => ({
 		kind: ContentKind.Detail,
 		tier: 0,
 		levelTag: level,
@@ -1319,7 +1319,7 @@ const packInstances = async (
 		count: group.rows.length,
 		param: 0,
 	}));
-	return { rows, resident, hlodClusters, tierCounts };
+	return { rows, global, hlodClusters, tierCounts };
 };
 
 /** the manifest's levels and scenery states */
@@ -1371,9 +1371,9 @@ const writePackage = async (
 		water: WaterTable;
 		lights: LightsTable;
 		irradiance: IrradianceTable;
-		resident: ContentRef[];
+		global: ContentRef[];
 		terrainLevels: number[];
-		terrainDetail: TerrainDetailInfo | null;
+		terrainSplat: TerrainSplatInfo | null;
 	},
 ): Promise<{ tree: Tree; coreMembers: Record<string, number>; archives: PackReport['archives'] }> => {
 	const { scene, store } = pack;
@@ -1438,7 +1438,7 @@ const writePackage = async (
 		terrain:
 			scene.terrain === null
 				? null
-				: { ...scene.terrain, levels: states.terrainLevels, detail: states.terrainDetail },
+				: { ...scene.terrain, levels: states.terrainLevels, splat: states.terrainSplat },
 		levels: states.levels,
 		environments: states.environments,
 		environmentPhases: states.environmentPhases,
@@ -1449,7 +1449,7 @@ const writePackage = async (
 			toggles: states.toggles,
 		},
 		archives,
-		resident: states.resident,
+		global: states.global,
 		subset: scene.subset.info,
 		source: scene.source,
 	};
@@ -1628,8 +1628,8 @@ class Collector {
 	readonly hlod = new Map<number, Group>();
 	/** HLOD nodes by sort key */
 	readonly hlodNodes = new Map<number, { key: TileKey; tier: number; bounds: Bounds }>();
-	/** resident rows by level tag */
-	readonly resident = new Map<number, Group>();
+	/** rows of the Global chunk files by level tag */
+	readonly global = new Map<number, Group>();
 	/** packed instance count by level tag, without HLOD clusters */
 	readonly tagInstances = new Map<number, number>();
 	/** world bounds of packed instances by level tag */
@@ -1721,8 +1721,8 @@ class Collector {
 		}
 	}
 
-	addResident(level: number, row: InstanceInput, name: string, file: number): void {
-		push(getOrInsert(this.resident, level, newGroup), row, 0, name, file);
+	addGlobal(level: number, row: InstanceInput, name: string, file: number): void {
+		push(getOrInsert(this.global, level, newGroup), row, 0, name, file);
 		this.#countInstance(level);
 	}
 
@@ -1798,7 +1798,7 @@ const levelInfo = (
 
 const terrainBounds = (
 	grid: TreeGrid,
-	terrain: Omit<TerrainInfo, 'levels' | 'detail'>,
+	terrain: Omit<TerrainInfo, 'levels' | 'splat'>,
 	key: TileKey,
 	samples: Uint16Array,
 ): Bounds => {

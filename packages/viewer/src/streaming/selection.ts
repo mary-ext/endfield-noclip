@@ -30,10 +30,10 @@ export type SelectionOptions = Pick<
 	| 'terrainPixels'
 	| 'terrain'
 	| 'terrainSurface'
-	| 'terrainDetail'
+	| 'terrainSplat'
 	| 'instances'
 	| 'detail'
-	| 'resident'
+	| 'global'
 	| 'hlodTiers'
 >;
 
@@ -53,11 +53,11 @@ export interface TerrainPatch {
 	morphEnd: number;
 	/** the finest resident surface page at or above `node`, or `null` for stand-in colours */
 	surface: SurfaceSource | null;
-	/** the node's resident close-up detail page (leaves near the camera), or `null` */
+	/** the node's resident close-up splat page (leaves near the camera), or `null` */
 	detail: ContentItem | null;
 }
 
-/** leaves within this distance load their close-up detail page, m; the shader fades detail out before it */
+/** leaves within this distance load their close-up splat page, m; the shader fades detail out before it */
 export const DETAIL_DISTANCE = 160;
 
 /** a range of rows of one resident instance block */
@@ -97,7 +97,7 @@ export class Selector {
 	readonly selection: Selection = { patches: [], instances: [], visited: 0 };
 	#tree: TileTree;
 	#stream: Pick<StreamManager, 'want' | 'get' | 'markUsed' | 'isReady'>;
-	#resident: readonly ContentRef[];
+	#global: readonly ContentRef[];
 	#pageQuads: number;
 	#rootSize: number;
 	#focusCells: ReadonlySet<string> | null = null;
@@ -107,20 +107,20 @@ export class Selector {
 	/**
 	 * @param tree the linked tree
 	 * @param stream residency
-	 * @param resident manifest.resident refs, always drawn
+	 * @param global manifest.global refs, always drawn
 	 * @param pageSide samples per height page edge
 	 * @param rootSize edge length of a level-0 tile
 	 */
 	constructor(
 		tree: TileTree,
 		stream: Pick<StreamManager, 'want' | 'get' | 'markUsed' | 'isReady'>,
-		resident: readonly ContentRef[],
+		global: readonly ContentRef[],
 		pageSide: number,
 		rootSize: number,
 	) {
 		this.#tree = tree;
 		this.#stream = stream;
-		this.#resident = resident;
+		this.#global = global;
 		this.#pageQuads = pageSide - 1;
 		this.#rootSize = rootSize;
 	}
@@ -138,9 +138,9 @@ export class Selector {
 		selection.visited = 0;
 		this.#focusCells = focusCells;
 
-		if (options.instances && options.resident) {
-			// resident blobs are pinned: drawn once they arrive, never wanted
-			for (const ref of this.#resident) {
+		if (options.instances && options.global) {
+			// global blobs are pinned: drawn once they arrive, never wanted
+			for (const ref of this.#global) {
 				if (!this.#shows(ref)) {
 					continue;
 				}
@@ -361,8 +361,8 @@ export class Selector {
 			}
 		}
 		let detail: ContentItem | null = null;
-		if (options.terrainDetail && node.terrainDetail !== null && distance < DETAIL_DISTANCE) {
-			detail = this.#stream.want(node.terrainDetail.blob, priority);
+		if (options.terrainSplat && node.terrainSplat !== null && distance < DETAIL_DISTANCE) {
+			detail = this.#stream.want(node.terrainSplat.blob, priority);
 		}
 		if (!inView || item === null) {
 			// a missing page is covered from its parent's

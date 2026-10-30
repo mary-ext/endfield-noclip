@@ -108,7 +108,7 @@ each frame that does work runs one traversal (`#traverseAndPrepare` in `viewer.t
 
 [`scene/tile-tree.ts`](../packages/viewer/src/scene/tile-tree.ts) links the package's quadtree nodes
 to their children and splits each node's content refs by kind: one terrain height page, one terrain
-surface page, a leaf's terrain detail page, HLOD refs (with a tier), detail refs and conditional
+surface page, a leaf's terrain splat page, HLOD refs (with a tier), detail refs and conditional
 refs. each node at or below the cell level records its cell id, for level focus.
 
 ### instance selection
@@ -118,13 +118,14 @@ REPLACE refinement on screen-space error, `geometricError · pixelFactor / dista
 
 - a node draws its HLOD while SSE ≤ `maxSse` (default 12 px), otherwise its children; a leaf refines
   into its detail blocks, even when it has none: some clusters stand for scenery filed under
-  neighbouring leaves or as resident, which draws anyway, so keeping the cluster would overlay it.
+  neighbouring leaves or as global scenery, which draws anyway, so keeping the cluster would overlay
+  it.
 - until everything a refinement needs is resident, the node keeps drawing its own HLOD, so streaming
   never opens holes. disabled HLOD tiers are refined past.
 - conditional content has no HLOD stand-in, so it follows its own rule: drawn while its tile spans
   more than `maxSse` pixels and its conditional set evaluates true (see
   [game-data/scene-states.md](game-data/scene-states.md)).
-- manifest `resident` refs are pinned and drawn whenever they're resident, never requested.
+- manifest `global` refs are pinned and drawn whenever they're resident, never requested.
 - `setLevel(tag)` limits content to that level's tag plus shared tag 0, which is how one level is
   shown alone over the shared terrain.
 
@@ -143,11 +144,11 @@ keeps its colours while finer pages stream. the shader draws the pages as stored
 roughness and occlusion ([world.md](game-data/world.md#terrain)). patches with no resident page, or
 with `terrainSurface` off or no BC textures, fall back to stand-in colours by slope.
 
-leaves within `DETAIL_DISTANCE` (160 m) also want their detail page. once it and all of the
-package's layer textures (pinned at load) are resident, the shader blends the leaf's close-up layers
-as [world.md](game-data/world.md#close-up-layers) describes, with a smooth triplanar projection in
+leaves within `DETAIL_DISTANCE` (160 m) also want their splat page. once it and all of the package's
+layer textures (pinned at load) are resident, the shader blends the leaf's close-up layers as
+[world.md](game-data/world.md#close-up-layers) describes, with a smooth triplanar projection in
 place of the game's random one, and fades them into the baked page between 96 and 144 m. the layers
-sample with explicit gradients so slots and planes without weight are skipped. `terrainDetail` turns
+sample with explicit gradients so slots and planes without weight are skipped. `terrainSplat` turns
 this off. on an Apple M-series GPU at 1600×1000 the blend added about 7 ms of GPU time over open
 ground (terrain only), unprofiled.
 
@@ -194,7 +195,7 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
   counts as used, even when a coarser stand-in is drawn, so a refinement in progress isn't evicted
   and refetched.
 - **pinning.** the core archive's height and surface pages and instance blocks (coarse terrain,
-  every HLOD block, resident scenery), plus the terrain layer textures, are pinned at load: queued
+  every HLOD block, global scenery), plus the terrain layer textures, are pinned at load: queued
   first, uploaded first, never evicted. pinned height pages keep their samples on the CPU for
   ground-height queries (the first pose).
 - **fetching.** at most 8 requests in flight (`maxRequests`). queued blobs are sorted by priority,
@@ -290,9 +291,9 @@ details:
   and 4–7 MiB of heights, so they grow only as content from several views piles up under a large
   budget; they never shrink, since the budget bounds them. owners rebuild their bind groups when the
   buffer's `version` changes. surface pages use a pair of BC3 texture arrays, one layer per page
-  (1024 layers, or the device's array-layer limit if lower; 34 MiB); detail pages use 256 slots of
-  an RGBA8 control array, a BC3 tint array and an index buffer (22 MiB); the package's layer
-  textures get two BC7 arrays sized at load. geometry gets one vertex and one index buffer per blob.
+  (1024 layers, or the device's array-layer limit if lower; 34 MiB); splat pages use 256 slots of an
+  RGBA8 control array, a BC3 tint array and an index buffer (22 MiB); the package's layer textures
+  get two BC7 arrays sized at load. geometry gets one vertex and one index buffer per blob.
 - **uniform ring** ([`gfx/uniform-ring.ts`](../packages/viewer/src/gfx/uniform-ring.ts)): one
   uniform buffer in 3 per-frame regions, sub-allocated at `minUniformBufferOffsetAlignment`. callers
   fill CPU views; `flush` uploads the frame's region in one `writeBuffer`, and draws bind group 0 at

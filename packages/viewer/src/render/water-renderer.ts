@@ -238,8 +238,8 @@ export class WaterRenderer {
 		params[0] = this.#normals === null ? 0 : 1;
 		params[1] = this.#flow === null ? 0 : 1;
 		params[2] = global?.mapSize ?? 1;
-		params[4] = global?.centre[0] ?? 0;
-		params[5] = global?.centre[1] ?? 0;
+		params[4] = global?.center[0] ?? 0;
+		params[5] = global?.center[1] ?? 0;
 		this.#device.queue.writeBuffer(this.#params, 0, params);
 	}
 

@@ -62,10 +62,10 @@ export interface ViewerOptions {
 	/** draw the terrain's baked albedo and normal pages; off (or without BC textures) shows stand-in colours */
 	terrainSurface: boolean;
 	/** blend the terrain's close-up material layers near the camera (needs BC textures) */
-	terrainDetail: boolean;
+	terrainSplat: boolean;
 	instances: boolean;
 	detail: boolean;
-	resident: boolean;
+	global: boolean;
 	/** enabled HLOD tiers 0–2 */
 	hlodTiers: [boolean, boolean, boolean];
 	wireframe: boolean;
@@ -120,10 +120,10 @@ export interface ViewerOptions {
 export const DEFAULT_OPTIONS: ViewerOptions = {
 	terrain: true,
 	terrainSurface: true,
-	terrainDetail: true,
+	terrainSplat: true,
 	instances: true,
 	detail: true,
-	resident: true,
+	global: true,
 	hlodTiers: [true, true, true],
 	wireframe: false,
 	boxes: true,
@@ -233,11 +233,11 @@ interface LoadedScene {
 
 /**
  * @param tree the linked tree
- * @param resident manifest.resident refs
+ * @param global manifest.global refs
  * @returns what the rows of each instance blob are: rows of HLOD blocks take their tier from the refs that
  *   slice them
  */
-const instanceRowKinds = (tree: TileTree, resident: readonly ContentRef[]): Map<number, RowKinds> => {
+const instanceRowKinds = (tree: TileTree, global: readonly ContentRef[]): Map<number, RowKinds> => {
 	const kinds = new Map<number, RowKinds>();
 	const spans = new Map<number, TierSpan[]>();
 	for (const node of tree.nodes) {
@@ -254,8 +254,8 @@ const instanceRowKinds = (tree: TileTree, resident: readonly ContentRef[]): Map<
 			kinds.set(ref.blob, RowKind.Detail);
 		}
 	}
-	for (const ref of resident) {
-		kinds.set(ref.blob, RowKind.Resident);
+	for (const ref of global) {
+		kinds.set(ref.blob, RowKind.Global);
 	}
 	return kinds;
 };
@@ -459,12 +459,12 @@ export class Viewer {
 							this.#terrain.releaseSurface(resident);
 							break;
 						}
-						case 'detail': {
-							this.#terrain.releaseDetail(resident);
+						case 'splat': {
+							this.#terrain.releaseSplat(resident);
 							break;
 						}
 						case 'layer': {
-							// pinned for the package's lifetime; its array goes with the next `setDetail`
+							// pinned for the package's lifetime; its array goes with the next `setSplat`
 							break;
 						}
 						case 'instances': {
@@ -486,10 +486,10 @@ export class Viewer {
 					}
 				},
 			},
-			instanceRowKinds(tree, pkg.manifest.resident),
+			instanceRowKinds(tree, pkg.manifest.global),
 			{ budgetBytes: this.options.budgetMiB * 2 ** 20, maxRequests: 8, uploadBytesPerFrame: 24 * 2 ** 20 },
 		);
-		// the coarse layer: everything in the core (coarse terrain pages, every HLOD block, resident scenery)
+		// the coarse layer: everything in the core (coarse terrain pages, every HLOD block, global scenery)
 		const coreBlobs: number[] = [];
 		for (let i = 0; i < pkg.blobs.length; i++) {
 			const blob = pkg.blobs[i];
@@ -510,11 +510,11 @@ export class Viewer {
 				}
 			}
 		}
-		// every detail page draws from all layer textures, so they stay resident
-		const detail = pkg.manifest.terrain?.detail ?? null;
-		this.#terrain.setDetail(detail);
-		if (detail !== null && this.#terrain.surfaces) {
-			coreBlobs.push(...new Set([...detail.diffuse, ...detail.normal]));
+		// every splat page draws from all layer textures, so they stay resident
+		const splat = pkg.manifest.terrain?.splat ?? null;
+		this.#terrain.setSplat(splat);
+		if (splat !== null && this.#terrain.surfaces) {
+			coreBlobs.push(...new Set([...splat.diffuse, ...splat.normal]));
 		}
 		stream.pin(coreBlobs);
 
@@ -522,7 +522,7 @@ export class Viewer {
 		const selector = new Selector(
 			tree,
 			stream,
-			manifest.resident,
+			manifest.global,
 			manifest.terrain?.pageSize ?? PAGE_SIDE,
 			manifest.tree.rootSize,
 		);
@@ -597,7 +597,7 @@ export class Viewer {
 		this.#setIrradiance(new IrradianceVolume(this.#gfx.device, EMPTY_IRRADIANCE));
 		this.#water.setTable(null);
 		this.#lights.setLights([]);
-		this.#terrain.setDetail(null);
+		this.#terrain.setSplat(null);
 		this.#level = null;
 		this.#unsettledPose = null;
 		this.#focusCells = null;
@@ -1249,7 +1249,7 @@ export class Viewer {
 			{
 				...options,
 				terrainSurface: options.terrainSurface && this.#terrain.surfaces,
-				terrainDetail: options.terrainDetail && this.#terrain.surfaces,
+				terrainSplat: options.terrainSplat && this.#terrain.surfaces,
 			},
 			this.#focusCells,
 		);

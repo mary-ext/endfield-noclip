@@ -157,11 +157,11 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<legend>layers</legend>
 				<Toggle viewer={viewer} name="terrain" label="terrain" />
 				<Toggle viewer={viewer} name="terrainSurface" label="terrain textures" />
-				<Toggle viewer={viewer} name="terrainDetail" label="terrain detail" />
+				<Toggle viewer={viewer} name="terrainSplat" label="terrain splat layers" />
 				<Toggle viewer={viewer} name="instances" label="instances" />
 				<Toggle viewer={viewer} name="boxes" label="boxes" />
 				<Toggle viewer={viewer} name="detail" label="detail" />
-				<Toggle viewer={viewer} name="resident" label="resident" />
+				<Toggle viewer={viewer} name="global" label="global scenery" />
 				<Toggle viewer={viewer} name="wireframe" label="wireframe" />
 			</fieldset>
 			<fieldset>

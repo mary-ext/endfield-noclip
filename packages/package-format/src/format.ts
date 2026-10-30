@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 14;
+export const PACKAGE_VERSION = 15;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -68,10 +68,10 @@ export const BlobKind = {
 	Irradiance: 6,
 	/** one terrain tile's baked albedo and normal pages; see `encodeSurfacePage` */
 	TerrainSurface: 7,
-	/** one leaf terrain tile's close-up blend inputs; see `encodeDetailPage` */
-	TerrainDetail: 8,
+	/** one leaf terrain tile's close-up blend inputs; see `encodeSplatPage` */
+	TerrainSplat: 8,
 	/**
-	 * one terrain layer texture: its BC7 mip levels from {@link TerrainDetailInfo.textureSize} down, largest
+	 * one terrain layer texture: its BC7 mip levels from {@link TerrainSplatInfo.textureSize} down, largest
 	 * first, as `writeTexture` takes them (levels under 4² padded to one block)
 	 */
 	TerrainLayer: 9,
@@ -88,7 +88,7 @@ export const BLOB_EXTENSIONS: Record<BlobKind, string> = {
 	[BlobKind.Other]: 'bin',
 	[BlobKind.Irradiance]: 'iv',
 	[BlobKind.TerrainSurface]: 'tsp',
-	[BlobKind.TerrainDetail]: 'tdt',
+	[BlobKind.TerrainSplat]: 'tsl',
 	[BlobKind.TerrainLayer]: 'tly',
 };
 
@@ -101,7 +101,7 @@ export const BLOB_KIND_NAMES: Record<BlobKind, string> = {
 	[BlobKind.Other]: 'other',
 	[BlobKind.Irradiance]: 'irradiance',
 	[BlobKind.TerrainSurface]: 'terrain surface',
-	[BlobKind.TerrainDetail]: 'terrain detail',
+	[BlobKind.TerrainSplat]: 'terrain splat',
 	[BlobKind.TerrainLayer]: 'terrain layer',
 };
 
@@ -127,7 +127,7 @@ export const ContentKind = {
 	/** the node's baked terrain surface page (albedo and normal); covers the same tile as its height page */
 	TerrainSurface: 4,
 	/** a leaf node's close-up blend inputs (splat control, tint, layer index) */
-	TerrainDetail: 5,
+	TerrainSplat: 5,
 } as const;
 
 export type ContentKind = (typeof ContentKind)[keyof typeof ContentKind];
@@ -139,7 +139,7 @@ export const CONTENT_KIND_NAMES: Record<ContentKind, string> = {
 	[ContentKind.Detail]: 'detail',
 	[ContentKind.Conditional]: 'conditional',
 	[ContentKind.TerrainSurface]: 'terrainSurface',
-	[ContentKind.TerrainDetail]: 'terrainDetail',
+	[ContentKind.TerrainSplat]: 'terrainSplat',
 };
 
 /** how a draw of a LOD chain is used */
@@ -301,7 +301,7 @@ export interface PackageManifest {
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
 	archives: ArchiveInfo[];
 	/** content drawn regardless of the tree's refinement (the game's always-loaded Global scenery) */
-	resident: ContentRef[];
+	global: ContentRef[];
 	/** the slice of the scene that was packed, or `null` for all of it */
 	subset: SubsetInfo | null;
 	/** identifies the game build the package came from; per-asset provenance lives in the debug index */
@@ -386,17 +386,17 @@ export interface TerrainInfo {
 	/** texels of each surface page edge outside the tile; the rest map the tile edge to edge */
 	surfaceBorder: number;
 	/** the close-up layer blend's inputs, or `null` if they weren't packed */
-	detail: TerrainDetailInfo | null;
+	splat: TerrainSplatInfo | null;
 }
 
 /**
  * the close-up layer blend: each leaf's 8 m cells name 4 layers, blended by the leaf's splat control page,
- * then tinted. leaf tiles carry a {@link ContentKind.TerrainDetail} ref
+ * then tinted. leaf tiles carry a {@link ContentKind.TerrainSplat} ref
  */
-export interface TerrainDetailInfo {
+export interface TerrainSplatInfo {
 	/** metres per index cell; a leaf has `leafSize / cellSize` cells per edge */
 	cellSize: number;
-	/** layers by ordinal, as the detail pages' index cells name them */
+	/** layers by ordinal, as the splat pages' index cells name them */
 	layers: TerrainLayerInfo[];
 	/** texels per layer texture edge at its first packed level */
 	textureSize: number;
@@ -410,7 +410,7 @@ export interface TerrainDetailInfo {
 
 /** one close-up material layer, from the game's `SplatLayerData` */
 export interface TerrainLayerInfo {
-	/** index into {@link TerrainDetailInfo.diffuse} and {@link TerrainDetailInfo.normal} */
+	/** index into {@link TerrainSplatInfo.diffuse} and {@link TerrainSplatInfo.normal} */
 	texture: number;
 	/** texture repeats per metre of world position */
 	tiling: number;
@@ -547,9 +547,9 @@ export interface ArchiveInfo {
 	 * `null` for `irradiance` archives (`irradiance/<x>_<z>.czar`: the cells over one 512 m square, see
 	 * {@link irradianceArchiveName}). for `shards` archives: the {@link TreeInfo.shardLevel} tile whose subtree
 	 * content it holds. for `assets` archives: the tile at or above the shard level whose subtree is the
-	 * smallest one containing every use of each asset in it, or `null` for `assets/common*` (resident content,
-	 * or uses under different root tiles). so everything a tile draws lives in the `assets` archives of that
-	 * tile and its ancestors, plus common
+	 * smallest one containing every use of each asset in it, or `null` for `assets/common*` (global content, or
+	 * uses under different root tiles). so everything a tile draws lives in the `assets` archives of that tile
+	 * and its ancestors, plus common
 	 */
 	tile: TileKey | null;
 	/** total byte length; `null` for the core, whose size depends on this manifest */
@@ -1173,8 +1173,8 @@ export interface WaterTable {
 
 /**
  * the scene's `Global_Water_Config`: maps shared by every surface. textures are the game's, unchanged. the
- * global flow map covers the square of edge {@link mapSize} around {@link centre}, i.e. (assumed from the
- * game's tooling, not its shaders) `uv = (world.xz - centre) / mapSize + 0.5`
+ * global flow map covers the square of edge {@link mapSize} around {@link center}, i.e. (assumed from the
+ * game's tooling, not its shaders) `uv = (world.xz - center) / mapSize + 0.5`
  */
 export interface WaterGlobal {
 	/** edge of the square the global flow map and the sector grid cover, metres */
@@ -1182,7 +1182,7 @@ export interface WaterGlobal {
 	/** edge of one sector, metres */
 	sectorSize: number;
 	/** world x, z the grid is centred on (`sceneCenterOffset`) */
-	centre: [x: number, z: number];
+	center: [x: number, z: number];
 	/** metres per texel of a sector tile */
 	flowmapPrecision: number;
 	/** flow over the whole grid: RG direction, B foam, A amplitude (channel meanings unconfirmed) */
@@ -1193,7 +1193,7 @@ export interface WaterGlobal {
 	rainMap: TextureRef;
 	/**
 	 * high-resolution flow tiles, like {@link flowMap} at {@link flowmapPrecision} m/texel. sector `(x, z)`
-	 * covers world `[centre.x + x·sectorSize, +sectorSize) × [centre.z + z·sectorSize, +sectorSize)`. only the
+	 * covers world `[center.x + x·sectorSize, +sectorSize) × [center.z + z·sectorSize, +sectorSize)`. only the
 	 * sectors that have data and overlap a packed surface are listed; elsewhere use {@link flowMap}
 	 */
 	sectors: WaterSector[];
@@ -1387,7 +1387,7 @@ export interface LightEntry {
 // #region binary records
 
 /**
- * a reference from a tree node (or {@link PackageManifest.resident}) to content. stored as 24-byte records in
+ * a reference from a tree node (or {@link PackageManifest.global}) to content. stored as 24-byte records in
  * tree.bin and as JSON in the manifest
  */
 export interface ContentRef {
@@ -1661,9 +1661,6 @@ export type MaterialBlend = 'opaque' | 'alphaTest' | 'alphaBlend' | 'premultipli
 /** which faces a material culls */
 export type MaterialCull = 'back' | 'front' | 'none';
 
-/** Lit-family normal map channel layout: `RAG` (with an MRO map) or `RG` */
-export type NormalLayout = 'RAG' | 'RG';
-
 /** one material */
 export type MaterialEntry = UnconvertedEntry | ReadyMaterial;
 
@@ -1684,10 +1681,12 @@ export interface ReadyMaterial {
 	alphaClipThreshold: number | null;
 	cull: MaterialCull;
 	zWrite: boolean;
-	/** `null` outside the Lit and foliage families */
-	normalLayout: NormalLayout | null;
-	/** whether the Lit-family MRO map is active */
-	usesMro: boolean;
+	/**
+	 * the Lit families' `_BaseTextureMapCount`: 0 adds an MRO map (R metallic, G roughness, B occlusion) and an
+	 * `RAG` normal map; 1 and 2 use an `RG` normal map with roughness in B, and metallic from the base map's
+	 * alpha (1) or `_Metallic` (2). `null` outside the Lit families
+	 */
+	baseTextureMapCount: number | null;
 	/** bound textures by Unity property name (`_BaseColorMap`, `_NormalMap`, …); empty slots are absent */
 	slots: Record<string, TextureSlot>;
 	/** overrides of {@link ShaderEntry.floats} */

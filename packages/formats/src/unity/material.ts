@@ -352,10 +352,12 @@ export interface MaterialClassification {
 	alphaClipThreshold: number | null;
 	cull: 'back' | 'front' | 'none';
 	zWrite: boolean;
-	/** Lit-family normal map channel layout: `RAG` with an MRO map, else `RG` */
-	normalLayout: 'RAG' | 'RG' | null;
-	/** whether the Lit-family MRO map is active (`_BaseTextureMapCount` 0) */
-	usesMro: boolean;
+	/**
+	 * Lit-family `_BaseTextureMapCount` (from the `_TWO_BASEMAP` keyword when the float is absent): 0 adds an
+	 * MRO map and an `RAG` normal map; otherwise the normal map is `RG` with roughness in B. `null` outside the
+	 * Lit families
+	 */
+	baseTextureMapCount: number | null;
 }
 
 /**
@@ -425,14 +427,9 @@ export const classifyHgrpMaterial = (
 	}
 
 	const litLike = family === 'lit' || family === 'litTransparent';
-	const foliage = family === 'leaf' || family === 'trunk' || family === 'grass' || family === 'cardMesh';
-	const baseMapCount = float('_BaseTextureMapCount') ?? (keywords.includes('_TWO_BASEMAP') ? 2 : 0);
-	let normalLayout: MaterialClassification['normalLayout'] = null;
-	if (foliage) {
-		normalLayout = 'RG';
-	} else if (litLike) {
-		normalLayout = baseMapCount === 0 ? 'RAG' : 'RG';
-	}
+	const baseTextureMapCount = litLike
+		? (float('_BaseTextureMapCount') ?? (keywords.includes('_TWO_BASEMAP') ? 2 : 0))
+		: null;
 
 	return {
 		family,
@@ -443,8 +440,7 @@ export const classifyHgrpMaterial = (
 		alphaClipThreshold,
 		cull,
 		zWrite: float('_ZWrite') === undefined ? !blended : float('_ZWrite') !== 0,
-		normalLayout,
-		usesMro: litLike && baseMapCount === 0,
+		baseTextureMapCount,
 	};
 };
 

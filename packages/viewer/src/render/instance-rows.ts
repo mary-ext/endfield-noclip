@@ -22,7 +22,7 @@ export const RowKind = {
 	Hlod1: 1,
 	Hlod2: 2,
 	Detail: 3,
-	Resident: 4,
+	Global: 4,
 } as const;
 
 export type RowKind = (typeof RowKind)[keyof typeof RowKind];

@@ -23,7 +23,7 @@ export type UvTransform = [scaleU: number, scaleV: number, offsetU: number, offs
 export type DecodeRequest =
 	| (RequestBase & { kind: 'heights' })
 	| (RequestBase & { kind: 'surface' })
-	| (RequestBase & { kind: 'detail' })
+	| (RequestBase & { kind: 'splat' })
 	| (RequestBase & { kind: 'layer' })
 	| (RequestBase & { kind: 'instances'; rowKinds: RowKinds })
 	| (RequestBase & { kind: 'geometry' })
@@ -49,10 +49,10 @@ export interface DecodedSurface {
 	normal: ArrayBuffer;
 }
 
-/** a decoded terrain detail page, see `DetailPage` in package-format */
+/** a decoded terrain splat page, see `SplatPage` in package-format */
 export interface DecodedDetail {
 	id: number;
-	kind: 'detail';
+	kind: 'splat';
 	/** texels per image edge */
 	side: number;
 	/** index cells per edge */

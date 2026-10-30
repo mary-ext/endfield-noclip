@@ -82,6 +82,9 @@ packs or renders correctly.
 - separate scenes (interiors, offices, arenas) are unvalidated
 - interactive LevelData decoding is strict: files with unsupported layouts are reported in
   `out/<map>/debug/unsupported-interactives.json` and omitted rather than partially scanned
+- interactive facilities are gathered from levels whose map is the packed scene, so a scene streamed
+  by levels of other maps (`base01_lv001`, streamed by `base01_lv003` and `indie_dg014`) probably
+  loses their facilities; select levels by `defaultState.exportedSceneConfigPath` instead
 - irradiance scene-state bakes are not selected by the active scene states; map and global variables
   are assumed 0
 - variable ids are unnamed; variables that drive entity level or animator state need a view-state
@@ -100,7 +103,7 @@ packs or renders correctly.
   compressing duplicate textures
 - texture zstd level and a max-texture-size option for a lite package (textures dominate package
   size)
-- place always-resident scenery by its own bounds instead of pulling it all into `assets/common`
+- place global scenery by its own bounds instead of pulling it all into `assets/common`
 - port the game's path hash so lookups stop reverse-scanning the path-hash table
 - move the viewer's environment-agnostic package loading into `package-format` so packer tests read
   packages through the viewer's code

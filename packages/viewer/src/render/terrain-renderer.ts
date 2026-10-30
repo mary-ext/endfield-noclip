@@ -2,13 +2,13 @@
  * CDLOD terrain: height pages live in a slot pool (one storage buffer), and every selected page quadrant is
  * an instance of one shared 33×33 grid, so terrain is a single draw. baked surface pages (albedo, normal)
  * live in a second slot pool, a pair of BC3 texture arrays, one layer per page. leaves near the camera add a
- * detail page (splat control, tint, layer index) from a third pool, and blend the package's layer textures,
+ * splat page (splat control, tint, layer index) from a third pool, and blend the package's layer textures,
  * which stay resident in a pair of BC7 arrays.
  *
  * @module
  */
 
-import type { TerrainDetailInfo } from '@endfield-noclip/package-format/format';
+import type { TerrainSplatInfo } from '@endfield-noclip/package-format/format';
 
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import { GrowableBuffer } from '../gfx/growable-buffer.ts';
@@ -45,9 +45,9 @@ const INITIAL_HEIGHT_SLOTS = 1024;
 const PATCH_FLOATS = 20;
 const SHADOW_KEY = 'terrain/shadow';
 
-/** detail page slots; leaves within `DETAIL_DISTANCE` need a few dozen */
+/** splat page slots; leaves within `DETAIL_DISTANCE` need a few dozen */
 const DETAIL_SLOTS = 256;
-/** index cells per detail page edge the shader is written for */
+/** index cells per splat page edge the shader is written for */
 const DETAIL_CELLS = 8;
 /** f32 words per layer in the layer storage buffer (5 vec4) */
 const LAYER_FLOATS = 20;
@@ -130,7 +130,7 @@ export class TerrainRenderer {
 	#detailBytes: number;
 	/** the package's layer textures, params and how many of the textures have arrived */
 	#layers: {
-		info: TerrainDetailInfo;
+		info: TerrainSplatInfo;
 		diffuse: GPUTexture;
 		normal: GPUTexture;
 		params: GPUBuffer;
@@ -208,25 +208,25 @@ export class TerrainRenderer {
 			maxAnisotropy: 8,
 		});
 
-		// detail pages need BC for the tint and the layer textures; without it the pool stays empty
+		// splat pages need BC for the tint and the layer textures; without it the pool stays empty
 		const detailSlots = this.surfaces ? Math.min(DETAIL_SLOTS, device.limits.maxTextureArrayLayers) : 0;
 		for (let slot = detailSlots - 1; slot >= 0; slot--) {
 			this.#freeDetailSlots.push(slot);
 		}
 		this.#detailControl = device.createTexture({
-			label: 'terrain detail control',
+			label: 'terrain splat control',
 			size: this.surfaces ? [SURFACE_SIDE, SURFACE_SIDE, detailSlots] : [4, 4, 1],
 			format: 'rgba8unorm',
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
 		});
 		this.#detailTint = device.createTexture({
-			label: 'terrain detail tint',
+			label: 'terrain splat tint',
 			size: this.surfaces ? [SURFACE_SIDE, SURFACE_SIDE, detailSlots] : [4, 4, 1],
 			format: this.surfaces ? 'bc3-rgba-unorm-srgb' : 'rgba8unorm',
 			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
 		});
 		this.#detailIndex = device.createBuffer({
-			label: 'terrain detail index',
+			label: 'terrain splat index',
 			size: Math.max(1, detailSlots) * DETAIL_CELLS * DETAIL_CELLS * 4,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 		});
@@ -334,7 +334,7 @@ export class TerrainRenderer {
 	 *
 	 * @param info the manifest's detail section, or `null` to drop the current package's layers
 	 */
-	setDetail(info: TerrainDetailInfo | null): void {
+	setSplat(info: TerrainSplatInfo | null): void {
 		if (this.#layers !== null) {
 			this.#layers.diffuse.destroy();
 			this.#layers.normal.destroy();
@@ -443,7 +443,7 @@ export class TerrainRenderer {
 	}
 
 	/**
-	 * uploads a detail page into a free slot
+	 * uploads a splat page into a free slot
 	 *
 	 * @param decoded the page
 	 * @returns the residency, or `null` if no slot was free (always, without BC textures)
@@ -451,7 +451,7 @@ export class TerrainRenderer {
 	 */
 	uploadDetail(decoded: DecodedDetail): ResidentDetail | null {
 		if (decoded.side !== SURFACE_SIDE || decoded.cells !== DETAIL_CELLS) {
-			throw new Error(`detail page of ${decoded.side}² with ${decoded.cells}² cells isn't supported`);
+			throw new Error(`splat page of ${decoded.side}² with ${decoded.cells}² cells isn't supported`);
 		}
 		const slot = this.#freeDetailSlots.pop();
 		if (slot === undefined) {
@@ -473,14 +473,14 @@ export class TerrainRenderer {
 		);
 		queue.writeBuffer(this.#detailIndex, slot * DETAIL_CELLS * DETAIL_CELLS * 4, decoded.index);
 		return {
-			kind: 'detail',
+			kind: 'splat',
 			bytes: SURFACE_SIDE * SURFACE_SIDE * 4 + SURFACE_IMAGE_BYTES + decoded.index.byteLength,
 			slot,
 		};
 	}
 
 	/** @param resident a page from {@link uploadDetail}; its slot returns to the pool */
-	releaseDetail(resident: ResidentDetail): void {
+	releaseSplat(resident: ResidentDetail): void {
 		this.#freeDetailSlots.push(resident.slot);
 	}
 
@@ -602,11 +602,11 @@ export class TerrainRenderer {
 			data[at + 14] = (SURFACE_SIDE - 2 * SURFACE_BORDER) / SURFACE_SIDE / covered.size;
 			data[at + 15] = SURFACE_BORDER / SURFACE_SIDE;
 			// layer uvs need world position: the node's corner (whole metres, exact in f32) and the eye's height
-			const detailPage = layersReady ? detail?.resident : undefined;
+			const splatPage = layersReady ? detail?.resident : undefined;
 			data[at + 16] = node.minX;
 			data[at + 17] = node.minZ;
 			data[at + 18] = eye[1];
-			words[at + 19] = detailPage?.kind === 'detail' ? detailPage.slot + 1 : 0;
+			words[at + 19] = splatPage?.kind === 'splat' ? splatPage.slot + 1 : 0;
 		}
 		// a whole page is drawn as its four quadrants
 		let expanded = count;

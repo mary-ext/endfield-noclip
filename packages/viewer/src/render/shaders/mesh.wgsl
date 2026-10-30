@@ -341,7 +341,7 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 		emission = glow.r;
 	}
 	if ((flags & EMISSIVE_MASK) != 0u) {
-		// mask channel 1 is the base colour's alpha. in the two-texture layout 2 is the normal map's B and 3 its
+		// mask channel 1 is the base colour's alpha. in the two-basemap layout 2 is the normal map's B and 3 its
 		// alpha; with an MRO map 2 is the base alpha too and 3 the MRO map's alpha. a map still streaming reads 0
 		emission = saturate((map_channel(flags, draw.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
 	}
@@ -368,7 +368,7 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 }
 
 // a mask channel of the material's own maps, numbered like `_EmissiveMaskChannel`: 1 the base colour's alpha;
-// in the two-texture layout 2 the normal map's B and 3 its alpha, with an MRO map 2 the base alpha and 3 the
+// in the two-basemap layout 2 the normal map's B and 3 its alpha, with an MRO map 2 the base alpha and 3 the
 // MRO map's alpha. maps still streaming read 0
 fn map_channel(flags: u32, channel: f32, base_a: f32, packed: vec4f, mask: vec4f) -> f32 {
 	if ((flags & NORMAL_OCCLUSION) != 0u) {

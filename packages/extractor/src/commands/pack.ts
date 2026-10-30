@@ -107,7 +107,7 @@ const formatReport = (report: PackReport): string => {
 			.join(', ')}`,
 	);
 	const { instances, chains, assets, hlod, tree } = report;
-	lines.push(`instances: detail ${instances.detail}, hlod ${instances.hlod}, resident ${instances.resident}`);
+	lines.push(`instances: detail ${instances.detail}, hlod ${instances.hlod}, global ${instances.global}`);
 	lines.push(
 		`chains: ${chains.count} templates, ${chains.draws} draws, ${chains.instancesPerChain.toFixed(1)} instances per template`,
 	);

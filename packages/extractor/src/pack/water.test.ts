@@ -23,7 +23,7 @@ describe('selectSurfaces', () => {
 });
 
 describe('sectorsOverlapping', () => {
-	const global: Pick<WaterGlobal, 'centre' | 'sectorSize'> = { centre: [100, -100], sectorSize: 128 };
+	const global: Pick<WaterGlobal, 'center' | 'sectorSize'> = { center: [100, -100], sectorSize: 128 };
 	const box = (minX: number, minZ: number, maxX: number, maxZ: number): { bounds: Bounds } => ({
 		bounds: { min: [minX, 0, minZ], max: [maxX, 0, maxZ] },
 	});
@@ -53,7 +53,7 @@ describe('finishWater', () => {
 			global: {
 				mapSize: 4096,
 				sectorSize: 128,
-				centre: [0, 0],
+				center: [0, 0],
 				flowmapPrecision: 0.5,
 				flowMap: 0,
 				causticMap: 1,
@@ -85,7 +85,7 @@ describe('finishWater', () => {
 			{
 				mapSize: 4096,
 				sectorSize: 128,
-				centre: [0, 0],
+				center: [0, 0],
 				flowmapPrecision: 0.5,
 				flowMap: 10,
 				causticMap: 11,

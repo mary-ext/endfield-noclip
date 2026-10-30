@@ -8,7 +8,7 @@
 import {
 	decodeGeometryBlob,
 	decodeHeightPage,
-	decodeDetailPage,
+	decodeSplatPage,
 	decodeInstanceBlock,
 	decodeSurfacePage,
 } from '@endfield-noclip/package-format/codec';
@@ -278,15 +278,15 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 				transfer: [albedo, normal],
 			};
 		}
-		case 'detail': {
-			const page = decodeDetailPage(raw);
+		case 'splat': {
+			const page = decodeSplatPage(raw);
 			const control = page.control.slice().buffer;
 			const tint = page.tint.slice().buffer;
 			const index = page.index.slice().buffer;
 			return {
 				response: {
 					id: request.id,
-					kind: 'detail',
+					kind: 'splat',
 					side: page.side,
 					cells: page.cells,
 					control,

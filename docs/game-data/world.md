@@ -317,7 +317,7 @@ shown or hidden as a whole:
 | destination | what goes there                                                                                                       | where it lives                               |
 | ----------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | HLOD        | scene-state-0 entities whose name matches the HLOD pattern; attached to the tile of tier `t` at tree level `leaf − t` | one block per level tag, in the core archive |
-| resident    | other entities of the `Global` chunk                                                                                  | one block per level tag, in the core archive |
+| global      | other entities of the `Global` chunk                                                                                  | one block per level tag, in the core archive |
 | detail      | other always-loaded entities, filed under the 64 m leaf containing their bounds centre                                | one block per (leaf, level tag)              |
 | conditional | entities of scene-state files, plus dynamic structures and facilities, with a visibility expression                   | one block per (leaf, level tag, condition)   |
 

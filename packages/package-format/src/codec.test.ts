@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import {
 	decodeBlobTable,
 	decodeChains,
-	decodeDetailPage,
+	decodeSplatPage,
 	decodeGeometryBlob,
 	decodeHeightPage,
 	decodeInstanceBlock,
@@ -13,7 +13,7 @@ import {
 	decodeTree,
 	encodeBlobTable,
 	encodeChains,
-	encodeDetailPage,
+	encodeSplatPage,
 	encodeGeometryBlob,
 	encodeHeightPage,
 	encodeInstanceBlock,
@@ -266,7 +266,7 @@ describe('height pages', () => {
 	});
 });
 
-describe('detail pages', () => {
+describe('splat pages', () => {
 	it('round-trips every section', () => {
 		const page = {
 			side: 8,
@@ -275,7 +275,7 @@ describe('detail pages', () => {
 			tint: Uint8Array.from({ length: 4 * 16 }, (_, i) => 200 - i),
 			index: Uint8Array.from({ length: 2 * 2 * 4 }, (_, i) => i),
 		};
-		const decoded = decodeDetailPage(encodeDetailPage(page));
+		const decoded = decodeSplatPage(encodeSplatPage(page));
 		assert.equal(decoded.side, 8);
 		assert.equal(decoded.cells, 2);
 		assert.deepEqual(decoded.control, page.control);
@@ -291,7 +291,7 @@ describe('detail pages', () => {
 			tint: new Uint8Array(4 * 16),
 			index: new Uint8Array(15),
 		};
-		assert.throws(() => encodeDetailPage(page), RangeError);
+		assert.throws(() => encodeSplatPage(page), RangeError);
 	});
 });
 

@@ -125,7 +125,7 @@ level's binding names the same asset.
 `readWaterGlobalConfig` keeps only sectors with `sectorDataExists` set. it takes each sector's
 `(x, z)` from its path (`…/Sector/T_<x>_<z>.asset`) rather than from its array index, and turns the
 signed `sectorDataAssetHashes` entry into an unsigned 64-bit key. sector `(x, z)` covers world
-`[centre.x + x·sectorSize, +sectorSize) × [centre.z + z·sectorSize, +sectorSize)`; clearly more
+`[center.x + x·sectorSize, +sectorSize) × [center.z + z·sectorSize, +sectorSize)`; clearly more
 surface centres land in sectors with data under this mapping than under swapped or flipped axes.
 each sector MonoBehaviour's `waterSectorTexture0` is a flow tile (256², linear BC7, one mip) holding
 the global flow map's content at `flowmapPrecision`. its `rippleLayerBuffer` is unread.
@@ -143,7 +143,7 @@ WaterTable
   configs    WaterConfigEntry[]   { name, values } deduplicated by asset key
   surfaces   WaterSurfaceEntry[]  { id, level, condition, geometry, transform, bounds, config,
                                     renderTypeMask, param1 }
-WaterGlobal  { mapSize, sectorSize, centre, flowmapPrecision,
+WaterGlobal  { mapSize, sectorSize, center, flowmapPrecision,
                flowMap, causticMap, normalMaps, rainMap, sectors: { x, z, texture }[] }
 ```
 
@@ -205,7 +205,7 @@ counts per level, chunk file, mask, mesh and config, and single config assets
   sky reflection and a GGX sun highlight. `distanceEdgeBlendFactor` fades shallow water into what's
   under it. foam isn't drawn.
 
-the flow-map orientation (`uv = (world.xz − centre) / mapSize + 0.5`), the flow and normal channel
+the flow-map orientation (`uv = (world.xz − center) / mapSize + 0.5`), the flow and normal channel
 meanings, and the blend between the two absorptions come from community tooling, not the game's
 shaders. treat them as the first suspects when the water looks wrong.
 

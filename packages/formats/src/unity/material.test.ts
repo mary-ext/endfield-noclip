@@ -71,8 +71,7 @@ describe('classifyHgrpMaterial', () => {
 		assert.equal(result.alphaClipThreshold, null);
 		assert.equal(result.cull, 'back');
 		assert.equal(result.zWrite, true);
-		assert.equal(result.normalLayout, 'RAG');
-		assert.equal(result.usesMro, true);
+		assert.equal(result.baseTextureMapCount, 0);
 	});
 
 	it('classifies alpha-tested two-sided foliage', () => {
@@ -89,7 +88,7 @@ describe('classifyHgrpMaterial', () => {
 		assert.equal(result.blend, 'alphaTest');
 		assert.equal(result.alphaClipThreshold, 0.35);
 		assert.equal(result.cull, 'none');
-		assert.equal(result.normalLayout, 'RG');
+		assert.equal(result.baseTextureMapCount, null);
 	});
 
 	it('classifies blended families by their factors', () => {
@@ -110,7 +109,7 @@ describe('classifyHgrpMaterial', () => {
 		);
 		assert.equal(glass.blend, 'alphaBlend');
 		assert.deepEqual(glass.blendFactors, [5, 10]);
-		assert.equal(glass.normalLayout, 'RG');
+		assert.equal(glass.baseTextureMapCount, 1);
 
 		const premultiplied = classifyHgrpMaterial(
 			material({ floats: { _SrcBlend: 1, _DstBlend: 10 } }),

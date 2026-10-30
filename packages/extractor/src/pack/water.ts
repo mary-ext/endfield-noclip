@@ -206,7 +206,7 @@ export const selectSurfaces = <T extends Pick<SourcedWaterSurface, 'levelTag' | 
  */
 export const sectorsOverlapping = <T extends { x: number; z: number }>(
 	sectors: readonly T[],
-	global: Pick<WaterGlobal, 'centre' | 'sectorSize'>,
+	global: Pick<WaterGlobal, 'center' | 'sectorSize'>,
 	surfaces: readonly Pick<WaterSurfaceEntry, 'bounds'>[],
 ): T[] => {
 	return sectors.filter((sector) => {
@@ -222,11 +222,11 @@ export const sectorsOverlapping = <T extends { x: number; z: number }>(
 };
 
 const sectorRect = (
-	{ centre, sectorSize }: Pick<WaterGlobal, 'centre' | 'sectorSize'>,
+	{ center, sectorSize }: Pick<WaterGlobal, 'center' | 'sectorSize'>,
 	{ x, z }: { x: number; z: number },
 ): Rect => {
-	const minX = centre[0] + x * sectorSize;
-	const minZ = centre[1] + z * sectorSize;
+	const minX = center[0] + x * sectorSize;
+	const minZ = center[1] + z * sectorSize;
 	return { minX, minZ, maxX: minX + sectorSize, maxZ: minZ + sectorSize };
 };
 
@@ -246,7 +246,7 @@ const planGlobal = async (
 	const sectors = options.subset
 		? sectorsOverlapping(
 				config.sectors,
-				{ centre: config.sceneCenterOffset, sectorSize: config.sectorSize },
+				{ center: config.sceneCenterOffset, sectorSize: config.sectorSize },
 				plan.table.surfaces,
 			)
 		: config.sectors;
@@ -278,7 +278,7 @@ const planGlobal = async (
 	const global: WaterGlobal = {
 		mapSize: config.mapSize,
 		sectorSize: config.sectorSize,
-		centre: config.sceneCenterOffset,
+		center: config.sceneCenterOffset,
 		flowmapPrecision: config.flowmapPrecision,
 		flowMap,
 		causticMap,

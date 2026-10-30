@@ -16,7 +16,7 @@ free of node APIs and of other workspace packages so both sides can import it.
 
 ## versioning
 
-`PACKAGE_VERSION` (14) is written to `manifest.version` and to the header of every binary encoding
+`PACKAGE_VERSION` (15) is written to `manifest.version` and to the header of every binary encoding
 (tree, chains, blob table, irradiance table, instance blocks, height pages, geometry blobs). readers
 accept exactly that version and reject any other, and nothing migrates old packages: a package from
 another version is re-extracted. bump the version on any incompatible change to the manifest, a
@@ -33,7 +33,7 @@ invalidates cached conversions.
   core.czar                       read whole when the package opens
     blobs/<hash>.hgt              terrain height pages coarser than the 128 m cells
     blobs/<hash>.tsp              terrain surface pages, likewise
-    blobs/<hash>.inst             HLOD and resident instance blocks, one of each per level tag
+    blobs/<hash>.inst             HLOD and global instance blocks, one of each per level tag
     manifest.json                 PackageManifest
     tables/blobs.bin              blob index → archive, codec, kind, offset, lengths
     tables/chains.bin             LOD-chain templates
@@ -47,10 +47,10 @@ invalidates cached conversions.
   shards/<l>_<x>_<z>.czar         content of one shard-level tile's subtree
     blobs/<hash>.hgt              terrain height pages at the cell level and finer
     blobs/<hash>.tsp              terrain surface pages, likewise
-    blobs/<hash>.tdt              terrain detail pages (leaves)
+    blobs/<hash>.tsl              terrain splat pages (leaves)
     blobs/<hash>.inst             detail and conditional instance blocks
   assets/<l>_<x>_<z>[.<n>].czar   geometry and texture blobs whose uses all lie under that tile
-  assets/common[.<n>].czar        ... used by resident content or under several root tiles
+  assets/common[.<n>].czar        ... used by global content or under several root tiles
   assets/terrain-layers.czar      terrain layer textures (.tly)
     blobs/<hash>.mesh             one mesh
     blobs/<hash>.tex              mip levels of one texture
@@ -85,7 +85,7 @@ view uncompressed members as typed arrays.
   member path is `blobs/<hash>.<ext>` (`BLOB_EXTENSIONS`).
 - **codec** (`BlobCodec`): `0` none, `1` one zstd frame. the packer keeps the zstd frame only when
   it saves at least 1/32 of the bytes, since a frame costs a decode pass and small BC7 mip tails
-  barely compress. levels: 19 for instance, height page, detail page and geometry blobs; 9 for
+  barely compress. levels: 19 for instance, height page, splat page and geometry blobs; 9 for
   textures, terrain surface pages, layer textures and irradiance cells (19 saves about 2 % more at
   roughly 10× the time). the viewer decodes zstd with zstddec's wasm build, because browsers'
   `DecompressionStream` can't be relied on for zstd.
@@ -138,9 +138,9 @@ stands for.
 its screen-space error, `geometricError · viewportHeight / (2 · distance · tan(fovY / 2))`, is
 within the threshold; otherwise it refines to its children, and a refined leaf draws its detail
 blocks. this is how the game swaps HLODs, seams included. per-instance LOD inside detail uses the
-chain thresholds. `manifest.resident` content (the game's always-loaded Global scenery) is always
-drawn and never replaced. `geometricError` is a placeholder, `edge / 16` (64 m leaf → 4 m), until
-the game's HLOD switch distances are known.
+chain thresholds. `manifest.global` content (the game's always-loaded Global chunk scenery) is
+always drawn and never replaced. `geometricError` is a placeholder, `edge / 16` (64 m leaf → 4 m),
+until the game's HLOD switch distances are known.
 
 **content refs** (`ContentRef`, `ContentKind`):
 
@@ -151,11 +151,11 @@ the game's HLOD switch distances are known.
 | `Detail` (2)         | a whole instance block                                       | 0         | level tag  | 0                                       |
 | `Conditional` (3)    | a whole instance block shown only while its condition holds  | 0         | level tag  | index into `StatesInfo.conditionalSets` |
 | `TerrainSurface` (4) | one surface page, covering the same tile as the height page  | 0         | 0          | 0                                       |
-| `TerrainDetail` (5)  | a leaf's detail page                                         | 0         | 0          | 0                                       |
+| `TerrainSplat` (5)   | a leaf's splat page                                          | 0         | 0          | 0                                       |
 
 detail and conditional blocks are one per (leaf, level tag, condition); an instance goes to the leaf
-under its bounds centre. HLOD and resident rows form one block per level tag in the core, HLOD rows
-sorted by node so each node's refs are one run. resident refs live in `manifest.resident` with kind
+under its bounds centre. HLOD and global rows form one block per level tag in the core, HLOD rows
+sorted by node so each node's refs are one run. global refs live in `manifest.global` with kind
 `Detail`.
 
 ## manifest
@@ -174,7 +174,7 @@ sorted by node so each node's refs are one run. resident refs live in `manifest.
 | `environments`, `environmentPhases`, `environmentVolumes` | see [environment.md](game-data/environment.md)                                                                                                                            |
 | `states`                                                  | progressions, toggles and conditional sets; see [scene states](#conditions)                                                                                               |
 | `archives`                                                | `ArchiveInfo`: name, role, tile, size, `dataOffset`                                                                                                                       |
-| `resident`                                                | content refs drawn regardless of refinement                                                                                                                               |
+| `global`                                                  | content refs drawn regardless of refinement                                                                                                                               |
 | `subset`                                                  | what `--level` / `--bounds` kept, or `null`                                                                                                                               |
 | `source`                                                  | the bundle manifest's build guid and content hash: identifies the game build                                                                                              |
 
@@ -238,15 +238,16 @@ edge lie outside the tile, so world `x` maps to
 `u = border / side + (x − tile.minX) / tile.size · (side − 2 · border) / side`. a tile missing
 either page has no surface ref. on map02 the 3,393 pages are 118 MB raw and 64 MB stored.
 
-### detail page (`.tdt`, `EFTD`) and layer textures (`.tly`)
+### splat page (`.tsl`, `EFSL`) and layer textures (`.tly`)
 
-a leaf's close-up blend inputs ([world.md](game-data/world.md#close-up-layers)). 12-byte header:
+a leaf's close-up blend inputs, the game's splat control, tint and index pages
+([world.md](game-data/world.md#close-up-layers)). 12-byte header:
 `u32 magic, u16 version, u16 side, u16 cells, u16 0`, then the `S` page's RGBA8 texels (`side²`),
 the `T` page's BC3 sRGB blocks, and `cells²` cells of 4 layer ordinals cut from the scene's index
 map, row-major from the leaf's minimum corner. the images share the surface page's layout. a leaf
-missing either page has no detail ref. map02's 2,492 are 218 MB raw and 40 MB stored.
+missing either page has no splat ref. map02's 2,492 are 218 MB raw and 40 MB stored.
 
-`terrain.detail` (`TerrainDetailInfo`) holds the cell size, the layer table (repeats per metre,
+`terrain.splat` (`TerrainSplatInfo`) holds the cell size, the layer table (repeats per metre,
 offsets, mean colour, scales and remaps, named rather than the game's packed vectors), and the layer
 textures: one `TerrainLayer` blob per texture and role, raw BC7 levels from `textureSize` down,
 largest first, levels under 4² padded to one block. the packer drops the game's top level (1024²),
@@ -297,13 +298,13 @@ each is one zstd frame around JSON. entry `i` has id `i`. an entry is either rea
 `debug/assets.json`); draws referencing an unconverted entry are skipped. `--no-assets` exists for
 fast iteration on the instance side.
 
-| table        | contents                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `geometries` | `ReadyGeometry`: blob, local bounds, vertex/index/submesh counts, attribute bitmask, `tangentUv`                                                                                                                                                                                                                                                                                                                                                                                    |
-| `materials`  | `shaders`: each shader's declared properties and defaults (floats, colours as authored: gamma-encoded, or linear for HDR colours, vectors, texture built-in defaults, `[Normal]` slots) and its `ShaderFamily`. `entries`: `ReadyMaterial` with shader index, keywords, render queue, blend, cull, `zWrite`, alpha clip threshold, normal layout, bound `slots` (texture id, UV set, `_ST` scale/offset) and only the floats/colours/vectors that differ from the shader's defaults |
-| `textures`   | `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler as `GPUSamplerDescriptor` fields plus Unity's `mipBias`, `pieces` coarse to fine                                                                                                                                                                                                                                                                                                                |
-| `water`      | see [water.md](game-data/water.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `lights`     | `LightEntry`: kind (spot, point), entity id, level tag, condition, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                           |
+| table        | contents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `geometries` | `ReadyGeometry`: blob, local bounds, vertex/index/submesh counts, attribute bitmask, `tangentUv`                                                                                                                                                                                                                                                                                                                                                                                            |
+| `materials`  | `shaders`: each shader's declared properties and defaults (floats, colours as authored: gamma-encoded, or linear for HDR colours, vectors, texture built-in defaults, `[Normal]` slots) and its `ShaderFamily`. `entries`: `ReadyMaterial` with shader index, keywords, render queue, blend, cull, `zWrite`, alpha clip threshold, `baseTextureMapCount`, bound `slots` (texture id, UV set, `_ST` scale/offset) and only the floats/colours/vectors that differ from the shader's defaults |
+| `textures`   | `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler as `GPUSamplerDescriptor` fields plus Unity's `mipBias`, `pieces` coarse to fine                                                                                                                                                                                                                                                                                                                        |
+| `water`      | see [water.md](game-data/water.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `lights`     | `LightEntry`: kind (spot, point), entity id, level tag, condition, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                                   |
 
 materials store overrides only because lit materials declare ~190 floats each; undeclared (stale)
 properties Unity keeps from earlier shaders are dropped
@@ -329,8 +330,8 @@ sampler and texels share one entry.
 ## asset placement
 
 geometry, material textures and other textures go to the asset archive of the **lowest common
-ancestor** (at or above the shard level) of the tiles that use them, or to `common` for resident
-uses or uses under different root tiles
+ancestor** (at or above the shard level) of the tiles that use them, or to `common` for global uses
+or uses under different root tiles
 ([asset-placement.ts](../packages/extractor/src/pack/asset-placement.ts)). everything a tile draws
 therefore lives in the asset archives of that tile and its ancestors plus common, which suits a
 region import into OPFS or CDN grouping. the viewer itself range-reads single blobs and ignores the
@@ -380,8 +381,8 @@ per-asset provenance lives here rather than in the manifest, which only identifi
 - **detail placement by centre**: a very large object at a leaf disappears while that leaf shows its
   HLOD, unless the HLOD covers it, as the game assumes.
 - **tiny shards**: off-square edges produce sub-KB shards that could merge into a neighbour.
-- **common archive size**: resident scenery pulls its assets into `common`; placing resident content
-  by its own bounds would spread it.
+- **common archive size**: global scenery pulls its assets into `common`; placing global content by
+  its own bounds would spread it.
 - **texture size**: textures at native resolution dominate package size; a cap that drops leading
   levels would make a lite package.
 - **terrain cliffs**: the cliff-index pages and cone maps, which the game's cliff projection and

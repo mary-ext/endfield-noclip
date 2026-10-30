@@ -258,7 +258,8 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	const keywords = entry.keywords;
 	const lit = family === 'lit';
 	const emissiveMap = keywords.includes('_EMISSIVE_MAP');
-	const triChannel = lit && keywords.includes('_TRI_CHANNEL_MASK') && !entry.usesMro;
+	const mro = entry.baseTextureMapCount === 0;
+	const triChannel = lit && keywords.includes('_TRI_CHANNEL_MASK') && !mro;
 	// a separate parallax mask texture (`_UseParallaxMask`) has no slot; such materials stay dark
 	const parallax =
 		lit && keywords.includes('_PARALLAX_MAP') && floatOf(entry, shader, '_UseParallaxMask', 0) === 0;
@@ -282,15 +283,15 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		params.set([...slot.scale, ...slot.offset], LookRow.uv + i * 4);
 	});
 
-	if (entry.normalLayout === 'RAG') {
+	if (mro) {
 		look.flags |= LookFlags.NormalRag;
-	} else if (entry.normalLayout === 'RG' || foliage) {
+	} else if (entry.baseTextureMapCount !== null || foliage) {
 		look.flags |= LookFlags.NormalRoughness;
 	}
-	// the two-texture layout's occlusion and metallic sources (module comment)
-	if (family === 'lit' && entry.normalLayout === 'RG') {
+	// the two-basemap layout's occlusion and metallic sources (module comment)
+	if (family === 'lit' && entry.baseTextureMapCount !== null && !mro) {
 		look.flags |= LookFlags.NormalOcclusion;
-		if (floatOf(entry, shader, '_BaseTextureMapCount', 1) < 1.5) {
+		if (entry.baseTextureMapCount < 1.5) {
 			look.flags |= LookFlags.MetallicBaseAlpha;
 		}
 	}
@@ -306,7 +307,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		const color = tint === undefined ? [1, 1, 1] : linearRgb(tint);
 		params.set([...color, entry.alphaClipThreshold ?? -1], LookRow.tint);
 		// `_AlphaMaskChannel` picks the alpha the Lit family tests: 0 the base colour's, 1 the normal map's. in
-		// the one-base-map layout the base colour's alpha is metallic, so testing it would cut holes in solid walls
+		// the `_BaseTextureMapCount` 1 layout the base colour's alpha is metallic, so testing it would cut holes in solid walls
 		if (family === 'lit' && floatOf(entry, shader, '_AlphaMaskChannel', 0) === 1) {
 			look.flags |= LookFlags.AlphaNormal;
 		}
@@ -433,7 +434,7 @@ const MASK_CHANNELS = [
 
 /** @returns the texture in the mask slot: the MRO map in that layout, else the tri-channel mask if it's on */
 const maskSlotOf = (entry: ReadyMaterial, triChannel: boolean): string | null => {
-	if (entry.usesMro) {
+	if (entry.baseTextureMapCount === 0) {
 		return '_MROMap';
 	}
 	if (triChannel) {

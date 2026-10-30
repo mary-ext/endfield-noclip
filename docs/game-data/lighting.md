@@ -161,8 +161,8 @@ grid still visible.
 | `_EMISSIVE_NOMAP` | only ships with the sweep animation (`_EMISSIVE_ANIM_SWEEP`); not drawn                 |
 
 the mask channel is 0 for no emission, 1 for the base colour's alpha, 2 for the normal map's B
-(two-texture layout) or the base alpha (MRO layout), and 3 or more for the normal map's alpha
-(two-texture) or the MRO map's alpha; the channel is remapped by `saturate((m − 0.05) / 0.9)`. the
+(two-basemap layout) or the base alpha (MRO layout), and 3 or more for the normal map's alpha
+(two-basemap) or the MRO map's alpha; the channel is remapped by `saturate((m − 0.05) / 0.9)`. the
 Hub's ceiling panels use mask channel 3. emission is multiplied by the albedo unless
 `_AlbedoAffectEmissive` is 1. `_IgnorePostExposure` emitters (nearly all) divide out the post
 exposure (the [auto exposure](#auto-exposure) times the viewer's exposure option), so they keep
@@ -210,7 +210,7 @@ separate parallax mask texture (`_UseParallaxMask`; such materials don't glow), 
 
 alpha-tested HGRP Lit materials (`_ALPHATEST_ON`) test the alpha `_AlphaMaskChannel` picks against
 `_AlphaClipThreshold`: 0 for the base colour's, 1 for the normal map's. map01 has 26 materials on
-channel 1, all in the two-texture layout, where the base alpha is metallic; testing that instead
+channel 1, all in the two-basemap layout, where the base alpha is metallic; testing that instead
 cuts the Hub's white container walls down to their grime streaks.
 
 ## matte paintings

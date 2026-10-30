@@ -9,7 +9,7 @@ import {
 // where geometry and texture blobs go. an asset lives in the archive of the smallest tile (at or above the
 // shard level) whose subtree contains every use of it, so fetching a region means its tile archives and their
 // ancestors' (plus common); it's never spread over sibling regions. assets used under different root tiles or
-// by resident content go to the common archive.
+// by global content go to the common archive.
 
 /** an asset's placement: a tile, `null` for the common archive, `undefined` while unused */
 export type Place = TileKey | null | undefined;
@@ -68,7 +68,7 @@ export class AssetPlacement {
 	 * records a use of a chain
 	 *
 	 * @param chain chain id
-	 * @param tile the tile whose content draws it, or `null` for content outside the tile tree (resident)
+	 * @param tile the tile whose content draws it, or `null` for content outside the tile tree (global)
 	 */
 	note(chain: number, tile: TileKey | null): void {
 		this.#chains[chain] = mergePlaces(this.#chains[chain], this.#lift(tile));
@@ -78,7 +78,7 @@ export class AssetPlacement {
 	 * records a use of a geometry outside the chain table
 	 *
 	 * @param geometry geometry id
-	 * @param tile the tile whose content draws it, or `null` for resident content
+	 * @param tile the tile whose content draws it, or `null` for global content
 	 */
 	noteGeometry(geometry: number, tile: TileKey | null): void {
 		this.#geometries[geometry] = mergePlaces(this.#geometries[geometry], this.#lift(tile));

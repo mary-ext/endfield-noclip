@@ -34,7 +34,7 @@ struct Layer {
 @group(1) @binding(2) var surface_albedo: texture_2d_array<f32>;
 @group(1) @binding(3) var surface_normal: texture_2d_array<f32>;
 @group(1) @binding(4) var surface_sampler: sampler;
-// detail pages: splat control (rgb weights, slot 3 the remainder) and tint (rgb, weight a⁴)
+// splat pages: splat control (rgb weights, slot 3 the remainder) and tint (rgb, weight a⁴)
 @group(1) @binding(5) var detail_control: texture_2d_array<f32>;
 @group(1) @binding(6) var detail_tint: texture_2d_array<f32>;
 // layer textures: diffuse rgb + height a; normal xy, roughness b, occlusion a
@@ -53,7 +53,7 @@ override PAGE_WORDS: u32 = (u32(SIDE * SIDE) + 1u) / 2u;
 // vertices per grid edge
 override GRID: u32 = u32(LAST) / 2u + 1u;
 
-// detail page layout, from `SURFACE_SIDE` and `SURFACE_BORDER`: 2 texels of border around 128 per 64 m
+// splat page layout, from `SURFACE_SIDE` and `SURFACE_BORDER`: 2 texels of border around 128 per 64 m
 const PAGE_TEXELS = 132.0;
 const PAGE_BORDER = 2.0;
 const LEAF_METRES = 64.0;

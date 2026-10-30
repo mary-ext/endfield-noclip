@@ -52,9 +52,9 @@ export interface ResidentSurface {
 	slot: number;
 }
 
-/** GPU residency of a terrain detail page */
+/** GPU residency of a terrain splat page */
 export interface ResidentDetail {
-	kind: 'detail';
+	kind: 'splat';
 	/** GPU bytes */
 	bytes: number;
 	/** layer of the detail texture arrays */
@@ -232,7 +232,7 @@ export class StreamManager {
 		residentByKind: {
 			heights: 0,
 			surface: 0,
-			detail: 0,
+			splat: 0,
 			layer: 0,
 			instances: 0,
 			geometry: 0,
@@ -649,8 +649,8 @@ export class StreamManager {
 				job = this.#pool.run({ kind: 'surface', ...base });
 				break;
 			}
-			case BlobKind.TerrainDetail: {
-				job = this.#pool.run({ kind: 'detail', ...base });
+			case BlobKind.TerrainSplat: {
+				job = this.#pool.run({ kind: 'splat', ...base });
 				break;
 			}
 			case BlobKind.TerrainLayer: {
@@ -755,7 +755,7 @@ export class StreamManager {
 			case 'surface': {
 				return this.#stores.uploadSurface(decoded);
 			}
-			case 'detail': {
+			case 'splat': {
 				return this.#stores.uploadDetail(decoded);
 			}
 			case 'layer': {
