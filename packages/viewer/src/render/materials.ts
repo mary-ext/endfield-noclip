@@ -22,7 +22,7 @@ import type {
 	ShaderEntry,
 } from '@endfield-noclip/package-format/format';
 
-import { linearRgb } from './colour.ts';
+import { linearRgb } from './color.ts';
 
 /** shader families that aren't drawn as opaque surfaces (fog volumes, light beams, effects) */
 const SKIPPED_FAMILIES = new Set([
@@ -173,7 +173,7 @@ export const LookRow = {
 	/** pulse speed, pulse phase per metre of the object's position, ignore post exposure, intensity */
 	parallax2: 92,
 	/** `_ParallaxColor` (HDR, as stored), mask channel */
-	parallaxColour: 96,
+	parallaxColor: 96,
 	/** `_ParallaxColorDark` */
 	parallaxDark: 100,
 } as const;
@@ -207,7 +207,7 @@ const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => {
 const floatOf = (entry: ReadyMaterial, shader: ShaderEntry, name: string, fallback: number): number =>
 	entry.floats[name] ?? shader.floats[name] ?? fallback;
 
-const colourOf = (entry: ReadyMaterial, shader: ShaderEntry, name: string): Color | undefined =>
+const colorOf = (entry: ReadyMaterial, shader: ShaderEntry, name: string): Color | undefined =>
 	entry.colors[name] ?? shader.colors[name];
 
 /**
@@ -300,11 +300,11 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 
 	// base colour: brightened, then covered by the tint
 	{
-		const tint = colourOf(entry, shader, '_BaseColor');
+		const tint = colorOf(entry, shader, '_BaseColor');
 		const cover = floatOf(entry, shader, '_BaseColorTintCover', 0);
 		const brighter = floatOf(entry, shader, '_BaseColorBrighterScale', 1);
-		const colour = tint === undefined ? [1, 1, 1] : linearRgb(tint);
-		params.set([...colour, entry.alphaClipThreshold ?? -1], LookRow.tint);
+		const color = tint === undefined ? [1, 1, 1] : linearRgb(tint);
+		params.set([...color, entry.alphaClipThreshold ?? -1], LookRow.tint);
 		// `_AlphaMaskChannel` picks the alpha the Lit family tests: 0 the base colour's, 1 the normal map's. in
 		// the one-base-map layout the base colour's alpha is metallic, so testing it would cut holes in solid walls
 		if (family === 'lit' && floatOf(entry, shader, '_AlphaMaskChannel', 0) === 1) {
@@ -336,7 +336,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	// (`_EMISSIVE_MASK`, where 0 turns emission off; mesh.wgsl reads the channel). the animated variants are
 	// drawn still, and `_EMISSIVE_NOMAP` only comes with the sweep animation, so it stays dark
 	{
-		const emissive = colourOf(entry, shader, '_EmissiveColor');
+		const emissive = colorOf(entry, shader, '_EmissiveColor');
 		const channel = floatOf(entry, shader, '_EmissiveMaskChannel', 0);
 		let emits = false;
 		if (emissiveMap) {
@@ -366,8 +366,8 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		// the switch-texture variants take G and B from textures of their own, which have no slot: only R blends
 		const switched = keywords.some((keyword) => keyword.startsWith('_TRI_CHANNEL_MASK_SWITCH_TEXTURE'));
 		MASK_CHANNELS.forEach((channel, i) => {
-			const colour = colourOf(entry, shader, channel.albedo) ?? [1, 1, 1, 0];
-			params.set([...linearRgb(colour), switched && i > 0 ? 0 : colour[3]], LookRow.maskAlbedo + i * 4);
+			const color = colorOf(entry, shader, channel.albedo) ?? [1, 1, 1, 0];
+			params.set([...linearRgb(color), switched && i > 0 ? 0 : color[3]], LookRow.maskAlbedo + i * 4);
 			params[LookRow.maskRoughness + i] = floatOf(entry, shader, channel.roughness, 1);
 			params[LookRow.maskMetallic + i] = floatOf(entry, shader, channel.metallic, 0);
 			params[LookRow.maskScale + i] = floatOf(entry, shader, channel.scale, 0);
@@ -393,7 +393,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 			],
 			LookRow.detail2,
 		);
-		const overlay = colourOf(entry, shader, '_DetailOverlayColor') ?? [0, 0, 0, 0];
+		const overlay = colorOf(entry, shader, '_DetailOverlayColor') ?? [0, 0, 0, 0];
 		params.set([...linearRgb(overlay), overlay[3]], LookRow.detailOverlay);
 	}
 
@@ -489,8 +489,8 @@ const parallaxParams = (look: MaterialLook, entry: ReadyMaterial, shader: Shader
 	);
 	// HDR colours, as stored (see the emission above)
 	const intensity = floatOf(entry, shader, '_ParallaxIntensity', 1);
-	const bright = colourOf(entry, shader, '_ParallaxColor') ?? [0, 0, 0, 1];
-	const dark = colourOf(entry, shader, '_ParallaxColorDark') ?? [0, 0, 0, 1];
+	const bright = colorOf(entry, shader, '_ParallaxColor') ?? [0, 0, 0, 1];
+	const dark = colorOf(entry, shader, '_ParallaxColorDark') ?? [0, 0, 0, 1];
 	params.set(
 		[
 			bright[0] * intensity,
@@ -498,7 +498,7 @@ const parallaxParams = (look: MaterialLook, entry: ReadyMaterial, shader: Shader
 			bright[2] * intensity,
 			floatOf(entry, shader, '_ParallaxMaskChannel', 0),
 		],
-		LookRow.parallaxColour,
+		LookRow.parallaxColor,
 	);
 	params.set([dark[0] * intensity, dark[1] * intensity, dark[2] * intensity], LookRow.parallaxDark);
 };
@@ -523,9 +523,9 @@ const mattePaintingLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialL
 		look.flags |= LookFlags.BaseMap;
 		params.set([...slot.scale, ...slot.offset], LookRow.uv);
 	}
-	const tint = colourOf(entry, shader, '_TintColor') ?? [1, 1, 1, 1];
+	const tint = colorOf(entry, shader, '_TintColor') ?? [1, 1, 1, 1];
 	const intensity = floatOf(entry, shader, '_TintColorIntensity', 1);
-	const colour = linearRgb(tint).map((c) => c * intensity);
+	const color = linearRgb(tint).map((c) => c * intensity);
 	// the alpha test on the texture's alpha alone: saturate(a · scale) < clip ⇔ a < clip / scale while
 	// clip ≤ 1; past 1 everything is discarded
 	let threshold = -1;
@@ -533,7 +533,7 @@ const mattePaintingLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialL
 		const scale = tint[3] * floatOf(entry, shader, '_TintColorAlpha', 1);
 		threshold = entry.alphaClipThreshold > 1 || scale <= 0 ? 2 : entry.alphaClipThreshold / scale;
 	}
-	params.set([...colour, threshold], LookRow.tint);
+	params.set([...color, threshold], LookRow.tint);
 	look.cutout = threshold >= 0 && look.textures[0] >= 0;
 	params[LookRow.surface] = floatOf(entry, shader, '_ExpThreshold', 1);
 	params[LookRow.surface + 1] = floatOf(entry, shader, '_ExpIntensity', 0);

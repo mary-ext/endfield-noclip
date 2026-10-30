@@ -146,18 +146,18 @@ export class ShadowMap {
 			const far = SPLITS[i];
 			// the slice's bounding sphere, centred on the view axis
 			const cornerSquared = 1 + tanX * tanX + tanY * tanY;
-			let centre = (near + far) / 2;
+			let center = (near + far) / 2;
 			// move the centre towards the far plane as far as the near corners allow (smallest sphere)
-			centre = Math.min(far, ((far * far - near * near) * cornerSquared) / (2 * (far - near)) || centre);
-			const radiusFar = Math.sqrt((far - centre) ** 2 + far * far * (cornerSquared - 1));
-			const radiusNear = Math.sqrt((centre - near) ** 2 + near * near * (cornerSquared - 1));
+			center = Math.min(far, ((far * far - near * near) * cornerSquared) / (2 * (far - near)) || center);
+			const radiusFar = Math.sqrt((far - center) ** 2 + far * far * (cornerSquared - 1));
+			const radiusNear = Math.sqrt((center - near) ** 2 + near * near * (cornerSquared - 1));
 			const radius = Math.ceil(Math.max(radiusFar, radiusNear));
 			const texel = (2 * radius) / SHADOW_SIZE;
 			// snap the centre to whole texels in world space
 			const world: Vec3 = [
-				eye[0] + forward[0] * centre,
-				eye[1] + forward[1] * centre,
-				eye[2] + forward[2] * centre,
+				eye[0] + forward[0] * center,
+				eye[1] + forward[1] * center,
+				eye[2] + forward[2] * center,
 			];
 			const sx = Math.round(dot(world, x) / texel) * texel;
 			const sy = Math.round(dot(world, y) / texel) * texel;

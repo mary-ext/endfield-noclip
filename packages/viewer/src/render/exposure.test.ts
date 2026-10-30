@@ -18,7 +18,7 @@ const HUB: AutoExposureSettings = {
 	downSpeed: 1,
 	meteringRange: [-8, 4],
 	binRange: [-5, 4],
-	centreWeighted: true,
+	centerWeighted: true,
 	percentiles: [0.05, 0.95],
 	evLimits: [-0.2, 8],
 };

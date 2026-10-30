@@ -10,7 +10,7 @@ struct Frame {
 	// direction towards the sun, w = 1 when the sun casts light
 	sun: vec4f,
 	// sun illuminance (pre-exposed lux, linear rgb), w = specular intensity
-	sun_colour: vec4f,
+	sun_color: vec4f,
 	// the ambient probe in Unity's shader form: SHAr, SHAg, SHAb, SHBr, SHBg, SHBb, SHC
 	sh: array<vec4f, 7>,
 	// x = indirect specular factor, y = 1 / post exposure (scales emission that ignores it), z = 1 with a reflection cubemap, w = its finest mip count - 1
@@ -453,7 +453,7 @@ fn local_light_at(i: u32, rel: vec3f) -> LocalLight {
 // Lambert without the 1/π and without (1 − F), so in the units of the light's colour the result is
 // `colour · (diffuse + π · specular)`. a soft source radius widens the lobe; a tube takes the point of the
 // segment nearest the reflection for its specular. the game's multiple-scattering term is left out
-fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_colour: vec3f, f0: vec3f, roughness: f32) -> vec3f {
+fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_color: vec3f, f0: vec3f, roughness: f32) -> vec3f {
 	let words = light_bin_words(px, rel);
 	if (words.x == 0xffffffffu) {
 		return vec3f(0.0);
@@ -508,7 +508,7 @@ fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_colour: vec
 			let f = fresnel_schlick(f0, v_dot_h);
 			let g = lights[i * 8u + 4u];
 			let specular = clamp(min(f * (distribution * norm * visibility), vec3f(2048.0)) * g.x, vec3f(0.0), vec3f(1000.0));
-			sum += (specular + diffuse_colour) * n_dot_l * lights[i * 8u + 1u].rgb * light.attenuation;
+			sum += (specular + diffuse_color) * n_dot_l * lights[i * 8u + 1u].rgb * light.attenuation;
 		}
 	}
 	return min(sum, vec3f(255.0));
@@ -558,7 +558,7 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	let roughness = clamp(s.roughness, 0.045, 1.0);
 	let a = roughness * roughness;
 	let a2 = a * a;
-	let diffuse_colour = s.albedo * (1.0 - s.metallic);
+	let diffuse_color = s.albedo * (1.0 - s.metallic);
 	let f0 = mix(vec3f(s.f0), s.albedo, s.metallic);
 
 	var direct = vec3f(0.0);
@@ -567,23 +567,23 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		let n_dot_h = clamp(dot(n, h), 0.0, 1.0);
 		let v_dot_h = clamp(dot(v, h), 0.0, 1.0);
 		let f = fresnel_schlick(f0, v_dot_h);
-		let specular = f * (ggx_distribution(n_dot_h, a2) * smith_visibility(n_dot_v, n_dot_l, a2)) * frame.sun_colour.w;
-		let diffuse = diffuse_colour / PI * (vec3f(1.0) - f);
+		let specular = f * (ggx_distribution(n_dot_h, a2) * smith_visibility(n_dot_v, n_dot_l, a2)) * frame.sun_color.w;
+		let diffuse = diffuse_color / PI * (vec3f(1.0) - f);
 		direct = (diffuse + specular) * n_dot_l;
 		// thin translucency: light from behind, wrapped around the leaf
 		let back = clamp(dot(-n, l), 0.0, 1.0);
-		direct += diffuse_colour / PI * s.transmission * back;
+		direct += diffuse_color / PI * s.transmission * back;
 		// the shadow lookup only where the sun can reach
 		var visibility = vec3f(0.0);
 		if (n_dot_l > 0.0 || s.transmission * back > 0.0) {
 			visibility = sun_visibility(rel, n, px);
 		}
-		direct *= frame.sun_colour.rgb * visibility * frame.sun.w;
+		direct *= frame.sun_color.rgb * visibility * frame.sun.w;
 	}
-	direct += local_lighting(n, v, rel, px, diffuse_colour, f0, roughness);
+	direct += local_lighting(n, v, rel, px, diffuse_color, f0, roughness);
 
 	let irradiance = ambient_irradiance(frame.eye.xyz + rel, n);
-	let diffuse_ambient = diffuse_colour * irradiance;
+	let diffuse_ambient = diffuse_color * irradiance;
 	var specular_ambient: vec3f;
 	{
 		let r = normalize(mix(reflect(-v, n), n, roughness * roughness));
@@ -597,7 +597,7 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	// specular sees only the material occlusion, through Lagarde's specular occlusion
 	let specular_occlusion = clamp(pow(n_dot_v + s.occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + s.occlusion, 0.0, 1.0);
 	let ambient = diffuse_ambient * s.occlusion + specular_ambient * specular_occlusion;
-	let albedo_luminance = dot(diffuse_colour, vec3f(0.2126, 0.7152, 0.0722));
+	let albedo_luminance = dot(diffuse_color, vec3f(0.2126, 0.7152, 0.0722));
 
 	var out: Shaded;
 	switch frame.flags.y {
@@ -629,9 +629,9 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 }
 
 // a flat colour that occlusion leaves alone (debug overlays)
-fn unlit(colour: vec3f) -> Shaded {
+fn unlit(color: vec3f) -> Shaded {
 	var out: Shaded;
-	out.radiance = vec4f(colour, 1.0);
+	out.radiance = vec4f(color, 1.0);
 	out.ambient = vec4f(0.0);
 	return out;
 }

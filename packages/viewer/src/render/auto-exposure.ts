@@ -100,7 +100,7 @@ export class AutoExposure {
 		const params = new ArrayBuffer(32);
 		new Uint32Array(params, 0, 3).set([width, height, STRIDE]);
 		new Float32Array(params, 12, 3).set([
-			settings.centreWeighted ? CENTRE_WEIGHT : 0,
+			settings.centerWeighted ? CENTRE_WEIGHT : 0,
 			settings.meteringRange[0],
 			settings.meteringRange[1],
 		]);

@@ -61,7 +61,7 @@ export class RenderTargets {
 	#devicePixelSize: [width: number, height: number] | null = null;
 	#textures: GPUTexture[] = [];
 	#depth: GPUTexture | null = null;
-	#colours: [GPUTexture, GPUTexture] | null = null;
+	#colors: [GPUTexture, GPUTexture] | null = null;
 	#scene: SceneTextures | null = null;
 	#version = 0;
 
@@ -146,7 +146,7 @@ export class RenderTargets {
 		};
 		const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
 		this.#depth = create({ label: 'depth', size: [width, height], format: DEPTH_FORMAT, usage });
-		this.#colours = [
+		this.#colors = [
 			create({
 				label: 'radiance',
 				size: [width, height],
@@ -157,9 +157,9 @@ export class RenderTargets {
 		];
 		this.#version++;
 		this.#scene = {
-			radiance: this.#colours[0].createView(),
-			radianceTexture: this.#colours[0],
-			ambient: this.#colours[1].createView(),
+			radiance: this.#colors[0].createView(),
+			radianceTexture: this.#colors[0],
+			ambient: this.#colors[1].createView(),
 			depth: this.#depth.createView(),
 			version: this.#version,
 		};
@@ -184,11 +184,11 @@ export class RenderTargets {
 		colors: GPURenderPassColorAttachment[];
 		depth: GPURenderPassDepthStencilAttachment;
 	} {
-		if (this.#depth === null || this.#colours === null) {
+		if (this.#depth === null || this.#colors === null) {
 			throw new Error('render targets used before update()');
 		}
 		const clear: GPUColor = { r: 0, g: 0, b: 0, a: 0 };
-		const colors = this.#colours.map((texture): GPURenderPassColorAttachment => ({
+		const colors = this.#colors.map((texture): GPURenderPassColorAttachment => ({
 			view: texture.createView(),
 			clearValue: clear,
 			loadOp: 'clear',

@@ -8,7 +8,7 @@ struct Row {
 	t0: vec4f,
 	t1: vec4f,
 	t2: vec4f,
-	centre: vec3f,
+	center: vec3f,
 	block: u32,
 	extent: vec3f,
 	info: u32,
@@ -54,7 +54,7 @@ struct Draw {
 	// exposure, pulse mean
 	parallax2: vec4f,
 	// bright colour, w = mask channel
-	parallax_colour: vec4f,
+	parallax_color: vec4f,
 	// dark colour
 	parallax_dark: vec4f,
 }
@@ -353,7 +353,7 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 	let parallax_maps = PARALLAX_MAP | PARALLAX_NOISE_MAP;
 	if ((flags & parallax_maps) == parallax_maps && in.tangent.w != 0.0) {
 		// the glow's mask uses the same channel numbering as the emission mask, one lower
-		let glow_mask = map_channel(flags, draw.parallax_colour.w + 1.0, base_a, packed, mask);
+		let glow_mask = map_channel(flags, draw.parallax_color.w + 1.0, base_a, packed, mask);
 		if (glow_mask > 0.01) {
 			let v = normalize(-in.rel);
 			s.emission += parallax_glow(draw, in, v, n, parallax_uv, uv0_dx, uv0_dy, parallax_dx, parallax_dy) *
@@ -437,8 +437,8 @@ fn parallax_glow(
 
 	let fresnel = pow(max(saturate(dot(v, n)), 0.001), draw.parallax.z);
 	let pulse = cos(frame.eye.w * draw.parallax2.x + draw.parallax2.y * in.phase) * draw.parallax.w + draw.parallax2.w;
-	let colour = mix(draw.parallax_dark.rgb, draw.parallax_colour.rgb, pattern) * fresnel * pulse;
-	return clamp(colour, vec3f(0.0), vec3f(1000.0)) * mix(1.0, frame.ambient.y, draw.parallax2.z);
+	let color = mix(draw.parallax_dark.rgb, draw.parallax_color.rgb, pattern) * fresnel * pulse;
+	return clamp(color, vec3f(0.0), vec3f(1000.0)) * mix(1.0, frame.ambient.y, draw.parallax2.z);
 }
 
 // the depth of alpha-tested materials, in the main pass and the shadow passes (opaque ones have no fragment

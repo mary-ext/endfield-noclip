@@ -18,7 +18,7 @@ export const FrameOffsets = {
 	viewProj: 0,
 	eye: 16,
 	sun: 20,
-	sunColour: 24,
+	sunColor: 24,
 	/** 7 vec4s */
 	sh: 28,
 	ambient: 56,

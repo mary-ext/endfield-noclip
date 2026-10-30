@@ -14,8 +14,8 @@ describe('gradingLook', () => {
 	it('packs every neutral section as an identity', () => {
 		const g = gradingLook(NEUTRAL_GRADING);
 		near([g.postExposure, g.hueShift, g.saturation, g.contrast], [1, 0, 1, 1]);
-		near(g.colourBalance, [1, 1, 1]);
-		near(g.colourFilter, [1, 1, 1]);
+		near(g.colorBalance, [1, 1, 1]);
+		near(g.colorFilter, [1, 1, 1]);
 		near(g.channelMixer.flat(), [1, 0, 0, 0, 1, 0, 0, 0, 1]);
 		near([...g.shadows, ...g.midtones, ...g.highlights], [1, 1, 1, 1, 1, 1, 1, 1, 1]);
 		near([...g.lift, ...g.gamma, ...g.gain], [0, 0, 0, 1, 1, 1, 1, 1, 1]);
@@ -41,6 +41,6 @@ describe('gradingLook', () => {
 			colorAdjustmentsColorFilter: [1, 0.5, 1, 1],
 		});
 		near([g.hueShift, g.saturation, g.contrast], [0.25, 0.95, 1.09]);
-		near(g.colourFilter, [1, 0.214, 1]);
+		near(g.colorFilter, [1, 0.214, 1]);
 	});
 });

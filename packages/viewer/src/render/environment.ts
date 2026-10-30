@@ -29,7 +29,7 @@ import type {
 import type { Vec3 } from '../scene/camera.ts';
 
 import { type ColorGradingInput, type Grading, NEUTRAL_GRADING, gradingLook } from './color-grading.ts';
-import { linearRgb, srgbToLinear } from './colour.ts';
+import { linearRgb, srgbToLinear } from './color.ts';
 import { type AutoExposureInput, type AutoExposureSettings, autoExposureLook } from './exposure.ts';
 
 // #region profile input
@@ -307,8 +307,8 @@ export interface PostLook {
 	} | null;
 	ao: { radius: number; falloff: number; distribution: number; thin: number; power: number } | null;
 	vignette: {
-		colour: Vec3;
-		centre: Vec2;
+		color: Vec3;
+		center: Vec2;
 		intensity: number;
 		smoothness: number;
 		roundness: number;
@@ -641,8 +641,8 @@ const postLook = (post: PostInput | null): PostLook => {
 			vignette === null
 				? null
 				: {
-						colour: linearRgb(vignette.color),
-						centre: vignette.center,
+						color: linearRgb(vignette.color),
+						center: vignette.center,
 						intensity: vignette.intensity,
 						smoothness: vignette.smoothness,
 						roundness: vignette.roundness,
@@ -767,8 +767,8 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 	const { light, sky, atmosphere, heightFog, volumetricFog } = source;
 	const preExposure = 1 / (1.2 * 2 ** light.directEV100);
 	const intensity = light.directLux * preExposure;
-	const colour = linearRgb(light.directColor);
-	const sunIlluminance: Vec3 = [colour[0] * intensity, colour[1] * intensity, colour[2] * intensity];
+	const color = linearRgb(light.directColor);
+	const sunIlluminance: Vec3 = [color[0] * intensity, color[1] * intensity, color[2] * intensity];
 	const sunDirection = towardsLight(light.directPitchYaw);
 	const skySunDirection =
 		light.atmospherePitchYawMode === 1 ? towardsLight(light.atmospherePitchYaw) : sunDirection;

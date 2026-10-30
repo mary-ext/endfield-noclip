@@ -69,12 +69,12 @@ fn sample_history(uv: vec2f) -> vec3f {
 
 // moves `c` towards the box's centre until it lies inside (Playdead's clip, gentler on colour than a clamp)
 fn clip_to_box(c: vec3f, lo: vec3f, hi: vec3f) -> vec3f {
-	let centre = 0.5 * (lo + hi);
+	let center = 0.5 * (lo + hi);
 	let extent = 0.5 * (hi - lo) + 1e-5;
-	let offset = c - centre;
+	let offset = c - center;
 	let units = abs(offset / extent);
 	let reach = max(units.x, max(units.y, units.z));
-	return select(c, centre + offset / reach, reach > 1.0);
+	return select(c, center + offset / reach, reach > 1.0);
 }
 
 @fragment
@@ -85,7 +85,7 @@ fn fs_taa(in: FullscreenOut) -> @location(0) vec4f {
 	// this output pixel's centre in the jittered main-pass image, in its pixels
 	let p = (in.uv + vec2f(post.jitter.x, -post.jitter.y) * 0.5) * taa.input.xy;
 	let size = vec2i(taa.input.xy);
-	let centre = vec2i(floor(p));
+	let center = vec2i(floor(p));
 	// output pixels per main-pass pixel
 	let ratio = vec2f(textureDimensions(history_texture)) * taa.input.zw;
 
@@ -99,7 +99,7 @@ fn fs_taa(in: FullscreenOut) -> @location(0) vec4f {
 	var nearest_depth = 0.0;
 	for (var y = -1; y <= 1; y++) {
 		for (var x = -1; x <= 1; x++) {
-			let px = clamp(centre + vec2i(x, y), vec2i(0), size - 1);
+			let px = clamp(center + vec2i(x, y), vec2i(0), size - 1);
 			let c = compress(max(textureLoad(current_texture, px, 0).rgb, vec3f(0.0)));
 			let d = (vec2f(px) + 0.5 - p) * ratio;
 			let w = exp(-FILTER * dot(d, d));

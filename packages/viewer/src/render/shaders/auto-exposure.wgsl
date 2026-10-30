@@ -6,7 +6,7 @@ struct Params {
 	size: vec2u,
 	stride: u32,
 	// 0 for average metering
-	centre_weight: f32,
+	center_weight: f32,
 	// log2 luminance of the first bin's start and the last bin's end
 	ev_range: vec2f,
 }
@@ -28,15 +28,15 @@ fn cs_histogram(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocat
 	workgroupBarrier();
 	let p = id.xy * params.stride;
 	if (all(p < params.size)) {
-		let colour = textureLoad(scene, p, 0).rgb;
-		let luminance = max(dot(colour, vec3f(0.2126729, 0.7151522, 0.072175)), 0.01);
+		let color = textureLoad(scene, p, 0).rgb;
+		let luminance = max(dot(color, vec3f(0.2126729, 0.7151522, 0.072175)), 0.01);
 		let ev = clamp(log2(luminance), params.ev_range.x, params.ev_range.y);
 		let x = (ev - params.ev_range.x) / (params.ev_range.y - params.ev_range.x) * (f32(BINS) - 0.0002);
 		let bin = min(u32(x), BINS - 1u);
 		let next = min(bin + 1u, BINS - 1u);
 		let f = fract(x);
 		let uv = vec2f(p) / vec2f(params.size) - 0.5;
-		let weight = params.centre_weight * (exp2(-170.56233 * dot(uv, uv)) - 1.0) + 1.0;
+		let weight = params.center_weight * (exp2(-170.56233 * dot(uv, uv)) - 1.0) + 1.0;
 		atomicAdd(&local_bins[bin], u32((1.0 - f) * weight * WEIGHT_SCALE + 0.5));
 		atomicAdd(&local_bins[next], u32(f * weight * WEIGHT_SCALE + 0.5));
 	}

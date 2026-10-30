@@ -11,7 +11,7 @@ import type { ColorGradingConfig, Vec4 } from '@endfield-noclip/package-format/f
 
 import type { Vec3 } from '../scene/camera.ts';
 
-import { srgbToLinear } from './colour.ts';
+import { srgbToLinear } from './color.ts';
 
 /** the parts of the game's colour grading the viewer reads */
 export type ColorGradingInput = Omit<
@@ -28,9 +28,9 @@ export interface Grading {
 	/** multiplies the colour before grading: `2^postExposure` */
 	postExposure: number;
 	/** white balance, LMS coefficients */
-	colourBalance: Vec3;
+	colorBalance: Vec3;
 	/** linear */
-	colourFilter: Vec3;
+	colorFilter: Vec3;
 	/** turns, added to the hue */
 	hueShift: number;
 	/** 1 is neutral */
@@ -116,7 +116,7 @@ const linear3 = (c: Readonly<Vec4>, scale: number): Vec3 => [
 ];
 
 /** URP's `ColorUtils.ColorBalanceToLMSCoeffs`: a white point moved along the Planckian locus and tinted */
-const colourBalance = (temperature: number, tint: number): Vec3 => {
+const colorBalance = (temperature: number, tint: number): Vec3 => {
 	const t1 = temperature / 65;
 	const t2 = tint / 65;
 	const x = 0.31271 - t1 * (t1 < 0 ? 0.1 : 0.05);
@@ -176,8 +176,8 @@ export const gradingLook = (input: ColorGradingInput): Grading => {
 	}
 	return {
 		postExposure: 2 ** adjust.colorAdjustmentsPostExposure,
-		colourBalance: colourBalance(wb ? input.whiteBalanceTemperature : 0, wb ? input.whiteBalanceTint : 0),
-		colourFilter: linear3(adjust.colorAdjustmentsColorFilter, 1),
+		colorBalance: colorBalance(wb ? input.whiteBalanceTemperature : 0, wb ? input.whiteBalanceTint : 0),
+		colorFilter: linear3(adjust.colorAdjustmentsColorFilter, 1),
 		hueShift: adjust.colorAdjustmentsHueShift / 360,
 		saturation: adjust.colorAdjustmentsSaturation / 100 + 1,
 		contrast: adjust.colorAdjustmentsContrast / 100 + 1,

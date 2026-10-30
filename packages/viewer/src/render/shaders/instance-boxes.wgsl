@@ -6,7 +6,7 @@ struct Row {
 	t0: vec4f,
 	t1: vec4f,
 	t2: vec4f,
-	centre: vec3f,
+	center: vec3f,
 	block: u32,
 	extent: vec3f,
 	// tag | kind << 8 | scene state << 16
@@ -26,7 +26,7 @@ struct VertexOut {
 	@builtin(position) position: vec4f,
 	@location(0) rel: vec3f,
 	@location(1) @interpolate(flat) normal: vec3f,
-	@location(2) @interpolate(flat) colour: vec3f,
+	@location(2) @interpolate(flat) color: vec3f,
 }
 
 // 6 faces × 2 triangles: face axis, sign and the two in-face corner signs per vertex
@@ -45,7 +45,7 @@ const EDGES = array<vec3f, 24>(
 	vec3f(-1, 1, -1), vec3f(-1, 1, 1), vec3f(1, 1, -1), vec3f(1, 1, 1),
 );
 
-fn kind_colour(kind: u32) -> vec3f {
+fn kind_color(kind: u32) -> vec3f {
 	switch kind {
 		case 0u: { return vec3f(0.30, 0.62, 0.30); }
 		case 1u: { return vec3f(0.80, 0.55, 0.18); }
@@ -63,9 +63,9 @@ fn culled() -> VertexOut {
 }
 
 struct Box {
-	centre: vec3f,
+	center: vec3f,
 	extent: vec3f,
-	colour: vec3f,
+	color: vec3f,
 	visible: bool,
 	// too large to fill without hiding everything around it (skyline and far-terrain meshes)
 	outline_only: bool,
@@ -78,11 +78,11 @@ fn load_box(ii: u32) -> Box {
 	}
 	let row = rows[index];
 	var box: Box;
-	box.centre = blocks[row.block].xyz + row.centre;
+	box.center = blocks[row.block].xyz + row.center;
 	box.extent = max(row.extent, vec3f(0.05));
-	box.colour = kind_colour((row.info >> 8u) & 0xfu);
+	box.color = kind_color((row.info >> 8u) & 0xfu);
 	// small-feature culling: drop boxes below the projected size threshold
-	let pixels = length(box.extent) * frame.viewport.z / max(length(box.centre), 1.0);
+	let pixels = length(box.extent) * frame.viewport.z / max(length(box.center), 1.0);
 	box.visible = pixels >= frame.viewport.w;
 	box.outline_only = max(box.extent.x, max(box.extent.y, box.extent.z)) > frame.params.x;
 	return box;
@@ -105,12 +105,12 @@ fn vs_fill(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 		case 1u: { corner = vec3f(c.x, sign, c.y); normal.y = sign; }
 		default: { corner = vec3f(c.x, c.y, sign); normal.z = sign; }
 	}
-	let rel = box.centre + corner * box.extent;
+	let rel = box.center + corner * box.extent;
 	var out: VertexOut;
 	out.position = frame.view_proj * vec4f(rel, 1.0);
 	out.rel = rel;
 	out.normal = normal;
-	out.colour = box.colour;
+	out.color = box.color;
 	return out;
 }
 
@@ -121,21 +121,21 @@ fn vs_wire(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 	if (!box.visible || (frame.flags.x == 0u && !box.outline_only)) {
 		return culled();
 	}
-	let rel = box.centre + EDGES[vi] * box.extent;
+	let rel = box.center + EDGES[vi] * box.extent;
 	var out: VertexOut;
 	out.position = frame.view_proj * vec4f(rel, 1.0);
 	out.rel = rel;
 	out.normal = vec3f(0.0, 1.0, 0.0);
-	out.colour = box.colour;
+	out.color = box.color;
 	return out;
 }
 
 @fragment
 fn fs_fill(in: VertexOut) -> Shaded {
-	return shade_surface(default_surface(in.colour, in.normal), in.rel, in.position.xy);
+	return shade_surface(default_surface(in.color, in.normal), in.rel, in.position.xy);
 }
 
 @fragment
 fn fs_wire(in: VertexOut) -> Shaded {
-	return unlit(in.colour * 1.4);
+	return unlit(in.color * 1.4);
 }

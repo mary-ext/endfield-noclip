@@ -6,7 +6,7 @@
 
 struct Update {
 	// xyz: probe index (in this level's spacing) of the clipmap's centre, w: level
-	centre: vec4i,
+	center: vec4i,
 	// xyz: cell index (p >> (6 + level)) of the window's minimum corner, w: the window's first word in `windows`
 	window: vec4i,
 	// xyz: window size in cells
@@ -74,8 +74,8 @@ fn cs_update(@builtin(global_invocation_id) id: vec3u) {
 	if (any(texel >= SIZE)) {
 		return;
 	}
-	let level = update.centre.w;
-	let lowest = update.centre.xyz - SIZE / 2;
+	let level = update.center.w;
+	let lowest = update.center.xyz - SIZE / 2;
 	let index = lowest + modulo(texel - lowest, SIZE);
 	let p = index * (1 << u32(2 * level)) + vec3i(ORIGIN);
 

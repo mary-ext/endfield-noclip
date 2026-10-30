@@ -164,10 +164,10 @@ fn fs_water(in: VertexOut) -> @location(0) vec4f {
 	let n_dot_h = clamp(dot(n, h), 0.0, 1.0);
 	let highlight = post.sun_illuminance.rgb * ggx_distribution(n_dot_h, a2) * 0.25 * clamp(dot(n, post.sun.xyz), 0.0, 1.0);
 
-	var colour = through * (1.0 - fresnel) + (reflected + highlight) * fresnel;
+	var color = through * (1.0 - fresnel) + (reflected + highlight) * fresnel;
 	// the shore: shallow water fades into what's under it
 	let coverage = clamp(thickness * c.optics.z, 0.0, 1.0);
-	colour = mix(behind, colour, coverage);
+	color = mix(behind, color, coverage);
 	let froxels = froxels_at(in.position.xy / size, surface_distance * dot(-v, post.forward.xyz));
-	return vec4f(atmosphere_over(colour, -v, surface_distance, froxels), 1.0);
+	return vec4f(atmosphere_over(color, -v, surface_distance, froxels), 1.0);
 }

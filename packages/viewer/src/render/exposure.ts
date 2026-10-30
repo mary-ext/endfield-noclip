@@ -32,7 +32,7 @@ export interface AutoExposureSettings {
 	meteringRange: Vec2;
 	/** the log2 luminance each bin counts as at most and at least, when averaging */
 	binRange: Vec2;
-	centreWeighted: boolean;
+	centerWeighted: boolean;
 	/** the fractions of the weighted samples below which and above which samples are ignored */
 	percentiles: Vec2;
 	/** the exposure's limits, EV */
@@ -51,7 +51,7 @@ export const autoExposureLook = (config: AutoExposureInput): AutoExposureSetting
 	downSpeed: config.autoExposureLerpDownSpeed,
 	meteringRange: config.autoExposureEv100Range,
 	binRange: config.autoExposureEv100HistogramRange,
-	centreWeighted: config.autoExposureMeteringMode === 1,
+	centerWeighted: config.autoExposureMeteringMode === 1,
 	percentiles: config.autoExposurePixelLuminanceRange,
 	evLimits: config.autoExposureEvClampRange,
 });

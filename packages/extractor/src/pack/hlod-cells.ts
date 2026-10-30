@@ -65,11 +65,11 @@ export const resolveClampedHlodCell = (request: {
 	const [cx, , cz] = bounds.center;
 	const low = tileAt(tree, level, cx - bounds.extents[0], cz - bounds.extents[2]);
 	const high = tileAt(tree, level, cx + bounds.extents[0], cz + bounds.extents[2]);
-	const centre = tileAt(tree, level, cx, cz);
+	const center = tileAt(tree, level, cx, cz);
 	const [x0, x1] = range(named.x, low.x, high.x);
 	const [z0, z1] = range(named.z, low.z, high.z);
-	const nearX = Math.min(Math.max(centre.x, x0), x1);
-	const nearZ = Math.min(Math.max(centre.z, z0), z1);
+	const nearX = Math.min(Math.max(center.x, x0), x1);
+	const nearZ = Math.min(Math.max(center.z, z0), z1);
 
 	const span = 2 ** (leafLevel - level);
 	let best: TileKey = { level, x: nearX, z: nearZ };

@@ -138,12 +138,12 @@ fn fs_blur(in: FullscreenOut) -> @location(0) vec4f {
 	}
 	let z = view_depth(depth);
 	let size = vec2i(textureDimensions(ao_texture));
-	let centre = px / AO_SCALE;
+	let center = px / AO_SCALE;
 	var sum = 0.0;
 	var weight = 0.0;
 	for (var y = -2; y < 2; y++) {
 		for (var x = -2; x < 2; x++) {
-			let q = clamp(centre + vec2i(x, y), vec2i(0), size - 1);
+			let q = clamp(center + vec2i(x, y), vec2i(0), size - 1);
 			let qz = textureLoad(half_depth, q, 0).r;
 			let w = select(0.0, 1.0, abs(qz - z) < 0.05 * z + 0.1);
 			sum += textureLoad(ao_texture, q, 0).r * w;

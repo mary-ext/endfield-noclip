@@ -681,15 +681,15 @@ export class PostProcess {
 			set(56, [bloom?.subtract ?? 0, bloom?.scatter ?? 0, 0, 0]);
 		}
 		set(28, [ao?.falloff ?? 1, ao?.distribution ?? 1, ao?.thin ?? 0, 0]);
-		set(29, [...(vignette?.colour ?? [0, 0, 0]), vignette?.roundness ?? 1]);
-		set(30, [...(vignette?.centre ?? [0.5, 0.5]), vignette?.rounded ? 1 : 0, 0]);
+		set(29, [...(vignette?.color ?? [0, 0, 0]), vignette?.roundness ?? 1]);
+		set(30, [...(vignette?.center ?? [0.5, 0.5]), vignette?.rounded ? 1 : 0, 0]);
 		const cloud = environment.cloud;
 		set(31, [cloud?.rotation ?? 0, cloud?.contrast ?? 1, cloud?.singleChannel ? 1 : 0, 0]);
 		set(32, cloud?.tint ?? [1, 1, 1, 1]);
 		set(33, [cloud?.opacity[0] ?? 1, cloud?.opacity[1] ?? 1, 0, 0]);
 		const g = environment.grading;
-		set(41, [...g.colourBalance, g.postExposure]);
-		set(42, [...g.colourFilter, 0]);
+		set(41, [...g.colorBalance, g.postExposure]);
+		set(42, [...g.colorFilter, 0]);
 		set(43, [g.hueShift, g.saturation, g.contrast, 0]);
 		set(44, [...g.channelMixer[0], 0]);
 		set(45, [...g.channelMixer[1], 0]);

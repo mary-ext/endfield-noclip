@@ -33,14 +33,14 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 		return vec4f(fogged_sky(direction, painted, froxels), 1.0);
 	}
 	let radiance = textureLoad(radiance_texture, px, 0);
-	var colour = radiance.rgb;
+	var color = radiance.rgb;
 	// the AO passes don't run while it's off, and the radiance then keeps the material occlusion alone
 	if (post.ao.w > 0.5) {
 		let ambient = textureLoad(ambient_texture, px, 0);
 		let ao = min(textureLoad(ao_texture, px, 0).r, ambient.a);
-		colour = max(colour + ambient.rgb * (multi_bounce(ao, radiance.a) - ambient.a), vec3f(0.0));
+		color = max(color + ambient.rgb * (multi_bounce(ao, radiance.a) - ambient.a), vec3f(0.0));
 	}
 	let eye_depth = view_depth(depth);
 	let distance = length(ray * eye_depth);
-	return vec4f(atmosphere_over(colour, direction, distance, froxels_at(in.uv, eye_depth)), 1.0);
+	return vec4f(atmosphere_over(color, direction, distance, froxels_at(in.uv, eye_depth)), 1.0);
 }

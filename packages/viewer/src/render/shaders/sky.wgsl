@@ -91,13 +91,13 @@ fn fog_over(direction: vec3f, distance: f32, froxels: Froxels) -> Fog {
 		let range = post.fog_range;
 		let before_start = clamp((range.x - distance) * range.y, 0.0, 1.0);
 		let past_cutoff = clamp((distance - range.z) * range.w, 0.0, 1.0);
-		let t = clamp(max(clamp(exp2(-density * rest), 0.0, 1.0), post.fog_colour.w) + before_start + past_cutoff,
+		let t = clamp(max(clamp(exp2(-density * rest), 0.0, 1.0), post.fog_color.w) + before_start + past_cutoff,
 			0.0, 1.0);
 		let toward_light = clamp(dot(direction, post.fog_directional_direction.xyz), 0.0, 1.0);
 		let directional_depth = density * max(rest - post.fog_directional_direction.w, 0.0);
 		let directional = post.fog_directional.rgb * pow(toward_light, post.fog_directional.w) *
 			(1.0 - clamp(exp2(-directional_depth), 0.0, 1.0)) * (1.0 - past_cutoff);
-		fog = Fog(fog.transmittance * t, fog.inscatter * t + post.fog_colour.rgb * (1.0 - t) + directional);
+		fog = Fog(fog.transmittance * t, fog.inscatter * t + post.fog_color.rgb * (1.0 - t) + directional);
 	}
 	// the froxels add in front of both
 	let light = froxels.light;
@@ -163,7 +163,7 @@ fn fogged_sky(direction: vec3f, painted: vec4f, froxels: Froxels) -> vec3f {
 }
 
 // the fog over something `distance` metres away
-fn atmosphere_over(colour: vec3f, direction: vec3f, distance: f32, froxels: Froxels) -> vec3f {
+fn atmosphere_over(color: vec3f, direction: vec3f, distance: f32, froxels: Froxels) -> vec3f {
 	let fog = fog_over(direction, distance, froxels);
-	return colour * fog.transmittance + fog.inscatter;
+	return color * fog.transmittance + fog.inscatter;
 }

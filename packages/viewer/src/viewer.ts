@@ -1445,8 +1445,8 @@ export class Viewer {
 			const environment = this.#environment;
 			f32.set(environment.sunDirection, FrameOffsets.sun);
 			f32[FrameOffsets.sun + 3] = 1;
-			f32.set(environment.sunIlluminance, FrameOffsets.sunColour);
-			f32[FrameOffsets.sunColour + 3] = environment.sunSpecular;
+			f32.set(environment.sunIlluminance, FrameOffsets.sunColor);
+			f32[FrameOffsets.sunColor + 3] = environment.sunSpecular;
 			f32.set(environment.sh, FrameOffsets.sh);
 			f32[FrameOffsets.ambient] = environment.indirectSpecular;
 			// emitters marked `_IgnorePostExposure` divide out the post exposure (the game's adapted exposure)
@@ -1493,10 +1493,10 @@ export class Viewer {
 			f32[at + 2] = shadow.attenuation;
 			f32[at + 3] = this.#shadowRamp === this.#noShadowRamp ? 0 : 1;
 		}
-		this.#irradiance.centres().forEach((centre, i) => {
+		this.#irradiance.centers().forEach((center, i) => {
 			const at = FrameOffsets.irradiance + i * 4;
-			f32.set(centre ?? [0, 0, 0], at);
-			f32[at + 3] = centre !== null && this.options.irradiance ? 1 : 0;
+			f32.set(center ?? [0, 0, 0], at);
+			f32[at + 3] = center !== null && this.options.irradiance ? 1 : 0;
 		});
 		{
 			const lit = this.scene !== null && this.options.localLights && this.options.debugView === 'lit';

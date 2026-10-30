@@ -161,7 +161,7 @@ test('originium crystals: UV set 1 base colour, tri-channel tint, detail and par
 	// three steps, a pulse between 0.2 and 1, the HDR colour as stored
 	assert.deepEqual(row(LookRow.parallax), [0.314, 3, 1, 0.4].map(Math.fround));
 	assert.equal(look.params[LookRow.parallax2 + 3], Math.fround(0.6));
-	assert.deepEqual(row(LookRow.parallaxColour), [2.8, 0.7, 0, 2].map(Math.fround));
+	assert.deepEqual(row(LookRow.parallaxColor), [2.8, 0.7, 0, 2].map(Math.fround));
 
 	// switch-texture variants take G and B from textures without a slot: they don't blend
 	const [switched] = materialLooks({

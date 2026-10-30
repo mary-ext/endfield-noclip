@@ -122,10 +122,10 @@ export class LocalLights {
 			packLight(this.#lightData, i, candidate);
 			const word = i >>> 5;
 			const bit = 1 << (i & 31);
-			const [centre, radius] = boundingSphere(candidate);
-			const x = dot(centre, right);
-			const y = dot(centre, up);
-			const z = dot(centre, forward);
+			const [center, radius] = boundingSphere(candidate);
+			const x = dot(center, right);
+			const y = dot(center, up);
+			const z = dot(center, forward);
 
 			// depth slices
 			const first = Math.max(0, Math.floor(z - radius - near));
@@ -212,8 +212,8 @@ export class LocalLights {
 				}
 			}
 			const candidate = { entry, rel, distance2, fade };
-			const [centre, radius] = boundingSphere(candidate);
-			if (planes.some(([nx, ny, nz, d]) => nx * centre[0] + ny * centre[1] + nz * centre[2] + d < -radius)) {
+			const [center, radius] = boundingSphere(candidate);
+			if (planes.some(([nx, ny, nz, d]) => nx * center[0] + ny * center[1] + nz * center[2] + d < -radius)) {
 				continue;
 			}
 			candidates.push(candidate);
@@ -232,7 +232,7 @@ const dot = (a: readonly number[], b: readonly number[]): number => a[0] * b[0] 
 const ndc = (value: number, depth: number, scale: number): number => (value * scale) / depth;
 
 /** @returns a camera-relative sphere holding everything the light reaches */
-const boundingSphere = ({ entry, rel }: Candidate): [centre: Vec3, radius: number] => {
+const boundingSphere = ({ entry, rel }: Candidate): [center: Vec3, radius: number] => {
 	const range = entry.range;
 	if (entry.kind === LightKind.Spot) {
 		const cos = Math.cos((entry.spotAngle * Math.PI) / 360);

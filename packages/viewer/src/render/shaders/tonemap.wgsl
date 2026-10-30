@@ -64,11 +64,11 @@ fn hsv_to_rgb(c: vec3f) -> vec3f {
 // linear sRGB in, graded ACEScg out (≥ 0)
 fn grade(linear: vec3f) -> vec3f {
 	// white balance in LMS, then into ACEScg
-	var c = (linear * LIN_TO_LMS) * post.colour_balance.xyz;
+	var c = (linear * LIN_TO_LMS) * post.color_balance.xyz;
 	c = ((c * LMS_TO_LIN) * SRGB_TO_AP0) * AP0_TO_AP1;
 	// HG's contrast: a power of luminance around 0.18
 	c *= pow(max(dot(c, AP1_LUMINANCE), 1e-6) / 0.18, post.hue_sat_con.z - 1.0);
-	c = max(vec3f(0.0), c * post.colour_filter.xyz);
+	c = max(vec3f(0.0), c * post.color_filter.xyz);
 	// split toning in gamma space
 	{
 		var g = pow(c, vec3f(1.0 / 2.2));
@@ -112,12 +112,12 @@ fn aces_modified(x: vec3f) -> vec3f {
 }
 
 // Khronos PBR Neutral
-fn pbr_neutral(colour: vec3f) -> vec3f {
+fn pbr_neutral(color: vec3f) -> vec3f {
 	let start = 0.8 - 0.04;
 	let desaturation = 0.15;
-	let x = min(colour.r, min(colour.g, colour.b));
+	let x = min(color.r, min(color.g, color.b));
 	let offset = select(0.04, x - 6.25 * x * x, x < 0.08);
-	var c = colour - offset;
+	var c = color - offset;
 	let peak = max(c.r, max(c.g, c.b));
 	if (peak < start) {
 		return c;
@@ -138,44 +138,44 @@ fn srgb_encode(c: vec3f) -> vec3f {
 @fragment
 fn fs_tonemap(in: FullscreenOut) -> @location(0) vec4f {
 	let px = vec2i(in.position.xy);
-	var colour = textureLoad(scene_texture, px, 0).rgb;
-	colour *= post.grade.x;
+	var color = textureLoad(scene_texture, px, 0).rgb;
+	color *= post.grade.x;
 	// the game's composite: towards the bloom by its intensity, optionally taking the thresholded part out of
 	// the scene; in add mode, bloom past 0.3 is compressed
 	if (post.flags.w != 0u) {
 		let subtract = post.bloom_shape.x;
-		let brightness = max(colour.r, max(colour.g, colour.b));
+		let brightness = max(color.r, max(color.g, color.b));
 		let soft = clamp(brightness - post.bloom.y, 0.0, post.bloom.z);
-		let above = colour * max(post.bloom.w * soft * soft, brightness - post.bloom.x) / max(brightness, 1e-4);
+		let above = color * max(post.bloom.w * soft * soft, brightness - post.bloom.x) / max(brightness, 1e-4);
 		var bloom = textureSampleLevel(bloom_texture, bilinear, in.uv, 0.0).rgb;
 		let compressed = pow(bloom, vec3f(0.33)) * 1.4938 - 0.7;
 		bloom = select(bloom, compressed, bloom * (1.0 - subtract) > vec3f(0.3));
-		colour += (bloom * post.bloom_tint.rgb - above * subtract) * post.bloom_tint.w;
+		color += (bloom * post.bloom_tint.rgb - above * subtract) * post.bloom_tint.w;
 	}
 	// URP's vignette, in HDR before grading as the game's uber pass applies it
 	if (post.grade.y > 0.0) {
-		var d = abs(in.uv - post.vignette_centre.xy) * post.grade.y * 3.0;
-		if (post.vignette_centre.z > 0.5) {
+		var d = abs(in.uv - post.vignette_center.xy) * post.grade.y * 3.0;
+		if (post.vignette_center.z > 0.5) {
 			d.x *= post.viewport.x * post.viewport.w;
 		}
-		let roundness = (1.0 - post.vignette_colour.w) * 6.0 + post.vignette_colour.w;
+		let roundness = (1.0 - post.vignette_color.w) * 6.0 + post.vignette_color.w;
 		d = pow(clamp(d, vec2f(0.0), vec2f(1.0)), vec2f(roundness));
 		let factor = pow(clamp(1.0 - dot(d, d), 0.0, 1.0), post.grade.z * 5.0);
-		colour *= mix(post.vignette_colour.rgb, vec3f(1.0), factor);
+		color *= mix(post.vignette_color.rgb, vec3f(1.0), factor);
 	}
 	switch u32(post.grade.w) {
 		case 0u: {
-			colour = aces_modified(grade(clamp(colour * post.colour_balance.w, vec3f(0.0), vec3f(LUT_MAX))));
+			color = aces_modified(grade(clamp(color * post.color_balance.w, vec3f(0.0), vec3f(LUT_MAX))));
 		}
 		case 1u: {
-			let graded = grade(clamp(colour * post.colour_balance.w, vec3f(0.0), vec3f(LUT_MAX)));
-			colour = pbr_neutral(max(graded * AP1_TO_SRGB, vec3f(0.0)));
+			let graded = grade(clamp(color * post.color_balance.w, vec3f(0.0), vec3f(LUT_MAX)));
+			color = pbr_neutral(max(graded * AP1_TO_SRGB, vec3f(0.0)));
 		}
 		default: {
-			colour = clamp(colour, vec3f(0.0), vec3f(1.0));
+			color = clamp(color, vec3f(0.0), vec3f(1.0));
 		}
 	}
 	// ±half a step of dither against banding in the sky
 	let noise = (ign(in.position.xy + post.eye.w * 5.588238) - 0.5) / 255.0;
-	return vec4f(srgb_encode(colour) + noise, 1.0);
+	return vec4f(srgb_encode(color) + noise, 1.0);
 }

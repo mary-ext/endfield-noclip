@@ -39,7 +39,7 @@ const vec3 = (f: (axis: number) => number): [number, number, number] => [f(0), f
 
 interface Level {
 	/** probe index of the centre, in this level's spacing; `null` before the first update */
-	centre: [number, number, number] | null;
+	center: [number, number, number] | null;
 	/** cell window: minimum cell index and size, and the slots last written */
 	windowMin: [number, number, number];
 	windowSize: [number, number, number];
@@ -139,7 +139,7 @@ export class IrradianceVolume {
 			// the coarsest level has no coarser one and never reads it; any other level's textures fill the slot
 			const coarse = textures[level + 1] ?? textures[level - 1];
 			const out: Level = {
-				centre: null,
+				center: null,
 				windowMin: [0, 0, 0],
 				windowSize: windowSizes[level],
 				slots: new Uint32Array(windowWords[level]),
@@ -186,11 +186,11 @@ export class IrradianceVolume {
 	}
 
 	/** @returns the world position (m) of each level's clipmap centre, or `null` for a level not filled yet */
-	centres(): (Vec3 | null)[] {
+	centers(): (Vec3 | null)[] {
 		return this.#levels.map((level, i) =>
-			level.centre === null
+			level.center === null
 				? null
-				: [level.centre[0] * SPACING[i], level.centre[1] * SPACING[i], level.centre[2] * SPACING[i]],
+				: [level.center[0] * SPACING[i], level.center[1] * SPACING[i], level.center[2] * SPACING[i]],
 		);
 	}
 
@@ -229,15 +229,15 @@ export class IrradianceVolume {
 		for (const [index, level] of this.#levels.entries()) {
 			const spacing = SPACING[index];
 			const wanted = vec3((axis) => Math.round(eye[axis] / spacing));
-			if (level.centre === null || wanted.some((v, axis) => Math.abs(v - level.centre![axis]) > RECENTRE)) {
-				level.centre = wanted;
+			if (level.center === null || wanted.some((v, axis) => Math.abs(v - level.center![axis]) > RECENTRE)) {
+				level.center = wanted;
 				level.dirty = true;
 			}
-			const centre = level.centre;
+			const center = level.center;
 			// the cells the level's probes fall in
 			const step = 1 << (2 * index);
 			const shift = 6 + index;
-			const min = vec3((axis) => ((centre[axis] - SIZE[axis] / 2) * step + ORIGIN) >> shift);
+			const min = vec3((axis) => ((center[axis] - SIZE[axis] / 2) * step + ORIGIN) >> shift);
 			if (min.some((v, axis) => v !== level.windowMin[axis])) {
 				level.windowMin = min;
 				level.dirty = true;
@@ -289,7 +289,7 @@ export class IrradianceVolume {
 			if (coarserChanged) {
 				level.dirty = true;
 			}
-			if (!level.dirty || level.centre === null) {
+			if (!level.dirty || level.center === null) {
 				continue;
 			}
 			level.dirty = false;
@@ -299,7 +299,7 @@ export class IrradianceVolume {
 			device.queue.writeBuffer(
 				level.uniforms,
 				0,
-				new Int32Array([...level.centre, index, ...level.windowMin, level.windowBase, sx, sy, sz, 0]),
+				new Int32Array([...level.center, index, ...level.windowMin, level.windowBase, sx, sy, sz, 0]),
 			);
 			const pass = encoder.beginComputePass({ label: `irradiance update ${index}` });
 			pass.setPipeline(this.#pipeline);

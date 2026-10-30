@@ -38,7 +38,7 @@ struct Post {
 	fog_layer0: vec4f,
 	fog_layer1: vec4f,
 	// fog inscattered radiance (pre-exposed), w = least transmittance (1 − max opacity)
-	fog_colour: vec4f,
+	fog_color: vec4f,
 	// start distance, start transition, cutoff distance, cutoff transition (m, per m)
 	fog_range: vec4f,
 	// directional inscattered radiance (pre-exposed), w = exponent
@@ -59,9 +59,9 @@ struct Post {
 	// ambient occlusion falloff (fraction of the radius), sample distribution power, thin-occluder compensation
 	ao_shape: vec4f,
 	// vignette colour (linear), w = roundness
-	vignette_colour: vec4f,
+	vignette_color: vec4f,
 	// vignette centre (uv), z = 1 when rounded
-	vignette_centre: vec4f,
+	vignette_center: vec4f,
 	// cloud layer: rotation (rad), contrast, 1 = colour from max(R, G) (texture mode 0), w = 1 with a cloud layer
 	cloud: vec4f,
 	// multiplies the cloud texel (the game's _CloudTint)
@@ -83,9 +83,9 @@ struct Post {
 	// sky dome distance (m), atmosphere fog on, unused, unused
 	sky_fog: vec4f,
 	// colour grading (the game's _ColorGradingCB): white balance (LMS), w = post exposure multiplier
-	colour_balance: vec4f,
+	color_balance: vec4f,
 	// linear colour filter
-	colour_filter: vec4f,
+	color_filter: vec4f,
 	// hue shift (turns), saturation, contrast
 	hue_sat_con: vec4f,
 	// rows of the channel mixer
