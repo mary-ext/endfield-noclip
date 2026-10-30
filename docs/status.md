@@ -78,8 +78,10 @@ packs or renders correctly.
 - water foam, caustics and flow tiles (packed but unread); other fluid types are unverified
 - scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal and
   the mist (FogSimple, VFXFakeVolumeFog) draw, without the first two's additive, vertex-offset,
-  polar-UV, lighting and particle variants, the effects' own fog or the mist boxes' 3D noise; other
-  effect shaders are suppressed rather than drawn opaque. rect decals (`HGRP/DecalLit`,
+  polar-UV, lighting and particle variants, the effects' own fog, the game's global scene-effect
+  colour adjustment (the Jingyu blight reads less saturated than in game) or the mist boxes' 3D
+  noise; other effect shaders are suppressed rather than drawn opaque. Marker Stone's low mist banks
+  over the valley are still missing; their source is unknown. rect decals (`HGRP/DecalLit`,
   `HGRP/TerrainDecalLit`, InitChunkData components 27 and 28) aren't packed
 - temporal smoothing of effects
 - light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term, the cloud
