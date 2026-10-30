@@ -29,7 +29,8 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 		if (post.cloud.w > 0.5 && post.cloud_shape.w > 0.5) {
 			return vec4f(painted.rgb, 1.0);
 		}
-		return vec4f(fogged_sky(direction, painted), 1.0);
+		let froxels = froxels_at(in.uv, post.sky_fog.x * dot(direction, post.forward.xyz));
+		return vec4f(fogged_sky(direction, painted, froxels), 1.0);
 	}
 	let radiance = textureLoad(radiance_texture, px, 0);
 	var colour = radiance.rgb;
@@ -39,6 +40,7 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 		let ao = min(textureLoad(ao_texture, px, 0).r, ambient.a);
 		colour = max(colour + ambient.rgb * (multi_bounce(ao, radiance.a) - ambient.a), vec3f(0.0));
 	}
-	let distance = length(ray * view_depth(depth));
-	return vec4f(atmosphere_over(colour, direction, distance), 1.0);
+	let eye_depth = view_depth(depth);
+	let distance = length(ray * eye_depth);
+	return vec4f(atmosphere_over(colour, direction, distance, froxels_at(in.uv, eye_depth)), 1.0);
 }

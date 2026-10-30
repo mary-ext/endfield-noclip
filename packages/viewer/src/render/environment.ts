@@ -99,6 +99,21 @@ export type HeightFogInput = Pick<
 	| 'heightFogDirectionalInscattering'
 >;
 
+/** `HGVolumetricFogConfig`: its height-fog set plus the froxel fog's own parameters */
+export type VolumetricFogInput = HeightFogInput &
+	Pick<
+		HeightFogLayers,
+		| 'volumetricFogScatteringDistribution'
+		| 'volumetricFogAlbedo'
+		| 'volumetricFogEmissive'
+		| 'volumetricFogExtinctionScale'
+		| 'volumetricFogDistance'
+		| 'volumetricFogStartDistance'
+		| 'volumetricFogNearFadeInDistance'
+		| 'volumetricFogDirectLightingScatteringIntensity'
+		| 'volumetricFogSkyLightingScatteringIntensity'
+	>;
+
 /**
  * the parts of the game's post volume the viewer reads (HDRP-style bloom, URP-style vignette, XeGTAO's
  * settings)
@@ -165,8 +180,8 @@ export interface EnvironmentInput {
 	atmosphere: AtmosphereInput;
 	fog: FogInput;
 	heightFog: HeightFogInput;
-	/** the volumetric fog's own height-fog set, which the game uses while volumetric fog is on */
-	volumetricFog: HeightFogInput;
+	/** the froxel fog, and its own height-fog set, which the game uses while volumetric fog is on */
+	volumetricFog: VolumetricFogInput;
 	cloud: CloudInput | null;
 	colorGrading: ColorGradingInput;
 	autoExposure: AutoExposureInput;
@@ -221,6 +236,33 @@ export interface HeightFog {
 	directionalDirection: Vec3;
 	directionalExponent: number;
 	directionalStartDistance: number;
+}
+
+/**
+ * the game's froxel fog: the height fog's layers as a participating medium, lit by the sun (shadowed), the
+ * ambient probe and its own emission, between `startDistance` and `distance` metres of view depth. the
+ * analytic height fog covers only what lies beyond `distance`
+ */
+export interface VolumetricFog {
+	/** view depth (m) where the froxels end and the analytic fog takes over */
+	distance: number;
+	/** view depth (m) nearer than which there is no fog at all */
+	startDistance: number;
+	/** metres over which the froxel fog fades in from its first slice */
+	nearFadeIn: number;
+	/** Henyey-Greenstein anisotropy */
+	anisotropy: number;
+	albedo: Vec3;
+	/** multiplies the height fog's density */
+	extinctionScale: number;
+	/** radiance added per metre, pre-exposed */
+	emissive: Vec3;
+	/** unit vector towards the sun that lights it */
+	sunDirection: Vec3;
+	/** pre-exposed sun radiance it scatters, times the direct lighting intensity */
+	sun: Vec3;
+	/** multiplies the ambient probe it scatters */
+	skyIntensity: number;
 }
 
 /**
@@ -308,6 +350,8 @@ export interface Environment {
 	/** the atmosphere fog, or `null` when off */
 	atmosphereFog: AtmosphereFog | null;
 	fog: HeightFog;
+	/** the froxel fog in front of the height fog, or `null` when off */
+	volumetricFog: VolumetricFog | null;
 	/** metres to the sky dome, for fogging the sky */
 	skyDistance: number;
 	post: PostLook;
@@ -493,7 +537,19 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 		inscatterAmbientColor: [0, 0, 0, 1],
 	},
 	heightFog: DEFAULT_HEIGHT_FOG,
-	volumetricFog: { ...DEFAULT_HEIGHT_FOG, enable: false },
+	volumetricFog: {
+		...DEFAULT_HEIGHT_FOG,
+		enable: false,
+		volumetricFogScatteringDistribution: 0.2,
+		volumetricFogAlbedo: [1, 1, 1, 1],
+		volumetricFogEmissive: [0, 0, 0, 1],
+		volumetricFogExtinctionScale: 1,
+		volumetricFogDistance: 100,
+		volumetricFogStartDistance: 0,
+		volumetricFogNearFadeInDistance: 0,
+		volumetricFogDirectLightingScatteringIntensity: 1,
+		volumetricFogSkyLightingScatteringIntensity: 1,
+	},
 	cloud: null,
 	colorGrading: NEUTRAL_GRADING,
 	post: {
@@ -648,6 +704,29 @@ const heightFogLook = (fog: HeightFogInput, light: LightInput): HeightFog => ({
 	directionalStartDistance: fog.heightFogDirectionalInscatteringStartDistance,
 });
 
+/** HGVolumetricFogRenderer's constants, minus the flow noise, local fog volumes and local lights */
+const volumetricFogLook = (
+	fog: VolumetricFogInput,
+	light: LightInput,
+	sunIntensity: number,
+): VolumetricFog => {
+	const directional = sunIntensity * fog.volumetricFogDirectLightingScatteringIntensity;
+	return {
+		distance: fog.volumetricFogDistance,
+		startDistance: fog.volumetricFogStartDistance,
+		nearFadeIn: fog.volumetricFogNearFadeInDistance,
+		anisotropy: fog.volumetricFogScatteringDistribution,
+		albedo: [fog.volumetricFogAlbedo[0], fog.volumetricFogAlbedo[1], fog.volumetricFogAlbedo[2]],
+		extinctionScale: fog.volumetricFogExtinctionScale,
+		// the game stores the emission per kilometre
+		emissive: scaled(fog.volumetricFogEmissive, 0.001),
+		sunDirection: towardsRotatedLight(light.rotationAtmosphere),
+		// colours go in raw, as for the atmosphere fog
+		sun: scaled(light.directColor, directional),
+		skyIntensity: fog.volumetricFogSkyLightingScatteringIntensity,
+	};
+};
+
 /** HGAtmosphereRenderer.SetupShaderVariablesGlobalAtmosphereFog */
 const atmosphereFogLook = (source: EnvironmentInput, sunIntensity: number): AtmosphereFog | null => {
 	const { fog, atmosphere, light } = source;
@@ -733,6 +812,7 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 			...heightFogLook(volumetricFog.enable ? volumetricFog : heightFog, light),
 			enabled: heightFog.enable,
 		},
+		volumetricFog: volumetricFog.enable ? volumetricFogLook(volumetricFog, light, intensity) : null,
 		skyDistance: sky.skyDistance,
 		post: postLook(source.post ?? DEFAULT_PROFILE.post),
 		grading: gradingLook(source.colorGrading),

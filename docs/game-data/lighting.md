@@ -169,10 +169,10 @@ the sky is fogged as if at `sky.skyDistance`.
 
 ## fog
 
-two analytic fogs, applied in
+two analytic fogs and the froxel fog in front of them, applied in
 [`shaders/sky.wgsl`](../../packages/viewer/src/render/shaders/sky.wgsl) by the composite (opaque
 surfaces and sky) and water passes, in the game's order: the atmosphere fog first, then the height
-fog over it.
+fog over it, then the froxels.
 
 - **atmosphere fog** (`fogConfig`, when `enable`): single scattering in a medium thinning
   exponentially with height, from `startDistance`. Rayleigh and Mie scattering come from the fog
@@ -186,8 +186,28 @@ fog over it.
   radiance. while `volumetricFogConfig.enable` is set (the PC path) the game takes the layers from
   the volumetric section's own height-fog set, which often differs a lot from `heightFogConfig`'s;
   on/off still follows `heightFogConfig.enable`.
+- **froxel fog** (`volumetricFogConfig`, when `enable`): a grid over the view whose slices are
+  spaced logarithmically in view depth from `volumetricFogStartDistance` out to
+  `volumetricFogDistance`, computed each frame by a compute pass
+  ([`volumetric-fog.ts`](../../packages/viewer/src/render/volumetric-fog.ts)). each froxel takes the
+  height fog's layer density at its height, halved and times `volumetricFogExtinctionScale`, as
+  extinction; `volumetricFogAlbedo` times it scatters. it scatters the sun (raw `directColor` times
+  the pre-exposed intensity and `volumetricFogDirectLightingScatteringIntensity`, through one
+  shadow-map comparison and the shadow's strength and sun-off override, with a Henyey-Greenstein
+  phase of `volumetricFogScatteringDistribution` towards the atmosphere's sun direction) and the
+  ambient probe's linear part (times `volumetricFogSkyLightingScatteringIntensity` / π), and adds
+  `volumetricFogEmissive` / 1000 per metre. a column is integrated front to back, fading in over
+  `volumetricFogNearFadeInDistance`.
+  - while it's on, the height fog integrates only the part of each ray past `volumetricFogDistance`
+    of view depth, though its start and cutoff ramps and opacity cap still measure the whole ray.
+    nothing nearer than the start distance is fogged.
+  - so the height-fog set's start distance and inscatter colour are the far fog's, not the near
+    fog's: drawing them alone puts a hard, bright fog wall at the start distance inside caves.
+  - each froxel is lit at a point that moves through it from frame to frame, and the temporal
+    antialiasing averages them; the game also reprojects the grid's history, which the viewer
+    doesn't.
 
-the game's froxel volumetric fog, local fog volumes and flow noise are not drawn.
+the froxel fog's local lights, local fog volumes and flow noise are not drawn.
 
 ## post chain
 
@@ -370,7 +390,10 @@ are sampled toroidally in `ambient_irradiance`.
   viewer's ambient and sky brightness are approximations.
 - irradiance scenarios, the index's pair table and trailing rows, directory words 1, 7 (high bits)
   and 8.
-- not rendered: froxel volumetric fog, light shafts, lens flare, cloud shadows, celestial bodies,
-  stars and aurora, local reflection probes, SSR, punctual lights, precipitation and wetness.
+- the froxel fog's grid size and depth distribution come from quality presets that aren't recovered
+  (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without the native
+  diffuse-ambient scale.
+- not rendered: light shafts, lens flare, cloud shadows, celestial bodies, stars and aurora, local
+  reflection probes, SSR, punctual lights, precipitation and wetness.
 - interiors outside the game's sun-off volumes receive the outdoor sun wherever no drawn geometry
   shadows them.

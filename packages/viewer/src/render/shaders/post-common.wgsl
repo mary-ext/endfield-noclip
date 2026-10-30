@@ -107,6 +107,10 @@ struct Post {
 	bloom_shape: vec4f,
 	// xy = the main pass's subpixel jitter (NDC) for temporal antialiasing, zw unused
 	jitter: vec4f,
+	// froxel fog slice of view depth z: log2(z · x + y) · z = the texture's w; w = the depth it covers (m), 0 when off
+	froxel_slices: vec4f,
+	// x = view depth (m) nearer than which there is no froxel fog, yzw unused
+	froxel_range: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> post: Post;

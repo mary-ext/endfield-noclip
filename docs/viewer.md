@@ -214,6 +214,7 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 | --- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | `irradiance update 0–2` (compute)              | a clipmap level re-centred or got new cells ([`render/irradiance-volume.ts`](../packages/viewer/src/render/irradiance-volume.ts))                         |
 | 2   | `shadow layer 0–3`                             | `shadows` on, a package loaded, `debugView` is `lit`                                                                                                      |
+| 2b  | `volumetric fog` (compute)                     | `fog` on, a package loaded, `lit`, and the environment's froxel fog on ([`render/volumetric-fog.ts`](../packages/viewer/src/render/volumetric-fog.ts))    |
 | 3   | `main`                                         | always (empty without a package)                                                                                                                          |
 | 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                                                      |
 | 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                                                  |

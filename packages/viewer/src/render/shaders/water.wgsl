@@ -156,7 +156,7 @@ fn fs_water(in: VertexOut) -> @location(0) vec4f {
 	var reflected = post.sky_horizon.rgb;
 	if (post.flags.x != 0u && r.y >= 0.0) {
 		let painted = textureSampleLevel(cloud_texture, cloud_sampler, cloud_uv(r), 0.0);
-		reflected = fogged_sky(r, painted);
+		reflected = fogged_sky(r, painted, NO_FROXELS);
 	}
 	let h = normalize(post.sun.xyz + v);
 	let roughness = max(c.surface.x, 0.02);
@@ -168,5 +168,6 @@ fn fs_water(in: VertexOut) -> @location(0) vec4f {
 	// the shore: shallow water fades into what's under it
 	let coverage = clamp(thickness * c.optics.z, 0.0, 1.0);
 	colour = mix(behind, colour, coverage);
-	return vec4f(atmosphere_over(colour, -v, surface_distance), 1.0);
+	let froxels = froxels_at(in.position.xy / size, surface_distance * dot(-v, post.forward.xyz));
+	return vec4f(atmosphere_over(colour, -v, surface_distance, froxels), 1.0);
 }

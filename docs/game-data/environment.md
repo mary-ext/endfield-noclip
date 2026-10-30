@@ -19,20 +19,20 @@ the extractor reads these sections
 ([`hg/environment-phase.ts`](../../packages/formats/src/hg/environment-phase.ts),
 `ENVIRONMENT_SECTIONS`), renamed in the package:
 
-| phase field           | package key     | used by the viewer                                      |
-| --------------------- | --------------- | ------------------------------------------------------- |
-| `lightConfig`         | `light`         | sun, exposure, ambient scale, effect directions         |
-| `skyConfig`           | `sky`           | ambient SH, reflection cubemap, sky distance            |
-| `atmosphereConfig`    | `atmosphere`    | sky LUTs, fog absorption                                |
-| `fogConfig`           | `fog`           | atmosphere (distance) fog                               |
-| `heightFogConfig`     | `heightFog`     | height fog                                              |
-| `volumetricFogConfig` | `volumetricFog` | its own height-fog set, used while volumetric fog is on |
-| `cloudConfig`         | `cloud`         | cloud panorama                                          |
-| `windConfig`          | `wind`          | packed, not used                                        |
-| `lightShaftConfig`    | `lightShaft`    | packed, not used                                        |
-| `colorGradingConfig`  | `colorGrading`  | grading                                                 |
-| `autoExposureConfig`  | `autoExposure`  | packed, not used                                        |
-| `shadowConfig`        | `shadow`        | sun shadow softness, strength, penumbra ramp, sun-off   |
+| phase field           | package key     | used by the viewer                                        |
+| --------------------- | --------------- | --------------------------------------------------------- |
+| `lightConfig`         | `light`         | sun, exposure, ambient scale, effect directions           |
+| `skyConfig`           | `sky`           | ambient SH, reflection cubemap, sky distance              |
+| `atmosphereConfig`    | `atmosphere`    | sky LUTs, fog absorption                                  |
+| `fogConfig`           | `fog`           | atmosphere (distance) fog                                 |
+| `heightFogConfig`     | `heightFog`     | height fog                                                |
+| `volumetricFogConfig` | `volumetricFog` | froxel fog, and its own height-fog set used while it's on |
+| `cloudConfig`         | `cloud`         | cloud panorama                                            |
+| `windConfig`          | `wind`          | packed, not used                                          |
+| `lightShaftConfig`    | `lightShaft`    | packed, not used                                          |
+| `colorGradingConfig`  | `colorGrading`  | grading                                                   |
+| `autoExposureConfig`  | `autoExposure`  | packed, not used                                          |
+| `shadowConfig`        | `shadow`        | sun shadow softness, strength, penumbra ramp, sun-off     |
 
 other sections the phase has (`rainConfig`, `snowConfig`, `celestialConfig`, `starConfig`,
 `volumetricCloudConfig`, `lensFlareConfig`, …) are not extracted. to add one, extend

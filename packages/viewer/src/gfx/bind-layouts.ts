@@ -40,30 +40,32 @@ export interface BindLayouts {
  * @returns the shared layouts
  */
 export const createBindLayouts = (device: GPUDevice): BindLayouts => {
+	// the volumetric fog's compute pass lights froxels with the same frame
+	const lighting = FRAGMENT | GPUShaderStage.COMPUTE;
 	const frame = device.createBindGroupLayout({
 		label: 'frame',
 		entries: [
 			{
 				binding: 0,
-				visibility: VERTEX | FRAGMENT,
+				visibility: VERTEX | lighting,
 				buffer: { type: 'uniform', hasDynamicOffset: true },
 			},
-			{ binding: 1, visibility: FRAGMENT, texture: { sampleType: 'depth', viewDimension: '2d-array' } },
-			{ binding: 2, visibility: FRAGMENT, sampler: { type: 'comparison' } },
-			{ binding: 3, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: 'cube' } },
-			{ binding: 4, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			{ binding: 1, visibility: lighting, texture: { sampleType: 'depth', viewDimension: '2d-array' } },
+			{ binding: 2, visibility: lighting, sampler: { type: 'comparison' } },
+			{ binding: 3, visibility: lighting, texture: { sampleType: 'float', viewDimension: 'cube' } },
+			{ binding: 4, visibility: lighting, sampler: { type: 'filtering' } },
 			// the irradiance clipmaps, A and B per level, and their repeating and clamping samplers
 			...[5, 6, 7, 8, 9, 10].map((binding): GPUBindGroupLayoutEntry => ({
 				binding,
-				visibility: FRAGMENT,
+				visibility: lighting,
 				texture: { sampleType: 'float', viewDimension: '3d' },
 			})),
-			{ binding: 11, visibility: FRAGMENT, sampler: { type: 'filtering' } },
-			{ binding: 12, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			{ binding: 11, visibility: lighting, sampler: { type: 'filtering' } },
+			{ binding: 12, visibility: lighting, sampler: { type: 'filtering' } },
 			// raw shadow-map depth reads
-			{ binding: 13, visibility: FRAGMENT, sampler: { type: 'non-filtering' } },
+			{ binding: 13, visibility: lighting, sampler: { type: 'non-filtering' } },
 			// the shadow's penumbra ramp
-			{ binding: 14, visibility: FRAGMENT, texture: { sampleType: 'float' } },
+			{ binding: 14, visibility: lighting, texture: { sampleType: 'float' } },
 		],
 	});
 	const terrain = device.createBindGroupLayout({

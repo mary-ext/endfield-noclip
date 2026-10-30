@@ -39,7 +39,8 @@ or renders correctly.
   preview
 - environment volume initial enablement and `EnvironmentEnable` script conditions, needed before any
   automatic gating
-- froxel volumetric fog
+- froxel fog: local lights, local fog volumes, flow noise and history reprojection aren't drawn, and
+  the grid size is Unreal's default rather than the game's quality preset
 - interiors, in order of impact:
   - per-instance emission overrides aren't read
   - normal-map roughness is read only when the mesh has tangents; normals are transformed by the

@@ -44,6 +44,7 @@ import { SHADOW_FORMAT, SHADOW_LAYERS, ShadowMap } from './render/shadow-map.ts'
 import { SETTLE_FRAMES } from './render/temporal-aa.ts';
 import { PAGE_SIDE, SURFACE_BORDER, SURFACE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
 import { type TextureBinding, TextureStore, placeholderView } from './render/texture-store.ts';
+import { VolumetricFog } from './render/volumetric-fog.ts';
 import { WaterRenderer } from './render/water-renderer.ts';
 import { Camera, type Vec3 } from './scene/camera.ts';
 import { type CameraPose, NoclipControls } from './scene/noclip-controls.ts';
@@ -289,6 +290,7 @@ export class Viewer {
 	#instances: InstanceRenderer;
 	#meshes: MeshRenderer;
 	#post: PostProcess;
+	#fog: VolumetricFog;
 	/** the loaded package's irradiance volume; an empty one without a package */
 	#irradiance: IrradianceVolume;
 	#water: WaterRenderer;
@@ -373,7 +375,9 @@ export class Viewer {
 		});
 		this.#instances = new InstanceRenderer(device, this.#layouts, this.#pipelines, format, INSTANCE_ROWS);
 		this.#meshes = new MeshRenderer(device, this.#layouts, this.#pipelines, this.#instances, format);
-		this.#post = new PostProcess(device, gfx.presentationFormat, this.#environment);
+		this.#fog = new VolumetricFog(device, this.#layouts.frame);
+		this.#fog.setEnvironment(this.#environment, this.camera.near);
+		this.#post = new PostProcess(device, gfx.presentationFormat, this.#environment, this.#fog);
 		this.#water = new WaterRenderer(device);
 		this.#pool = new DecodePool(Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) >> 1)));
 		this.controls = new NoclipControls(this.camera, canvas);
@@ -741,6 +745,7 @@ export class Viewer {
 		this.#blendKey = key;
 		this.#environment = deriveEnvironment(profile);
 		this.#post.setEnvironment(this.#environment);
+		this.#fog.setEnvironment(this.#environment, this.camera.near);
 		this.#dirty = true;
 		this.#emitState();
 	}
@@ -1330,6 +1335,18 @@ export class Viewer {
 			draws += this.#meshes.encodeShadow(pass);
 			pass.end();
 		});
+		// after the shadow layers, which it reads
+		const froxels =
+			hasScene &&
+			this.options.fog &&
+			this.options.debugView === 'lit' &&
+			this.#fog.encode(encoder, {
+				frameGroup: this.#frameBindGroup,
+				frameOffset: uniforms.offset,
+				camera: this.camera,
+				aspect: this.#targets.width / this.#targets.height,
+				frame: this.#frame,
+			});
 		const { colors, depth } = this.#targets.mainPassAttachments();
 		const pass = encoder.beginRenderPass({
 			label: 'main',
@@ -1357,6 +1374,7 @@ export class Viewer {
 			outputHeight: this.#targets.outputHeight,
 			settings: this.#postSettings(),
 			frame: this.#frame,
+			froxels,
 			water: this.#water,
 		});
 		this.#profiler.resolve(encoder);
@@ -1497,6 +1515,7 @@ export class Viewer {
 				this.#instances.poolBytes +
 				this.#targets.bytes +
 				this.#post.bytes +
+				this.#fog.bytes +
 				this.#shadows.bytes,
 			queued: stream?.queued ?? 0,
 			requestsInFlight: stream?.requestsInFlight ?? 0,
@@ -1529,6 +1548,7 @@ export class Viewer {
 		this.unload();
 		this.controls.destroy();
 		this.#post.destroy();
+		this.#fog.destroy();
 		this.#water.destroy();
 		this.#shadows.destroy();
 		this.#pool.destroy();

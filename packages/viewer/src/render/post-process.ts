@@ -24,10 +24,11 @@ import taaWgsl from './shaders/taa.wgsl?raw';
 import tonemapWgsl from './shaders/tonemap.wgsl?raw';
 import { TemporalAA } from './temporal-aa.ts';
 import { type TextureBinding, placeholderView } from './texture-store.ts';
+import type { VolumetricFog } from './volumetric-fog.ts';
 import type { WaterRenderer } from './water-renderer.ts';
 
 /** byte size of `Post` in post-common.wgsl */
-const POST_BYTES = 58 * 16;
+const POST_BYTES = 60 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
@@ -120,6 +121,7 @@ const Lut = {
 	skyView: 2,
 	sampler: 3,
 	skyMean: 4,
+	froxels: 5,
 } as const;
 
 interface Sized {
@@ -202,14 +204,23 @@ export class PostProcess {
 	#cloud: TextureBinding;
 	#noCloud: TextureBinding;
 	#lutsReady = false;
+	/** the froxel fog the composite and water passes add in front */
+	#fog: VolumetricFog;
 
 	/**
 	 * @param device the device
 	 * @param swapchainFormat the canvas format the final pass writes
 	 * @param environment the environment to start with
+	 * @param fog the froxel fog, which the caller encodes before {@link encode}
 	 */
-	constructor(device: GPUDevice, swapchainFormat: GPUTextureFormat, environment: Environment) {
+	constructor(
+		device: GPUDevice,
+		swapchainFormat: GPUTextureFormat,
+		environment: Environment,
+		fog: VolumetricFog,
+	) {
 		this.#device = device;
+		this.#fog = fog;
 		this.autoExposure = new AutoExposure(device);
 		this.#uniforms = device.createBuffer({
 			label: 'post uniforms',
@@ -322,6 +333,7 @@ export class PostProcess {
 			[Lut.skyView]: views.skyView,
 			[Lut.sampler]: this.#sampler,
 			[Lut.skyMean]: views.skyMean,
+			[Lut.froxels]: this.#fog.view,
 		};
 		return this.#device.createBindGroup({
 			layout: pipeline.getBindGroupLayout(1),
@@ -331,13 +343,13 @@ export class PostProcess {
 
 	/**
 	 * @param pipeline a pass built from {@link postShaderSource} with atmosphere.wgsl and sky.wgsl that draws
-	 *   the sky (it reads the sky-view LUT and its mean; the fog is analytic)
+	 *   the sky and fog (it reads the sky-view LUT and its mean, and the froxel fog)
 	 * @returns its groups 0 (uniforms) and 1 (atmosphere)
 	 */
 	#skyGroups(pipeline: GPURenderPipeline): GPUBindGroup[] {
 		return [
 			this.#uniformsGroup(pipeline),
-			this.#atmosphereGroup(pipeline, [Lut.skyView, Lut.sampler, Lut.skyMean]),
+			this.#atmosphereGroup(pipeline, [Lut.skyView, Lut.sampler, Lut.skyMean, Lut.froxels]),
 		];
 	}
 
@@ -693,7 +705,14 @@ export class PostProcess {
 	}
 
 	/** writes the per-frame uniforms (camera, settings) over the environment's and uploads them all */
-	#writeFrame(camera: Camera, width: number, height: number, settings: PostSettings, frame: number): void {
+	#writeFrame(
+		camera: Camera,
+		width: number,
+		height: number,
+		settings: PostSettings,
+		frame: number,
+		froxels: boolean,
+	): void {
 		const environment = this.#environment;
 		const f = this.#data;
 		const u = this.#words;
@@ -733,6 +752,11 @@ export class PostProcess {
 			],
 			27 * 4,
 		);
+		{
+			const sampling = froxels ? this.#fog.sampling : null;
+			set(58, sampling?.slices ?? [0, 0, 0, 0]);
+			set(59, [sampling?.start ?? 0, 0, 0, 0]);
+		}
 		f[31 * 4 + 3] = environment.cloud !== null && this.#cloud !== this.#noCloud ? 1 : 0;
 		f[33 * 4 + 3] = settings.debugView === 'clouds' ? 1 : 0;
 		this.#device.queue.writeBuffer(this.#uniforms, 0, f);
@@ -767,6 +791,8 @@ export class PostProcess {
 			outputHeight: number;
 			settings: PostSettings;
 			frame: number;
+			/** whether the froxel fog was encoded this frame */
+			froxels: boolean;
 			/** drawn after compositing, when it has surfaces */
 			water: WaterRenderer;
 		},
@@ -774,7 +800,7 @@ export class PostProcess {
 		const { scene, swapchain, camera, width, height, outputWidth, outputHeight, frame } = input;
 		const settings = effectiveSettings(input.settings);
 		const sized = this.#ensureSized(scene, { width, height, outputWidth, outputHeight });
-		this.#writeFrame(camera, width, height, settings, frame);
+		this.#writeFrame(camera, width, height, settings, frame, input.froxels && settings.fog);
 		const luts = this.#lutPasses;
 		if (!this.#lutsReady) {
 			this.#run(encoder, 'transmittance lut', luts.transmittance);
