@@ -1070,7 +1070,7 @@ const packTerrain = async (
 				options: placement(BlobKind.TerrainDetail, archiveForTile(pack, key)),
 			})),
 		);
-		const whole = { tier: 0, level: 0, first: 0, count: 1 };
+		const whole = { tier: 0, levelTag: 0, first: 0, count: 1 };
 		for (const [i, { key }] of batch.entries()) {
 			const node = surface.nodes?.[terrainNodeIndex(key)];
 			pack.builder.addRef(
@@ -1188,7 +1188,7 @@ const packTerrainLayers = async (
 				texture: layer.texture,
 				tiling: layer.tiling / surface.terrainSize,
 				offset: layer.offset,
-				meanColour: layer.meanColour,
+				meanColor: layer.meanColor,
 				normalScale: layer.normalScale,
 				diffuseScale: layer.diffuseScale,
 				blendBorder: layer.blendBorder,
@@ -1244,7 +1244,7 @@ const packInstances = async (
 				{
 					kind: group.condition === null ? ContentKind.Detail : ContentKind.Conditional,
 					tier: 0,
-					level: group.level,
+					levelTag: group.level,
 					blob: blobs[i],
 					first: 0,
 					count: group.rows.length,
@@ -1292,7 +1292,15 @@ const packInstances = async (
 			const node = collected.hlodNodes.get(groups[first])!;
 			builder.addRef(
 				node.key,
-				{ kind: ContentKind.Hlod, tier: node.tier, level, blob, first, count: end - first, param: 0 },
+				{
+					kind: ContentKind.Hlod,
+					tier: node.tier,
+					levelTag: level,
+					blob,
+					first,
+					count: end - first,
+					param: 0,
+				},
 				NodeFlags.HasHlod,
 			);
 			builder.extend(node.key, node.bounds);
@@ -1305,7 +1313,7 @@ const packInstances = async (
 	const resident = (await coreBlocks(collected.resident)).map(({ level, group, blob }): ContentRef => ({
 		kind: ContentKind.Detail,
 		tier: 0,
-		level,
+		levelTag: level,
 		blob,
 		first: 0,
 		count: group.rows.length,
@@ -1583,7 +1591,7 @@ const archivePlacement = (pack: PackState, name: string): Pick<ArchiveInfo, 'rol
 	}
 	const shard = pack.shardTiles.get(name);
 	if (shard !== undefined) {
-		return { role: 'tiles', tile: shard };
+		return { role: 'shards', tile: shard };
 	}
 	return { role: 'assets', tile: pack.assetArchives.tileOf(name) ?? null };
 };

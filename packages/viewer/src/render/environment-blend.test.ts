@@ -32,7 +32,7 @@ const phase = (name: string, density: number): EnvironmentPhaseInfo =>
 
 const volume = (patch: Partial<EnvironmentVolumeInfo>): EnvironmentVolumeInfo => ({
 	name: 'v',
-	level: 1,
+	levelTag: 1,
 	shape: { kind: 'global' },
 	blendMode: 1,
 	priority: 100,
@@ -176,7 +176,7 @@ describe('eyeInLevelVolume', () => {
 		} as const satisfies EnvironmentVolumeShape;
 		const m = manifest(
 			[phase('base', 1), phase('next door', 2)],
-			[volume({ shape: square, blendDistance: 1 }), volume({ level: 2, phase: 1, shape: neighbour })],
+			[volume({ shape: square, blendDistance: 1 }), volume({ levelTag: 2, phase: 1, shape: neighbour })],
 		);
 		const eye = eyeInLevelVolume(m, 1, profile(0), target, [-50, 10, 50], {});
 		assert.ok(eye !== null);
@@ -199,7 +199,7 @@ describe('eyeInLevelVolume', () => {
 			[
 				volume({ shape: elsewhere, blendMode: 3 }),
 				volume({ shape: square, blendDistance: 1 }),
-				volume({ level: 2, phase: 1, shape: square }),
+				volume({ levelTag: 2, phase: 1, shape: square }),
 			],
 		);
 		// the scripted volume isn't the level's own, and the switched-off neighbour doesn't block the view

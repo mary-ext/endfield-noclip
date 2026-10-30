@@ -68,7 +68,7 @@ describe('classifyHgrpMaterial', () => {
 		const result = classifyHgrpMaterial(material({}), shader('HGRP/Lit', 2000));
 		assert.equal(result.family, 'lit');
 		assert.equal(result.blend, 'opaque');
-		assert.equal(result.alphaClip, null);
+		assert.equal(result.alphaClipThreshold, null);
 		assert.equal(result.cull, 'back');
 		assert.equal(result.zWrite, true);
 		assert.equal(result.normalLayout, 'RAG');
@@ -87,7 +87,7 @@ describe('classifyHgrpMaterial', () => {
 		assert.equal(result.family, 'leaf');
 		assert.equal(result.renderQueue, 2450);
 		assert.equal(result.blend, 'alphaTest');
-		assert.equal(result.alphaClip, 0.35);
+		assert.equal(result.alphaClipThreshold, 0.35);
 		assert.equal(result.cull, 'none');
 		assert.equal(result.normalLayout, 'RG');
 	});

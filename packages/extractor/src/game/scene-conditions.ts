@@ -46,7 +46,7 @@ export const loadSceneStateControls = async (world: WorldIndex, map: string): Pr
 				id: sceneStateControl(index),
 				name,
 				kind: 'sceneState',
-				levels: [0],
+				levelTags: [0],
 				defaultEnabled: condition !== undefined && evaluate(condition),
 				condition:
 					condition === undefined
@@ -75,7 +75,7 @@ export const unnamedSceneStateControl = (index: number): SceneToggleInfo => ({
 	id: sceneStateControl(index),
 	name: `scene state ${index}`,
 	kind: 'sceneState',
-	levels: [0],
+	levelTags: [0],
 	defaultEnabled: false,
 	condition: `not in the MapConfig`,
 });

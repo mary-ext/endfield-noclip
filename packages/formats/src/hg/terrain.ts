@@ -288,7 +288,7 @@ export interface TerrainLayer {
 	/** uv offset (`splatST.zw`) */
 	offset: [u: number, v: number];
 	/** the layer's mean albedo, linear; the tint is applied relative to it (`packedSplatInfo.xyz`) */
-	meanColour: [r: number, g: number, b: number];
+	meanColor: [r: number, g: number, b: number];
 	/** scales the normal map's xy (`packedSplatInfo.w`) */
 	normalScale: number;
 	/** multiplies the diffuse texture's rgb (`diffuseRemapScale.xyz`) */
@@ -438,7 +438,7 @@ export const readTerrainSurfacesData = (object: TypeTreeObject): TerrainSurfaces
 				texture: st[1],
 				tiling: st[0],
 				offset: [st[2], st[3]],
-				meanColour: [info[0], info[1], info[2]],
+				meanColor: [info[0], info[1], info[2]],
 				normalScale: info[3],
 				diffuseScale: [diffuse[0], diffuse[1], diffuse[2]],
 				blendBorder: diffuse[3],
@@ -570,7 +570,7 @@ export const readTerrainControlPage = (texture: TerrainTexture): Uint8Array => {
 
 /**
  * reads a baked `T` page: rgb tint, applied to the layer blend as `(tint − mean) · a⁴`, `mean` being the
- * layers' blended {@link TerrainLayer.meanColour}. rows along +Z.
+ * layers' blended {@link TerrainLayer.meanColor}. rows along +Z.
  *
  * @param texture a decoded `_T` file
  * @returns the page's BC3 sRGB blocks; a view into the texture

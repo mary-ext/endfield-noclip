@@ -13,7 +13,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 	const ref = (blob: number, condition: number, level: number): ContentRef => ({
 		kind: ContentKind.Conditional,
 		tier: 0,
-		level,
+		levelTag: level,
 		blob,
 		first: 0,
 		count: 1,
@@ -123,7 +123,7 @@ it('drops the HLOD of a nearby leaf with no detail instead of overlaying the sce
 		surface: null,
 		terrainDetail: null,
 		detail: [],
-		hlod: [{ kind: ContentKind.Hlod, tier: 0, level: 0, blob: 9, first: 0, count: 1, param: 0 }],
+		hlod: [{ kind: ContentKind.Hlod, tier: 0, levelTag: 0, blob: 9, first: 0, count: 1, param: 0 }],
 		conditional: [],
 		cellId: null,
 	};

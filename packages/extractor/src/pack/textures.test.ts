@@ -98,7 +98,7 @@ describe('convertTexture', () => {
 				minFilter: 'linear',
 				mipmapFilter: 'linear',
 				maxAnisotropy: 4,
-				lodBias: -0.5,
+				mipBias: -0.5,
 			},
 		});
 		assert.equal(pieces.length, 5);

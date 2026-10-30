@@ -363,7 +363,7 @@ export class TerrainRenderer {
 						layer.normalScale,
 						...layer.diffuseScale,
 						layer.blendBorder,
-						...layer.meanColour,
+						...layer.meanColor,
 						layer.texture,
 						layer.height[0],
 						layer.height[1],

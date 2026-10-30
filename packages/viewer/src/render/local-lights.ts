@@ -188,7 +188,7 @@ export class LocalLights {
 	#select(camera: Camera, aspect: number): Candidate[] {
 		this.#shown ??= this.#entries.filter(
 			(entry) =>
-				(this.#level === null || entry.level === this.#level || entry.level === 0) &&
+				(this.#level === null || entry.levelTag === this.#level || entry.levelTag === 0) &&
 				(entry.condition === null || (this.#conditions[entry.condition] ?? false)),
 		);
 		const candidates = this.#candidates;
@@ -265,9 +265,9 @@ const packLight = (out: Float32Array, index: number, { entry, rel, fade }: Candi
 	out[at + 1] = rel[1];
 	out[at + 2] = rel[2];
 	out[at + 3] = 1 / entry.range;
-	out[at + 4] = entry.colour[0] * fade;
-	out[at + 5] = entry.colour[1] * fade;
-	out[at + 6] = entry.colour[2] * fade;
+	out[at + 4] = entry.color[0] * fade;
+	out[at + 5] = entry.color[1] * fade;
+	out[at + 6] = entry.color[2] * fade;
 	out[at + 7] = spot ? 0 : 1;
 	out[at + 8] = entry.direction[0];
 	out[at + 9] = entry.direction[1];
@@ -278,7 +278,7 @@ const packLight = (out: Float32Array, index: number, { entry, rel, fade }: Candi
 	out[at + 14] = entry.falloffExponent;
 	out[at + 15] = entry.softSourceRadius;
 	out[at + 16] = entry.specularIntensity;
-	out[at + 17] = entry.volumetricIntensity;
+	out[at + 17] = entry.volumetricScatteringIntensity;
 	const box = entry.cullingBox;
 	out[at + 18] = box?.falloffThreshold ?? 0;
 	out[at + 19] = box === null ? 0 : 1;

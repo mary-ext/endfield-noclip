@@ -99,9 +99,9 @@ export const loadDynamicStructures = async (
 	const addToggle = (id: string, kind: SceneToggleInfo['kind'], enabled: boolean, tags: number[]): void => {
 		const current = toggles.get(id);
 		if (current) {
-			current.levels = [...new Set([...current.levels, ...tags])];
+			current.levelTags = [...new Set([...current.levelTags, ...tags])];
 		} else {
-			toggles.set(id, { id, name: id, kind, levels: tags, defaultEnabled: enabled, condition: null });
+			toggles.set(id, { id, name: id, kind, levelTags: tags, defaultEnabled: enabled, condition: null });
 		}
 	};
 	for (const owner of owners) {
@@ -126,7 +126,7 @@ export const loadDynamicStructures = async (
 				const id = gateControl(gate);
 				const toggle = gates.get(id)!;
 				const current = toggles.get(id);
-				toggles.set(id, { ...toggle, levels: [...new Set([...(current?.levels ?? []), tag])] });
+				toggles.set(id, { ...toggle, levelTags: [...new Set([...(current?.levelTags ?? []), tag])] });
 				requirements.push({ control: id, mask: 2 });
 			}
 			// visible-state lists hold MapConfig scene state indices; the entity and the group each need one of
@@ -144,8 +144,8 @@ export const loadDynamicStructures = async (
 						mask: group.logicState,
 					});
 				} else if ((group.logicState & 1) === 0) {
-					const id = `state:logic:${entity.grid}:${ordinal}:${group.logicState}`;
-					addToggle(id, 'state', false, [tag]);
+					const id = `logic:${entity.grid}:${ordinal}:${group.logicState}`;
+					addToggle(id, 'logic', false, [tag]);
 					requirements.push({ control: id, mask: 2 });
 				}
 			}

@@ -244,7 +244,7 @@ export const planEnvironments = async (
 					);
 		plan.volumes.push({
 			name: volume.name.replace(/#.*$/, ''),
-			level: tag,
+			levelTag: tag,
 			shape,
 			blendMode: volume.blendMode,
 			priority: volume.priority,

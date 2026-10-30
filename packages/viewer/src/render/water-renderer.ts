@@ -191,7 +191,7 @@ export class WaterRenderer {
 		let slot = 0;
 		for (const surface of table.surfaces) {
 			// level 0 surfaces belong to no level and show with every one
-			if (level !== null && surface.level !== level && surface.level !== 0) {
+			if (level !== null && surface.levelTag !== level && surface.levelTag !== 0) {
 				continue;
 			}
 			if (surface.condition !== null && !this.#conditions[surface.condition]) {

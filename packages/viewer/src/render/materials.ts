@@ -304,13 +304,14 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		const cover = floatOf(entry, shader, '_BaseColorTintCover', 0);
 		const brighter = floatOf(entry, shader, '_BaseColorBrighterScale', 1);
 		const colour = tint === undefined ? [1, 1, 1] : linearRgb(tint);
-		params.set([...colour, entry.alphaClip ?? -1], LookRow.tint);
+		params.set([...colour, entry.alphaClipThreshold ?? -1], LookRow.tint);
 		// `_AlphaMaskChannel` picks the alpha the Lit family tests: 0 the base colour's, 1 the normal map's. in
 		// the one-base-map layout the base colour's alpha is metallic, so testing it would cut holes in solid walls
 		if (family === 'lit' && floatOf(entry, shader, '_AlphaMaskChannel', 0) === 1) {
 			look.flags |= LookFlags.AlphaNormal;
 		}
-		look.cutout = entry.alphaClip !== null && entry.alphaClip >= 0 && alphaTextureOf(look) >= 0;
+		look.cutout =
+			entry.alphaClipThreshold !== null && entry.alphaClipThreshold >= 0 && alphaTextureOf(look) >= 0;
 		params[LookRow.surface2 + 3] = brighter;
 		// untextured: the tint alone
 		params[LookRow.emissive + 3] = look.textures[0] < 0 ? 1 : cover;
@@ -528,9 +529,9 @@ const mattePaintingLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialL
 	// the alpha test on the texture's alpha alone: saturate(a · scale) < clip ⇔ a < clip / scale while
 	// clip ≤ 1; past 1 everything is discarded
 	let threshold = -1;
-	if (entry.alphaClip !== null && entry.alphaClip > 0) {
+	if (entry.alphaClipThreshold !== null && entry.alphaClipThreshold > 0) {
 		const scale = tint[3] * floatOf(entry, shader, '_TintColorAlpha', 1);
-		threshold = entry.alphaClip > 1 || scale <= 0 ? 2 : entry.alphaClip / scale;
+		threshold = entry.alphaClipThreshold > 1 || scale <= 0 ? 2 : entry.alphaClipThreshold / scale;
 	}
 	params.set([...colour, threshold], LookRow.tint);
 	look.cutout = threshold >= 0 && look.textures[0] >= 0;

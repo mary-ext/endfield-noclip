@@ -17,7 +17,7 @@ a separate axis, covered in [world.md](world.md); the package merges them into t
 | progression                | resource-group `logicState` bitmask under a settlement / POI / factory-region controller                | progression `<kind>:<key>`                       | lowest authored level                                                    |
 | facility visual form       | interactive template model-upgrade list                                                                 | progression `facility:<entity id>`               | the template's base model                                                |
 | script group               | script-control component's default-load flag                                                            | toggle `script:<grid>:<ordinal>`                 | the stored default                                                       |
-| controller-less logic gate | resource-group `logicState` on an entity with no controller                                             | toggle `state:logic:…`                           | off                                                                      |
+| controller-less logic gate | resource-group `logicState` on an entity with no controller                                             | toggle `logic:…`                                 | off                                                                      |
 
 ## MapConfig scene states
 
@@ -168,8 +168,8 @@ point. each progression is selected independently, because the player's progress
 no single completion percentage describes it.
 
 a resource group with a non-zero mask on an entity with no controller: if bit 0 is set it shows in
-the default state and needs no control; otherwise it gets a `state:logic:<grid>:<ordinal>:<mask>`
-toggle, off, because nothing recovered drives that entity's logic state.
+the default state and needs no control; otherwise it gets a `logic:<grid>:<ordinal>:<mask>` toggle,
+off, because nothing recovered drives that entity's logic state.
 
 trees use bits 0/1 for standing/felled under the same mechanism; that is harvest state, not
 progression.
@@ -248,7 +248,7 @@ results to the instance selector, the water renderer and the environment blend.
   `activation: 'unknown'` because their script enablement isn't recovered (see
   [environment.md](environment.md))
 
-toggles are listed where their `levels` include 0 or the shown level's tag. "Reset" restores the
+toggles are listed where their `levelTags` include 0 or the shown level's tag. "Reset" restores the
 package defaults. conditional detail ignores HLOD refinement and stops streaming once its tile is
 below the screen error threshold.
 

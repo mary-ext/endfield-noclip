@@ -21,7 +21,7 @@ it('selects mutually exclusive upgrades while preserving shared and script-gated
 				id: 'script:course',
 				name: 'course',
 				kind: 'script',
-				levels: [1],
+				levelTags: [1],
 				defaultEnabled: false,
 				condition: null,
 			},

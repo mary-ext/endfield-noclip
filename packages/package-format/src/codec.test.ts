@@ -69,8 +69,8 @@ describe('tree', () => {
 				},
 			],
 			refs: [
-				{ kind: ContentKind.TerrainHeights, tier: 0, level: 0, blob: 7, first: 0, count: 1, param: 1.5 },
-				{ kind: ContentKind.Hlod, tier: 2, level: 10, blob: 3, first: 10, count: 4, param: 0 },
+				{ kind: ContentKind.TerrainHeights, tier: 0, levelTag: 0, blob: 7, first: 0, count: 1, param: 1.5 },
+				{ kind: ContentKind.Hlod, tier: 2, levelTag: 10, blob: 3, first: 10, count: 4, param: 0 },
 			],
 		};
 		assert.deepEqual(decodeTree(encodeTree(tree)), tree);

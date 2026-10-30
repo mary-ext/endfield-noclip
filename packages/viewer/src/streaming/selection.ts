@@ -213,7 +213,7 @@ export class Selector {
 	}
 
 	#shows(ref: ContentRef): boolean {
-		return this.#level === null || ref.level === this.#level || ref.level === 0;
+		return this.#level === null || ref.levelTag === this.#level || ref.levelTag === 0;
 	}
 
 	#priority(node: TileNode, sse: number, inView: boolean): number {

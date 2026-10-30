@@ -198,7 +198,7 @@ const writeRef = (view: DataView, at: number, ref: ContentRef): void => {
 	view.setUint8(at, ref.kind);
 	view.setUint8(at + 1, ref.tier);
 	view.setUint16(at + 2, 0, true);
-	view.setUint32(at + 4, ref.level, true);
+	view.setUint32(at + 4, ref.levelTag, true);
 	view.setUint32(at + 8, ref.blob, true);
 	view.setUint32(at + 12, ref.first, true);
 	view.setUint32(at + 16, ref.count, true);
@@ -239,7 +239,7 @@ export const decodeTree = (data: Uint8Array): Tree => {
 		refs.push({
 			kind: checkedEnum(isContentKind, view.getUint8(at), 'content kind'),
 			tier: view.getUint8(at + 1),
-			level: view.getUint32(at + 4, true),
+			levelTag: view.getUint32(at + 4, true),
 			blob: view.getUint32(at + 8, true),
 			first: view.getUint32(at + 12, true),
 			count: view.getUint32(at + 16, true),

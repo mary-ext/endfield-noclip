@@ -52,7 +52,7 @@ export const gateToggles = (gates: Iterable<DynamicGate>): Map<string, SceneTogg
 				id,
 				name: describe(condition),
 				kind: 'mission',
-				levels: [],
+				levelTags: [],
 				defaultEnabled: evaluate(condition),
 				condition: `loads while ${describe(condition)}; default: story finished`,
 			});
@@ -73,7 +73,7 @@ export const gateToggles = (gates: Iterable<DynamicGate>): Map<string, SceneTogg
 			id,
 			name: describe(condition),
 			kind: 'variable',
-			levels: [],
+			levelTags: [],
 			defaultEnabled: evaluate(condition, value),
 			condition: `loads while ${describe(condition)}; default: variable assumed ${value}, the highest value the scene compares it against`,
 		});

@@ -296,13 +296,13 @@ export const eyeInLevelVolume = (
 	const applicable = manifest.environmentVolumes.filter((volume, id) => volumeApplies(volume, id, options));
 	const own = applicable.find(
 		(volume) =>
-			(volume.level === level || volume.level === 0) &&
+			(volume.levelTag === level || volume.levelTag === 0) &&
 			manifest.environmentPhases[volume.phase].name === base.name,
 	);
 	if (own === undefined) {
 		return null;
 	}
-	const others = applicable.filter((volume) => volume.level !== 0 && volume.level !== level);
+	const others = applicable.filter((volume) => volume.levelTag !== 0 && volume.levelTag !== level);
 	// time-faded volumes apply fully anywhere inside; keep a metre off the edge
 	const margin = Math.max(own.blendMode === 1 ? own.blendDistance : 0, 1);
 	for (let step = VIEW_STEPS; step >= 0; step--) {

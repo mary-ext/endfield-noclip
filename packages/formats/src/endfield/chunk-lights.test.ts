@@ -120,7 +120,7 @@ test('readChunkLights decodes the light entities from their rows', () => {
 	assert.equal(light.type, LightType.Spot);
 	assert.deepEqual(light.position, [10, 20, 30]);
 	assert.deepEqual(light.direction, [0, -1, 0]);
-	assert.deepEqual(light.colour, [5, 2.75, 1.25]);
+	assert.deepEqual(light.color, [5, 2.75, 1.25]);
 	assert.equal(light.range, 12);
 	assert.deepEqual([light.spotAngle, light.innerSpotAngle], [60, 40]);
 	assert.equal(light.specularIntensity, 0.5);
@@ -128,7 +128,7 @@ test('readChunkLights decodes the light entities from their rows', () => {
 	assert.deepEqual(light.distanceFade, { falloff: 30, culling: 50 });
 	assert.deepEqual(light.cullingBox?.halfExtents, [2, 0, 0]);
 	assert.equal(Math.fround(light.cullingBox?.falloffThreshold ?? 0), Math.fround(0.8));
-	assert.equal(light.volumetricIntensity, 10);
+	assert.equal(light.volumetricScatteringIntensity, 10);
 	assert.equal(light.falloffExponent, -1);
 });
 

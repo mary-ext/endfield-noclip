@@ -51,8 +51,8 @@ export interface ChunkLight {
 	/** world direction the light points along (the transform's +z), unit length */
 	direction: [x: number, y: number, z: number];
 	/** linear radiant colour: the authored colour times intensity and the colour temperature's tint */
-	colour: [r: number, g: number, b: number];
-	/** the authored intensity, already in {@link colour} */
+	color: [r: number, g: number, b: number];
+	/** the authored intensity, already in {@link color} */
 	intensity: number;
 	/** metres */
 	range: number;
@@ -75,7 +75,7 @@ export interface ChunkLight {
 	/** the distance falloff's exponent; negative for inverse square with a smooth window */
 	falloffExponent: number;
 	/** the froxel fog's multiplier on this light */
-	volumetricIntensity: number;
+	volumetricScatteringIntensity: number;
 	/** sorts lights of equal camera distance */
 	priority: number;
 	/** fades the light out with camera distance: full up to `falloff`, gone at `culling` (m) */
@@ -180,7 +180,7 @@ const decodeLight = (id: number, name: string, core: DataView, settings: DataVie
 		type,
 		position: vec3(28),
 		direction: vec3(44),
-		colour: vec3(60),
+		color: vec3(60),
 		intensity: f(16),
 		range: f(76),
 		spotAngle: s(36),
@@ -192,7 +192,7 @@ const decodeLight = (id: number, name: string, core: DataView, settings: DataVie
 		tubeLength: Math.max(s(144), 0),
 		softSourceRadius: s(148),
 		falloffExponent: s(444),
-		volumetricIntensity: s(440),
+		volumetricScatteringIntensity: s(440),
 		priority: settings.getInt32(140, true),
 		distanceFade: flag(94) ? { falloff: s(156), culling: s(152) } : null,
 		cullingBox: flag(92)

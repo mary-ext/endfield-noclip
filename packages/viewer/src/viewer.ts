@@ -782,7 +782,7 @@ export class Viewer {
 		}
 		const indices = new Set<number>();
 		for (const volume of manifest.environmentVolumes) {
-			if (volume.phase !== null && (volume.level === level.tag || volume.level === 0)) {
+			if (volume.phase !== null && (volume.levelTag === level.tag || volume.levelTag === 0)) {
 				indices.add(volume.phase);
 			}
 		}

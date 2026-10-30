@@ -158,7 +158,7 @@ export const convertMaterial = (
 			renderQueue: classification.renderQueue,
 			blend: classification.blend,
 			blendFactors: classification.blendFactors,
-			alphaClip: classification.alphaClip,
+			alphaClipThreshold: classification.alphaClipThreshold,
 			cull: classification.cull,
 			zWrite: classification.zWrite,
 			normalLayout: classification.normalLayout,

@@ -46,7 +46,7 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 	);
 	const toggles = manifest.states.toggles.filter(
 		(entry) =>
-			(entry.levels.includes(0) || entry.levels.includes(level?.tag ?? 0)) &&
+			(entry.levelTags.includes(0) || entry.levelTags.includes(level?.tag ?? 0)) &&
 			matches(`${entry.name} ${entry.id}`),
 	);
 	// volumes apply wherever they hold the camera, so a neighbour's volume reaching into this level is listed too
@@ -54,8 +54,8 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 		.map((volume, id) => ({ volume, id }))
 		.filter(
 			({ volume }) =>
-				(volume.level === 0 ||
-					volume.level === level?.tag ||
+				(volume.levelTag === 0 ||
+					volume.levelTag === level?.tag ||
 					(level !== undefined && volumeReaches(volume, level.rect))) &&
 				matches(volume.name),
 		);
@@ -131,7 +131,7 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 						))}
 				</details>
 			))}
-			{(['script', 'state'] as const).map((kind) => (
+			{(['script', 'logic'] as const).map((kind) => (
 				<details key={kind}>
 					<summary>
 						{kind === 'script' ? 'Script / event scenery' : 'Logic-gate previews'} (
@@ -191,9 +191,9 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 										? 'Scripted blend · preview at full strength'
 										: `Priority ${volume.priority}`}
 								{volume.condition !== null && ` · with ${loadingStates(volume.condition)}`}
-								{volume.level !== 0 &&
-									volume.level !== level?.tag &&
-									` · from ${levelNames.get(volume.level) ?? `level ${volume.level}`}`}
+								{volume.levelTag !== 0 &&
+									volume.levelTag !== level?.tag &&
+									` · from ${levelNames.get(volume.levelTag) ?? `level ${volume.levelTag}`}`}
 							</small>
 						</span>
 					</label>

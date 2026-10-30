@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 13;
+export const PACKAGE_VERSION = 14;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -417,7 +417,7 @@ export interface TerrainLayerInfo {
 	/** uv offset */
 	offset: [u: number, v: number];
 	/** the layer's mean albedo, linear; the tint applies relative to it */
-	meanColour: [r: number, g: number, b: number];
+	meanColor: [r: number, g: number, b: number];
 	/** scales the normal map's xy */
 	normalScale: number;
 	/** multiplies the diffuse texture's rgb */
@@ -510,11 +510,11 @@ export interface SceneToggleInfo {
 	/**
 	 * `sceneState`: a MapConfig scene state. `mission` / `variable`: a dynamic entity load gate on quest and
 	 * mission states / on a map or global variable; on means the gate passes. `script`: a script-loaded entity
-	 * group. `state`: a logic gate whose condition is not recovered
+	 * group. `logic`: a logic-state gate (the game's `LogicState`) whose condition is not recovered
 	 */
-	kind: 'sceneState' | 'mission' | 'variable' | 'script' | 'state';
+	kind: 'sceneState' | 'mission' | 'variable' | 'script' | 'logic';
 	/** level tags whose controls list it; 0 lists it everywhere */
-	levels: number[];
+	levelTags: number[];
 	defaultEnabled: boolean;
 	/**
 	 * for scene states and gates, the game's condition in words and the assumption the default rests on; `null`
@@ -542,10 +542,10 @@ export interface ArchiveInfo {
 	 * `assets/common.czar`. an asset archive over its size cap continues in `assets/<id>.<n>.czar`, n ≥ 1
 	 */
 	name: string;
-	role: 'core' | 'tiles' | 'assets' | 'irradiance';
+	role: 'core' | 'shards' | 'assets' | 'irradiance';
 	/**
 	 * `null` for `irradiance` archives (`irradiance/<x>_<z>.czar`: the cells over one 512 m square, see
-	 * {@link irradianceArchiveName}). for `tiles` shards: the {@link TreeInfo.shardLevel} tile whose subtree
+	 * {@link irradianceArchiveName}). for `shards` archives: the {@link TreeInfo.shardLevel} tile whose subtree
 	 * content it holds. for `assets` archives: the tile at or above the shard level whose subtree is the
 	 * smallest one containing every use of each asset in it, or `null` for `assets/common*` (resident content,
 	 * or uses under different root tiles). so everything a tile draws lives in the `assets` archives of that
@@ -666,7 +666,7 @@ export interface EnvironmentVolumeInfo {
 	/** the object's name */
 	name: string;
 	/** the owning level's tag (0 for scene-wide) */
-	level: number;
+	levelTag: number;
 	shape: EnvironmentVolumeShape;
 	blendMode: number;
 	priority: number;
@@ -1284,7 +1284,7 @@ export interface WaterSurfaceEntry {
 	/** the game's entity id */
 	id: number;
 	/** the owning level's tag (`id >>> 27`), matching {@link LevelInfo.tag} */
-	level: number;
+	levelTag: number;
 	/**
 	 * index into {@link StatesInfo.conditionalSets} when the surface only loads with some scene states (map02's
 	 * paddy-field pools), `null` when it's always loaded
@@ -1339,7 +1339,7 @@ export interface LightEntry {
 	/** the game's entity id */
 	id: number;
 	/** the owning level's tag (`id >>> 27`), matching {@link LevelInfo.tag} */
-	level: number;
+	levelTag: number;
 	/**
 	 * index into {@link StatesInfo.conditionalSets} when the light only loads with some scene states, else
 	 * `null`
@@ -1352,7 +1352,7 @@ export interface LightEntry {
 	 * linear colour times intensity and colour-temperature tint, in the units the shading adds to the scene as
 	 * they are (the game doesn't pre-expose local lights)
 	 */
-	colour: Vec3;
+	color: Vec3;
 	/** metres; the light reaches nothing farther */
 	range: number;
 	/** full cone angles, degrees; 0 for points */
@@ -1366,7 +1366,7 @@ export interface LightEntry {
 	falloffExponent: number;
 	specularIntensity: number;
 	/** scales the light in the froxel fog; 0 leaves the fog unlit */
-	volumetricIntensity: number;
+	volumetricScatteringIntensity: number;
 	/** orders lights at equal camera distance when there are more than a viewer draws */
 	priority: number;
 	/**
@@ -1398,7 +1398,7 @@ export interface ContentRef {
 	 * the instances' level tag (`entityId >>> 27`, matching {@link LevelInfo.tag}) for instance content; 0 for
 	 * terrain
 	 */
-	level: number;
+	levelTag: number;
 	/** blob index */
 	blob: number;
 	/** first row, for refs into a shared instance block; 0 otherwise */
@@ -1681,7 +1681,7 @@ export interface ReadyMaterial {
 	/** source and destination factors (Unity `BlendMode` values) for blended materials */
 	blendFactors: [src: number, dst: number] | null;
 	/** alpha-test threshold, or `null` without alpha testing */
-	alphaClip: number | null;
+	alphaClipThreshold: number | null;
 	cull: MaterialCull;
 	zWrite: boolean;
 	/** `null` outside the Lit and foliage families */
@@ -1757,7 +1757,7 @@ export interface TextureSampler {
 	/** 1 unless every filter is linear, as WebGPU requires */
 	maxAnisotropy: number;
 	/** Unity's mip bias; WebGPU samplers have none, so a shader applies it if it wants */
-	lodBias: number;
+	mipBias: number;
 }
 
 /** block layout of a texture format: a 4×4 block for BC formats, a single texel otherwise */

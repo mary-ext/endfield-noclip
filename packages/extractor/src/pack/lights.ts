@@ -74,11 +74,11 @@ export const lightEntry = (light: ChunkLight, condition: number | null): LightEn
 	return {
 		kind: spot ? LightKind.Spot : LightKind.Point,
 		id: light.id,
-		level: light.levelTag,
+		levelTag: light.levelTag,
 		condition,
 		position: light.position,
 		direction: light.direction,
-		colour: light.colour,
+		color: light.color,
 		range: light.range,
 		spotAngle: spot ? light.spotAngle : 0,
 		innerSpotAngle: spot ? light.innerSpotAngle : 0,
@@ -87,7 +87,7 @@ export const lightEntry = (light: ChunkLight, condition: number | null): LightEn
 		softSourceRadius: light.softSourceRadius,
 		falloffExponent: light.falloffExponent,
 		specularIntensity: light.specularIntensity,
-		volumetricIntensity: light.volumetricIntensity,
+		volumetricScatteringIntensity: light.volumetricScatteringIntensity,
 		priority: light.priority,
 		distanceFade: light.distanceFade,
 		cullingBox:

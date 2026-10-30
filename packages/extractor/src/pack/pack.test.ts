@@ -71,7 +71,7 @@ describe('TileTreeBuilder', () => {
 
 	it('creates ancestors, child masks and merged bounds', () => {
 		const builder = new TileTreeBuilder(grid);
-		const ref = { kind: ContentKind.Detail, tier: 0, level: 0, blob: 0, first: 0, count: 1, param: 0 };
+		const ref = { kind: ContentKind.Detail, tier: 0, levelTag: 0, blob: 0, first: 0, count: 1, param: 0 };
 		builder.addRef({ level: 2, x: 1, z: 0 }, ref, 4);
 		builder.extend({ level: 2, x: 1, z: 0 }, { min: [-1000, 10, -2000], max: [-900, 20, -1900] });
 		builder.addRef({ level: 2, x: 0, z: 1 }, { ...ref, blob: 1 }, 4);

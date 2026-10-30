@@ -16,7 +16,7 @@ free of node APIs and of other workspace packages so both sides can import it.
 
 ## versioning
 
-`PACKAGE_VERSION` (13) is written to `manifest.version` and to the header of every binary encoding
+`PACKAGE_VERSION` (14) is written to `manifest.version` and to the header of every binary encoding
 (tree, chains, blob table, irradiance table, instance blocks, height pages, geometry blobs). readers
 accept exactly that version and reject any other, and nothing migrates old packages: a package from
 another version is re-extracted. bump the version on any incompatible change to the manifest, a
@@ -61,8 +61,8 @@ invalidates cached conversions.
 
 `CORE_PATHS` names the core's fixed members; `shardArchiveName`, `assetArchiveName` and
 `irradianceArchiveName` name the others. `manifest.archives` lists every archive with its `role`
-(`core`, `tiles`, `assets`, `irradiance`) and `tile`; the core is entry 0, the rest follow sorted by
-name.
+(`core`, `shards`, `assets`, `irradiance`) and `tile`; the core is entry 0, the rest follow sorted
+by name.
 
 the packer replaces a previous package in its output directory but refuses a directory holding
 anything else, so a mistyped `-o` can't wipe unrelated files. it writes the new package into a
@@ -144,14 +144,14 @@ the game's HLOD switch distances are known.
 
 **content refs** (`ContentRef`, `ContentKind`):
 
-| kind                 | points at                                                    | `tier`    | `level`   | `param`                                 |
-| -------------------- | ------------------------------------------------------------ | --------- | --------- | --------------------------------------- |
-| `TerrainHeights` (0) | one height page                                              | 0         | 0         | the game's `maxHeightError`, m          |
-| `Hlod` (1)           | rows `[first, first + count)` of a level's shared HLOD block | HLOD tier | level tag | 0                                       |
-| `Detail` (2)         | a whole instance block                                       | 0         | level tag | 0                                       |
-| `Conditional` (3)    | a whole instance block shown only while its condition holds  | 0         | level tag | index into `StatesInfo.conditionalSets` |
-| `TerrainSurface` (4) | one surface page, covering the same tile as the height page  | 0         | 0         | 0                                       |
-| `TerrainDetail` (5)  | a leaf's detail page                                         | 0         | 0         | 0                                       |
+| kind                 | points at                                                    | `tier`    | `levelTag` | `param`                                 |
+| -------------------- | ------------------------------------------------------------ | --------- | ---------- | --------------------------------------- |
+| `TerrainHeights` (0) | one height page                                              | 0         | 0          | the game's `maxHeightError`, m          |
+| `Hlod` (1)           | rows `[first, first + count)` of a level's shared HLOD block | HLOD tier | level tag  | 0                                       |
+| `Detail` (2)         | a whole instance block                                       | 0         | level tag  | 0                                       |
+| `Conditional` (3)    | a whole instance block shown only while its condition holds  | 0         | level tag  | index into `StatesInfo.conditionalSets` |
+| `TerrainSurface` (4) | one surface page, covering the same tile as the height page  | 0         | 0          | 0                                       |
+| `TerrainDetail` (5)  | a leaf's detail page                                         | 0         | 0          | 0                                       |
 
 detail and conditional blocks are one per (leaf, level tag, condition); an instance goes to the leaf
 under its bounds centre. HLOD and resident rows form one block per level tag in the core, HLOD rows
@@ -297,13 +297,13 @@ each is one zstd frame around JSON. entry `i` has id `i`. an entry is either rea
 `debug/assets.json`); draws referencing an unconverted entry are skipped. `--no-assets` exists for
 fast iteration on the instance side.
 
-| table        | contents                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `geometries` | `ReadyGeometry`: blob, local bounds, vertex/index/submesh counts, attribute bitmask, `tangentUv`                                                                                                                                                                                                                                                                                                                                                                          |
-| `materials`  | `shaders`: each shader's declared properties and defaults (floats, colours as authored: gamma-encoded, or linear for HDR colours, vectors, texture built-in defaults, `[Normal]` slots) and its `ShaderFamily`. `entries`: `ReadyMaterial` with shader index, keywords, render queue, blend, cull, `zWrite`, alpha clip, normal layout, bound `slots` (texture id, UV set, `_ST` scale/offset) and only the floats/colours/vectors that differ from the shader's defaults |
-| `textures`   | `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler as `GPUSamplerDescriptor` fields plus Unity's `lodBias`, `pieces` coarse to fine                                                                                                                                                                                                                                                                                                      |
-| `water`      | see [water.md](game-data/water.md)                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `lights`     | `LightEntry`: kind (spot, point), entity id, level tag, condition, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                            |
+| table        | contents                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `geometries` | `ReadyGeometry`: blob, local bounds, vertex/index/submesh counts, attribute bitmask, `tangentUv`                                                                                                                                                                                                                                                                                                                                                                                    |
+| `materials`  | `shaders`: each shader's declared properties and defaults (floats, colours as authored: gamma-encoded, or linear for HDR colours, vectors, texture built-in defaults, `[Normal]` slots) and its `ShaderFamily`. `entries`: `ReadyMaterial` with shader index, keywords, render queue, blend, cull, `zWrite`, alpha clip threshold, normal layout, bound `slots` (texture id, UV set, `_ST` scale/offset) and only the floats/colours/vectors that differ from the shader's defaults |
+| `textures`   | `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler as `GPUSamplerDescriptor` fields plus Unity's `mipBias`, `pieces` coarse to fine                                                                                                                                                                                                                                                                                                                |
+| `water`      | see [water.md](game-data/water.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `lights`     | `LightEntry`: kind (spot, point), entity id, level tag, condition, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                           |
 
 materials store overrides only because lit materials declare ~190 floats each; undeclared (stale)
 properties Unity keeps from earlier shaders are dropped

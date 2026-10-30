@@ -265,7 +265,7 @@ export class TextureStore {
 	}
 
 	#sampler(entry: ReadyTexture): GPUSampler {
-		const { lodBias: _, ...descriptor } = entry.sampler;
+		const { mipBias: _, ...descriptor } = entry.sampler;
 		const key = JSON.stringify(descriptor);
 		let sampler = this.#samplers.get(key);
 		if (sampler === undefined) {

@@ -116,6 +116,6 @@ const gpuSampler = (sampler: UnitySamplerSettings): TextureSampler => {
 		minFilter: linear ? 'linear' : 'nearest',
 		mipmapFilter: trilinear ? 'linear' : 'nearest',
 		maxAnisotropy: trilinear ? Math.min(16, Math.max(1, sampler.aniso)) : 1,
-		lodBias: sampler.mipBias,
+		mipBias: sampler.mipBias,
 	};
 };

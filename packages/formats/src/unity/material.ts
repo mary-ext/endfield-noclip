@@ -349,7 +349,7 @@ export interface MaterialClassification {
 	/** source/destination factors for blended materials, as {@link BlendFactor} values */
 	blendFactors: [number, number] | null;
 	/** alpha-test threshold, or `null` without alpha testing */
-	alphaClip: number | null;
+	alphaClipThreshold: number | null;
 	cull: 'back' | 'front' | 'none';
 	zWrite: boolean;
 	/** Lit-family normal map channel layout: `RAG` with an MRO map, else `RG` */
@@ -406,7 +406,7 @@ export const classifyHgrpMaterial = (
 		blend = alphaTested || renderQueue >= 2450 ? 'alphaTest' : 'opaque';
 	}
 
-	const alphaClip =
+	const alphaClipThreshold =
 		blend === 'alphaTest' || alphaTested ? (float('_AlphaClipThreshold') ?? float('_Cutoff') ?? 0.5) : null;
 
 	let cull: MaterialClassification['cull'];
@@ -440,7 +440,7 @@ export const classifyHgrpMaterial = (
 		renderQueue,
 		blend,
 		blendFactors,
-		alphaClip,
+		alphaClipThreshold,
 		cull,
 		zWrite: float('_ZWrite') === undefined ? !blended : float('_ZWrite') !== 0,
 		normalLayout,

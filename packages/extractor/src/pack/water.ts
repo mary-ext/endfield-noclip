@@ -367,7 +367,7 @@ const surfaceEntry = (surface: SourcedWaterSurface, geometry: number, config: nu
 	const m = surface.matrix;
 	return {
 		id: surface.id,
-		level: surface.levelTag,
+		levelTag: surface.levelTag,
 		condition: null,
 		geometry,
 		// top three rows of the column-major matrix, row-major
