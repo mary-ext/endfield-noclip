@@ -37,6 +37,12 @@ struct Frame {
 	shadow_look: vec4f,
 	// world position of each irradiance clipmap level's centre (0.5 m, 2 m, 8 m probes), w = 1 once filled
 	irradiance: array<vec4f, 3>,
+	// this frame's local lights (local-lights.ts): count, screen tiles across and down, near plane (m)
+	local_lights: vec4f,
+	// the camera's unit forward vector, w unused
+	view_forward: vec4f,
+	// render width, height (px), z, w unused
+	render_size: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -60,6 +66,10 @@ struct Frame {
 @group(0) @binding(10) var irradiance_b2: texture_3d<f32>;
 @group(0) @binding(11) var irradiance_repeat: sampler;
 @group(0) @binding(12) var irradiance_clamp: sampler;
+// local lights, 8 vec4s each (`packLight` in local-lights.ts), and their bins: 8-word masks per 32 px screen
+// tile, then per 1 m view-depth slice
+@group(0) @binding(15) var<storage, read> lights: array<vec4f>;
+@group(0) @binding(16) var<storage, read> light_bins: array<u32>;
 
 // #region sun shadow
 
@@ -360,6 +370,184 @@ fn environment_brdf(f0: vec3f, roughness: f32, n_dot_v: f32) -> vec3f {
 	return f0 * ab.x + ab.y;
 }
 
+// #region local lights
+
+// the first mask word of a pixel's screen tile and of its view-depth slice in `light_bins`, or x = 0xffffffff
+// where no light can reach (no lights, or past the last slice)
+fn light_bin_words(px: vec2f, rel: vec3f) -> vec2u {
+	let count = u32(frame.local_lights.x);
+	let depth = dot(rel, frame.view_forward.xyz) - frame.local_lights.w;
+	if (count == 0u || depth < 0.0 || depth >= 2048.0) {
+		return vec2u(0xffffffffu, 0u);
+	}
+	let tiles = vec2u(frame.local_lights.yz);
+	let tile = min(vec2u(max(px, vec2f(0.0)) / 32.0), tiles - 1u);
+	return vec2u((tile.y * tiles.x + tile.x) * 8u, (tiles.x * tiles.y + u32(depth)) * 8u);
+}
+
+// what reaches a camera-relative point from one local light, before the BRDF
+struct LocalLight {
+	// from the point to the light
+	to_light: vec3f,
+	// distance falloff × cone × culling box; 0 where the light doesn't reach
+	attenuation: f32,
+	// a tube's ends relative to the point (zero for points and spots)
+	a: vec3f,
+	b: vec3f,
+}
+
+// the game's punctual light falloff: the culling box's fade, inverse square in a smooth window (or a power of
+// the window with a falloff exponent), a tube's integrated inverse square, and a spot's squared cone
+fn local_light_at(i: u32, rel: vec3f) -> LocalLight {
+	let base = i * 8u;
+	let p = lights[base];
+	let d = lights[base + 2u];
+	let e = lights[base + 3u];
+	let g = lights[base + 4u];
+	var out: LocalLight;
+	out.to_light = p.xyz - rel;
+	out.attenuation = 0.0;
+	out.a = vec3f(0.0);
+	out.b = vec3f(0.0);
+	var box = 1.0;
+	if (g.w > 0.5) {
+		let q = vec4f(-out.to_light, 1.0);
+		let m = max(abs(dot(lights[base + 5u], q)), max(abs(dot(lights[base + 6u], q)), abs(dot(lights[base + 7u], q))));
+		let k = g.z * 0.5;
+		box = 1.0 - clamp((m - (0.5 + k)) / max(0.5 - k, 1e-4), 0.0, 1.0);
+		box *= box;
+		if (box < 0.001) {
+			return out;
+		}
+	}
+	let d2 = dot(out.to_light, out.to_light);
+	let x = d2 * p.w * p.w;
+	if (x >= 1.0) {
+		return out;
+	}
+	let spot = lights[base + 1u].w < 0.5;
+	var tube = 1.0;
+	let tube_length = select(e.y, 0.0, spot);
+	if (tube_length > 0.0) {
+		let segment = d.xyz * tube_length;
+		out.a = out.to_light - segment * 0.5;
+		out.b = out.to_light + segment * 0.5;
+		tube = 1.0 / ((length(out.a) * length(out.b) + dot(out.a, out.b)) * 0.5 + 1.0);
+	}
+	var attenuation: f32;
+	if (e.z < 0.0) {
+		let window = clamp(1.0 - x * x, 0.0, 1.0);
+		attenuation = select(1.0 / (d2 + 1.0), tube, tube_length > 0.0) * window * window;
+	} else {
+		attenuation = tube * pow(1.0 - x, e.z);
+	}
+	if (spot) {
+		let cone = clamp((dot(out.to_light * inverseSqrt(max(d2, 1e-8)), -d.xyz) - d.w) * e.x, 0.0, 1.0);
+		attenuation *= cone * cone;
+	}
+	out.attenuation = attenuation * box;
+	return out;
+}
+
+// the local lights' direct light on a surface, with the game's lobe for them (and its sun): GGX without the 1/π,
+// Lambert without the 1/π and without (1 − F), so in the units of the light's colour the result is
+// `colour · (diffuse + π · specular)`. a soft source radius widens the lobe; a tube takes the point of the
+// segment nearest the reflection for its specular. the game's multiple-scattering term is left out
+fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_colour: vec3f, f0: vec3f, roughness: f32) -> vec3f {
+	let words = light_bin_words(px, rel);
+	if (words.x == 0xffffffffu) {
+		return vec3f(0.0);
+	}
+	let count = u32(frame.local_lights.x);
+	let n_dot_v = clamp(dot(n, v), 0.0, 1.0);
+	let r = reflect(-v, n);
+	var sum = vec3f(0.0);
+	for (var w = 0u; w * 32u < count; w++) {
+		var mask = light_bins[words.x + w] & light_bins[words.y + w];
+		while (mask != 0u) {
+			let i = w * 32u + firstTrailingBit(mask);
+			mask &= mask - 1u;
+			let light = local_light_at(i, rel);
+			if (light.attenuation <= 0.0) {
+				continue;
+			}
+			let e = lights[i * 8u + 3u];
+			let tube_length = select(e.y, 0.0, lights[i * 8u + 1u].w < 0.5);
+			let d2 = dot(light.to_light, light.to_light);
+			let distance = sqrt(d2);
+			var l = light.to_light / distance;
+			var l_spec = l;
+			var n_dot_l: f32;
+			var norm = 1.0;
+			if (tube_length > 0.0) {
+				n_dot_l = clamp(0.5 * (dot(n, light.a) / length(light.a) + dot(n, light.b) / length(light.b)), 0.0, 1.0);
+				let segment = light.b - light.a;
+				let r_dot_s = dot(r, segment);
+				let t = clamp(dot(light.a, r * r_dot_s - segment) / max(tube_length * tube_length - r_dot_s * r_dot_s, 1e-6), 0.0, 1.0);
+				l_spec = normalize(light.a + segment * t);
+				let r2 = roughness * roughness;
+				norm = r2 / clamp(r2 + 0.5 * clamp(tube_length / distance, 0.0, 1.0), 1e-6, 1.0);
+			} else {
+				n_dot_l = clamp(dot(n, l), 0.0, 1.0);
+			}
+			if (n_dot_l <= 0.0) {
+				continue;
+			}
+			let h = normalize(l_spec + v);
+			let n_dot_h = clamp(dot(n, h), 0.0, 1.0);
+			let v_dot_h = clamp(dot(v, h), 0.0, 1.0);
+			var a = roughness * roughness;
+			let soft = clamp(e.w / distance, 0.0, 1.0);
+			if (soft > 0.0) {
+				a = clamp(a + soft * soft / (3.6 * v_dot_h + 0.4), 0.0, 1.0);
+			}
+			let a2 = a * a;
+			let dd = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+			let distribution = a2 / max(dd * dd, 1e-8);
+			let visibility = 0.5 / (n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - a2) + a2) + n_dot_v * sqrt(n_dot_l * n_dot_l * (1.0 - a2) + a2) + 1e-4);
+			let f = fresnel_schlick(f0, v_dot_h);
+			let g = lights[i * 8u + 4u];
+			let specular = clamp(min(f * (distribution * norm * visibility), vec3f(2048.0)) * g.x, vec3f(0.0), vec3f(1000.0));
+			sum += (specular + diffuse_colour) * n_dot_l * lights[i * 8u + 1u].rgb * light.attenuation;
+		}
+	}
+	return min(sum, vec3f(255.0));
+}
+
+// the local lights scattered towards the camera by the froxel fog at a camera-relative point: each light's colour,
+// falloff and per-light volumetric intensity through a Henyey-Greenstein phase of anisotropy `g` along `ray`
+// (towards the point)
+fn local_fog_lighting(rel: vec3f, px: vec2f, ray: vec3f, g: f32) -> vec3f {
+	let words = light_bin_words(px, rel);
+	if (words.x == 0xffffffffu) {
+		return vec3f(0.0);
+	}
+	let count = u32(frame.local_lights.x);
+	var sum = vec3f(0.0);
+	for (var w = 0u; w * 32u < count; w++) {
+		var mask = light_bins[words.x + w] & light_bins[words.y + w];
+		while (mask != 0u) {
+			let i = w * 32u + firstTrailingBit(mask);
+			mask &= mask - 1u;
+			let intensity = lights[i * 8u + 4u].y;
+			if (intensity <= 0.0) {
+				continue;
+			}
+			let light = local_light_at(i, rel);
+			if (light.attenuation <= 0.0) {
+				continue;
+			}
+			let mu = dot(ray, normalize(light.to_light));
+			let x = 1.0 + g * g - 2.0 * g * mu;
+			let phase = (1.0 - g * g) / max(4.0 * PI * x * sqrt(x), 0.001);
+			sum += lights[i * 8u + 1u].rgb * (light.attenuation * phase * intensity);
+		}
+	}
+	return sum;
+}
+
+// #endregion
+
 // sun (shadowed) plus ambient probe; `rel` is the camera-relative position
 fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	let n = s.normal;
@@ -392,6 +580,7 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		}
 		direct *= frame.sun_colour.rgb * visibility * frame.sun.w;
 	}
+	direct += local_lighting(n, v, rel, px, diffuse_colour, f0, roughness);
 
 	let irradiance = ambient_irradiance(frame.eye.xyz + rel, n);
 	let diffuse_ambient = diffuse_colour * irradiance;

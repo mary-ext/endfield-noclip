@@ -19,9 +19,9 @@ or renders correctly.
   manual preview controls with stored defaults ([scene states](game-data/scene-states.md))
 - terrain heights, baked surface pages and the close-up layer blend
   ([world](game-data/world.md#terrain))
-- environment profiles and volume blending, water, post-processing and base-scenario irradiance
-  ([environment](game-data/environment.md), [lighting](game-data/lighting.md),
-  [water](game-data/water.md))
+- environment profiles and volume blending, water, post-processing, base-scenario irradiance and
+  local point, spot and tube lights ([environment](game-data/environment.md),
+  [lighting](game-data/lighting.md), [water](game-data/water.md))
 
 ## look and lighting
 
@@ -39,8 +39,13 @@ or renders correctly.
   preview
 - environment volume initial enablement and `EnvironmentEnable` script conditions, needed before any
   automatic gating
-- froxel fog: local lights, local fog volumes, flow noise and history reprojection aren't drawn, and
-  the grid size is Unreal's default rather than the game's quality preset
+- froxel fog: local fog volumes, flow noise and history reprojection aren't drawn, and the grid size
+  is Unreal's default rather than the game's quality preset
+- local lights ([lighting](game-data/lighting.md#local-lights)): no shadows, shadow-only lights,
+  flicker or multiple-scattering term; light beams aren't drawn; lights inside prefabs and dynamic
+  structures aren't packed
+- the sun may be π too dark against local lights and the game (the two conventions differ);
+  unchecked
 - interiors, in order of impact:
   - per-instance emission overrides aren't read
   - normal-map roughness is read only when the mesh has tangents; normals are transformed by the
@@ -48,7 +53,6 @@ or renders correctly.
     camera
   - shadow casters are only what's on screen and shadow-only proxies are skipped, so the sun leaks
     through roofs behind the camera
-  - local point and spot lights and light beams aren't drawn
   - local reflection probes, GTAO in specular occlusion, contact shadows
 - the packed tangent frame isn't decoded; tangents are regenerated
 - terrain close up: smooth triplanar replaces the game's random plane choice, and the cliff

@@ -50,8 +50,8 @@ the repo's `out/`; set `NOCLIP_PACKAGES=/path` to point it elsewhere
 ([`package/viewer-package.ts`](../packages/viewer/src/package/viewer-package.ts)) reads the whole
 core archive, checks the manifest's format and version (a mismatch throws `PackageError` rather than
 guessing at fields), and decodes its tables (tree, blob table, LOD chains, geometry, material,
-texture, water and irradiance tables). shard JSON headers are never fetched: the blob table gives
-each shard blob's absolute byte range, so a blob costs one range read.
+texture, water, light and irradiance tables). shard JSON headers are never fetched: the blob table
+gives each shard blob's absolute byte range, so a blob costs one range read.
 
 `load` then builds the linked tile tree, the texture store, the irradiance volume and the stream
 manager, pins the coarse layer (see [residency](#residency-and-budgets)), picks the initial level,
@@ -292,9 +292,10 @@ details:
   fill CPU views; `flush` uploads the frame's region in one `writeBuffer`, and draws bind group 0 at
   a dynamic offset. a frame needs the main block plus one per shadow layer.
 - **bind layouts** ([`gfx/bind-layouts.ts`](../packages/viewer/src/gfx/bind-layouts.ts)): group 0 is
-  the frame (uniforms, shadow map, reflection cubemap, irradiance clipmaps) for every family, so a
-  pass binds it once; group 1 is per family; meshes add group 2 (per-draw parameters) and group 3
-  (material textures). shadow passes bind a placeholder in place of the shadow map they render into.
+  the frame (uniforms, shadow map, reflection cubemap, irradiance clipmaps, local lights and their
+  bins) for every family, so a pass binds it once; group 1 is per family; meshes add group 2
+  (per-draw parameters) and group 3 (material textures). shadow passes bind a placeholder in place
+  of the shadow map they render into.
 - **pipeline cache** ([`gfx/pipeline-cache.ts`](../packages/viewer/src/gfx/pipeline-cache.ts)):
   modules by label, pipelines by a state key such as `mesh/opaque/x4`. renderers `prepare` every
   pipeline they use with `createRenderPipelineAsync` at construction, so streaming never compiles

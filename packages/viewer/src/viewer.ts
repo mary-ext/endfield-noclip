@@ -37,6 +37,7 @@ import { DEBUG_VIEWS, type DebugView, FRAME_UNIFORM_BYTES, FrameOffsets } from '
 import { InstanceRenderer } from './render/instance-renderer.ts';
 import { RowKind, type RowKinds, type TierSpan } from './render/instance-rows.ts';
 import { IrradianceVolume } from './render/irradiance-volume.ts';
+import { LocalLights } from './render/local-lights.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
 import { type PostSettings, PostProcess, type Tonemapper, postExposure } from './render/post-process.ts';
@@ -103,6 +104,8 @@ export interface ViewerOptions {
 	vignette: boolean;
 	/** light ambient from the baked irradiance volume; off uses the environment's ambient probe alone */
 	irradiance: boolean;
+	/** light surfaces and the froxel fog with the package's point and spot lights */
+	localLights: boolean;
 	/** blend the game's environment volumes at the camera; off shows the level's base environment */
 	environmentVolumes: boolean;
 	/** an environment phase to show over the base instead of the volumes, or `null` */
@@ -146,6 +149,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	bloom: true,
 	vignette: true,
 	irradiance: true,
+	localLights: true,
 	environmentVolumes: true,
 	environmentPin: null,
 	environmentEnabled: {},
@@ -285,6 +289,7 @@ export class Viewer {
 	#noShadowRamp: GPUTextureView;
 	/** the shadow ramp view the frame groups were built with */
 	#shadowRamp: GPUTextureView;
+	readonly #lights: LocalLights;
 	#profiler: GpuProfiler;
 	#terrain: TerrainRenderer;
 	#instances: InstanceRenderer;
@@ -366,6 +371,7 @@ export class Viewer {
 		this.#noShadowRamp = placeholderView(device, { label: 'no shadow ramp', dimension: '2d' });
 		this.#shadowRamp = this.#noShadowRamp;
 		this.#irradiance = new IrradianceVolume(device, EMPTY_IRRADIANCE);
+		this.#lights = new LocalLights(device);
 		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups();
 		this.#profiler = new GpuProfiler(device, gfx.features.timestampQuery);
 		const format = this.#targets.format;
@@ -549,6 +555,8 @@ export class Viewer {
 		selector.setLevel(this.#level?.tag ?? null);
 		this.#post.autoExposure.reset();
 		this.#water.setTable(pkg.water);
+		this.#lights.setLights(pkg.lights.lights);
+		this.#lights.setLevel(this.#level?.tag ?? null);
 		this.#applyEnvironment();
 		if (this.#level !== null) {
 			this.#focusCells = this.#cellIds(this.#level);
@@ -586,6 +594,7 @@ export class Viewer {
 		this.#fades.reset();
 		this.#setIrradiance(new IrradianceVolume(this.#gfx.device, EMPTY_IRRADIANCE));
 		this.#water.setTable(null);
+		this.#lights.setLights([]);
 		this.#terrain.setDetail(null);
 		this.#level = null;
 		this.#unsettledPose = null;
@@ -617,6 +626,8 @@ export class Viewer {
 					{ binding: 12, resource: this.#irradiance.clampSampler },
 					{ binding: 13, resource: this.#shadows.gatherSampler },
 					{ binding: 14, resource: this.#shadowRamp },
+					{ binding: 15, resource: { buffer: this.#lights.lightBuffer } },
+					{ binding: 16, resource: { buffer: this.#lights.binBuffer } },
 				],
 			});
 		const irradiance = this.#irradiance.views();
@@ -997,6 +1008,7 @@ export class Viewer {
 		}
 		this.#level = level;
 		this.scene.selector.setLevel(level.tag);
+		this.#lights.setLevel(level.tag);
 		this.#post.autoExposure.reset();
 		this.#applyEnvironment();
 		this.#flyOver(level);
@@ -1062,6 +1074,7 @@ export class Viewer {
 			scene.selector.setConditions(this.#conditionResults);
 		}
 		this.#water.setConditions(this.#conditionResults);
+		this.#lights.setConditions(this.#conditionResults);
 		this.#dirty = true;
 	}
 
@@ -1482,6 +1495,18 @@ export class Viewer {
 			f32.set(centre ?? [0, 0, 0], at);
 			f32[at + 3] = centre !== null && this.options.irradiance ? 1 : 0;
 		});
+		{
+			const lit = this.scene !== null && this.options.localLights && this.options.debugView === 'lit';
+			const lights = lit ? this.#lights.prepare(camera, width, height) : { count: 0, tilesX: 1, tilesY: 1 };
+			const at = FrameOffsets.localLights;
+			f32[at] = lights.count;
+			f32[at + 1] = lights.tilesX;
+			f32[at + 2] = lights.tilesY;
+			f32[at + 3] = camera.near;
+			f32.set(camera.forward(), FrameOffsets.viewForward);
+			f32[FrameOffsets.renderSize] = width;
+			f32[FrameOffsets.renderSize + 1] = height;
+		}
 	}
 
 	/** refreshes {@link stats}, notifying subscribers only if something changed */
@@ -1549,6 +1574,7 @@ export class Viewer {
 		this.controls.destroy();
 		this.#post.destroy();
 		this.#fog.destroy();
+		this.#lights.destroy();
 		this.#water.destroy();
 		this.#shadows.destroy();
 		this.#pool.destroy();

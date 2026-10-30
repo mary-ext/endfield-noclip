@@ -100,6 +100,50 @@ luminance L1 along the normal, the factor is `(2 · min(d / p, 1) + d) / (2 + p)
 `d / p` under cover, so interiors don't mirror the bright sky, and about 1 in the open. the game's
 clustered local reflection probes (normalised the same way) and SSR are not implemented.
 
+## local lights
+
+the scenes' point, spot and tube lights live in the chunk files
+([world.md](world.md#initchunkdata-layout)). the packer keeps the spot and point lights (a point
+with a positive length is a tube along its direction) in `tables/lights.json.zst`
+([`pack/lights.ts`](../../packages/extractor/src/pack/lights.ts)), with conditions from the scene
+states of the files holding them, like instances. directional lights, shadow-only lights (12 on
+map02) and character-only lights (none) are left out. both bake types on the maps, realtime and
+mixed, light directly, as in the game.
+
+| input                                                         | effect                                                                                                                                                                    |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| final colour                                                  | linear colour × intensity × the colour temperature's tint, precomputed in the file; added to the scene without pre-exposure                                               |
+| range, falloff exponent                                       | negative exponent: `1 / (d² + 1)` times `(1 − (d²/R²)²)²`; otherwise `(1 − d²/R²)^exponent`                                                                               |
+| tube length                                                   | `1 / (d²+1)` becomes `1 / ((\|a\|\|b\| + a·b) / 2 + 1)` over the segment ends `a`, `b`; `n·l` averages both ends; specular takes the segment point nearest the reflection |
+| spot angle, inner spot angle                                  | `saturate((cos θ − cos(outer/2)) / (cos(inner/2) − cos(outer/2)))²`                                                                                                       |
+| culling box (offset, half extents, Euler rotation, threshold) | in world axes about the light; with `m` the largest box coordinate, `(1 − saturate((m − (1 + t)/2) / ((1 − t)/2)))²`                                                      |
+| culling and falloff distance                                  | the colour fades with camera distance, linearly in squared distance, from the falloff distance to nothing at the culling distance                                         |
+| soft source radius `s`                                        | widens the lobe: `α += saturate(s / d)² / (3.6 v·h + 0.4)`                                                                                                                |
+| specular intensity                                            | scales the specular lobe                                                                                                                                                  |
+| volumetric scattering intensity                               | scales the light in the froxel fog                                                                                                                                        |
+
+the game's lobe for these lights (and for its sun) is GGX with the height-correlated Smith
+visibility and Schlick Fresnel, but without the 1/π in the distribution and the Lambert term and
+without (1 − F) on diffuse, so a light adds
+`colour · attenuation · n·l · (diffuse colour + π · specular BRDF)`; the specular term is clamped to
+1000 and the sum of all lights to 255. the viewer follows that
+([`local_lighting` in `shaders/frame.wgsl`](../../packages/viewer/src/render/shaders/frame.wgsl)),
+leaving out the game's multiple-scattering term. the viewer's sun divides diffuse by π with the
+colour taken as illuminance; which convention reproduces the game's sun brightness is open
+([open](#open)).
+
+each frame [`render/local-lights.ts`](../../packages/viewer/src/render/local-lights.ts) takes the
+shown level's lights (and tag 0's) whose condition holds, that are within their culling distance and
+in the view, sorts them by camera distance then priority and keeps the nearest 256, as the game's
+light list does. it bins them the game's way: 32 px screen tiles and 1 m view-depth slices from the
+near plane (2048 of them), each a 256-bit mask; a pixel walks the lights set in both its tile's and
+its slice's mask. the viewer bins conservative bounding spheres on the CPU; the game does it in
+compute shaders. the froxel fog lights each froxel with the same lists, through the fog's
+Henyey-Greenstein phase times each light's volumetric intensity.
+
+not drawn: local light shadows (972 map02 lights cast them in the game), shadow-only lights, cookies
+(no map02 light has one), the flicker component and light beams.
+
 ## emission
 
 HGRP Lit materials emit through one of their `_EMISSIVE_*` keywords
@@ -207,7 +251,8 @@ fog over it, then the froxels.
     antialiasing averages them; the game also reprojects the grid's history, which the viewer
     doesn't.
 
-the froxel fog's local lights, local fog volumes and flow noise are not drawn.
+the froxel fog's local fog volumes and flow noise are not drawn; its local lights are (see
+[local lights](#local-lights)), unshadowed.
 
 ## post chain
 
@@ -394,6 +439,11 @@ are sampled toroidally in `ambient_irradiance`.
   (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without the native
   diffuse-ambient scale.
 - not rendered: light shafts, lens flare, cloud shadows, celestial bodies, stars and aurora, local
-  reflection probes, SSR, punctual lights, precipitation and wetness.
+  reflection probes, SSR, local light shadows and light beams, precipitation and wetness.
+- the sun's units: the game shades its sun with the same lobe as local lights (no 1/π on diffuse),
+  while the viewer treats the sun's colour as illuminance and divides diffuse by π. unless the CPU
+  folds a 1/π into the sun's colour, the viewer's sun is π too dark. unchecked against a shot.
+- the cap on local lights per frame comes from a quality setting that isn't recovered (the viewer
+  takes the hard maximum, 256).
 - interiors outside the game's sun-off volumes receive the outdoor sun wherever no drawn geometry
   shadows them.

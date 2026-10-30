@@ -1,6 +1,6 @@
 // the game's froxel fog: a grid over the view, its slices spaced logarithmically in view depth out to the
 // fog's distance. each thread walks one column front to back, lighting every froxel (the height fog's medium
-// scattering the sun, shadowed, and the ambient probe, plus its own emission) and storing the light
+// scattering the sun, shadowed, the ambient probe and the local lights, plus its own emission) and storing the light
 // scattered towards the camera so far (rgb) and the transmittance (a). needs frame.wgsl.
 
 struct VolumetricFog {
@@ -80,6 +80,8 @@ fn cs_froxels(@builtin(global_invocation_id) id: vec3u) {
 	let uv = (vec2f(id.xy) + 0.5) / vec2f(size.xy);
 	let ray = fog.forward.xyz + (uv.x * 2.0 - 1.0) * fog.right.xyz + (1.0 - uv.y * 2.0) * fog.up.xyz;
 	let direction = normalize(ray);
+	// the column's render pixel, for the local lights' screen tiles
+	let pixel = uv * frame.render_size.xy;
 	let g = fog.range.z;
 	let phase = henyey_greenstein(g, dot(direction, fog.sun_direction.xyz));
 	// the ambient probe's linear part towards the viewer, softened by the anisotropy
@@ -101,7 +103,7 @@ fn cs_froxels(@builtin(global_invocation_id) id: vec3u) {
 		let scattering = fog.albedo.rgb * sigma;
 		let scattering_luminance = dot(scattering, vec3f(0.2126, 0.7152, 0.0722));
 		let extinction = max(sigma - scattering_luminance, 0.0) + scattering_luminance;
-		let light = fog.sun.rgb * (froxel_sun(rel) * phase) + sky;
+		let light = fog.sun.rgb * (froxel_sun(rel) * phase) + sky + local_fog_lighting(rel, pixel, direction, g);
 		let source = light * scattering + fog.emissive.rgb;
 
 		// front to back between successive froxel centres, measured along the ray, fading in from the first

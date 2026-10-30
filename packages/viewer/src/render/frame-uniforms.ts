@@ -11,7 +11,7 @@ import frameWgsl from './shaders/frame.wgsl?raw';
 export const FRAME_WGSL = brdfWgsl + frameWgsl;
 
 /** byte size of `Frame` */
-export const FRAME_UNIFORM_BYTES = 720;
+export const FRAME_UNIFORM_BYTES = 768;
 
 /** float offsets of `Frame` fields */
 export const FrameOffsets = {
@@ -36,6 +36,10 @@ export const FrameOffsets = {
 	shadowLook: 164,
 	/** three vec4s: irradiance clipmap centres, w = filled */
 	irradiance: 168,
+	/** light count, tiles across and down, near plane */
+	localLights: 180,
+	viewForward: 184,
+	renderSize: 188,
 } as const;
 
 /**

@@ -18,6 +18,7 @@ import {
 	CORE_PATHS,
 	type GeometryTable,
 	type IrradianceTable,
+	type LightsTable,
 	type MaterialTable,
 	PACKAGE_FORMAT,
 	PACKAGE_VERSION,
@@ -56,6 +57,8 @@ export interface ViewerPackage {
 	textures: TextureTable;
 	/** the scene's water */
 	water: WaterTable;
+	/** the scene's local lights */
+	lights: LightsTable;
 	/** the baked irradiance volume's cells (empty without one) */
 	irradiance: IrradianceTable;
 	/**
@@ -132,6 +135,8 @@ export const openViewerPackage = async (
 	const textures = (await json(CORE_PATHS.textures)) as TextureTable;
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
 	const water = (await json(CORE_PATHS.water)) as WaterTable;
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
+	const lights = (await json(CORE_PATHS.lights)) as LightsTable;
 	const irradiance = decodeIrradianceTable(await member(CORE_PATHS.irradiance));
 
 	return {
@@ -144,6 +149,7 @@ export const openViewerPackage = async (
 		materials,
 		textures,
 		water,
+		lights,
 		irradiance,
 		readCoreBlob(index) {
 			const blob = blobs[index];

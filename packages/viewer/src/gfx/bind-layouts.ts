@@ -66,6 +66,9 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 			{ binding: 13, visibility: lighting, sampler: { type: 'non-filtering' } },
 			// the shadow's penumbra ramp
 			{ binding: 14, visibility: lighting, texture: { sampleType: 'float' } },
+			// local lights and their bins
+			storage(15, lighting),
+			storage(16, lighting),
 		],
 	});
 	const terrain = device.createBindGroupLayout({
