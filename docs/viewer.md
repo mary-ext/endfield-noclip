@@ -360,7 +360,8 @@ details:
 
 ## driving the viewer from an agent
 
-use the `agent-browser` CLI with WebGPU enabled; without `--webgpu` the canvas stays blank.
+use the `agent-browser` CLI with WebGPU enabled; without it the canvas stays blank. on macOS, pass
+`--webgpu`:
 
 ```sh
 pnpm run dev --port 5199 --strictPort
@@ -375,6 +376,42 @@ agent-browser --webgpu open 'http://localhost:5199/?package=map02&level=map02_lv
   [sources](#sources)), but a re-pack that keeps a shard's size goes unnoticed.
 - wrap multi-statement `agent-browser eval` code in an IIFE: top-level `const` collides across
   evals.
+
+### on Linux
+
+on Linux, `--webgpu` runs WebGPU on SwiftShader, a software Vulkan, so the viewer crawls and
+screenshots time out. run a headed browser on the hardware Vulkan driver instead. the flags depend
+on the machine, so keep them in the gitignored `agent-browser.local.json` rather than in the repo or
+a global agent-browser config:
+
+```json
+{
+	"headed": true,
+	"args": "--enable-unsafe-webgpu\n--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan\n--use-vulkan=native\n--use-angle=vulkan\n--ignore-gpu-blocklist\n--ozone-platform=wayland\n--disable-gpu-vsync\n--disable-frame-rate-limit\n--disable-renderer-backgrounding\n--disable-background-timer-throttling"
+}
+```
+
+point agent-browser at it from `mise.local.toml` (add that file to `.git/info/exclude`), then run
+`mise trust`:
+
+```toml
+[env]
+AGENT_BROWSER_CONFIG = "{{config_root}}/agent-browser.local.json"
+```
+
+- interactive shells pick the variable up on entering the repo. non-interactive shells, such as an
+  agent's, skip mise's prompt hook: launch with `mise exec -- agent-browser open '<url>'`. later
+  commands reuse the open browser and can be plain `agent-browser`.
+- `--ozone-platform=wayland` is for Wayland sessions; drop it under X11.
+- the vsync and frame-rate flags keep the browser drawing when its window is on a hidden workspace.
+  without them Wayland stops sending frame callbacks, the page drops to about 1 fps, and screenshots
+  time out. the page still reports itself visible, so `document.visibilityState` can't detect this.
+- with the frame-rate limit off, `continuous` renders as fast as the GPU allows; turn it off when
+  done.
+- headless mode reaches the GPU but captures the canvas as blank, because Chrome disables WebGPU
+  interop with the compositor there. keep `headed` on.
+- check the adapter with `viewer.stats.adapter` (the HUD shows it too); `google swiftshader` means
+  the config wasn't loaded.
 
 ### posing
 
