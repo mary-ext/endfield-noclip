@@ -32,6 +32,8 @@ export interface MainPassFormat {
 /** the main pass's outputs, which the post passes read */
 export interface SceneTextures {
 	radiance: GPUTextureView;
+	/** the texture behind {@link radiance}; unused once composited, so post passes may copy into it */
+	radianceTexture: GPUTexture;
 	ambient: GPUTextureView;
 	depth: GPUTextureView;
 	/** bumped whenever the views or the output size change (resize, render scale) */
@@ -145,12 +147,18 @@ export class RenderTargets {
 		const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
 		this.#depth = create({ label: 'depth', size: [width, height], format: DEPTH_FORMAT, usage });
 		this.#colours = [
-			create({ label: 'radiance', size: [width, height], format: HDR_FORMAT, usage }),
+			create({
+				label: 'radiance',
+				size: [width, height],
+				format: HDR_FORMAT,
+				usage: usage | GPUTextureUsage.COPY_DST,
+			}),
 			create({ label: 'ambient', size: [width, height], format: HDR_FORMAT, usage }),
 		];
 		this.#version++;
 		this.#scene = {
 			radiance: this.#colours[0].createView(),
+			radianceTexture: this.#colours[0],
 			ambient: this.#colours[1].createView(),
 			depth: this.#depth.createView(),
 			version: this.#version,

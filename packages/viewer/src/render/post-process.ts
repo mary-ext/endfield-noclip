@@ -135,9 +135,6 @@ interface Sized {
 	ao: GPUTexture;
 	/** full resolution */
 	aoBlurred: GPUTexture;
-	/** a copy of the composited scene for the water to refract */
-	background: GPUTexture;
-	backgroundView: GPUTextureView;
 	/** the composited scene at the render size, which the temporal resolve reads */
 	scene: GPUTexture;
 	sceneView: GPUTextureView;
@@ -352,9 +349,9 @@ export class PostProcess {
 		}
 		const pixels = sized.width * sized.height;
 		const outputPixels = sized.outputWidth * sized.outputHeight;
-		// at the render size the reduced AO depth and AO, the blurred AO, the scene and the water's background; at
-		// the output size the temporal history and the bloom chain (two quarter-size mips)
-		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) + outputPixels * 8 * (2 / 3) + this.taa.bytes;
+		// at the render size the reduced AO depth and AO, the blurred AO and the scene; at the output size the
+		// temporal history and the bloom chain (two quarter-size mips)
+		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8) + outputPixels * 8 * (2 / 3) + this.taa.bytes;
 	}
 
 	/** the composite pass's group 2: the main pass's outputs, the blurred AO and the cloud panorama */
@@ -406,7 +403,6 @@ export class PostProcess {
 			sized.ao,
 			sized.aoBlurred,
 			sized.scene,
-			sized.background,
 			...sized.down,
 			...sized.blurred,
 			...sized.up,
@@ -448,7 +444,6 @@ export class PostProcess {
 		const ao = texture('ao', aoWidth, aoHeight, AO_FORMAT);
 		const aoBlurred = texture('ao blurred', width, height, AO_FORMAT);
 		const sceneTexture = texture('hdr scene', width, height, HDR_FORMAT);
-		const background = texture('hdr background', width, height, HDR_FORMAT);
 		const sceneView = sceneTexture.createView();
 		this.taa.resize({ scene: sceneView, depth: scene.depth, width, height, outputWidth, outputHeight });
 		const histories = this.taa.histories;
@@ -563,8 +558,6 @@ export class PostProcess {
 			scene: sceneTexture,
 			sceneView,
 			historyViews: [histories[0].createView(), histories[1].createView()],
-			background,
-			backgroundView: background.createView(),
 			down,
 			blurred,
 			up,
@@ -801,10 +794,15 @@ export class PostProcess {
 		this.#run(encoder, 'composite', sized.passes.composite);
 		const water = input.water;
 		if (settings.debugView === 'lit' && water.active) {
-			encoder.copyTextureToTexture({ texture: sized.scene }, { texture: sized.background }, [width, height]);
+			// the water refracts a copy of the composited scene, kept in the main pass's radiance target, which
+			// nothing reads after compositing
+			encoder.copyTextureToTexture({ texture: sized.scene }, { texture: scene.radianceTexture }, [
+				width,
+				height,
+			]);
 			water.encode(encoder, sized.sceneView, {
 				scene,
-				background: sized.backgroundView,
+				background: scene.radiance,
 				postGroups: (pipeline) => this.#skyGroups(pipeline),
 				cloud: this.#cloud,
 				version: sized.version,
