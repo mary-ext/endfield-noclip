@@ -96,6 +96,8 @@ struct EffectOut {
 struct EffectAccumulated {
 	@location(0) sum: vec4f,
 	@location(1) revealage: vec4f,
+	// additive light, which the composite adds after the fog
+	@location(2) glow: vec4f,
 }
 
 fn fx_row(id: u32, r: u32) -> vec4f {
@@ -287,6 +289,7 @@ fn fx_accumulate(premultiplied: vec3f, alpha: f32, distance: f32) -> EffectAccum
 	var out: EffectAccumulated;
 	out.sum = vec4f(premultiplied * weight, alpha * weight);
 	out.revealage = vec4f(alpha);
+	out.glow = vec4f(0.0);
 	return out;
 }
 

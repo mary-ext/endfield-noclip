@@ -39,7 +39,9 @@ export const MAIN_TARGETS: GPUColorTargetState[] = [
 /**
  * the transparent pass's colour targets (weighted blended order-independent transparency, McGuire and Bavoil
  * 2013): the weighted sum of premultiplied colours with the weights' sum in alpha, and the revealage, the
- * product of `1 − alpha` over the layers. the composite resolves them over the opaque scene
+ * product of `1 − alpha` over the layers. the composite resolves them over the opaque scene. a third target,
+ * the glow, sums additively blended light, which the other two can't hold; the composite adds it after the
+ * fog
  */
 export const TRANSPARENT_TARGETS: GPUColorTargetState[] = [
 	{
@@ -54,6 +56,13 @@ export const TRANSPARENT_TARGETS: GPUColorTargetState[] = [
 		blend: {
 			color: { srcFactor: 'zero', dstFactor: 'one-minus-src' },
 			alpha: { srcFactor: 'zero', dstFactor: 'one-minus-src' },
+		},
+	},
+	{
+		format: HDR_FORMAT,
+		blend: {
+			color: { srcFactor: 'one', dstFactor: 'one' },
+			alpha: { srcFactor: 'one', dstFactor: 'one' },
 		},
 	},
 ];
@@ -78,6 +87,8 @@ export interface SceneTextures {
 	transparent: GPUTextureView;
 	/** the transparent pass's revealage: 1 where nothing transparent was drawn */
 	revealage: GPUTextureView;
+	/** the transparent pass's additive light ({@link TRANSPARENT_TARGETS}) */
+	glow: GPUTextureView;
 	/** bumped whenever the views or the output size change (resize, render scale) */
 	version: number;
 }
@@ -208,6 +219,7 @@ export class RenderTargets {
 		this.#transparent = [
 			create({ label: 'transparent', size: [width, height], format: HDR_FORMAT, usage }),
 			create({ label: 'revealage', size: [width, height], format: 'r8unorm', usage }),
+			create({ label: 'glow', size: [width, height], format: HDR_FORMAT, usage }),
 		];
 		this.#version++;
 		this.#scene = {
@@ -219,6 +231,7 @@ export class RenderTargets {
 			depth: this.#depth.createView(),
 			transparent: this.#transparent[0].createView(),
 			revealage: this.#transparent[1].createView(),
+			glow: this.#transparent[2].createView(),
 			version: this.#version,
 		};
 		return true;
@@ -226,7 +239,7 @@ export class RenderTargets {
 
 	/** @returns bytes held by the targets (estimate; the swapchain counts as two buffers) */
 	get bytes(): number {
-		return this.width * this.height * (4 + 8 * 4 + 8 + 1) + this.outputWidth * this.outputHeight * 4 * 2;
+		return this.width * this.height * (4 + 8 * 4 + 8 + 1 + 8) + this.outputWidth * this.outputHeight * 4 * 2;
 	}
 
 	/** @returns the main pass's outputs */
@@ -274,13 +287,19 @@ export class RenderTargets {
 		if (this.#depth === null || this.#transparent === null) {
 			throw new Error('render targets used before update()');
 		}
-		const [sum, revealage] = this.#transparent;
+		const [sum, revealage, glow] = this.#transparent;
 		return {
 			colors: [
 				{ view: sum.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
 				{
 					view: revealage.createView(),
 					clearValue: { r: 1, g: 1, b: 1, a: 1 },
+					loadOp: 'clear',
+					storeOp: 'store',
+				},
+				{
+					view: glow.createView(),
+					clearValue: { r: 0, g: 0, b: 0, a: 0 },
 					loadOp: 'clear',
 					storeOp: 'store',
 				},

@@ -241,6 +241,8 @@ struct Accumulated {
 	@location(0) sum: vec4f,
 	// alpha, which the blend turns into the product of 1 − alpha
 	@location(1) revealage: vec4f,
+	// additive light, none for glass
+	@location(2) glow: vec4f,
 }
 
 // alpha-blended materials (`transparent` in materials.ts), shaded like opaque ones. the opacity is the alpha
@@ -266,6 +268,7 @@ fn fs_transparent(in: VertexOut) -> Accumulated {
 	var out: Accumulated;
 	out.sum = vec4f(shaded.radiance.rgb * weight, weight);
 	out.revealage = vec4f(alpha);
+	out.glow = vec4f(0.0);
 	return out;
 }
 

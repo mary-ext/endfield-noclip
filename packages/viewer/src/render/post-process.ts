@@ -466,6 +466,7 @@ export class PostProcess {
 				{ binding: 7, resource: scene.transparent },
 				{ binding: 8, resource: scene.revealage },
 				{ binding: 9, resource: celestial.createView() },
+				{ binding: 10, resource: scene.glow },
 			],
 		});
 	}
