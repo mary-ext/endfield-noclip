@@ -1,7 +1,9 @@
 /**
  * how the viewer draws the game's scene effect meshes, `HGRP/Effect/VFXBaseV2` and `HGRP/Effect/VFXDecal`:
  * unlit, premultiplied layers built from a stack of scrolling textures, drawn in the transparent pass by
- * `effect.wgsl`. the decal projects its textures down its box onto whatever the main pass drew inside it.
+ * `effect.wgsl`. the decal projects its textures down its box onto whatever the main pass drew inside it. the
+ * mist, `HGRP/FogSimple` cards and `HGRP/Effect/VFXFakeVolumeFog` boxes, has looks of its own
+ * ({@link MistRow}).
  *
  * both shaders combine textures by role. a texture can distort the UVs of the textures sampled after it
  * (disturb), scale that distortion (weight), multiply the colour and alpha (mask), add a tinted layer (blend)
@@ -411,3 +413,171 @@ export const vfxDecalLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectL
 	);
 	return look;
 };
+
+// #region mist
+
+/**
+ * float offsets of a mist look's parameters (`fogSimpleLook`, `fakeVolumeFogLook`), in place of
+ * {@link EffectRow} for the mist entry points of `effect.wgsl`. the UV rows are shared
+ */
+export const MistRow = {
+	/** colour rgb (linear, HDR), alpha */
+	color: 0,
+	/** one UV transform per texture slot, as {@link EffectRow.uv} */
+	uv: 4,
+	/** cards: `_BaseAlphaIntensity`, `_FogNoiseIntensity`, `_UseWind`, `_WindNoiseIntensity` */
+	card: 32,
+	/** cards: `_WindNoiseContrast`, the wind noise's UV scale in u and v, `_WindSpeed` */
+	wind: 36,
+	/** cards: `_WindDirX`, `_WindDirY`, 1 when lit, `_LightFactor` */
+	light: 40,
+	/** cards: `_IndirectColor` (linear), 1 when the blending is additive */
+	indirect: 44,
+	/** distance fade start and end, near camera fade start and end (view depth, m) */
+	fade: 48,
+	/** cards: top fade contrast and offset, soft blend distance (0 without `_USE_SOFTBLEND`), 0 */
+	top: 52,
+	/** volumes: `_FogExponent`, `_FogDensity`, `_CubEdgeFade`, `_NearFadeDistance` (0 when walk-in) */
+	volume: 56,
+	/** volumes: `_HeightOffset`, `_HeightFalloff`, vertical falloff min, max (equal: none) */
+	volumeHeight: 60,
+	/** volumes: `_FogIntensityFadeDistance`, 1 to measure it from the centre, `_FogDepthStart`, `_FogDepthEnd` */
+	volumeFade: 64,
+	/** `_IgnorePostExposure`, 0, 0, 0 */
+	misc: 68,
+} as const;
+
+/** the slot index of a card's noise texture; its main texture is slot 0 */
+export const MIST_NOISE_SLOT = 1;
+
+/** card keywords that are drawn; lighting from a normal map and the fog keyword's own fogging are approximated */
+const FOG_SIMPLE_KEYWORDS = new Set(['_USE_FOG', '_USE_SOFTBLEND', '_USE_LIGHTING']);
+
+/** a fade between two view depths that also works with equal ends (then a step at the start) */
+const fadeRange = (start: number, end: number): [number, number] =>
+	Math.abs(end - start) < 1e-4 ? [start, start + 1e-4] : [start, end];
+
+/**
+ * `HGRP/FogSimple`, the game's mist cards: a texture's red channel, broken up by a noise texture and a
+ * second, scrolling sample of it (wind), in a flat or sun-lit colour, faded by view depth, towards the card's
+ * top, and where it nears what lies behind it.
+ *
+ * @param entry a material of `HGRP/FogSimple`
+ * @param shader its shader
+ * @returns its mist look, or `null` when it uses features that aren't drawn
+ */
+export const fogSimpleLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLook | null => {
+	if (
+		(entry.blend !== 'premultiplied' && entry.blend !== 'additive') ||
+		entry.keywords.some((keyword) => !FOG_SIMPLE_KEYWORDS.has(keyword))
+	) {
+		return null;
+	}
+	const { float, color } = readers(entry, shader);
+	const look = emptyEffect(7);
+	const params = look.params;
+	for (const [i, name] of ['_MainTex', '_NoiseTex'].entries()) {
+		const slot = entry.slots[name];
+		if (slot === undefined || slot.uv > 1) {
+			return null;
+		}
+		setSlot(look, i, slot, { speed: [0, 0], cos: 1, sin: 0 }, ROLE_NONE);
+	}
+	const base = color('_BaseColor') ?? [1, 1, 1, 1];
+	params.set([...linearRgb(base), base[3]], MistRow.color);
+	params.set(
+		[
+			float('_BaseAlphaIntensity', 1),
+			float('_FogNoiseIntensity', 0),
+			float('_UseWind', 0),
+			float('_WindNoiseIntensity', 0),
+		],
+		MistRow.card,
+	);
+	const separate = float('_UseSeparateScale', 0) !== 0;
+	const windScale = float('_WindScale', 1);
+	params.set(
+		[
+			float('_WindNoiseContrast', 0),
+			windScale * (separate ? float('_WindScaleX', 1) : 1),
+			windScale * (separate ? float('_WindScaleY', 1) : 1),
+			float('_WindSpeed', 0),
+		],
+		MistRow.wind,
+	);
+	const lit = entry.keywords.includes('_USE_LIGHTING') && float('_UseLighting', 0) !== 0;
+	params.set(
+		[float('_WindDirX', 1), float('_WindDirY', 0), lit ? 1 : 0, float('_LightFactor', 0)],
+		MistRow.light,
+	);
+	const indirect = color('_IndirectColor') ?? [0, 0, 0, 1];
+	params.set([...linearRgb(indirect), entry.blend === 'additive' ? 1 : 0], MistRow.indirect);
+	params.set(
+		[
+			...fadeRange(float('_DistanceFadeStart', 0), float('_DistanceFadeEnd', 0)),
+			...fadeRange(float('_NearCameraFadeDistanceStart', 0), float('_NearCameraFadeDistanceEnd', 0)),
+		],
+		MistRow.fade,
+	);
+	params.set(
+		[
+			float('_TopFadeContract', 1),
+			float('_TopFadeOffset', 0),
+			entry.keywords.includes('_USE_SOFTBLEND') ? Math.max(float('_SoftDistance', 1), 1e-3) : 0,
+		],
+		MistRow.top,
+	);
+	return look;
+};
+
+/**
+ * `HGRP/Effect/VFXFakeVolumeFog`, fog boxes: the fog's thickness along the view ray through the unit cube, up
+ * to the surface behind or the camera inside, turned into opacity and faded towards the box's edges and top
+ * and with distance. always additive; the 3D noise isn't drawn.
+ *
+ * @param entry a material of `HGRP/Effect/VFXFakeVolumeFog`
+ * @param shader its shader
+ * @returns its mist look, or `null` when it can't be drawn
+ */
+export const fakeVolumeFogLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLook | null => {
+	if (entry.blend !== 'additive') {
+		return null;
+	}
+	const { float, color } = readers(entry, shader);
+	const look = emptyEffect(7);
+	const params = look.params;
+	const fog = color('_FogColor') ?? [1, 1, 1, 1];
+	params.set([...linearRgb(fog), fog[3] * float('_TintColorAlpha', 1)], MistRow.color);
+	const walkIn = float('_canWalkIn', 0) !== 0;
+	params.set(
+		[
+			float('_FogExponent', 1),
+			float('_FogDensity', 1),
+			Math.max(float('_CubEdgeFade', 1), 1e-3),
+			walkIn ? 0 : Math.max(float('_NearFadeDistance', 1), 1e-3),
+		],
+		MistRow.volume,
+	);
+	params.set(
+		[
+			float('_HeightOffset', 0),
+			float('_HeightFalloff', 0),
+			float('_VerticalFalloffMin', 0),
+			float('_VerticalFalloffMax', 0),
+		],
+		MistRow.volumeHeight,
+	);
+	params.set(
+		[
+			Math.max(float('_FogIntensityFadeDistance', 1e5), 1e-3),
+			float('_FogIntensityFadeUseCenter', 0),
+			float('_FogDepthStart', 0),
+			float('_FogDepthEnd', 0),
+		],
+		MistRow.volumeFade,
+	);
+	params[MistRow.misc] = float('_IgnorePostExposure', 1);
+	return look;
+};
+
+// #endregion

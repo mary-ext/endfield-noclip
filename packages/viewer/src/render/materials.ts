@@ -23,7 +23,13 @@ import type {
 import type { Color } from '@endfield-noclip/package-format/values';
 
 import { linearRgb } from './color.ts';
-import { type EffectLook, vfxBaseLook, vfxDecalLook } from './effect-looks.ts';
+import {
+	type EffectLook,
+	fakeVolumeFogLook,
+	fogSimpleLook,
+	vfxBaseLook,
+	vfxDecalLook,
+} from './effect-looks.ts';
 
 /** shader families that aren't drawn as opaque surfaces (fog volumes, light beams, effects) */
 const SKIPPED_FAMILIES = new Set([
@@ -102,6 +108,11 @@ export const LookFlags = {
 	Effect: 1 << 28,
 	/** with {@link Effect}: a VFXDecal box, projected onto the surfaces inside it */
 	EffectDecal: 1 << 29,
+	/**
+	 * with {@link Effect}: mist (`MistRow` in effect-looks.ts), a FogSimple card, or with {@link EffectDecal} a
+	 * VFXFakeVolumeFog box, drawn by its back faces like a decal's
+	 */
+	EffectMist: 1 << 30,
 } as const;
 
 /** the slot flags of {@link LookFlags} by slot, which are cleared while a slot's texture isn't resident */
@@ -310,6 +321,16 @@ const effectLookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook |
 		case 'HGRP/Effect/VFXDecal': {
 			effect = vfxDecalLook(entry, shader);
 			flags |= LookFlags.EffectDecal;
+			break;
+		}
+		case 'HGRP/FogSimple': {
+			effect = fogSimpleLook(entry, shader);
+			flags |= LookFlags.EffectMist;
+			break;
+		}
+		case 'HGRP/Effect/VFXFakeVolumeFog': {
+			effect = fakeVolumeFogLook(entry, shader);
+			flags |= LookFlags.EffectMist | LookFlags.EffectDecal;
 			break;
 		}
 		default: {

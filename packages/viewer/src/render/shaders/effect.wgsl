@@ -378,3 +378,134 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 	// the game's decal premultiplies its colour by the alpha twice
 	return fx_accumulate(color * alpha * alpha, alpha, length(rel));
 }
+
+// #region mist
+
+// rows of a mist look (`MistRow` in effect-looks.ts, in vec4s)
+const MIST_COLOR = 0u;
+const MIST_CARD = 8u;
+const MIST_WIND = 9u;
+const MIST_LIGHT = 10u;
+const MIST_INDIRECT = 11u;
+const MIST_FADE = 12u;
+const MIST_TOP = 13u;
+const MIST_VOLUME = 14u;
+const MIST_VOLUME_HEIGHT = 15u;
+const MIST_VOLUME_FADE = 16u;
+const MIST_MISC = 17u;
+
+// a mist layer into the transparent pass: additive ones into the glow, premultiplied ones like other layers
+fn mist_accumulate(id: u32, premultiplied: vec3f, alpha: f32, distance: f32) -> EffectAccumulated {
+	if (fx_row(id, MIST_INDIRECT).w != 0.0) {
+		var out: EffectAccumulated;
+		out.sum = vec4f(0.0);
+		out.revealage = vec4f(0.0);
+		out.glow = vec4f(premultiplied, 0.0);
+		return out;
+	}
+	return fx_accumulate(premultiplied, alpha, distance);
+}
+
+// a fade between two view depths: in from x to y (or out, when y < x)
+fn mist_fade(range: vec2f, depth: f32) -> f32 {
+	return saturate((depth - range.x) / (range.y - range.x));
+}
+
+// `HGRP/FogSimple` mist cards: the main texture's red broken up by the noise texture, times a scrolling wind
+// sample of it (on colour and opacity both, as the game's), in the flat colour or lit by the sun; faded by view
+// depth, towards the card's top (object y) and where it nears what lies behind it
+@fragment
+fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
+	let id = in.draw;
+	let uv = in.uv.xy;
+	let dx = dpdx(uv);
+	let dy = dpdy(uv);
+	let bias = exp2(frame.params.y);
+	let card = fx_row(id, MIST_CARD);
+	let wind = fx_row(id, MIST_WIND);
+	let light = fx_row(id, MIST_LIGHT);
+	let main_st = fx_row(id, FX_UV);
+	let noise_st = fx_row(id, FX_UV + 1u);
+	let main = textureSampleGrad(fx_tex0, fx_samp0, uv * main_st.xy + main_st.zw, dx * main_st.xy * bias, dy * main_st.xy * bias);
+	let noise = textureSampleGrad(fx_tex1, fx_samp1, uv * noise_st.xy + noise_st.zw, dx * noise_st.xy * bias, dy * noise_st.xy * bias);
+	let wind_uv = uv * wind.yz + vec2f(-light.x, light.y) * (frame.eye.w * wind.w);
+	let gust = textureSampleGrad(fx_tex1, fx_samp1, wind_uv, dx * wind.yz * bias, dy * wind.yz * bias).x;
+	let base = fx_row(id, MIST_COLOR);
+	var alpha = ((1.0 - card.y) + noise.x * card.y) * main.x * base.a;
+	var color = base.rgb;
+	if (light.z != 0.0) {
+		// the game's sun colour carries no 1/π (docs/game-data/lighting.md); the viewer's does
+		let n = normalize(in.normal) * select(-1.0, 1.0, dot(in.normal, -in.rel) >= 0.0);
+		let lit = (1.0 - light.w) + max(dot(n, frame.sun.xyz), 0.0) * light.w;
+		let sun = frame.sun_color.rgb * (frame.sun.w / PI);
+		color = mix(fx_row(id, MIST_INDIRECT).rgb, base.rgb * sun, lit);
+	}
+	let windy = (1.0 - card.z) + ((1.0 - card.w) + saturate(mix(-wind.x, wind.x + 1.0, gust)) * card.w) * card.z;
+	color *= windy;
+	alpha *= windy;
+
+	let depth = dot(in.rel, frame.view_forward.xyz);
+	let fade = fx_row(id, MIST_FADE);
+	let top = fx_row(id, MIST_TOP);
+	let object_y = dot(in.to_object1, vec4f(in.rel, 1.0));
+	var soft = 1.0;
+	if (top.z > 0.0) {
+		soft = saturate((fx_scene_depth(vec2i(in.position.xy)) - depth) / top.z);
+	}
+	alpha = saturate(
+		alpha * mist_fade(fade.xy, depth) * mist_fade(fade.zw, depth) * saturate(-object_y * top.x + top.y) * soft * card.x,
+	);
+	return mist_accumulate(id, max(color, vec3f(0.0)) * alpha, alpha, length(in.rel));
+}
+
+// `HGRP/Effect/VFXFakeVolumeFog` boxes, drawn by their back faces without a depth test like the decals: from
+// the nearer of the surface behind and the back face, the fog's thickness along the ray towards the camera
+// through the unit cube (or up to the camera inside it), faded towards the box's edges and top, with distance and,
+// for boxes the camera can't walk into, close to them
+@fragment
+fn fs_mist_volume(in: EffectOut) -> EffectAccumulated {
+	let id = in.draw;
+	let px = vec2i(in.position.xy);
+	let face = dot(in.rel, frame.view_forward.xyz);
+	let depth = min(fx_scene_depth(px), face);
+	let rel = in.rel * (depth / face);
+	let p = vec4f(rel, 1.0);
+	let object_p = vec3f(dot(in.to_object0, p), dot(in.to_object1, p), dot(in.to_object2, p));
+	let to_camera = vec3f(dot(in.to_object0.xyz, -rel), dot(in.to_object1.xyz, -rel), dot(in.to_object2.xyz, -rel));
+	let reach = length(to_camera);
+	let dir = to_camera / reach;
+	let exits = max((vec3f(-0.5) - object_p) / dir, (vec3f(0.5) - object_p) / dir);
+	let object_length = min(min(min(exits.x, exits.y), exits.z), reach);
+	// back to metres: the object-space ray's length per world metre
+	let thickness = object_length * (length(rel) / reach);
+
+	let volume = fx_row(id, MIST_VOLUME);
+	let height = fx_row(id, MIST_VOLUME_HEIGHT);
+	let base = fx_row(id, MIST_COLOR);
+	var alpha = base.a * (1.0 - exp2(-thickness * volume.x)) * volume.y;
+	alpha *= saturate(1.0 - length(cross(object_p, dir)) / volume.z);
+	alpha *= 1.0 - saturate((object_p.y - height.x) * height.y);
+	if (height.w > height.z) {
+		alpha *= 1.0 - smoothstep(height.z - 0.5, height.w - 0.5, object_p.y);
+	}
+	if (volume.w > 0.0) {
+		alpha *= saturate(thickness / volume.w);
+	}
+	let fade = fx_row(id, MIST_VOLUME_FADE);
+	let to_point = length(rel);
+	let distance = mix(to_point, length(mist_origin(in)), fade.y);
+	alpha = saturate(alpha) * (1.0 - saturate(distance / fade.x));
+	if (fade.z > 0.0) {
+		alpha *= smoothstep(min(fade.w, 0.99), 1.0, saturate(to_point / fade.z));
+	}
+	let color = base.rgb * mix(1.0, frame.ambient.y, fx_row(id, MIST_MISC).x);
+	return mist_accumulate(id, color * alpha, alpha, to_point);
+}
+
+// the camera-relative origin of an effect's object, from its world → object rows
+fn mist_origin(in: EffectOut) -> vec3f {
+	let m = transpose(mat3x3f(in.to_object0.xyz, in.to_object1.xyz, in.to_object2.xyz));
+	return -(inverse3(m) * vec3f(in.to_object0.w, in.to_object1.w, in.to_object2.w));
+}
+
+// #endregion

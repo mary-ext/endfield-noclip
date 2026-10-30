@@ -451,15 +451,50 @@ down the box's y (UV = local xz + 0.5). its roles are fixed: `_MainTex`, `_MaskT
 to the power `_AngleBlendFallOff`, N from the main pass's packed surface normal). the colour is
 premultiplied by the alpha twice, as the game does.
 
-effects join the transparent pass's weighted blend ([glass](#glass)) and are fogged the same way.
-they cast no shadows and wait until all their textures are resident.
+### mist
 
-not drawn: additive effects (the transparent pass's blend can't add), effects with vertex offsets,
-polar or screen-space UVs, lighting, brightening spheres, breathing, edge colour, vertex animation
-textures or water blending, the flipbook and particle inputs, VFXDecal's parallax, 3D texture,
-weight and particle variants, the effects' own fog (`_USE_FOG`; the composite fogs them instead),
-the scene effect colour grade, and every other effect shader (`VFXAdvance`, `VFXFakeVolumeFog`,
-`VFXDitherAlpha`, `VFXRefract`, `VFXWater`, …).
+the drifting mist banks are effects too: `HGRP/FogSimple` cards (841 on map02, `SimpleFogCard*`) and
+`HGRP/Effect/VFXFakeVolumeFog` boxes (69, `SimpleFakeVolumeFog*`), drawn by their own entry points
+in the same file:
+
+- **cards.** alpha is `_MainTex`'s red times `(1 − _FogNoiseIntensity) + noise · _FogNoiseIntensity`
+  (`_NoiseTex` red) times `_BaseColor.a`. with `_UseWind`, a second `_NoiseTex` sample at the UV ×
+  `_WindScale` (× `_WindScaleX/Y` with `_UseSeparateScale`), scrolling by
+  `(−_WindDirX, _WindDirY) · _WindSpeed` per second, remapped by `_WindNoiseContrast` and mixed in
+  by `_WindNoiseIntensity`, scales both colour and alpha. the colour is `_BaseColor`; with
+  `_USE_LIGHTING` it's `_BaseColor` times the sun (the game's light colour, the viewer's over π),
+  mixed towards `_IndirectColor` away from the sun by `_LightFactor`. alpha then fades in over
+  `_DistanceFadeStart…End` and out over `_NearCameraFadeDistanceStart…End` metres of view depth,
+  towards the card's top (`saturate(−object y · _TopFadeContract + _TopFadeOffset)`), with
+  `_USE_SOFTBLEND` within `_SoftDistance` metres of what lies behind, and is scaled by
+  `_BaseAlphaIntensity`.
+- **boxes.** drawn by their back faces without a depth test, like the decals. from the nearer of the
+  surface behind and the back face, the fog's thickness is the distance along the view ray through
+  the unit cube towards the camera (stopping at the camera inside it), and alpha is
+  `_FogColor.a · (1 − 2^(−thickness · _FogExponent)) · _FogDensity`, faded within `_CubEdgeFade` of
+  the box's axis line, above `_HeightOffset` by `_HeightFalloff`, between `_VerticalFalloffMin/Max`,
+  close to boxes the camera can't walk into (`_NearFadeDistance`), and out to
+  `_FogIntensityFadeDistance` from the point (or the box's centre). the colour is `_FogColor`.
+
+most cards and every box blend additively; they draw into the transparent pass's glow, which the
+composite adds unfogged after the fog ([viewer](../viewer.md#the-render-frame)). premultiplied cards
+join the weighted blend. the cards' own fog (`_USE_FOG`, faded by `_FogIntensity` and
+`_FogIntensityFadeOutDistance`) isn't drawn, nor the boxes' 3D noise or their depth prepass, so the
+additive ones read a little brighter far away. at Sword Vault Dale (map02_lv006) the cards make the
+haze over the valley's middle distance that the fog alone left clear.
+
+### blending and gaps
+
+effects join the transparent pass's weighted blend ([glass](#glass)) and are fogged the same way;
+additive ones could draw into its glow but are still hidden. they cast no shadows and wait until all
+their textures are resident.
+
+not drawn: additive VFXBaseV2 and VFXDecal effects, effects with vertex offsets, polar or
+screen-space UVs, lighting, brightening spheres, breathing, edge colour, vertex animation textures
+or water blending, the flipbook and particle inputs, VFXDecal's parallax, 3D texture, weight and
+particle variants, the effects' own fog (`_USE_FOG`; the composite fogs them instead), the scene
+effect colour grade, and every other effect shader (`VFXAdvance`, `VFXDitherAlpha`, `VFXRefract`,
+`VFXWater`, …).
 
 ## sky
 

@@ -76,9 +76,10 @@ packs or renders correctly.
 - erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
 - water foam, caustics and flow tiles (packed but unread); other fluid types are unverified
-- scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2 and VFXDecal
-  draw, without their additive, vertex-offset, polar-UV, lighting and particle variants or their own
-  fog; other effect shaders are suppressed rather than drawn opaque. rect decals (`HGRP/DecalLit`,
+- scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal and
+  the mist (FogSimple, VFXFakeVolumeFog) draw, without the first two's additive, vertex-offset,
+  polar-UV, lighting and particle variants, the effects' own fog or the mist boxes' 3D noise; other
+  effect shaders are suppressed rather than drawn opaque. rect decals (`HGRP/DecalLit`,
   `HGRP/TerrainDecalLit`, InitChunkData components 27 and 28) aren't packed
 - temporal smoothing of effects
 - light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term, the cloud

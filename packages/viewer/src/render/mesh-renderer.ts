@@ -82,7 +82,7 @@ const faceCullOf = (bucket: MeshBucket): FaceCull => {
 };
 
 /** the draws a phase runs over: prepared in this order */
-type DrawRange = 'opaque' | 'cutout' | 'transparent' | 'effect' | 'effectDecal';
+type DrawRange = 'opaque' | 'cutout' | 'transparent' | 'effect' | 'effectDecal' | 'mist' | 'mistVolume';
 
 /** one run over a pass's opaque, alpha-tested or alpha-blended draws, with a pipeline per face culling */
 interface DrawPhase {
@@ -104,6 +104,8 @@ const TRANSPARENT_PHASES: readonly DrawPhase[] = [
 	{ key: 'mesh/transparent', range: 'transparent', textured: true, shadow: false },
 	{ key: 'mesh/effect', range: 'effect', textured: true, shadow: false },
 	{ key: 'mesh/effect-decal', range: 'effectDecal', textured: true, shadow: false },
+	{ key: 'mesh/mist', range: 'mist', textured: true, shadow: false },
+	{ key: 'mesh/mist-volume', range: 'mistVolume', textured: true, shadow: false },
 ];
 
 /** the main pass's outputs that scene effects read, as `SceneTextures` holds them */
@@ -190,12 +192,16 @@ export class MeshRenderer {
 	#transparentOrder: MeshBucket[] = [];
 	#effectOrder: MeshBucket[] = [];
 	#decalOrder: MeshBucket[] = [];
+	#mistOrder: MeshBucket[] = [];
+	#mistVolumeOrder: MeshBucket[] = [];
 	/** group 3 of the effect pipelines: seven textures, their samplers, the main pass's depth and surfaces */
 	#effectLayout: GPUBindGroupLayout;
 	/** effect bind groups by material id */
 	#effectBindings = new Map<number, MaterialBinding & { inputs: number }>();
 	#effectStart = 0;
 	#decalStart = 0;
+	#mistStart = 0;
+	#mistVolumeStart = 0;
 	/**
 	 * prepared draws, opaque, then alpha-tested, then alpha-blended; entries past {@link #drawCount} are reused
 	 * next frame
@@ -349,11 +355,14 @@ export class MeshRenderer {
 				bindGroupLayouts: [layouts.frame, layouts.instances, layouts.draw, this.#effectLayout],
 			});
 			const effectModule = pipelines.module('mesh-effect', FRAME_WGSL + effectWgsl);
-			const [, effect, decal] = TRANSPARENT_PHASES;
+			const [, effect, decal, mist, mistVolume] = TRANSPARENT_PHASES;
 			for (const [phase, entryPoint, depthCompare] of [
 				[effect, 'fs_effect', DEPTH_COMPARE],
 				// decals find their surface through the depth buffer, so their back faces draw wherever they are
 				[decal, 'fs_effect_decal', 'always'],
+				[mist, 'fs_mist_card', DEPTH_COMPARE],
+				// fog boxes measure their thickness up to the depth buffer the same way
+				[mistVolume, 'fs_mist_volume', 'always'],
 			] as const) {
 				for (const cullMode of FACE_CULLS) {
 					for (const uvFormat of UV_FORMATS) {
@@ -522,11 +531,15 @@ export class MeshRenderer {
 		const transparent = this.#transparentOrder;
 		const effects = this.#effectOrder;
 		const decals = this.#decalOrder;
+		const mists = this.#mistOrder;
+		const mistVolumes = this.#mistVolumeOrder;
 		opaque.length = 0;
 		cutout.length = 0;
 		transparent.length = 0;
 		effects.length = 0;
 		decals.length = 0;
+		mists.length = 0;
+		mistVolumes.length = 0;
 		for (const bucket of buckets) {
 			if (bucket.count === 0 || bucket.geometry.resident?.kind !== 'geometry') {
 				continue;
@@ -540,7 +553,12 @@ export class MeshRenderer {
 			// effects are made of their textures, so they wait for all of them
 			if ((look.flags & LookFlags.Effect) !== 0) {
 				if (look.textures.every((texture) => texture < 0 || textures.binding(texture) !== null)) {
-					((look.flags & LookFlags.EffectDecal) !== 0 ? decals : effects).push(bucket);
+					const decal = (look.flags & LookFlags.EffectDecal) !== 0;
+					if ((look.flags & LookFlags.EffectMist) !== 0) {
+						(decal ? mistVolumes : mists).push(bucket);
+					} else {
+						(decal ? decals : effects).push(bucket);
+					}
 				}
 				continue;
 			}
@@ -557,11 +575,15 @@ export class MeshRenderer {
 		transparent.sort(byBindings);
 		effects.sort(byBindings);
 		decals.sort(byBindings);
+		mists.sort(byBindings);
+		mistVolumes.sort(byBindings);
 		const cutoutFrom = opaque.length;
 		const transparentFrom = cutoutFrom + cutout.length;
 		const effectFrom = transparentFrom + transparent.length;
 		const decalFrom = effectFrom + effects.length;
-		const bucketCount = decalFrom + decals.length;
+		const mistFrom = decalFrom + decals.length;
+		const mistVolumeFrom = mistFrom + mists.length;
+		const bucketCount = mistVolumeFrom + mistVolumes.length;
 		const bucketAt = (b: number): MeshBucket => {
 			if (b < cutoutFrom) {
 				return opaque[b];
@@ -575,7 +597,13 @@ export class MeshRenderer {
 			if (b < decalFrom) {
 				return effects[b - effectFrom];
 			}
-			return decals[b - decalFrom];
+			if (b < mistFrom) {
+				return decals[b - decalFrom];
+			}
+			if (b < mistVolumeFrom) {
+				return mists[b - mistFrom];
+			}
+			return mistVolumes[b - mistVolumeFrom];
 		};
 
 		const params = this.#paramData;
@@ -591,6 +619,8 @@ export class MeshRenderer {
 		this.#transparentStart = 0;
 		this.#effectStart = 0;
 		this.#decalStart = 0;
+		this.#mistStart = 0;
+		this.#mistVolumeStart = 0;
 		for (let b = 0; b < bucketCount; b++) {
 			if (b === cutoutFrom) {
 				this.#cutoutStart = d;
@@ -603,6 +633,12 @@ export class MeshRenderer {
 			}
 			if (b === decalFrom) {
 				this.#decalStart = d;
+			}
+			if (b === mistFrom) {
+				this.#mistStart = d;
+			}
+			if (b === mistVolumeFrom) {
+				this.#mistVolumeStart = d;
 			}
 			const bucket = bucketAt(b);
 			const resident = bucket.geometry.resident;
@@ -695,6 +731,12 @@ export class MeshRenderer {
 		if (decalFrom === bucketCount) {
 			this.#decalStart = d;
 		}
+		if (mistFrom === bucketCount) {
+			this.#mistStart = d;
+		}
+		if (mistVolumeFrom === bucketCount) {
+			this.#mistVolumeStart = d;
+		}
 		this.#cutoutCastersEnd = Math.max(this.#cutoutCastersEnd, this.#cutoutStart);
 		if (d > 0) {
 			const queue = this.#device.queue;
@@ -781,6 +823,16 @@ export class MeshRenderer {
 				}
 				case 'effectDecal': {
 					from = this.#decalStart;
+					to = this.#mistStart;
+					break;
+				}
+				case 'mist': {
+					from = this.#mistStart;
+					to = this.#mistVolumeStart;
+					break;
+				}
+				case 'mistVolume': {
+					from = this.#mistVolumeStart;
 					to = this.#drawCount;
 					break;
 				}

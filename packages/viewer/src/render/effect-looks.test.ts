@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { ReadyMaterial, ShaderEntry, TextureSlot } from '@endfield-noclip/package-format/materials';
 
-import { EffectRole, EffectRow, ROLE_NONE } from './effect-looks.ts';
+import { EffectRole, EffectRow, MistRow, ROLE_NONE } from './effect-looks.ts';
 import { LookFlags, materialLooks } from './materials.ts';
 
 const shader = (name: string): ShaderEntry => ({
@@ -126,4 +126,55 @@ test('effects with features the viewer lacks, or additive blending, stay hidden'
 		looks.map((look) => look.drawn),
 		[false, false, false],
 	);
+});
+
+test('mist: additive FogSimple cards and walk-in fog boxes draw; equal fade ends become a step', () => {
+	const looks = materialLooks({
+		shaders: [shader('HGRP/FogSimple'), shader('HGRP/Effect/VFXFakeVolumeFog')],
+		entries: [
+			material({
+				id: 0,
+				blend: 'additive',
+				keywords: ['_USE_SOFTBLEND'],
+				slots: { _MainTex: slot(1), _NoiseTex: slot(2) },
+				floats: {
+					_BaseAlphaIntensity: 2,
+					_DistanceFadeStart: 0.001,
+					_DistanceFadeEnd: 0.001,
+					_NearCameraFadeDistanceStart: 3000,
+					_NearCameraFadeDistanceEnd: 2500,
+					_SoftDistance: 12,
+				},
+			}),
+			material({
+				id: 1,
+				shader: 1,
+				blend: 'additive',
+				keywords: ['_USE_NOISE3D'],
+				slots: { _NoiseTex3D: slot(3) },
+				floats: { _canWalkIn: 1, _NearFadeDistance: 5, _FogDensity: 4 },
+			}),
+			material({
+				id: 2,
+				keywords: ['_USE_SOMETHING_ELSE'],
+				slots: { _MainTex: slot(1), _NoiseTex: slot(2) },
+			}),
+		],
+	});
+	const [card, box] = looks;
+	assert.equal(card.flags, LookFlags.Effect | LookFlags.EffectMist);
+	assert.deepEqual(card.textures.slice(0, 2), [1, 2]);
+	assert.equal(card.params[MistRow.card], 2);
+	assert.equal(card.params[MistRow.indirect + 3], 1);
+	assert.deepEqual(
+		Array.from(card.params.subarray(MistRow.fade, MistRow.fade + 4), (v) => Number(v.toFixed(4))),
+		[0.001, 0.0011, 3000, 2500],
+	);
+	assert.equal(card.params[MistRow.top + 2], 12);
+	assert.equal(box.flags, LookFlags.Effect | LookFlags.EffectMist | LookFlags.EffectDecal);
+	assert.equal(box.cull, 'front');
+	assert.equal(box.params[MistRow.volume + 1], 4);
+	// walk-in boxes skip the close-up fade
+	assert.equal(box.params[MistRow.volume + 3], 0);
+	assert.equal(looks[2].drawn, false);
 });
