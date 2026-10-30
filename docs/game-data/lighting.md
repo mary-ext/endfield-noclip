@@ -196,8 +196,8 @@ profile's `autoExposure` section (blended across volumes like the rest)
   divides by all samples.
 - the target is `2^autoExposureManualEvCompensationAuto · 0.18 / clamp(2^average, 0.01, 8)`, or
   `2^autoExposureManualEvCompensationManual` in mode 1, clamped to `2^autoExposureEvClampRange`.
-  nearly every profile clamps to 0…8 EV (the Hub's to −0.2…8), so daylight stays at the fixed
-  exposure and dark interiors brighten.
+  most profiles on map01 and map02 clamp to 0…8 EV (the Hub's to −0.2…8), so daylight stays at the
+  fixed exposure and dark interiors brighten; a few allow darkening.
 - the exposure moves `clamp(speed · dt)` of the way to the target each frame, with
   `autoExposureLerpUpSpeed` when brightening, else `autoExposureLerpDownSpeed`.
 

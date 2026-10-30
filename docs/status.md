@@ -30,7 +30,8 @@ or renders correctly.
 - irradiance: only the base scenario is packed; scenario overlays, partial clipmap updates, the
   game's forward-shifted centres and jitter, fallback textures for cells without probes, the meaning
   of two index tables, and other index magics
-- the game's own bloom and vignette variants (the viewer uses URP's); colour curves are not packed
+- the game's own bloom and vignette variants (the viewer uses URP's, whose bloom spreads bright
+  emitters such as ceiling panels far wider than the game's); colour curves are not packed
 - weather: rain/snow configs are not packed, and precipitation and wetness don't render. the
   weather-script activation and property initialization are unknown, so weather stays a manual
   preview
@@ -38,8 +39,8 @@ or renders correctly.
   automatic gating
 - froxel volumetric fog
 - interiors, in order of impact:
-  - bloom spreads bright emitters far wider than the game's; some thin emissive strips show as lines
-    at silhouettes
+  - some thin emissive strips show as bright lines at silhouettes; per-instance emission overrides
+    aren't read
   - normal-map roughness is read only when the mesh has tangents; normals are transformed by the
     model matrix rather than its inverse transpose, and every material lights the side facing the
     camera
