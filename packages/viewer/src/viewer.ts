@@ -1525,7 +1525,7 @@ export class Viewer {
 			});
 			if (hasScene) {
 				transparent.setBindGroup(0, this.#frameBindGroup, [uniforms.offset]);
-				draws += this.#meshes.encodeTransparent(transparent);
+				draws += this.#meshes.encodeTransparent(transparent, this.#targets.scene);
 			}
 			transparent.end();
 		}

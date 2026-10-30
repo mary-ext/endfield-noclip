@@ -399,6 +399,68 @@ blend into whatever lies behind (`_ObjectBlend*`, which reads the scene depth) a
 them while a map variable is not 2, and the finished-story defaults hide them
 ([variable gates](scene-states.md)), so they draw only when that gate is flipped, as a flat tint.
 
+## scene effects
+
+scenery effects are meshes placed like any other renderer, mostly in dynamic structures, with
+`HGRP/Effect/*` materials. the magenta blight around Jingyu Valley's corrupted shrine (map02_lv001,
+near unity −905, 228, −1505) is one: `VFXDecal` boxes stain the ground and `VFXBaseV2` cards rise
+from it as red and blue smoke, all in script group `script:458752:41` with the shrine's damaged
+pieces (on by default). two shaders are drawn
+([`effect-looks.ts`](../../packages/viewer/src/render/effect-looks.ts),
+[`shaders/effect.wgsl`](../../packages/viewer/src/render/shaders/effect.wgsl)); every other effect
+shader stays hidden, since the opaque fallback would turn its bounding surfaces into walls.
+
+both are unlit and premultiplied (one, one minus source alpha), and build their colour from a stack
+of textures by role:
+
+- **disturb**: the texture's red channel, remapped by `_Bi_Disturb`, shifts the UVs of the textures
+  sampled after it that opt in (`*UseDisturb`), by `_DisturbU/VIntensity1` (or `…2` for the second)
+- **weight**: scales that shift (`_WeightTexIntensity · _DisturbUseWeight`) and the dissolve
+  threshold
+- **mask**: multiplies the main texture's colour and alpha
+- **blend**: adds `blend · saturate((alpha + blend.a) · _BlendTint.a) · _BlendTint.rgb`
+- **dissolve**: alpha survives where the texture's red exceeds a threshold that sweeps from −1.01 to
+  1.01 with `_DissolveScheduleOffset`, sharpened by `_DissolveEdgeSharp`; a band
+  `_DissolveEmissiveEdge` wide takes `_DissolveEmissiveColor`
+
+each texture's UVs scroll by its `*UVSpeed` per second, rotate about the texture's centre, then take
+an `_ST`; `*AsAlpha` turns a texture's red channel into its alpha. colour properties marked HDR are
+used as stored, the others are converted to linear. colours ignore the post exposure when
+`_IgnorePostExposure` is set, as emission does. the near camera fade (`_UseNearCameraFade`) fades a
+layer in between `_NearCameraFadeDistanceStart` and `…End` metres of view depth, and out between
+`…Start2` and `…End2`.
+
+**VFXBaseV2** takes the main texture plus up to five `_SampleTexN`, each playing the role its
+`_SampleTexNUseWeightK` property selects (0 disturb, 1 second disturb, 2 weight, 3 mask, 4 blend, 5
+dissolve), with the `_ST` of that role's own texture property (`_DisturbTex1`, `_DisturbTex2`,
+`_WeightTex`, `_MaskTex`, `_BlendTex`, `_DissolveTex`). the colour starts from
+`_TintColor · _TintColorIntensity` times the vertex colour, alpha from
+`_TintColor.a · _TintColorAlpha`; it's brightened by `_ExpIntensity` above `_ExpThreshold`. alpha
+fades by a Fresnel term (`saturate(N·V + _FresnelBias)^_FresnelPower`, flipped by `_FresnelFlip`,
+applied by `_FresnelAffectOpacity`) and, with `_USE_SOFTBLEND`, where the surface comes within
+`_SoftDistance` metres of what lies behind it.
+
+**VFXDecal** draws a unit box (`s_fx_particle_decal_cube`). the viewer draws its back faces without
+a depth test, so it still shows with the camera inside: each covered pixel reconstructs the main
+pass's surface from the depth buffer and, if that point lies inside the box, projects the textures
+down the box's y (UV = local xz + 0.5). its roles are fixed: `_MainTex`, `_MaskTex`, `_BlendTex`,
+`_DisturbTex1/2`, `_DissolveTex`, each only with its `_USE_*` keyword. the colour is
+`_DecalBaseColor`, alpha its alpha times `_TintColorAlpha`, faded towards the box's x and z faces
+(`_EdgeFadeX/Z`, over `_EdgeFadeIntensity`), its top and bottom (`_HeightFade` around
+`_HeightFadeOffset`), and with `_USE_NORMALBLEND` on surfaces facing away from the box's y (`N·up`
+to the power `_AngleBlendFallOff`, N from the main pass's packed surface normal). the colour is
+premultiplied by the alpha twice, as the game does.
+
+effects join the transparent pass's weighted blend ([glass](#glass)) and are fogged the same way.
+they cast no shadows and wait until all their textures are resident.
+
+not drawn: additive effects (the transparent pass's blend can't add), effects with vertex offsets,
+polar or screen-space UVs, lighting, brightening spheres, breathing, edge colour, vertex animation
+textures or water blending, the flipbook and particle inputs, VFXDecal's parallax, 3D texture,
+weight and particle variants, the effects' own fog (`_USE_FOG`; the composite fogs them instead),
+the scene effect colour grade, and every other effect shader (`VFXAdvance`, `VFXFakeVolumeFog`,
+`VFXDitherAlpha`, `VFXRefract`, `VFXWater`, …).
+
 ## sky
 
 [`shaders/atmosphere.wgsl`](../../packages/viewer/src/render/shaders/atmosphere.wgsl) is a

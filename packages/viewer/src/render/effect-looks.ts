@@ -1,0 +1,413 @@
+/**
+ * how the viewer draws the game's scene effect meshes, `HGRP/Effect/VFXBaseV2` and `HGRP/Effect/VFXDecal`:
+ * unlit, premultiplied layers built from a stack of scrolling textures, drawn in the transparent pass by
+ * `effect.wgsl`. the decal projects its textures down its box onto whatever the main pass drew inside it.
+ *
+ * both shaders combine textures by role. a texture can distort the UVs of the textures sampled after it
+ * (disturb), scale that distortion (weight), multiply the colour and alpha (mask), add a tinted layer (blend)
+ * or eat the alpha away below a threshold (dissolve). VFXBaseV2 gives each `_SampleTexN` its role by its
+ * `_SampleTexNUseWeightK` properties; VFXDecal has one fixed texture per role.
+ *
+ * materials using features this doesn't draw (vertex offsets, polar or screen UVs, lighting, flipbooks and
+ * the like) stay hidden, as do additive ones, which the transparent pass's blending can't express.
+ *
+ * @module
+ */
+
+import type { ReadyMaterial, ShaderEntry } from '@endfield-noclip/package-format/materials';
+
+import { linearRgb } from './color.ts';
+
+/** a look's {@link EffectRow.slotBits} role value for a texture that isn't sampled */
+export const ROLE_NONE = 7;
+
+/** the roles a texture plays, as `effect.wgsl` numbers them */
+export const EffectRole = {
+	Disturb1: 0,
+	Disturb2: 1,
+	Weight: 2,
+	Mask: 3,
+	Blend: 4,
+	Dissolve: 5,
+	/** the base colour and alpha */
+	Main: 6,
+} as const;
+
+/** float offsets of an effect look's parameters (`MaterialLook.params`); the shader reads them as vec4 rows */
+export const EffectRow = {
+	/** tint rgb (times its intensity), alpha */
+	tint: 0,
+	/** one UV transform per texture slot: scale, offset */
+	uv: 4,
+	/** per slot: UV scroll per second (xy), the UV rotation's cosine and sine */
+	anim: 32,
+	/** per slot: role, plus 8 when the slot's UVs take the distortion, plus 16 when its red channel is its alpha */
+	slotBits: 60,
+	/** the blend layer's tint rgb (HDR), w = how strongly it covers */
+	blendTint: 68,
+	/** distortion per unit of the first and second disturb texture: u1, v1, u2, v2 */
+	disturb: 72,
+	/**
+	 * `_Bi_Disturb`, the weight texture's strength on the distortion, on the dissolve, 1 when the weight is
+	 * used
+	 */
+	weight: 76,
+	/** dissolve threshold, edge sharpness, glowing edge width, 1 when dissolving */
+	dissolve: 80,
+	/** the dissolve edge's colour (HDR), 1 when a mask is used */
+	dissolveColor: 84,
+	/** Fresnel power, bias, flip, how much it affects opacity (0 without `_USE_FRESNEL`) */
+	fresnel: 88,
+	/**
+	 * soft blend distance (0 without `_USE_SOFTBLEND`), soft blend bias, `_IgnorePostExposure`, 1 to use vertex
+	 * colours
+	 */
+	soft: 92,
+	/** near camera fade: start, end, second start, second end (view depth, m) */
+	near: 96,
+	/** 1 with the near camera fade, brightening threshold, brightening intensity, 1 with distortion */
+	misc: 100,
+	/** decals: edge fade across x, across z, the fades' width, height fade */
+	decalFade: 104,
+	/** decals: height fade offset, angle falloff (0: no angle fade), 0, 0 */
+	decal: 108,
+} as const;
+
+/** slots of a VFXBaseV2 look: the main texture, then `_SampleTex0`… */
+const BASE_SLOTS = ['_MainTex', '_SampleTex0', '_SampleTex1', '_SampleTex2', '_SampleTex3', '_SampleTex4'];
+
+/** the property whose `_ST` a VFXBaseV2 sample texture uses, by role */
+const ROLE_TEXTURES = ['_DisturbTex1', '_DisturbTex2', '_WeightTex', '_MaskTex', '_BlendTex', '_DissolveTex'];
+
+/**
+ * slots of a VFXDecal look: each texture's role, the keyword that enables it, and the properties of its UV
+ * scroll, rotation (degrees) and distortion switch, where it has them. the shader runs through the slots in
+ * order, so the disturb textures come before the textures they distort
+ */
+const DECAL_SLOTS = [
+	{
+		name: '_MainTex',
+		role: EffectRole.Main,
+		keyword: null,
+		speed: '_MainTexUVSpeed',
+		rotate: '_MainTexUVRotate',
+		disturbed: '_MainTexUseDisturb',
+	},
+	{
+		name: '_DisturbTex1',
+		role: EffectRole.Disturb1,
+		keyword: '_USE_DISTURB',
+		speed: '_DisturbUVSpeed1',
+		rotate: null,
+		disturbed: null,
+	},
+	{
+		name: '_DisturbTex2',
+		role: EffectRole.Disturb2,
+		keyword: '_USE_DISTURB_TEX2',
+		speed: '_DisturbUVSpeed2',
+		rotate: null,
+		disturbed: null,
+	},
+	{
+		name: '_MaskTex',
+		role: EffectRole.Mask,
+		keyword: '_USE_MASK',
+		speed: '_MaskTexUVSpeed',
+		rotate: '_MaskTexUVRotate',
+		disturbed: '_MaskTexUseDisturb',
+	},
+	{
+		name: '_BlendTex',
+		role: EffectRole.Blend,
+		keyword: '_USE_BLEND',
+		speed: '_BlendTexUVSpeed',
+		rotate: '_BlendTexUVRotate',
+		disturbed: '_BlendTexUseDisturb',
+	},
+	{
+		name: '_DissolveTex',
+		role: EffectRole.Dissolve,
+		keyword: '_USE_DISSOLVE',
+		speed: '_DissolveUVSpeed',
+		rotate: '_DissolveUVRotate',
+		disturbed: '_DissolveTexUseDisturb',
+	},
+] as const;
+
+/** keywords each shader can have and still be drawn */
+const BASE_KEYWORDS = new Set([
+	'_SAMPLE_TEX0',
+	'_SAMPLE_TEX1',
+	'_SAMPLE_TEX2',
+	'_SAMPLE_TEX3',
+	'_SAMPLE_TEX4',
+	'_USE_FOG',
+	'_USE_SOFTBLEND',
+	'_USE_FRESNEL',
+]);
+const DECAL_KEYWORDS = new Set([
+	'_USE_MASK',
+	'_USE_BLEND',
+	'_USE_DISSOLVE',
+	'_USE_DISTURB',
+	'_USE_DISTURB_TEX2',
+	'_USE_NORMALBLEND',
+	'_USE_FOG',
+]);
+
+/** what an effect look puts in `MaterialLook` besides its parameters */
+export interface EffectLook {
+	/** texture id per slot, or -1 */
+	textures: number[];
+	/** largest UV scale per slot, for streaming */
+	uvScales: number[];
+	params: Float32Array;
+}
+
+/** the parameter readers both shaders share */
+const readers = (entry: ReadyMaterial, shader: ShaderEntry) => ({
+	float: (name: string, fallback: number): number => entry.floats[name] ?? shader.floats[name] ?? fallback,
+	color: (name: string): [number, number, number, number] | undefined =>
+		entry.colors[name] ?? shader.colors[name] ?? entry.vectors[name] ?? shader.vectors[name],
+});
+
+/** fills the slot rows shared by both shaders */
+const setSlot = (
+	look: EffectLook,
+	i: number,
+	slot: { texture: number; scale: number[]; offset: number[] },
+	anim: { speed: number[]; cos: number; sin: number },
+	bits: number,
+): void => {
+	look.textures[i] = slot.texture;
+	look.uvScales[i] = Math.max(Math.abs(slot.scale[0]), Math.abs(slot.scale[1]), 1e-3);
+	look.params.set([slot.scale[0], slot.scale[1], slot.offset[0], slot.offset[1]], EffectRow.uv + i * 4);
+	look.params.set([anim.speed[0], anim.speed[1], anim.cos, anim.sin], EffectRow.anim + i * 4);
+	look.params[EffectRow.slotBits + i] = bits;
+};
+
+/** an effect look with no textures */
+const emptyEffect = (slots: number): EffectLook => {
+	const params = new Float32Array(128);
+	for (let i = 0; i < slots; i++) {
+		params[EffectRow.slotBits + i] = ROLE_NONE;
+		params.set([1, 1, 0, 0], EffectRow.uv + i * 4);
+		params.set([0, 0, 1, 0], EffectRow.anim + i * 4);
+	}
+	return {
+		textures: Array.from({ length: slots }, () => -1),
+		uvScales: Array.from({ length: slots }, () => 1),
+		params,
+	};
+};
+
+/** the rows of the near camera fade, the dissolve and the blend layer, which both shaders read alike */
+const setShared = (look: EffectLook, entry: ReadyMaterial, shader: ShaderEntry, intensity: number): void => {
+	const { float, color } = readers(entry, shader);
+	const params = look.params;
+	params.set(color('_BlendTint') ?? [1, 1, 1, 0], EffectRow.blendTint);
+	params.set(
+		[
+			float('_DisturbUIntensity1', 0),
+			float('_DisturbVIntensity1', 0),
+			float('_DisturbUIntensity2', 0),
+			float('_DisturbVIntensity2', 0),
+		],
+		EffectRow.disturb,
+	);
+	// the dissolve threshold sweeps from below 0 to past 1 as the schedule goes from 0 to 1
+	params.set(
+		[
+			float('_DissolveScheduleOffset', 0) * 2.02 - 1.01,
+			float('_DissolveEdgeSharp', 1),
+			float('_DissolveEmissiveEdge', 0),
+		],
+		EffectRow.dissolve,
+	);
+	const edge = color('_DissolveEmissiveColor') ?? [0, 0, 0, 0];
+	params.set([edge[0] * intensity, edge[1] * intensity, edge[2] * intensity], EffectRow.dissolveColor);
+	params.set(
+		[
+			float('_NearCameraFadeDistanceStart', 0),
+			float('_NearCameraFadeDistanceEnd', 1),
+			float('_NearCameraFadeDistanceStart2', 1e5),
+			float('_NearCameraFadeDistanceEnd2', 2e5),
+		],
+		EffectRow.near,
+	);
+	params[EffectRow.misc] = float('_UseNearCameraFade', 0) !== 0 ? 1 : 0;
+	params[EffectRow.soft + 2] = float('_IgnorePostExposure', 1);
+};
+
+/**
+ * @param entry a material of `HGRP/Effect/VFXBaseV2`
+ * @param shader its shader
+ * @returns its effect look, or `null` when it uses features that aren't drawn
+ */
+export const vfxBaseLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLook | null => {
+	if (entry.blend !== 'premultiplied' || entry.keywords.some((keyword) => !BASE_KEYWORDS.has(keyword))) {
+		return null;
+	}
+	const { float, color } = readers(entry, shader);
+	const look = emptyEffect(7);
+	const params = look.params;
+	const intensity = float('_TintColorIntensity', 1);
+	const tint = linearRgb(color('_TintColor') ?? [1, 1, 1, 1]);
+	params.set(
+		[
+			tint[0] * intensity,
+			tint[1] * intensity,
+			tint[2] * intensity,
+			(color('_TintColor')?.[3] ?? 1) * float('_TintColorAlpha', 1),
+		],
+		EffectRow.tint,
+	);
+	const animOf = (prefix: string) => {
+		const speed = color(`${prefix}UVSpeed`) ?? [0, 0, 0, 0];
+		// the shaders' UV rotations are pure rotations: (a, b) of the matrix's first column is (cos, sin)
+		const rotation = color(`${prefix}UVRotateMat`) ?? [1, 0, 0, 1];
+		return { speed: [speed[0], speed[1]], cos: rotation[0], sin: rotation[1] };
+	};
+	const uv1 = (prefix: string): number => {
+		const weights = color(`${prefix}UVWeights`) ?? [1, 0, 0, 0];
+		return weights[1] > weights[0] ? 32 : 0;
+	};
+	BASE_SLOTS.forEach((name, i) => {
+		const slot = entry.slots[name];
+		if (slot === undefined || slot.uv > 1) {
+			return;
+		}
+		if (i === 0) {
+			const bits =
+				EffectRole.Main +
+				(float('_MainTexUseDisturb', 0) !== 0 ? 8 : 0) +
+				(float('_UseMainTexAsAlpha', 0) !== 0 ? 16 : 0) +
+				uv1('_MainTex');
+			setSlot(look, i, slot, animOf('_MainTex'), bits);
+			return;
+		}
+		const n = i - 1;
+		if (!entry.keywords.includes(`_SAMPLE_TEX${n}`)) {
+			return;
+		}
+		const role = ROLE_TEXTURES.findIndex((_, k) => float(`_SampleTex${n}UseWeight${k}`, 0) !== 0);
+		if (role < 0) {
+			return;
+		}
+		// the shader transforms a sample texture's UVs by the `_ST` of its role's texture property
+		const transform = entry.slots[ROLE_TEXTURES[role]] ?? slot;
+		const bits =
+			role +
+			(float(`_SampleTex${n}UseDisturb`, 0) !== 0 ? 8 : 0) +
+			(float(`_UseSampleTex${n}AsAlpha`, 0) !== 0 ? 16 : 0) +
+			uv1(`_SampleTex${n}`);
+		setSlot(look, i, { ...transform, texture: slot.texture }, animOf(`_SampleTex${n}`), bits);
+	});
+	if (look.textures[0] < 0) {
+		return null;
+	}
+	setShared(look, entry, shader, intensity);
+	params[EffectRow.dissolve + 3] = float('_UseDissolve', 0) !== 0 ? 1 : 0;
+	// as in the game, a mask or weight switched on without a texture in that role leaves nothing
+	params[EffectRow.dissolveColor + 3] = float('_UseMask', 0) !== 0 ? 1 : 0;
+	params.set(
+		[
+			float('_Bi_Disturb', 0),
+			float('_WeightTexIntensity', 1) * float('_DisturbUseWeight', 0),
+			float('_WeightTexIntensity', 1) * float('_DissolveUseWeight', 0),
+			float('_UseWeightTex', 0) !== 0 ? 1 : 0,
+		],
+		EffectRow.weight,
+	);
+	if (entry.keywords.includes('_USE_FRESNEL')) {
+		params.set(
+			[
+				float('_FresnelPower', 1),
+				float('_FresnelBias', 0),
+				float('_FresnelFlip', 0),
+				float('_FresnelAffectOpacity', 0),
+			],
+			EffectRow.fresnel,
+		);
+	}
+	if (entry.keywords.includes('_USE_SOFTBLEND')) {
+		params[EffectRow.soft] = Math.max(float('_SoftDistance', 1), 1e-3);
+		params[EffectRow.soft + 1] = float('_SoftBias', 0);
+	}
+	params[EffectRow.soft + 3] = float('_DisableVertColor', 0) !== 0 ? 0 : 1;
+	params[EffectRow.misc + 1] = float('_ExpThreshold', 1);
+	params[EffectRow.misc + 2] = float('_ExpIntensity', 0);
+	params[EffectRow.misc + 3] = float('_UseDisturb', 0) !== 0 ? 1 : 0;
+	return look;
+};
+
+/**
+ * @param entry a material of `HGRP/Effect/VFXDecal`
+ * @param shader its shader
+ * @returns its effect look, or `null` when it uses features that aren't drawn
+ */
+export const vfxDecalLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLook | null => {
+	if (entry.blend !== 'premultiplied' || entry.keywords.some((keyword) => !DECAL_KEYWORDS.has(keyword))) {
+		return null;
+	}
+	const { float, color } = readers(entry, shader);
+	const look = emptyEffect(7);
+	const params = look.params;
+	const base = color('_DecalBaseColor') ?? [1, 1, 1, 1];
+	params.set([base[0], base[1], base[2], base[3] * float('_TintColorAlpha', 1)], EffectRow.tint);
+	DECAL_SLOTS.forEach(({ name, role, keyword, speed: speedName, rotate, disturbed }, i) => {
+		const slot = entry.slots[name];
+		if (slot === undefined || slot.uv > 1 || (keyword !== null && !entry.keywords.includes(keyword))) {
+			return;
+		}
+		const speed = color(speedName) ?? [0, 0, 0, 0];
+		// a rotation in degrees about the texture's centre
+		const angle = rotate === null ? 0 : (float(rotate, 0) * Math.PI) / 180;
+		const useDisturb = disturbed === null ? 0 : float(disturbed, 0);
+		const asAlpha =
+			(role === EffectRole.Main && float('_UseMainTexAsAlpha', 0) !== 0) ||
+			(role === EffectRole.Mask && float('_UseMaskTexAsAlpha', 0) !== 0);
+		// the shader applies the blend texture's `_ST` twice
+		const transform =
+			role === EffectRole.Blend
+				? {
+						...slot,
+						scale: [slot.scale[0] * slot.scale[0], slot.scale[1] * slot.scale[1]],
+						offset: [slot.offset[0] * (slot.scale[0] + 1), slot.offset[1] * (slot.scale[1] + 1)],
+					}
+				: slot;
+		setSlot(
+			look,
+			i,
+			transform,
+			{ speed: [speed[0], speed[1]], cos: Math.cos(angle), sin: -Math.sin(angle) },
+			role + (useDisturb !== 0 ? 8 : 0) + (asAlpha ? 16 : 0),
+		);
+	});
+	if (look.textures[0] < 0) {
+		return null;
+	}
+	setShared(look, entry, shader, base[0]);
+	params[EffectRow.dissolve + 3] = entry.keywords.includes('_USE_DISSOLVE') ? 1 : 0;
+	params[EffectRow.dissolveColor + 3] = entry.keywords.includes('_USE_MASK') ? 1 : 0;
+	params[EffectRow.weight] = float('_Bi_Disturb', 0);
+	params[EffectRow.misc + 3] = entry.keywords.includes('_USE_DISTURB') ? 1 : 0;
+	params.set(
+		[
+			float('_EdgeFadeX', 0),
+			float('_EdgeFadeZ', 0),
+			float('_EdgeFadeIntensity', 0),
+			Math.max(float('_HeightFade', 0), 1e-3),
+		],
+		EffectRow.decalFade,
+	);
+	params.set(
+		[
+			float('_HeightFadeOffset', 0),
+			entry.keywords.includes('_USE_NORMALBLEND') ? float('_AngleBlendFallOff', 1) : 0,
+		],
+		EffectRow.decal,
+	);
+	return look;
+};

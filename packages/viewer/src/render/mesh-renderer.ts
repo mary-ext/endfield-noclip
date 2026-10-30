@@ -26,6 +26,7 @@ import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
 import { alphaTextureOf, LOOK_FLOATS, LookFlags, SLOTS, SLOT_FLAGS } from './materials.ts';
+import effectWgsl from './shaders/effect.wgsl?raw';
 import meshWgsl from './shaders/mesh.wgsl?raw';
 import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
 import type { TextureBinding, TextureStore } from './texture-store.ts';
@@ -81,7 +82,7 @@ const faceCullOf = (bucket: MeshBucket): FaceCull => {
 };
 
 /** the draws a phase runs over: prepared in this order */
-type DrawRange = 'opaque' | 'cutout' | 'transparent';
+type DrawRange = 'opaque' | 'cutout' | 'transparent' | 'effect' | 'effectDecal';
 
 /** one run over a pass's opaque, alpha-tested or alpha-blended draws, with a pipeline per face culling */
 interface DrawPhase {
@@ -101,7 +102,16 @@ const MAIN_PHASES: readonly DrawPhase[] = [
 
 const TRANSPARENT_PHASES: readonly DrawPhase[] = [
 	{ key: 'mesh/transparent', range: 'transparent', textured: true, shadow: false },
+	{ key: 'mesh/effect', range: 'effect', textured: true, shadow: false },
+	{ key: 'mesh/effect-decal', range: 'effectDecal', textured: true, shadow: false },
 ];
+
+/** the main pass's outputs that scene effects read, as `SceneTextures` holds them */
+export interface EffectInputs {
+	depth: GPUTextureView;
+	reflectionSurface: GPUTextureView;
+	version: number;
+}
 
 const SHADOW_PHASES: readonly DrawPhase[] = [
 	{ key: 'mesh/shadow/opaque', range: 'opaque', textured: false, shadow: true },
@@ -115,9 +125,12 @@ interface PreparedDraw {
 	baseVertex: number;
 	first: number;
 	count: number;
-	material: GPUBindGroup;
+	/** the material group; `null` for an effect until the transparent pass builds it */
+	material: GPUBindGroup | null;
 	cull: FaceCull;
 	uvFormat: UvFormat;
+	/** for scene effects: the material id and slot bindings their group is built from at encode */
+	effect: { material: number; slots: (TextureBinding | null)[] } | null;
 }
 
 interface MaterialBinding {
@@ -175,6 +188,14 @@ export class MeshRenderer {
 	#opaqueOrder: MeshBucket[] = [];
 	#cutoutOrder: MeshBucket[] = [];
 	#transparentOrder: MeshBucket[] = [];
+	#effectOrder: MeshBucket[] = [];
+	#decalOrder: MeshBucket[] = [];
+	/** group 3 of the effect pipelines: seven textures, their samplers, the main pass's depth and surfaces */
+	#effectLayout: GPUBindGroupLayout;
+	/** effect bind groups by material id */
+	#effectBindings = new Map<number, MaterialBinding & { inputs: number }>();
+	#effectStart = 0;
+	#decalStart = 0;
 	/**
 	 * prepared draws, opaque, then alpha-tested, then alpha-blended; entries past {@link #drawCount} are reused
 	 * next frame
@@ -303,6 +324,83 @@ export class MeshRenderer {
 			fragment: { module, entryPoint: 'fs_cutout_depth', targets: [] },
 			depthStencil: SHADOW_DEPTH_STATE,
 		});
+
+		// #region scene effects
+		{
+			this.#effectLayout = device.createBindGroupLayout({
+				label: 'effect materials',
+				entries: [
+					...SLOTS.map((_, binding) => ({
+						binding,
+						visibility: GPUShaderStage.FRAGMENT,
+						texture: { sampleType: 'float' as const },
+					})),
+					...SLOTS.map((_, i) => ({
+						binding: SLOTS.length + i,
+						visibility: GPUShaderStage.FRAGMENT,
+						sampler: { type: 'filtering' as const },
+					})),
+					{ binding: 14, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
+					{ binding: 15, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'uint' } },
+				],
+			});
+			const layout = device.createPipelineLayout({
+				label: 'effect',
+				bindGroupLayouts: [layouts.frame, layouts.instances, layouts.draw, this.#effectLayout],
+			});
+			const effectModule = pipelines.module('mesh-effect', FRAME_WGSL + effectWgsl);
+			const [, effect, decal] = TRANSPARENT_PHASES;
+			for (const [phase, entryPoint, depthCompare] of [
+				[effect, 'fs_effect', DEPTH_COMPARE],
+				// decals find their surface through the depth buffer, so their back faces draw wherever they are
+				[decal, 'fs_effect_decal', 'always'],
+			] as const) {
+				for (const cullMode of FACE_CULLS) {
+					for (const uvFormat of UV_FORMATS) {
+						void pipelines.prepare(pipelineKey(phase.key, cullMode, uvFormat), () => ({
+							layout,
+							vertex: { ...vertex(uvFormat), module: effectModule, entryPoint: 'vs_effect' },
+							primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
+							fragment: { module: effectModule, entryPoint, targets: TRANSPARENT_TARGETS },
+							depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare },
+						}));
+					}
+				}
+			}
+		}
+		// #endregion
+	}
+
+	/** an effect material's bind group over its slots' current bindings and this frame's main pass outputs */
+	#effectGroup(
+		material: number,
+		slots: readonly (TextureBinding | null)[],
+		inputs: EffectInputs,
+	): GPUBindGroup {
+		const versions = slots.map((slot) => slot?.version ?? -1);
+		const cached = this.#effectBindings.get(material);
+		if (
+			cached !== undefined &&
+			cached.inputs === inputs.version &&
+			cached.versions.every((version, i) => version === versions[i])
+		) {
+			return cached.group;
+		}
+		const group = this.#device.createBindGroup({
+			label: `effect material ${material}`,
+			layout: this.#effectLayout,
+			entries: [
+				...slots.map((slot, i) => ({ binding: i, resource: slot?.view ?? this.#white })),
+				...slots.map((slot, i) => ({
+					binding: SLOTS.length + i,
+					resource: slot?.sampler ?? this.#defaultSampler,
+				})),
+				{ binding: 14, resource: inputs.depth },
+				{ binding: 15, resource: inputs.reflectionSurface },
+			],
+		});
+		this.#effectBindings.set(material, { versions, inputs: inputs.version, group });
+		return group;
 	}
 
 	#zeroBuffer(size: number): GPUBuffer {
@@ -375,6 +473,7 @@ export class MeshRenderer {
 	/** forgets material bind groups (when a package is unloaded) */
 	releaseMaterials(): void {
 		this.#bindings.clear();
+		this.#effectBindings.clear();
 	}
 
 	/** the material's bind group over its slots' current bindings (`null` slots get the white texture) */
@@ -421,9 +520,13 @@ export class MeshRenderer {
 		const opaque = this.#opaqueOrder;
 		const cutout = this.#cutoutOrder;
 		const transparent = this.#transparentOrder;
+		const effects = this.#effectOrder;
+		const decals = this.#decalOrder;
 		opaque.length = 0;
 		cutout.length = 0;
 		transparent.length = 0;
+		effects.length = 0;
+		decals.length = 0;
 		for (const bucket of buckets) {
 			if (bucket.count === 0 || bucket.geometry.resident?.kind !== 'geometry') {
 				continue;
@@ -432,6 +535,13 @@ export class MeshRenderer {
 			// they wait for it rather than draw as solid cards
 			const look = bucket.look;
 			if ((look.flags & LookFlags.Unlit) !== 0 && textures.binding(look.textures[0]) === null) {
+				continue;
+			}
+			// effects are made of their textures, so they wait for all of them
+			if ((look.flags & LookFlags.Effect) !== 0) {
+				if (look.textures.every((texture) => texture < 0 || textures.binding(texture) !== null)) {
+					((look.flags & LookFlags.EffectDecal) !== 0 ? decals : effects).push(bucket);
+				}
 				continue;
 			}
 			if (look.transparent) {
@@ -445,9 +555,13 @@ export class MeshRenderer {
 		opaque.sort(byBindings);
 		cutout.sort(byBindings);
 		transparent.sort(byBindings);
+		effects.sort(byBindings);
+		decals.sort(byBindings);
 		const cutoutFrom = opaque.length;
 		const transparentFrom = cutoutFrom + cutout.length;
-		const bucketCount = transparentFrom + transparent.length;
+		const effectFrom = transparentFrom + transparent.length;
+		const decalFrom = effectFrom + effects.length;
+		const bucketCount = decalFrom + decals.length;
 		const bucketAt = (b: number): MeshBucket => {
 			if (b < cutoutFrom) {
 				return opaque[b];
@@ -455,7 +569,13 @@ export class MeshRenderer {
 			if (b < transparentFrom) {
 				return cutout[b - cutoutFrom];
 			}
-			return transparent[b - transparentFrom];
+			if (b < effectFrom) {
+				return transparent[b - transparentFrom];
+			}
+			if (b < decalFrom) {
+				return effects[b - effectFrom];
+			}
+			return decals[b - decalFrom];
 		};
 
 		const params = this.#paramData;
@@ -469,12 +589,20 @@ export class MeshRenderer {
 		this.#cutoutCastersEnd = 0;
 		this.#cutoutStart = 0;
 		this.#transparentStart = 0;
+		this.#effectStart = 0;
+		this.#decalStart = 0;
 		for (let b = 0; b < bucketCount; b++) {
 			if (b === cutoutFrom) {
 				this.#cutoutStart = d;
 			}
 			if (b === transparentFrom) {
 				this.#transparentStart = d;
+			}
+			if (b === effectFrom) {
+				this.#effectStart = d;
+			}
+			if (b === decalFrom) {
+				this.#decalStart = d;
 			}
 			const bucket = bucketAt(b);
 			const resident = bucket.geometry.resident;
@@ -507,7 +635,10 @@ export class MeshRenderer {
 			listStart = Math.min(listStart, bucket.first);
 			listEnd = Math.max(listEnd, bucket.first + bucket.count);
 
-			const material = this.#materialGroup(bucket.material, slots);
+			// an effect's group also binds the main pass's outputs, so it's built when the transparent pass encodes
+			const isEffect = b >= effectFrom;
+			const material = isEffect ? null : this.#materialGroup(bucket.material, slots);
+			const effect = isEffect ? { material: bucket.material, slots: [...slots] } : null;
 			const cull = faceCullOf(bucket);
 			const draw = this.#draws[d];
 			if (draw === undefined) {
@@ -521,6 +652,7 @@ export class MeshRenderer {
 					material,
 					cull,
 					uvFormat: resident.uvFormat,
+					effect,
 				};
 			} else {
 				draw.geometry = resident;
@@ -532,6 +664,7 @@ export class MeshRenderer {
 				draw.material = material;
 				draw.cull = cull;
 				draw.uvFormat = resident.uvFormat;
+				draw.effect = effect;
 			}
 			d++;
 			if (look.castsShadows) {
@@ -556,6 +689,12 @@ export class MeshRenderer {
 		if (transparentFrom === bucketCount) {
 			this.#transparentStart = d;
 		}
+		if (effectFrom === bucketCount) {
+			this.#effectStart = d;
+		}
+		if (decalFrom === bucketCount) {
+			this.#decalStart = d;
+		}
 		this.#cutoutCastersEnd = Math.max(this.#cutoutCastersEnd, this.#cutoutStart);
 		if (d > 0) {
 			const queue = this.#device.queue;
@@ -573,10 +712,17 @@ export class MeshRenderer {
 	}
 
 	/**
-	 * @param pass the transparent pass, with group 0 bound
+	 * @param pass the transparent pass, with group 0 bound and the main pass's depth attached read-only
+	 * @param inputs the main pass's outputs, which scene effects read
 	 * @returns draw calls issued
 	 */
-	encodeTransparent(pass: GPURenderPassEncoder): number {
+	encodeTransparent(pass: GPURenderPassEncoder, inputs: EffectInputs): number {
+		for (let i = this.#effectStart; i < this.#drawCount; i++) {
+			const draw = this.#draws[i];
+			if (draw.effect !== null) {
+				draw.material = this.#effectGroup(draw.effect.material, draw.effect.slots, inputs);
+			}
+		}
 		return this.#encode(pass, TRANSPARENT_PHASES);
 	}
 
@@ -625,6 +771,16 @@ export class MeshRenderer {
 				}
 				case 'transparent': {
 					from = this.#transparentStart;
+					to = this.#effectStart;
+					break;
+				}
+				case 'effect': {
+					from = this.#effectStart;
+					to = this.#decalStart;
+					break;
+				}
+				case 'effectDecal': {
+					from = this.#decalStart;
 					to = this.#drawCount;
 					break;
 				}
@@ -638,6 +794,10 @@ export class MeshRenderer {
 			let material: GPUBindGroup | null = null;
 			for (let i = from; i < to; i++) {
 				const draw = this.#draws[i];
+				// only an effect drawn outside the transparent pass would lack its group
+				if (draw.material === null) {
+					continue;
+				}
 				if (draw.cull !== cull || draw.uvFormat !== uvFormat) {
 					cull = draw.cull;
 					uvFormat = draw.uvFormat;

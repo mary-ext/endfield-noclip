@@ -135,6 +135,7 @@ column selectors; the ones with established meaning:
 | 18    | 256-byte instance constants starting with the object-to-world matrix                                                                           |
 | 21    | 64-byte name prefix (root object names win when present)                                                                                       |
 | 27    | rect decal constants; the decal's material is in StreamingChunkData                                                                            |
+| 28    | terrain decal constants in 27's layout (matrix, inverse, params, packed colour); material in StreamingChunkData, `HGRP/TerrainDecalLit`        |
 | 42    | a local light's runtime data, zero-filled in the file (244 bytes); the values are in the object row (below)                                    |
 | 63    | the same light's settings, zero-filled (448 bytes)                                                                                             |
 | 67    | LOD ranges: LOD count and cumulative draw count per LOD                                                                                        |

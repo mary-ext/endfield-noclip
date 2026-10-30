@@ -23,6 +23,7 @@ import type {
 import type { Color } from '@endfield-noclip/package-format/values';
 
 import { linearRgb } from './color.ts';
+import { type EffectLook, vfxBaseLook, vfxDecalLook } from './effect-looks.ts';
 
 /** shader families that aren't drawn as opaque surfaces (fog volumes, light beams, effects) */
 const SKIPPED_FAMILIES = new Set([
@@ -97,6 +98,10 @@ export const LookFlags = {
 	// bit 26 is the geometry's (mesh-renderer.ts)
 	/** `HGRP/Foliage/Leaf`: the sun shadow, vertex-normal lighting and canopy ramp of {@link LookRow.foliage} */
 	FoliageLeaf: 1 << 27,
+	/** a scene effect (effect-looks.ts), drawn by `effect.wgsl` in the transparent pass */
+	Effect: 1 << 28,
+	/** with {@link Effect}: a VFXDecal box, projected onto the surfaces inside it */
+	EffectDecal: 1 << 29,
 } as const;
 
 /** the slot flags of {@link LookFlags} by slot, which are cleared while a slot's texture isn't resident */
@@ -257,8 +262,13 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 			continue;
 		}
 		const shader = materials.shaders[entry.shader];
-		// effect meshes need their own opacity, distortion and animation passes. the opaque mesh fallback
-		// turns their bounding surfaces into solid walls, including VFXDecal shaders without a family yet.
+		const effect = effectLookOf(entry, shader);
+		if (effect !== null) {
+			looks[entry.id] = effect;
+			continue;
+		}
+		// other effect meshes need their own opacity, distortion and animation passes. the opaque mesh fallback
+		// turns their bounding surfaces into solid walls
 		if (
 			SKIPPED_FAMILIES.has(shader.family) ||
 			shader.name.startsWith('HGRP/Effect/') ||
@@ -282,6 +292,44 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 		}
 	}
 	return looks;
+};
+
+/**
+ * @returns the look of a scene effect the viewer draws (effect-looks.ts), else `null`. effects are
+ *   alpha-blended and cast no shadows; decal boxes draw their back faces, so they still show with the camera
+ *   inside them
+ */
+const effectLookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook | null => {
+	let effect: EffectLook | null = null;
+	let flags = LookFlags.Effect;
+	switch (shader.name) {
+		case 'HGRP/Effect/VFXBaseV2': {
+			effect = vfxBaseLook(entry, shader);
+			break;
+		}
+		case 'HGRP/Effect/VFXDecal': {
+			effect = vfxDecalLook(entry, shader);
+			flags |= LookFlags.EffectDecal;
+			break;
+		}
+		default: {
+			return null;
+		}
+	}
+	if (effect === null) {
+		return null;
+	}
+	return {
+		drawn: true,
+		cutout: false,
+		transparent: true,
+		cull: (flags & LookFlags.EffectDecal) !== 0 ? 'front' : entry.cull,
+		castsShadows: false,
+		textures: effect.textures,
+		uvScales: effect.uvScales,
+		flags,
+		params: effect.params,
+	};
 };
 
 const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
