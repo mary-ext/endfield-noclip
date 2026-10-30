@@ -115,7 +115,7 @@ export interface ViewerOptions {
 	cloudShadows: boolean;
 	water: boolean;
 	ao: boolean;
-	/** screen-space reflections on glossy surfaces, such as puddles */
+	/** screen-space reflections, as on puddles, wet floors and metal */
 	reflections: boolean;
 	bloom: boolean;
 	vignette: boolean;
@@ -1017,6 +1017,7 @@ export class Viewer {
 		this.camera.pitch = pitch;
 		// a cut: the last frames show somewhere else
 		this.#post.taa.reset();
+		this.#post.reflections.reset();
 		this.#fog.reset();
 	}
 

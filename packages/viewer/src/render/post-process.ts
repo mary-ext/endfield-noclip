@@ -14,6 +14,7 @@ import { AutoExposure } from './auto-exposure.ts';
 import { CelestialLayer } from './celestial.ts';
 import { type Environment, evaluateSh } from './environment.ts';
 import type { DebugView } from './frame-uniforms.ts';
+import { ScreenSpaceReflections } from './screen-space-reflections.ts';
 import atmosphereWgsl from './shaders/atmosphere.wgsl?raw';
 import bloomWgsl from './shaders/bloom.wgsl?raw';
 import brdfWgsl from './shaders/brdf.wgsl?raw';
@@ -22,7 +23,6 @@ import compositeWgsl from './shaders/composite.wgsl?raw';
 import gtaoWgsl from './shaders/gtao.wgsl?raw';
 import commonWgsl from './shaders/post-common.wgsl?raw';
 import skyWgsl from './shaders/sky.wgsl?raw';
-import ssrTraceWgsl from './shaders/ssr-trace.wgsl?raw';
 import ssrWgsl from './shaders/ssr.wgsl?raw';
 import taaWgsl from './shaders/taa.wgsl?raw';
 import tonemapWgsl from './shaders/tonemap.wgsl?raw';
@@ -74,7 +74,7 @@ export interface PostSettings {
 	heightFog: boolean;
 	atmosphereFog: boolean;
 	ao: boolean;
-	/** screen-space reflections on glossy surfaces */
+	/** screen-space reflections */
 	reflections: boolean;
 	bloom: boolean;
 	vignette: boolean;
@@ -145,8 +145,6 @@ interface Sized {
 	ao: GPUTexture;
 	/** full resolution */
 	aoBlurred: GPUTexture;
-	/** what the screen-space reflections add to the radiance */
-	ssr: GPUTexture;
 	/** the nebula and planets at the sky pixels, and how far they cover the sky */
 	celestial: GPUTexture;
 	/** the composited scene at the render size, which the temporal resolve reads */
@@ -164,7 +162,6 @@ interface Sized {
 		aoDepth: Pass;
 		gtao: Pass;
 		blur: Pass;
-		ssr: Pass;
 		celestial: Pass;
 		composite: Pass;
 		/** group 0 of the temporal resolve */
@@ -188,6 +185,8 @@ export class PostProcess {
 	readonly taa: TemporalAA;
 	/** the nebula and planets the composite draws on the sky; the caller sets their look and textures */
 	readonly celestial: CelestialLayer;
+	/** the screen-space reflections; the caller resets their history on cuts */
+	readonly reflections: ScreenSpaceReflections;
 	#device: GPUDevice;
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(POST_BYTES / 4);
@@ -206,7 +205,6 @@ export class PostProcess {
 		aoDepth: GPURenderPipeline;
 		gtao: GPURenderPipeline;
 		blur: GPURenderPipeline;
-		ssr: GPURenderPipeline;
 		celestial: GPURenderPipeline;
 		composite: GPURenderPipeline;
 		prefilter: GPURenderPipeline;
@@ -288,9 +286,9 @@ export class PostProcess {
 		const module = (label: string, parts: string[]): GPUShaderModule =>
 			device.createShaderModule({ label, code: postShaderSource(parts) });
 		this.taa = new TemporalAA(device, module('taa', [taaWgsl]));
+		this.reflections = new ScreenSpaceReflections(device, module('ssr', [ssrWgsl]), this.#uniforms);
 		const atmosphere = module('atmosphere', [atmosphereWgsl]);
 		const gtao = module('gtao', [gtaoWgsl]);
-		const ssr = module('ssr', [ssrTraceWgsl, ssrWgsl]);
 		const composite = module('composite', [atmosphereWgsl, skyWgsl, compositeWgsl]);
 		const celestial = module('celestial', [celestialWgsl]);
 		const bloom = module('bloom', [bloomWgsl]);
@@ -316,7 +314,6 @@ export class PostProcess {
 			aoDepth: pipeline('ao depth', gtao, 'fs_ao_depth', AO_DEPTH_FORMAT),
 			gtao: pipeline('gtao', gtao, 'fs_gtao', AO_FORMAT),
 			blur: pipeline('gtao blur', gtao, 'fs_blur', AO_FORMAT),
-			ssr: pipeline('ssr', ssr, 'fs_ssr', HDR_FORMAT),
 			celestial: pipeline('celestial', celestial, 'fs_celestial', HDR_FORMAT),
 			composite: pipeline('composite', composite, 'fs_composite', HDR_FORMAT),
 			prefilter: pipeline('bloom prefilter', bloom, 'fs_prefilter', HDR_FORMAT),
@@ -430,21 +427,21 @@ export class PostProcess {
 		}
 		const pixels = sized.width * sized.height;
 		const outputPixels = sized.outputWidth * sized.outputHeight;
-		// at the render size the reduced AO depth and AO, the blurred AO, the reflections, the celestial layers and
-		// the scene; at the output size the temporal history and the bloom chain (two quarter-size mips)
-		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8 + 8) + outputPixels * 8 * (2 / 3) + this.taa.bytes;
+		// at the render size the reduced AO depth and AO, the blurred AO, the celestial layers and the scene; at the
+		// output size the temporal history and the bloom chain (two quarter-size mips)
+		return (
+			pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) +
+			outputPixels * 8 * (2 / 3) +
+			this.taa.bytes +
+			this.reflections.bytes
+		);
 	}
 
 	/**
 	 * the composite pass's group 2: the main and transparent passes' outputs, the blurred AO, the cloud
 	 * panorama and reflections
 	 */
-	#sceneGroup(
-		scene: SceneTextures,
-		aoBlurred: GPUTexture,
-		ssr: GPUTexture,
-		celestial: GPUTexture,
-	): GPUBindGroup {
+	#sceneGroup(scene: SceneTextures, aoBlurred: GPUTexture, celestial: GPUTexture): GPUBindGroup {
 		return this.#device.createBindGroup({
 			layout: this.#pipelines.composite.getBindGroupLayout(2),
 			entries: [
@@ -454,7 +451,7 @@ export class PostProcess {
 				{ binding: 3, resource: scene.depth },
 				{ binding: 4, resource: this.#cloud.view },
 				{ binding: 5, resource: this.#cloud.sampler },
-				{ binding: 6, resource: ssr.createView() },
+				{ binding: 6, resource: this.reflections.output.createView() },
 				{ binding: 7, resource: scene.transparent },
 				{ binding: 8, resource: scene.revealage },
 				{ binding: 9, resource: celestial.createView() },
@@ -478,7 +475,6 @@ export class PostProcess {
 			sized.passes.composite.groups[2] = this.#sceneGroup(
 				sized.sceneTextures,
 				sized.aoBlurred,
-				sized.ssr,
 				sized.celestial,
 			);
 		}
@@ -500,7 +496,6 @@ export class PostProcess {
 			sized.aoDepth,
 			sized.ao,
 			sized.aoBlurred,
-			sized.ssr,
 			sized.celestial,
 			sized.scene,
 			...sized.down,
@@ -543,11 +538,12 @@ export class PostProcess {
 		const aoDepth = texture('ao depth', aoWidth, aoHeight, AO_DEPTH_FORMAT);
 		const ao = texture('ao', aoWidth, aoHeight, AO_FORMAT);
 		const aoBlurred = texture('ao blurred', width, height, AO_FORMAT);
-		const ssrTexture = texture('ssr', width, height, HDR_FORMAT);
 		const celestialTexture = texture('celestial', width, height, HDR_FORMAT);
 		const sceneTexture = texture('hdr scene', width, height, HDR_FORMAT);
 		const sceneView = sceneTexture.createView();
 		this.taa.resize({ scene: sceneView, depth: scene.depth, width, height, outputWidth, outputHeight });
+		// the reflections run before compositing, so the scene they read still holds last frame's
+		this.reflections.resize({ scene, previousScene: sceneView, width, height });
 		const histories = this.taa.histories;
 		// the game's chain: sized as if the view were at most 1080 px tall, the first level at half that size,
 		// with as many levels as half-resolution bloom gets (quarter resolution runs one fewer)
@@ -657,7 +653,6 @@ export class PostProcess {
 			aoDepth,
 			ao,
 			aoBlurred,
-			ssr: ssrTexture,
 			celestial: celestialTexture,
 			scene: sceneTexture,
 			sceneView,
@@ -704,22 +699,6 @@ export class PostProcess {
 					],
 					target: aoBlurred.createView(),
 				},
-				ssr: {
-					pipeline: p.ssr,
-					groups: [
-						this.#uniformsGroup(p.ssr),
-						device.createBindGroup({
-							layout: p.ssr.getBindGroupLayout(1),
-							entries: [
-								{ binding: 0, resource: scene.radiance },
-								{ binding: 1, resource: scene.reflection },
-								{ binding: 2, resource: scene.reflectionNormal },
-								{ binding: 3, resource: scene.depth },
-							],
-						}),
-					],
-					target: ssrTexture.createView(),
-				},
 				celestial: {
 					pipeline: p.celestial,
 					// group 1 is the layer's own, bound each frame
@@ -735,10 +714,7 @@ export class PostProcess {
 				},
 				composite: {
 					pipeline: p.composite,
-					groups: [
-						...this.#skyGroups(p.composite),
-						this.#sceneGroup(scene, aoBlurred, ssrTexture, celestialTexture),
-					],
+					groups: [...this.#skyGroups(p.composite), this.#sceneGroup(scene, aoBlurred, celestialTexture)],
 					target: sceneView,
 				},
 				taa: this.#uniformsGroup(this.taa.pipeline),
@@ -944,8 +920,12 @@ export class PostProcess {
 			this.#run(encoder, 'gtao', sized.passes.gtao);
 			this.#run(encoder, 'gtao blur', sized.passes.blur);
 		}
-		// with reflections off the pass still clears what composite reads
-		this.#run(encoder, 'ssr', sized.passes.ssr);
+		// with reflections off this still clears what composite reads
+		this.reflections.encode(encoder, {
+			camera,
+			look: this.#environment.post.ssr,
+			enabled: settings.reflections,
+		});
 		{
 			const environment = this.#environment;
 			this.celestial.write(camera.position, environment.sunDirection, environment.sunIlluminance);
@@ -1010,5 +990,6 @@ export class PostProcess {
 		this.celestial.destroy();
 		this.autoExposure.destroy();
 		this.taa.destroy();
+		this.reflections.destroy();
 	}
 }

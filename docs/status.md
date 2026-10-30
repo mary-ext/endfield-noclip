@@ -61,8 +61,9 @@ packs or renders correctly.
   projection and cone-map parallax aren't drawn; the blend's GPU cost is unprofiled
 - puddles ([world](game-data/world.md#puddles)) stop past the leaf splat pages' load distance,
   ignore the parallax layers' height, and have no ripples
-- screen-space reflections are the viewer's own (unprofiled, single ray, no blur for rough
-  surfaces); off-screen reflections fall back to the sky cubemap
+- screen-space reflections ([lighting](game-data/lighting.md#screen-space-reflections)): the rain
+  wetness variant isn't drawn, the GPU cost is unprofiled, and off-screen reflections fall back to
+  the sky cubemap
 - glass ([glass](game-data/lighting.md#glass)): refraction and Fresnel opacity aren't drawn, glass
   in front of water is lost, glass against the sky isn't fogged, and nothing checks whether the game
   lets glass cast shadows

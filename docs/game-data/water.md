@@ -208,12 +208,14 @@ counts per level, chunk file, mask, mesh and config, and single config assets
   from a Henyey–Greenstein lobe (g 0.854) to Rayleigh, with less sun let in at grazing incidence.
   the sun's shadow is looked up 2 m off the surface point along the waves' horizontal tilt, which
   dapples it. the transmitted scene isn't dimmed by the reflectance.
-- **reflection**: the reflected ray is marched through the depth buffer like screen-space
-  reflections ([lighting.md](lighting.md#ambient)), with the sky reflection (normalised the same way
-  as on surfaces, scaled by `envLightSpecularIntensity`) where it finds nothing. the environment
-  BRDF weighs it, with f0 = 0.08 · `specular`. where the march hits, the colour also leans towards
-  the reflection by that weight times the column's opacity, so deep water mirrors its surroundings.
-  the sun's GGX highlight is shadowed and scaled by `punctualLightSpecularIntensity`.
+- **reflection**: the reflected ray is marched through the depth buffer by the viewer's own march
+  ([`ssr-trace.wgsl`](../../packages/viewer/src/render/shaders/ssr-trace.wgsl), not the game's
+  [screen-space reflections](lighting.md#screen-space-reflections)), with the sky reflection
+  (normalised the same way as on surfaces, scaled by `envLightSpecularIntensity`) where it finds
+  nothing. the environment BRDF weighs it, with f0 = 0.08 · `specular`. where the march hits, the
+  colour also leans towards the reflection by that weight times the column's opacity, so deep water
+  mirrors its surroundings. the sun's GGX highlight is shadowed and scaled by
+  `punctualLightSpecularIntensity`.
 - **shore**: `distanceEdgeBlendFactor` fades shallow water into what's under it; at a distance the
   thickness counts less at grazing angles. foam and caustics aren't drawn.
 

@@ -1,6 +1,6 @@
-// the screen-space reflection march, shared by the ssr and water passes: a mirror ray steps through the depth
-// buffer until it passes behind something drawn. needs post-common.wgsl and a `depth_texture` (the main pass's
-// depth) declared by the pass.
+// the water pass's reflection march (the viewer's own, not the game's ssr.wgsl): a mirror ray steps through the
+// depth buffer until it passes behind something drawn. needs post-common.wgsl and a `depth_texture` (the main
+// pass's depth) declared by the pass.
 
 const SSR_STEPS = 48u;
 const SSR_REFINE = 5u;

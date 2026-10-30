@@ -235,16 +235,21 @@ struct Shaded {
 	@location(0) radiance: vec4f,
 	// rgb: diffuse ambient before any occlusion, a: material occlusion
 	@location(1) ambient: vec4f,
-	// rgb: the sky reflection the radiance holds, which a screen-space hit replaces; a: the hit's weight (0: no
-	// screen-space reflection)
+	// rgb: the sky reflection the radiance holds, which a screen-space hit replaces; a unused
 	@location(2) reflection: vec4f,
-	// xy: octahedral normal · 0.5 + 0.5, z: perceptual roughness
-	@location(3) reflection_normal: vec4f,
+	// what the screen-space reflections need of the surface (`pack_reflection_surface`); 0 where none
+	@location(3) reflection_surface: vec2u,
 }
 
-// screen-space reflections fade out over this perceptual roughness range
-const SSR_ROUGHNESS_START = 0.15;
-const SSR_ROUGHNESS_END = 0.3;
+// x: octahedral normal · 0.5 + 0.5 in 12 bits each, perceptual roughness in the top 8; y: the screen-space
+// reflection's weight (environment BRDF and specular occlusion) as the square root of each channel in 10 bits,
+// bit 30 set. unpacked by `reflection_surface_at` in ssr.wgsl
+fn pack_reflection_surface(n: vec3f, roughness: f32, weight: vec3f) -> vec2u {
+	let e = vec2u(round(clamp(oct_encode(n) * 0.5 + 0.5, vec2f(0.0), vec2f(1.0)) * 4095.0));
+	let r = u32(round(clamp(roughness, 0.0, 1.0) * 255.0));
+	let w = vec3u(round(sqrt(clamp(weight, vec3f(0.0), vec3f(1.0))) * 1023.0));
+	return vec2u(e.x | (e.y << 12u) | (r << 24u), w.x | (w.y << 10u) | (w.z << 20u) | (1u << 30u));
+}
 
 // what a material family hands to the lighting
 struct Surface {
@@ -657,7 +662,9 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	let diffuse_ambient = diffuse_color * irradiance;
 	// specular sees only the material occlusion, through Lagarde's specular occlusion
 	let specular_occlusion = clamp(pow(n_dot_v + s.occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + s.occlusion, 0.0, 1.0);
-	let specular_weight = environment_brdf(f0, roughness, n_dot_v) * specular_occlusion * frame.ambient.x;
+	// a screen-space hit gets the environment BRDF and specular occlusion but not the sky's specular factor
+	let ssr_weight = environment_brdf(f0, roughness, n_dot_v) * specular_occlusion;
+	let specular_weight = ssr_weight * frame.ambient.x;
 	var specular_ambient: vec3f;
 	{
 		let r = normalize(mix(reflect(-v, n), n, roughness * roughness));
@@ -673,7 +680,7 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 
 	var out: Shaded;
 	out.reflection = vec4f(0.0);
-	out.reflection_normal = vec4f(0.0);
+	out.reflection_surface = vec2u(0u);
 	switch frame.flags.y {
 		case 1u: {
 			out.radiance = vec4f(s.albedo, 1.0);
@@ -699,11 +706,8 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	}
 	out.radiance = vec4f(direct + ambient + s.emission, albedo_luminance);
 	out.ambient = vec4f(diffuse_ambient, s.occlusion);
-	let glossy = 1.0 - smoothstep(SSR_ROUGHNESS_START, SSR_ROUGHNESS_END, roughness);
-	if (glossy > 0.0) {
-		out.reflection = vec4f(specular_ambient * glossy, dot(specular_weight, LUMINANCE) * glossy);
-		out.reflection_normal = vec4f(oct_encode(n) * 0.5 + 0.5, roughness, 0.0);
-	}
+	out.reflection = vec4f(specular_ambient, 0.0);
+	out.reflection_surface = pack_reflection_surface(n, roughness, ssr_weight);
 	return out;
 }
 
@@ -713,7 +717,7 @@ fn unlit(color: vec3f) -> Shaded {
 	out.radiance = vec4f(color, 1.0);
 	out.ambient = vec4f(0.0);
 	out.reflection = vec4f(0.0);
-	out.reflection_normal = vec4f(0.0);
+	out.reflection_surface = vec2u(0u);
 	return out;
 }
 

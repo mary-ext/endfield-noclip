@@ -218,24 +218,24 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 
 `#render` encodes one command buffer per frame. passes in order:
 
-| #   | pass                                           | when                                                                                                                                                             |
-| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `irradiance update 0–2` (compute)              | a clipmap level re-centred or got new cells ([`render/irradiance-volume.ts`](../packages/viewer/src/render/irradiance-volume.ts))                                |
-| 2   | `shadow layer 0–3`                             | `shadows` on, a package loaded, `debugView` is `lit`                                                                                                             |
-| 2b  | `volumetric fog` (compute)                     | `heightFog` on, a package loaded, `lit`, and the environment's volumetric fog on ([`render/volumetric-fog.ts`](../packages/viewer/src/render/volumetric-fog.ts)) |
-| 3   | `main`                                         | always (empty without a package)                                                                                                                                 |
-| 3b  | `transparent`                                  | always, so the composite reads cleared targets ([glass](game-data/lighting.md#glass))                                                                            |
-| 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                                                             |
-| 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                                                         |
-| 6   | `ao depth`, `gtao`, `gtao blur`                | `ao` on and the environment has AO settings                                                                                                                      |
-| 6b  | `ssr`                                          | always; writes nothing with `reflections` off or in debug views                                                                                                  |
-| 6c  | `celestial`                                    | always; writes nothing with `sky` off or nothing beyond the atmosphere ([celestial](game-data/lighting.md#beyond-the-atmosphere))                                |
-| 7   | `composite`                                    | always                                                                                                                                                           |
-| 8   | scene copy + `water`                           | `water` on, `lit`, and visible water surfaces                                                                                                                    |
-| 9   | `taa`                                          | always ([`render/temporal-aa.ts`](../packages/viewer/src/render/temporal-aa.ts)); with `antialiasing` off it only scales to the output size                      |
-| 10  | `auto exposure histogram` (compute)            | `autoExposure` on, `lit`, the profile meters, and a readback buffer is free ([`render/auto-exposure.ts`](../packages/viewer/src/render/auto-exposure.ts))        |
-| 11  | `bloom down` ×n, `bloom up` ×n                 | `bloom` on                                                                                                                                                       |
-| 12  | `tonemap`                                      | always, into the swapchain                                                                                                                                       |
+| #   | pass                                                            | when                                                                                                                                                                       |
+| --- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `irradiance update 0–2` (compute)                               | a clipmap level re-centred or got new cells ([`render/irradiance-volume.ts`](../packages/viewer/src/render/irradiance-volume.ts))                                          |
+| 2   | `shadow layer 0–3`                                              | `shadows` on, a package loaded, `debugView` is `lit`                                                                                                                       |
+| 2b  | `volumetric fog` (compute)                                      | `heightFog` on, a package loaded, `lit`, and the environment's volumetric fog on ([`render/volumetric-fog.ts`](../packages/viewer/src/render/volumetric-fog.ts))           |
+| 3   | `main`                                                          | always (empty without a package)                                                                                                                                           |
+| 3b  | `transparent`                                                   | always, so the composite reads cleared targets ([glass](game-data/lighting.md#glass))                                                                                      |
+| 4   | `transmittance lut`, `multiple scattering lut`                  | once per environment                                                                                                                                                       |
+| 5   | `sky view lut`, `sky mean`                                      | `sky` on                                                                                                                                                                   |
+| 6   | `ao depth`, `gtao`, `gtao blur`                                 | `ao` on and the environment has AO settings                                                                                                                                |
+| 6b  | `ssr march`, `ssr temporal`, `ssr downsample` ×n, `ssr resolve` | `reflections` on and `lit`; otherwise `ssr off` only clears the output ([`render/screen-space-reflections.ts`](../packages/viewer/src/render/screen-space-reflections.ts)) |
+| 6c  | `celestial`                                                     | always; writes nothing with `sky` off or nothing beyond the atmosphere ([celestial](game-data/lighting.md#beyond-the-atmosphere))                                          |
+| 7   | `composite`                                                     | always                                                                                                                                                                     |
+| 8   | scene copy + `water`                                            | `water` on, `lit`, and visible water surfaces                                                                                                                              |
+| 9   | `taa`                                                           | always ([`render/temporal-aa.ts`](../packages/viewer/src/render/temporal-aa.ts)); with `antialiasing` off it only scales to the output size                                |
+| 10  | `auto exposure histogram` (compute)                             | `autoExposure` on, `lit`, the profile meters, and a readback buffer is free ([`render/auto-exposure.ts`](../packages/viewer/src/render/auto-exposure.ts))                  |
+| 11  | `bloom down` ×n, `bloom up` ×n                                  | `bloom` on                                                                                                                                                                 |
+| 12  | `tonemap`                                                       | always, into the swapchain                                                                                                                                                 |
 
 passes 3–8 run at the render size, the canvas's device-pixel size times `renderScale`; `taa` and
 everything after it run at the output (canvas) size.
@@ -249,12 +249,13 @@ details:
   instance block origins are rebased to the eye on the CPU in f64 each frame, so f32 precision holds
   at any distance.
 - **main pass.** one sample per pixel into radiance and its ambient part (`rgba16float`), plus what
-  glossy surfaces hand the screen-space reflections: the sky reflection the radiance holds with the
-  weight of a screen-space hit (`rgba16float`) and the normal and roughness (`rgba8unorm`), with
-  depth stored for post. draw order: terrain, meshes (opaque, then alpha-tested), instance boxes,
-  box outlines (boxes larger than `outlineMetres`), terrain wireframe. alpha-blended meshes draw
-  afterwards in the `transparent` pass, which tests the main pass's depth without writing it; the
-  composite resolves them ([glass](game-data/lighting.md#glass)).
+  lit surfaces hand the screen-space reflections: the sky reflection the radiance holds
+  (`rgba16float`) and the normal, roughness and hit weight packed in `rg32uint`, which fills
+  WebGPU's default 32 bytes per sample; depth is stored for post. draw order: terrain, meshes
+  (opaque, then alpha-tested), instance boxes, box outlines (boxes larger than `outlineMetres`),
+  terrain wireframe. alpha-blended meshes draw afterwards in the `transparent` pass, which tests the
+  main pass's depth without writing it; the composite resolves them
+  ([glass](game-data/lighting.md#glass)).
 - **antialiasing** is temporal with upsampling, as in the game, which has no MSAA. the main pass's
   projection is offset by a Halton (2, 3) subpixel jitter each frame (8 positions per cycle, more
   when upsampling), and the post passes that reconstruct view rays undo it. `taa` reconstructs each
@@ -274,11 +275,12 @@ details:
   this frame's main-pass selection and gets its own copy of the frame uniforms with its
   view-projection.
 - **post** ([`render/post-process.ts`](../packages/viewer/src/render/post-process.ts)) is fullscreen
-  triangles with `auto` layouts. `ssr` marches glossy pixels' reflections through the depth buffer
-  ([lighting.md](game-data/lighting.md#ambient)). composite adds them, then applies AO, sky,
-  atmosphere fog and height fog; `heightFog` and `atmosphereFog` change what composite does, not
-  which passes run. water draws over a copy of the composited scene so it can refract and reflect it
-  ([`render/water-renderer.ts`](../packages/viewer/src/render/water-renderer.ts),
+  triangles with `auto` layouts. the `ssr` passes march every lit pixel's reflection into last
+  frame's composited scene, filter it over frames and blur it by roughness
+  ([lighting.md](game-data/lighting.md#screen-space-reflections)). composite adds them, then applies
+  AO, sky, atmosphere fog and height fog; `heightFog` and `atmosphereFog` change what composite
+  does, not which passes run. water draws over a copy of the composited scene so it can refract and
+  reflect it ([`render/water-renderer.ts`](../packages/viewer/src/render/water-renderer.ts),
   [game-data/water.md](game-data/water.md)). it's the one post pass with an explicit layout, because
   it also binds the main pass's frame group for the sun shadow, irradiance volume and sky
   reflection; its shader moves the post uniforms to group 3.

@@ -165,15 +165,44 @@ luminance L1 along the normal, the factor is `(2 · min(d / p, 1) + d) / (2 + p)
 `d / p` under cover, so interiors don't mirror the bright sky, and about 1 in the open. the game's
 clustered local reflection probes (normalised the same way) are not implemented.
 
-glossy surfaces (perceptual roughness below 0.15, fading out by 0.3) get screen-space reflections on
-top: the mirror ray is marched through the depth buffer, and where it hits something on screen, that
-radiance times the same environment BRDF and specular occlusion replaces the sky reflection, fading
-at the screen edges and for rays heading back towards the camera
-([`ssr.wgsl`](../../packages/viewer/src/render/shaders/ssr.wgsl)). the hit's radiance is the main
-pass's, before ambient occlusion and fog. this is the viewer's own SSR, not a port of the game's;
-it's what makes terrain puddles reflect the scenery around them. the march itself
-([`ssr-trace.wgsl`](../../packages/viewer/src/render/shaders/ssr-trace.wgsl)) is shared with the
-water pass ([water.md](water.md#viewer)).
+### screen-space reflections
+
+every lit surface, at any roughness, gets the game's screen-space reflections on top
+([`ssr.wgsl`](../../packages/viewer/src/render/shaders/ssr.wgsl),
+[`screen-space-reflections.ts`](../../packages/viewer/src/render/screen-space-reflections.ts)), as
+its PC high quality runs them. where a hit is found, its colour replaces the sky reflection by a
+fade: `specular = (hit · fade + sky · (1 − fade)) · environment BRDF · specular occlusion`, where
+only the sky term carries the normalisation above and the indirect specular factor.
+
+- **march.** the mirror ray is projected to the screen and stretched to its edge, then stepped in
+  equal steps of uv and device depth, 4 taps per loop: 32 steps (PC high quality's
+  `ssrRayMarchingSampleCount`, which is also the floor distant pixels would otherwise drop below),
+  and 4 once roughness reaches 0.3. a tap hits when it lies behind the depth buffer by less than two
+  steps' depth; the hit is refined linearly between taps. the start is offset by interleaved
+  gradient noise per frame unless a step is shorter than a pixel
+- **colour.** the hit reads last frame's composited scene (with its fog, transparents, water and
+  reflections) where the hit point was on last frame's screen
+- **fade.** the product of three ramps: towards the screen's edges over `fadenessOnScreen` of uv;
+  for surfaces seen head-on, `1 − saturate(|N·V| · fadenessOnMirrorMul + fadenessOnMirrorAdd)`,
+  whose rays turn back off the screen; and, unless roughness is below 0.1, between 90 and 100 m.
+  these come from the post profile's `ScreenSpaceReflectionVolume`; every shipped profile sets 0.1,
+  2 and −1
+- **temporal filter.** colour (kept as `c / (1 + max(c))`) and fade blend 97% of last frame's,
+  reprojected and clipped to the 3 × 3 neighbourhood's box (the plus and full extremes averaged,
+  widened to the mean ± 1.25 σ), times a confidence
+  `exp(−screen motion in px) · saturate(ln(0.02 · view depth) + 0.01)`. that confidence is about 0
+  nearer than 50 m, so close reflections are left to the main antialiasing
+- **blur.** both go into a pyramid of up to 7 mips, each a 4 × 4 binomial (1 3 3 1)² of the finer
+  mip weighted by `exp(−0.01 · |Δ view depth|)` against the nearest depth under the texel. the
+  resolve picks the mip the reflected cone covers: a Blinn-Phong lobe's half-angle
+  `acos(0.244^(1 / (2/α² − 1)))` seen through the mirror at the hit's distance, its footprint in
+  pixels → `log2`. it blends the same depth-weighted binomial at the two mips around it (below a
+  quarter mip, the filtered colour as is); the fade is read at the lower mip
+
+the viewer runs these as fullscreen passes rather than the game's compute kernels, reprojects
+through the depth buffer and the previous camera instead of motion vectors (the scenery is static),
+and leaves out the game's rain-wetness variant, which re-derives the wet normal and roughness the
+way the deferred wetness does. off-screen reflections keep the sky reflection.
 
 ## local lights
 
@@ -661,7 +690,7 @@ are sampled toroidally in `ambient_irradiance`.
   that aren't recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient
   probe without the native diffuse-ambient scale.
 - not rendered: light shafts, lens flare, the moon's sky-wide ring (`HG_RING`), the sun disc,
-  aurora, local reflection probes, the game's own SSR, local light shadows and light beams,
+  aurora, local reflection probes, local light shadows and light beams,
   precipitation and rain wetness (terrain puddles do render).
 - celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' order against
   the cloud panorama (`drawCloudAfterPlanet`), their ring thinning the stars, and the brightness of

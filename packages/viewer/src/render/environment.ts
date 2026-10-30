@@ -18,6 +18,7 @@ import type {
 	FogConfig,
 	HeightFogLayers,
 	LightConfig,
+	ScreenSpaceReflectionSettings,
 	ShadowConfig,
 	SkyConfig,
 	VignetteSettings,
@@ -143,6 +144,10 @@ export interface PostInput {
 	vignette: Pick<
 		VignetteSettings,
 		'color' | 'center' | 'intensity' | 'smoothness' | 'roundness' | 'rounded'
+	> | null;
+	screenSpaceReflection: Pick<
+		ScreenSpaceReflectionSettings,
+		'enable' | 'fadenessOnScreen' | 'fadenessOnMirrorMul' | 'fadenessOnMirrorAdd'
 	> | null;
 }
 
@@ -316,6 +321,14 @@ export interface PostLook {
 		smoothness: number;
 		roundness: number;
 		rounded: boolean;
+	} | null;
+	/** the screen-space reflections' fades (`ScreenSpaceReflectionVolume`) */
+	ssr: {
+		/** the uv distance from the screen's edge over which hits fade in */
+		onScreen: number;
+		/** the head-on fade `1 − saturate(|N·V| · mirrorMul + mirrorAdd)` */
+		mirrorMul: number;
+		mirrorAdd: number;
 	} | null;
 }
 
@@ -609,6 +622,13 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 			roundness: 1,
 			rounded: false,
 		},
+		// what every shipped profile sets
+		screenSpaceReflection: {
+			enable: true,
+			fadenessOnScreen: 0.1,
+			fadenessOnMirrorMul: 2,
+			fadenessOnMirrorAdd: -1,
+		},
 	},
 	// held at exposure 1
 	autoExposure: {
@@ -664,6 +684,7 @@ const postLook = (post: PostInput | null): PostLook => {
 	const bloom = post?.bloom ?? null;
 	const ao = post?.ambientOcclusion ?? null;
 	const vignette = post?.vignette ?? null;
+	const ssr = post?.screenSpaceReflection ?? null;
 	return {
 		bloom: bloom === null ? null : bloomLook(bloom),
 		ao: ao === null || !ao.enable ? null : aoLook(ao),
@@ -677,6 +698,14 @@ const postLook = (post: PostInput | null): PostLook => {
 						smoothness: vignette.smoothness,
 						roundness: vignette.roundness,
 						rounded: vignette.rounded,
+					},
+		ssr:
+			ssr === null || !ssr.enable
+				? null
+				: {
+						onScreen: ssr.fadenessOnScreen,
+						mirrorMul: ssr.fadenessOnMirrorMul,
+						mirrorAdd: ssr.fadenessOnMirrorAdd,
 					},
 	};
 };

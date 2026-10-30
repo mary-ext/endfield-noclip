@@ -21,18 +21,19 @@ export const DEPTH_COMPARE: GPUCompareFunction = 'greater';
 /** HDR colour format of the main pass and the post chain */
 export const HDR_FORMAT: GPUTextureFormat = 'rgba16float';
 
-/** what glossy surfaces hand the screen-space reflections: octahedral normal, roughness */
-export const REFLECTION_NORMAL_FORMAT: GPUTextureFormat = 'rgba8unorm';
+/** what lit surfaces hand the screen-space reflections, packed (`pack_reflection_surface` in frame.wgsl) */
+export const REFLECTION_SURFACE_FORMAT: GPUTextureFormat = 'rg32uint';
 
 /**
  * the main pass's colour targets, in `@location` order: radiance, its ambient part, the sky reflection the
- * radiance holds (with how much of a screen-space hit replaces it), and the reflecting surface's normal
+ * radiance holds, and what the screen-space reflections need of the surface. together they fill WebGPU's
+ * default 32 bytes per sample
  */
 export const MAIN_TARGETS: GPUColorTargetState[] = [
 	{ format: HDR_FORMAT },
 	{ format: HDR_FORMAT },
 	{ format: HDR_FORMAT },
-	{ format: REFLECTION_NORMAL_FORMAT },
+	{ format: REFLECTION_SURFACE_FORMAT },
 ];
 
 /**
@@ -68,10 +69,10 @@ export interface SceneTextures {
 	/** the texture behind {@link radiance}; unused once composited, so post passes may copy into it */
 	radianceTexture: GPUTexture;
 	ambient: GPUTextureView;
-	/** rgb: the sky reflection in {@link radiance}, a: the weight of a screen-space hit (0: none) */
+	/** rgb: the sky reflection in {@link radiance} */
 	reflection: GPUTextureView;
-	/** xy: octahedral normal · 0.5 + 0.5, z: perceptual roughness */
-	reflectionNormal: GPUTextureView;
+	/** the surface's normal, roughness and screen-space reflection weight, packed; 0 where nothing lit was drawn */
+	reflectionSurface: GPUTextureView;
 	depth: GPUTextureView;
 	/** the transparent pass's weighted colour sum ({@link TRANSPARENT_TARGETS}) */
 	transparent: GPUTextureView;
@@ -197,7 +198,12 @@ export class RenderTargets {
 			}),
 			create({ label: 'ambient', size: [width, height], format: HDR_FORMAT, usage }),
 			create({ label: 'reflection', size: [width, height], format: HDR_FORMAT, usage }),
-			create({ label: 'reflection normal', size: [width, height], format: REFLECTION_NORMAL_FORMAT, usage }),
+			create({
+				label: 'reflection surface',
+				size: [width, height],
+				format: REFLECTION_SURFACE_FORMAT,
+				usage,
+			}),
 		];
 		this.#transparent = [
 			create({ label: 'transparent', size: [width, height], format: HDR_FORMAT, usage }),
@@ -209,7 +215,7 @@ export class RenderTargets {
 			radianceTexture: this.#colors[0],
 			ambient: this.#colors[1].createView(),
 			reflection: this.#colors[2].createView(),
-			reflectionNormal: this.#colors[3].createView(),
+			reflectionSurface: this.#colors[3].createView(),
 			depth: this.#depth.createView(),
 			transparent: this.#transparent[0].createView(),
 			revealage: this.#transparent[1].createView(),
@@ -220,7 +226,7 @@ export class RenderTargets {
 
 	/** @returns bytes held by the targets (estimate; the swapchain counts as two buffers) */
 	get bytes(): number {
-		return this.width * this.height * (4 + 8 * 3 + 4 + 8 + 1) + this.outputWidth * this.outputHeight * 4 * 2;
+		return this.width * this.height * (4 + 8 * 4 + 8 + 1) + this.outputWidth * this.outputHeight * 4 * 2;
 	}
 
 	/** @returns the main pass's outputs */
