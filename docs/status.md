@@ -26,8 +26,7 @@ or renders correctly.
 - baked GI brightness is unverified against in-game shots; the native ambient scale is missing, and
   the lighting lookup has no jitter or forward-shifted clipmap centres. next: compare GPU clipmap
   samples with the bake at one point, and check clipmap seams (L0 repeats, L1 clamps)
-- several ambient, sky-LUT and exposure constants are computed in native engine code and not yet
-  recovered
+- several ambient and sky-LUT constants are computed in native engine code and not yet recovered
 - irradiance: only the base scenario is packed; scenario overlays, partial clipmap updates, the
   game's forward-shifted centres and jitter, fallback textures for cells without probes, the meaning
   of two index tables, and other index magics
@@ -37,10 +36,8 @@ or renders correctly.
   preview
 - environment volume initial enablement and `EnvironmentEnable` script conditions, needed before any
   automatic gating
-- auto exposure, froxel volumetric fog
+- froxel volumetric fog
 - interiors, in order of impact:
-  - no auto exposure: the game brightens dark interiors by up to 8 EV, the viewer keeps the level's
-    fixed exposure
   - bloom spreads bright emitters far wider than the game's; some thin emissive strips show as lines
     at silhouettes
   - normal-map roughness is read only when the mesh has tangents; normals are transformed by the

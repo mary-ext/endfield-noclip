@@ -30,6 +30,7 @@ import type { Vec3 } from '../scene/camera.ts';
 
 import { type ColorGradingInput, type Grading, NEUTRAL_GRADING, gradingLook } from './color-grading.ts';
 import { linearRgb, srgbToLinear } from './colour.ts';
+import { type AutoExposureInput, type AutoExposureSettings, autoExposureLook } from './exposure.ts';
 
 // #region profile input
 
@@ -160,6 +161,7 @@ export interface EnvironmentInput {
 	volumetricFog: HeightFogInput;
 	cloud: CloudInput | null;
 	colorGrading: ColorGradingInput;
+	autoExposure: AutoExposureInput;
 	post: PostInput | null;
 }
 
@@ -301,6 +303,7 @@ export interface Environment {
 		/** radians */
 		rotation: number;
 	} | null;
+	autoExposure: AutoExposureSettings;
 }
 
 /**
@@ -498,6 +501,19 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 			rounded: false,
 		},
 	},
+	// held at exposure 1
+	autoExposure: {
+		autoExposureMode: 1,
+		autoExposureManualEvCompensationAuto: 0,
+		autoExposureLerpUpSpeed: 1,
+		autoExposureLerpDownSpeed: 1,
+		autoExposureEv100Range: [-8, 4],
+		autoExposureEv100HistogramRange: [-8, 4],
+		autoExposureMeteringMode: 0,
+		autoExposurePixelLuminanceRange: [0.05, 0.95],
+		autoExposureEvClampRange: [0, 0],
+		autoExposureManualEvCompensationManual: 0,
+	},
 };
 
 const scaled = (c: Color, scale: number): Vec3 => [c[0] * scale, c[1] * scale, c[2] * scale];
@@ -693,6 +709,7 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 		post: postLook(source.post ?? DEFAULT_PROFILE.post),
 		grading: gradingLook(source.colorGrading),
 		cloud: cloudLook(source.cloud),
+		autoExposure: autoExposureLook(source.autoExposure),
 	};
 };
 

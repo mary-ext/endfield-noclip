@@ -976,7 +976,10 @@ export interface ColorGradingConfig {
 	colorCurvesEnabled: boolean;
 }
 
-/** `HGAutoExposureConfig`; mode 0 is fixed exposure from {@link LightConfig.directEV100} */
+/**
+ * `HGAutoExposureConfig`: the post exposure on top of {@link LightConfig.directEV100}'s. mode 0 meters the
+ * scene, 1 holds `2^autoExposureManualEvCompensationManual`; metering mode 0 averages, 1 weights the centre
+ */
 export interface AutoExposureConfig {
 	autoExposureMode: number;
 	autoExposureManualEvCompensationAuto: number;

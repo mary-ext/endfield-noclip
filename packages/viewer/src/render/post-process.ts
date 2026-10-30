@@ -9,6 +9,7 @@
 import { type SceneTextures, HDR_FORMAT } from '../gfx/render-targets.ts';
 import type { Camera } from '../scene/camera.ts';
 
+import { AutoExposure } from './auto-exposure.ts';
 import { type Environment, evaluateSh } from './environment.ts';
 import type { DebugView } from './frame-uniforms.ts';
 import atmosphereWgsl from './shaders/atmosphere.wgsl?raw';
@@ -44,6 +45,8 @@ export type Tonemapper = (typeof TONEMAPPERS)[number];
 export interface PostSettings {
 	/** exposure compensation, EV */
 	exposure: number;
+	/** follow the game's auto exposure on top of the compensation */
+	autoExposure: boolean;
 	tonemapper: Tonemapper;
 	sky: boolean;
 	fog: boolean;
@@ -63,6 +66,7 @@ const effectiveSettings = (settings: PostSettings): PostSettings => {
 	return {
 		...settings,
 		exposure: 0,
+		autoExposure: false,
 		tonemapper: 'none',
 		fog: false,
 		aerialPerspective: false,
@@ -71,6 +75,14 @@ const effectiveSettings = (settings: PostSettings): PostSettings => {
 		vignette: false,
 	};
 };
+
+/**
+ * @param settings the post settings
+ * @param autoExposure the auto exposure's state
+ * @returns the linear exposure the tonemap pass multiplies the scene by
+ */
+export const postExposure = (settings: PostSettings, autoExposure: AutoExposure): number =>
+	2 ** settings.exposure * (settings.autoExposure ? autoExposure.exposure : 1);
 
 /**
  * @param parts WGSL sources after the shared post ones
@@ -130,6 +142,8 @@ interface Sized {
 
 /** owns the post chain's targets, pipelines and uniforms */
 export class PostProcess {
+	/** the post exposure the game's auto exposure picks; the caller steps it each frame */
+	readonly autoExposure: AutoExposure;
 	#device: GPUDevice;
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(POST_BYTES / 4);
@@ -174,6 +188,7 @@ export class PostProcess {
 		environment: Environment,
 	) {
 		this.#device = device;
+		this.autoExposure = new AutoExposure(device);
 		this.#uniforms = device.createBuffer({
 			label: 'post uniforms',
 			size: POST_BYTES,
@@ -650,7 +665,7 @@ export class PostProcess {
 		const { bloom, ao, vignette } = environment.post;
 		set(23, [ao?.radius ?? 1, 1, ao?.power ?? 1, settings.ao && ao !== null ? 1 : 0]);
 		set(26, [
-			2 ** settings.exposure,
+			postExposure(settings, this.autoExposure),
 			settings.vignette && vignette !== null ? vignette.intensity : 0,
 			vignette?.smoothness ?? 0,
 			TONEMAPPERS.indexOf(settings.tonemapper),
@@ -732,6 +747,13 @@ export class PostProcess {
 				version: sized.version,
 			});
 		}
+		if (settings.autoExposure) {
+			this.autoExposure.encode(
+				encoder,
+				{ view: sized.sceneView, width, height },
+				this.#environment.autoExposure,
+			);
+		}
 		if (settings.bloom) {
 			for (const pass of sized.passes.down) {
 				this.#run(encoder, 'bloom down', pass);
@@ -757,5 +779,6 @@ export class PostProcess {
 		this.#skyView.destroy();
 		this.#skyMean.destroy();
 		this.#uniforms.destroy();
+		this.autoExposure.destroy();
 	}
 }

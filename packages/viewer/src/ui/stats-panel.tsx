@@ -11,6 +11,7 @@ export const StatsPanel = ({ viewer }: { viewer: Viewer }) => {
 		['frame', `${s.frameMs.toFixed(1)} ms`],
 		['cpu', `${s.cpuMs.toFixed(2)} ms`],
 		['gpu', s.gpuMs === null ? 'n/a' : `${s.gpuMs.toFixed(2)} ms`],
+		['auto exposure', `${s.autoExposureEv >= 0 ? '+' : ''}${s.autoExposureEv.toFixed(2)} EV`],
 		['draws (textured)', `${s.draws} (${s.texturedDraws})`],
 		['triangles', formatCount(s.triangles)],
 		['instances (meshes)', `${formatCount(s.instances)} (${formatCount(s.meshInstances)})`],

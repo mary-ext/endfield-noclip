@@ -191,18 +191,19 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 
 `#render` encodes one command buffer per frame. passes in order:
 
-| #   | pass                                           | when                                                                                                                              |
-| --- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `irradiance update 0–2` (compute)              | a clipmap level re-centred or got new cells ([`render/irradiance-volume.ts`](../packages/viewer/src/render/irradiance-volume.ts)) |
-| 2   | `shadow layer 0–3`                             | `shadows` on, a package loaded, `debugView` is `lit`                                                                              |
-| 3   | `main`                                         | always (empty without a package)                                                                                                  |
-| 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                              |
-| 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                          |
-| 6   | `ao depth`, `gtao`, `gtao blur`                | `ao` on and the environment has AO settings                                                                                       |
-| 7   | `composite`                                    | always                                                                                                                            |
-| 8   | scene copy + `water`                           | `water` on, `lit`, and visible water surfaces                                                                                     |
-| 9   | `bloom down` ×n, `bloom up` ×n                 | `bloom` on                                                                                                                        |
-| 10  | `tonemap`                                      | always, into the swapchain                                                                                                        |
+| #   | pass                                           | when                                                                                                                                                      |
+| --- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `irradiance update 0–2` (compute)              | a clipmap level re-centred or got new cells ([`render/irradiance-volume.ts`](../packages/viewer/src/render/irradiance-volume.ts))                         |
+| 2   | `shadow layer 0–3`                             | `shadows` on, a package loaded, `debugView` is `lit`                                                                                                      |
+| 3   | `main`                                         | always (empty without a package)                                                                                                                          |
+| 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                                                      |
+| 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                                                  |
+| 6   | `ao depth`, `gtao`, `gtao blur`                | `ao` on and the environment has AO settings                                                                                                               |
+| 7   | `composite`                                    | always                                                                                                                                                    |
+| 8   | scene copy + `water`                           | `water` on, `lit`, and visible water surfaces                                                                                                             |
+| 9   | `auto exposure histogram` (compute)            | `autoExposure` on, `lit`, the profile meters, and a readback buffer is free ([`render/auto-exposure.ts`](../packages/viewer/src/render/auto-exposure.ts)) |
+| 10  | `bloom down` ×n, `bloom up` ×n                 | `bloom` on                                                                                                                                                |
+| 11  | `tonemap`                                      | always, into the swapchain                                                                                                                                |
 
 details:
 
@@ -266,10 +267,11 @@ details:
 ## how the frame stays cheap
 
 - **redraw only when dirty.** `#tick` renders when the camera moved, the canvas resized, an option
-  or scene value changed (`#dirty`), the stream's `version` changed, or `continuous` is on. it
-  traverses without rendering while streaming is in progress (`!stream.idle`), and does nothing at
-  all when the view is still and streaming is idle. the environment re-blends only when the eye, its
-  settings or a fade changed.
+  or scene value changed (`#dirty`), the stream's `version` changed, the auto exposure is still
+  moving (or waiting on its first histogram), or `continuous` is on. it traverses without rendering
+  while streaming is in progress (`!stream.idle`), and does nothing at all when the view is still
+  and streaming is idle. the environment re-blends only when the eye, its settings or a fade
+  changed.
 - **stats** publish every 250 ms and notify subscribers only when the JSON differs, so the React
   panels don't re-render on a still view.
 - **one traversal, many passes.** selection runs once per frame; shadow layers reuse its buckets.
@@ -330,7 +332,8 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
   `environmentPhases`. `await import('/src/render/environment.ts')` gives `deriveEnvironment` for
   checking derived values against a profile.
 - scene states: `viewer.sceneValues`, `viewer.conditionResults`, `viewer.setSceneValue(id, value)`.
-- look: `viewer.options.exposure` (EV on top of the level's) and `viewer.options.debugView`
+- look: `viewer.options.exposure` (EV on top of the level's and the auto exposure's),
+  `viewer.options.autoExposure`, `viewer.stats.autoExposureEv` and `viewer.options.debugView`
   (`'clouds'` shows the raw cloud panorama).
 - `viewer.stats` (refreshed every 250 ms): draws, triangles, instances, residency, queue and request
   counters, `cpuMs`, `cpuPhases` and `gpuMs`.

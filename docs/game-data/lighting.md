@@ -119,8 +119,8 @@ the mask channel is 0 for no emission, 1 for the base colour's alpha, 2 for the 
 (two-texture) or the MRO map's alpha; the channel is remapped by `saturate((m − 0.05) / 0.9)`. the
 Hub's ceiling panels use mask channel 3. emission is multiplied by the albedo unless
 `_AlbedoAffectEmissive` is 1. `_IgnorePostExposure` emitters (nearly all) divide out the post
-exposure, so they keep their brightness however the exposure adapts; the viewer's exposure option
-stands in for the game's adapted exposure.
+exposure (the [auto exposure](#auto-exposure) times the viewer's exposure option), so they keep
+their brightness however the exposure adapts.
 
 not drawn: the animated variants' motion (they're drawn still), `_EmissiveType`'s extra G/B/A
 colours, the Fresnel term, emissive UV set 1, and per-instance emission overrides.
@@ -178,7 +178,32 @@ the game's froxel volumetric fog, local fog volumes and flow noise are not drawn
 | composite: AO on the ambient part, sky, fog                                                                                               | as above                                                                                               |
 | water                                                                                                                                     | see [water.md](water.md)                                                                               |
 | bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                    | post `bloom`: the high-quality tier's threshold (sRGB → linear, as URP does), intensity, scatter, tint |
-| tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode | post `vignette`; `colorGrading`; the viewer's exposure compensation                                    |
+| tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode | post `vignette`; `colorGrading`; the auto exposure and the viewer's exposure compensation              |
+
+### auto exposure
+
+on top of the fixed pre-exposure, the game adapts a post exposure to the view, following the
+profile's `autoExposure` section (blended across volumes like the rest)
+([`render/exposure.ts`](../../packages/viewer/src/render/exposure.ts),
+[`render/auto-exposure.ts`](../../packages/viewer/src/render/auto-exposure.ts)):
+
+- a 16-bin histogram of log2 luminance over `autoExposureEv100Range`, from every 16th pixel of the
+  composited scene before bloom, each sample split between its two nearest bins. metering mode 1
+  weights samples towards the screen's centre (`1 − 0.75 · (1 − 2^(−170.6 · r²))`, `r` from the
+  centre in uv).
+- the average counts each bin as its lower edge, clamped to `autoExposureEv100HistogramRange`, keeps
+  only the samples between the `autoExposurePixelLuminanceRange` fractions (5 % and 95 %) and
+  divides by all samples.
+- the target is `2^autoExposureManualEvCompensationAuto · 0.18 / clamp(2^average, 0.01, 8)`, or
+  `2^autoExposureManualEvCompensationManual` in mode 1, clamped to `2^autoExposureEvClampRange`.
+  nearly every profile clamps to 0…8 EV (the Hub's to −0.2…8), so daylight stays at the fixed
+  exposure and dark interiors brighten.
+- the exposure moves `clamp(speed · dt)` of the way to the target each frame, with
+  `autoExposureLerpUpSpeed` when brightening, else `autoExposureLerpDownSpeed`.
+
+the viewer reads the histogram back a frame or two late, as the game does, renders while the
+exposure moves, and jumps straight to the first reading after loading or switching levels. the stats
+panel shows the adjustment; the "auto exposure" toggle holds it at 0 EV.
 
 ### ambient occlusion
 
@@ -300,9 +325,6 @@ are sampled toroidally in `ambient_irradiance`.
 - the CPU packing of the diffuse-ambient scale, the irradiance volume's default SH (`skyAmbientSH`
   vs `customIVDefaultSH`), and the sky's absolute brightness. these live in native engine code; the
   viewer's ambient and sky brightness are approximations.
-- auto exposure: profiles meter a luminance histogram and allow brightening only (EV clamp 0 to 8 on
-  most), which lifts dark interiors in the game; the viewer keeps a fixed exposure, so interiors
-  read too dark while `_IgnorePostExposure` emitters keep their brightness.
 - the viewer's bloom spreads very bright emitters (ceiling panels) far wider than the game's.
 - irradiance scenarios, the index's pair table and trailing rows, directory words 1, 7 (high bits)
   and 8.

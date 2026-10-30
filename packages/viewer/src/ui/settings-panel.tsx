@@ -164,6 +164,7 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<Toggle viewer={viewer} name="ao" label="ambient occlusion" />
 				<Toggle viewer={viewer} name="bloom" label="bloom" />
 				<Toggle viewer={viewer} name="vignette" label="vignette" />
+				<Toggle viewer={viewer} name="autoExposure" label="auto exposure" />
 				<Toggle viewer={viewer} name="irradiance" label="baked GI" />
 			</fieldset>
 			<EnvironmentControls viewer={viewer} />

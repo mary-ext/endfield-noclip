@@ -39,7 +39,7 @@ import { RowKind, type RowKinds, type TierSpan } from './render/instance-rows.ts
 import { IrradianceVolume } from './render/irradiance-volume.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
-import { PostProcess, type Tonemapper } from './render/post-process.ts';
+import { type PostSettings, PostProcess, type Tonemapper, postExposure } from './render/post-process.ts';
 import { SHADOW_FORMAT, SHADOW_LAYERS, ShadowMap } from './render/shadow-map.ts';
 import { PAGE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
 import { type TextureBinding, TextureStore, placeholderView } from './render/texture-store.ts';
@@ -78,6 +78,8 @@ export interface ViewerOptions {
 	continuous: boolean;
 	/** exposure compensation on top of the level's exposure, EV */
 	exposure: number;
+	/** adapt the exposure to the view as the game's auto exposure does */
+	autoExposure: boolean;
 	tonemapper: Tonemapper;
 	sky: boolean;
 	fog: boolean;
@@ -115,6 +117,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	budgetMiB: 384,
 	continuous: false,
 	exposure: 0,
+	autoExposure: true,
 	tonemapper: 'game',
 	sky: true,
 	fog: true,
@@ -145,6 +148,8 @@ export interface ViewerStats {
 	gpuMs: number | null;
 	/** GPU time by pass label, ms; see {@link GpuProfiler.passes} for how far to trust it */
 	gpuPasses: Record<string, number>;
+	/** the auto exposure's adjustment, EV (0 when off) */
+	autoExposureEv: number;
 	draws: number;
 	triangles: number;
 	instances: number;
@@ -483,6 +488,7 @@ export class Viewer {
 		const showable = manifest.levels.filter((level) => level.instances > 0);
 		this.#level = showable.find((level) => level.id === initialLevel) ?? showable[0] ?? null;
 		selector.setLevel(this.#level?.tag ?? null);
+		this.#post.autoExposure.reset();
 		this.#water.setTable(pkg.water);
 		this.#applyEnvironment();
 		if (this.#level !== null) {
@@ -928,6 +934,7 @@ export class Viewer {
 		}
 		this.#level = level;
 		this.scene.selector.setLevel(level.tag);
+		this.#post.autoExposure.reset();
 		this.#applyEnvironment();
 		this.#flyOver(level);
 		this.#emitState();
@@ -1041,6 +1048,7 @@ export class Viewer {
 			cpuPhases: {},
 			gpuMs: null,
 			gpuPasses: {},
+			autoExposureEv: 0,
 			draws: 0,
 			triangles: 0,
 			instances: 0,
@@ -1084,7 +1092,13 @@ export class Viewer {
 		this.#span('controls');
 		const scene = this.scene;
 		const options = this.options;
-		let render = this.#dirty || moved || resized || options.continuous;
+		// keep rendering while the exposure adapts; each frame also meters the next
+		const post = this.#postSettings();
+		const adapting = this.#post.autoExposure.update(
+			post.autoExposure && post.debugView === 'lit' ? this.#environment.autoExposure : null,
+			dt,
+		);
+		let render = this.#dirty || moved || resized || options.continuous || adapting;
 		this.#dirty = false;
 		// with the view, the options and the resident content unchanged and nothing loading, the traversal
 		// would repeat the last frame's
@@ -1252,24 +1266,13 @@ export class Viewer {
 			}
 		}
 		pass.end();
-		const options = this.options;
 		this.#post.encode(encoder, {
 			scene: this.#targets.scene,
 			swapchain: this.#targets.swapchainView(),
 			camera: this.camera,
 			width: this.#targets.width,
 			height: this.#targets.height,
-			settings: {
-				exposure: options.exposure,
-				tonemapper: options.tonemapper,
-				sky: options.sky,
-				fog: options.fog,
-				aerialPerspective: options.aerialPerspective,
-				ao: options.ao,
-				bloom: options.bloom,
-				vignette: options.vignette,
-				debugView: options.debugView,
-			},
+			settings: this.#postSettings(),
 			frame: this.#frame,
 			water: this.#water,
 		});
@@ -1277,8 +1280,26 @@ export class Viewer {
 		this.#span('encode');
 		device.queue.submit([encoder.finish()]);
 		this.#profiler.afterSubmit();
+		this.#post.autoExposure.afterSubmit();
 		this.#span('submit');
 		return draws;
+	}
+
+	/** the post chain's settings, from the options; auto exposure needs a scene */
+	#postSettings(): PostSettings {
+		const options = this.options;
+		return {
+			exposure: options.exposure,
+			autoExposure: options.autoExposure && this.scene !== null,
+			tonemapper: options.tonemapper,
+			sky: options.sky,
+			fog: options.fog,
+			aerialPerspective: options.aerialPerspective,
+			ao: options.ao,
+			bloom: options.bloom,
+			vignette: options.vignette,
+			debugView: options.debugView,
+		};
 	}
 
 	#writeFrameUniforms(f32: Float32Array, u32: Uint32Array, { shadows }: { shadows: boolean }): void {
@@ -1303,9 +1324,8 @@ export class Viewer {
 			f32[FrameOffsets.sunColour + 3] = environment.sunSpecular;
 			f32.set(environment.sh, FrameOffsets.sh);
 			f32[FrameOffsets.ambient] = environment.indirectSpecular;
-			// the exposure option stands in for the game's adapted exposure, which emitters marked
-			// `_IgnorePostExposure` divide out
-			f32[FrameOffsets.ambient + 1] = 2 ** -this.options.exposure;
+			// emitters marked `_IgnorePostExposure` divide out the post exposure (the game's adapted exposure)
+			f32[FrameOffsets.ambient + 1] = 1 / postExposure(this.#postSettings(), this.#post.autoExposure);
 			f32[FrameOffsets.ambient + 2] = this.#reflection === this.#noReflection ? 0 : 1;
 			f32[FrameOffsets.ambient + 3] = this.#reflectionMips;
 		}
@@ -1365,6 +1385,7 @@ export class Viewer {
 			cpuPhases: Object.fromEntries(this.#cpuSpans),
 			gpuMs: this.#profiler.milliseconds,
 			gpuPasses: Object.fromEntries(this.#profiler.passes),
+			autoExposureEv: Math.log2(this.#post.autoExposure.exposure),
 			draws: this.#lastDraws,
 			triangles:
 				(this.options.terrain ? this.#terrain.patchCount * this.#terrain.patchTriangles : 0) +
