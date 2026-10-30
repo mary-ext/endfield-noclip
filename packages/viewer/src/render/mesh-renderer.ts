@@ -124,7 +124,7 @@ export class MeshRenderer {
 	#device: GPUDevice;
 	#layouts: BindLayouts;
 	#pipelines: PipelineCache;
-	#instances: GPUBindGroup;
+	#instances: { readonly bindGroup: GPUBindGroup };
 	#params: GPUBuffer;
 	#paramData = new Float32Array(MAX_DRAWS * DRAW_FLOATS);
 	#paramWords = new Uint32Array(this.#paramData.buffer);
@@ -152,14 +152,15 @@ export class MeshRenderer {
 	 * @param device the device
 	 * @param layouts shared layouts
 	 * @param pipelines pipeline cache
-	 * @param instances group 1: instance rows, block origins and the visible list
+	 * @param instances the owner of group 1 (instance rows, block origins and the visible list), asked for it
+	 *   on every encode since it changes when the rows grow
 	 * @param format the main pass's targets
 	 */
 	constructor(
 		device: GPUDevice,
 		layouts: BindLayouts,
 		pipelines: PipelineCache,
-		instances: GPUBindGroup,
+		instances: { readonly bindGroup: GPUBindGroup },
 		format: MainPassFormat,
 	) {
 		this.#device = device;
@@ -494,7 +495,7 @@ export class MeshRenderer {
 				}
 			}
 		}
-		pass.setBindGroup(1, this.#instances);
+		pass.setBindGroup(1, this.#instances.bindGroup);
 		pass.setBindGroup(2, this.#drawGroup);
 		let draws = 0;
 		for (const phase of phases) {

@@ -368,13 +368,7 @@ export class Viewer {
 			bc: gfx.features.textureCompressionBc,
 		});
 		this.#instances = new InstanceRenderer(device, this.#layouts, this.#pipelines, format, INSTANCE_ROWS);
-		this.#meshes = new MeshRenderer(
-			device,
-			this.#layouts,
-			this.#pipelines,
-			this.#instances.bindGroup,
-			format,
-		);
+		this.#meshes = new MeshRenderer(device, this.#layouts, this.#pipelines, this.#instances, format);
 		this.#post = new PostProcess(device, gfx.presentationFormat, this.#environment);
 		this.#water = new WaterRenderer(device);
 		this.#pool = new DecodePool(Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) >> 1)));

@@ -1,7 +1,8 @@
 /**
- * instance rows of every resident block live in one mega storage buffer, sub-allocated per block. each row
- * names its block's slot in a small origin table that is rebased to the eye every frame (camera-relative), so
- * no draw needs per-instance bindings.
+ * instance rows of every resident block live in one mega storage buffer, sub-allocated per block and grown as
+ * blocks stream in (a level holds a small fraction of the rows the buffer can grow to). each row names its
+ * block's slot in a small origin table that is rebased to the eye every frame (camera-relative), so no draw
+ * needs per-instance bindings.
  *
  * two ways to draw rows as boxes:
  *
@@ -15,8 +16,8 @@
  */
 
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
+import { GrowableBuffer } from '../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
-import { RangeAllocator } from '../gfx/range-allocator.ts';
 import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
 import type { DecodedInstances } from '../package/decode-protocol.ts';
 import type { Vec3 } from '../scene/camera.ts';
@@ -28,6 +29,8 @@ import { ROW_BYTES, assignBlockSlot } from './instance-rows.ts';
 import boxesWgsl from './shaders/instance-boxes.wgsl?raw';
 
 const BLOCK_SLOTS = 16_384;
+/** rows the mega buffer starts with (10 MiB) */
+const INITIAL_ROWS = 131_072;
 /** entries of the visible list */
 export const LIST_CAPACITY = 1 << 20;
 const BOX_FILL_VERTICES = 36;
@@ -46,13 +49,14 @@ type DrawMode = 'ranges' | 'list';
 
 /** owns the instance mega buffer, the block origin table, the visible list and the box pipelines */
 export class InstanceRenderer {
-	readonly capacityRows: number;
 	/** box instances submitted last frame */
 	instanceCount = 0;
 
 	#device: GPUDevice;
-	#rows: GPUBuffer;
-	#allocator: RangeAllocator;
+	#layout: GPUBindGroupLayout;
+	/** the rows buffer version {@link #bindGroup} binds */
+	#rowsVersion = -1;
+	#pool: GrowableBuffer;
 	#blocks: GPUBuffer;
 	#blockOrigins = new Float64Array(BLOCK_SLOTS * 3);
 	#blockData = new Float32Array(BLOCK_SLOTS * 4);
@@ -73,29 +77,27 @@ export class InstanceRenderer {
 	 * @param layouts shared layouts
 	 * @param pipelines pipeline cache
 	 * @param format the main pass's targets
-	 * @param capacityRows rows the mega buffer holds
+	 * @param maxRows rows the mega buffer can grow to
 	 */
 	constructor(
 		device: GPUDevice,
 		layouts: BindLayouts,
 		pipelines: PipelineCache,
 		format: MainPassFormat,
-		capacityRows: number,
+		maxRows: number,
 	) {
 		this.#device = device;
 		this.#pipelines = pipelines;
-		this.capacityRows = Math.min(
-			capacityRows,
-			Math.floor(device.limits.maxStorageBufferBindingSize / ROW_BYTES),
-		);
-		this.#allocator = new RangeAllocator(this.capacityRows);
+		this.#layout = layouts.instances;
 		for (let slot = BLOCK_SLOTS - 1; slot >= 0; slot--) {
 			this.#freeSlots.push(slot);
 		}
-		this.#rows = device.createBuffer({
+		this.#pool = new GrowableBuffer(device, {
 			label: 'instance rows',
-			size: this.capacityRows * ROW_BYTES,
-			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+			unitBytes: ROW_BYTES,
+			initialUnits: INITIAL_ROWS,
+			maxUnits: maxRows,
+			usage: GPUBufferUsage.STORAGE,
 		});
 		this.#blocks = device.createBuffer({
 			label: 'instance block origins',
@@ -107,15 +109,7 @@ export class InstanceRenderer {
 			size: this.#listData.byteLength,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 		});
-		this.#bindGroup = device.createBindGroup({
-			label: 'instances',
-			layout: layouts.instances,
-			entries: [
-				{ binding: 0, resource: { buffer: this.#rows } },
-				{ binding: 1, resource: { buffer: this.#blocks } },
-				{ binding: 2, resource: { buffer: this.#list } },
-			],
-		});
+		this.#bindGroup = this.#createBindGroup();
 
 		const module = pipelines.module('instance-boxes', FRAME_WGSL + boxesWgsl);
 		this.#keys = {
@@ -147,14 +141,33 @@ export class InstanceRenderer {
 		void pipelines.prepare(this.#keys.list.wire, () => describe(true, true));
 	}
 
-	/** @returns group 1 of the instance families (rows, block origins, visible list) */
+	#createBindGroup(): GPUBindGroup {
+		this.#rowsVersion = this.#pool.version;
+		return this.#device.createBindGroup({
+			label: 'instances',
+			layout: this.#layout,
+			entries: [
+				{ binding: 0, resource: { buffer: this.#pool.buffer } },
+				{ binding: 1, resource: { buffer: this.#blocks } },
+				{ binding: 2, resource: { buffer: this.#list } },
+			],
+		});
+	}
+
+	/**
+	 * @returns group 1 of the instance families (rows, block origins, visible list); a new group after the rows
+	 *   grew, so fetch it every frame
+	 */
 	get bindGroup(): GPUBindGroup {
+		if (this.#rowsVersion !== this.#pool.version) {
+			this.#bindGroup = this.#createBindGroup();
+		}
 		return this.#bindGroup;
 	}
 
-	/** @returns bytes of the fixed GPU allocations */
+	/** @returns bytes of the GPU allocations */
 	get poolBytes(): number {
-		return this.capacityRows * ROW_BYTES + this.#blockData.byteLength + this.#listData.byteLength;
+		return this.#pool.bytes + this.#blockData.byteLength + this.#listData.byteLength;
 	}
 
 	/**
@@ -164,20 +177,20 @@ export class InstanceRenderer {
 	 * @returns the residency, or `null` if there was no room
 	 */
 	upload(decoded: DecodedInstances): ResidentInstances | null {
-		const alloc = decoded.count > 0 ? this.#allocator.allocate(decoded.count) : { start: 0, count: 0 };
+		const alloc = decoded.count > 0 ? this.#pool.allocate(decoded.count) : { start: 0, count: 0 };
 		if (alloc === null) {
 			return null;
 		}
 		const slot = this.#freeSlots.pop();
 		if (slot === undefined) {
 			if (alloc.count > 0) {
-				this.#allocator.free(alloc);
+				this.#pool.free(alloc);
 			}
 			return null;
 		}
 		assignBlockSlot(decoded.rows, slot);
 		if (alloc.count > 0) {
-			this.#device.queue.writeBuffer(this.#rows, alloc.start * ROW_BYTES, decoded.rows);
+			this.#device.queue.writeBuffer(this.#pool.buffer, alloc.start * ROW_BYTES, decoded.rows);
 		}
 		this.#blockOrigins.set(decoded.origin, slot * 3);
 		this.#liveSlots = Math.max(this.#liveSlots, slot + 1);
@@ -197,7 +210,7 @@ export class InstanceRenderer {
 	/** @param resident a block from {@link upload}; its rows and slot are freed */
 	release(resident: ResidentInstances): void {
 		if (resident.alloc.count > 0) {
-			this.#allocator.free(resident.alloc);
+			this.#pool.free(resident.alloc);
 		}
 		this.#freeSlots.push(resident.blockSlot);
 	}
@@ -320,7 +333,7 @@ export class InstanceRenderer {
 			return 0;
 		}
 		pass.setPipeline(pipeline);
-		pass.setBindGroup(1, this.#bindGroup);
+		pass.setBindGroup(1, this.bindGroup);
 		if (this.#mode === 'list') {
 			pass.draw(vertices, this.instanceCount, 0, 0);
 			return 1;

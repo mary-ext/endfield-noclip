@@ -9,7 +9,7 @@
 
 import type { IrradianceTable } from '@endfield-noclip/package-format/format';
 
-import { RangeAllocator } from '../gfx/range-allocator.ts';
+import { GrowableBuffer } from '../gfx/growable-buffer.ts';
 import type { DecodedIrradiance } from '../package/decode-protocol.ts';
 import type { Vec3 } from '../scene/camera.ts';
 import type { ResidentIrradiance, StreamManager } from '../streaming/stream-manager.ts';
@@ -22,8 +22,12 @@ const SIZE = [128, 64, 128] as const;
 const SPACING = [0.5, 2, 8] as const;
 /** a level re-centres once the camera is this many texels from its centre (well within its fade margin) */
 const RECENTRE = 4;
-/** cell buffer size at most (bytes); the window of cells around the camera needs ~40 MB on map02 */
-const CELL_BUFFER_BYTES = 192 * 1024 ** 2;
+/**
+ * cell buffer size to start with and at most (bytes). the windows around the camera hold ~20–80 MB of cells,
+ * and the streaming budget bounds what stays resident besides
+ */
+const CELL_BUFFER_INITIAL = 32 * 1024 ** 2;
+const CELL_BUFFER_MAX = 192 * 1024 ** 2;
 /** stream priority of cells; coarse levels first, all ahead of scenery */
 const PRIORITY = [1e6, 2e6, 3e6] as const;
 
@@ -45,6 +49,8 @@ interface Level {
 	dirty: boolean;
 	a: GPUTexture;
 	b: GPUTexture;
+	/** the next coarser level's textures, which texels without a probe copy (any level's for the coarsest) */
+	coarse: { a: GPUTexture; b: GPUTexture };
 	uniforms: GPUBuffer;
 	group: GPUBindGroup;
 }
@@ -54,8 +60,10 @@ export class IrradianceVolume {
 	#device: GPUDevice;
 	/** blob index by cell key */
 	#cells: Map<number, number>;
-	#buffer: GPUBuffer;
-	#allocator: RangeAllocator;
+	/** the resident cells, in words */
+	#buffer: GrowableBuffer;
+	/** the cell buffer version the level groups bind */
+	#bufferVersion = 0;
 	#windows: GPUBuffer;
 	#pipeline: GPUComputePipeline;
 	#levels: Level[];
@@ -72,14 +80,14 @@ export class IrradianceVolume {
 		for (let i = 0; i < table.keys.length; i++) {
 			this.#cells.set(table.keys[i], table.blobs[i]);
 		}
-		const bytes =
-			table.keys.length === 0 ? 16 : Math.min(CELL_BUFFER_BYTES, device.limits.maxStorageBufferBindingSize);
-		this.#buffer = device.createBuffer({
+		const empty = table.keys.length === 0;
+		this.#buffer = new GrowableBuffer(device, {
 			label: 'irradiance cells',
-			size: bytes & ~3,
-			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+			unitBytes: 4,
+			initialUnits: empty ? 4 : CELL_BUFFER_INITIAL / 4,
+			maxUnits: empty ? 4 : CELL_BUFFER_MAX / 4,
+			usage: GPUBufferUsage.STORAGE,
 		});
-		this.#allocator = new RangeAllocator(bytes >> 2);
 		const module = device.createShaderModule({ label: 'irradiance update', code: updateWgsl });
 		this.#pipeline = device.createComputePipeline({
 			label: 'irradiance update',
@@ -110,7 +118,6 @@ export class IrradianceVolume {
 			size: windowWords.reduce((sum, n) => sum + n, 0) * 4,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 		});
-		const empty = table.keys.length === 0;
 		const textures = SPACING.map((_, level) => {
 			const texture = (label: string, height: number): GPUTexture =>
 				device.createTexture({
@@ -131,35 +138,40 @@ export class IrradianceVolume {
 			});
 			// the coarsest level has no coarser one and never reads it; any other level's textures fill the slot
 			const coarse = textures[level + 1] ?? textures[level - 1];
-			const group = device.createBindGroup({
-				layout: this.#pipeline.getBindGroupLayout(0),
-				entries: [
-					{ binding: 0, resource: { buffer: uniforms } },
-					{ binding: 1, resource: { buffer: this.#buffer } },
-					{ binding: 2, resource: { buffer: this.#windows } },
-					{ binding: 3, resource: a.createView() },
-					{ binding: 4, resource: b.createView() },
-					{ binding: 5, resource: coarse.a.createView() },
-					{ binding: 6, resource: coarse.b.createView() },
-					{ binding: 7, resource: this.sampler },
-					{ binding: 8, resource: this.clampSampler },
-				],
-			});
-			const size = windowSizes[level];
 			const out: Level = {
 				centre: null,
 				windowMin: [0, 0, 0],
-				windowSize: size,
+				windowSize: windowSizes[level],
 				slots: new Uint32Array(windowWords[level]),
 				windowBase,
 				dirty: true,
 				a,
 				b,
+				coarse,
 				uniforms,
-				group,
+				group: this.#levelGroup({ a, b, coarse, uniforms }),
 			};
 			windowBase += windowWords[level];
 			return out;
+		});
+		this.#bufferVersion = this.#buffer.version;
+	}
+
+	/** @returns a level's update group over the current cell buffer */
+	#levelGroup(level: Pick<Level, 'a' | 'b' | 'coarse' | 'uniforms'>): GPUBindGroup {
+		return this.#device.createBindGroup({
+			layout: this.#pipeline.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: { buffer: level.uniforms } },
+				{ binding: 1, resource: { buffer: this.#buffer.buffer } },
+				{ binding: 2, resource: { buffer: this.#windows } },
+				{ binding: 3, resource: level.a.createView() },
+				{ binding: 4, resource: level.b.createView() },
+				{ binding: 5, resource: level.coarse.a.createView() },
+				{ binding: 6, resource: level.coarse.b.createView() },
+				{ binding: 7, resource: this.sampler },
+				{ binding: 8, resource: this.clampSampler },
+			],
 		});
 	}
 
@@ -183,24 +195,24 @@ export class IrradianceVolume {
 	}
 
 	/**
-	 * copies a streamed cell into the cell buffer.
+	 * copies a streamed cell into the cell buffer, growing it if needed.
 	 *
 	 * @param decoded the cell
-	 * @returns its residency, or `null` if the buffer is full
+	 * @returns its residency, or `null` if the buffer is full at its largest
 	 */
 	upload(decoded: DecodedIrradiance): ResidentIrradiance | null {
 		const words = decoded.data.byteLength >> 2;
-		const alloc = this.#allocator.allocate(words);
+		const alloc = this.#buffer.allocate(words);
 		if (alloc === null) {
 			return null;
 		}
-		this.#device.queue.writeBuffer(this.#buffer, alloc.start * 4, decoded.data);
+		this.#device.queue.writeBuffer(this.#buffer.buffer, alloc.start * 4, decoded.data);
 		return { kind: 'irradiance', bytes: decoded.data.byteLength, alloc };
 	}
 
 	/** @param resident a cell's residency, freed */
 	release(resident: ResidentIrradiance): void {
-		this.#allocator.free(resident.alloc);
+		this.#buffer.free(resident.alloc);
 	}
 
 	/**
@@ -264,6 +276,12 @@ export class IrradianceVolume {
 	 */
 	encode(encoder: GPUCommandEncoder): void {
 		const device = this.#device;
+		if (this.#bufferVersion !== this.#buffer.version) {
+			this.#bufferVersion = this.#buffer.version;
+			for (const level of this.#levels) {
+				level.group = this.#levelGroup(level);
+			}
+		}
 		// coarse to fine, since finer levels copy coarser ones
 		let coarserChanged = false;
 		for (let index = this.#levels.length - 1; index >= 0; index--) {

@@ -65,8 +65,7 @@ or renders correctly.
 - GPU culling and indirect draws
 - per-cascade shadow caster culling and cascade caching
 - terrain pass cost, budget churn in dense areas
-- temporal antialiasing sharpening, and fixed GPU pools (irradiance cells, instance rows) sized far
-  above what levels use
+- temporal antialiasing sharpening
 - per-subtree level masks in the tile tree so traversal skips other levels
 - terrain outside the shown level is drawn bare; clipping or dimming it is undecided
 - teleport points as viewpoints: where the game stores them is unknown

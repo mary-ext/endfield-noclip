@@ -271,12 +271,17 @@ details:
   back to their untextured look.
 - **range allocator** ([`gfx/range-allocator.ts`](../packages/viewer/src/gfx/range-allocator.ts)):
   first-fit over units, with frees coalescing neighbours so streaming in and out doesn't fragment
-  the space without bound. it sub-allocates the instance-row mega storage buffer (1.5M rows, one
-  range per block) and the irradiance cell buffer. terrain height pages use a fixed slot pool (4096
-  slots); surface pages use a pair of BC3 texture arrays, one layer per page (1024 layers, or the
-  device's array-layer limit if lower; 34 MiB); detail pages use 256 slots of an RGBA8 control
-  array, a BC3 tint array and an index buffer (22 MiB); the package's layer textures get two BC7
-  arrays sized at load. geometry gets one vertex and one index buffer per blob.
+  the space without bound. it sub-allocates the instance-row mega storage buffer (one range per
+  block) and the irradiance cell buffer, both
+  [`GrowableBuffer`s](../packages/viewer/src/gfx/growable-buffer.ts): they start at 10 and 32 MiB
+  and, when a range doesn't fit, copy themselves into a buffer twice the size, up to 1.5M rows (114
+  MiB) and 192 MiB. a level holds 2–5 MiB of rows and 20–40 MiB of cells at the default budget, so
+  they rarely grow unless the budget is raised; they never shrink, since the budget bounds them.
+  owners rebuild their bind groups when the buffer's `version` changes. terrain height pages use a
+  fixed slot pool (4096 slots); surface pages use a pair of BC3 texture arrays, one layer per page
+  (1024 layers, or the device's array-layer limit if lower; 34 MiB); detail pages use 256 slots of
+  an RGBA8 control array, a BC3 tint array and an index buffer (22 MiB); the package's layer
+  textures get two BC7 arrays sized at load. geometry gets one vertex and one index buffer per blob.
 - **uniform ring** ([`gfx/uniform-ring.ts`](../packages/viewer/src/gfx/uniform-ring.ts)): one
   uniform buffer in 3 per-frame regions, sub-allocated at `minUniformBufferOffsetAlignment`. callers
   fill CPU views; `flush` uploads the frame's region in one `writeBuffer`, and draws bind group 0 at

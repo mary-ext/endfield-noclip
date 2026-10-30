@@ -13,20 +13,44 @@ export interface RangeAllocation {
 
 /** first-fit range allocator with coalescing frees */
 export class RangeAllocator {
-	readonly capacity: number;
+	#capacity: number;
 	/** free ranges sorted by start */
 	#free: RangeAllocation[];
 	#used = 0;
 
 	/** @param capacity units available */
 	constructor(capacity: number) {
-		this.capacity = capacity;
+		this.#capacity = capacity;
 		this.#free = capacity > 0 ? [{ start: 0, count: capacity }] : [];
+	}
+
+	/** @returns units available in all */
+	get capacity(): number {
+		return this.#capacity;
 	}
 
 	/** @returns units currently allocated */
 	get used(): number {
 		return this.#used;
+	}
+
+	/**
+	 * extends the range at its end; live allocations keep their places.
+	 *
+	 * @param capacity the new capacity, at least the current one
+	 */
+	grow(capacity: number): void {
+		const added = capacity - this.#capacity;
+		if (added <= 0) {
+			return;
+		}
+		const last = this.#free.at(-1);
+		if (last !== undefined && last.start + last.count === this.#capacity) {
+			this.#free[this.#free.length - 1] = { start: last.start, count: last.count + added };
+		} else {
+			this.#free.push({ start: this.#capacity, count: added });
+		}
+		this.#capacity = capacity;
 	}
 
 	/**
