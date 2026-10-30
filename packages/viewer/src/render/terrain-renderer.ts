@@ -11,6 +11,7 @@
 import type { TerrainDetailInfo } from '@endfield-noclip/package-format/format';
 
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
+import { GrowableBuffer } from '../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
 import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
 import type {
@@ -39,6 +40,8 @@ const GRID = QUADS / 2 + 1;
 /** u32 words per page slot (two samples per word) */
 const PAGE_WORDS = Math.ceil((PAGE_SIDE * PAGE_SIDE) / 2);
 const PAGE_BYTES = PAGE_WORDS * 4;
+/** height page slots the pool starts with (8 MiB); a level's view holds a few hundred pages */
+const INITIAL_HEIGHT_SLOTS = 1024;
 const PATCH_FLOATS = 20;
 const SHADOW_KEY = 'terrain/shadow';
 
@@ -102,7 +105,6 @@ const gridIndices = (): { fill: Uint16Array; wire: Uint16Array } => {
 
 /** owns the height and surface pools, patch buffer and terrain pipelines */
 export class TerrainRenderer {
-	readonly capacity: number;
 	/** whether surface pages can be drawn (the device has BC textures) */
 	readonly surfaces: boolean;
 	/** patches drawn last frame */
@@ -112,7 +114,10 @@ export class TerrainRenderer {
 
 	#device: GPUDevice;
 	#layout: GPUBindGroupLayout;
-	#heights: GPUBuffer;
+	/** height pages, one unit each */
+	#heights: GrowableBuffer;
+	/** the heights buffer version {@link #bindGroup} binds */
+	#heightsVersion = -1;
 	#albedo: GPUTexture;
 	#normal: GPUTexture;
 	#freeSurfaceSlots: number[] = [];
@@ -143,7 +148,6 @@ export class TerrainRenderer {
 	#fillCount: number;
 	#wireCount: number;
 	#bindGroup: GPUBindGroup;
-	#freeSlots: number[] = [];
 	#pipelines: PipelineCache;
 	#fillKey: string;
 	#wireKey: string;
@@ -153,8 +157,8 @@ export class TerrainRenderer {
 	 * @param layouts shared layouts
 	 * @param pipelines pipeline cache
 	 * @param format the main pass's targets
-	 * @param options `capacity`: height page slots; `bc`: whether the device has BC textures, without which
-	 *   surface pages aren't drawn
+	 * @param options `capacity`: height page slots the pool can grow to; `bc`: whether the device has BC
+	 *   textures, without which surface pages aren't drawn
 	 */
 	constructor(
 		device: GPUDevice,
@@ -163,18 +167,15 @@ export class TerrainRenderer {
 		format: MainPassFormat,
 		options: { capacity: number; bc: boolean },
 	) {
-		const { capacity } = options;
 		this.#device = device;
 		this.#pipelines = pipelines;
-		this.capacity = capacity;
 		this.surfaces = options.bc;
-		for (let slot = capacity - 1; slot >= 0; slot--) {
-			this.#freeSlots.push(slot);
-		}
-		this.#heights = device.createBuffer({
+		this.#heights = new GrowableBuffer(device, {
 			label: 'terrain heights',
-			size: capacity * PAGE_BYTES,
-			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+			unitBytes: PAGE_BYTES,
+			initialUnits: INITIAL_HEIGHT_SLOTS,
+			maxUnits: options.capacity,
+			usage: GPUBufferUsage.STORAGE,
 		});
 		// without BC the arrays are 1-layer placeholders, so the bind group stays valid
 		const surfaceSlots = this.surfaces ? Math.min(SURFACE_SLOTS, device.limits.maxTextureArrayLayers) : 0;
@@ -281,11 +282,12 @@ export class TerrainRenderer {
 	#createBindGroup(): GPUBindGroup {
 		const device = this.#device;
 		const layers = this.#layers ?? this.#placeholderLayers();
+		this.#heightsVersion = this.#heights.version;
 		return device.createBindGroup({
 			label: 'terrain',
 			layout: this.#layout,
 			entries: [
-				{ binding: 0, resource: { buffer: this.#heights } },
+				{ binding: 0, resource: { buffer: this.#heights.buffer } },
 				{ binding: 1, resource: { buffer: this.#patches } },
 				{ binding: 2, resource: array(this.#albedo) },
 				{ binding: 3, resource: array(this.#normal) },
@@ -496,26 +498,26 @@ export class TerrainRenderer {
 
 	/** @returns bytes of the fixed GPU allocations */
 	get poolBytes(): number {
-		return this.capacity * PAGE_BYTES + this.#patchData.byteLength + this.#surfaceBytes + this.#detailBytes;
+		return this.#heights.bytes + this.#patchData.byteLength + this.#surfaceBytes + this.#detailBytes;
 	}
 
 	/**
-	 * uploads a height page into a free slot.
+	 * uploads a height page into a free slot, growing the pool if needed.
 	 *
 	 * @param decoded the page
 	 * @param options `keepSamples` keeps the samples on the CPU, for ground-height queries
-	 * @returns the residency, or `null` if no slot was free
+	 * @returns the residency, or `null` if the pool is full at its largest
 	 * @throws {Error} if the page isn't {@link PAGE_SIDE} samples across
 	 */
 	upload(decoded: DecodedHeights, options: { keepSamples: boolean }): ResidentHeights | null {
 		if (decoded.side !== PAGE_SIDE) {
 			throw new Error(`height page side ${decoded.side} isn't ${PAGE_SIDE}`);
 		}
-		const slot = this.#freeSlots.pop();
+		const slot = this.#heights.allocate(1)?.start;
 		if (slot === undefined) {
 			return null;
 		}
-		this.#device.queue.writeBuffer(this.#heights, slot * PAGE_BYTES, decoded.samples);
+		this.#device.queue.writeBuffer(this.#heights.buffer, slot * PAGE_BYTES, decoded.samples);
 		return {
 			kind: 'heights',
 			bytes: PAGE_BYTES,
@@ -526,7 +528,7 @@ export class TerrainRenderer {
 
 	/** @param resident a page from {@link upload}; its slot returns to the pool */
 	release(resident: ResidentHeights): void {
-		this.#freeSlots.push(resident.slot);
+		this.#heights.free({ start: resident.slot, count: 1 });
 	}
 
 	/**
@@ -661,6 +663,9 @@ export class TerrainRenderer {
 		const pipeline = this.#pipelines.get(key);
 		if (pipeline === undefined || this.patchCount === 0) {
 			return 0;
+		}
+		if (this.#heightsVersion !== this.#heights.version) {
+			this.#bindGroup = this.#createBindGroup();
 		}
 		pass.setPipeline(pipeline);
 		pass.setBindGroup(1, this.#bindGroup);

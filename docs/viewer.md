@@ -273,13 +273,13 @@ details:
 - **range allocator** ([`gfx/range-allocator.ts`](../packages/viewer/src/gfx/range-allocator.ts)):
   first-fit over units, with frees coalescing neighbours so streaming in and out doesn't fragment
   the space without bound. it sub-allocates the instance-row mega storage buffer (one range per
-  block) and the irradiance cell buffer, both
-  [`GrowableBuffer`s](../packages/viewer/src/gfx/growable-buffer.ts): they start at 10 and 32 MiB
+  block), the irradiance cell buffer and the terrain height page pool (one unit per page), all
+  [`GrowableBuffer`s](../packages/viewer/src/gfx/growable-buffer.ts): they start at 10, 32 and 8 MiB
   and, when a range doesn't fit, copy themselves into a buffer twice the size, up to 1.5M rows (114
-  MiB) and 192 MiB. a level holds 2–5 MiB of rows and 20–40 MiB of cells at the default budget, so
-  they rarely grow unless the budget is raised; they never shrink, since the budget bounds them.
-  owners rebuild their bind groups when the buffer's `version` changes. terrain height pages use a
-  fixed slot pool (4096 slots); surface pages use a pair of BC3 texture arrays, one layer per page
+  MiB), 192 MiB and 4096 pages (33 MiB). a level's view holds 2–5 MiB of rows, 20–40 MiB of cells
+  and 4–7 MiB of heights, so they grow only as content from several views piles up under a large
+  budget; they never shrink, since the budget bounds them. owners rebuild their bind groups when the
+  buffer's `version` changes. surface pages use a pair of BC3 texture arrays, one layer per page
   (1024 layers, or the device's array-layer limit if lower; 34 MiB); detail pages use 256 slots of
   an RGBA8 control array, a BC3 tint array and an index buffer (22 MiB); the package's layer
   textures get two BC7 arrays sized at load. geometry gets one vertex and one index buffer per blob.
