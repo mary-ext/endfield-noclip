@@ -77,6 +77,9 @@ packs or renders correctly.
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
 - water foam, caustics and flow tiles (packed but unread); other fluid types are unverified
 - VFX and temporal smoothing. unsupported effect meshes are suppressed rather than drawn opaque
+- light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term, the cloud
+  mask and the sun disc that feeds them aren't drawn; unchecked against an in-game shot facing the
+  sun
 - the sky's celestial layers are unchecked against in-game shots
   ([beyond the atmosphere](game-data/lighting.md#beyond-the-atmosphere))
 - HLOD/detail, LOD and mip swaps pop without cross-fade; ground-blend and decal meshes z-fight

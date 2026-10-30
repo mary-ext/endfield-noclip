@@ -515,14 +515,15 @@ the volumetric fog's local fog volumes and flow noise are not drawn; its local l
 
 [`render/post-process.ts`](../../packages/viewer/src/render/post-process.ts), after the main pass:
 
-| pass                                                                                                                                      | inputs                                                                                    |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| GTAO, half resolution, depth-aware upsample ([`gtao.wgsl`](../../packages/viewer/src/render/shaders/gtao.wgsl))                           | post `ambientOcclusion`: see [below](#ambient-occlusion)                                  |
-| celestial: nebula, stars and planets at the sky pixels                                                                                    | `celestial`, `star`: see [beyond the atmosphere](#beyond-the-atmosphere)                  |
-| composite: AO on the ambient part, sky, fog                                                                                               | as above                                                                                  |
-| water                                                                                                                                     | see [water.md](water.md)                                                                  |
-| bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                    | post `bloom`: see [below](#bloom)                                                         |
-| tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode | post `vignette`; `colorGrading`; the auto exposure and the viewer's exposure compensation |
+| pass                                                                                                                                               | inputs                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| GTAO, half resolution, depth-aware upsample ([`gtao.wgsl`](../../packages/viewer/src/render/shaders/gtao.wgsl))                                    | post `ambientOcclusion`: see [below](#ambient-occlusion)                                  |
+| celestial: nebula, stars and planets at the sky pixels                                                                                             | `celestial`, `star`: see [beyond the atmosphere](#beyond-the-atmosphere)                  |
+| composite: AO on the ambient part, sky, fog                                                                                                        | as above                                                                                  |
+| water                                                                                                                                              | see [water.md](water.md)                                                                  |
+| light shafts: thresholded far pixels near the sun, radial blur ([`light-shafts.wgsl`](../../packages/viewer/src/render/shaders/light-shafts.wgsl)) | `lightShaft`: see [below](#light-shafts)                                                  |
+| bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                             | post `bloom`: see [below](#bloom)                                                         |
+| tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode          | post `vignette`; `colorGrading`; the auto exposure and the viewer's exposure compensation |
 
 ### auto exposure
 
@@ -548,6 +549,27 @@ profile's `autoExposure` section (blended across volumes like the rest)
 the viewer reads the histogram back a frame or two late, as the game does, renders while the
 exposure moves, and jumps straight to the first reading after loading or switching levels. the stats
 panel shows the adjustment; the "auto exposure" toggle holds it at 0 EV.
+
+### light shafts
+
+the game's sun shafts are Unreal's light shaft bloom
+([`render/light-shafts.ts`](../../packages/viewer/src/render/light-shafts.ts)), added onto the
+composited scene before temporal antialiasing, so the auto exposure meters them:
+
+- they run while `lightShaft.enable` is set and the sun is in front of the camera. the sun is the
+  light config's `rotationLightShaft`, projected to the screen without clamping, so a sun just off
+  screen still casts shafts into the view.
+- a target at half the render size (the game's `lightShaftDownSampleFactor` 2 on PC) keeps
+  `colour / luminance · clamp(luminance − bloomThreshold, 0, bloomMaxBrightness) · 2 · bloomScale · bloomTint`
+  of each pixel, only where the view depth is beyond half of `occlusionDepthRange` (ramping in over
+  the range), faded towards the screen's edges and by `(1 − 2·|sun − uv|)²` away from the sun.
+- three blur passes (`lightShaftBlurPassCount`) each average 12 samples (`lightShaftSampleNum`) on
+  the way to the sun, reaching `min(blurIntensity · 0.1 · 4.8^pass, 1)` of the distance.
+- the last blur is added to the scene's colour.
+
+the occlusion-term variant (`enableOcclusion`) and the cloud mask (`enableLightShaftCloudMask`)
+aren't drawn. without the sun disc, which the viewer doesn't draw, only bright fog and sky near the
+sun pass the threshold.
 
 ### bloom
 
@@ -698,9 +720,9 @@ are sampled toroidally in `ambient_irradiance`.
 - the volumetric fog's grid size, depth distribution and history weight come from quality presets
   that aren't recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient
   probe without the native diffuse-ambient scale.
-- not rendered: light shafts, lens flare, the moon's sky-wide ring (`HG_RING`), the sun disc,
-  aurora, local reflection probes, local light shadows and light beams, precipitation (rain
-  wetness does render: [environment](environment.md#wetness)).
+- not rendered: lens flare, the moon's sky-wide ring (`HG_RING`), the sun disc, aurora, local
+  reflection probes, local light shadows and light beams, precipitation (rain wetness does render:
+  [environment](environment.md#wetness)).
 - celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' ring thinning
   the stars, their blend modes (the viewer always adds them), and the brightness of the ray-traced
   planet's light (taken as the viewer's pre-exposed sun) are unchecked against a shot.

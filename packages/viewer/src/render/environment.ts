@@ -18,6 +18,7 @@ import type {
 	FogConfig,
 	HeightFogLayers,
 	LightConfig,
+	LightShaftConfig,
 	ScreenSpaceReflectionSettings,
 	ShadowConfig,
 	SkyConfig,
@@ -50,6 +51,7 @@ export type LightInput = Pick<
 	| 'rotationAtmosphere'
 	| 'rotationCloudShadow'
 	| 'rotationHeightFogDirectionalInscattering'
+	| 'rotationLightShaft'
 >;
 
 /** the parts of the game's sky config the viewer reads */
@@ -180,6 +182,18 @@ export type ShadowInput = Pick<
 	| 'csmSimulatedAttenuation'
 >;
 
+/** the parts of the game's light shaft config the viewer reads */
+export type LightShaftInput = Pick<
+	LightShaftConfig,
+	| 'enable'
+	| 'bloomScale'
+	| 'bloomThreshold'
+	| 'bloomMaxBrightness'
+	| 'bloomTint'
+	| 'blurIntensity'
+	| 'occlusionDepthRange'
+>;
+
 /** what the viewer reads of an environment profile; extra fields are ignored */
 export interface EnvironmentInput {
 	name: string;
@@ -194,6 +208,7 @@ export interface EnvironmentInput {
 	cloud: CloudInput | null;
 	colorGrading: ColorGradingInput;
 	autoExposure: AutoExposureInput;
+	lightShaft: LightShaftInput;
 	post: PostInput | null;
 }
 
@@ -412,6 +427,25 @@ export interface Environment {
 		projection: Vec3;
 	} | null;
 	autoExposure: AutoExposureSettings;
+	/** screen-space sun shafts, or `null` when off */
+	lightShaft: LightShaftLook | null;
+}
+
+/** the game's screen-space sun shafts (`HGLightShaftConfig`) as the light shaft passes take them */
+export interface LightShaftLook {
+	/** unit vector towards the sun the shafts radiate from */
+	sunDirection: Vec3;
+	bloomScale: number;
+	/** scene luminance (pre-exposed) above which pixels cast shafts */
+	threshold: number;
+	/** cap on the luminance above the threshold */
+	maxBrightness: number;
+	/** raw colour */
+	tint: Vec3;
+	/** how far each blur pass reaches towards the sun */
+	blurIntensity: number;
+	/** metres; only what lies beyond half of it casts shafts */
+	occlusionDepthRange: number;
 }
 
 /**
@@ -532,6 +566,7 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 		rotationAtmosphere: IDENTITY,
 		rotationCloudShadow: IDENTITY,
 		rotationHeightFogDirectionalInscattering: IDENTITY,
+		rotationLightShaft: IDENTITY,
 	},
 	shadow: {
 		csmIntensity: 1,
@@ -598,6 +633,15 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 	},
 	cloud: null,
 	colorGrading: NEUTRAL_GRADING,
+	lightShaft: {
+		enable: false,
+		bloomScale: 0,
+		bloomThreshold: 1,
+		bloomMaxBrightness: 1,
+		bloomTint: [1, 1, 1, 1],
+		blurIntensity: 0,
+		occlusionDepthRange: 5000,
+	},
 	post: {
 		bloom: {
 			resolutionHighQuality: 2,
@@ -821,6 +865,22 @@ const volumetricFogLook = (
 	};
 };
 
+/** LightShaftPassConstructor.LightShaftPass: the shafts radiate from the light shaft rotation's light */
+const lightShaftLook = (config: LightShaftInput, light: LightInput): LightShaftLook | null => {
+	if (!config.enable) {
+		return null;
+	}
+	return {
+		sunDirection: towardsRotatedLight(light.rotationLightShaft),
+		bloomScale: config.bloomScale,
+		threshold: config.bloomThreshold,
+		maxBrightness: config.bloomMaxBrightness,
+		tint: [config.bloomTint[0], config.bloomTint[1], config.bloomTint[2]],
+		blurIntensity: config.blurIntensity,
+		occlusionDepthRange: config.occlusionDepthRange,
+	};
+};
+
 /** HGAtmosphereRenderer.SetupShaderVariablesGlobalAtmosphereFog */
 const atmosphereFogLook = (source: EnvironmentInput, sunIntensity: number): AtmosphereFog | null => {
 	const { fog, atmosphere, light } = source;
@@ -913,6 +973,7 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 		cloud: cloudLook(source.cloud),
 		cloudShadow: cloudShadowLook(source.cloud, light),
 		autoExposure: autoExposureLook(source.autoExposure),
+		lightShaft: lightShaftLook(source.lightShaft, light),
 	};
 };
 

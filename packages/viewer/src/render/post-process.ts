@@ -14,6 +14,7 @@ import { AutoExposure } from './auto-exposure.ts';
 import { CelestialLayer } from './celestial.ts';
 import { type Environment, evaluateSh } from './environment.ts';
 import type { DebugView } from './frame-uniforms.ts';
+import { LightShafts } from './light-shafts.ts';
 import { ScreenSpaceReflections } from './screen-space-reflections.ts';
 import atmosphereWgsl from './shaders/atmosphere.wgsl?raw';
 import bloomWgsl from './shaders/bloom.wgsl?raw';
@@ -187,6 +188,7 @@ export class PostProcess {
 	readonly celestial: CelestialLayer;
 	/** the screen-space reflections; the caller resets their history on cuts */
 	readonly reflections: ScreenSpaceReflections;
+	#lightShafts: LightShafts;
 	#device: GPUDevice;
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(POST_BYTES / 4);
@@ -287,6 +289,7 @@ export class PostProcess {
 			device.createShaderModule({ label, code: postShaderSource(parts) });
 		this.taa = new TemporalAA(device, module('taa', [taaWgsl]));
 		this.reflections = new ScreenSpaceReflections(device, module('ssr', [ssrWgsl]), this.#uniforms);
+		this.#lightShafts = new LightShafts(device);
 		const atmosphere = module('atmosphere', [atmosphereWgsl]);
 		const gtao = module('gtao', [gtaoWgsl]);
 		const composite = module('composite', [atmosphereWgsl, skyWgsl, compositeWgsl]);
@@ -433,7 +436,8 @@ export class PostProcess {
 			pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) +
 			outputPixels * 8 * (2 / 3) +
 			this.taa.bytes +
-			this.reflections.bytes
+			this.reflections.bytes +
+			this.#lightShafts.bytes
 		);
 	}
 
@@ -547,6 +551,7 @@ export class PostProcess {
 		this.taa.resize({ scene: sceneView, depth: scene.depth, width, height, outputWidth, outputHeight });
 		// the reflections run before compositing, so the scene they read still holds last frame's
 		this.reflections.resize({ scene, previousScene: sceneView, width, height });
+		this.#lightShafts.resize({ scene, composited: sceneView, width, height });
 		const histories = this.taa.histories;
 		// the game's chain: sized as if the view were at most 1080 px tall, the first level at half that size,
 		// with as many levels as half-resolution bloom gets (quarter resolution runs one fewer)
@@ -951,6 +956,13 @@ export class PostProcess {
 				version: sized.version,
 			});
 		}
+		if (settings.debugView === 'lit') {
+			this.#lightShafts.encode(encoder, {
+				camera,
+				aspect: width / height,
+				look: this.#environment.lightShaft,
+			});
+		}
 		const resolved = this.taa.encode(encoder, { camera, postGroup: sized.passes.taa });
 		if (settings.autoExposure) {
 			this.autoExposure.encode(
@@ -991,5 +1003,6 @@ export class PostProcess {
 		this.autoExposure.destroy();
 		this.taa.destroy();
 		this.reflections.destroy();
+		this.#lightShafts.destroy();
 	}
 }

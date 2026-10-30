@@ -29,7 +29,7 @@ the extractor reads these sections
 | `volumetricFogConfig` | `volumetricFog` | volumetric fog, and its own height-fog set used while it's on |
 | `cloudConfig`         | `cloud`         | cloud panorama                                                |
 | `windConfig`          | `wind`          | packed, not used                                              |
-| `lightShaftConfig`    | `lightShaft`    | packed, not used                                              |
+| `lightShaftConfig`    | `lightShaft`    | sun shafts                                                    |
 | `colorGradingConfig`  | `colorGrading`  | grading                                                       |
 | `autoExposureConfig`  | `autoExposure`  | packed, not used                                              |
 | `shadowConfig`        | `shadow`        | sun shadow softness, strength, penumbra ramp, sun-off         |
