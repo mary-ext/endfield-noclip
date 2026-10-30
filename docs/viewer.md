@@ -198,10 +198,11 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 - **uploading.** at most 24 MiB per frame, pinned first, then by priority. decoded content nobody
   has wanted for 30 frames is dropped instead. a full pool evicts up to 16 older, lower-priority
   blobs of the same kind and retries.
-- **budget.** resident bytes of all kinds count against `budgetMiB` (default 384). over budget, the
-  least recently used unpinned blobs not used this frame are evicted. if the budget is still
-  exceeded by content in use, the manager is _saturated_: unpinned fetches and uploads pause until
-  something falls out of use, because evicting fresh uploads only to refetch them would thrash.
+- **budget.** resident bytes of all kinds count against `budgetMiB` (default 768, since the densest
+  views, such as Wuling City at street level, want 550–700 MiB). over budget, the least recently
+  used unpinned blobs not used this frame are evicted. if the budget is still exceeded by content in
+  use, the manager is _saturated_: unpinned fetches and uploads pause until something falls out of
+  use, because evicting fresh uploads only to refetch them would thrash.
 - `version` is bumped on every upload and eviction; the frame loop redraws on a change.
 
 ## the render frame

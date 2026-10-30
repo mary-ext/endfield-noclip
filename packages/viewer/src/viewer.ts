@@ -127,7 +127,8 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	terrainPixels: 3,
 	minBoxPixels: 1.5,
 	outlineMetres: 60,
-	budgetMiB: 384,
+	// the densest views (Wuling City at street level) want ~550–700 MiB of content
+	budgetMiB: 768,
 	textureBias: 0,
 	continuous: false,
 	antialiasing: true,

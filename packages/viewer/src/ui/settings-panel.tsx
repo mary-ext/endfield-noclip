@@ -236,9 +236,9 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				viewer={viewer}
 				name="budgetMiB"
 				label="memory budget"
-				min={16}
-				max={1024}
-				step={16}
+				min={64}
+				max={2048}
+				step={64}
 				unit="MiB"
 			/>
 			<Slider
