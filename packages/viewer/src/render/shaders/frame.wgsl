@@ -514,7 +514,7 @@ fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_colour: vec
 	return min(sum, vec3f(255.0));
 }
 
-// the local lights scattered towards the camera by the froxel fog at a camera-relative point: each light's colour,
+// the local lights scattered towards the camera by the volumetric fog at a camera-relative point: each light's colour,
 // falloff and per-light volumetric intensity through a Henyey-Greenstein phase of anisotropy `g` along `ray`
 // (towards the point)
 fn local_fog_lighting(rel: vec3f, px: vec2f, ray: vec3f, g: f32) -> vec3f {

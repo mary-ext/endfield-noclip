@@ -74,7 +74,7 @@ export interface ChunkLight {
 	softSourceRadius: number;
 	/** the distance falloff's exponent; negative for inverse square with a smooth window */
 	falloffExponent: number;
-	/** the froxel fog's multiplier on this light */
+	/** the volumetric fog's multiplier on this light */
 	volumetricScatteringIntensity: number;
 	/** sorts lights of equal camera distance */
 	priority: number;

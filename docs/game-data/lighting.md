@@ -120,7 +120,7 @@ mixed, light directly, as in the game.
 | culling and falloff distance                                  | the colour fades with camera distance, linearly in squared distance, from the falloff distance to nothing at the culling distance                                         |
 | soft source radius `s`                                        | widens the lobe: `α += saturate(s / d)² / (3.6 v·h + 0.4)`                                                                                                                |
 | specular intensity                                            | scales the specular lobe                                                                                                                                                  |
-| volumetric scattering intensity                               | scales the light in the froxel fog                                                                                                                                        |
+| volumetric scattering intensity                               | scales the light in the volumetric fog                                                                                                                                    |
 
 the game's lobe for these lights (and for its sun) is GGX with the height-correlated Smith
 visibility and Schlick Fresnel, but without the 1/π in the distribution and the Lambert term and
@@ -138,7 +138,7 @@ in the view, sorts them by camera distance then priority and keeps the nearest 2
 light list does. it bins them the game's way: 32 px screen tiles and 1 m view-depth slices from the
 near plane (2048 of them), each a 256-bit mask; a pixel walks the lights set in both its tile's and
 its slice's mask. the viewer bins conservative bounding spheres on the CPU; the game does it in
-compute shaders. the froxel fog lights each froxel with the same lists, through the fog's
+compute shaders. the volumetric fog lights each froxel with the same lists, through the fog's
 Henyey-Greenstein phase times each light's volumetric intensity.
 
 not drawn: local light shadows (972 map02 lights cast them in the game), shadow-only lights, cookies
@@ -248,7 +248,7 @@ the sky is fogged as if at `sky.skyDistance`.
 
 ## fog
 
-two analytic fogs and the froxel fog in front of them, applied in
+two analytic fogs and the volumetric fog in front of them, applied in
 [`shaders/sky.wgsl`](../../packages/viewer/src/render/shaders/sky.wgsl) by the composite (opaque
 surfaces and sky) and water passes, in the game's order: the atmosphere fog first, then the height
 fog over it, then the froxels.
@@ -265,8 +265,8 @@ fog over it, then the froxels.
   radiance. while `volumetricFogConfig.enable` is set (the PC path) the game takes the layers from
   the volumetric section's own height-fog set, which often differs a lot from `heightFogConfig`'s;
   on/off still follows `heightFogConfig.enable`.
-- **froxel fog** (`volumetricFogConfig`, when `enable`): a grid over the view whose slices are
-  spaced logarithmically in view depth from `volumetricFogStartDistance` out to
+- **volumetric fog** (`volumetricFogConfig`, when `enable`): a froxel grid over the view whose
+  slices are spaced logarithmically in view depth from `volumetricFogStartDistance` out to
   `volumetricFogDistance`, computed each frame by a compute pass
   ([`volumetric-fog.ts`](../../packages/viewer/src/render/volumetric-fog.ts)). each froxel takes the
   height fog's layer density at its height, halved and times `volumetricFogExtinctionScale`, as
@@ -286,7 +286,7 @@ fog over it, then the froxels.
     antialiasing averages them; the game also reprojects the grid's history, which the viewer
     doesn't.
 
-the froxel fog's local fog volumes and flow noise are not drawn; its local lights are (see
+the volumetric fog's local fog volumes and flow noise are not drawn; its local lights are (see
 [local lights](#local-lights)), unshadowed.
 
 ## post chain
@@ -368,9 +368,9 @@ tonemapper the game ships besides none; every profile sets `tonemappingMode` 5).
 aren't packed and stay neutral; no shipped profile enables the external lookup texture. the viewer
 also offers Khronos PBR Neutral and a clamp, for separating lighting errors from grading.
 
-the viewer's toggles for sky, fog, aerial perspective, AO, bloom and vignette, and its debug views
-(albedo, normals, roughness, ambient only, raw cloud panorama), turn passes off without touching the
-profile.
+the viewer's toggles for sky, height fog, atmosphere fog, AO, bloom and vignette, and its debug
+views (albedo, normals, roughness, ambient only, raw cloud panorama), turn passes off without
+touching the profile.
 
 ## irradiance volume format
 
@@ -472,9 +472,9 @@ are sampled toroidally in `ambient_irradiance`.
   viewer's ambient and sky brightness are approximations.
 - irradiance scene-state bakes, the index's pair table and trailing rows, directory words 1, 7 (high
   bits) and 8.
-- the froxel fog's grid size and depth distribution come from quality presets that aren't recovered
-  (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without the native
-  diffuse-ambient scale.
+- the volumetric fog's grid size and depth distribution come from quality presets that aren't
+  recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without
+  the native diffuse-ambient scale.
 - not rendered: light shafts, lens flare, cloud shadows, celestial bodies, stars and aurora, local
   reflection probes, SSR, local light shadows and light beams, precipitation and wetness.
 - the sun's units: the game shades its sun with the same lobe as local lights (no 1/π on diffuse),

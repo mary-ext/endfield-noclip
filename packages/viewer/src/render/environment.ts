@@ -99,7 +99,7 @@ export type HeightFogInput = Pick<
 	| 'heightFogDirectionalInscattering'
 >;
 
-/** `HGVolumetricFogConfig`: its height-fog set plus the froxel fog's own parameters */
+/** `HGVolumetricFogConfig`: its height-fog set plus the volumetric fog's own parameters */
 export type VolumetricFogInput = HeightFogInput &
 	Pick<
 		HeightFogLayers,
@@ -180,7 +180,7 @@ export interface EnvironmentInput {
 	atmosphere: AtmosphereInput;
 	fog: FogInput;
 	heightFog: HeightFogInput;
-	/** the froxel fog, and its own height-fog set, which the game uses while volumetric fog is on */
+	/** the volumetric fog, and its own height-fog set, which the game uses while volumetric fog is on */
 	volumetricFog: VolumetricFogInput;
 	cloud: CloudInput | null;
 	colorGrading: ColorGradingInput;
@@ -239,8 +239,8 @@ export interface HeightFog {
 }
 
 /**
- * the game's froxel fog: the height fog's layers as a participating medium, lit by the sun (shadowed), the
- * ambient probe and its own emission, between `startDistance` and `distance` metres of view depth. the
+ * the game's volumetric fog: the height fog's layers as a participating medium, lit by the sun (shadowed),
+ * the ambient probe and its own emission, between `startDistance` and `distance` metres of view depth. the
  * analytic height fog covers only what lies beyond `distance`
  */
 export interface VolumetricFog {
@@ -248,7 +248,7 @@ export interface VolumetricFog {
 	distance: number;
 	/** view depth (m) nearer than which there is no fog at all */
 	startDistance: number;
-	/** metres over which the froxel fog fades in from its first slice */
+	/** metres over which the volumetric fog fades in from its first slice */
 	nearFadeIn: number;
 	/** Henyey-Greenstein anisotropy */
 	anisotropy: number;
@@ -349,8 +349,8 @@ export interface Environment {
 	atmosphere: Atmosphere;
 	/** the atmosphere fog, or `null` when off */
 	atmosphereFog: AtmosphereFog | null;
-	fog: HeightFog;
-	/** the froxel fog in front of the height fog, or `null` when off */
+	heightFog: HeightFog;
+	/** the volumetric fog in front of the height fog, or `null` when off */
 	volumetricFog: VolumetricFog | null;
 	/** metres to the sky dome, for fogging the sky */
 	skyDistance: number;
@@ -808,7 +808,7 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 		},
 		atmosphereFog: atmosphereFogLook(source, intensity),
 		// with volumetric fog on (the PC path) the game reads the volumetric section's own height-fog set
-		fog: {
+		heightFog: {
 			...heightFogLook(volumetricFog.enable ? volumetricFog : heightFog, light),
 			enabled: heightFog.enable,
 		},

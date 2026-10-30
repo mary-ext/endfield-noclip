@@ -52,9 +52,9 @@ struct Post {
 	bloom: vec4f,
 	// bloom tint (luminance 1), w = intensity (2^intensity − 1)
 	bloom_tint: vec4f,
-	// exposure multiplier, vignette intensity, vignette smoothness, tonemapper (0 game, 1 neutral, 2 none)
+	// exposure multiplier, vignette intensity, vignette smoothness, tonemapper (0 game, 1 PBR Neutral, 2 none)
 	grade: vec4f,
-	// x = sky, y = height fog, z = aerial perspective, w = bloom
+	// x = sky, y = height fog, z = atmosphere fog, w = bloom
 	flags: vec4u,
 	// ambient occlusion falloff (fraction of the radius), sample distribution power, thin-occluder compensation
 	ao_shape: vec4f,
@@ -107,9 +107,9 @@ struct Post {
 	bloom_shape: vec4f,
 	// xy = the main pass's subpixel jitter (NDC) for temporal antialiasing, zw unused
 	jitter: vec4f,
-	// froxel fog slice of view depth z: log2(z · x + y) · z = the texture's w; w = the depth it covers (m), 0 when off
+	// volumetric fog slice of view depth z: log2(z · x + y) · z = the texture's w; w = the depth it covers (m), 0 when off
 	froxel_slices: vec4f,
-	// x = view depth (m) nearer than which there is no froxel fog, yzw unused
+	// x = view depth (m) nearer than which there is no volumetric fog, yzw unused
 	froxel_range: vec4f,
 }
 

@@ -1,5 +1,5 @@
 /**
- * the passes after the main pass: sky LUTs, ground-truth AO, compositing (AO, sky, aerial perspective, height
+ * the passes after the main pass: sky LUTs, ground-truth AO, compositing (AO, sky, atmosphere fog, height
  * fog), water, temporal antialiasing, bloom and tonemapping into the swapchain. everything up to the temporal
  * resolve runs at the render size, everything after it at the output size. every pass is a fullscreen
  * triangle; pipelines use `auto` layouts, so each bind group holds exactly the bindings its pass reads.
@@ -52,9 +52,10 @@ const bloomLevelCount = (width: number, height: number, half: boolean): number =
 
 /**
  * the tonemapping curves the final pass offers, in the order of their `Post.grade.w` codes: the game's
- * modified ACES, Khronos PBR Neutral, or a clamp. the game's colour grading applies under the first two
+ * modified ACES (its `TonemappingMode.ACES_modified`), Khronos PBR Neutral (not the game's own `Neutral`
+ * mode), or a clamp. the game's colour grading applies under the first two
  */
-export const TONEMAPPERS = ['game', 'neutral', 'none'] as const;
+export const TONEMAPPERS = ['game', 'pbr neutral', 'none'] as const;
 
 export type Tonemapper = (typeof TONEMAPPERS)[number];
 
@@ -66,8 +67,8 @@ export interface PostSettings {
 	autoExposure: boolean;
 	tonemapper: Tonemapper;
 	sky: boolean;
-	fog: boolean;
-	aerialPerspective: boolean;
+	heightFog: boolean;
+	atmosphereFog: boolean;
 	ao: boolean;
 	bloom: boolean;
 	vignette: boolean;
@@ -85,8 +86,8 @@ const effectiveSettings = (settings: PostSettings): PostSettings => {
 		exposure: 0,
 		autoExposure: false,
 		tonemapper: 'none',
-		fog: false,
-		aerialPerspective: false,
+		heightFog: false,
+		atmosphereFog: false,
 		ao: false,
 		bloom: false,
 		vignette: false,
@@ -204,14 +205,14 @@ export class PostProcess {
 	#cloud: TextureBinding;
 	#noCloud: TextureBinding;
 	#lutsReady = false;
-	/** the froxel fog the composite and water passes add in front */
+	/** the volumetric fog the composite and water passes add in front */
 	#fog: VolumetricFog;
 
 	/**
 	 * @param device the device
 	 * @param swapchainFormat the canvas format the final pass writes
 	 * @param environment the environment to start with
-	 * @param fog the froxel fog, which the caller encodes before {@link encode}
+	 * @param fog the volumetric fog, which the caller encodes before {@link encode}
 	 */
 	constructor(
 		device: GPUDevice,
@@ -343,7 +344,7 @@ export class PostProcess {
 
 	/**
 	 * @param pipeline a pass built from {@link postShaderSource} with atmosphere.wgsl and sky.wgsl that draws
-	 *   the sky and fog (it reads the sky-view LUT and its mean, and the froxel fog)
+	 *   the sky and fog (it reads the sky-view LUT and its mean, and the volumetric fog)
 	 * @returns its groups 0 (uniforms) and 1 (atmosphere)
 	 */
 	#skyGroups(pipeline: GPURenderPipeline): GPUBindGroup[] {
@@ -652,7 +653,7 @@ export class PostProcess {
 		set(13, [...a.ozoneAbsorption, a.ozoneTipAltitude]);
 		set(14, [a.ozoneTipValue, a.ozoneWidth, 0, 0]);
 		set(15, [...a.groundAlbedo, 0]);
-		const fog = environment.fog;
+		const fog = environment.heightFog;
 		set(16, [fog.layers[0].density, fog.layers[0].falloff, fog.layers[0].height, 0]);
 		set(17, [fog.layers[1].density, fog.layers[1].falloff, fog.layers[1].height, 0]);
 		set(18, [...fog.inscatter, 1 - fog.maxOpacity]);
@@ -746,8 +747,8 @@ export class PostProcess {
 		u.set(
 			[
 				settings.sky ? 1 : 0,
-				settings.fog && environment.fog.enabled ? 1 : 0,
-				settings.aerialPerspective ? 1 : 0,
+				settings.heightFog && environment.heightFog.enabled ? 1 : 0,
+				settings.atmosphereFog ? 1 : 0,
 				settings.bloom && bloom !== null ? 1 : 0,
 			],
 			27 * 4,
@@ -791,7 +792,7 @@ export class PostProcess {
 			outputHeight: number;
 			settings: PostSettings;
 			frame: number;
-			/** whether the froxel fog was encoded this frame */
+			/** whether the volumetric fog was encoded this frame */
 			froxels: boolean;
 			/** drawn after compositing, when it has surfaces */
 			water: WaterRenderer;
@@ -800,7 +801,7 @@ export class PostProcess {
 		const { scene, swapchain, camera, width, height, outputWidth, outputHeight, frame } = input;
 		const settings = effectiveSettings(input.settings);
 		const sized = this.#ensureSized(scene, { width, height, outputWidth, outputHeight });
-		this.#writeFrame(camera, width, height, settings, frame, input.froxels && settings.fog);
+		this.#writeFrame(camera, width, height, settings, frame, input.froxels && settings.heightFog);
 		const luts = this.#lutPasses;
 		if (!this.#lutsReady) {
 			this.#run(encoder, 'transmittance lut', luts.transmittance);

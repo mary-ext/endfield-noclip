@@ -95,8 +95,8 @@ export interface ViewerOptions {
 	autoExposure: boolean;
 	tonemapper: Tonemapper;
 	sky: boolean;
-	fog: boolean;
-	aerialPerspective: boolean;
+	heightFog: boolean;
+	atmosphereFog: boolean;
 	shadows: boolean;
 	water: boolean;
 	ao: boolean;
@@ -104,7 +104,7 @@ export interface ViewerOptions {
 	vignette: boolean;
 	/** light ambient from the baked irradiance volume; off uses the environment's ambient probe alone */
 	irradiance: boolean;
-	/** light surfaces and the froxel fog with the package's point and spot lights */
+	/** light surfaces and the volumetric fog with the package's point and spot lights */
 	localLights: boolean;
 	/** blend the game's environment volumes at the camera; off shows the level's base environment */
 	environmentVolumes: boolean;
@@ -141,8 +141,8 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	autoExposure: true,
 	tonemapper: 'game',
 	sky: true,
-	fog: true,
-	aerialPerspective: true,
+	heightFog: true,
+	atmosphereFog: true,
 	shadows: true,
 	water: true,
 	ao: true,
@@ -1354,7 +1354,7 @@ export class Viewer {
 		// after the shadow layers, which it reads
 		const froxels =
 			hasScene &&
-			this.options.fog &&
+			this.options.heightFog &&
 			this.options.debugView === 'lit' &&
 			this.#fog.encode(encoder, {
 				frameGroup: this.#frameBindGroup,
@@ -1410,8 +1410,8 @@ export class Viewer {
 			autoExposure: options.autoExposure && this.scene !== null,
 			tonemapper: options.tonemapper,
 			sky: options.sky,
-			fog: options.fog,
-			aerialPerspective: options.aerialPerspective,
+			heightFog: options.heightFog,
+			atmosphereFog: options.atmosphereFog,
 			ao: options.ao,
 			bloom: options.bloom,
 			vignette: options.vignette,

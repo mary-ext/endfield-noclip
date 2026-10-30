@@ -167,15 +167,15 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 			<fieldset>
 				<legend>look{viewer.environmentName === null ? '' : ` · ${viewer.environmentName}`}</legend>
 				<Toggle viewer={viewer} name="sky" label="sky" />
-				<Toggle viewer={viewer} name="fog" label="height fog" />
-				<Toggle viewer={viewer} name="aerialPerspective" label="aerial perspective" />
+				<Toggle viewer={viewer} name="heightFog" label="height and volumetric fog" />
+				<Toggle viewer={viewer} name="atmosphereFog" label="atmosphere fog" />
 				<Toggle viewer={viewer} name="shadows" label="shadows" />
 				<Toggle viewer={viewer} name="water" label="water" />
 				<Toggle viewer={viewer} name="ao" label="ambient occlusion" />
 				<Toggle viewer={viewer} name="bloom" label="bloom" />
 				<Toggle viewer={viewer} name="vignette" label="vignette" />
 				<Toggle viewer={viewer} name="autoExposure" label="auto exposure" />
-				<Toggle viewer={viewer} name="irradiance" label="baked GI" />
+				<Toggle viewer={viewer} name="irradiance" label="irradiance volume" />
 				<Toggle viewer={viewer} name="localLights" label="local lights" />
 				<Toggle viewer={viewer} name="antialiasing" label="temporal AA" />
 			</fieldset>
@@ -245,7 +245,7 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 			<Slider
 				viewer={viewer}
 				name="textureBias"
-				label="texture mip bias"
+				label="texture mip drop"
 				min={0}
 				max={2}
 				step={1}

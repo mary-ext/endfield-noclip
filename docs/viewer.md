@@ -216,21 +216,21 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 
 `#render` encodes one command buffer per frame. passes in order:
 
-| #   | pass                                           | when                                                                                                                                                      |
-| --- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `irradiance update 0–2` (compute)              | a clipmap level re-centred or got new cells ([`render/irradiance-volume.ts`](../packages/viewer/src/render/irradiance-volume.ts))                         |
-| 2   | `shadow layer 0–3`                             | `shadows` on, a package loaded, `debugView` is `lit`                                                                                                      |
-| 2b  | `volumetric fog` (compute)                     | `fog` on, a package loaded, `lit`, and the environment's froxel fog on ([`render/volumetric-fog.ts`](../packages/viewer/src/render/volumetric-fog.ts))    |
-| 3   | `main`                                         | always (empty without a package)                                                                                                                          |
-| 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                                                      |
-| 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                                                  |
-| 6   | `ao depth`, `gtao`, `gtao blur`                | `ao` on and the environment has AO settings                                                                                                               |
-| 7   | `composite`                                    | always                                                                                                                                                    |
-| 8   | scene copy + `water`                           | `water` on, `lit`, and visible water surfaces                                                                                                             |
-| 9   | `taa`                                          | always ([`render/temporal-aa.ts`](../packages/viewer/src/render/temporal-aa.ts)); with `antialiasing` off it only scales to the output size               |
-| 10  | `auto exposure histogram` (compute)            | `autoExposure` on, `lit`, the profile meters, and a readback buffer is free ([`render/auto-exposure.ts`](../packages/viewer/src/render/auto-exposure.ts)) |
-| 11  | `bloom down` ×n, `bloom up` ×n                 | `bloom` on                                                                                                                                                |
-| 12  | `tonemap`                                      | always, into the swapchain                                                                                                                                |
+| #   | pass                                           | when                                                                                                                                                             |
+| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `irradiance update 0–2` (compute)              | a clipmap level re-centred or got new cells ([`render/irradiance-volume.ts`](../packages/viewer/src/render/irradiance-volume.ts))                                |
+| 2   | `shadow layer 0–3`                             | `shadows` on, a package loaded, `debugView` is `lit`                                                                                                             |
+| 2b  | `volumetric fog` (compute)                     | `heightFog` on, a package loaded, `lit`, and the environment's volumetric fog on ([`render/volumetric-fog.ts`](../packages/viewer/src/render/volumetric-fog.ts)) |
+| 3   | `main`                                         | always (empty without a package)                                                                                                                                 |
+| 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                                                             |
+| 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                                                         |
+| 6   | `ao depth`, `gtao`, `gtao blur`                | `ao` on and the environment has AO settings                                                                                                                      |
+| 7   | `composite`                                    | always                                                                                                                                                           |
+| 8   | scene copy + `water`                           | `water` on, `lit`, and visible water surfaces                                                                                                                    |
+| 9   | `taa`                                          | always ([`render/temporal-aa.ts`](../packages/viewer/src/render/temporal-aa.ts)); with `antialiasing` off it only scales to the output size                      |
+| 10  | `auto exposure histogram` (compute)            | `autoExposure` on, `lit`, the profile meters, and a readback buffer is free ([`render/auto-exposure.ts`](../packages/viewer/src/render/auto-exposure.ts))        |
+| 11  | `bloom down` ×n, `bloom up` ×n                 | `bloom` on                                                                                                                                                       |
+| 12  | `tonemap`                                      | always, into the swapchain                                                                                                                                       |
 
 passes 3–8 run at the render size, the canvas's device-pixel size times `renderScale`; `taa` and
 everything after it run at the output (canvas) size.
@@ -265,9 +265,9 @@ details:
   this frame's main-pass selection and gets its own copy of the frame uniforms with its
   view-projection.
 - **post** ([`render/post-process.ts`](../packages/viewer/src/render/post-process.ts)) is fullscreen
-  triangles with `auto` layouts. composite applies AO, sky, aerial perspective and height fog; `fog`
-  and `aerialPerspective` change what composite does, not which passes run. water draws over a copy
-  of the composited scene so it can refract it
+  triangles with `auto` layouts. composite applies AO, sky, atmosphere fog and height fog;
+  `heightFog` and `atmosphereFog` change what composite does, not which passes run. water draws over
+  a copy of the composited scene so it can refract it
   ([`render/water-renderer.ts`](../packages/viewer/src/render/water-renderer.ts),
   [game-data/water.md](game-data/water.md)).
 - **debug views** (`albedo`, `normals`, `roughness`, `ambient`, `clouds`) show the main pass as it

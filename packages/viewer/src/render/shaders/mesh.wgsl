@@ -34,7 +34,7 @@ struct Draw {
 	emissive: vec4f,
 	// x = how little the albedo tints emission (1: not at all), y = the emission mask channel, z = 1 when
 	// emission ignores the post exposure
-	emission2: vec4f,
+	emissive2: vec4f,
 	// the tri-channel mask's R, G and B: linear colour, strength
 	mask_albedo: array<vec4f, 3>,
 	// per mask channel (xyz): the roughness and metallic it blends toward, its contrast and offset
@@ -231,7 +231,7 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 			c *= base.rgb;
 		}
 		c += max(c - vec3f(draw.surface.x), vec3f(0.0)) * draw.surface.y;
-		return unlit(clamp(c * mix(1.0, frame.ambient.y, draw.emission2.z), vec3f(0.0), vec3f(1000.0)));
+		return unlit(clamp(c * mix(1.0, frame.ambient.y, draw.emissive2.z), vec3f(0.0), vec3f(1000.0)));
 	}
 
 	var albedo = clamp(base.rgb * draw.surface2.w, vec3f(0.0), vec3f(1.0));
@@ -343,12 +343,12 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 	if ((flags & EMISSIVE_MASK) != 0u) {
 		// mask channel 1 is the base colour's alpha. in the two-texture layout 2 is the normal map's B and 3 its
 		// alpha; with an MRO map 2 is the base alpha too and 3 the MRO map's alpha. a map still streaming reads 0
-		emission = saturate((map_channel(flags, draw.emission2.y, base_a, packed, mask) - 0.05) / 0.9);
+		emission = saturate((map_channel(flags, draw.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
 	}
 	// emission is in the pre-exposed units of the light already. emitters that ignore the post exposure divide
 	// it out, so they keep their brightness however the exposure adapts
-	let tint = mix(s.albedo, vec3f(1.0), draw.emission2.x);
-	s.emission = draw.emissive.rgb * emission * tint * mix(1.0, frame.ambient.y, draw.emission2.z);
+	let tint = mix(s.albedo, vec3f(1.0), draw.emissive2.x);
+	s.emission = draw.emissive.rgb * emission * tint * mix(1.0, frame.ambient.y, draw.emissive2.z);
 
 	let parallax_maps = PARALLAX_MAP | PARALLAX_NOISE_MAP;
 	if ((flags & parallax_maps) == parallax_maps && in.tangent.w != 0.0) {

@@ -138,7 +138,7 @@ export class VolumetricFog {
 		set(7, [...look.emissive, look.skyIntensity]);
 		set(8, [...look.sunDirection, 0]);
 		set(9, [...look.sun, 0]);
-		const [a, b] = environment.fog.layers;
+		const [a, b] = environment.heightFog.layers;
 		set(10, [a.density, a.falloff, a.height, 0]);
 		set(11, [b.density, b.falloff, b.height, 0]);
 	}

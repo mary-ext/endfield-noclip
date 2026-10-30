@@ -1,4 +1,4 @@
-// the game's froxel fog: a grid over the view, its slices spaced logarithmically in view depth out to the
+// the game's volumetric fog: a grid over the view, its slices spaced logarithmically in view depth out to the
 // fog's distance. each thread walks one column front to back, lighting every froxel (the height fog's medium
 // scattering the sun, shadowed, the ambient probe and the local lights, plus its own emission) and storing the light
 // scattered towards the camera so far (rgb) and the transmittance (a). needs frame.wgsl.

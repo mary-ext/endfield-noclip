@@ -1365,7 +1365,7 @@ export interface LightEntry {
 	/** distance falloff `(1 − d²/range²)^exponent`; negative for inverse square with a smooth window */
 	falloffExponent: number;
 	specularIntensity: number;
-	/** scales the light in the froxel fog; 0 leaves the fog unlit */
+	/** scales the light in the volumetric fog; 0 leaves the fog unlit */
 	volumetricScatteringIntensity: number;
 	/** orders lights at equal camera distance when there are more than a viewer draws */
 	priority: number;

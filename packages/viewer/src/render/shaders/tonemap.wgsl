@@ -112,7 +112,7 @@ fn aces_modified(x: vec3f) -> vec3f {
 }
 
 // Khronos PBR Neutral
-fn neutral(colour: vec3f) -> vec3f {
+fn pbr_neutral(colour: vec3f) -> vec3f {
 	let start = 0.8 - 0.04;
 	let desaturation = 0.15;
 	let x = min(colour.r, min(colour.g, colour.b));
@@ -169,7 +169,7 @@ fn fs_tonemap(in: FullscreenOut) -> @location(0) vec4f {
 		}
 		case 1u: {
 			let graded = grade(clamp(colour * post.colour_balance.w, vec3f(0.0), vec3f(LUT_MAX)));
-			colour = neutral(max(graded * AP1_TO_SRGB, vec3f(0.0)));
+			colour = pbr_neutral(max(graded * AP1_TO_SRGB, vec3f(0.0)));
 		}
 		default: {
 			colour = clamp(colour, vec3f(0.0), vec3f(1.0));

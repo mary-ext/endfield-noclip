@@ -1,11 +1,11 @@
-// the sky, aerial perspective and height fog as the composite and water passes apply them. needs
+// the sky, atmosphere fog and height fog as the composite and water passes apply them. needs
 // post-common.wgsl and atmosphere.wgsl.
 
 // the fog as HGRP's deferred lighting and sky apply it: the atmosphere fog, then the two-layer height fog, in
-// the game's own units, with the froxel fog (volumetric-fog.wgsl) in front when it's on. the froxels then
+// the game's own units, with the volumetric fog (volumetric-fog.wgsl) in front when it's on. the froxels then
 // cover the ray out to the fog's distance in view depth, and the height fog only what lies beyond.
 
-// the froxel fog integrated up to each slice: scattered light (rgb) and transmittance (a)
+// the volumetric fog integrated up to each slice: scattered light (rgb) and transmittance (a)
 @group(1) @binding(5) var froxel_texture: texture_3d<f32>;
 
 // one height-fog layer's density along a ray from `base_y`, per metre of ray: Unreal's base-2 form of the
@@ -26,7 +26,7 @@ struct Fog {
 	inscatter: vec3f,
 }
 
-// the froxel fog in front of a point
+// the volumetric fog in front of a point
 struct Froxels {
 	// scattered light (rgb) and transmittance (a)
 	light: vec4f,
@@ -37,7 +37,7 @@ struct Froxels {
 // for rays the froxel grid doesn't hold (reflections): the height fog all the way
 const NO_FROXELS = Froxels(vec4f(0.0, 0.0, 0.0, 1.0), 0.0);
 
-// the froxel fog in front of something `depth` metres of view depth away, at `uv` on screen
+// the volumetric fog in front of something `depth` metres of view depth away, at `uv` on screen
 fn froxels_at(uv: vec2f, depth: f32) -> Froxels {
 	if (post.froxel_slices.w <= 0.0) {
 		return NO_FROXELS;

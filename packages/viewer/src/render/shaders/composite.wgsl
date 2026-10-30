@@ -1,5 +1,5 @@
 // composites the main pass into the HDR scene: ambient occlusion on the ambient part, the sky where nothing
-// was drawn, aerial perspective and the two-layer height fog. needs post-common.wgsl, atmosphere.wgsl and
+// was drawn, the atmosphere fog and the two-layer height fog. needs post-common.wgsl, atmosphere.wgsl and
 // sky.wgsl.
 
 @group(2) @binding(0) var radiance_texture: texture_2d<f32>;

@@ -151,7 +151,7 @@ export const LookRow = {
 	 * `_AlbedoAffectEmissive` (1: emission ignores the albedo), `_EmissiveMaskChannel`, `_IgnorePostExposure`
 	 * (1: emission keeps its brightness whatever the exposure)
 	 */
-	emission2: 44,
+	emissive2: 44,
 	/** three rows, the tri-channel mask's R, G and B: linear colour, strength */
 	maskAlbedo: 48,
 	/** the roughness each mask channel blends toward */
@@ -354,7 +354,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 					channel,
 					floatOf(entry, shader, '_IgnorePostExposure', 1),
 				],
-				LookRow.emission2,
+				LookRow.emissive2,
 			);
 		}
 	}
@@ -537,6 +537,6 @@ const mattePaintingLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialL
 	look.cutout = threshold >= 0 && look.textures[0] >= 0;
 	params[LookRow.surface] = floatOf(entry, shader, '_ExpThreshold', 1);
 	params[LookRow.surface + 1] = floatOf(entry, shader, '_ExpIntensity', 0);
-	params[LookRow.emission2 + 2] = floatOf(entry, shader, '_IgnorePostExposure', 1);
+	params[LookRow.emissive2 + 2] = floatOf(entry, shader, '_IgnorePostExposure', 1);
 	return look;
 };
