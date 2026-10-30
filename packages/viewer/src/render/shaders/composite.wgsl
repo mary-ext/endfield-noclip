@@ -1,6 +1,6 @@
 // composites the main pass into the HDR scene: screen-space reflections, ambient occlusion on the ambient part, the sky where nothing
-// was drawn, the transparent layers, the atmosphere fog and the two-layer height fog. needs post-common.wgsl, atmosphere.wgsl and
-// sky.wgsl.
+// was drawn with the nebula and planets beyond it, the transparent layers, the atmosphere fog and the two-layer height fog. needs
+// post-common.wgsl, atmosphere.wgsl and sky.wgsl.
 
 @group(2) @binding(0) var radiance_texture: texture_2d<f32>;
 @group(2) @binding(1) var ambient_texture: texture_2d<f32>;
@@ -13,6 +13,8 @@
 // the transparent pass's weighted sum and revealage (`TRANSPARENT_TARGETS` in render-targets.ts)
 @group(2) @binding(7) var transparent_texture: texture_2d<f32>;
 @group(2) @binding(8) var revealage_texture: texture_2d<f32>;
+// the nebula and planets over the sky: s · (1 − a) + rgb (celestial.wgsl)
+@group(2) @binding(9) var celestial_texture: texture_2d<f32>;
 
 // Jimenez et al.'s multi-bounce fit: occluded light that bounces off a bright surface comes back, so bright
 // surfaces darken less than `ao`. per channel in the game; here from the albedo's luminance
@@ -46,7 +48,10 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 			return vec4f(over_transparent(painted.rgb, px), 1.0);
 		}
 		let froxels = froxels_at(in.uv, post.sky_fog.x * dot(direction, post.forward.xyz));
-		return vec4f(over_transparent(fogged_sky(direction, painted, froxels), px), 1.0);
+		let layers = textureLoad(celestial_texture, px, 0);
+		let sky = sky_radiance(direction, painted) * (1.0 - layers.a) + layers.rgb;
+		let fog = fog_over(direction, post.sky_fog.x, froxels);
+		return vec4f(over_transparent(sky * fog.transmittance + fog.inscatter, px), 1.0);
 	}
 	let radiance = textureLoad(radiance_texture, px, 0);
 	var color = max(radiance.rgb + textureLoad(ssr_texture, px, 0).rgb, vec3f(0.0));

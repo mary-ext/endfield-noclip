@@ -445,8 +445,8 @@ const distanceInPolygon = (points: readonly (readonly [number, number])[], x: nu
 
 type Sections = Record<keyof EnvironmentSections, Record<string, unknown>>;
 
-/** fields that hold texture-table ids (or other references), which switch rather than lerp */
-const REFERENCE = /(texture|map)$/i;
+/** fields that hold texture-table ids or materials (or other references), which switch rather than lerp */
+const REFERENCE = /(texture|map|material|mat)$/i;
 /** integer settings that switch rather than lerp */
 const DISCRETE = /(mode|type)$/i;
 
@@ -480,7 +480,10 @@ const lerpObject = (
 };
 
 const lerpValue = (key: string, a: unknown, b: unknown, t: number): unknown => {
-	if (typeof a === 'number' && typeof b === 'number' && !REFERENCE.test(key) && !DISCRETE.test(key)) {
+	if (REFERENCE.test(key)) {
+		return t < 0.5 && a !== undefined ? structuredClone(a) : structuredClone(b);
+	}
+	if (typeof a === 'number' && typeof b === 'number' && !DISCRETE.test(key)) {
 		return a + (b - a) * t;
 	}
 	if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) {

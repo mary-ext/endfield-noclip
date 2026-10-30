@@ -321,6 +321,42 @@ in raw, like the game's C# passes it; decoding it from sRGB makes some skies nea
 
 the sky is fogged as if at `sky.skyDistance`.
 
+### beyond the atmosphere
+
+the game shades everything past the atmosphere inside its one sky-dome draw, switched by keywords
+and fed from the phase's `celestial` and `star` sections. the viewer renders the same layers per sky
+pixel in a pass of its own
+([`shaders/celestial.wgsl`](../../packages/viewer/src/render/shaders/celestial.wgsl), packed by
+[`render/celestial.ts`](../../packages/viewer/src/render/celestial.ts)), and the composite puts them
+over the atmosphere's sky before fogging it: `sky · (1 − cover) + layers`. in the game's order:
+
+- **nebula** (`star.enableNebula`): the equirectangular `nebulaMap`, turned by `nebulaMapRotation`
+  about the vertical, times the raw `nebulaTint` × 2. sky planets hide it by
+  `celestialNebulaConverage`.
+- **stars** (`star.enableStars`): one candidate per cell of a grid over the direction
+  (`starsTilling` × 200 cells per radian), kept where a hash clears `1 − starsDensity`, sized
+  between `minMaxRange`, tinted between `starsTint` and `starsTint1`, twinkling at
+  `starsFlickerSpeed`, scaled by `starsExposure` and thinned by `skyBoxStarRangeMap` and the
+  nebula's brightness (`nebulaStarConverage`).
+- **the ray-traced planet** (`advancedPlanetConfig`, Dijiang's view of Talos-II): its material
+  (`HGRP/Planet/PlanetBillboard`) is only a parameter source, copied with colours linearised. a
+  sphere of `_RealPlanetRadius` at `_PlanetWSBase + (−sin φ, sin θ, −cos θ cos φ) · _Dist` (`_Phi2`,
+  `_Theta2`), textured in a cylindrical equal-area mapping after the `_Pitch`/`_Roll` tilt, with sea
+  colours from the RSM map (g depth, b sea mask), a cloud atlas (four quadrants of longitude ×
+  hemisphere in RGBA, point-sampled) and its cloud shadows, URP's minimal GGX, a soft terminator
+  `1 / (1 + e^(−20 n·l))`, a rim and a flat ambient. a three-sample single-scattering atmosphere
+  runs over it, with the sun's transmittance from the material's lookup texture. it's lit from
+  `_CustomLightDir` when `_CustomLightDirection` is set, and its disc replaces the sky behind.
+- **sky planets** (`planetConfig`, `talosAlphaConfig`, when `drawPlanetInSkydome`): spheres seen
+  from `moonConfig.orbitRadius − moonConfig.radius` (the moon is the body the map stands on) in the
+  direction of `skydomeDrawer.pitchYaw`, lit from `incidentLightingPitchYaw`. the body's frame is
+  `Euler(selfTiltX, 0, selfTiltZ)` spun by `selfRotationY` about its pole; the game hands the
+  frame's right vector to the shader as "forward" and its forward as "right", and the viewer does
+  the same. the disc samples `_MainTex` and `_EmissiveTex` of the draw material, with a ring
+  (`_RingTex`, inner to outer radius over v) shadowed by the planet, and a single-scattering rim
+  placed 2000 units out. they're added on top, faded below the horizon when `drawPlanetBelowHorizon`
+  is set.
+
 ## fog
 
 two analytic fogs and the volumetric fog in front of them, applied in
@@ -371,6 +407,7 @@ the volumetric fog's local fog volumes and flow noise are not drawn; its local l
 | pass                                                                                                                                      | inputs                                                                                    |
 | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | GTAO, half resolution, depth-aware upsample ([`gtao.wgsl`](../../packages/viewer/src/render/shaders/gtao.wgsl))                           | post `ambientOcclusion`: see [below](#ambient-occlusion)                                  |
+| celestial: nebula, stars and planets at the sky pixels                                                                                    | `celestial`, `star`: see [beyond the atmosphere](#beyond-the-atmosphere)                  |
 | composite: AO on the ambient part, sky, fog                                                                                               | as above                                                                                  |
 | water                                                                                                                                     | see [water.md](water.md)                                                                  |
 | bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                    | post `bloom`: see [below](#bloom)                                                         |
@@ -550,9 +587,13 @@ are sampled toroidally in `ambient_irradiance`.
 - the volumetric fog's grid size and depth distribution come from quality presets that aren't
   recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without
   the native diffuse-ambient scale.
-- not rendered: light shafts, lens flare, cloud shadows, celestial bodies, stars and aurora, local
-  reflection probes, the game's own SSR, local light shadows and light beams, precipitation and rain
-  wetness (terrain puddles do render).
+- not rendered: light shafts, lens flare, cloud shadows, the moon's sky-wide ring (`HG_RING`), the
+  sun disc, aurora, local reflection probes, the game's own SSR, local light shadows and light
+  beams, precipitation and rain wetness (terrain puddles do render).
+- celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' order against
+  the cloud panorama (`drawCloudAfterPlanet`), their ring thinning the stars, and the brightness of
+  the ray-traced planet's light (taken as the viewer's pre-exposed sun) are unchecked against a
+  shot.
 - the sun's units: the game shades its sun with the same lobe as local lights (no 1/π on diffuse),
   while the viewer treats the sun's colour as illuminance and divides diffuse by π. unless the CPU
   folds a 1/π into the sun's colour, the viewer's sun is π too dark. unchecked against a shot.

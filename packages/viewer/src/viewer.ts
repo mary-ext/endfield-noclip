@@ -32,6 +32,7 @@ import { UniformRing } from './gfx/uniform-ring.ts';
 import { DecodePool } from './package/decode-pool.ts';
 import type { PackageSource } from './package/package-source.ts';
 import { CORE_ARCHIVE_INDEX, type ViewerPackage, openViewerPackage } from './package/viewer-package.ts';
+import { type CelestialLook, NO_CELESTIAL, celestialLook, celestialTextures } from './render/celestial.ts';
 import {
 	type AppliedVolume,
 	blendEnvironment,
@@ -319,6 +320,8 @@ export class Viewer {
 	#water: WaterRenderer;
 	/** the shown level's look */
 	#environment: Environment = deriveEnvironment(null);
+	/** the nebula and planets of {@link #environment}'s profile */
+	#celestial: CelestialLook = NO_CELESTIAL;
 	/** the shown level's base environment, which the volumes blend over */
 	#baseProfile: EnvironmentProfile | null = null;
 	/** what the environment was last blended for */
@@ -615,6 +618,7 @@ export class Viewer {
 		this.#meshes.releaseMaterials();
 		// the destroyed store's sky textures
 		this.#post.setCloud(null);
+		this.#post.celestial.setTextures(() => null);
 		this.#setReflection(this.#noReflection, 1);
 		this.#setShadowRamp(null);
 		this.scene = null;
@@ -683,6 +687,13 @@ export class Viewer {
 			priority: 1e6,
 		});
 		this.#post.setCloud(cloud?.binding ?? null);
+
+		const celestialIds = celestialTextures(this.#celestial);
+		this.#post.celestial.setTextures(
+			(slot) =>
+				streamWholeTexture({ stream, textures, id: celestialIds[slot], kind: '2d', priority: 1e6 })
+					?.binding ?? null,
+		);
 
 		const reflection = streamWholeTexture({
 			stream,
@@ -785,6 +796,8 @@ export class Viewer {
 		}
 		this.#blendKey = key;
 		this.#environment = deriveEnvironment(profile);
+		this.#celestial = celestialLook(profile?.celestial, profile?.star);
+		this.#post.celestial.setLook(this.#celestial);
 		this.#post.setEnvironment(this.#environment);
 		this.#fog.setEnvironment(this.#environment, this.camera.near);
 		this.#dirty = true;
