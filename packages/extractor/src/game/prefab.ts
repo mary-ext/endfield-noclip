@@ -232,7 +232,8 @@ export const readPrefabRenderers = async (
 			mesh: candidate.mesh,
 			materials,
 			submeshes: arrayField(mesh, 'm_SubMeshes').length,
-			shadowOnly: numberField(candidate.data, 'm_CastShadows') === 3,
+			// Unity's ShadowCastingMode: 3 ShadowsOnly, 4 ShadowsOnlyTwoSided
+			shadowOnly: numberField(candidate.data, 'm_CastShadows') >= 3,
 		});
 	}
 	return result;

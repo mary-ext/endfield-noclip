@@ -212,7 +212,7 @@ test('prefab selection follows active hierarchy and LOD references, preserving m
 		add(id + 2n, UnityClass.MeshFilter, { m_Mesh: pointer(50n) });
 		add(id + 3n, UnityClass.MeshRenderer, {
 			m_Enabled: true,
-			m_CastShadows: 3,
+			m_CastShadows: 4,
 			m_Materials: [pointer(0n), pointer(60n)],
 		});
 	}

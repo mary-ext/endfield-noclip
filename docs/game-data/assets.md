@@ -173,8 +173,8 @@ root:
   candidates.
 - for an enabled `LODGroup` (class 205), only renderers of LOD 0 are kept. other LODs' renderers are
   excluded by object identity, never by name.
-- material slots keep their order (a null slot draws nothing for that submesh); `m_CastShadows` 3
-  (shadows only) marks a shadow-only renderer.
+- material slots keep their order (a null slot draws nothing for that submesh); `m_CastShadows` 3 or
+  4 (Unity's `ShadowsOnly`, `ShadowsOnlyTwoSided`) marks a shadow-only renderer.
 - a skinned renderer's pose is each bone's prefab-space matrix times its bind pose; bounds are the
   union of the mesh bounds under every bone so weighted vertices stay inside. non-zero blend shape
   weights throw, since baking ignores them.
