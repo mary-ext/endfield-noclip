@@ -46,6 +46,7 @@ const METALLIC_BASE_ALPHA = 128u;
 const NORMAL_OCCLUSION = 256u;
 const EMISSIVE_MASK = 2048u;
 const UNLIT = 4096u;
+const ALPHA_NORMAL = 8192u;
 // set per draw from the geometry's streams (`GeometryFlags` in mesh-renderer.ts)
 const HAS_NORMALS = 512u;
 const HAS_TANGENTS = 1024u;
@@ -233,13 +234,16 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 }
 
 // the depth of alpha-tested materials, in the main pass and the shadow passes (opaque ones have no fragment
-// stage there). only drawn for materials with an alpha-test threshold whose base colour is bound (`cutout`
+// stage there). only drawn for materials with an alpha-test threshold whose alpha texture is bound (`cutout`
 // in materials.ts and MeshRenderer.prepare)
 @fragment
 fn fs_cutout_depth(in: VertexOut) {
 	let draw = draws[in.draw];
-	let base = textureSampleBias(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw, frame.params.y);
-	if (base.a < draw.tint.w) {
+	let bias = frame.params.y;
+	let base = textureSampleBias(base_map, base_sampler, in.uv * draw.base_uv.xy + draw.base_uv.zw, bias);
+	let packed = textureSampleBias(normal_map, detail_sampler, in.uv * draw.normal_uv.xy + draw.normal_uv.zw, bias);
+	let alpha = select(base.a, packed.a, (bitcast<u32>(draw.offset.w) & ALPHA_NORMAL) != 0u);
+	if (alpha < draw.tint.w) {
 		discard;
 	}
 }

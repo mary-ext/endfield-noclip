@@ -325,8 +325,9 @@ details:
   tile-based GPUs, hidden-surface removal. opaque meshes use non-discarding pipelines, and shadow
   pipelines for them have no fragment stage. alpha-tested meshes lay down cut-out depth first, then
   shade with `depthCompare: 'equal'` and a non-discarding shader, so overlapping leaf cards shade
-  each pixel once. an alpha-tested material draws as opaque until its base colour has streamed,
-  since there's no alpha to test yet.
+  each pixel once. an alpha-tested material draws as opaque until the texture holding its alpha
+  ([alpha testing](game-data/lighting.md#alpha-testing)) has streamed, since there's no alpha to
+  test yet.
 - **no MSAA.** at 2560×1600 on an Apple M-series GPU, a dense Wuling City view took ~46 ms of GPU
   time with 4× MSAA and ~16 ms with temporal antialiasing (the `taa` pass is under 1 ms), and the
   render targets shrank from ~440 to ~200 MiB. `renderScale` 0.5 brought the same view to ~5 ms.

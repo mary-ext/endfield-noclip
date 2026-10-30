@@ -126,6 +126,13 @@ their brightness however the exposure adapts.
 not drawn: the animated variants' motion (they're drawn still), `_EmissiveType`'s extra G/B/A
 colours, the Fresnel term, emissive UV set 1, and per-instance emission overrides.
 
+## alpha testing
+
+alpha-tested HGRP Lit materials (`_ALPHATEST_ON`) test the alpha `_AlphaMaskChannel` picks against
+`_AlphaClipThreshold`: 0 for the base colour's, 1 for the normal map's. map01 has 26 materials on
+channel 1, all in the two-texture layout, where the base alpha is metallic; testing that instead
+cuts the Hub's white container walls down to their grime streaks.
+
 ## matte paintings
 
 `HGRP/MattePainting` draws the painted mountain ranges on the horizon: a few alpha-tested ring

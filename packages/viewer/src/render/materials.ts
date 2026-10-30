@@ -65,6 +65,8 @@ export const LookFlags = {
 	EmissiveMask: 1 << 11,
 	/** unlit: the tinted base colour is the radiance (matte paintings; see `mattePaintingLook`) */
 	Unlit: 1 << 12,
+	/** the alpha test reads the normal map's alpha instead of the base colour's (`_AlphaMaskChannel` 1) */
+	AlphaNormal: 1 << 13,
 } as const;
 
 /** the slot flags of {@link LookFlags}, which are cleared while a slot's texture isn't resident */
@@ -83,8 +85,9 @@ export interface MaterialLook {
 	/** `false` for materials not drawn at all (fog volumes, additive blending) */
 	drawn: boolean;
 	/**
-	 * alpha-tested against the base colour's alpha (`fs_cutout_depth` in mesh.wgsl), once the base colour is
-	 * bound; such draws need pipelines that can discard
+	 * alpha-tested against the alpha of the base colour, or of the normal map with
+	 * {@link LookFlags.AlphaNormal} (`fs_cutout_depth` in mesh.wgsl), once that texture is bound
+	 * ({@link alphaTextureOf}); such draws need pipelines that can discard
 	 */
 	cutout: boolean;
 	/** the faces the game culls, for unmirrored instances */
@@ -119,6 +122,13 @@ export const LookRow = {
 	 */
 	emission2: 32,
 } as const;
+
+/**
+ * @param look a material look
+ * @returns the texture id whose alpha an alpha-tested look tests, or -1 when it has none
+ */
+export const alphaTextureOf = (look: MaterialLook): number =>
+	look.textures[(look.flags & LookFlags.AlphaNormal) !== 0 ? 1 : 0];
 
 /** a look with no textures and identity UV transforms */
 const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => {
@@ -226,7 +236,12 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		const brighter = floatOf(entry, shader, '_BaseColorBrighterScale', 1);
 		const colour = tint === undefined ? [1, 1, 1] : linearRgb(tint);
 		params.set([...colour, entry.alphaClip ?? -1], LookRow.tint);
-		look.cutout = entry.alphaClip !== null && entry.alphaClip >= 0 && look.textures[0] >= 0;
+		// `_AlphaMaskChannel` picks the alpha the Lit family tests: 0 the base colour's, 1 the normal map's. in
+		// the one-base-map layout the base colour's alpha is metallic, so testing it would cut holes in solid walls
+		if (family === 'lit' && floatOf(entry, shader, '_AlphaMaskChannel', 0) === 1) {
+			look.flags |= LookFlags.AlphaNormal;
+		}
+		look.cutout = entry.alphaClip !== null && entry.alphaClip >= 0 && alphaTextureOf(look) >= 0;
 		params[LookRow.surface2 + 3] = brighter;
 		// untextured: the tint alone
 		params[LookRow.emissive + 3] = look.textures[0] < 0 ? 1 : cover;

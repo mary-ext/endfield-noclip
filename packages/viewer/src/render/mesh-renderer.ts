@@ -19,7 +19,7 @@ import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
-import { LOOK_FLOATS, LookFlags, LookRow, SLOTS, SLOT_FLAGS } from './materials.ts';
+import { alphaTextureOf, LOOK_FLOATS, LookFlags, LookRow, SLOTS, SLOT_FLAGS } from './materials.ts';
 import meshWgsl from './shaders/mesh.wgsl?raw';
 import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
 import type { TextureBinding, TextureStore } from './texture-store.ts';
@@ -399,13 +399,13 @@ export class MeshRenderer {
 			if (bucket.count === 0 || bucket.geometry.resident?.kind !== 'geometry') {
 				continue;
 			}
-			// without its base colour there's no alpha to test yet. unlit looks are their texture, so they wait
-			// for it rather than draw as solid cards
+			// without the texture holding its alpha there's nothing to test yet. unlit looks are their texture, so
+			// they wait for it rather than draw as solid cards
 			const look = bucket.look;
 			if ((look.flags & LookFlags.Unlit) !== 0 && textures.binding(look.textures[0]) === null) {
 				continue;
 			}
-			if (look.cutout && textures.binding(look.textures[0]) !== null) {
+			if (look.cutout && textures.binding(alphaTextureOf(look)) !== null) {
 				cutout.push(bucket);
 			} else {
 				opaque.push(bucket);
