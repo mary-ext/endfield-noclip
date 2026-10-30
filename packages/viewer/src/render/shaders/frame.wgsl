@@ -3,10 +3,19 @@
 // the level's exposure, so shaded values land around 0–2 before tonemapping.
 
 struct Frame {
+	// #region camera
 	// camera-relative view-projection: reversed-Z, infinite far plane
 	view_proj: mat4x4f,
 	// camera world position (f32, for world-space lookups only), w = time (s)
 	eye: vec4f,
+	// the camera's unit forward vector, w unused
+	view_forward: vec4f,
+	// output width, height (px), pixel factor (output px per metre at 1 m), minimum projected instance size (px)
+	viewport: vec4f,
+	// render width, height (px), z, w unused
+	render_size: vec4f,
+	// #endregion
+	// #region lighting
 	// direction towards the sun, w = 1 when the sun casts light
 	sun: vec4f,
 	// sun illuminance (pre-exposed lux, linear rgb), w = specular intensity
@@ -15,8 +24,12 @@ struct Frame {
 	sh: array<vec4f, 7>,
 	// x = indirect specular factor, y = 1 / post exposure (scales emission that ignores it), z = 1 with a reflection cubemap, w = its finest mip count - 1
 	ambient: vec4f,
-	// output width, height (px), pixel factor (output px per metre at 1 m), minimum projected instance size (px)
-	viewport: vec4f,
+	// world position of each irradiance clipmap level's centre (0.5 m, 2 m, 8 m probes), w = 1 once filled
+	irradiance: array<vec4f, 3>,
+	// this frame's local lights (local-lights.ts): count, screen tiles across and down, near plane (m)
+	local_lights: vec4f,
+	// #endregion
+	// #region terrain and debug
 	// terrain: zero-sample height relative to the eye, metres per height unit, hole bit (u32 bits), 0
 	terrain: vec4f,
 	// x = wireframe, y = debug view (0 lit, 1 albedo, 2 normals, 3 roughness, 4 ambient only; 5, the raw
@@ -25,6 +38,8 @@ struct Frame {
 	// boxes larger than x metres (max half extent) draw as outlines only; y = material texture mip bias (log2 of
 	// the render scale, so upsampled frames sample at the output's density); z, w reserved
 	params: vec4f,
+	// #endregion
+	// #region shadows
 	// camera-relative position → shadow map [0, 1]² × depth, per layer: three sharp cascades, then the far layer
 	shadow_matrices: array<mat4x4f, 4>,
 	// x = the sharp cascades' reach squared (m²), y = 1 / (reach² − fade start²), z reserved, w = 1 when shadows are on
@@ -35,14 +50,8 @@ struct Frame {
 	shadow_spheres: array<vec4f, 4>,
 	// x = strength, y = how far the shadow is replaced by z (a fixed attenuation), w = 1 with a penumbra ramp
 	shadow_look: vec4f,
-	// world position of each irradiance clipmap level's centre (0.5 m, 2 m, 8 m probes), w = 1 once filled
-	irradiance: array<vec4f, 3>,
-	// this frame's local lights (local-lights.ts): count, screen tiles across and down, near plane (m)
-	local_lights: vec4f,
-	// the camera's unit forward vector, w unused
-	view_forward: vec4f,
-	// render width, height (px), z, w unused
-	render_size: vec4f,
+	// #endregion
+	// #region weather
 	// the cloud shadow (`Environment.cloudShadow`): [0] = centre (world), w = 1 when on; [1] = switch start (m),
 	// switch end (m), repeats per metre, 0; [2] = flow per second, alpha, far scale; [3] = projection, 0
 	cloud_shadow: array<vec4f, 4>,
@@ -50,6 +59,7 @@ struct Frame {
 	// [1] = far distance factor, far wetness, sheltered wetness, vertical wetness; [2] = x: the standing water's
 	// mask threshold (0: none), yzw unused
 	wetness: array<vec4f, 3>,
+	// #endregion
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;

@@ -15,31 +15,36 @@ export const FRAME_UNIFORM_BYTES = 880;
 
 /** float offsets of `Frame` fields */
 export const FrameOffsets = {
+	// camera
 	viewProj: 0,
 	eye: 16,
-	sun: 20,
-	sunColor: 24,
+	viewForward: 20,
+	viewport: 24,
+	renderSize: 28,
+	// lighting
+	sun: 32,
+	sunColor: 36,
 	/** 7 vec4s */
-	sh: 28,
-	ambient: 56,
-	viewport: 60,
-	terrain: 64,
-	/** u32 */
-	flags: 68,
-	params: 72,
-	/** four mat4s */
-	shadowMatrices: 76,
-	shadowFade: 140,
-	shadowPenumbra: 144,
-	/** four vec4s */
-	shadowSpheres: 148,
-	shadowLook: 164,
+	sh: 40,
+	ambient: 68,
 	/** three vec4s: irradiance clipmap centres, w = filled */
-	irradiance: 168,
+	irradiance: 72,
 	/** light count, tiles across and down, near plane */
-	localLights: 180,
-	viewForward: 184,
-	renderSize: 188,
+	localLights: 84,
+	// terrain and debug
+	terrain: 88,
+	/** u32 */
+	flags: 92,
+	params: 96,
+	// shadows
+	/** four mat4s */
+	shadowMatrices: 100,
+	shadowFade: 164,
+	shadowPenumbra: 168,
+	/** four vec4s */
+	shadowSpheres: 172,
+	shadowLook: 188,
+	// weather
 	/** four vec4s, see `Frame.cloud_shadow` */
 	cloudShadow: 192,
 	/** three vec4s, see `Frame.wetness` */
