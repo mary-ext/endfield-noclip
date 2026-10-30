@@ -92,6 +92,8 @@ export const LookFlags = {
 	ParallaxMap: 1 << 16,
 	ParallaxNoiseMap: 1 << 17,
 	// bits UV1_SHIFT… pick each slot's UV set
+	/** `HGRP/Erosion`: slots and parameters as {@link erosionLook} lays them out */
+	Erosion: 1 << 25,
 } as const;
 
 /** the slot flags of {@link LookFlags} by slot, which are cleared while a slot's texture isn't resident */
@@ -237,10 +239,18 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 			looks[entry.id] = emptyLook({ drawn: false });
 			continue;
 		}
-		if (shader.family === 'mattePainting') {
-			looks[entry.id] = mattePaintingLook(entry, shader);
-		} else {
-			looks[entry.id] = lookOf(entry, shader);
+		switch (shader.family) {
+			case 'mattePainting': {
+				looks[entry.id] = mattePaintingLook(entry, shader);
+				break;
+			}
+			case 'erosion': {
+				looks[entry.id] = erosionLook(entry, shader);
+				break;
+			}
+			default: {
+				looks[entry.id] = lookOf(entry, shader);
+			}
 		}
 	}
 	return looks;
@@ -502,6 +512,124 @@ const parallaxParams = (look: MaterialLook, entry: ReadyMaterial, shader: Shader
 		LookRow.parallaxColor,
 	);
 	params.set([dark[0] * intensity, dark[1] * intensity, dark[2] * intensity], LookRow.parallaxDark);
+};
+
+/**
+ * float offsets of an {@link erosionLook}'s parameters, which reuse the rows of {@link LookRow} that the Lit
+ * layers use
+ */
+export const ErosionRow = {
+	/** linear `_BaseColor`, no alpha test */
+	base: LookRow.tint,
+	/** `_Roughness`, `_DetailRoughnessCover`, `_Metallic`, `_NormalScale` */
+	surface: LookRow.surface,
+	/** `_OcclusionStrength`, f0, `_MetallicOffset`, `_DetailNormalScale` */
+	surface2: LookRow.surface2,
+	/** `_NoiseEmissiveStrength`, `_FlowColorStrength`, `_FlowColorEmissiveStrength`, `_DistanceBlend` */
+	strengths: LookRow.emissive,
+	/** `_MetallicColor`, `_NoiseStrength` (the noise layer's depth) */
+	metal: LookRow.maskAlbedo,
+	/** `_NoisePatternTintColor`, `_NoiseMin` */
+	noise: LookRow.maskAlbedo + 4,
+	/** `_NoisePatternAlphaTintColor`, `_FlowColorOffset` */
+	noiseAlpha: LookRow.maskAlbedo + 8,
+	/** `_FlowTopColor`, `_FlowRoughness` */
+	flowTop: LookRow.maskRoughness,
+	/** `_FlowBottomColor` */
+	flowBottom: LookRow.maskMetallic,
+	/** `_FlowNormalTilling`, `_FlowNoiseStrength`, ramp scroll per second, `_FlowSpeedOffset` */
+	flow: LookRow.maskScale,
+} as const;
+
+/** an {@link erosionLook}'s textures by slot of {@link SLOTS}, with the property that tiles each */
+const EROSION_SLOTS: (readonly [name: string, tiling: string | null] | null)[] = [
+	null,
+	['_BaseNormalMap', '_BaseNormalTilling'],
+	['_MetalMixMap', null],
+	// sampled at a coordinate of its own, not by UV
+	['_FlowRampMap', null],
+	['_DetailNormalMap', '_DetailNormalTilling'],
+	// the noise layer: the parallax march samples it untiled, the colour lookup tiled
+	['_NoisePatternMap', '_NoisePatternMapTilling'],
+	['_NoisePatternMap', null],
+];
+
+/**
+ * `HGRP/Erosion`: the blight-covered rock. a base colour and an HDR metal colour are mixed by `_MetalMixMap`
+ * (R: 0 where metal; G: occlusion and flow noise; B: where the flow band shows; A: roughness). a noise
+ * pattern, offset by a one-step parallax and tinted, is added to the colour and faintly to emission. a flow
+ * band reads `_FlowRampMap` along the object's height and blends from `_FlowBottomColor` below
+ * `_FlowColorOffset` to `_FlowTopColor` above it. the base and detail normal maps are summed. every texture
+ * samples UV set 0 and ignores its `_ST`, tiling by its own property instead. HDR colours are used as stored,
+ * like `_EmissiveColor`.
+ *
+ * the blend with whatever lies behind (`_ObjectBlend*`, which needs the scene's depth) and
+ * `_FakeTranslucency` aren't drawn
+ */
+const erosionLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
+	const look = emptyLook({ drawn: true });
+	look.cull = entry.cull;
+	look.flags |= LookFlags.Erosion;
+	const params = look.params;
+	EROSION_SLOTS.forEach((use, i) => {
+		const slot = use === null ? undefined : entry.slots[use[0]];
+		if (use === null || slot === undefined) {
+			return;
+		}
+		const tiling = use[1] === null ? 1 : floatOf(entry, shader, use[1], 1);
+		look.textures[i] = slot.texture;
+		// the ramp is sampled at its finest level whatever its size on screen
+		look.uvScales[i] = i === 3 ? 0 : Math.max(Math.abs(tiling), 1e-3);
+		look.flags |= SLOT_FLAGS[i];
+		params.set([tiling, tiling, 0, 0], LookRow.uv + i * 4);
+	});
+	const hdr = (name: string): number[] => (colorOf(entry, shader, name) ?? [1, 1, 1, 1]).slice(0, 3);
+	const float = (name: string, fallback: number): number => floatOf(entry, shader, name, fallback);
+	params.set([...linearRgb(colorOf(entry, shader, '_BaseColor') ?? [1, 1, 1, 1]), -1], ErosionRow.base);
+	params.set(
+		[
+			float('_Roughness', 0),
+			float('_DetailRoughnessCover', 0),
+			float('_Metallic', 0),
+			float('_NormalScale', 1),
+		],
+		ErosionRow.surface,
+	);
+	params.set(
+		[
+			float('_OcclusionStrength', 1),
+			0.08 * float('_Specular', 0.5),
+			float('_MetallicOffset', 0),
+			float('_DetailNormalScale', 1),
+		],
+		ErosionRow.surface2,
+	);
+	params.set(
+		[
+			float('_NoiseEmissiveStrength', 0),
+			float('_FlowColorStrength', 0),
+			float('_FlowColorEmissiveStrength', 0),
+			float('_DistanceBlend', 1),
+		],
+		ErosionRow.strengths,
+	);
+	params.set([...hdr('_MetallicColor'), float('_NoiseStrength', 0)], ErosionRow.metal);
+	params.set([...hdr('_NoisePatternTintColor'), float('_NoiseMin', 0)], ErosionRow.noise);
+	params.set([...hdr('_NoisePatternAlphaTintColor'), float('_FlowColorOffset', 0)], ErosionRow.noiseAlpha);
+	params.set([...hdr('_FlowTopColor'), float('_FlowRoughness', 0)], ErosionRow.flowTop);
+	params.set(hdr('_FlowBottomColor'), ErosionRow.flowBottom);
+	// the scroll advances 0.05 · speed per tick of a global clock, assumed to tick in seconds (as the parallax
+	// pulse's)
+	params.set(
+		[
+			float('_FlowNormalTilling', 0),
+			float('_FlowNoiseStrength', 0),
+			0.05 * float('_FlowNormalSpeed', 0),
+			float('_FlowSpeedOffset', 0),
+		],
+		ErosionRow.flow,
+	);
+	return look;
 };
 
 /**

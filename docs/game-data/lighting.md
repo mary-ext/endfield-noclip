@@ -226,6 +226,35 @@ pass still applies. fog comes from the composite like everything else. the shade
 pass, so they don't cast shadows, and the viewer holds them back until their texture is resident.
 `_UseMainTexAsAlpha` isn't read; no map01 material sets it.
 
+## erosion
+
+`HGRP/Erosion` draws the dark blight rock that grows over the Originium Science Park and other map01
+areas. it has no base colour map; the colour comes from its other maps
+([`erosionLook`](../../packages/viewer/src/render/materials.ts), `erosion_surface` in
+`shaders/mesh.wgsl`):
+
+- `_MetalMixMap` R is 0 where the surface is metal. there the colour becomes `_MetallicColor`, the
+  roughness 0.01 and the metallic `_Metallic · (metal − _MetallicOffset)`; elsewhere it's
+  `_BaseColor`, with roughness `_Roughness` times the map's A, blended toward the detail map's alpha
+  by `_DetailRoughnessCover`. G is occlusion (by `_OcclusionStrength`) and B masks the flow band.
+- a noise layer: `_NoisePatternMap`, shifted by one parallax step `_NoiseStrength` deep, tinted by
+  `_NoisePatternTintColor` and the base normal map's alpha, scaled by `max(N·V, _NoiseMin)` and
+  faded out by distance over `_DistanceBlend` metres. it's added to the colour and, times
+  `_NoiseEmissiveStrength`, to emission.
+- a flow band: `_FlowRampMap` read along the object-space height (`× _FlowNormalTilling`, plus the
+  metal map's G `× _FlowNoiseStrength` and `_FlowSpeedOffset`, scrolling by `_FlowNormalSpeed`),
+  coloured `_FlowBottomColor` below the height `_FlowColorOffset` and `_FlowTopColor` above it. it
+  adds `_FlowColorStrength` of itself to the colour where the metal map's B is set,
+  `_FlowColorEmissiveStrength` to emission elsewhere, and lowers roughness by `_FlowRoughness` times
+  its brightness.
+- the base and detail normal maps (each with its own scale) are summed; metal flattens the bitangent
+  component.
+
+every map samples UV set 0 and tiles by its own `*Tilling` property rather than its `_ST`. the
+metal, noise and flow colours are HDR and used as stored, like `_EmissiveColor`. not drawn: the soft
+blend into whatever lies behind (`_ObjectBlend*`, which reads the scene depth), `_FakeTranslucency`
+and `HGRP/ErosionDynamic`.
+
 ## sky
 
 [`shaders/atmosphere.wgsl`](../../packages/viewer/src/render/shaders/atmosphere.wgsl) is a

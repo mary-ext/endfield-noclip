@@ -1653,6 +1653,7 @@ export type ShaderFamily =
 	| 'terrain'
 	| 'hlod'
 	| 'mattePainting'
+	| 'erosion'
 	| 'unknown';
 
 /** how a material composites */

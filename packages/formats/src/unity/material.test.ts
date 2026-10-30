@@ -128,6 +128,8 @@ describe('shader helpers', () => {
 		assert.equal(shaderFamily('HGRP/Foliage/Grass'), 'grass');
 		assert.equal(shaderFamily('Hidden/VLB_Standard'), 'volumetricBeam');
 		assert.equal(shaderFamily('HGRP/MattePainting'), 'mattePainting');
+		assert.equal(shaderFamily('HGRP/Erosion'), 'erosion');
+		assert.equal(shaderFamily('HGRP/DecalErosionVolume'), 'decal');
 		assert.equal(shaderFamily('Custom/Thing'), 'unknown');
 	});
 

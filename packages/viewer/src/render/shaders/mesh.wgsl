@@ -1,6 +1,6 @@
 // instanced meshes with the HGRP surface essentials: base colour, tangent-space normal map, roughness from
 // the normal map's B channel or an MRO map, emission, and Lit's tri-channel mask, detail map and parallax
-// glow. quantized positions, octahedral normals and tangents and UV sets 0 and 1 from the geometry blob;
+// glow, plus the erosion shader. quantized positions, octahedral normals and tangents and UV sets 0 and 1 from the geometry blob;
 // instances from this frame's visible list; draw parameters by the list entry's draw id (see materials.ts for
 // their layout).
 
@@ -75,6 +75,8 @@ const TRI_CHANNEL_MASK = 16384u;
 const DETAIL_MAP = 32768u;
 const PARALLAX_MAP = 65536u;
 const PARALLAX_NOISE_MAP = 131072u;
+// `HGRP/Erosion` (`erosionLook` in materials.ts)
+const EROSION = 33554432u;
 // slot i samples UV set 1 when bit UV1_SHIFT + i is set
 const UV1_SHIFT = 18u;
 // set per draw from the geometry's streams (`GeometryFlags` in mesh-renderer.ts)
@@ -127,6 +129,8 @@ struct VertexOut {
 	@location(4) @interpolate(flat) draw: u32,
 	// the sum of the object's world position components, which offsets the parallax pulse
 	@location(5) @interpolate(flat) phase: f32,
+	// the object-space height, along which the erosion flow band runs
+	@location(6) object_y: f32,
 }
 
 @vertex
@@ -164,6 +168,7 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	out.uv = vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw);
 	out.draw = draw_id;
 	out.phase = world.x + world.y + world.z;
+	out.object_y = p.y;
 	return out;
 }
 
@@ -232,6 +237,10 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 		}
 		c += max(c - vec3f(draw.surface.x), vec3f(0.0)) * draw.surface.y;
 		return unlit(clamp(c * mix(1.0, frame.ambient.y, draw.emissive2.z), vec3f(0.0), vec3f(1000.0)));
+	}
+	if ((flags & EROSION) != 0u) {
+		let s = erosion_surface(draw, in, flags, faceted, packed, mask, detail, uv0_dx, uv0_dy);
+		return shade_surface(s, in.rel, in.position.xy);
 	}
 
 	var albedo = clamp(base.rgb * draw.surface2.w, vec3f(0.0), vec3f(1.0));
@@ -439,6 +448,132 @@ fn parallax_glow(
 	let pulse = cos(frame.eye.w * draw.parallax2.x + draw.parallax2.y * in.phase) * draw.parallax.w + draw.parallax2.w;
 	let color = mix(draw.parallax_dark.rgb, draw.parallax_color.rgb, pattern) * fresnel * pulse;
 	return clamp(color, vec3f(0.0), vec3f(1000.0)) * mix(1.0, frame.ambient.y, draw.parallax2.z);
+}
+
+// `HGRP/Erosion` (`erosionLook` in materials.ts, parameters by `ErosionRow`): base and metal colours mixed by the
+// metal map, plus a parallax-offset noise layer and a flow band along the object's height. `packed` is the base
+// normal map, `mask` the metal map and `detail` the detail normal map; textures still streaming read as the
+// game's defaults (white, or flat normals)
+fn erosion_surface(
+	draw: Draw,
+	in: VertexOut,
+	flags: u32,
+	faceted: vec3f,
+	packed_in: vec4f,
+	mask_in: vec4f,
+	detail_in: vec4f,
+	uv0_dx: vec2f,
+	uv0_dy: vec2f,
+) -> Surface {
+	let flat_normal = vec4f(0.5, 0.5, 1.0, 1.0);
+	let packed = select(flat_normal, packed_in, (flags & NORMAL_MAP) != 0u);
+	let metal_map = select(vec4f(1.0), mask_in, (flags & MASK_MAP) != 0u);
+	let detail = select(flat_normal, detail_in, (flags & DETAIL_MAP) != 0u);
+	let base_color = draw.tint.rgb;
+	let roughness = draw.surface.x;
+	let roughness_cover = draw.surface.y;
+	let metallic = draw.surface.z;
+	let normal_scale = draw.surface.w;
+	let occlusion_strength = draw.surface2.x;
+	let metallic_offset = draw.surface2.z;
+	let detail_scale = draw.surface2.w;
+	let noise_emissive = draw.emissive.x;
+	let flow_strength = draw.emissive.y;
+	let flow_emissive = draw.emissive.z;
+	let distance_blend = draw.emissive.w;
+	let metal_color = draw.mask_albedo[0].rgb;
+	let noise_depth = draw.mask_albedo[0].w;
+	let noise_tint = draw.mask_albedo[1].rgb;
+	let noise_min = draw.mask_albedo[1].w;
+	let noise_alpha_tint = draw.mask_albedo[2].rgb;
+	let flow_offset = draw.mask_albedo[2].w;
+	let flow_top = draw.mask_roughness.rgb;
+	let flow_roughness = draw.mask_roughness.w;
+	let flow_bottom = draw.mask_metallic.rgb;
+	let flow = draw.mask_scale;
+
+	var n = in.normal;
+	if (dot(n, n) < 1e-6) {
+		n = faceted;
+	}
+	n = normalize(n);
+	let towards_viewer = dot(n, in.rel) <= 0.0;
+	if (!towards_viewer) {
+		n = -n;
+	}
+	let v = normalize(-in.rel);
+	// 1 where metal
+	let metal = saturate(1.0 - metal_map.r);
+	let has_tangent = in.tangent.w != 0.0;
+	var b = vec3f(0.0);
+	if (has_tangent) {
+		b = cross(in.normal, in.tangent.xyz) * in.tangent.w;
+	}
+
+	// the noise layer: one parallax step into the noise map as a height field, then a tinted lookup at the hit,
+	// fading with distance
+	var noise_offset = vec2f(0.0);
+	if (has_tangent && (flags & PARALLAX_NOISE_MAP) != 0u) {
+		let vt = normalize(vec3f(dot(v, in.tangent.xyz), dot(v, b), dot(v, in.normal)));
+		let delta = vt.xy / (vt.z + 0.42) / max(vt.z, 0.001) * -noise_depth;
+		let hit = textureSampleGrad(parallax_noise_map, parallax_sampler, in.uv.xy + delta, uv0_dx, uv0_dy).x;
+		// the hit refined between the surface (height 1) and the step (height 0)
+		noise_offset = delta / (1.0 + max(hit, 0.0));
+	}
+	var noise_rgb = vec3f(1.0);
+	if ((flags & PARALLAX_MAP) != 0u) {
+		let tiling = draw.slot_uv[PARALLAX_SLOT].xy;
+		noise_rgb = textureSampleGrad(
+			parallax_map,
+			parallax_sampler,
+			(in.uv.xy + noise_offset) * tiling,
+			uv0_dx * tiling,
+			uv0_dy * tiling,
+		).rgb;
+	}
+	let fade = max(0.001, 1.0 - saturate(length(in.rel) / distance_blend));
+	let noise = noise_rgb * noise_tint * packed.a * max(dot(n, v), noise_min) * fade;
+
+	// the flow band: the ramp read along the object's height, offset by the metal map's G and a scroll, coloured
+	// from the bottom colour below the offset height to the top colour above it
+	let flow_u = in.object_y * flow.x + metal_map.g * flow.y + frame.eye.w * flow.z + flow.w;
+	var ramp = vec3f(0.5, 0.5, 1.0);
+	if ((flags & EMISSIVE_MAP) != 0u) {
+		ramp = textureSampleLevel(emissive_map, base_sampler, vec2f(flow_u, 0.5), 0.0).rgb;
+	}
+	var below = select(0.0, 1.0, flow_offset >= 0.0);
+	if (in.object_y != 0.0) {
+		below = saturate(flow_offset / in.object_y);
+	}
+	below = below * below * (3.0 - 2.0 * below);
+	let flow_color = ramp * mix(flow_bottom, flow_top, 1.0 - below);
+
+	var albedo = mix(base_color + noise + noise_alpha_tint * metal, metal_color, metal);
+	albedo += flow_color * flow_strength * metal_map.b;
+
+	// the base and detail normals summed; metal flattens the bitangent component
+	if (has_tangent) {
+		let base_xy = packed.rg * 2.0 - 1.0;
+		let detail_xy = vec2f(detail.r * detail.a, detail.g) * 2.0 - 1.0;
+		var tn = normalize(
+			vec3f(base_xy * normal_scale, normal_z(base_xy)) + vec3f(detail_xy * detail_scale, normal_z(detail_xy)),
+		);
+		tn.y = mix(tn.y, 0.0, metal);
+		let t = normalize(in.tangent.xyz - n * dot(in.tangent.xyz, n));
+		var bt = select(-b, b, towards_viewer);
+		bt = normalize(bt - n * dot(bt, n));
+		n = normalize(t * tn.x + bt * tn.y + n * tn.z);
+	}
+
+	var s = default_surface(clamp(albedo, vec3f(0.0), vec3f(1.0)), n);
+	s.roughness = saturate(
+		mix(mix(roughness * metal_map.a, detail.a, roughness_cover), 0.01, metal) - length(flow_color) * flow_roughness,
+	);
+	s.metallic = saturate(metallic * (metal - metallic_offset));
+	s.f0 = draw.surface2.y;
+	s.occlusion = 1.0 - occlusion_strength + metal_map.g * occlusion_strength;
+	s.emission = noise * noise_emissive + flow_color * flow_emissive * saturate(1.0 - metal_map.b);
+	return s;
 }
 
 // the depth of alpha-tested materials, in the main pass and the shadow passes (opaque ones have no fragment
