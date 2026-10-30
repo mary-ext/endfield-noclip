@@ -283,7 +283,7 @@ fn shade(in: VertexOut) -> Shaded {
 		return shade_surface(s, in.rel, in.position.xy);
 	}
 
-	var albedo = clamp(base.rgb * draw.surface2.w, vec3f(0.0), vec3f(1.0));
+	var albedo = clamp(base.rgb * draw.tint.rgb * draw.surface2.w, vec3f(0.0), vec3f(1.0));
 	if ((flags & BASE_MAP) == 0u) {
 		albedo = vec3f(1.0);
 	}

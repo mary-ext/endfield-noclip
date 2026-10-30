@@ -183,6 +183,11 @@ colours, the Fresnel term, and per-instance emission overrides.
 
 ## lit layers
 
+the Lit, LitTransparent and foliage shaders start from the base colour map times the linearized
+`_BaseColor`, times `_BaseColorBrighterScale`, clamped to 1, then blend toward `_BaseColor` by
+`_BaseColorTintCover`. the tint matters: Dijiang's black floors and walls are a light grey map
+tinted by about 0.3. `HGRP/LitHLOD` ignores the tint.
+
 three optional Lit layers come from the game's shader for these keywords
 ([`render/materials.ts`](../../packages/viewer/src/render/materials.ts), `shaders/mesh.wgsl`). each
 texture slot samples UV set 0 or 1, as its `m_UVSetIndex` says; the originium crystals' base colour

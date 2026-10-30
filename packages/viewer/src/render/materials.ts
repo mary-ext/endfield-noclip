@@ -318,12 +318,12 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		look.flags |= LookFlags.Foliage;
 	}
 
-	// base colour: brightened, then covered by the tint
+	// base colour: tinted and brightened, then covered by the tint. the HLOD shader ignores the tint
 	{
 		const tint = colorOf(entry, shader, '_BaseColor');
 		const cover = floatOf(entry, shader, '_BaseColorTintCover', 0);
 		const brighter = floatOf(entry, shader, '_BaseColorBrighterScale', 1);
-		const color = tint === undefined ? [1, 1, 1] : linearRgb(tint);
+		const color = tint === undefined || family === 'hlod' ? [1, 1, 1] : linearRgb(tint);
 		params.set([...color, entry.alphaClipThreshold ?? -1], LookRow.tint);
 		// `_AlphaMaskChannel` picks the alpha the Lit family tests: 0 the base colour's, 1 the normal map's. in
 		// the `_BaseTextureMapCount` 1 layout the base colour's alpha is metallic, so testing it would cut holes in solid walls
