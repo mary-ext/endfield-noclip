@@ -178,6 +178,8 @@ export interface StreamStats {
 	decoding: number;
 	uploading: number;
 	residentBytes: number;
+	/** {@link residentBytes} split by residency kind */
+	residentByKind: Record<Resident['kind'], number>;
 	pinnedBytes: number;
 	downloadedBytes: number;
 	requests: number;
@@ -218,6 +220,16 @@ export class StreamManager {
 		decoding: 0,
 		uploading: 0,
 		residentBytes: 0,
+		residentByKind: {
+			heights: 0,
+			surface: 0,
+			detail: 0,
+			layer: 0,
+			instances: 0,
+			geometry: 0,
+			texture: 0,
+			irradiance: 0,
+		},
 		pinnedBytes: 0,
 		downloadedBytes: 0,
 		requests: 0,
@@ -700,7 +712,7 @@ export class StreamManager {
 			item.state = 'ready';
 			// fresh content counts as used, so the budget pass can't evict it before its first draw
 			item.usedFrame = this.#frame;
-			this.#count(item, resident.bytes);
+			this.#count(item, resident, resident.bytes);
 			uploaded += resident.bytes;
 			this.version++;
 		}
@@ -737,8 +749,9 @@ export class StreamManager {
 	}
 
 	/** adds `bytes` to the resident counters */
-	#count(item: ContentItem, bytes: number): void {
+	#count(item: ContentItem, resident: Resident, bytes: number): void {
 		this.stats.residentBytes += bytes;
+		this.stats.residentByKind[resident.kind] += bytes;
 		if (item.pinned) {
 			this.stats.pinnedBytes += bytes;
 		}
@@ -780,7 +793,7 @@ export class StreamManager {
 			return;
 		}
 		this.#stores.release(item.blob, resident);
-		this.#count(item, -resident.bytes);
+		this.#count(item, resident, -resident.bytes);
 		item.resident = null;
 		item.state = 'idle';
 		this.stats.evictions++;

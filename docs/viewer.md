@@ -354,7 +354,8 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
   `viewer.options.autoExposure`, `viewer.stats.autoExposureEv` and `viewer.options.debugView`
   (`'clouds'` shows the raw cloud panorama).
 - `viewer.stats` (refreshed every 250 ms): draws, triangles, instances, residency, queue and request
-  counters, `cpuMs`, `cpuPhases` and `gpuMs`.
+  counters, `cpuMs`, `cpuPhases` and `gpuMs`. `viewer.scene.stream.stats.residentByKind` splits the
+  streamed residency by kind (textures, geometry, irradiance, …).
 
 ### profiling
 
