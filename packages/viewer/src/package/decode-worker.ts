@@ -8,6 +8,7 @@
 import {
 	decodeGeometryBlob,
 	decodeHeightPage,
+	decodeDetailPage,
 	decodeInstanceBlock,
 	decodeSurfacePage,
 } from '@endfield-noclip/package-format/codec';
@@ -218,6 +219,28 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 				response: { id: request.id, kind: 'surface', side: page.side, albedo, normal },
 				transfer: [albedo, normal],
 			};
+		}
+		case 'detail': {
+			const page = decodeDetailPage(raw);
+			const control = page.control.slice().buffer;
+			const tint = page.tint.slice().buffer;
+			const index = page.index.slice().buffer;
+			return {
+				response: {
+					id: request.id,
+					kind: 'detail',
+					side: page.side,
+					cells: page.cells,
+					control,
+					tint,
+					index,
+				},
+				transfer: [control, tint, index],
+			};
+		}
+		case 'layer': {
+			const data = ownBuffer(raw);
+			return { response: { id: request.id, kind: 'layer', data }, transfer: [data] };
 		}
 		case 'instances': {
 			const built = buildInstanceRows(decodeInstanceBlock(raw), request.rowKinds);

@@ -149,6 +149,7 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<legend>layers</legend>
 				<Toggle viewer={viewer} name="terrain" label="terrain" />
 				<Toggle viewer={viewer} name="terrainSurface" label="terrain textures" />
+				<Toggle viewer={viewer} name="terrainDetail" label="terrain detail" />
 				<Toggle viewer={viewer} name="instances" label="instances" />
 				<Toggle viewer={viewer} name="boxes" label="boxes" />
 				<Toggle viewer={viewer} name="detail" label="detail" />

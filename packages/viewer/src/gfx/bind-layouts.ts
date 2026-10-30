@@ -18,7 +18,7 @@ const storage = (binding: number, visibility: number): GPUBindGroupLayoutEntry =
 export interface BindLayouts {
 	/** group 0: `Frame` uniforms at a dynamic offset into the uniform ring */
 	frame: GPUBindGroupLayout;
-	/** group 1 of the terrain family: height pages, patch list, surface pages */
+	/** group 1 of the terrain family: height pages, patch list, surface and detail pages, layer textures */
 	terrain: GPUBindGroupLayout;
 	/** group 1 of the instance families: instance rows, block origins, this frame's visible-instance list */
 	instances: GPUBindGroupLayout;
@@ -75,6 +75,16 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 			{ binding: 2, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
 			{ binding: 3, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
 			{ binding: 4, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			// detail pages (control, tint), layer textures (diffuse, normal), the detail index and layer
+			// parameters, and the layers' repeating sampler
+			...[5, 6, 7, 8].map((binding): GPUBindGroupLayoutEntry => ({
+				binding,
+				visibility: FRAGMENT,
+				texture: { sampleType: 'float', viewDimension: '2d-array' },
+			})),
+			storage(9, FRAGMENT),
+			storage(10, FRAGMENT),
+			{ binding: 11, visibility: FRAGMENT, sampler: { type: 'filtering' } },
 		],
 	});
 	const instances = device.createBindGroupLayout({

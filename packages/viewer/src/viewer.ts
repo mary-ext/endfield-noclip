@@ -58,6 +58,8 @@ export interface ViewerOptions {
 	terrain: boolean;
 	/** draw the terrain's baked albedo and normal pages; off (or without BC textures) shows stand-in colours */
 	terrainSurface: boolean;
+	/** blend the terrain's close-up material layers near the camera (needs BC textures) */
+	terrainDetail: boolean;
 	instances: boolean;
 	detail: boolean;
 	resident: boolean;
@@ -107,6 +109,7 @@ export interface ViewerOptions {
 export const DEFAULT_OPTIONS: ViewerOptions = {
 	terrain: true,
 	terrainSurface: true,
+	terrainDetail: true,
 	instances: true,
 	detail: true,
 	resident: true,
@@ -422,6 +425,8 @@ export class Viewer {
 			{
 				uploadHeights: (decoded, options) => this.#terrain.upload(decoded, options),
 				uploadSurface: (decoded) => this.#terrain.uploadSurface(decoded),
+				uploadDetail: (decoded) => this.#terrain.uploadDetail(decoded),
+				uploadLayer: (blob, decoded) => this.#terrain.uploadLayer(blob, decoded),
 				uploadInstances: (decoded) => this.#instances.upload(decoded),
 				uploadGeometry: (blob, decoded) => this.#meshes.upload(blob, decoded),
 				uploadTexture: (blob, decoded) => textures.upload(blob, decoded),
@@ -434,6 +439,14 @@ export class Viewer {
 						}
 						case 'surface': {
 							this.#terrain.releaseSurface(resident);
+							break;
+						}
+						case 'detail': {
+							this.#terrain.releaseDetail(resident);
+							break;
+						}
+						case 'layer': {
+							// pinned for the package's lifetime; its array goes with the next `setDetail`
 							break;
 						}
 						case 'instances': {
@@ -478,6 +491,12 @@ export class Viewer {
 					break;
 				}
 			}
+		}
+		// every detail page draws from all layer textures, so they stay resident
+		const detail = pkg.manifest.terrain?.detail ?? null;
+		this.#terrain.setDetail(detail);
+		if (detail !== null && this.#terrain.surfaces) {
+			coreBlobs.push(...new Set([...detail.diffuse, ...detail.normal]));
 		}
 		stream.pin(coreBlobs);
 
@@ -557,6 +576,7 @@ export class Viewer {
 		this.#fades.reset();
 		this.#setIrradiance(new IrradianceVolume(this.#gfx.device, EMPTY_IRRADIANCE));
 		this.#water.setTable(null);
+		this.#terrain.setDetail(null);
 		this.#level = null;
 		this.#unsettledPose = null;
 		this.#focusCells = null;
@@ -1183,7 +1203,11 @@ export class Viewer {
 		};
 		const selection = scene.selector.run(
 			view,
-			{ ...options, terrainSurface: options.terrainSurface && this.#terrain.surfaces },
+			{
+				...options,
+				terrainSurface: options.terrainSurface && this.#terrain.surfaces,
+				terrainDetail: options.terrainDetail && this.#terrain.surfaces,
+			},
 			this.#focusCells,
 		);
 		this.#visited = selection.visited;

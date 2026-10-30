@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
 	decodeBlobTable,
 	decodeChains,
+	decodeDetailPage,
 	decodeGeometryBlob,
 	decodeHeightPage,
 	decodeInstanceBlock,
@@ -12,6 +13,7 @@ import {
 	decodeTree,
 	encodeBlobTable,
 	encodeChains,
+	encodeDetailPage,
 	encodeGeometryBlob,
 	encodeHeightPage,
 	encodeInstanceBlock,
@@ -261,6 +263,35 @@ describe('height pages', () => {
 
 	it('rejects the wrong sample count', () => {
 		assert.throws(() => encodeHeightPage(new Uint16Array(10), 65), RangeError);
+	});
+});
+
+describe('detail pages', () => {
+	it('round-trips every section', () => {
+		const page = {
+			side: 8,
+			cells: 2,
+			control: Uint8Array.from({ length: 8 * 8 * 4 }, (_, i) => i & 0xff),
+			tint: Uint8Array.from({ length: 4 * 16 }, (_, i) => 200 - i),
+			index: Uint8Array.from({ length: 2 * 2 * 4 }, (_, i) => i),
+		};
+		const decoded = decodeDetailPage(encodeDetailPage(page));
+		assert.equal(decoded.side, 8);
+		assert.equal(decoded.cells, 2);
+		assert.deepEqual(decoded.control, page.control);
+		assert.deepEqual(decoded.tint, page.tint);
+		assert.deepEqual(decoded.index, page.index);
+	});
+
+	it('rejects sections of the wrong size', () => {
+		const page = {
+			side: 8,
+			cells: 2,
+			control: new Uint8Array(8 * 8 * 4),
+			tint: new Uint8Array(4 * 16),
+			index: new Uint8Array(15),
+		};
+		assert.throws(() => encodeDetailPage(page), RangeError);
 	});
 });
 

@@ -30,6 +30,7 @@ export type SelectionOptions = Pick<
 	| 'terrainPixels'
 	| 'terrain'
 	| 'terrainSurface'
+	| 'terrainDetail'
 	| 'instances'
 	| 'detail'
 	| 'resident'
@@ -52,7 +53,12 @@ export interface TerrainPatch {
 	morphEnd: number;
 	/** the finest resident surface page at or above `node`, or `null` for stand-in colours */
 	surface: SurfaceSource | null;
+	/** the node's resident close-up detail page (leaves near the camera), or `null` */
+	detail: ContentItem | null;
 }
+
+/** leaves within this distance load their close-up detail page, m; the shader fades detail out before it */
+export const DETAIL_DISTANCE = 160;
 
 /** a range of rows of one resident instance block */
 export interface InstanceRange {
@@ -357,6 +363,10 @@ export class Selector {
 				surface = { item: page, node };
 			}
 		}
+		let detail: ContentItem | null = null;
+		if (options.terrainDetail && node.terrainDetail !== null && distance < DETAIL_DISTANCE) {
+			detail = this.#stream.want(node.terrainDetail.blob, priority);
+		}
 		if (!inView || item === null) {
 			// a missing page is covered from its parent's
 			return;
@@ -369,7 +379,7 @@ export class Selector {
 		const finerRange = this.#range(level + 1, view, options);
 		const subdivide = level < this.#tree.terrainLeafLevel && distance < finerRange;
 		if (!subdivide) {
-			this.selection.patches.push({ item, node, quadrant: -1, morphStart, morphEnd, surface });
+			this.selection.patches.push({ item, node, quadrant: -1, morphStart, morphEnd, surface, detail });
 			return;
 		}
 		for (let quadrant = 0; quadrant < 4; quadrant++) {
@@ -381,7 +391,7 @@ export class Selector {
 			if (child?.terrain != null) {
 				this.#stream.want(child.terrain.blob, this.#priority(child, sse * 2, true));
 			}
-			this.selection.patches.push({ item, node, quadrant, morphStart, morphEnd, surface });
+			this.selection.patches.push({ item, node, quadrant, morphStart, morphEnd, surface, detail: null });
 		}
 	}
 

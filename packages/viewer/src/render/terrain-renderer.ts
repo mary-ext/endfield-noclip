@@ -1,18 +1,32 @@
 /**
  * CDLOD terrain: height pages live in a slot pool (one storage buffer), and every selected page quadrant is
  * an instance of one shared 33×33 grid, so terrain is a single draw. baked surface pages (albedo, normal)
- * live in a second slot pool, a pair of BC3 texture arrays, one layer per page.
+ * live in a second slot pool, a pair of BC3 texture arrays, one layer per page. leaves near the camera add a
+ * detail page (splat control, tint, layer index) from a third pool, and blend the package's layer textures,
+ * which stay resident in a pair of BC7 arrays.
  *
  * @module
  */
 
+import type { TerrainDetailInfo } from '@endfield-noclip/package-format/format';
+
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
 import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
-import type { DecodedHeights, DecodedSurface } from '../package/decode-protocol.ts';
+import type {
+	DecodedDetail,
+	DecodedHeights,
+	DecodedLayer,
+	DecodedSurface,
+} from '../package/decode-protocol.ts';
 import type { Vec3 } from '../scene/camera.ts';
 import type { TerrainPatch } from '../streaming/selection.ts';
-import type { ResidentHeights, ResidentSurface } from '../streaming/stream-manager.ts';
+import type {
+	ResidentDetail,
+	ResidentHeights,
+	ResidentLayer,
+	ResidentSurface,
+} from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import terrainWgsl from './shaders/terrain.wgsl?raw';
@@ -25,8 +39,17 @@ const GRID = QUADS / 2 + 1;
 /** u32 words per page slot (two samples per word) */
 const PAGE_WORDS = Math.ceil((PAGE_SIDE * PAGE_SIDE) / 2);
 const PAGE_BYTES = PAGE_WORDS * 4;
-const PATCH_FLOATS = 16;
+const PATCH_FLOATS = 20;
 const SHADOW_KEY = 'terrain/shadow';
+
+/** detail page slots; leaves within `DETAIL_DISTANCE` need a few dozen */
+const DETAIL_SLOTS = 256;
+/** index cells per detail page edge the shader is written for */
+const DETAIL_CELLS = 8;
+/** f32 words per layer in the layer storage buffer (5 vec4) */
+const LAYER_FLOATS = 20;
+/** bytes of one BC7 layer level, levels under 4² padded to a block */
+const bc7LevelBytes = (size: number): number => Math.ceil(size / 4) ** 2 * 16;
 
 /** texels per surface page edge the renderer is written for, border included */
 export const SURFACE_SIDE = 132;
@@ -39,6 +62,8 @@ const SURFACE_FORMAT: GPUTextureFormat = 'bc3-rgba-unorm';
 const SURFACE_IMAGE_BYTES = (SURFACE_SIDE / 4) ** 2 * 16;
 
 const vertexAt = (x: number, z: number): number => z * GRID + x;
+
+const array = (texture: GPUTexture): GPUTextureView => texture.createView({ dimension: '2d-array' });
 
 const gridIndices = (): { fill: Uint16Array; wire: Uint16Array } => {
 	const fill: number[] = [];
@@ -86,11 +111,29 @@ export class TerrainRenderer {
 	readonly patchTriangles = (GRID - 1) * (GRID - 1) * 2;
 
 	#device: GPUDevice;
+	#layout: GPUBindGroupLayout;
 	#heights: GPUBuffer;
 	#albedo: GPUTexture;
 	#normal: GPUTexture;
 	#freeSurfaceSlots: number[] = [];
 	#surfaceBytes: number;
+	#surfaceSampler: GPUSampler;
+	#detailControl: GPUTexture;
+	#detailTint: GPUTexture;
+	#detailIndex: GPUBuffer;
+	#freeDetailSlots: number[] = [];
+	#detailBytes: number;
+	/** the package's layer textures, params and how many of the textures have arrived */
+	#layers: {
+		info: TerrainDetailInfo;
+		diffuse: GPUTexture;
+		normal: GPUTexture;
+		params: GPUBuffer;
+		/** layer blob → which arrays and layers it fills (identical textures share a blob) */
+		targets: Map<number, { texture: GPUTexture; layer: number }[]>;
+		uploaded: Set<number>;
+	} | null = null;
+	#layerSampler: GPUSampler;
 	#patches: GPUBuffer;
 	#patchCapacity: number;
 	#patchData: Float32Array;
@@ -149,6 +192,44 @@ export class TerrainRenderer {
 		this.#albedo = surfaceTexture('terrain albedo pages');
 		this.#normal = surfaceTexture('terrain normal pages');
 		this.#surfaceBytes = this.surfaces ? surfaceSlots * SURFACE_IMAGE_BYTES * 2 : 0;
+		this.#surfaceSampler = device.createSampler({
+			label: 'terrain surface',
+			magFilter: 'linear',
+			minFilter: 'linear',
+		});
+		this.#layerSampler = device.createSampler({
+			label: 'terrain layers',
+			addressModeU: 'repeat',
+			addressModeV: 'repeat',
+			magFilter: 'linear',
+			minFilter: 'linear',
+			mipmapFilter: 'linear',
+			maxAnisotropy: 8,
+		});
+
+		// detail pages need BC for the tint and the layer textures; without it the pool stays empty
+		const detailSlots = this.surfaces ? Math.min(DETAIL_SLOTS, device.limits.maxTextureArrayLayers) : 0;
+		for (let slot = detailSlots - 1; slot >= 0; slot--) {
+			this.#freeDetailSlots.push(slot);
+		}
+		this.#detailControl = device.createTexture({
+			label: 'terrain detail control',
+			size: this.surfaces ? [SURFACE_SIDE, SURFACE_SIDE, detailSlots] : [4, 4, 1],
+			format: 'rgba8unorm',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		});
+		this.#detailTint = device.createTexture({
+			label: 'terrain detail tint',
+			size: this.surfaces ? [SURFACE_SIDE, SURFACE_SIDE, detailSlots] : [4, 4, 1],
+			format: this.surfaces ? 'bc3-rgba-unorm-srgb' : 'rgba8unorm',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		});
+		this.#detailIndex = device.createBuffer({
+			label: 'terrain detail index',
+			size: Math.max(1, detailSlots) * DETAIL_CELLS * DETAIL_CELLS * 4,
+			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+		});
+		this.#detailBytes = detailSlots * (SURFACE_SIDE * SURFACE_SIDE * 4 + SURFACE_IMAGE_BYTES);
 		this.#patchCapacity = 8192;
 		this.#patchData = new Float32Array(this.#patchCapacity * PATCH_FLOATS);
 		this.#patchWords = new Uint32Array(this.#patchData.buffer);
@@ -162,24 +243,8 @@ export class TerrainRenderer {
 		this.#wireCount = wire.length;
 		this.#fillIndices = this.#indexBuffer('terrain fill indices', fill);
 		this.#wireIndices = this.#indexBuffer('terrain wire indices', wire);
-		this.#bindGroup = device.createBindGroup({
-			label: 'terrain',
-			layout: layouts.terrain,
-			entries: [
-				{ binding: 0, resource: { buffer: this.#heights } },
-				{ binding: 1, resource: { buffer: this.#patches } },
-				{ binding: 2, resource: this.#albedo.createView({ dimension: '2d-array' }) },
-				{ binding: 3, resource: this.#normal.createView({ dimension: '2d-array' }) },
-				{
-					binding: 4,
-					resource: device.createSampler({
-						label: 'terrain surface',
-						magFilter: 'linear',
-						minFilter: 'linear',
-					}),
-				},
-			],
-		});
+		this.#layout = layouts.terrain;
+		this.#bindGroup = this.#createBindGroup();
 
 		const module = pipelines.module('terrain', FRAME_WGSL + terrainWgsl);
 		const constants = { SIDE: PAGE_SIDE };
@@ -215,6 +280,210 @@ export class TerrainRenderer {
 		}));
 	}
 
+	#createBindGroup(): GPUBindGroup {
+		const device = this.#device;
+		const layers = this.#layers ?? this.#placeholderLayers();
+		return device.createBindGroup({
+			label: 'terrain',
+			layout: this.#layout,
+			entries: [
+				{ binding: 0, resource: { buffer: this.#heights } },
+				{ binding: 1, resource: { buffer: this.#patches } },
+				{ binding: 2, resource: array(this.#albedo) },
+				{ binding: 3, resource: array(this.#normal) },
+				{ binding: 4, resource: this.#surfaceSampler },
+				{ binding: 5, resource: array(this.#detailControl) },
+				{ binding: 6, resource: array(this.#detailTint) },
+				{ binding: 7, resource: array(layers.diffuse) },
+				{ binding: 8, resource: array(layers.normal) },
+				{ binding: 9, resource: { buffer: this.#detailIndex } },
+				{ binding: 10, resource: { buffer: layers.params } },
+				{ binding: 11, resource: this.#layerSampler },
+			],
+		});
+	}
+
+	#placeholders: { diffuse: GPUTexture; normal: GPUTexture; params: GPUBuffer } | null = null;
+
+	/** 1-layer stand-ins that keep the bind group valid while a package has no layers */
+	#placeholderLayers(): { diffuse: GPUTexture; normal: GPUTexture; params: GPUBuffer } {
+		if (this.#placeholders === null) {
+			const texture = (label: string): GPUTexture =>
+				this.#device.createTexture({
+					label,
+					size: [4, 4, 1],
+					format: 'rgba8unorm',
+					usage: GPUTextureUsage.TEXTURE_BINDING,
+				});
+			this.#placeholders = {
+				diffuse: texture('no terrain layer diffuse'),
+				normal: texture('no terrain layer normal'),
+				params: this.#device.createBuffer({
+					label: 'no terrain layers',
+					size: LAYER_FLOATS * 4,
+					usage: GPUBufferUsage.STORAGE,
+				}),
+			};
+		}
+		return this.#placeholders;
+	}
+
+	/**
+	 * sets the package's terrain layers: allocates their texture arrays and uploads their parameters. the
+	 * textures arrive through {@link uploadLayer}; detail draws once all have.
+	 *
+	 * @param info the manifest's detail section, or `null` to drop the current package's layers
+	 */
+	setDetail(info: TerrainDetailInfo | null): void {
+		if (this.#layers !== null) {
+			this.#layers.diffuse.destroy();
+			this.#layers.normal.destroy();
+			this.#layers.params.destroy();
+			this.#layers = null;
+		}
+		if (info !== null && this.surfaces && info.diffuse.length > 0) {
+			const count = info.diffuse.length;
+			const texture = (label: string, format: GPUTextureFormat): GPUTexture =>
+				this.#device.createTexture({
+					label,
+					size: [info.textureSize, info.textureSize, count],
+					mipLevelCount: info.textureLevels,
+					format,
+					usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+				});
+			const diffuse = texture('terrain layer diffuse', 'bc7-rgba-unorm-srgb');
+			const normal = texture('terrain layer normal', 'bc7-rgba-unorm');
+			const data = new Float32Array(Math.max(1, info.layers.length) * LAYER_FLOATS);
+			for (const [i, layer] of info.layers.entries()) {
+				data.set(
+					[
+						layer.tiling,
+						layer.offset[0],
+						layer.offset[1],
+						layer.normalScale,
+						...layer.diffuseScale,
+						layer.blendBorder,
+						...layer.meanColour,
+						layer.texture,
+						layer.height[0],
+						layer.height[1],
+						layer.occlusion[0],
+						layer.occlusion[1],
+						layer.roughness[0],
+						layer.roughness[1],
+						0,
+						0,
+					],
+					i * LAYER_FLOATS,
+				);
+			}
+			const params = this.#device.createBuffer({
+				label: 'terrain layers',
+				size: data.byteLength,
+				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+			});
+			this.#device.queue.writeBuffer(params, 0, data);
+			const targets = new Map<number, { texture: GPUTexture; layer: number }[]>();
+			const target = (blob: number, into: GPUTexture, layer: number): void => {
+				const list = targets.get(blob) ?? [];
+				list.push({ texture: into, layer });
+				targets.set(blob, list);
+			};
+			for (let i = 0; i < count; i++) {
+				target(info.diffuse[i], diffuse, i);
+				target(info.normal[i], normal, i);
+			}
+			this.#layers = { info, diffuse, normal, params, targets, uploaded: new Set() };
+		}
+		this.#bindGroup = this.#createBindGroup();
+	}
+
+	/**
+	 * uploads one layer texture into its array layer
+	 *
+	 * @param blob the layer blob, one of those {@link setDetail} named
+	 * @param decoded its levels
+	 * @returns the residency
+	 * @throws {Error} if the blob isn't one of the package's layer textures or has the wrong size
+	 */
+	uploadLayer(blob: number, decoded: DecodedLayer): ResidentLayer {
+		const layers = this.#layers;
+		const targets = layers?.targets.get(blob);
+		if (layers === null || targets === undefined) {
+			throw new Error(`blob ${blob} isn't a terrain layer texture of this package`);
+		}
+		const { textureSize, textureLevels } = layers.info;
+		let bytes = 0;
+		for (const target of targets) {
+			let offset = 0;
+			for (let level = 0; level < textureLevels; level++) {
+				const size = Math.max(1, textureSize >> level);
+				const blocks = Math.ceil(size / 4);
+				const levelBytes = bc7LevelBytes(size);
+				if (offset + levelBytes > decoded.data.byteLength) {
+					throw new Error(`terrain layer blob ${blob} is shorter than its ${textureLevels} levels`);
+				}
+				this.#device.queue.writeTexture(
+					{ texture: target.texture, mipLevel: level, origin: [0, 0, target.layer] },
+					decoded.data,
+					{ offset, bytesPerRow: blocks * 16, rowsPerImage: blocks },
+					[blocks * 4, blocks * 4, 1],
+				);
+				offset += levelBytes;
+			}
+			bytes += offset;
+		}
+		layers.uploaded.add(blob);
+		return { kind: 'layer', bytes };
+	}
+
+	/** whether every layer texture has arrived, so detail can draw */
+	get #layersReady(): boolean {
+		return this.#layers !== null && this.#layers.uploaded.size === this.#layers.targets.size;
+	}
+
+	/**
+	 * uploads a detail page into a free slot
+	 *
+	 * @param decoded the page
+	 * @returns the residency, or `null` if no slot was free (always, without BC textures)
+	 * @throws {Error} if the page doesn't have the sizes the shader is written for
+	 */
+	uploadDetail(decoded: DecodedDetail): ResidentDetail | null {
+		if (decoded.side !== SURFACE_SIDE || decoded.cells !== DETAIL_CELLS) {
+			throw new Error(`detail page of ${decoded.side}² with ${decoded.cells}² cells isn't supported`);
+		}
+		const slot = this.#freeDetailSlots.pop();
+		if (slot === undefined) {
+			return null;
+		}
+		const queue = this.#device.queue;
+		const size = [SURFACE_SIDE, SURFACE_SIDE, 1];
+		queue.writeTexture(
+			{ texture: this.#detailControl, origin: [0, 0, slot] },
+			decoded.control,
+			{ bytesPerRow: SURFACE_SIDE * 4, rowsPerImage: SURFACE_SIDE },
+			size,
+		);
+		queue.writeTexture(
+			{ texture: this.#detailTint, origin: [0, 0, slot] },
+			decoded.tint,
+			{ bytesPerRow: (SURFACE_SIDE / 4) * 16, rowsPerImage: SURFACE_SIDE / 4 },
+			size,
+		);
+		queue.writeBuffer(this.#detailIndex, slot * DETAIL_CELLS * DETAIL_CELLS * 4, decoded.index);
+		return {
+			kind: 'detail',
+			bytes: SURFACE_SIDE * SURFACE_SIDE * 4 + SURFACE_IMAGE_BYTES + decoded.index.byteLength,
+			slot,
+		};
+	}
+
+	/** @param resident a page from {@link uploadDetail}; its slot returns to the pool */
+	releaseDetail(resident: ResidentDetail): void {
+		this.#freeDetailSlots.push(resident.slot);
+	}
+
 	#indexBuffer(label: string, data: Uint16Array): GPUBuffer {
 		const buffer = this.#device.createBuffer({
 			label,
@@ -229,7 +498,7 @@ export class TerrainRenderer {
 
 	/** @returns bytes of the fixed GPU allocations */
 	get poolBytes(): number {
-		return this.capacity * PAGE_BYTES + this.#patchData.byteLength + this.#surfaceBytes;
+		return this.capacity * PAGE_BYTES + this.#patchData.byteLength + this.#surfaceBytes + this.#detailBytes;
 	}
 
 	/**
@@ -309,8 +578,9 @@ export class TerrainRenderer {
 		const count = Math.min(patches.length, this.#patchCapacity);
 		const data = this.#patchData;
 		const words = this.#patchWords;
+		const layersReady = this.#layersReady;
 		for (let i = 0; i < count; i++) {
-			const { item, node, quadrant, morphStart, morphEnd, surface } = patches[i];
+			const { item, node, quadrant, morphStart, morphEnd, surface, detail } = patches[i];
 			const at = i * PATCH_FLOATS;
 			data[at] = node.minX - eye[0];
 			data[at + 1] = node.minZ - eye[2];
@@ -331,6 +601,12 @@ export class TerrainRenderer {
 			data[at + 13] = covered.minZ - eye[2];
 			data[at + 14] = (SURFACE_SIDE - 2 * SURFACE_BORDER) / SURFACE_SIDE / covered.size;
 			data[at + 15] = SURFACE_BORDER / SURFACE_SIDE;
+			// layer uvs need world position: the node's corner (whole metres, exact in f32) and the eye's height
+			const detailPage = layersReady ? detail?.resident : undefined;
+			data[at + 16] = node.minX;
+			data[at + 17] = node.minZ;
+			data[at + 18] = eye[1];
+			words[at + 19] = detailPage?.kind === 'detail' ? detailPage.slot + 1 : 0;
 		}
 		// a whole page is drawn as its four quadrants
 		let expanded = count;

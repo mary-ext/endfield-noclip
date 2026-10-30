@@ -46,9 +46,11 @@ invalidates cached conversions.
   shards/<l>_<x>_<z>.czar         content of one shard-level tile's subtree
     blobs/<hash>.hgt              terrain height pages at the cell level and finer
     blobs/<hash>.tsp              terrain surface pages, likewise
+    blobs/<hash>.tdt              terrain detail pages (leaves)
     blobs/<hash>.inst             detail and conditional instance blocks
   assets/<l>_<x>_<z>[.<n>].czar   geometry and texture blobs whose uses all lie under that tile
   assets/common[.<n>].czar        ... used by resident content or under several root tiles
+  assets/terrain-layers.czar      terrain layer textures (.tly)
     blobs/<hash>.mesh             one mesh
     blobs/<hash>.tex              mip levels of one texture
   irradiance/<x>_<z>.czar         irradiance cells over one 512 m square
@@ -80,10 +82,10 @@ view uncompressed members as typed arrays.
   member path is `blobs/<hash>.<ext>` (`BLOB_EXTENSIONS`).
 - **codec** (`BlobCodec`): `0` none, `1` one zstd frame. the packer keeps the zstd frame only when
   it saves at least 1/32 of the bytes, since a frame costs a decode pass and small BC7 mip tails
-  barely compress. levels: 19 for instance, height page and geometry blobs; 9 for textures, terrain
-  surface pages and irradiance cells (19 saves about 2 % more at roughly 10× the time). the viewer
-  decodes zstd with zstddec's wasm build, because browsers' `DecompressionStream` can't be relied on
-  for zstd.
+  barely compress. levels: 19 for instance, height page, detail page and geometry blobs; 9 for
+  textures, terrain surface pages, layer textures and irradiance cells (19 saves about 2 % more at
+  roughly 10× the time). the viewer decodes zstd with zstddec's wasm build, because browsers'
+  `DecompressionStream` can't be relied on for zstd.
 - **offsets** are u32, so every archive stays below 4 GiB; asset archives roll over to a `.<n>` part
   at 1 GiB, which also suits HTTP and OPFS.
 - **the core's offsets**: `ArchiveInfo.dataOffset` is `null` for the core, because the core's header
@@ -142,6 +144,7 @@ the game's HLOD switch distances are known.
 | `Detail` (2)         | a whole instance block                                       | 0         | level tag | 0                                       |
 | `Conditional` (3)    | a whole instance block shown only while its condition holds  | 0         | level tag | index into `StatesInfo.conditionalSets` |
 | `TerrainSurface` (4) | one surface page, covering the same tile as the height page  | 0         | 0         | 0                                       |
+| `TerrainDetail` (5)  | a leaf's detail page                                         | 0         | 0         | 0                                       |
 
 detail and conditional blocks are one per (leaf, level tag, condition); an instance goes to the leaf
 under its bounds centre. HLOD and resident rows form one block per level tag in the core, HLOD rows
@@ -159,7 +162,7 @@ sorted by node so each node's refs are one run. resident refs live in `manifest.
 | `scene`                                                   | streaming scene id and display name                                                                                                                                       |
 | `coordinates`                                             | `COORDINATE_CONVENTIONS`                                                                                                                                                  |
 | `tree`                                                    | `TreeInfo` plus node and ref counts                                                                                                                                       |
-| `terrain`                                                 | position, `heightScale`, `terrainSize`, page size, hole bit, levels with pages, surface page size and border; `null` without terrain                                      |
+| `terrain`                                                 | position, `heightScale`, `terrainSize`, page size, hole bit, levels with pages, surface page size and border, close-up `detail`; `null` without terrain                   |
 | `levels`                                                  | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment |
 | `environments`, `environmentPhases`, `environmentVolumes` | see [environment.md](game-data/environment.md)                                                                                                                            |
 | `states`                                                  | progressions, toggles and conditional sets; see [scene states](#conditions)                                                                                               |
@@ -227,6 +230,22 @@ tile pages as stored, one level each; [world.md](game-data/world.md#terrain) giv
 edge lie outside the tile, so world `x` maps to
 `u = border / side + (x − tile.minX) / tile.size · (side − 2 · border) / side`. a tile missing
 either page has no surface ref. on map02 the 3,393 pages are 118 MB raw and 64 MB stored.
+
+### detail page (`.tdt`, `EFTD`) and layer textures (`.tly`)
+
+a leaf's close-up blend inputs ([world.md](game-data/world.md#close-up-layers)). 12-byte header:
+`u32 magic, u16 version, u16 side, u16 cells, u16 0`, then the `S` page's RGBA8 texels (`side²`),
+the `T` page's BC3 sRGB blocks, and `cells²` cells of 4 layer ordinals cut from the scene's index
+map, row-major from the leaf's minimum corner. the images share the surface page's layout. a leaf
+missing either page has no detail ref. map02's 2,492 are 218 MB raw and 40 MB stored.
+
+`terrain.detail` (`TerrainDetailInfo`) holds the cell size, the layer table (repeats per metre,
+offsets, mean colour, scales and remaps, named rather than the game's packed vectors), and the layer
+textures: one `TerrainLayer` blob per texture and role, raw BC7 levels from `textureSize` down,
+largest first, levels under 4² padded to one block. the packer drops the game's top level (1024²),
+since 512² already gives 57–230 texels per metre; map02's 38 pairs are 22 MB in
+`assets/terrain-layers.czar`. `detail` is `null` when the scene's layer table, index map or textures
+are missing or disagree (the pack log says which).
 
 ### geometry blob (`.mesh`, `EFGM`)
 
@@ -357,7 +376,7 @@ per-asset provenance lives here rather than in the manifest, which only identifi
   by its own bounds would spread it.
 - **texture size**: textures at native resolution dominate package size; a cap that drops leading
   levels would make a lite package.
-- **terrain detail**: only the baked albedo and normal pages are packed; the tint, splat control and
-  cliff-index pages and the per-scene layer arrays, which the close-up blend needs, are not.
+- **terrain cliffs**: the cliff-index pages and cone maps, which the game's cliff projection and
+  parallax use, aren't packed.
 - **unsupported**: line and point topologies; skinned meshes are packed static or posed; the game's
   packed tangent bits are undecoded (generated tangents replace them); rect decals are skipped.

@@ -14,8 +14,8 @@
 import { BinaryReader, FormatError } from '../binary/binary-reader.ts';
 import { imageByteLength, ktx2FormatInfo, type Ktx2FormatInfo } from '../binary/ktx2.ts';
 import { graphicsFormatInfo } from '../unity/texture.ts';
-import type { TypeTreeObject } from '../unity/type-tree.ts';
-import { arrayField, isObject, numberField, vector3Field } from '../unity/values.ts';
+import type { TypeTreeObject, TypeTreeValue } from '../unity/type-tree.ts';
+import { arrayField, isObject, numberField, objectField, vector3Field } from '../unity/values.ts';
 
 import { unpackHgPayload } from './payload.ts';
 
@@ -272,6 +272,35 @@ export interface TerrainSurface {
 	terrainSize: number;
 	/** quadtree node table, when known; see {@link TerrainNode} */
 	nodes?: TerrainNode[];
+	/** the close-up material layers by ordinal (the splat index map's values), when known */
+	layers?: TerrainLayer[];
+}
+
+/**
+ * one `SplatLayerData` entry: a close-up material layer. four of them blend per 8 m cell; see
+ * {@link readTerrainSplatIndex}
+ */
+export interface TerrainLayer {
+	/** index of the layer's `LAYER_D`/`LAYER_N` textures (`splatST.y`) */
+	texture: number;
+	/** texture repeats across the whole terrain square (`splatST.x`); divide by its size for repeats per metre */
+	tiling: number;
+	/** uv offset (`splatST.zw`) */
+	offset: [u: number, v: number];
+	/** the layer's mean albedo, linear; the tint is applied relative to it (`packedSplatInfo.xyz`) */
+	meanColour: [r: number, g: number, b: number];
+	/** scales the normal map's xy (`packedSplatInfo.w`) */
+	normalScale: number;
+	/** multiplies the diffuse texture's rgb (`diffuseRemapScale.xyz`) */
+	diffuseScale: [r: number, g: number, b: number];
+	/** how far below the highest layer a layer still shows in the height blend (`diffuseRemapScale.w`) */
+	blendBorder: number;
+	/**
+	 * `maskMapRemapScale` and `maskMapRemapOffset`: height (diffuse alpha) in z, occlusion (normal alpha) in y,
+	 * roughness (normal blue) in w; x of the offset is a surface type id (`· 255`)
+	 */
+	maskScale: [x: number, y: number, z: number, w: number];
+	maskOffset: [x: number, y: number, z: number, w: number];
 }
 
 /**
@@ -364,10 +393,22 @@ export const terrainNodeIndex = (tile: TerrainTileKey): number => {
 	return (side * side - 1) / 3 + tile.z * side + tile.x;
 };
 
+/** type-tree readers may or may not unwrap Unity's `Array` wrapper */
+const listField = (object: TypeTreeObject, name: string): TypeTreeValue[] => {
+	const value = object[name];
+	return isObject(value) ? arrayField(value, 'Array') : arrayField(object, name);
+};
+
+const vector4Field = (parent: TypeTreeObject, name: string): [number, number, number, number] => {
+	const value = objectField(parent, name);
+	return [numberField(value, 'x'), numberField(value, 'y'), numberField(value, 'z'), numberField(value, 'w')];
+};
+
 /**
  * reads the fields this module needs from a type-tree-decoded `HGTerrainSurfacesData` object
  *
- * @param object the MonoBehaviour (`terrainPosition`, `heightScale`, `terrainSize`, optionally `nodeData`)
+ * @param object the MonoBehaviour (`terrainPosition`, `heightScale`, `terrainSize`, optionally `nodeData` and
+ *   `layerData`)
  * @throws {FormatError} if a required field is missing or has the wrong type
  */
 export const readTerrainSurfacesData = (object: TypeTreeObject): TerrainSurface => {
@@ -379,10 +420,33 @@ export const readTerrainSurfacesData = (object: TypeTreeObject): TerrainSurface 
 	};
 	terrainLeafLevel(surface.terrainSize);
 
+	if (Object.hasOwn(object, 'layerData')) {
+		surface.layers = listField(object, 'layerData').map((row, index): TerrainLayer => {
+			if (!isObject(row)) {
+				throw new FormatError(`HGTerrainSurfacesData.layerData[${index}] isn't an object`);
+			}
+			const st = vector4Field(row, 'splatST');
+			const info = vector4Field(row, 'packedSplatInfo');
+			const diffuse = vector4Field(row, 'diffuseRemapScale');
+			if (!Number.isInteger(st[1]) || st[1] < 0) {
+				throw new FormatError(`HGTerrainSurfacesData.layerData[${index}] has texture index ${st[1]}`);
+			}
+			return {
+				texture: st[1],
+				tiling: st[0],
+				offset: [st[2], st[3]],
+				meanColour: [info[0], info[1], info[2]],
+				normalScale: info[3],
+				diffuseScale: [diffuse[0], diffuse[1], diffuse[2]],
+				blendBorder: diffuse[3],
+				maskScale: vector4Field(row, 'maskMapRemapScale'),
+				maskOffset: vector4Field(row, 'maskMapRemapOffset'),
+			};
+		});
+	}
+
 	if (Object.hasOwn(object, 'nodeData')) {
-		// type-tree readers may or may not unwrap Unity's `Array` wrapper
-		const nodeData = object.nodeData;
-		const rows = isObject(nodeData) ? arrayField(nodeData, 'Array') : arrayField(object, 'nodeData');
+		const rows = listField(object, 'nodeData');
 		surface.nodes = rows.map((row, index): TerrainNode => {
 			if (!isObject(row)) {
 				throw new FormatError(`HGTerrainSurfacesData.nodeData[${index}] isn't an object`);
@@ -486,6 +550,95 @@ export const readTerrainBc3Page = (texture: TerrainTexture): Uint8Array => {
 		);
 	}
 	return texture.mips[0].data;
+};
+
+/**
+ * reads a baked `S` page: splat control, the blend weights of the 4 layers its 8 m cell's index names. rgb
+ * weight layers 0–2, layer 3 gets `1 − r − g − b`; a feeds the game's wetness. rows along +Z.
+ *
+ * @param texture a decoded `_S` file
+ * @returns the page's 132² RGBA8 texels; a view into the texture
+ * @throws {FormatError} if the texture isn't a one-level 132² RGBA8 page
+ */
+export const readTerrainControlPage = (texture: TerrainTexture): Uint8Array => {
+	checkPage(texture, TerrainFormat.R8G8B8A8_UNorm, 'RGBA8');
+	return texture.mips[0].data;
+};
+
+/**
+ * reads a baked `T` page: rgb tint, applied to the layer blend as `(tint − mean) · a⁴`, `mean` being the
+ * layers' blended {@link TerrainLayer.meanColour}. rows along +Z.
+ *
+ * @param texture a decoded `_T` file
+ * @returns the page's BC3 sRGB blocks; a view into the texture
+ * @throws {FormatError} if the texture isn't a one-level 132² sRGB DXT5 page
+ */
+export const readTerrainTintPage = (texture: TerrainTexture): Uint8Array => {
+	checkPage(texture, TerrainFormat.RGBA_DXT5_SRGB, 'sRGB DXT5');
+	return texture.mips[0].data;
+};
+
+const checkPage = (texture: TerrainTexture, format: TerrainFormat, label: string): void => {
+	if (
+		texture.format !== format ||
+		texture.width !== TERRAIN_PAGE_SIZE ||
+		texture.height !== TERRAIN_PAGE_SIZE ||
+		texture.mips.length !== 1
+	) {
+		throw new FormatError(
+			`expected a one-level 132² ${label} page, got ${texture.width}×${texture.height} format ${texture.format} with ${texture.mips.length} levels`,
+		);
+	}
+};
+
+/**
+ * checks a `LAYER_D` or `LAYER_N` texture: a square BC7 mip chain. `D` is sRGB albedo with height in a; `N`
+ * is linear, rg tangent-space normal xy (`· 2 − 1`), b roughness, a occlusion. rows advance along +v.
+ *
+ * @param texture a decoded layer file
+ * @param role which layer texture it is
+ * @throws {FormatError} if the texture isn't a square BC7 mip chain of the role's colour space
+ */
+export const checkTerrainLayerTexture = (texture: TerrainTexture, role: 'D' | 'N'): void => {
+	const format = role === 'D' ? TerrainFormat.RGBA_BC7_SRGB : TerrainFormat.RGBA_BC7_UNorm;
+	if (texture.format !== format || texture.width !== texture.height) {
+		throw new FormatError(
+			`expected a square ${role === 'D' ? 'sRGB ' : ''}BC7 layer texture, got ${texture.width}×${texture.height} format ${texture.format}`,
+		);
+	}
+};
+
+// #endregion
+
+// #region splat index
+
+/** metres per splat index cell; a leaf tile holds 8 × 8 cells */
+export const TERRAIN_SPLAT_CELL = 8;
+
+/**
+ * reads the scene's splat index map (`terrain/splatindexmap.tga`, an RGBA32 Texture2D), which names the 4
+ * layers each 8 m cell blends. each channel stores a layer ordinal times 4; row 0 is the terrain square's
+ * minimum z.
+ *
+ * @param data the texture's level 0, RGBA8 texels
+ * @param side texels per edge, `terrainSize / 8`
+ * @param layerCount layers the scene has
+ * @returns 4 ordinals per cell, row-major from the minimum corner
+ * @throws {FormatError} if the size disagrees or a value isn't a multiple of 4 naming a known layer
+ */
+export const readTerrainSplatIndex = (data: Uint8Array, side: number, layerCount: number): Uint8Array => {
+	if (data.length !== side * side * 4) {
+		throw new FormatError(`splat index has ${data.length} bytes, expected ${side}² RGBA8 texels`);
+	}
+	const out = new Uint8Array(data.length);
+	for (let i = 0; i < data.length; i++) {
+		const value = data[i];
+		if (value % 4 !== 0 || value / 4 >= layerCount) {
+			throw new FormatError(`splat index value ${value} at ${i} doesn't name one of ${layerCount} layers`);
+		}
+		out[i] = value / 4;
+	}
+	return out;
 };
 
 // #endregion

@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 11;
+export const PACKAGE_VERSION = 12;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -67,6 +67,13 @@ export const BlobKind = {
 	Irradiance: 6,
 	/** one terrain tile's baked albedo and normal pages; see `encodeSurfacePage` */
 	TerrainSurface: 7,
+	/** one leaf terrain tile's close-up blend inputs; see `encodeDetailPage` */
+	TerrainDetail: 8,
+	/**
+	 * one terrain layer texture: its BC7 mip levels from {@link TerrainDetailInfo.textureSize} down, largest
+	 * first, as `writeTexture` takes them (levels under 4² padded to one block)
+	 */
+	TerrainLayer: 9,
 } as const;
 
 export type BlobKind = (typeof BlobKind)[keyof typeof BlobKind];
@@ -80,6 +87,8 @@ export const BLOB_EXTENSIONS: Record<BlobKind, string> = {
 	[BlobKind.Other]: 'bin',
 	[BlobKind.Irradiance]: 'iv',
 	[BlobKind.TerrainSurface]: 'tsp',
+	[BlobKind.TerrainDetail]: 'tdt',
+	[BlobKind.TerrainLayer]: 'tly',
 };
 
 /** human-readable blob kind names, for stats and debug output */
@@ -91,6 +100,8 @@ export const BLOB_KIND_NAMES: Record<BlobKind, string> = {
 	[BlobKind.Other]: 'other',
 	[BlobKind.Irradiance]: 'irradiance',
 	[BlobKind.TerrainSurface]: 'terrain surface',
+	[BlobKind.TerrainDetail]: 'terrain detail',
+	[BlobKind.TerrainLayer]: 'terrain layer',
 };
 
 /** the outer compression of a stored blob */
@@ -114,6 +125,8 @@ export const ContentKind = {
 	Conditional: 3,
 	/** the node's baked terrain surface page (albedo and normal); covers the same tile as its height page */
 	TerrainSurface: 4,
+	/** a leaf node's close-up blend inputs (splat control, tint, layer index) */
+	TerrainDetail: 5,
 } as const;
 
 export type ContentKind = (typeof ContentKind)[keyof typeof ContentKind];
@@ -125,6 +138,7 @@ export const CONTENT_KIND_NAMES: Record<ContentKind, string> = {
 	[ContentKind.Detail]: 'detail',
 	[ContentKind.Conditional]: 'conditional',
 	[ContentKind.TerrainSurface]: 'terrainSurface',
+	[ContentKind.TerrainDetail]: 'terrainDetail',
 };
 
 /** how a draw of a LOD chain is used */
@@ -370,6 +384,51 @@ export interface TerrainInfo {
 	surfaceSize: number;
 	/** texels of each surface page edge outside the tile; the rest map the tile edge to edge */
 	surfaceBorder: number;
+	/** the close-up layer blend's inputs, or `null` if they weren't packed */
+	detail: TerrainDetailInfo | null;
+}
+
+/**
+ * the close-up layer blend: each leaf's 8 m cells name 4 layers, blended by the leaf's splat control page,
+ * then tinted. leaf tiles carry a {@link ContentKind.TerrainDetail} ref
+ */
+export interface TerrainDetailInfo {
+	/** metres per index cell; a leaf has `leafSize / cellSize` cells per edge */
+	cellSize: number;
+	/** layers by ordinal, as the detail pages' index cells name them */
+	layers: TerrainLayerInfo[];
+	/** texels per layer texture edge at its first packed level */
+	textureSize: number;
+	/** mip levels per layer texture */
+	textureLevels: number;
+	/** {@link BlobKind.TerrainLayer} blobs by texture index: sRGB albedo with height in alpha */
+	diffuse: number[];
+	/** ... linear normal xy, roughness, occlusion */
+	normal: number[];
+}
+
+/** one close-up material layer, from the game's `SplatLayerData` */
+export interface TerrainLayerInfo {
+	/** index into {@link TerrainDetailInfo.diffuse} and {@link TerrainDetailInfo.normal} */
+	texture: number;
+	/** texture repeats per metre of world position */
+	tiling: number;
+	/** uv offset */
+	offset: [u: number, v: number];
+	/** the layer's mean albedo, linear; the tint applies relative to it */
+	meanColour: [r: number, g: number, b: number];
+	/** scales the normal map's xy */
+	normalScale: number;
+	/** multiplies the diffuse texture's rgb */
+	diffuseScale: [r: number, g: number, b: number];
+	/** how far below the highest layer a layer still shows in the height blend */
+	blendBorder: number;
+	/** height = diffuse alpha · scale + offset */
+	height: [scale: number, offset: number];
+	/** occlusion = normal alpha · scale + offset */
+	occlusion: [scale: number, offset: number];
+	/** roughness = normal blue · scale + offset */
+	roughness: [scale: number, offset: number];
 }
 
 /** a level (named area) of the scene */

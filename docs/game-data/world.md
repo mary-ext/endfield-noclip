@@ -223,6 +223,9 @@ MonoBehaviour at
 - `terrainSize`: root edge length, a power-of-two multiple of 64 m
 - `nodeData`: a complete breadth-first quadtree (`index = (4^l − 1)/3 + z·2^l + x`) with per-node
   min/max height and a `maxHeightError`, which the packer uses as the terrain node's error
+- `layerData`: the close-up material layers by ordinal; see below
+- `sectorSplatInfo`: one u64 per 64 m sector, a bitmask of the layer ordinals the sector uses
+  (checked against the index map on map02); the packer doesn't need it
 
 world Y of a sample is `position.y + (h & 0x7fff) · heightScale / 32768`. bit 15 marks a hole; holes
 keep a plausible height in the low bits, which suits skirts and morphing but not drawing. a scene
@@ -231,6 +234,31 @@ with terrain tiles but no `HGTerrainSurfacesData` fails the pack rather than gue
 the packer aligns its tile tree with this quadtree (root = the terrain square, leaf = 64 m) so tree
 nodes never split the game's own units; scenes without terrain get a 4096 m tree centred on the
 origin.
+
+### close-up layers
+
+near the camera the game draws a blend of tiling material layers instead of the baked pages:
+
+- **index**: `terrain/splatindexmap.tga`, an RGBA32 Texture2D of `terrainSize / 8` texels (row 0 at
+  the minimum z), names 4 layer ordinals per 8 m cell, each stored times 4
+- **weights**: the leaf's `S` page; rgb weight the cell's slots 0–2, slot 3 gets `1 − r − g − b`.
+  its filtering stays half a texel inside the cell, since the weights belong to that cell's layers
+- **layers** (`layerData`): `splatST` (x: repeats across the terrain square, y: texture index, zw:
+  uv offset), `packedSplatInfo` (mean albedo, normal xy scale), `diffuseRemapScale` (rgb multiplier,
+  height-blend border in w), `maskMapRemapScale`/`Offset` (scale and offset for occlusion in y,
+  height in z, roughness in w; the offset's x is a surface type id)
+- **textures**: `LAYER_D` is sRGB albedo with height in alpha; `LAYER_N` is tangent-space normal xy,
+  roughness in b, occlusion in a. on map02 they are 1024² BC7 with 11 levels and repeat every 2–9 m
+- **blend**: with weighted heights `wh = w · h`, each slot gets
+  `w · (max(0, wh − max(wh) + border) + ε)`, normalized. albedo is the blended
+  `diffuse · diffuseScale`, plus `(tint − mean) · a⁴` from the leaf's `T` page, `mean` being the
+  blended mean albedos. the blended tangent normal is oriented on the baked normal, with tangent
+  `cross(n, +Z)`
+- **projection**: world position times the layer's repeats per metre, on the x, y or z plane picked
+  by the baked normal's `|n|⁸` weights (the game picks one plane per pixel at random)
+
+not reproduced: the cliff projection driven by the `C` page, parallax from the cone maps, and
+wetness from `S.a`.
 
 `terrain scenes|tiles|export-heights` inspects and exports the data.
 

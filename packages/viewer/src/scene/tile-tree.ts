@@ -35,6 +35,8 @@ export interface TileNode {
 	terrain: ContentRef | null;
 	/** the node's baked surface page, if it has one */
 	surface: ContentRef | null;
+	/** the leaf's close-up terrain blend inputs, if it has them */
+	terrainDetail: ContentRef | null;
 	hlod: ContentRef[];
 	detail: ContentRef[];
 	conditional: ContentRef[];
@@ -72,6 +74,7 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 		const footprint = tileFootprint(info, raw);
 		let terrain: ContentRef | null = null;
 		let surface: ContentRef | null = null;
+		let terrainDetail: ContentRef | null = null;
 		const hlod: ContentRef[] = [];
 		const detail: ContentRef[] = [];
 		const conditional: ContentRef[] = [];
@@ -98,6 +101,10 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 					surface = ref;
 					break;
 				}
+				case ContentKind.TerrainDetail: {
+					terrainDetail = ref;
+					break;
+				}
 			}
 		}
 		const node: TileNode = {
@@ -113,6 +120,7 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 			quadrants: [null, null, null, null],
 			terrain,
 			surface,
+			terrainDetail,
 			hlod,
 			detail,
 			conditional,

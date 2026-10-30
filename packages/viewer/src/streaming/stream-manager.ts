@@ -14,8 +14,10 @@ import type { DecodePool } from '../package/decode-pool.ts';
 import type {
 	Decoded,
 	DecodedGeometry,
+	DecodedDetail,
 	DecodedHeights,
 	DecodedInstances,
+	DecodedLayer,
 	DecodedIrradiance,
 	DecodedSurface,
 	DecodedTexture,
@@ -46,6 +48,22 @@ export interface ResidentSurface {
 	bytes: number;
 	/** layer of the surface texture arrays */
 	slot: number;
+}
+
+/** GPU residency of a terrain detail page */
+export interface ResidentDetail {
+	kind: 'detail';
+	/** GPU bytes */
+	bytes: number;
+	/** layer of the detail texture arrays */
+	slot: number;
+}
+
+/** GPU residency of a terrain layer texture (the terrain renderer owns the array) */
+export interface ResidentLayer {
+	kind: 'layer';
+	/** GPU bytes */
+	bytes: number;
 }
 
 /** GPU residency of an instance block */
@@ -104,6 +122,8 @@ export interface ResidentIrradiance {
 export type Resident =
 	| ResidentHeights
 	| ResidentSurface
+	| ResidentDetail
+	| ResidentLayer
 	| ResidentInstances
 	| ResidentGeometry
 	| ResidentTexture
@@ -135,6 +155,10 @@ export interface ContentStores {
 	uploadHeights(decoded: DecodedHeights, options: { keepSamples: boolean }): ResidentHeights | null;
 	/** @returns the residency, or `null` if there was no room */
 	uploadSurface(decoded: DecodedSurface): ResidentSurface | null;
+	/** @returns the residency, or `null` if there was no room */
+	uploadDetail(decoded: DecodedDetail): ResidentDetail | null;
+	/** @returns the residency */
+	uploadLayer(blob: number, decoded: DecodedLayer): ResidentLayer;
 	/** @returns the residency, or `null` if there was no room */
 	uploadInstances(decoded: DecodedInstances): ResidentInstances | null;
 	/** @returns the residency */
@@ -585,6 +609,14 @@ export class StreamManager {
 				job = this.#pool.run({ kind: 'surface', ...base });
 				break;
 			}
+			case BlobKind.TerrainDetail: {
+				job = this.#pool.run({ kind: 'detail', ...base });
+				break;
+			}
+			case BlobKind.TerrainLayer: {
+				job = this.#pool.run({ kind: 'layer', ...base });
+				break;
+			}
 			case BlobKind.Instances: {
 				job = this.#pool.run({ kind: 'instances', ...base, rowKinds: this.#rowKinds.get(item.blob) ?? [] });
 				break;
@@ -682,6 +714,12 @@ export class StreamManager {
 			}
 			case 'surface': {
 				return this.#stores.uploadSurface(decoded);
+			}
+			case 'detail': {
+				return this.#stores.uploadDetail(decoded);
+			}
+			case 'layer': {
+				return this.#stores.uploadLayer(item.blob, decoded);
 			}
 			case 'instances': {
 				return this.#stores.uploadInstances(decoded);

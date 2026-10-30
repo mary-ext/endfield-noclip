@@ -102,8 +102,8 @@ each frame that does work runs one traversal (`#traverseAndPrepare` in `viewer.t
 
 [`scene/tile-tree.ts`](../packages/viewer/src/scene/tile-tree.ts) links the package's quadtree nodes
 to their children and splits each node's content refs by kind: one terrain height page, one terrain
-surface page, HLOD refs (with a tier), detail refs and conditional refs. each node at or below the
-cell level records its cell id, for level focus.
+surface page, a leaf's terrain detail page, HLOD refs (with a tier), detail refs and conditional
+refs. each node at or below the cell level records its cell id, for level focus.
 
 ### instance selection
 
@@ -135,6 +135,14 @@ finest resident surface page at or above its node, magnified when it's an ancest
 keeps its colours while finer pages stream. the shader draws the pages as stored: albedo, normal,
 roughness and occlusion ([world.md](game-data/world.md#terrain)). patches with no resident page, or
 with `terrainSurface` off or no BC textures, fall back to stand-in colours by slope.
+
+leaves within `DETAIL_DISTANCE` (160 m) also want their detail page. once it and all of the
+package's layer textures (pinned at load) are resident, the shader blends the leaf's close-up layers
+as [world.md](game-data/world.md#close-up-layers) describes, with a smooth triplanar projection in
+place of the game's random one, and fades them into the baked page between 96 and 144 m. the layers
+sample with explicit gradients so slots and planes without weight are skipped. `terrainDetail` turns
+this off. on an Apple M-series GPU at 1600×1000 the blend added about 7 ms of GPU time over open
+ground (terrain only), unprofiled.
 
 ### per-instance LOD
 
@@ -177,9 +185,9 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
   counts as used, even when a coarser stand-in is drawn, so a refinement in progress isn't evicted
   and refetched.
 - **pinning.** the core archive's height and surface pages and instance blocks (coarse terrain,
-  every HLOD block, resident scenery) are pinned at load: queued first, uploaded first, never
-  evicted. pinned height pages keep their samples on the CPU for ground-height queries (the first
-  pose).
+  every HLOD block, resident scenery), plus the terrain layer textures, are pinned at load: queued
+  first, uploaded first, never evicted. pinned height pages keep their samples on the CPU for
+  ground-height queries (the first pose).
 - **fetching.** at most 8 requests in flight (`maxRequests`). queued blobs are sorted by priority,
   and each seed coalesces neighbours in the same archive (gaps ≤ 64 KiB, span ≤ 2 MiB, ≤ 96 blobs)
   into one range read. core blobs are read from memory without a request slot. requests whose blobs
@@ -250,8 +258,9 @@ details:
   the space without bound. it sub-allocates the instance-row mega storage buffer (1.5M rows, one
   range per block) and the irradiance cell buffer. terrain height pages use a fixed slot pool (4096
   slots); surface pages use a pair of BC3 texture arrays, one layer per page (1024 layers, or the
-  device's array-layer limit if lower; 34 MiB). geometry gets one vertex and one index buffer per
-  blob.
+  device's array-layer limit if lower; 34 MiB); detail pages use 256 slots of an RGBA8 control
+  array, a BC3 tint array and an index buffer (22 MiB); the package's layer textures get two BC7
+  arrays sized at load. geometry gets one vertex and one index buffer per blob.
 - **uniform ring** ([`gfx/uniform-ring.ts`](../packages/viewer/src/gfx/uniform-ring.ts)): one
   uniform buffer in 3 per-frame regions, sub-allocated at `minUniformBufferOffsetAlignment`. callers
   fill CPU views; `flush` uploads the frame's region in one `writeBuffer`, and draws bind group 0 at
@@ -378,5 +387,6 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
 - terrain's GPU cost at high resolution is unexamined.
 - the profiler times every pass whenever `timestamp-query` exists; gate it on the stats panel if it
   shows up in measurements.
-- terrain surface pages swap with their level, without cross-fade, and the close-up layer blend
-  isn't drawn.
+- terrain surface pages swap with their level, without cross-fade. the close-up blend's cost is
+  unprofiled; sampling one projection plane per pixel, as the game does, or fewer anisotropy taps
+  are the obvious cuts, and layer tiling repeats visibly in open grass.

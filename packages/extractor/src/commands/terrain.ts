@@ -202,7 +202,7 @@ const printScenes = (index: Map<string, TerrainSceneIndex>): void => {
 				String(entry.tiles.size).padStart(6),
 				(levels.length === 0 ? '  -' : `  L${levels[0]}–L${levels.at(-1)}`).padEnd(12),
 				(levels.length === 0 ? '-' : `${side}×${side}`).padEnd(11),
-				`${entry.layers.D.length}/${entry.layers.N.length}/${entry.layers.C.length}`,
+				`${entry.layers.D.size}/${entry.layers.N.size}/${entry.layers.C.size}`,
 			].join(' '),
 		);
 	}

@@ -39,6 +39,7 @@ const MAGIC_HEIGHTS = 0x54_48_46_45; // 'EFHT'
 const MAGIC_GEOMETRY = 0x4d_47_46_45; // 'EFGM'
 const MAGIC_IRRADIANCE = 0x56_49_46_45; // 'EFIV'
 const MAGIC_SURFACE = 0x53_54_46_45; // 'EFTS'
+const MAGIC_DETAIL = 0x44_54_46_45; // 'EFTD'
 
 const TABLE_HEADER_SIZE = 16;
 const NODE_SIZE = 48;
@@ -51,6 +52,7 @@ const INSTANCE_HEADER_SIZE = 32;
 const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4 + 1;
 const HEIGHTS_HEADER_SIZE = 8;
 const SURFACE_HEADER_SIZE = 8;
+const DETAIL_HEADER_SIZE = 12;
 const GEOMETRY_HEADER_SIZE = 32;
 const GEOMETRY_STREAM_SIZE = 32;
 const GEOMETRY_SUBMESH_SIZE = 40;
@@ -653,6 +655,81 @@ export const decodeSurfacePage = (data: Uint8Array): SurfacePage => {
 		side,
 		albedo: data.subarray(SURFACE_HEADER_SIZE, SURFACE_HEADER_SIZE + bytes),
 		normal: data.subarray(SURFACE_HEADER_SIZE + bytes, SURFACE_HEADER_SIZE + bytes * 2),
+	};
+};
+
+// #endregion
+
+// #region detail pages
+
+/** a leaf terrain tile's close-up blend inputs; images have `side`² texels with rows along +Z */
+export interface DetailPage {
+	side: number;
+	/** index cells per edge */
+	cells: number;
+	/** RGBA8 splat control: rgb weight index slots 0–2, slot 3 gets the remainder */
+	control: Uint8Array;
+	/** BC3 sRGB tint, applied with weight a⁴ */
+	tint: Uint8Array;
+	/** 4 layer ordinals per cell, row-major from the minimum corner */
+	index: Uint8Array;
+}
+
+/**
+ * detail page: 12-byte header (`'EFTD'`, u16 version, u16 side, u16 cells, u16 0), then the control texels,
+ * the tint's BC3 blocks and the index cells.
+ *
+ * @param page the inputs
+ * @returns the encoded page
+ * @throws {RangeError} if `side` isn't a multiple of 4 or a section has the wrong size
+ */
+export const encodeDetailPage = (page: DetailPage): Uint8Array => {
+	const { side, cells } = page;
+	const tintBytes = bc3ImageBytes(side);
+	if (
+		side % 4 !== 0 ||
+		page.control.length !== side * side * 4 ||
+		page.tint.length !== tintBytes ||
+		page.index.length !== cells * cells * 4
+	) {
+		throw new RangeError(`detail page sections don't fit a ${side}² page with ${cells}² cells`);
+	}
+	const out = new Uint8Array(DETAIL_HEADER_SIZE + page.control.length + tintBytes + page.index.length);
+	const view = viewOf(out);
+	view.setUint32(0, MAGIC_DETAIL, true);
+	view.setUint16(4, PACKAGE_VERSION, true);
+	view.setUint16(6, side, true);
+	view.setUint16(8, cells, true);
+	out.set(page.control, DETAIL_HEADER_SIZE);
+	out.set(page.tint, DETAIL_HEADER_SIZE + page.control.length);
+	out.set(page.index, DETAIL_HEADER_SIZE + page.control.length + tintBytes);
+	return out;
+};
+
+/**
+ * @param data an encoded detail page
+ * @returns the page; its sections are views into `data`
+ * @throws {PackageFormatError} on a bad header or length
+ */
+export const decodeDetailPage = (data: Uint8Array): DetailPage => {
+	const view = viewOf(data);
+	checkHeader(view, { magic: MAGIC_DETAIL, size: DETAIL_HEADER_SIZE, label: 'detail page' });
+	const side = view.getUint16(6, true);
+	const cells = view.getUint16(8, true);
+	if (side % 4 !== 0) {
+		throw new PackageFormatError(`detail page side ${side} isn't a multiple of 4`);
+	}
+	const controlBytes = side * side * 4;
+	const tintBytes = bc3ImageBytes(side);
+	const indexBytes = cells * cells * 4;
+	checkLength(data, DETAIL_HEADER_SIZE + controlBytes + tintBytes + indexBytes, 'detail page');
+	const tintAt = DETAIL_HEADER_SIZE + controlBytes;
+	return {
+		side,
+		cells,
+		control: data.subarray(DETAIL_HEADER_SIZE, tintAt),
+		tint: data.subarray(tintAt, tintAt + tintBytes),
+		index: data.subarray(tintAt + tintBytes, tintAt + tintBytes + indexBytes),
 	};
 };
 

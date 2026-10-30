@@ -20,6 +20,8 @@ interface RequestBase {
 export type DecodeRequest =
 	| (RequestBase & { kind: 'heights' })
 	| (RequestBase & { kind: 'surface' })
+	| (RequestBase & { kind: 'detail' })
+	| (RequestBase & { kind: 'layer' })
 	| (RequestBase & { kind: 'instances'; rowKinds: RowKinds })
 	| (RequestBase & { kind: 'geometry' })
 	| (RequestBase & { kind: 'texture' })
@@ -42,6 +44,29 @@ export interface DecodedSurface {
 	side: number;
 	albedo: ArrayBuffer;
 	normal: ArrayBuffer;
+}
+
+/** a decoded terrain detail page, see `DetailPage` in package-format */
+export interface DecodedDetail {
+	id: number;
+	kind: 'detail';
+	/** texels per image edge */
+	side: number;
+	/** index cells per edge */
+	cells: number;
+	/** RGBA8 splat control */
+	control: ArrayBuffer;
+	/** BC3 sRGB tint */
+	tint: ArrayBuffer;
+	/** the 4 layer ordinals of each cell packed into one u32, lowest byte first */
+	index: ArrayBuffer;
+}
+
+/** a terrain layer texture's BC7 levels, largest first */
+export interface DecodedLayer {
+	id: number;
+	kind: 'layer';
+	data: ArrayBuffer;
 }
 
 /** a decoded instance block */
@@ -90,6 +115,8 @@ export interface DecodedIrradiance {
 export type Decoded =
 	| DecodedHeights
 	| DecodedSurface
+	| DecodedDetail
+	| DecodedLayer
 	| DecodedInstances
 	| DecodedGeometry
 	| DecodedTexture
