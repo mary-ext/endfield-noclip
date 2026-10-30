@@ -104,9 +104,10 @@ fn cs_froxels(@builtin(global_invocation_id) id: vec3u) {
 		let light = fog.sun.rgb * (froxel_sun(rel) * phase) + sky;
 		let source = light * scattering + fog.emissive.rgb;
 
-		// front to back between successive froxel centres, fading in from the first slice
+		// front to back between successive froxel centres, measured along the ray, fading in from the first
+		// slice
 		let depth = slice_depth(f32(s) + 0.5);
-		let span = depth - previous;
+		let span = (depth - previous) * length(ray);
 		previous = depth;
 		travelled += span;
 		let fade = clamp(travelled * fog.range.y, 0.0, 1.0);
