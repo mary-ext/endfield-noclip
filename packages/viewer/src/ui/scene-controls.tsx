@@ -97,7 +97,7 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 							<small className="muted">{entry.kind}</small>
 						</span>
 						<select
-							value={viewer.sceneValues[entry.id]}
+							value={viewer.sceneValues[entry.id] ?? entry.defaultLevel}
 							onChange={(event) => viewer.setSceneValue(entry.id, Number(event.currentTarget.value))}
 						>
 							{entry.levels.map((value) => (
