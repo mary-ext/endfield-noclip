@@ -78,6 +78,8 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 			maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
 			maxTextureArrayLayers: limits.maxTextureArrayLayers,
 			maxStorageBuffersPerShaderStage: limits.maxStorageBuffersPerShaderStage,
+			// the mesh pipeline samples 17 textures in its fragment stage, one over the default
+			maxSampledTexturesPerShaderStage: limits.maxSampledTexturesPerShaderStage,
 		},
 	});
 	device.lost

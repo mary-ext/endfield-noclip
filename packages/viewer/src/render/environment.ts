@@ -44,7 +44,10 @@ export type LightInput = Pick<
 	| 'indirectSpecularFactor'
 	| 'atmospherePitchYawMode'
 	| 'atmospherePitchYaw'
+	| 'cloudShadowPitchYawMode'
+	| 'cloudShadowPitchYaw'
 	| 'rotationAtmosphere'
+	| 'rotationCloudShadow'
 	| 'rotationHeightFogDirectionalInscattering'
 >;
 
@@ -157,6 +160,8 @@ export type CloudInput = Pick<
 	| 'cloudOpacityG'
 	| 'cloudFadeAlpha'
 	| 'rotation'
+	| 'enableCloudShadow'
+	| 'cloudShadowConfig'
 >;
 
 /** the parts of the game's shadow config the viewer reads */
@@ -366,6 +371,30 @@ export interface Environment {
 		/** radians */
 		rotation: number;
 	} | null;
+	/**
+	 * a tiling texture projected along the sun onto the ground, darkening the sun's light where its red channel
+	 * is low; `null` when off. the game's far-texture set isn't supported (no shipped phase enables it)
+	 */
+	cloudShadow: {
+		texture: number;
+		/** world position the projection is centred on */
+		center: Vec3;
+		/** texture repeats per metre */
+		scale: number;
+		/** texture offset per second */
+		flow: Vec2;
+		/** how far the texture darkens the sun, 0–1 */
+		alpha: number;
+		/**
+		 * past `start` metres from the centre (horizontally), the texture switches to one sampled at `farScale`
+		 * times the scale, over `width` metres
+		 */
+		start: number;
+		width: number;
+		farScale: number;
+		/** projects a position offset onto the centre's height plane along the sun: `d + projection · d.y` */
+		projection: Vec3;
+	} | null;
 	autoExposure: AutoExposureSettings;
 }
 
@@ -482,7 +511,10 @@ const DEFAULT_PROFILE: EnvironmentInput = {
 		indirectSpecularFactor: 1,
 		atmospherePitchYawMode: 0,
 		atmospherePitchYaw: [38, 35],
+		cloudShadowPitchYawMode: 0,
+		cloudShadowPitchYaw: [38, 35],
 		rotationAtmosphere: IDENTITY,
+		rotationCloudShadow: IDENTITY,
 		rotationHeightFogDirectionalInscattering: IDENTITY,
 	},
 	shadow: {
@@ -671,6 +703,35 @@ const cloudLook = (cloud: CloudInput | null): Environment['cloud'] => {
 	};
 };
 
+/** HGSkyRenderer.SetupShaderVariablesGlobalCloudShadow, without the far-texture set */
+const cloudShadowLook = (cloud: CloudInput | null, light: LightInput): Environment['cloudShadow'] => {
+	if (cloud === null || !cloud.enable || !cloud.enableCloudShadow) {
+		return null;
+	}
+	const config = cloud.cloudShadowConfig;
+	if (config.cloudShadowTexture === null) {
+		return null;
+	}
+	// the light's direction of travel over the sine of its pitch, so `d + projection · d.y` lands on the plane
+	const pitch = light.cloudShadowPitchYawMode === 1 ? light.cloudShadowPitchYaw[0] : light.directPitchYaw[0];
+	const sine = Math.min(Math.max(Math.abs(Math.sin((pitch * Math.PI) / 180)), 0.001), 1);
+	const [x, y, z] = rotate(light.rotationCloudShadow, [0, 0, 1]);
+	const [dx, dy] = config.cloudShadowFlowDirection;
+	const speed = config.cloudShadowFlowSpeed;
+	return {
+		texture: config.cloudShadowTexture,
+		center: config.cloudShadowEnvCenter,
+		// coverage is the texture's span in kilometres
+		scale: 0.001 / config.cloudShadowCoverage,
+		flow: [(dx * speed) / 1000, (dy * speed) / 1000],
+		alpha: config.cloudShadowAlpha,
+		start: config.cloudShadowScaleStartDistance,
+		width: config.cloudShadowScaleEndDistance,
+		farScale: 1 / config.cloudShadowDistanceScale,
+		projection: [x / sine, y / sine, z / sine],
+	};
+};
+
 /** HGAtmosphereRenderer.SetupShaderVariablesGlobalHeightFog, minus the flow noise */
 const heightFogLook = (fog: HeightFogInput, light: LightInput): HeightFog => ({
 	enabled: fog.enable,
@@ -815,6 +876,7 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 		post: postLook(source.post ?? DEFAULT_PROFILE.post),
 		grading: gradingLook(source.colorGrading),
 		cloud: cloudLook(source.cloud),
+		cloudShadow: cloudShadowLook(source.cloud, light),
 		autoExposure: autoExposureLook(source.autoExposure),
 	};
 };

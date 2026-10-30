@@ -69,6 +69,8 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 			// local lights and their bins
 			storage(15, lighting),
 			storage(16, lighting),
+			// the cloud shadow texture, sampled with the repeating sampler
+			{ binding: 17, visibility: lighting, texture: { sampleType: 'float' } },
 		],
 	});
 	const terrain = device.createBindGroupLayout({

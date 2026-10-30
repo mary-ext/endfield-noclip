@@ -43,6 +43,9 @@ struct Frame {
 	view_forward: vec4f,
 	// render width, height (px), z, w unused
 	render_size: vec4f,
+	// the cloud shadow (`Environment.cloudShadow`): [0] = centre (world), w = 1 when on; [1] = switch start (m),
+	// switch end (m), repeats per metre, 0; [2] = flow per second, alpha, far scale; [3] = projection, 0
+	cloud_shadow: array<vec4f, 4>,
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -70,6 +73,8 @@ struct Frame {
 // tile, then per 1 m view-depth slice
 @group(0) @binding(15) var<storage, read> lights: array<vec4f>;
 @group(0) @binding(16) var<storage, read> light_bins: array<u32>;
+// the cloud shadow's tiling texture (red), sampled with irradiance_repeat; a placeholder while off
+@group(0) @binding(17) var cloud_shadow_map: texture_2d<f32>;
 
 // #region sun shadow
 
@@ -182,15 +187,34 @@ fn sun_shadow(rel: vec3f, normal: vec3f, px: vec2f) -> f32 {
 	return mix(far, sharp, near);
 }
 
-// what reaches a surface of the sun's light, per channel: the shadow, replaced by the environment's fixed
-// attenuation where it keeps the sun out (caves), weakened by its strength and tinted through its penumbra ramp
+// the sun's visibility under the cloud shadow at a camera-relative position: a tiling texture projected along
+// the sun onto the centre's height plane, switching to a coarser sampling of it far from the centre
+fn cloud_shadow(rel: vec3f) -> f32 {
+	if (frame.cloud_shadow[0].w < 0.5) {
+		return 1.0;
+	}
+	let d = rel + frame.eye.xyz - frame.cloud_shadow[0].xyz;
+	let uv = (d + frame.cloud_shadow[3].xyz * d.y).xz * frame.cloud_shadow[1].z;
+	let flow = frame.cloud_shadow[2].xy * frame.eye.w;
+	let near = textureSampleLevel(cloud_shadow_map, irradiance_repeat, uv + flow, 0.0).x;
+	let far = textureSampleLevel(cloud_shadow_map, irradiance_repeat, uv * frame.cloud_shadow[2].w + flow, 0.0).x;
+	// smoothstep, safe for an empty range
+	let range = frame.cloud_shadow[1].xy;
+	let t = clamp((length(d.xz) - range.x) / max(range.y - range.x, 1e-4), 0.0, 1.0);
+	let cloud = mix(near, far, t * t * (3.0 - 2.0 * t));
+	return mix(1.0, cloud, frame.cloud_shadow[2].z);
+}
+
+// what reaches a surface of the sun's light, per channel: the shadow (with the cloud shadow), replaced by the
+// environment's fixed attenuation where it keeps the sun out (caves), weakened by its strength and tinted
+// through its penumbra ramp
 fn sun_visibility(rel: vec3f, normal: vec3f, px: vec2f) -> vec3f {
 	if (frame.shadow_fade.w < 0.5) {
-		return vec3f(1.0);
+		return vec3f(cloud_shadow(rel));
 	}
 	var shadow = frame.shadow_look.z;
 	if (frame.shadow_look.y < 0.99) {
-		shadow = mix(sun_shadow(rel, normal, px), frame.shadow_look.z, frame.shadow_look.y);
+		shadow = mix(sun_shadow(rel, normal, px) * cloud_shadow(rel), frame.shadow_look.z, frame.shadow_look.y);
 	}
 	let sh = mix(1.0, min(1.0, shadow), frame.shadow_look.x);
 	if (frame.shadow_look.w < 0.5) {

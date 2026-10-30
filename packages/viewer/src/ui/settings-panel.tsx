@@ -171,6 +171,7 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<Toggle viewer={viewer} name="heightFog" label="height and volumetric fog" />
 				<Toggle viewer={viewer} name="atmosphereFog" label="atmosphere fog" />
 				<Toggle viewer={viewer} name="shadows" label="shadows" />
+				<Toggle viewer={viewer} name="cloudShadows" label="cloud shadows" />
 				<Toggle viewer={viewer} name="water" label="water" />
 				<Toggle viewer={viewer} name="ao" label="ambient occlusion" />
 				<Toggle viewer={viewer} name="reflections" label="screen-space reflections" />

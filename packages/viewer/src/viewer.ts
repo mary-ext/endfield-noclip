@@ -111,6 +111,8 @@ export interface ViewerOptions {
 	heightFog: boolean;
 	atmosphereFog: boolean;
 	shadows: boolean;
+	/** darken the sun under the environment's projected cloud shadow texture */
+	cloudShadows: boolean;
 	water: boolean;
 	ao: boolean;
 	/** screen-space reflections on glossy surfaces, such as puddles */
@@ -160,6 +162,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	heightFog: true,
 	atmosphereFog: true,
 	shadows: true,
+	cloudShadows: true,
 	water: true,
 	ao: true,
 	reflections: true,
@@ -308,6 +311,10 @@ export class Viewer {
 	#noShadowRamp: GPUTextureView;
 	/** the shadow ramp view the frame groups were built with */
 	#shadowRamp: GPUTextureView;
+	/** bound while the environment has no cloud shadow, or it hasn't streamed in */
+	#noCloudShadow: GPUTextureView;
+	/** the cloud shadow view the frame groups were built with */
+	#cloudShadow: GPUTextureView;
 	readonly #lights: LocalLights;
 	#profiler: GpuProfiler;
 	#terrain: TerrainRenderer;
@@ -391,6 +398,8 @@ export class Viewer {
 		this.#reflection = this.#noReflection;
 		this.#noShadowRamp = placeholderView(device, { label: 'no shadow ramp', dimension: '2d' });
 		this.#shadowRamp = this.#noShadowRamp;
+		this.#noCloudShadow = placeholderView(device, { label: 'no cloud shadow', dimension: '2d' });
+		this.#cloudShadow = this.#noCloudShadow;
 		this.#irradiance = new IrradianceVolume(device, EMPTY_IRRADIANCE);
 		this.#lights = new LocalLights(device);
 		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups();
@@ -662,6 +671,7 @@ export class Viewer {
 					{ binding: 14, resource: this.#shadowRamp },
 					{ binding: 15, resource: { buffer: this.#lights.lightBuffer } },
 					{ binding: 16, resource: { buffer: this.#lights.binBuffer } },
+					{ binding: 17, resource: this.#cloudShadow },
 				],
 			});
 		const irradiance = this.#irradiance.views();
@@ -712,6 +722,24 @@ export class Viewer {
 			priority: 1e6,
 		});
 		this.#setShadowRamp(ramp?.binding?.view ?? null);
+
+		const cloudShadow = streamWholeTexture({
+			stream,
+			textures,
+			id: environment.cloudShadow?.texture ?? null,
+			kind: '2d',
+			priority: 1e6,
+		});
+		this.#setCloudShadow(cloudShadow?.binding?.view ?? null);
+	}
+
+	/** rebinds the frame groups when the cloud shadow's view changed; `null` binds the placeholder */
+	#setCloudShadow(view: GPUTextureView | null): void {
+		const next = view ?? this.#noCloudShadow;
+		if (next !== this.#cloudShadow) {
+			this.#cloudShadow = next;
+			[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups();
+		}
 	}
 
 	/** rebinds the frame groups when the shadow ramp's view changed; `null` binds the black placeholder */
@@ -1609,6 +1637,27 @@ export class Viewer {
 			f32[at + 1] = shadow.override;
 			f32[at + 2] = shadow.attenuation;
 			f32[at + 3] = this.#shadowRamp === this.#noShadowRamp ? 0 : 1;
+		}
+		{
+			const cloud = this.#environment.cloudShadow;
+			const at = FrameOffsets.cloudShadow;
+			const on =
+				cloud !== null &&
+				this.#cloudShadow !== this.#noCloudShadow &&
+				this.options.cloudShadows &&
+				this.options.debugView === 'lit';
+			f32.fill(0, at, at + 16);
+			if (on) {
+				f32.set(cloud.center, at);
+				f32[at + 3] = 1;
+				f32[at + 4] = cloud.start;
+				f32[at + 5] = cloud.start + cloud.width;
+				f32[at + 6] = cloud.scale;
+				f32.set(cloud.flow, at + 8);
+				f32[at + 10] = cloud.alpha;
+				f32[at + 11] = cloud.farScale;
+				f32.set(cloud.projection, at + 12);
+			}
 		}
 		this.#irradiance.centers().forEach((center, i) => {
 			const at = FrameOffsets.irradiance + i * 4;

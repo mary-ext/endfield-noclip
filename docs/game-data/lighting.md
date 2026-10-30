@@ -69,7 +69,26 @@ the view doesn't cast.
 
   without a ramp the sun is multiplied by the visibility `v`. on map02, Yinglung Pass's phases tint
   penumbrae purple, and ten cave and interior volumes keep the sun out entirely. the cached map's,
-  contact shadows' and other fields are packed but unused; contact and cloud shadows aren't drawn.
+  contact shadows' and other fields are packed but unused; contact shadows aren't drawn.
+
+### cloud shadows
+
+the `cloud` section's `cloudShadowConfig` (on with `enable` and `enableCloudShadow`) darkens the sun
+with a tiling texture projected along the sun's light onto the plane at `cloudShadowEnvCenter`'s
+height. the light direction is `rotationCloudShadow`'s, divided by the sine of its pitch
+(`cloudShadowPitchYaw` with mode 1, else `directPitchYaw`), clamped to [0.001, 1].
+
+- uv = projected offset from the centre (x, z) × `0.001 / cloudShadowCoverage` (coverage is the
+  tile's span in kilometres), plus `flowDirection · flowSpeed / 1000` per second.
+- past `cloudShadowScaleStartDistance` metres from the centre (horizontally), over the next
+  `cloudShadowScaleEndDistance` metres, the sample smoothsteps to one taken at uv /
+  `cloudShadowDistanceScale`.
+- the sun visibility is multiplied by `mix(1, red, cloudShadowAlpha)` before the sun-off override,
+  strength and ramp above.
+
+no shipped phase enables the far texture set (`enableFarCloudShadowTexture`); the viewer ignores it.
+rain phases set high alphas: on Marker Stone 0.75–1 against 0.49–0.70 for its dry phases, which is
+most of what makes the rain look overcast. the volumetric fog doesn't take the cloud shadow yet.
 
 ## ambient
 
@@ -587,9 +606,9 @@ are sampled toroidally in `ambient_irradiance`.
 - the volumetric fog's grid size and depth distribution come from quality presets that aren't
   recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient probe without
   the native diffuse-ambient scale.
-- not rendered: light shafts, lens flare, cloud shadows, the moon's sky-wide ring (`HG_RING`), the
-  sun disc, aurora, local reflection probes, the game's own SSR, local light shadows and light
-  beams, precipitation and rain wetness (terrain puddles do render).
+- not rendered: light shafts, lens flare, cloud shadows in the volumetric fog, the moon's sky-wide
+  ring (`HG_RING`), the sun disc, aurora, local reflection probes, the game's own SSR, local light
+  shadows and light beams, precipitation and rain wetness (terrain puddles do render).
 - celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' order against
   the cloud panorama (`drawCloudAfterPlanet`), their ring thinning the stars, and the brightness of
   the ray-traced planet's light (taken as the viewer's pre-exposed sun) are unchecked against a
