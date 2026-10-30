@@ -35,10 +35,10 @@ the extractor reads these sections
 | `shadowConfig`        | `shadow`        | sun shadow softness, strength, penumbra ramp, sun-off         |
 | `celestialConfig`     | `celestial`     | planets in the sky                                            |
 | `starConfig`          | `star`          | star field and nebula                                         |
+| `rainConfig`          | `rain`          | rain wetness ([wetness](#wetness)); falling rain isn't drawn  |
 
-other sections the phase has (`rainConfig`, `snowConfig`, `volumetricCloudConfig`,
-`lensFlareConfig`, …) are not extracted. to add one, extend `ENVIRONMENT_SECTIONS` and
-`mapSections`, the `SECTION_KEYS` map in
+other sections the phase has (`snowConfig`, `volumetricCloudConfig`, `lensFlareConfig`, …) are not
+extracted. to add one, extend `ENVIRONMENT_SECTIONS` and `mapSections`, the `SECTION_KEYS` map in
 [`pack/environments.ts`](../../packages/extractor/src/pack/environments.ts), and the matching
 interface in
 [`package-format/src/environment.ts`](../../packages/package-format/src/environment.ts).

@@ -26,6 +26,7 @@ export const ENVIRONMENT_SECTIONS = [
 	'shadowConfig',
 	'celestialConfig',
 	'starConfig',
+	'rainConfig',
 ] as const;
 
 /** a section's field name */
@@ -122,4 +123,5 @@ export const mapSections = <T>(
 	shadowConfig: fn('shadowConfig'),
 	celestialConfig: fn('celestialConfig'),
 	starConfig: fn('starConfig'),
+	rainConfig: fn('rainConfig'),
 });

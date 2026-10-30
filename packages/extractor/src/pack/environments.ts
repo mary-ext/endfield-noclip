@@ -57,6 +57,7 @@ const SECTION_KEYS = {
 	shadowConfig: 'shadow',
 	celestialConfig: 'celestial',
 	starConfig: 'star',
+	rainConfig: 'rain',
 } as const satisfies Record<EnvironmentSectionName, keyof EnvironmentProfile>;
 
 /** what a level resolved to, for the pack report and debug index */

@@ -29,6 +29,8 @@ export interface EnvironmentProfile {
 	shadow: ShadowConfig;
 	celestial: CelestialConfig;
 	star: StarConfig;
+	/** absent in packages written before it was extracted */
+	rain?: RainConfig;
 	/** the level's global post-processing volume, or `null` if it has none */
 	post: PostProfile | null;
 }
@@ -475,6 +477,33 @@ export interface ShadowConfig {
 	rhodesModeEnabled: boolean;
 	rhodesShipCenter: Vec3;
 	rhodesShipRadius: number;
+}
+
+/**
+ * `HGRainConfig`: falling rain and the wetness it leaves. `enable` turns the rain on; the wetness fields
+ * apply apart from it, whenever `enableWetness` is set. only the fields the viewer reads are listed; the
+ * section holds the rest of the game's (streaks, splashes, screen drops, ripples) under their own names
+ */
+export interface RainConfig {
+	enable: boolean;
+	/** 0–100 */
+	intensity: number;
+	enableWetness: boolean;
+	enableWetnessAffectSSR: boolean;
+	/** 0–1, how wet surfaces get */
+	wetness: number;
+	/** porosity is `saturate(smoothness · factor + base)`: how far wetness darkens instead of smoothing */
+	wetnessBasePorosity: number;
+	wetnessPorosityFactor: number;
+	/** the wetness of surfaces sheltered from the rain */
+	baseWetnessLevel: number;
+	/** the wetness of vertical surfaces, against 1 for those facing up */
+	verticalWetnessScalar: number;
+	/** where wetness fades into the far value, in multiples of the rain occlusion range */
+	farSceneWetnessDistanceFactor: number;
+	farSceneWetnessValue: number;
+	/** above 0, the high-quality wetness lays standing water on flat ground near the camera */
+	rippleRoughnessMaskThreshold: number;
 }
 
 /** `HGWindConfig`: foliage and cloth wind */
