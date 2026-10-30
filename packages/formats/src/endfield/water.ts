@@ -54,7 +54,7 @@ export interface WaterSurface {
 	/** `id >>> 27`, the owning level's namespace */
 	levelTag: number;
 	name: string;
-	/** non-zero; 1 or 2 in the current client. meaning unconfirmed */
+	/** non-zero bit mask of the game's `HGWaterRenderType` (1 `Proxy`, 2 `LOD`); 1 or 2 in the current client */
 	renderTypeMask: number;
 	/** 0 throughout the current client */
 	runtimeMeshId: number;

@@ -19,7 +19,11 @@ export interface LevelConfig {
 	id: string;
 	/** numeric id, as stored in MapConfig's ownership grid */
 	idNum: number;
-	/** streaming world this level lives in, e.g. `map02` */
+	/**
+	 * the level's map (stored as `mapIdStr`), e.g. `map02`. open-world levels share their streaming scene's
+	 * name, but a non-seamless level is usually its own map while streaming another scene; take the scene from
+	 * {@link defaultState.exportedSceneConfigPath}
+	 */
 	mapId: string | null;
 	defaultState: {
 		/** streaming scene asset, e.g. `map02/map02_streaming.asset` */

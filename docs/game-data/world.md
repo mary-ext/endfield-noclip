@@ -7,19 +7,26 @@ turns it into per-level blocks. which scenery a scene state, quest or variable s
 covered in [scene-states.md](scene-states.md); the package layout these blocks land in is in
 [../package-format.md](../package-format.md).
 
-## worlds and levels
+## scenes, maps and levels
 
-a **world** is a streaming scene (`Data/Streaming/PC/<scene>/`): `map01` (Valley IV), `map02`
-(Wuling), `base01_lv001` (Dijiang), `indie_dg007`, and about a hundred more. each world has one
-Unity coordinate frame. LevelConfig rects, entity matrices, terrain tiles and MapRegion shapes are
-all in that frame, and nothing is relocated per level. `world maps` lists the scenes the client
-ships; a scene being listed says nothing about whether it packs or renders.
+the game has three units, and this project names them the same way:
 
-a **level** (`map02_lv001`, …) is an area inside a world, not a separate scene. open-world levels
-share their map's streaming scene and are `isSeamless`. many dungeon levels reuse an open-world
-map's art scene too, so they need no separate handling; interiors, arenas and Dijiang are separate
-worlds with their own frames (some interiors sit at world-like coordinates but still stream from
-their own scene).
+- a **scene** is a streaming scene (`Data/Streaming/PC/<scene>/`, described by a
+  `StreamingSceneConfig` asset): `map01`, `map02`, `base01_lv001` (Dijiang), `indie_dg007`, and
+  about a hundred more. each scene has one Unity coordinate frame. LevelConfig rects, entity
+  matrices, terrain tiles and MapRegion shapes are all in that frame, and nothing is relocated per
+  level. a package holds one scene. `world scenes` lists the scenes the client ships; a scene being
+  listed says nothing about whether it packs or renders.
+- a **map** is a MapConfig (`mapIdStr`): the ownership grid and scene states of a playable space.
+  the open-world maps `map01` and `map02` share their scene's name; their `domainName` (`domain_1`,
+  `domain_2`) is the region the game shows as Valley IV and Wuling.
+- a **level** (`map02_lv001`, …) is a LevelConfig: an area inside a map, not a separate scene.
+  open-world levels share their map's streaming scene and are `isSeamless`. a non-seamless level is
+  usually its own map but streams another level's scene (`dung02_gdg001` streams `map02`,
+  `base01_lv003` streams `base01_lv001`), so a level's scene comes from
+  `defaultState.exportedSceneConfigPath`, never from its `mapId`. interiors, arenas and Dijiang are
+  separate scenes with their own frames (some interiors sit at world-like coordinates but still
+  stream from their own scene).
 
 ### LevelConfig
 
@@ -31,7 +38,7 @@ change fails loudly. fields the project uses:
 | field                                             | meaning                                                                                                              |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `id`, `idNum`                                     | string id and the numeric id MapConfig's grid stores                                                                 |
-| `mapId`                                           | the streaming world, e.g. `map02`                                                                                    |
+| `mapId`                                           | the level's map (stored as `mapIdStr`), e.g. `map02`; not always its streaming scene, see below                      |
 | `defaultState.exportedSceneConfigPath`            | streaming scene asset, e.g. `map02/map02_streaming.asset`                                                            |
 | `defaultState.sourceSceneName`                    | the level's art sub-scene, e.g. `map02_lv001_art`                                                                    |
 | `levelGrids`                                      | the 128 m cells the level owns                                                                                       |
@@ -94,6 +101,9 @@ Data/Streaming/PC/<scene>/Streaming/InitChunkData_Global_<sceneState>_<area>.byt
 Data/Streaming/PC/<scene>/Streaming/StreamingChunkData_…   (same suffixes)
 ```
 
+the suffixes are the game's `GridIdentifier` fields (`pos`, `sceneStateId`, `areaId`); the game
+calls the 128 m cell a grid.
+
 - `<x>_<z>` is the cell. most entity pivots fall inside their file's cell; large objects are filed
   by bounds and repeat in each cell they touch. the `Global` file has no cell and is always
   resident.
@@ -102,7 +112,7 @@ Data/Streaming/PC/<scene>/Streaming/StreamingChunkData_…   (same suffixes)
 - `<area>` is a stream-area id from `FBStreamArea` (below); 0 is the default area.
 
 `WorldIndex.chunkFiles()` parses these names; `world cells <level>` lists a level's files as
-`sceneState/area`, `world entities <map> <x> <z>|global` dumps one cell.
+`sceneState/area`, `world entities <scene> <x> <z>|global` dumps one cell.
 
 every file is the HG payload envelope (see [../extraction.md](../extraction.md)) around a
 FlatBuffer.
@@ -118,17 +128,17 @@ a component group is an ECS archetype stored column-major: a descriptor list of
 `(component id, stride)` and one blob of `count · Σ stride` bytes. component ids are anonymous
 column selectors; the ones with established meaning:
 
-| id    | content                                                                                                         |
-| ----- | --------------------------------------------------------------------------------------------------------------- |
-| 0–5   | world AABB, centre xyz then extents xyz (f32 each)                                                              |
-| 8–14  | draw infos for capacity `2^(id − 8)`: count, 24-byte infos (submesh, flag word), then `(max², min²)` LOD bounds |
-| 18    | 256-byte instance constants starting with the object-to-world matrix                                            |
-| 21    | 64-byte name prefix (root object names win when present)                                                        |
-| 27    | rect decal constants; the decal's material is in StreamingChunkData                                             |
-| 42    | a local light's runtime data, zero-filled in the file (244 bytes); the values are in the object row (below)     |
-| 63    | the same light's settings, zero-filled (448 bytes)                                                              |
-| 67    | LOD ranges: LOD count and cumulative draw count per LOD                                                         |
-| 68–74 | draw refs for capacity `2^(id − 68)`: `(u64 material hash, u64 mesh hash, …)`                                   |
+| id    | content                                                                                                                                        |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0–5   | world AABB, centre xyz then extents xyz (f32 each)                                                                                             |
+| 8–14  | draw infos for capacity `2^(id − 8)`: count, 24-byte infos (the game's `RendererInfo`: submesh, `renderFlags`), then `(max², min²)` LOD bounds |
+| 18    | 256-byte instance constants starting with the object-to-world matrix                                                                           |
+| 21    | 64-byte name prefix (root object names win when present)                                                                                       |
+| 27    | rect decal constants; the decal's material is in StreamingChunkData                                                                            |
+| 42    | a local light's runtime data, zero-filled in the file (244 bytes); the values are in the object row (below)                                    |
+| 63    | the same light's settings, zero-filled (448 bytes)                                                                                             |
+| 67    | LOD ranges: LOD count and cumulative draw count per LOD                                                                                        |
+| 68–74 | draw refs for capacity `2^(id − 68)`: `(u64 material hash, u64 mesh hash, …)`                                                                  |
 
 `readChunkEntities` turns a group into `ChunkEntity` rows with id, tag, name, matrix, bounds, decal
 flag and a `StaticRenderer` (draws with mesh/material StringPathHash keys, submesh, flags and LOD
@@ -162,8 +172,9 @@ code: [init-chunk-data.ts](../../packages/formats/src/endfield/init-chunk-data.t
 visible by default (`RootVisible`), and trigger volumes: an XZ polygon with a box and height range
 per area. while the streaming centre is inside one or more triggers, the client shows the union of
 those areas' visible slices; otherwise it shows `RootVisible`. area ids are the `<area>` suffix of
-chunk file names and the visibility groups of DynamicStreaming entities. root slots 7–9 exist but
-are not decoded.
+chunk file names and the visibility groups of DynamicStreaming entities. root slots 7–9
+(`HlodUnloadBounds`, `HlodUnloadTriggers`, `HlodUnloadPoints`), HLOD-unload trigger volumes in the
+same layout, are not decoded.
 
 the packer draws a level with all of its areas, deduplicating entities shared between areas; the
 trigger test (`visibleAreasAt`) exists for consumers that want the game's area switching.
@@ -285,7 +296,7 @@ level in very few triangles.
   the packer keeps whole chains, thresholds included.
 - **foliage cards.** imposter card meshes (`…_cardmesh`) appear as ordinary far LODs; the packer
   marks a draw as a card when its mesh path contains `_cardmesh`.
-- **shadow proxies.** draws with flag bit 10 only cast shadows.
+- **shadow proxies.** draws with `renderFlags` bit 10 only cast shadows.
 - **HLOD clusters.** auto-generated per-level clusters in three tiers, placed as ordinary entities
   named `HLOD<tier>_<i>_<j>_Cluster_<hash>…`, `i`/`j` being the tier's grid cell, with negative
   coordinates clamped to 0 (west and south of the terrain origin every cluster is named on cell 0).
@@ -315,16 +326,18 @@ count. with `--level`, the subset keeps entities with that level's tag and terra
 its cells.
 
 the game's HLOD switch distances are unknown, so a node's geometric error is a placeholder (1/16 of
-its edge, 4 m at the 64 m leaf) that the viewer's SSE threshold tunes.
+its edge, 4 m at the 64 m leaf) that the viewer's SSE threshold tunes. the game streams HLOD as the
+streaming layers `HLOD0`–`HLOD2`, each with its own load radius (`hlod0LayerLoadRadius`, …), and
+calls a tier an HLOD level; their values come from settings that aren't read.
 
 ## open
 
-- the meaning of the draw flag bits other than shadow-only, and of a negative `minSquared` beyond
-  "never culled by size"
+- the meaning of the `renderFlags` bits other than shadow-only, and of a negative `minSquared`
+  beyond "never culled by size"
 - HLOD switch distances, and the HLOD generated-material channel layout
 - the cell size of `fb_main` grids; the levels are known from file names, the metric size is not
   decoded
-- stream-area root slots 7–9
+- stream-area root slots 7–9 (HLOD-unload triggers)
 - `farmod` far-field assets: whether they form a layer outside HLOD
 - whether dungeon levels that reuse an open-world scene add content of their own beyond LevelData
   and DynamicStreaming

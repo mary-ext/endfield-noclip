@@ -4,8 +4,8 @@ import type { Aabb } from '../unity/values.ts';
 
 import { levelTagOf } from './level-partition.ts';
 
-// static scenery placements: `Data/Streaming/PC/<scene>/Streaming/InitChunkData_<x>_<z>_<layer>_<state>.bytes`
-// (and `…_Global_<layer>_<state>.bytes`). framing ported from An1X3R/Endfield-map-extractor (MIT,
+// static scenery placements: `Data/Streaming/PC/<scene>/Streaming/InitChunkData_<x>_<z>_<sceneStateId>_<areaId>.bytes`
+// (and `…_Global_<sceneStateId>_<areaId>.bytes`), the game's `GridIdentifier` fields. framing ported from An1X3R/Endfield-map-extractor (MIT,
 // `extractor_core/{instances,flatbuffer}.py`, `extract_scene_renderer_materials.py`) and the field readings
 // of Variante/endfield_research_kit (MIT, `memory/game_data/world_chunk*.md`).
 //
@@ -28,8 +28,9 @@ export interface ChunkObject {
 	id: number;
 	/**
 	 * union tag of the row. by name census: 1 = environment (reflection probes, `Env_*`, volumes, wind, terrain
-	 * root), 2 = component-group entities (renderers, colliders, decals, lights), 3 = audio emitters, grass
-	 * grids, surface-type data. names of the member types are not recovered. see {@link ChunkObjectKind}
+	 * root), 2 = component-group entities (renderers, colliders, decals, lights; the game's `ECSEntityType`), 3
+	 * = proxy entities (audio, grass and tree grids, surface-type data; the game's `ProxyEntityType`). see
+	 * {@link ChunkObjectKind}
 	 */
 	kind: number;
 	name: string;

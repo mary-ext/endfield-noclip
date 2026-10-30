@@ -28,13 +28,13 @@ every water surface is an entity of a **Global** chunk (no cell chunk holds one 
 current client). the groups holding them have the bounds columns 0–5, an unread 24-byte column 7,
 the name column 21 and component 30, whose rows are 104 bytes:
 
-| offset | type   | field            | notes                                                                                |
-| ------ | ------ | ---------------- | ------------------------------------------------------------------------------------ |
-| 0      | u32    | render type mask | 1 or 2; meaning unknown. 1 is mostly paddy pools and small planes                    |
-| 4      | i32    | runtime mesh id  | always 0                                                                             |
-| 8      | f32×16 | object-to-world  | column-major, translation at floats 12–14, same convention as the renderer component |
-| 72     | f32×4  | param0           | always 0                                                                             |
-| 88     | f32×4  | param1           | `w` always 1; `x`, `y`, `z` vary, meaning unknown                                    |
+| offset | type   | field            | notes                                                                                            |
+| ------ | ------ | ---------------- | ------------------------------------------------------------------------------------------------ |
+| 0      | u32    | render type mask | bits of the game's `HGWaterRenderType`: 1 proxy, 2 LOD. 1 is mostly paddy pools and small planes |
+| 4      | i32    | runtime mesh id  | always 0                                                                                         |
+| 8      | f32×16 | object-to-world  | column-major, translation at floats 12–14, same convention as the renderer component             |
+| 72     | f32×4  | param0           | always 0                                                                                         |
+| 88     | f32×4  | param1           | `w` always 1; `x`, `y`, `z` vary, meaning unknown                                                |
 
 `readWaterSurfaces` rejects a row with a zero mask, a non-finite value or a missing binding, because
 each of those has never occurred and would mean the layout moved.
@@ -217,8 +217,9 @@ content. the mesh renderer skips `waterDecal` and has no dedicated path for `wat
 
 ## open
 
-- `renderTypeMask` and `param1.xyz`: likely a pass split and per-surface flow or foam options; needs
-  the game's water rendering code.
+- how the proxy and LOD render types of `renderTypeMask` differ in drawing (the viewer draws both
+  the same way), and `param1.xyz`, likely per-surface flow or foam options; needs the game's water
+  rendering code.
 - the unread 24-byte column 7 beside component 30.
 - flow and normal channel meanings and the flow-map UV orientation (see above).
 - what WaterProxy meshes render (possibly water inside prefabs writing the same inputs as surfaces)

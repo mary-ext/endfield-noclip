@@ -1006,8 +1006,8 @@ export interface LiftGammaGain {
 
 /**
  * `HGColorGradingConfig`: tonemapping and URP-style grading (the colour curves aren't included).
- * `tonemappingMode` indexes the game's `None, Neutral, ACES, ACESmodified, Custom, External` (5 everywhere
- * seen; the curve behind it isn't known)
+ * `tonemappingMode` is the game's `TonemappingMode`: 0 `None`, 1 `Neutral`, 2 `ACES`, 3 `Custom`, 4
+ * `External`, 5 `ACES_modified` (5 everywhere seen; 1–4 are hidden from the game's inspector)
  */
 export interface ColorGradingConfig {
 	tonemappingMode: number;
@@ -1305,7 +1305,7 @@ export interface WaterSurfaceEntry {
 	bounds: Bounds;
 	/** index into {@link WaterTable.configs} */
 	config: number;
-	/** the game's render type mask, 1 or 2; meaning unknown */
+	/** bit mask of the game's `HGWaterRenderType` (1 `Proxy`, 2 `LOD`); 1 or 2 in the current client */
 	renderTypeMask: number;
 	/** the game's per-surface `param1`; `w` is always 1, `x`/`y`/`z` meaning unknown */
 	param1: Vec4;
@@ -1473,7 +1473,7 @@ export interface ChainDraw {
 	 */
 	minSquared: number;
 	maxSquared: number;
-	/** the game's renderer flag word, kept for bits not yet understood */
+	/** the game's `RendererInfo.renderFlags`, kept for bits not yet understood */
 	sourceFlags: number;
 }
 

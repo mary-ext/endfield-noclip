@@ -3,7 +3,7 @@ import { FormatError } from '../binary/binary-reader.ts';
 import { ChunkObjectKind } from './init-chunk-data.ts';
 import { readChunkRows, readPropertyTable, type MonoValue } from './mono-objects.ts';
 
-// resource bindings of streamed objects: `Data/Streaming/PC/<scene>/Streaming/StreamingChunkData_<x>_<z>_<layer>_<state>.bytes`
+// resource bindings of streamed objects: `Data/Streaming/PC/<scene>/Streaming/StreamingChunkData_<x>_<z>_<sceneStateId>_<areaId>.bytes`
 // (and `…_Global_…`), the sibling of the same-named InitChunkData. it shares the Init root layout and object ids
 // (`readChunkRows`); what it adds per object is a keyed property table (`readPropertyTable`) whose values point
 // at assets by StringPathHash key. row readings follow Variante/endfield_research_kit (MIT,
