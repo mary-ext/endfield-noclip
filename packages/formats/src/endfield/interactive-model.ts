@@ -182,11 +182,11 @@ export const readInteractiveModel = (
 				properties();
 				const levels: string[] = [];
 				list(() => {
-					const model = str();
-					if (!model) {
+					const level = str();
+					if (!level) {
 						throw new FormatError('empty facility upgrade model');
 					}
-					levels.push(model);
+					levels.push(level);
 				});
 				if (levels.length === 0 || levels.length > 32 || !levels.includes(id)) {
 					throw new FormatError('invalid facility visual forms');
