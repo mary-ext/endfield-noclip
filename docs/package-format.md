@@ -18,7 +18,7 @@ it.
 
 ## versioning
 
-`PACKAGE_VERSION` (17) is written to `manifest.version` and covers the manifest, the JSON tables and
+`PACKAGE_VERSION` (18) is written to `manifest.version` and covers the manifest, the JSON tables and
 how the parts fit together. each binary encoding (tree, chains, blob table, irradiance table,
 instance blocks, height, surface and splat pages, geometry blobs) carries its own version in its
 header, next to its codec. readers accept exactly the versions they know and reject any other, and
@@ -39,7 +39,7 @@ the manifest, the tree or instance blocks leaves cached mesh and texture convers
     blobs/<hash>.hgt              terrain height pages coarser than the 128 m cells
     blobs/<hash>.tsp              terrain surface pages, likewise
     blobs/<hash>.inst             HLOD and global instance blocks, one of each per visibility group
-    manifest.json                 PackageManifest
+    manifest.json.zst             PackageManifest
     tables/blobs.bin              blob index → archive, codec, kind, offset, lengths
     tables/chains.bin             LOD-chain templates
     tables/geometries.json.zst    geometry table
@@ -180,7 +180,8 @@ Global chunks of scene states become conditional global blocks, drawn whole whil
 
 ## manifest
 
-`manifest.json`, `PackageManifest`:
+`manifest.json.zst`, `PackageManifest` (zstd-compressed JSON like the tables; it's ~5 MB raw on
+map02, a third of the core):
 
 | field                                                     | contents                                                                                                                                                                  |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -312,7 +313,7 @@ a WebGPU upload of the bytes as they are samples correctly with the game's UVs.
 
 ## JSON tables
 
-each is one zstd frame around JSON. entry `i` has id `i`. an entry is either ready or an
+each is one zstd frame (level 9) around JSON. entry `i` has id `i`. an entry is either ready or an
 `UnconvertedEntry` (`pending` when packed with `--no-assets`, `failed` with the reason in
 `debug/assets.json`); draws referencing an unconverted entry are skipped. `--no-assets` exists for
 fast iteration on the instance side.

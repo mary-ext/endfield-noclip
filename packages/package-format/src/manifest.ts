@@ -25,17 +25,17 @@ export const PACKAGE_FORMAT = 'endfield-noclip.package';
  * bumped on any incompatible change to the manifest or a table. binary encodings carry their own versions in
  * their headers
  */
-export const PACKAGE_VERSION = 17;
+export const PACKAGE_VERSION = 18;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
 
 /**
- * fixed member paths inside {@link CORE_ARCHIVE}. `.zst` members are one zstd frame each (the JSON asset
- * tables shrink 6–50× that way); the rest are stored as they are
+ * fixed member paths inside {@link CORE_ARCHIVE}. `.zst` members are one zstd frame each (the JSON shrinks
+ * 6–50× that way); the rest are stored as they are
  */
 export const CORE_PATHS = {
-	manifest: 'manifest.json',
+	manifest: 'manifest.json.zst',
 	tree: 'tree.bin',
 	blobs: 'tables/blobs.bin',
 	chains: 'tables/chains.bin',
@@ -47,7 +47,7 @@ export const CORE_PATHS = {
 	irradiance: 'tables/irradiance.bin',
 } as const;
 
-/** `manifest.json` in the core archive */
+/** `manifest.json.zst` in the core archive */
 export interface PackageManifest {
 	format: typeof PACKAGE_FORMAT;
 	version: number;
