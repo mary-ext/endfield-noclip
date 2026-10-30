@@ -2,6 +2,8 @@ import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import {
 	readInteractiveBaseModel,
 	readInteractiveModel,
+	readInteractiveTable,
+	readInteractiveVariantModels,
 } from '@endfield-noclip/formats/endfield/interactive-model';
 import {
 	type LevelInteractive,
@@ -40,12 +42,12 @@ const TEMPLATES = new Map([
 	],
 ]);
 
-const templateDataPath = (template: string): string =>
-	`Data/Json/Interactive/InteractiveData/data_${template}.json`;
+const TABLE = 'Data/Json/Interactive/InteractiveTable.json';
 
 /**
  * resolves the models of interactives placed by referenced LevelData: shop, depot and recycling-station
- * visual forms, and every other template's base model, always shown
+ * visual forms, and every other interactive's model (its template variant's, else the template's), always
+ * shown
  *
  * @param context install readers
  * @param scene owning map
@@ -89,6 +91,7 @@ export const loadInteractiveFacilities = async (
 			scale: scale * numberField(data, 'scaleFactor'),
 		};
 	};
+	const interactives = readInteractiveTable(await read(TABLE), string);
 	const unsupported: { path: string; reason: string }[] = [];
 
 	// placements first, so only the templates they use are read
@@ -128,43 +131,69 @@ export const loadInteractiveFacilities = async (
 		}
 	}
 
-	// templates: facilities with their visual forms, the rest with their base model alone
+	// interactive ids: facilities with their visual forms, the rest with one model
 	const authored = new Map<
 		string,
 		{ name: string | null; initial: number; forms: { prefab: string; scale: number }[] }
 	>();
-	for (const template of new Set(placed.map(({ row }) => row.template))) {
-		const facility = TEMPLATES.get(template);
+	// each template's base model and its variants' model overrides
+	const templates = new Map<
+		string,
+		{ base: { id: string; scale: number } | null; variants: Map<string, string | null> }
+	>();
+	const variantsOf = new Map<string, Set<string>>();
+	for (const [id, template] of interactives.templates) {
+		if (id !== template) {
+			variantsOf.set(template, (variantsOf.get(template) ?? new Set()).add(id));
+		}
+	}
+	for (const key of new Set(placed.map(({ row }) => row.template))) {
+		const facility = TEMPLATES.get(key);
 		if (facility !== undefined) {
 			// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
 			const model = readInteractiveModel(await read(facility.data), string);
-			authored.set(template, {
+			authored.set(key, {
 				name: facility.name,
 				initial: model.levels.indexOf(model.id),
 				forms: model.levels.map((modelId) => formOf(modelId, model.scale)),
 			});
 			continue;
 		}
-		const data = templateDataPath(template);
-		// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
-		const file = await find(data);
-		if (!file) {
-			// variants such as the weapon-wall racks have no template file of their own
-			unsupported.push({ path: data, reason: `no template file for ${template}` });
+		const template = interactives.templates.get(key);
+		const data = template === undefined ? undefined : interactives.templatePaths.get(template);
+		if (template === undefined || data === undefined) {
+			unsupported.push({ path: TABLE, reason: `no template for ${key}` });
 			continue;
 		}
-		try {
-			// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
-			const model = readInteractiveBaseModel(await vfs.readVerified(file), string);
-			if (model !== null) {
-				authored.set(template, { name: null, initial: 0, forms: [formOf(model.id, model.scale)] });
+		let resolved = templates.get(template);
+		if (resolved === undefined) {
+			try {
+				// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
+				const bytes = await read(data);
+				resolved = {
+					base: readInteractiveBaseModel(bytes, string),
+					variants: readInteractiveVariantModels(bytes, string, variantsOf.get(template) ?? new Set()),
+				};
+			} catch (error) {
+				if (!(error instanceof FormatError)) {
+					throw error;
+				}
+				unsupported.push({ path: data, reason: error.message });
+				resolved = { base: null, variants: new Map() };
 			}
-		} catch (error) {
-			if (!(error instanceof FormatError)) {
-				throw error;
-			}
-			unsupported.push({ path: data, reason: error.message });
+			templates.set(template, resolved);
 		}
+		const { base } = resolved;
+		const modelId = resolved.variants.get(key) ?? base?.id;
+		if (modelId === undefined) {
+			// triggers and logic-only interactives have no model
+			continue;
+		}
+		if (!(modelId in modelData)) {
+			unsupported.push({ path: data, reason: `model ${modelId} of ${key} is not in the model table` });
+			continue;
+		}
+		authored.set(key, { name: null, initial: 0, forms: [formOf(modelId, base?.scale ?? 1)] });
 	}
 
 	// the manifest maps hashes to paths only, and each path decompresses on read: stop once all are found

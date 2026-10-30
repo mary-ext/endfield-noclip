@@ -28,9 +28,10 @@ const fixture = (options: { gated: boolean; unsupported: boolean; areas: boolean
 	i32(0);
 	i32(0);
 	i32(0);
+	// a populated blackbox is unsupported
+	u8(options.unsupported ? 15 : 255);
 	u8(255);
-	u8(255);
-	i32(options.unsupported ? 1 : 0);
+	i32(0);
 	i32(0);
 	i32(0);
 	i32(0);

@@ -233,34 +233,54 @@ renderers have no game entity id, so the packer gives them a synthetic one: the 
 index counted down from the top of the 27-bit id space, away from the game's ids. ECS entities
 already present in static chunks keep their static copy.
 
-## interactive facilities
+## interactives
 
-shops, depots and recycling stations are interactives whose look depends on an upgrade level. their
-visual forms come from three sources:
+interactives are the placed gameplay objects: switches, doors, chests, campfires, collectibles,
+harvestable plants, shops. their models come from four sources:
 
-1. the facility template `Data/Json/Interactive/InteractiveData/data_<template>.json` (pooled
-   MemoryPack). `readInteractiveModel` walks its components up to the model-upgrade component
-   (`InteractiveModelLevelUpComponentData`), which lists model ids in visual-form order and must
-   contain the base model id.
-2. `Data/Json/GameplayConfig/ModelTable.json` maps each model id to a prefab path and `scaleFactor`.
-3. LevelData files (from LevelConfig `levelDataPathHashes`) place interactives.
-   `readLevelInteractives` decodes the sequential prefix through the interactive list: template id,
-   `createState`, position, rotation, scale, `modelScale` (0 = no override).
+1. LevelData files (from LevelConfig `levelDataPathHashes`) place them. `readLevelInteractives`
+   decodes the sequential prefix through the interactive list: interactive id, `createState`,
+   position, rotation, scale, `modelScale` (0 = no override). only `createState` 0 (created with the
+   level) is drawn.
+2. `Data/Json/Interactive/InteractiveTable.json` maps each interactive id to a template and each
+   template to its data file (`readInteractiveTable`). many ids share one template: the Wuling
+   switch variants all instantiate `int_switch_wuling`.
+3. the template `Data/Json/Interactive/InteractiveData/data_<template>.json` (pooled MemoryPack).
+   its leading component is the model component (`readInteractiveBaseModel`: model id and scale).
+   its last members are the variant table, keyed by interactive id, whose entries can override the
+   model id (`readInteractiveVariantModels`).
+4. `Data/Json/GameplayConfig/ModelTable.json` maps each model id to a prefab path and `scaleFactor`.
+
+a placement draws its variant's model, else the template's, always visible. templates without a
+model (triggers, logic) draw nothing.
 
 the three facility templates (`int_system_domain_shop`, `int_system_domain_depot`,
-`int_doodad_core_recycle`) are read through their model-upgrade component, and their placements with
-`createState` 0 are emitted one model per visual form, each visible under its form's bit of a
-per-facility progression control. other templates are read only through their leading model
-component (`readInteractiveBaseModel`), and their placements draw that base model, always visible
+`int_doodad_core_recycle`) instead walk their components up to the model-upgrade component
+(`InteractiveModelLevelUpComponentData`, `readInteractiveModel`), which lists model ids in
+visual-form order and must contain the base model id. their placements are emitted one model per
+visual form, each visible under its form's bit of a per-facility progression control
 ([scene-states.md](scene-states.md#facility-visual-forms)).
+
+### reading the variant table
+
+between the model component and the variant table sit hundreds of component and action-graph types
+that aren't decoded, so the table is located from the end of the file: it is followed only by the
+template's temporary properties and two flags. a position frames the table when the parse ends
+exactly at the end of the file and its keys are exactly the InteractiveTable ids that name this
+template (other than the template's own id, which is never a key; this holds for every shipped
+template). zero or several such positions is an error, and that template is reported and skipped.
+variant entries are 14-member objects in name order; `Optional<T>` is an object of (enabled, value)
+for managed `T` and a raw struct (enabled, padding, value) for unmanaged `T`.
+
+### reading LevelData
 
 LevelData is a sequential format: an unread field's length is unknown, so scanning past it would
 misframe every later row. the reader fails closed with `UnsupportedLevelData` on any populated field
 or condition it doesn't implement, and the whole file is omitted and listed in the pack's
 unsupported-interactives report. never decode a partial file. polymorphic fields are MemoryPack
 unions whose tag indexes the subclasses in name order, with each subclass's members also in name
-order: the function areas' specific data reads tags 2 (AI bark block), 12 (repatriate zone), 14
-(scene toast) and 15.
+order. gameplay tags are unmanaged four-byte values. every map01 and map02 file decodes; the
+blackbox (factory puzzle) scenes' populated blackbox settings are unsupported.
 
 code: [interactive-model.ts](../../packages/formats/src/endfield/interactive-model.ts),
 [level-interactives.ts](../../packages/formats/src/endfield/level-interactives.ts),
@@ -275,6 +295,6 @@ viewer doesn't use it.
 - decoding the packed tangent frame in normal bits 20–31 (its layout is identified; tangents are
   regenerated), and the meaning of the uv dimension byte's high nibble 2
 - animated poses and non-zero blend shapes
-- LevelData members after the interactive list, and the facility layouts not yet supported
+- LevelData members after the interactive list, and populated blackbox settings
 - the per-controller meaning of progression bit 0 ("unbuilt" versus level 1)
 - the path hash function, which would replace the StringPathHash table scans in path → hash lookups

@@ -199,7 +199,7 @@ ignores:
 | `chunk-files.json`              | the chunk files read, indexed by `instances.jsonl`                                                          |
 | `environments.json`             | per level, the chosen base environment and where each section came from                                     |
 | `water.json`                    | water surfaces and sectors packed versus present, and assets that failed to load                            |
-| `unsupported-interactives.json` | interactive LevelData files skipped as a whole because their layout isn't supported                         |
+| `unsupported-interactives.json` | interactive LevelData files skipped as a whole, and templates or models that couldn't be resolved           |
 | `unsupported-prefabs.json`      | prefabs that couldn't be instantiated, with reasons                                                         |
 
 start from these when something is missing in the viewer: `instances.jsonl` maps a drawn block back
@@ -211,7 +211,7 @@ to entities and chunk files, and `assets.json` says why an asset didn't convert.
   diverges from XXH3 at 128 UTF-8 bytes (see AnimeStudio's `EndfieldVfsHash`).
 - material conversion isn't cached, and failed conversions aren't remembered, so a warm pack can
   still start workers.
-- interactive LevelData decoding covers the supported facility layouts only; other files are listed
-  in `unsupported-interactives.json` rather than partially read.
+- LevelData files with populated blackbox settings (factory puzzle scenes) are listed in
+  `unsupported-interactives.json` rather than partially read.
 - some texture formats aren't convertible (e.g. GraphicsFormat 54); they appear as failures in the
   report and `assets.json`.

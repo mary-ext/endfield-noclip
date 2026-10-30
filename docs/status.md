@@ -105,8 +105,11 @@ packs or renders correctly.
 ## coverage and conditional content
 
 - separate scenes (interiors, offices, arenas) are unvalidated
-- interactive LevelData decoding is strict: files with unsupported layouts are reported in
-  `out/<map>/debug/unsupported-interactives.json` and omitted rather than partially scanned
+- interactives ([assets](game-data/assets.md#interactives)) draw their model's default pose and
+  ignore per-placement component properties and view states (`ModelViewStateControllerData`), so
+  doors stay as authored and every state's effects show at once (range rings, lock marks).
+  interactives whose model id is missing from the model table, and LevelData with populated blackbox
+  settings, are reported in `out/<map>/debug/unsupported-interactives.json` and omitted
 - interactive facilities are gathered from levels whose map is the packed scene, so a scene streamed
   by levels of other maps (`base01_lv001`, streamed by `base01_lv003` and `indie_dg014`) probably
   loses their facilities; select levels by `defaultState.exportedSceneConfigPath` instead

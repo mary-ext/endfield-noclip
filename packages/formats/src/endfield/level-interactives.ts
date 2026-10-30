@@ -207,7 +207,13 @@ export const readLevelInteractives = (
 		}),
 	);
 	field = 'aiTransData';
-	empty();
+	list(() =>
+		nullable(4, () => {
+			str();
+			r.skip(24);
+			r.i32();
+		}),
+	);
 	field = 'autoSpawnedInteractives';
 	r.skip(count() * 8);
 	field = 'blackbox';
@@ -216,10 +222,46 @@ export const readLevelInteractives = (
 	}
 	field = 'buildableCondition';
 	condition(0);
-	for (const name of ['cameraPoses', 'charPatrol']) {
-		field = name;
-		empty();
-	}
+	field = 'cameraPoses';
+	list(() => nullable(4, () => r.skip(32)));
+	// patrol routes: loop type, id, then points of (actions, gait, position)
+	const patrol = (action: () => void): void => {
+		nullable(3, () => {
+			r.i32();
+			r.u64();
+			list(() =>
+				nullable(3, () => {
+					list(action);
+					r.i32();
+					r.skip(12);
+				}),
+			);
+		});
+	};
+	field = 'charPatrol';
+	list(() =>
+		patrol(() =>
+			nullable(18, () => {
+				r.i32();
+				r.f32();
+				str();
+				bool();
+				r.skip(12);
+				str();
+				str();
+				r.f32();
+				// gameplay tags are unmanaged four-byte values
+				r.i32();
+				r.f32();
+				str();
+				bool();
+				bool();
+				str();
+				r.i32();
+				r.f32();
+			}),
+		),
+	);
 	field = 'doodadGroup';
 	list(() => {
 		marker(9);
@@ -276,7 +318,20 @@ export const readLevelInteractives = (
 				});
 			});
 			str();
-			empty();
+			// spawner buffs: (blackboard of key, useString, float, string), buff id
+			list(() =>
+				nullable(2, () => {
+					list(() =>
+						nullable(4, () => {
+							str();
+							bool();
+							r.f32();
+							str();
+						}),
+					);
+					str();
+				}),
+			);
 			r.skip(16);
 			// Nullable<float> is an unmanaged eight-byte value: hasValue, padding, float bits.
 			r.skip(8);
@@ -316,20 +371,57 @@ export const readLevelInteractives = (
 	);
 	field = 'enemyPatrol';
 	list(() =>
-		nullable(3, () => {
-			r.i32();
-			r.u64();
-			list(() =>
-				nullable(3, () => {
-					empty();
-					r.i32();
-					r.skip(12);
-				}),
-			);
-		}),
+		patrol(() =>
+			nullable(13, () => {
+				r.i32();
+				str();
+				r.f32();
+				str();
+				str();
+				bool();
+				bool();
+				r.f32();
+				str();
+				str();
+				str();
+				r.i32();
+				r.f32();
+			}),
+		),
 	);
 	field = 'environmentVolumes';
-	empty();
+	list(() =>
+		nullable(12, () => {
+			r.f32();
+			r.i32();
+			str();
+			r.skip(8);
+			// polyline shape; its BVH is rebuilt at runtime and shipped empty
+			nullable(12, () => {
+				r.f32();
+				ints();
+				empty();
+				bool();
+				list(() => r.skip(count() * 8));
+				r.f32();
+				bool();
+				bool();
+				r.skip(12);
+				r.skip(count() * 8);
+				r.skip(12);
+				nullable(1, () => {
+					if (r.u8() !== 255) {
+						unsupported();
+					}
+				});
+			});
+			r.skip(12);
+			r.i32();
+			r.skip(24);
+			r.u64();
+			r.i32();
+		}),
+	);
 	field = 'factoryMines';
 	list(mine);
 	field = 'factoryPredefineData';
@@ -416,9 +508,103 @@ export const readLevelInteractives = (
 				case 255: {
 					return;
 				}
+				case 0: {
+					// ambience camera: blend styles and times, duration, three limit switches, eight limits,
+					// screen x/y, two switches
+					marker(20);
+					r.skip(20);
+					bool();
+					bool();
+					bool();
+					r.skip(40);
+					bool();
+					bool();
+					return;
+				}
+				case 1:
+				case 6:
+				case 10:
+				case 17: {
+					// blight miasma level, carry-zone gameplay tag, hidden NPC mask, visit-stat save id
+					marker(1);
+					r.i32();
+					return;
+				}
 				case 2: {
 					// block AI bark: defaultOn
 					marker(1);
+					bool();
+					return;
+				}
+				case 3: {
+					// camera control state: blend styles and times, three switches, two checked states
+					marker(11);
+					r.skip(16);
+					bool();
+					bool();
+					bool();
+					r.f32();
+					str();
+					r.f32();
+					str();
+					return;
+				}
+				case 4: {
+					// camera look-at: blends, duration, speeds and angles, two switches, three values
+					marker(13);
+					r.skip(32);
+					bool();
+					bool();
+					r.skip(12);
+					return;
+				}
+				case 5: {
+					// camera volume: blend style, duration, fov, id, two switches, pose, tween, three switches
+					marker(12);
+					r.skip(20);
+					bool();
+					bool();
+					r.skip(28);
+					bool();
+					bool();
+					bool();
+					return;
+				}
+				case 7: {
+					// dither factory zone: centre, size
+					marker(2);
+					r.skip(24);
+					return;
+				}
+				case 9: {
+					// hide entities by type: entity mask, logic-id whitelist, NPC mask, proxy whitelist
+					marker(4);
+					r.i32();
+					r.skip(count() * 8);
+					r.i32();
+					list(() => {
+						str();
+					});
+					return;
+				}
+				case 11: {
+					// radio trigger: five ids, trigger id, once
+					marker(7);
+					for (let i = 0; i < 5; i++) {
+						str();
+					}
+					r.u64();
+					bool();
+					return;
+				}
+				case 16: {
+					// story safe zone: defaultOn, NPC proxies, enter and leave toasts
+					marker(4);
+					bool();
+					list(() => {
+						str();
+					});
+					bool();
 					bool();
 					return;
 				}
@@ -440,7 +626,17 @@ export const readLevelInteractives = (
 				case 14: {
 					// scene toast: conditionalEntries, depthText, mainTitle, priority, saveId, subTitle
 					marker(6);
-					empty();
+					// conditional entries: condition, depthText, entryLocalId, mainTitle, saveId, subTitle
+					list(() =>
+						nullable(6, () => {
+							condition(0);
+							lang();
+							r.i32();
+							lang();
+							r.i32();
+							lang();
+						}),
+					);
 					lang();
 					lang();
 					r.i32();
@@ -455,7 +651,20 @@ export const readLevelInteractives = (
 		});
 	});
 	field = 'guideHints';
-	empty();
+	list(() =>
+		nullable(10, () => {
+			str();
+			bool();
+			str();
+			str();
+			str();
+			r.skip(count() * 8);
+			r.i32();
+			r.skip(12);
+			str();
+			r.i32();
+		}),
+	);
 	field = 'interactiveLockData';
 	list(() =>
 		nullable(2, () => {
