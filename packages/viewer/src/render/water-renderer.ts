@@ -1,7 +1,8 @@
 /**
  * the open-world water: the shown level's surfaces (plus shared ones) drawn after compositing, over a copy of
- * the scene, with their configs and the scene's global wave normals and flow map. surfaces are resident in
- * the game, so every surface of the level is wanted; those outside the view aren't drawn.
+ * the scene, with their configs and the scene's global wave normals and flow map. it lights them with the
+ * main pass's frame group (sun shadow, irradiance volume, sky reflection). surfaces are resident in the game,
+ * so every surface of the level is wanted; those outside the view aren't drawn.
  *
  * @module
  */
@@ -14,9 +15,11 @@ import { type Plane, type Vec3, boxInFrustum } from '../scene/camera.ts';
 import { streamWholeTexture } from '../streaming/mesh-selection.ts';
 import type { ResidentGeometry, StreamManager } from '../streaming/stream-manager.ts';
 
-import { postShaderSource } from './post-process.ts';
+import { FRAME_WGSL } from './frame-uniforms.ts';
 import atmosphereWgsl from './shaders/atmosphere.wgsl?raw';
+import commonWgsl from './shaders/post-common.wgsl?raw';
 import skyWgsl from './shaders/sky.wgsl?raw';
+import ssrTraceWgsl from './shaders/ssr-trace.wgsl?raw';
 import waterWgsl from './shaders/water.wgsl?raw';
 import { type TextureBinding, type TextureStore, placeholderView } from './texture-store.ts';
 
@@ -28,20 +31,42 @@ const MAX_SURFACES = 4096;
 /** priority of the surfaces' geometry at 1 m, and of their textures */
 const PRIORITY = 1e5;
 
-/** what the water pass reads from the post chain */
+/** the layouts of the groups the water pass shares with other passes */
+export interface WaterLayouts {
+	/** the main pass's frame group (group 0) */
+	frame: GPUBindGroupLayout;
+	/** the post uniforms (group 3) */
+	uniforms: GPUBindGroupLayout;
+	/** the sky's reads (group 1) */
+	sky: GPUBindGroupLayout;
+}
+
+/** what the water pass reads from the main pass and the post chain */
 export interface WaterContext {
 	scene: SceneTextures;
-	/** a copy of the composited scene, which the pass refracts */
+	/** a copy of the composited scene, which the pass refracts and reflects */
 	background: GPUTextureView;
-	/**
-	 * @param pipeline the water pipeline
-	 * @returns the post chain's groups 0 (uniforms) and 1 (atmosphere) for it
-	 */
-	postGroups(pipeline: GPURenderPipeline): GPUBindGroup[];
-	cloud: TextureBinding;
-	/** bumped whenever anything above changes */
+	/** the main pass's frame group and its uniforms' dynamic offset */
+	frame: { group: GPUBindGroup; offset: number };
+	/** groups of {@link WaterLayouts.uniforms} and {@link WaterLayouts.sky} */
+	postUniforms: GPUBindGroup;
+	sky: GPUBindGroup;
+	/** bumped whenever the scene textures change */
 	version: number;
 }
+
+/**
+ * @returns the water shader: the frame's lighting at group 0, then the post passes' helpers with their
+ *   uniforms moved to group 3
+ */
+const waterShaderSource = (): string => {
+	const binding = '@group(0) @binding(0) var<uniform> post';
+	if (!commonWgsl.includes(binding)) {
+		throw new Error(`post-common.wgsl no longer declares \`${binding}\``);
+	}
+	const common = commonWgsl.replace(binding, '@group(3) @binding(0) var<uniform> post');
+	return [FRAME_WGSL, common, atmosphereWgsl, skyWgsl, ssrTraceWgsl, waterWgsl].join('\n');
+};
 
 interface Draw {
 	geometry: ResidentGeometry;
@@ -55,8 +80,8 @@ const packConfig = (c: WaterConfig, out: Float32Array, at: number): void => {
 		c.waterRayleighAbsorptionMeter,
 		c.waterRayleighAbsorptionMeter2,
 		[c.safeFullAbsorpDistance, c.envLightIntensity, c.distanceEdgeBlendFactor, c.rayleighMieLerpFactor],
-		// water's reflectance at normal incidence; `specular` scales it like a material's
-		[c.roughness, 0.02 * (c.specular / 0.5), c.waterIOR, 0],
+		// reflectance at normal incidence, from `specular` the way Unreal-style materials scale it
+		[c.roughness, 0.08 * c.specular, c.waterIOR, c.envLightSpecularIntensity],
 		[c.flowSpeed, c.normalTilling, c.normalScale, c.flowFullCycle],
 		[
 			c.largeWaveFlowSpeed * (c.largeWaveInvDir > 0.5 ? -1 : 1),
@@ -65,7 +90,7 @@ const packConfig = (c: WaterConfig, out: Float32Array, at: number): void => {
 			c.flowFullCycleLarge,
 		],
 		[...c.flowDirectionVector2, c.useFlowMap, 0],
-		[c.smallWaveNormalType, c.largeWaveNormalType, 0, 0],
+		[c.smallWaveNormalType, c.largeWaveNormalType, c.punctualLightSpecularIntensity, 0],
 	];
 	rows.forEach((row, i) => out.set(row, at + i * 4));
 };
@@ -73,6 +98,7 @@ const packConfig = (c: WaterConfig, out: Float32Array, at: number): void => {
 /** owns the water pipeline, its buffers and the per-frame surface list */
 export class WaterRenderer {
 	#device: GPUDevice;
+	#layout: GPUBindGroupLayout;
 	#pipeline: GPURenderPipeline;
 	#surfaces: GPUBuffer;
 	#surfaceData = new Float32Array(MAX_SURFACES * SURFACE_FLOATS);
@@ -87,20 +113,44 @@ export class WaterRenderer {
 	#draws: Draw[] = [];
 	#normals: TextureBinding | null = null;
 	#flow: TextureBinding | null = null;
-	#groups: GPUBindGroup[] | null = null;
-	/** what {@link #groups} were built from */
+	/** group 2 */
+	#group: GPUBindGroup | null = null;
+	/** what {@link #group} was built from */
 	#groupKey: unknown[] = [];
 
-	/** @param device the device */
-	constructor(device: GPUDevice) {
+	/**
+	 * @param device the device
+	 * @param layouts the shared groups' layouts
+	 */
+	constructor(device: GPUDevice, layouts: WaterLayouts) {
 		this.#device = device;
-		const module = device.createShaderModule({
+		const module = device.createShaderModule({ label: 'water', code: waterShaderSource() });
+		const fragment = GPUShaderStage.FRAGMENT;
+		const texture = (
+			binding: number,
+			sampleType: GPUTextureSampleType,
+			viewDimension: GPUTextureViewDimension = '2d',
+		): GPUBindGroupLayoutEntry => ({ binding, visibility: fragment, texture: { sampleType, viewDimension } });
+		// the bindings of water.wgsl's group 2
+		this.#layout = device.createBindGroupLayout({
 			label: 'water',
-			code: postShaderSource([atmosphereWgsl, skyWgsl, waterWgsl]),
+			entries: [
+				{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+				{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
+				texture(2, 'unfilterable-float'),
+				texture(3, 'depth'),
+				texture(4, 'float', '2d-array'),
+				texture(5, 'float'),
+				{ binding: 6, visibility: fragment, sampler: { type: 'filtering' } },
+				{ binding: 7, visibility: fragment, buffer: { type: 'uniform' } },
+			],
 		});
 		this.#pipeline = device.createRenderPipeline({
 			label: 'water',
-			layout: 'auto',
+			layout: device.createPipelineLayout({
+				label: 'water',
+				bindGroupLayouts: [layouts.frame, layouts.sky, this.#layout, layouts.uniforms],
+			}),
 			vertex: {
 				module,
 				entryPoint: 'vs_water',
@@ -138,7 +188,7 @@ export class WaterRenderer {
 		this.#table = table;
 		this.#configs?.destroy();
 		this.#configs = null;
-		this.#groups = null;
+		this.#group = null;
 		this.clear();
 		if (table === null || table.configs.length === 0) {
 			return;
@@ -236,34 +286,30 @@ export class WaterRenderer {
 		this.#device.queue.writeBuffer(this.#params, 0, params);
 	}
 
-	#bindGroups(context: WaterContext): GPUBindGroup[] | null {
+	#bindGroup(context: WaterContext): GPUBindGroup | null {
 		if (this.#configs === null) {
 			return null;
 		}
-		const key = [context.version, context.cloud, this.#normals, this.#flow];
-		if (this.#groups !== null && key.every((part, i) => part === this.#groupKey[i])) {
-			return this.#groups;
+		const key = [context.version, context.background, this.#normals, this.#flow];
+		if (this.#group !== null && key.every((part, i) => part === this.#groupKey[i])) {
+			return this.#group;
 		}
-		this.#groups = [
-			...context.postGroups(this.#pipeline),
-			this.#device.createBindGroup({
-				layout: this.#pipeline.getBindGroupLayout(2),
-				entries: [
-					{ binding: 0, resource: { buffer: this.#surfaces } },
-					{ binding: 1, resource: { buffer: this.#configs } },
-					{ binding: 2, resource: context.background },
-					{ binding: 3, resource: context.scene.depth },
-					{ binding: 4, resource: context.cloud.view },
-					{ binding: 5, resource: context.cloud.sampler },
-					{ binding: 6, resource: this.#normals?.view ?? this.#noNormals },
-					{ binding: 7, resource: this.#flow?.view ?? this.#noFlow },
-					{ binding: 8, resource: this.#repeat },
-					{ binding: 9, resource: { buffer: this.#params } },
-				],
-			}),
-		];
+		this.#group = this.#device.createBindGroup({
+			label: 'water',
+			layout: this.#layout,
+			entries: [
+				{ binding: 0, resource: { buffer: this.#surfaces } },
+				{ binding: 1, resource: { buffer: this.#configs } },
+				{ binding: 2, resource: context.background },
+				{ binding: 3, resource: context.scene.depth },
+				{ binding: 4, resource: this.#normals?.view ?? this.#noNormals },
+				{ binding: 5, resource: this.#flow?.view ?? this.#noFlow },
+				{ binding: 6, resource: this.#repeat },
+				{ binding: 7, resource: { buffer: this.#params } },
+			],
+		});
 		this.#groupKey = key;
-		return this.#groups;
+		return this.#group;
 	}
 
 	/** @returns whether there's anything to draw this frame */
@@ -279,8 +325,8 @@ export class WaterRenderer {
 	 * @param context what the pass reads
 	 */
 	encode(encoder: GPUCommandEncoder, target: GPUTextureView, context: WaterContext): void {
-		const groups = this.#bindGroups(context);
-		if (groups === null || this.#draws.length === 0) {
+		const group = this.#bindGroup(context);
+		if (group === null || this.#draws.length === 0) {
 			return;
 		}
 		const pass = encoder.beginRenderPass({
@@ -288,7 +334,10 @@ export class WaterRenderer {
 			colorAttachments: [{ view: target, loadOp: 'load', storeOp: 'store' }],
 		});
 		pass.setPipeline(this.#pipeline);
-		groups.forEach((group, i) => pass.setBindGroup(i, group));
+		pass.setBindGroup(0, context.frame.group, [context.frame.offset]);
+		pass.setBindGroup(1, context.sky);
+		pass.setBindGroup(2, group);
+		pass.setBindGroup(3, context.postUniforms);
 		for (const { geometry, slot } of this.#draws) {
 			pass.setVertexBuffer(0, geometry.vertices, 0, geometry.positionBytes);
 			pass.setIndexBuffer(geometry.indices, geometry.indexFormat);

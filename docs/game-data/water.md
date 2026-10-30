@@ -191,23 +191,37 @@ counts per level, chunk file, mask, mesh and config, and single config assets
   drawn, up to 4096.
 - **pass**: drawn in the post chain after compositing, over a copy of the HDR scene, and only in the
   `lit` debug view. both faces are drawn so water reads from below. transforms are made eye-relative
-  on the CPU; the vertex stage reads only the dequantized `unorm16x4` positions.
+  on the CPU; the vertex stage reads only the dequantized `unorm16x4` positions. the pass binds the
+  main pass's frame group, so water is lit like the rest of the scene: the sun through its shadow
+  maps, the irradiance volume, and the level's sky reflection.
 - **textures**: the wave-normal array and the global flow map are streamed whole. caustic, rain and
   sector tiles are packed but unused.
-- **shading**, in the config's terms: the water column between the surface and the scene depth below
-  absorbs and scatters with the per-metre coefficients (`waterRayleighAbsorptionMeter2` blending
-  toward `waterRayleighAbsorptionMeter` as the thickness approaches `safeFullAbsorpDistance`), lit
-  by the sun through a Rayleigh/Mie phase mix (`rayleighMieLerpFactor`) and ambient sky
-  (`envLightIntensity`). two wave layers from the normal array (`smallWaveNormalType`,
-  `largeWaveNormalType`) flow along the flow map (`useFlowMap`) or `flowDirectionVector2`,
-  cross-fading two phases per layer; `largeWaveInvDir` reverses the large layer. the waves offset
-  the refracted lookup by `waterIOR`, and Fresnel (f0 0.02 scaled by `specular / 0.5`) mixes in the
-  sky reflection and a GGX sun highlight. `distanceEdgeBlendFactor` fades shallow water into what's
-  under it. foam isn't drawn.
+- **waves**: two layers from the normal array (`smallWaveNormalType`, `largeWaveNormalType`) flow
+  along the flow map (`useFlowMap`) or `flowDirectionVector2`, cross-fading two phases per layer;
+  `largeWaveInvDir` reverses the large layer. the waves offset the refracted lookup by `waterIOR`.
+- **water column**, between the surface and the scene depth below (at most 50 m): it absorbs and
+  scatters with the per-metre coefficients, `waterRayleighAbsorptionMeter2` blending toward
+  `waterRayleighAbsorptionMeter` as the thickness approaches `safeFullAbsorpDistance`. light
+  scattered towards the eye is integrated over the column, with each source's extinction lengthened
+  by its slant through the water. sources are the irradiance volume at the surface (scaled by
+  `envLightIntensity`) and the shadowed sun through a phase mix that `rayleighMieLerpFactor` moves
+  from a Henyey–Greenstein lobe (g 0.854) to Rayleigh, with less sun let in at grazing incidence.
+  the sun's shadow is looked up 2 m off the surface point along the waves' horizontal tilt, which
+  dapples it. the transmitted scene isn't dimmed by the reflectance.
+- **reflection**: the reflected ray is marched through the depth buffer like screen-space
+  reflections ([lighting.md](lighting.md#ambient)), with the sky reflection (normalised the same way
+  as on surfaces, scaled by `envLightSpecularIntensity`) where it finds nothing. the environment
+  BRDF weighs it, with f0 = 0.08 · `specular`. where the march hits, the colour also leans towards
+  the reflection by that weight times the column's opacity, so deep water mirrors its surroundings.
+  the sun's GGX highlight is shadowed and scaled by `punctualLightSpecularIntensity`.
+- **shore**: `distanceEdgeBlendFactor` fades shallow water into what's under it; at a distance the
+  thickness counts less at grazing angles. foam and caustics aren't drawn.
 
-the flow-map orientation (`uv = (world.xz − center) / mapSize + 0.5`), the flow and normal channel
-meanings, and the blend between the two absorptions come from community tooling, not the game's
-shaders. treat them as the first suspects when the water looks wrong.
+the lighting follows the game's water lighting pass. the flow-map orientation
+(`uv = (world.xz − center) / mapSize + 0.5`), the flow and normal channel meanings, which absorption
+is near and which far, and which config fields feed the ambient scale and the phase mix come from
+community tooling or field names, not the game's shaders. treat them as the first suspects when the
+water looks wrong.
 
 ### WaterProxy and WaterDecal
 

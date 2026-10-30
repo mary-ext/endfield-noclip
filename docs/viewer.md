@@ -276,9 +276,11 @@ details:
   triangles with `auto` layouts. `ssr` marches glossy pixels' reflections through the depth buffer
   ([lighting.md](game-data/lighting.md#ambient)). composite adds them, then applies AO, sky,
   atmosphere fog and height fog; `heightFog` and `atmosphereFog` change what composite does, not
-  which passes run. water draws over a copy of the composited scene so it can refract it
+  which passes run. water draws over a copy of the composited scene so it can refract and reflect it
   ([`render/water-renderer.ts`](../packages/viewer/src/render/water-renderer.ts),
-  [game-data/water.md](game-data/water.md)).
+  [game-data/water.md](game-data/water.md)). it's the one post pass with an explicit layout, because
+  it also binds the main pass's frame group for the sun shadow, irradiance volume and sky
+  reflection; its shader moves the post uniforms to group 3.
 - **debug views** (`albedo`, `normals`, `roughness`, `ambient`, `clouds`) show the main pass as it
   is: no shadows, exposure, tonemapping, AO, bloom or water. temporal antialiasing still applies.
 

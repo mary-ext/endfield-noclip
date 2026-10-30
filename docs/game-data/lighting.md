@@ -107,7 +107,9 @@ radiance times the same environment BRDF and specular occlusion replaces the sky
 at the screen edges and for rays heading back towards the camera
 ([`ssr.wgsl`](../../packages/viewer/src/render/shaders/ssr.wgsl)). the hit's radiance is the main
 pass's, before ambient occlusion and fog. this is the viewer's own SSR, not a port of the game's;
-it's what makes terrain puddles reflect the scenery around them.
+it's what makes terrain puddles reflect the scenery around them. the march itself
+([`ssr-trace.wgsl`](../../packages/viewer/src/render/shaders/ssr-trace.wgsl)) is shared with the
+water pass ([water.md](water.md#viewer)).
 
 ## local lights
 

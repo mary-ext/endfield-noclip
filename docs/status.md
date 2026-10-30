@@ -71,8 +71,7 @@ packs or renders correctly.
   parallax glow's global highlight and its world-space, PBR and deform variants
 - erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
-- water foam, caustics, flow tiles (packed but unread) and geometry reflections; other fluid types
-  are unverified
+- water foam, caustics and flow tiles (packed but unread); other fluid types are unverified
 - celestial bodies, VFX and temporal smoothing. unsupported effect meshes are suppressed rather than
   drawn opaque
 - HLOD/detail, LOD and mip swaps pop without cross-fade; ground-blend and decal meshes z-fight

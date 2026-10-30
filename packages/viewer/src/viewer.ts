@@ -402,7 +402,7 @@ export class Viewer {
 		this.#fog = new VolumetricFog(device, this.#layouts.frame);
 		this.#fog.setEnvironment(this.#environment, this.camera.near);
 		this.#post = new PostProcess(device, gfx.presentationFormat, this.#environment, this.#fog);
-		this.#water = new WaterRenderer(device);
+		this.#water = new WaterRenderer(device, { frame: this.#layouts.frame, ...this.#post.skyLayouts });
 		this.#pool = new DecodePool(Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) >> 1)));
 		this.controls = new NoclipControls(this.camera, canvas);
 		this.stats = this.#emptyStats();
@@ -1494,6 +1494,7 @@ export class Viewer {
 			frame: this.#frame,
 			froxels,
 			water: this.#water,
+			frameGroup: { group: this.#frameBindGroup, offset: uniforms.offset },
 		});
 		this.#profiler.resolve(encoder);
 		this.#span('encode');

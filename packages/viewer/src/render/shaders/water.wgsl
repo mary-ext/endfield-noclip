@@ -1,11 +1,12 @@
-// open-world water, drawn after compositing over a copy of the scene: the water column between the surface
-// and the ground below absorbs and scatters (the config's per-metre coefficients), flowing wave normals
-// distort the view through it and reflect the sky, and the shore fades in with depth. follows the game's
-// WaterConfig fields; the blend of the two absorptions and the flow-map conventions come from earlier
-// community tooling rather than the game's shaders. foam isn't drawn yet. needs post-common.wgsl,
-// atmosphere.wgsl and sky.wgsl.
+// open-world water, drawn after compositing over a copy of the scene and lit like the main pass (the frame's
+// sun shadow, irradiance volume and sky reflection). the water column between the surface and the ground below
+// absorbs and scatters with the config's per-metre coefficients, flowing wave normals distort the view through
+// it, and the surface reflects what screen-space reflections find, else the sky reflection. the flow-map
+// conventions come from earlier community tooling rather than the game's shaders; foam and caustics aren't
+// drawn. needs frame.wgsl, then post-common.wgsl (its uniforms at group 3), atmosphere.wgsl, sky.wgsl and
+// ssr-trace.wgsl.
 
-struct Surface {
+struct WaterSurface {
 	// object-to-world rows, translation relative to the eye
 	t0: vec4f,
 	t1: vec4f,
@@ -21,9 +22,9 @@ struct Config {
 	// absorption per metre, near and far
 	absorption: vec4f,
 	absorption_far: vec4f,
-	// x = depth (m) of full absorption, y = ambient light intensity, z = shore blend factor, w = Rayleigh–Mie mix
+	// x = depth (m) of full absorption, y = ambient light intensity, z = shore blend factor, w = Mie–Rayleigh mix
 	optics: vec4f,
-	// roughness, f0, distortion strength, unused
+	// roughness, f0, distortion strength, sky reflection intensity
 	surface: vec4f,
 	// small waves: speed, tiling, normal scale, cycle
 	small: vec4f,
@@ -31,21 +32,26 @@ struct Config {
 	large: vec4f,
 	// flow direction xy (without a flow map), 1 to follow the flow map, unused
 	flow: vec4f,
-	// layers of the wave normal array: small waves, large waves; z, w unused
+	// layers of the wave normal array: small waves, large waves; z = sun highlight intensity, w unused
 	layers: vec4f,
 }
 
-@group(2) @binding(0) var<storage, read> surfaces: array<Surface>;
+@group(2) @binding(0) var<storage, read> surfaces: array<WaterSurface>;
 @group(2) @binding(1) var<storage, read> configs: array<Config>;
 @group(2) @binding(2) var background: texture_2d<f32>;
 @group(2) @binding(3) var depth_texture: texture_depth_2d;
-@group(2) @binding(4) var cloud_texture: texture_2d<f32>;
-@group(2) @binding(5) var cloud_sampler: sampler;
-@group(2) @binding(6) var wave_normals: texture_2d_array<f32>;
-@group(2) @binding(7) var flow_map: texture_2d<f32>;
-@group(2) @binding(8) var repeat_sampler: sampler;
+@group(2) @binding(4) var wave_normals: texture_2d_array<f32>;
+@group(2) @binding(5) var flow_map: texture_2d<f32>;
+@group(2) @binding(6) var repeat_sampler: sampler;
 // x = 1 with wave normals, y = 1 with a flow map, z = flow map size (m), w unused; then the map's centre
-@group(2) @binding(9) var<uniform> water: array<vec4f, 2>;
+@group(2) @binding(7) var<uniform> water: array<vec4f, 2>;
+
+// the in-water Mie lobe: Henyey–Greenstein with the game's anisotropy
+fn water_mie_phase(cos_theta: f32) -> f32 {
+	let g = 0.854;
+	let x = 1.0 + g * g - 2.0 * g * cos_theta;
+	return (1.0 - g * g) / max(4.0 * PI * x * sqrt(x), 0.001);
+}
 
 struct VertexOut {
 	@builtin(position) position: vec4f,
@@ -84,6 +90,11 @@ fn wave(p: vec2f, direction: vec2f, spec: vec4f, layer: i32, shift: f32) -> vec4
 fn wave_normal(rg: vec2f, strength: f32) -> vec3f {
 	let xy = (rg * 2.0 - 1.0) * strength;
 	return vec3f(xy, sqrt(max(1.0 - dot(xy, xy), 0.0)));
+}
+
+// light scattered towards the eye over `depth` metres of water whose extinction is `extinction`
+fn column_inscatter(extinction: vec3f, depth: f32) -> vec3f {
+	return (vec3f(1.0) - exp(-extinction * depth)) / extinction;
 }
 
 @fragment
@@ -137,37 +148,66 @@ fn fs_water(in: VertexOut) -> @location(0) vec4f {
 	}
 	let behind = textureLoad(background, vec2i(uv * size), 0).rgb;
 
-	// the water column
+	// the light reaching the water: the sun through the shadow, looked up where the waves bend it as the game
+	// does, and the irradiance volume
+	let up = vec3f(0.0, 1.0, 0.0);
+	let sun = frame.sun_color.rgb * sun_visibility(in.rel + vec3f(n.x, 0.0, n.z) * 2.0, up, in.position.xy) * frame.sun.w;
+	let irradiance = ambient_irradiance(world, n);
+
+	// the water column: each light's path through it lengthens with its slant
 	let absorption = mix(c.absorption_far.rgb, c.absorption.rgb, min(thickness / max(c.optics.x, 0.01), 1.0));
-	let extinction = c.scattering.rgb + absorption;
+	let extinction = max(c.scattering.rgb + absorption, vec3f(1e-4));
 	let transmittance = exp(-extinction * thickness);
-	let albedo = c.scattering.rgb / max(extinction, vec3f(1e-4));
-	let cos_theta = dot(-v, post.sun.xyz);
-	let phase = mix(rayleigh_phase(cos_theta), mie_phase(cos_theta), c.optics.w);
-	let sunlight = post.sun_illuminance.rgb * phase * max(post.sun.y, 0.0);
-	let ambient = post.sky_up.rgb * c.optics.y;
-	let inscatter = albedo * (sunlight + ambient) * (vec3f(1.0) - transmittance);
-	let through = behind * transmittance + inscatter;
+	let ambient_in = column_inscatter(extinction * (1.0 + abs(v.y) * 1.394), thickness) * irradiance * (0.717 * c.optics.y);
+	let cos_theta = dot(-v, frame.sun.xyz);
+	let phase = mix(water_mie_phase(cos_theta), rayleigh_phase(cos_theta), c.optics.w);
+	// the sun's light that the surface lets in
+	let slant = 1.0 - dot(frame.sun.xyz, n);
+	let entry = max(abs(0.98 - 0.98 * slant * slant * slant * slant * slant), 0.1);
+	let sun_extinction = extinction * (1.0 + abs(v.y / max(frame.sun.y, 0.05)));
+	let sun_in = column_inscatter(sun_extinction, thickness) * sun * phase * entry;
+	let inscatter = c.scattering.rgb * (ambient_in + sun_in);
 
-	// reflection of the sky, and the sun's highlight
-	let n_dot_v = clamp(dot(n, v), 1e-4, 1.0);
-	let fresnel = fresnel_schlick(vec3f(c.surface.y), n_dot_v).x;
-	let r = reflect(-v, n);
-	var reflected = post.sky_horizon.rgb;
-	if (post.flags.x != 0u && r.y >= 0.0) {
-		let painted = textureSampleLevel(cloud_texture, cloud_sampler, cloud_uv(r), 0.0);
-		reflected = fogged_sky(r, painted, NO_FROXELS);
-	}
-	let h = normalize(post.sun.xyz + v);
+	// reflection: what the screen-space march finds, else the sky reflection
 	let roughness = max(c.surface.x, 0.02);
-	let a2 = roughness * roughness * roughness * roughness;
-	let n_dot_h = clamp(dot(n, h), 0.0, 1.0);
-	let highlight = post.sun_illuminance.rgb * ggx_distribution(n_dot_h, a2) * 0.25 * clamp(dot(n, post.sun.xyz), 0.0, 1.0);
+	let n_dot_v = clamp(dot(n, v), 1e-4, 1.0);
+	let r = reflect(-v, n);
+	var sky = ambient_probe(r);
+	if (frame.ambient.z > 0.5) {
+		sky = textureSampleLevel(reflection_map, reflection_sampler, r, roughness * frame.ambient.w).rgb;
+	}
+	sky *= reflection_normalisation(irradiance, n) * frame.ambient.x * c.surface.w;
+	var reflected = sky;
+	var found = 0.0;
+	if (post.reflections.x > 0.5) {
+		// off the surface by two pixels' footprint, so the ray doesn't hit where it starts
+		let hit = ssr_trace(in.rel + up * 2.0 * surface_distance / post.right.w, r, in.position.xy);
+		if (hit.confidence > 0.0) {
+			reflected = mix(sky, textureLoad(background, vec2i(hit.uv * size), 0).rgb, hit.confidence);
+			found = hit.confidence;
+		}
+	}
+	let f0 = vec3f(c.surface.y);
+	let specular_weight = environment_brdf(f0, roughness, n_dot_v);
 
-	var color = through * (1.0 - fresnel) + (reflected + highlight) * fresnel;
-	// the shore: shallow water fades into what's under it
-	let coverage = clamp(thickness * c.optics.z, 0.0, 1.0);
-	color = mix(behind, color, coverage);
+	// the sun's highlight
+	var highlight = vec3f(0.0);
+	{
+		let l = frame.sun.xyz;
+		let n_dot_l = clamp(dot(n, l), 0.0, 1.0);
+		let h = normalize(l + v);
+		let a = roughness * roughness;
+		let a2 = a * a;
+		let brdf = fresnel_schlick(f0, clamp(dot(v, h), 0.0, 1.0)) * ggx_distribution(clamp(dot(n, h), 0.0, 1.0), a2) * smith_visibility(n_dot_v, n_dot_l, a2);
+		highlight = min(brdf, vec3f(2048.0)) * n_dot_l * sun * c.layers.z;
+	}
+
+	var color = behind * transmittance + inscatter + reflected * specular_weight + highlight;
+	// where the march found something, lean towards it over deep water, as the game does
+	color = mix(color, reflected, specular_weight * (vec3f(1.0) - transmittance) * found);
+	// the shore: shallow water fades into what's under it, more so at a distance seen from the side
+	let edge = thickness * mix(1.0, abs(dot(v, n)), clamp(surface_distance * 0.05, 0.0, 1.0));
+	color = mix(behind, color, clamp(edge * c.optics.z, 0.0, 1.0));
 	let froxels = froxels_at(in.position.xy / size, surface_distance * dot(-v, post.forward.xyz));
 	return vec4f(atmosphere_over(color, -v, surface_distance, froxels), 1.0);
 }

@@ -20,6 +20,7 @@ import compositeWgsl from './shaders/composite.wgsl?raw';
 import gtaoWgsl from './shaders/gtao.wgsl?raw';
 import commonWgsl from './shaders/post-common.wgsl?raw';
 import skyWgsl from './shaders/sky.wgsl?raw';
+import ssrTraceWgsl from './shaders/ssr-trace.wgsl?raw';
 import ssrWgsl from './shaders/ssr.wgsl?raw';
 import taaWgsl from './shaders/taa.wgsl?raw';
 import tonemapWgsl from './shaders/tonemap.wgsl?raw';
@@ -215,6 +216,14 @@ export class PostProcess {
 	#lutsReady = false;
 	/** the volumetric fog the composite and water passes add in front */
 	#fog: VolumetricFog;
+	/**
+	 * explicit layouts of the post uniforms and of the sky's reads (the sky-view LUT, its sampler, the sky mean
+	 * and the volumetric fog, at their atmosphere.wgsl and sky.wgsl bindings), for passes that also bind the
+	 * main pass's frame group and so can't use `auto` layouts
+	 */
+	readonly skyLayouts: { uniforms: GPUBindGroupLayout; sky: GPUBindGroupLayout };
+	/** groups for {@link skyLayouts} */
+	#skyLayoutGroups: { uniforms: GPUBindGroup; sky: GPUBindGroup };
 
 	/**
 	 * @param device the device
@@ -272,7 +281,7 @@ export class PostProcess {
 		this.taa = new TemporalAA(device, module('taa', [taaWgsl]));
 		const atmosphere = module('atmosphere', [atmosphereWgsl]);
 		const gtao = module('gtao', [gtaoWgsl]);
-		const ssr = module('ssr', [ssrWgsl]);
+		const ssr = module('ssr', [ssrTraceWgsl, ssrWgsl]);
 		const composite = module('composite', [atmosphereWgsl, skyWgsl, compositeWgsl]);
 		const bloom = module('bloom', [bloomWgsl]);
 		const tonemap = module('tonemap', [tonemapWgsl]);
@@ -322,6 +331,44 @@ export class PostProcess {
 		};
 		this.#environment = environment;
 		this.#writeEnvironment();
+
+		{
+			const fragment = GPUShaderStage.FRAGMENT;
+			const texture = (binding: number, viewDimension: GPUTextureViewDimension): GPUBindGroupLayoutEntry => ({
+				binding,
+				visibility: fragment,
+				texture: { sampleType: 'float', viewDimension },
+			});
+			const uniforms = device.createBindGroupLayout({
+				label: 'post uniforms',
+				entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | fragment, buffer: { type: 'uniform' } }],
+			});
+			const sky = device.createBindGroupLayout({
+				label: 'sky reads',
+				entries: [
+					texture(Lut.skyView, '2d'),
+					{ binding: Lut.sampler, visibility: fragment, sampler: { type: 'filtering' } },
+					texture(Lut.skyMean, '2d'),
+					texture(Lut.froxels, '3d'),
+				],
+			});
+			this.skyLayouts = { uniforms, sky };
+			this.#skyLayoutGroups = {
+				uniforms: device.createBindGroup({
+					layout: uniforms,
+					entries: [{ binding: 0, resource: { buffer: this.#uniforms } }],
+				}),
+				sky: device.createBindGroup({
+					layout: sky,
+					entries: [
+						{ binding: Lut.skyView, resource: views.skyView },
+						{ binding: Lut.sampler, resource: this.#sampler },
+						{ binding: Lut.skyMean, resource: views.skyMean },
+						{ binding: Lut.froxels, resource: fog.view },
+					],
+				}),
+			};
+		}
 	}
 
 	#uniformsGroup(pipeline: GPURenderPipeline): GPUBindGroup {
@@ -832,6 +879,8 @@ export class PostProcess {
 			froxels: boolean;
 			/** drawn after compositing, when it has surfaces */
 			water: WaterRenderer;
+			/** the main pass's frame group and its uniforms' offset, which the water pass lights with */
+			frameGroup: { group: GPUBindGroup; offset: number };
 		},
 	): void {
 		const { scene, swapchain, camera, width, height, outputWidth, outputHeight, frame } = input;
@@ -868,8 +917,9 @@ export class PostProcess {
 			water.encode(encoder, sized.sceneView, {
 				scene,
 				background: scene.radiance,
-				postGroups: (pipeline) => this.#skyGroups(pipeline),
-				cloud: this.#cloud,
+				frame: input.frameGroup,
+				postUniforms: this.#skyLayoutGroups.uniforms,
+				sky: this.#skyLayoutGroups.sky,
 				version: sized.version,
 			});
 		}
