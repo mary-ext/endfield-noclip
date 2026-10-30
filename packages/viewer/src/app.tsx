@@ -54,11 +54,13 @@ export const App = () => {
 		if (canvas === null) {
 			return;
 		}
-		let disposed = false;
+		// StrictMode mounts this effect twice in development, so the first creation is aborted mid-flight
+		const abort = new AbortController();
 		let created: Viewer | null = null;
-		Viewer.create(canvas, (reason) => setError(`the GPU device was lost: ${reason}`))
+		Viewer.create(canvas, (reason) => setError(`the GPU device was lost: ${reason}`), abort.signal)
 			.then((instance) => {
-				if (disposed) {
+				// built before the abort, so before any replacement touched the canvas: safe to destroy
+				if (abort.signal.aborted) {
 					instance.destroy();
 					return;
 				}
@@ -73,9 +75,13 @@ export const App = () => {
 					openInitial(instance, param);
 				}
 			})
-			.catch((err: unknown) => setError(describeError(err)));
+			.catch((err: unknown) => {
+				if (!abort.signal.aborted) {
+					setError(describeError(err));
+				}
+			});
 		return () => {
-			disposed = true;
+			abort.abort();
 			created?.destroy();
 		};
 	}, []);

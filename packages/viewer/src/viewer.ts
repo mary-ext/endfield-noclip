@@ -399,11 +399,25 @@ export class Viewer {
 	/**
 	 * @param canvas the canvas to render into
 	 * @param onLost called if the GPU device is lost
+	 * @param signal abandons the creation; once aborted, the canvas is left untouched
 	 * @returns a running viewer
 	 * @throws {GfxUnsupportedError} without WebGPU
+	 * @throws the signal's reason when aborted
 	 */
-	static async create(canvas: HTMLCanvasElement, onLost: (reason: string) => void): Promise<Viewer> {
-		const viewer = new Viewer(await createGfxDevice(onLost), canvas);
+	static async create(
+		canvas: HTMLCanvasElement,
+		onLost: (reason: string) => void,
+		signal: AbortSignal,
+	): Promise<Viewer> {
+		const gfx = await createGfxDevice(onLost);
+		// a canvas has one WebGPU context, shared by every viewer made on it. an abandoned viewer built anyway
+		// would reconfigure that context and then unconfigure it on destroy, blacking out the viewer that
+		// replaced it, so drop the device before touching the canvas
+		if (signal.aborted) {
+			gfx.device.destroy();
+			throw signal.reason;
+		}
+		const viewer = new Viewer(gfx, canvas);
 		viewer.#raf = requestAnimationFrame((time) => viewer.#tick(time));
 		return viewer;
 	}
