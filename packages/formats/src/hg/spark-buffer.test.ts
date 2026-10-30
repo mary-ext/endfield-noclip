@@ -64,13 +64,13 @@ const buildBeanTable = (idType: number = SparkType.String): Uint8Array => {
 	b.cString('I18nText');
 	b.u32(2);
 	b.cString('id');
-	b.u8(SparkType.Int64);
+	b.u8(SparkType.Long);
 	b.cString('text');
 	b.u8(SparkType.String);
 
 	// root
 	b.patch(header[1], b.pos);
-	b.u8(SparkType.Dictionary);
+	b.u8(SparkType.Map);
 	b.cString('LevelDescTable');
 	b.u8(SparkType.String);
 	b.u8(SparkType.Bean);
@@ -113,9 +113,9 @@ test('decodes an int64-keyed string table', () => {
 	const header = [b.u32(12), b.u32(0), b.u32(0)];
 	b.u32(0);
 	b.patch(header[1], b.pos);
-	b.u8(SparkType.Dictionary);
+	b.u8(SparkType.Map);
 	b.cString('I18nTextTable_EN');
-	b.u8(SparkType.Int64);
+	b.u8(SparkType.Long);
 	b.u8(SparkType.String);
 	const hello = b.cString('hello');
 	const world = b.cString('world');

@@ -7,18 +7,18 @@ import { ByteView } from '../binary/byte-view.ts';
 //
 //   u32 typesOffset, u32 rootOffset, u32 dataOffset
 //   types: u32 count, count × { u8 kind (8 = bean), pad4, u32 hash, cstring name, pad4, u32 fieldCount,
-//          fieldCount × { cstring name, u8 type, [pad4, u32 beanHash if type = bean] } }
-//   root:  u8 0x0a (dictionary), cstring name, u8 keyType, u8 valueType, [pad4, u32 beanHash]
+//          fieldCount × { cstring name, u8 type, [pad4, u32 typeHash if type = bean] } }
+//   root:  u8 0x0a (map), cstring name, u8 keyType, u8 valueType, [pad4, u32 typeHash]
 //   data:  u32 slotCount, slotCount × (u32 entriesOffset, u32 entryCount); entries are `key ‖ value` packed
 //          with natural alignment. strings and beans are stored as u32 absolute offsets (0xFFFFFFFF = null);
 //          beans' fields follow the same packing.
 
-/** value type codes */
+/** value type codes (the game's `SparkType`) */
 export const SparkType = {
-	Int64: 3,
+	Long: 3,
 	String: 7,
 	Bean: 8,
-	Dictionary: 10,
+	Map: 10,
 } as const;
 
 /** a decoded SparkBuffer value */
@@ -26,10 +26,10 @@ export type SparkValue = bigint | string | null | { [field: string]: SparkValue 
 
 interface BeanType {
 	name: string;
-	fields: { name: string; type: number; beanHash: number }[];
+	fields: { name: string; type: number; typeHash: number }[];
 }
 
-/** a decoded dictionary table */
+/** a decoded map table */
 export interface SparkTable {
 	name: string;
 	/** entries in storage order */
@@ -37,7 +37,7 @@ export interface SparkTable {
 }
 
 /**
- * decodes a SparkBuffer dictionary table
+ * decodes a SparkBuffer map table
  *
  * @param bytes the table file
  * @returns the table's entries as plain values
@@ -70,15 +70,15 @@ export const parseSparkTable = (bytes: Uint8Array): SparkTable => {
 				const [fieldName, afterField] = cString(at);
 				const type = u8(afterField);
 				at = afterField + 1;
-				let beanHash = 0;
+				let typeHash = 0;
 				if (type === SparkType.Bean) {
 					at = align(at, 4);
-					beanHash = u32(at);
+					typeHash = u32(at);
 					at += 4;
-				} else if (type !== SparkType.Int64 && type !== SparkType.String) {
+				} else if (type !== SparkType.Long && type !== SparkType.String) {
 					throw new FormatError(`unsupported spark field type ${type} in ${name}.${fieldName}`);
 				}
-				fields.push({ name: fieldName, type, beanHash });
+				fields.push({ name: fieldName, type, typeHash });
 			}
 			types.set(hash, { name, fields });
 		}
@@ -86,7 +86,7 @@ export const parseSparkTable = (bytes: Uint8Array): SparkTable => {
 
 	let at = u32(4);
 	const rootKind = u8(at);
-	if (rootKind !== SparkType.Dictionary) {
+	if (rootKind !== SparkType.Map) {
 		throw new FormatError(`unsupported spark root kind ${rootKind}`);
 	}
 	const [name, afterName] = cString(at + 1);
@@ -98,9 +98,9 @@ export const parseSparkTable = (bytes: Uint8Array): SparkTable => {
 	}
 
 	/** reads a value of `type` packed at or after `pos`; returns it and the position after it */
-	const read = (type: number, beanHash: number, pos: number): [SparkValue, number] => {
+	const read = (type: number, typeHash: number, pos: number): [SparkValue, number] => {
 		switch (type) {
-			case SparkType.Int64: {
+			case SparkType.Long: {
 				const p = align(pos, 8);
 				return [view.i64(p), p + 8];
 			}
@@ -112,7 +112,7 @@ export const parseSparkTable = (bytes: Uint8Array): SparkTable => {
 			case SparkType.Bean: {
 				const p = align(pos, 4);
 				const offset = u32(p);
-				return [offset === 0xffffffff ? null : readBean(beanHash, offset), p + 4];
+				return [offset === 0xffffffff ? null : readBean(typeHash, offset), p + 4];
 			}
 			default: {
 				throw new FormatError(`unsupported spark value type ${type}`);
@@ -127,14 +127,14 @@ export const parseSparkTable = (bytes: Uint8Array): SparkTable => {
 		const out: { [field: string]: SparkValue } = {};
 		let p = pos;
 		for (const field of type.fields) {
-			const [value, next] = read(field.type, field.beanHash, p);
+			const [value, next] = read(field.type, field.typeHash, p);
 			out[field.name] = value;
 			p = next;
 		}
 		return out;
 	};
 
-	if (keyType !== SparkType.Int64 && keyType !== SparkType.String) {
+	if (keyType !== SparkType.Long && keyType !== SparkType.String) {
 		throw new FormatError(`unsupported spark key type ${keyType}`);
 	}
 	const entries: SparkTable['entries'] = [];

@@ -170,7 +170,7 @@ test('ambiguous named sub-assets remain ambiguous within a valid preload range',
 		]),
 	);
 	const assets = resolver([owner]);
-	assets.manifest.findAssets = () => [{ pathHash: 1n, bundleIndex: 0, pathOffset: 0, size: 0 }];
+	assets.manifest.findAssets = () => [{ pathHash: 1n, bundleIndex: 0, pathOffset: 0, assetSize: 0 }];
 	await assert.rejects(
 		assets.findUnique({ hash: 1n, path: 'model.fbx##mesh' }, UnityClass.Mesh),
 		/2 Mesh objects/,

@@ -156,7 +156,7 @@ test('finds assets by path hash and decodes their paths', () => {
 	const manifest = new BundleManifest(fixture(), { brotliDecompress: identity });
 	const [asset] = manifest.findAssets(8n);
 	assert.equal(asset.bundleIndex, 1);
-	assert.equal(asset.size, 20);
+	assert.equal(asset.assetSize, 20);
 	assert.equal(manifest.assetPath(asset), 'assets/y.fbx##y');
 	assert.deepEqual(manifest.findAssets(6n), []);
 	assert.equal([...manifest.assets()].length, 2);

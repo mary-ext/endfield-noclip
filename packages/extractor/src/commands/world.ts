@@ -374,7 +374,7 @@ const resolve = async (world: WorldIndex, query: string): Promise<void> => {
 			}
 			seen.add(asset.bundleIndex);
 			const bundle = manifest.bundle(asset.bundleIndex);
-			console.log(`  asset ${manifest.assetPath(asset)} (${asset.size} bytes)`);
+			console.log(`  asset ${manifest.assetPath(asset)} (${asset.assetSize} bytes)`);
 			console.log(`  bundle #${bundle.index} ${bundle.name}`);
 			console.log(`    direct deps (${bundle.directDependencies.length}):`);
 			for (const dep of bundle.directDependencies) {

@@ -9,14 +9,15 @@ import { hashSlot } from './hash-slots.ts';
 //
 //   header (156 bytes): u32 0xFF11FF11, u32 n, UTF-16 guid[n]; u32 0xF1F2F3F4, u32 n, UTF-16 hash[n]; u32 0
 //   asset dictionary:  u32 size, u32 capacity, capacity × (u32 offset, u32 count) slots,
-//                      capacity × AssetInfo{ i64 pathHash, u32 path, i32 bundleIndex, i32 size, u32 0 }
+//                      capacity × AssetInfo{ i64 pathHashHead, u32 path, i32 bundleIndex, i32 assetSize, u32 0 }
 //   bundle dictionary: same shape over 48-byte Bundle values keyed by hashName (bundleIndex stored as 0)
-//   bundle array:      u32 size, u32 count, count × Bundle{ i32 index, u32 name, u32 deps, u32 reverseDeps,
-//                      u32 directDeps, u32 flags, i64 hashName, i64 hashVersion, i32 category, u32 0 }
-//   variable region:   u32 size, payload, u32 size
+//   bundle array:      u32 size, u32 count, count × Bundle{ i32 bundleIndex, u32 name, u32 dependencies,
+//                      u32 directReverseDependencies, u32 directDependencies, u32 bundleFlags, i64 hashName,
+//                      i64 hashVersion, i32 category, u32 0 }
+//   data region:       u32 size, data, u32 size
 //
 // slot offsets are relative to the dictionary's capacity word; slot = unsigned key mod capacity. `name` and
-// the dependency lists point into the payload: UTF-16 strings are `u32 byteLength ‖ chars ‖ u16 0`, lists are
+// the dependency lists point into the data region: UTF-16 strings are `u32 byteLength ‖ chars ‖ u16 0`, lists are
 // `u32 count ‖ u32 bundleIndex[count] ‖ u16 0`. `path` points at `u32 length ‖ Brotli(UTF-16LE) ‖ u16 0`.
 
 const HEAD1 = 0xff11ff11;
@@ -36,11 +37,12 @@ export interface BundleInfo {
 	dependencies: number[];
 	directDependencies: number[];
 	directReverseDependencies: number[];
-	flags: number;
+	bundleFlags: number;
 	/** hash of `name` (the manifest's own string hash) */
 	hashName: bigint;
 	/** `hashName` folded with every dependency's name hash */
 	hashVersion: bigint;
+	/** the game's `RootCategory`: 0 `Main`, 1 `Initial`, matching the name's `main/` or `initial/` prefix */
 	category: number;
 }
 
@@ -49,8 +51,8 @@ export interface AssetInfo {
 	/** hash of the lowercased asset path; same key space as StringPathHash */
 	pathHash: bigint;
 	bundleIndex: number;
-	size: number;
-	/** payload offset of the compressed path, for {@link BundleManifest.assetPath} */
+	assetSize: number;
+	/** data-region offset of the compressed path, for {@link BundleManifest.assetPath} */
 	pathOffset: number;
 }
 
@@ -69,12 +71,12 @@ export class BundleManifest {
 	readonly #assetDictionary: number;
 	readonly #assetCapacity: number;
 	readonly #bundleArray: number;
-	readonly #payload: number;
+	readonly #data: number;
 	#bundlesByName: Map<string, number> | undefined;
 
 	/** build guid from the first header */
 	readonly guid: string;
-	/** content hash from the second header */
+	/** content hash from the second header (the game's manifest `hash`) */
 	readonly contentHash: string;
 	readonly bundleCount: number;
 
@@ -116,12 +118,9 @@ export class BundleManifest {
 		this.#bundleArray = bundleSection + 8;
 
 		const variable = bundleSection + 4 + bundleSize;
-		const payloadSize = this.#view.u32(variable);
-		this.#payload = variable + 4;
-		if (
-			this.#view.u32(this.#payload + payloadSize) !== payloadSize ||
-			this.#payload + payloadSize + 4 !== bytes.length
-		) {
+		const dataSize = this.#view.u32(variable);
+		this.#data = variable + 4;
+		if (this.#view.u32(this.#data + dataSize) !== dataSize || this.#data + dataSize + 4 !== bytes.length) {
 			throw new FormatError('bundle manifest variable region is malformed');
 		}
 	}
@@ -142,7 +141,7 @@ export class BundleManifest {
 			dependencies: this.#list(this.#view.u32(at + 8)),
 			directReverseDependencies: this.#list(this.#view.u32(at + 12)),
 			directDependencies: this.#list(this.#view.u32(at + 16)),
-			flags: this.#view.u32(at + 20),
+			bundleFlags: this.#view.u32(at + 20),
 			hashName: this.#view.u64(at + 24),
 			hashVersion: this.#view.u64(at + 32),
 			category: this.#view.i32(at + 40),
@@ -197,7 +196,7 @@ export class BundleManifest {
 	 * @returns its path as stored (lowercase)
 	 */
 	assetPath(asset: AssetInfo): string {
-		const at = this.#payload + asset.pathOffset;
+		const at = this.#data + asset.pathOffset;
 		const length = this.#view.u32(at);
 		return utf16.decode(this.#decompress(this.#view.subarray(at + 4, length)));
 	}
@@ -217,16 +216,16 @@ export class BundleManifest {
 			pathHash: this.#view.u64(at),
 			pathOffset: this.#view.u32(at + 8),
 			bundleIndex: this.#view.i32(at + 12),
-			size: this.#view.i32(at + 16),
+			assetSize: this.#view.i32(at + 16),
 		};
 	}
 
 	#string(offset: number): string {
-		return this.#view.lengthPrefixedUtf16(this.#payload + offset);
+		return this.#view.lengthPrefixedUtf16(this.#data + offset);
 	}
 
 	#list(offset: number): number[] {
-		const at = this.#payload + offset;
+		const at = this.#data + offset;
 		const count = this.#view.u32(at);
 		this.#view.check(at + 4, count * 4);
 		return Array.from({ length: count }, (_, i) => this.#view.u32(at + 4 + i * 4));

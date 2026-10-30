@@ -30,14 +30,18 @@ export interface VfsChunkEntry {
 	files: VfsFileEntry[];
 }
 
-/** a decrypted `<group>.blc` catalog */
+/**
+ * a decrypted `<group>.blc` catalog, the game's `VFBlockMainInfo`. the game calls a group a VFS block; this
+ * project says group because "block" already names several other layers
+ */
 export interface VfsCatalog {
 	/** catalog version; also forms part of per-file nonces */
 	version: number;
-	/** human name, e.g. `Bundle`, `Streaming` */
+	/** human name (`groupCfgName`), e.g. `Bundle`, `Streaming` */
 	groupName: string;
 	/** 8 hex digits, matching the directory name */
 	groupHash: string;
+	/** the group's `EVFSBlockType` value, e.g. 11 for `Bundle`; chunks and files repeat it */
 	blockType: number;
 	fileCount: number;
 	chunksLength: number;
@@ -82,12 +86,13 @@ export const parseVfsCatalog = (raw: Uint8Array, key: Uint8Array): VfsCatalog =>
 	}
 	r.offset = CATALOG_HEAD_LENGTH;
 
-	// release catalogs start with a layout marker; 5 widens the per-entry padding from 4 to 8 bytes
-	const layout = r.u32();
-	if (layout !== 4 && layout !== 5) {
-		throw new FormatError(`unknown vfs catalog layout ${layout}; is the key correct?`);
+	// the game's `codeVersion`; 5 widens each chunk's and file's tag (`VFSFileTag`) from a 4-byte legacy value
+	// to 8 bytes. the tags aren't needed to read files, so they're skipped
+	const codeVersion = r.u32();
+	if (codeVersion !== 4 && codeVersion !== 5) {
+		throw new FormatError(`unknown vfs catalog code version ${codeVersion}; is the key correct?`);
 	}
-	const padding = layout === 5 ? 8 : 4;
+	const tagLength = codeVersion === 5 ? 8 : 4;
 	r.skip(4);
 
 	const groupName = readShortString(r);
@@ -107,7 +112,7 @@ export const parseVfsCatalog = (raw: Uint8Array, key: Uint8Array): VfsCatalog =>
 		const contentMd5 = toHex(r.bytesView(16));
 		const length = r.i64Number();
 		const chunkBlockType = r.u8();
-		r.skip(padding);
+		r.skip(tagLength);
 
 		const itemCount = r.i32();
 		if (itemCount < 0) {
@@ -124,8 +129,8 @@ export const parseVfsCatalog = (raw: Uint8Array, key: Uint8Array): VfsCatalog =>
 			const fileBlockType = r.u8();
 			const encrypted = r.bool();
 			const ivSeed = encrypted ? r.i64() : null;
-			// the padding follows the optional seed; reading it first yields bogus nonces
-			r.skip(padding);
+			// the file tag follows the optional seed; reading it first yields bogus nonces
+			r.skip(tagLength);
 			if (offset < 0 || fileLength < 0 || offset + fileLength > length) {
 				throw new FormatError(`vfs entry ${name} lies outside its chunk`);
 			}

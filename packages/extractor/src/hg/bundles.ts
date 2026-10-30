@@ -142,7 +142,7 @@ export interface ContainerEntry {
 }
 
 /** an AssetBundle object's name and container */
-export interface AssetBundleInfo {
+export interface AssetBundleObject {
 	/** the owning AssetBundle object; pointers are relative to its SerializedFile */
 	info: ObjectInfo;
 	name: string | undefined;
@@ -255,8 +255,8 @@ export class BundleAssetFile {
 	}
 
 	/** @returns every AssetBundle object of the file with its `m_Container` */
-	async assetBundles(): Promise<AssetBundleInfo[]> {
-		const bundles: AssetBundleInfo[] = [];
+	async assetBundles(): Promise<AssetBundleObject[]> {
+		const bundles: AssetBundleObject[] = [];
 		for (const info of this.file.objects) {
 			if (info.classId !== UnityClass.AssetBundle) {
 				continue;
