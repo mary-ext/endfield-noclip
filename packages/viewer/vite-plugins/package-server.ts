@@ -79,12 +79,14 @@ const serveFile = async (path: string, req: IncomingMessage, res: ServerResponse
 		res.end();
 		return;
 	}
-	// archives keep their names across re-packs, so revalidate instead of caching blindly
+	// archives keep their names across re-packs, so revalidate instead of caching blindly. Last-Modified has
+	// whole-second precision, too coarse for a file rewritten within a second of being read; a re-pack swaps
+	// in new files, so the inode changes with every package
 	res.setHeader('cache-control', 'no-cache');
-	res.setHeader('last-modified', info.mtime.toUTCString());
-	const since = req.headers['if-modified-since'];
-	// Last-Modified has whole-second precision
-	if (since !== undefined && Math.floor(info.mtimeMs / 1000) * 1000 <= Date.parse(since)) {
+	const etag = `"${info.ino.toString(36)}-${info.size.toString(36)}-${info.mtimeMs.toString(36)}"`;
+	res.setHeader('etag', etag);
+	const ifRange = req.headers['if-range'];
+	if (req.headers['if-none-match'] === etag) {
 		res.statusCode = 304;
 		res.end();
 		return;
@@ -94,7 +96,8 @@ const serveFile = async (path: string, req: IncomingMessage, res: ServerResponse
 
 	let start = 0;
 	let end = info.size - 1;
-	const range = req.headers.range;
+	// a cache holding parts of an older file asks for the range only if the file is unchanged
+	const range = ifRange === undefined || ifRange === etag ? req.headers.range : undefined;
 	if (range !== undefined) {
 		const match = /^bytes=(\d*)-(\d*)$/.exec(range);
 		if (match === null) {
