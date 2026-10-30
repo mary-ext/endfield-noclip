@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { zstdDecompressSync } from 'node:zlib';
 
+import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import { decodeInstanceBlock, encodeInstanceBlock } from '@endfield-noclip/package-format/codec';
 import {
 	BlobCodec,
@@ -22,6 +23,7 @@ import { fromFileHandle } from '@mary-ext/czar/node';
 import { BlobDir } from './blob-file.ts';
 import { BlobStore } from './blob-store.ts';
 import { ChainTable } from './chains.ts';
+import { resolveClampedHlodCell } from './hlod-cells.ts';
 import { InstanceBlockBuilder } from './instances.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
 
@@ -108,6 +110,44 @@ describe('TileTreeBuilder', () => {
 			Array.from({ length: 7 }, (_, level) => [level, -1, -1]),
 		);
 		assert.ok(tree.nodes.slice(0, 6).every((node) => node.childMask === 0b1000));
+	});
+});
+
+describe('resolveClampedHlodCell', () => {
+	// 64 m leaves at level 5, origin at -1024
+	const tree = { origin: [-1024, -1024] as [number, number], rootSize: 2048 };
+	const box = (minX: number, maxX: number, z: number): Aabb => ({
+		center: [(minX + maxX) / 2, 10, z],
+		extents: [(maxX - minX) / 2, 5, 10],
+	});
+	const resolve = (bounds: Aabb, details: Map<string, Aabb[]>, named = { level: 5, x: 0, z: 6 }) =>
+		resolveClampedHlodCell({
+			tree,
+			leafLevel: 5,
+			named,
+			bounds,
+			detailAt: (leaf) => details.get(`${leaf.x},${leaf.z}`) ?? [],
+		});
+	// z = -620 lies in leaf row 6
+	const z = -620;
+
+	it('picks the cell whose detail the cluster contains, not the bounds centre', () => {
+		// a large member overhangs far west; the cluster's own members sit in cell -16
+		const details = new Map([
+			['-16,6', [box(-2040, -1990, z)]],
+			['-19,6', [box(-2500, -2100, z)]],
+		]);
+		assert.deepEqual(resolve(box(-2400, -1980, z), details), { level: 5, x: -16, z: 6 });
+	});
+
+	it('falls back to the centre cell without contained detail', () => {
+		assert.deepEqual(resolve(box(-2000, -1940, z), new Map()), { level: 5, x: -15, z: 6 });
+	});
+
+	it('never moves a cell east of 0 or along an axis named other than 0', () => {
+		assert.deepEqual(resolve(box(-990, -970, z), new Map()), { level: 5, x: 0, z: 6 });
+		const details = new Map([['-16,7', [box(-2040, -1990, -560)]]]);
+		assert.deepEqual(resolve(box(-2400, -1980, -560), details, { level: 5, x: 0, z: 6 }).z, 6);
 	});
 });
 

@@ -131,6 +131,7 @@ import {
 	type LevelEnvironmentDebug,
 	planEnvironments,
 } from './environments.ts';
+import { mayBeClamped, resolveClampedHlodCell } from './hlod-cells.ts';
 import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
 import { type IrradianceReport, packIrradiance } from './irradiance.ts';
 import { type CacheReport, PackCache } from './pack-cache.ts';
@@ -216,6 +217,19 @@ const MATERIAL_CONCURRENCY = 8;
 
 /** HLOD cluster entity names: `HLOD<tier>_<i>_<j>_Cluster_<hash>_<n>…`, `i`/`j` being the tier's grid cell */
 const HLOD_NAME = /^HLOD(\d)_(-?\d+)_(-?\d+)_Cluster_/;
+
+/** an HLOD cluster entity waiting for its cell */
+interface HlodCluster {
+	/** level tag */
+	tag: number;
+	tier: number;
+	/** the cell in its name */
+	named: TileKey;
+	row: InstanceInput;
+	name: string;
+	/** chunk-file index */
+	file: number;
+}
 
 /** files and directories a package consists of; only these are removed when replacing a package */
 const PACKAGE_ENTRIES = new Set([CORE_ARCHIVE, 'shards', 'assets', 'irradiance', 'debug', '.spool']);
@@ -584,6 +598,19 @@ const collectEntities = async (
 	/** per geometry id: whether its path names a card mesh */
 	const cards: boolean[] = [];
 	let hlodNameMatches = 0;
+	/** HLOD clusters whose names may have clamped a coordinate */
+	const clampedHlod: HlodCluster[] = [];
+	/** bounds of always-loaded detail instances by `tileId/levelTag` */
+	const detailBounds = new Map<string, Aabb[]>();
+	const addHlod = (cluster: HlodCluster, key: TileKey): void => {
+		const [x, , z] = cluster.row.bounds.center;
+		const at = tileAt(grid, key.level, x, z);
+		if (at.x === key.x && at.z === key.z) {
+			hlodNameMatches++;
+		}
+		collected.addHlod(cluster.tag, cluster.tier, key, cluster.row, cluster.name, cluster.file);
+		pack.uses.note(cluster.row.chain, key);
+	};
 
 	const chainDraw = (draw: RendererDraw, hlod: boolean): ChainDraw => {
 		const geometry = pack.geometries.intern(draw.meshHash, scene.pathOf);
@@ -669,13 +696,14 @@ const collectEntities = async (
 					});
 				} else if (hlod !== null) {
 					const tier = Number(hlod[1]);
-					const key = { level: grid.hlodLevels[tier], x: Number(hlod[2]), z: Number(hlod[3]) };
-					const at = tileAt(grid, key.level, x, z);
-					if (at.x === key.x && at.z === key.z) {
-						hlodNameMatches++;
+					const named = { level: grid.hlodLevels[tier], x: Number(hlod[2]), z: Number(hlod[3]) };
+					const cluster = { tag: entity.levelTag, tier, named, row, name: entity.name, file: fileIndex };
+					if (mayBeClamped(named)) {
+						// resolved once every detail instance is known
+						clampedHlod.push(cluster);
+					} else {
+						addHlod(cluster, named);
 					}
-					collected.addHlod(entity.levelTag, tier, key, row, entity.name, fileIndex);
-					pack.uses.note(row.chain, key);
 				} else if (file.cell === null) {
 					collected.addResident(entity.levelTag, row, entity.name, fileIndex);
 					pack.uses.note(row.chain, null);
@@ -683,11 +711,22 @@ const collectEntities = async (
 					const key = tileAt(grid, grid.leafLevel, x, z);
 					collected.addDetail(entity.levelTag, key, row, entity.name, fileIndex);
 					pack.uses.note(row.chain, key);
+					getOrInsert(detailBounds, `${tileId(key)}/${entity.levelTag}`, () => []).push(bounds);
 				}
 				collected.noteOwner(entity.levelTag, bounds);
 			}
 		},
 	);
+	for (const cluster of clampedHlod) {
+		const key = resolveClampedHlodCell({
+			tree: grid,
+			leafLevel: grid.leafLevel,
+			named: cluster.named,
+			bounds: cluster.row.bounds,
+			detailAt: (leaf) => detailBounds.get(`${tileId(leaf)}/${cluster.tag}`) ?? [],
+		});
+		addHlod(cluster, key);
+	}
 	counts.sceneStateRenderers = stateRows.size;
 	for (const { row, tag, name, file, states } of stateRows.values()) {
 		const key = tileAt(grid, grid.leafLevel, row.bounds.center[0], row.bounds.center[2]);

@@ -125,7 +125,11 @@ skyline props. terrain page keys equal tree keys.
 
 HLOD cluster names (`HLOD<tier>_<i>_<j>_Cluster_…`) give the tier and the cell on a `64 · 2^tier` m
 grid from the terrain origin, and the packer attaches each cluster to that named cell rather than to
-its bounds centre, because clusters overhang their cells.
+its bounds centre, because clusters overhang their cells. names clamp negative coordinates to 0, so
+along an axis named 0 the packer tries each spanned cell at or below 0 and picks the one with the
+most always-loaded detail instances inside the cluster's bounds (the cell nearest the centre without
+any). a cluster left on a cell without that detail can't refine, so it would draw over the detail it
+stands for.
 
 **refinement contract** (REPLACE, at HLOD-cell granularity): a node draws its coarse content while
 its screen-space error, `geometricError · viewportHeight / (2 · distance · tan(fovY / 2))`, is

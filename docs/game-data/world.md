@@ -280,7 +280,9 @@ level in very few triangles.
   marks a draw as a card when its mesh path contains `_cardmesh`.
 - **shadow proxies.** draws with flag bit 10 only cast shadows.
 - **HLOD clusters.** auto-generated per-level clusters in three tiers, placed as ordinary entities
-  named `HLOD<tier>_<i>_<j>_Cluster_<hash>…`, `i`/`j` being the tier's grid cell. their draw range
+  named `HLOD<tier>_<i>_<j>_Cluster_<hash>…`, `i`/`j` being the tier's grid cell, with negative
+  coordinates clamped to 0 (west and south of the terrain origin every cluster is named on cell 0).
+  one large member can stretch a cluster's bounds hundreds of metres past its cell. their draw range
   is unbounded, so HLOD visibility is decided by the HLOD/streaming system, not by LODGroup. they
   occur only in always-loaded (scene state 0) files. HLOD0 cells are 64 m, doubling per tier; the
   pack report counts how many cluster names agree with the tile computed from their position.
