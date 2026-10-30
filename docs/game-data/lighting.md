@@ -74,12 +74,16 @@ the view doesn't cast.
 ### cloud shadows
 
 the `cloud` section's `cloudShadowConfig` (on with `enable` and `enableCloudShadow`) darkens the sun
-with a tiling texture projected along the sun's light onto the plane at `cloudShadowEnvCenter`'s
-height. the light direction is `rotationCloudShadow`'s, divided by the sine of its pitch
-(`cloudShadowPitchYaw` with mode 1, else `directPitchYaw`), clamped to [0.001, 1].
+with a tiling texture skewed along the sun's light by height. an offset `d` from
+`cloudShadowEnvCenter` becomes `d + l · d.y`, where `l` is `rotationCloudShadow`'s direction divided
+by `|cos(pitch / 360)|` clamped to [0.001, 1], with the pitch (`cloudShadowPitchYaw` with mode 1,
+else `directPitchYaw`) in degrees but the cosine taken in radians. the divisor is therefore within
+1% of 1 at any pitch, so `l` is effectively the unit direction. a true `1 / sin(pitch)` would reach
+1000 at the 0° pitch Wuling City's outdoor phase ships, and its texture would stripe along the
+terrain's contours.
 
-- uv = projected offset from the centre (x, z) × `0.001 / cloudShadowCoverage` (coverage is the
-  tile's span in kilometres), plus `flowDirection · flowSpeed / 1000` per second.
+- uv = the skewed offset (x, z) × `0.001 / cloudShadowCoverage` (coverage is the tile's span in
+  kilometres), plus `flowDirection · flowSpeed / 1000` per second.
 - past `cloudShadowScaleStartDistance` metres from the centre (horizontally), over the next
   `cloudShadowScaleEndDistance` metres, the sample smoothsteps to one taken at uv /
   `cloudShadowDistanceScale`.

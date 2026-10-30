@@ -392,7 +392,7 @@ export interface Environment {
 		start: number;
 		width: number;
 		farScale: number;
-		/** projects a position offset onto the centre's height plane along the sun: `d + projection · d.y` */
+		/** skews a position offset along the sun by its height before sampling: `d + projection · d.y` */
 		projection: Vec3;
 	} | null;
 	autoExposure: AutoExposureSettings;
@@ -712,9 +712,11 @@ const cloudShadowLook = (cloud: CloudInput | null, light: LightInput): Environme
 	if (config.cloudShadowTexture === null) {
 		return null;
 	}
-	// the light's direction of travel over the sine of its pitch, so `d + projection · d.y` lands on the plane
+	// the light's direction of travel over the cosine of its pitch in degrees / 360 taken as radians, as the game
+	// computes it. that keeps the factor within 1% of 1 for any pitch; a true 1/sin(pitch) would blow up at the
+	// 0° pitch some phases ship, striping the texture along the terrain's contours
 	const pitch = light.cloudShadowPitchYawMode === 1 ? light.cloudShadowPitchYaw[0] : light.directPitchYaw[0];
-	const sine = Math.min(Math.max(Math.abs(Math.sin((pitch * Math.PI) / 180)), 0.001), 1);
+	const factor = Math.min(Math.max(Math.abs(Math.cos(pitch / 360)), 0.001), 1);
 	const [x, y, z] = rotate(light.rotationCloudShadow, [0, 0, 1]);
 	const [dx, dy] = config.cloudShadowFlowDirection;
 	const speed = config.cloudShadowFlowSpeed;
@@ -728,7 +730,7 @@ const cloudShadowLook = (cloud: CloudInput | null, light: LightInput): Environme
 		start: config.cloudShadowScaleStartDistance,
 		width: config.cloudShadowScaleEndDistance,
 		farScale: 1 / config.cloudShadowDistanceScale,
-		projection: [x / sine, y / sine, z / sine],
+		projection: [x / factor, y / factor, z / factor],
 	};
 };
 
