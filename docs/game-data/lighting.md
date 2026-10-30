@@ -252,8 +252,13 @@ areas. it has no base colour map; the colour comes from its other maps
 
 every map samples UV set 0 and tiles by its own `*Tilling` property rather than its `_ST`. the
 metal, noise and flow colours are HDR and used as stored, like `_EmissiveColor`. not drawn: the soft
-blend into whatever lies behind (`_ObjectBlend*`, which reads the scene depth), `_FakeTranslucency`
-and `HGRP/ErosionDynamic`.
+blend into whatever lies behind (`_ObjectBlend*`, which reads the scene depth) and
+`_FakeTranslucency`.
+
+`HGRP/ErosionDynamic` (animated, glowing) isn't drawn either. it's used only by the
+`P_erosion_map01_dynamic…` prefabs, the erosion patches the player clears. their load gate shows
+them while a map variable is not 2, and the finished-story defaults hide them
+([variable gates](scene-states.md)), so they draw only when that gate is flipped, as a flat tint.
 
 ## sky
 
