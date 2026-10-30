@@ -333,6 +333,12 @@ export class AssetResolver {
 				`PPtr file id ${pptr.fileId} is past ${from.file.file.externals.length} externals`,
 			);
 		}
+		// Unity's built-in files (`library/unity default resources`, `resources/unity_builtin_extra`) ship in the
+		// player, not in any bundle
+		const path = external.pathName.toLowerCase();
+		if (path.startsWith('library/') || path.startsWith('resources/')) {
+			throw new FormatError(`PPtr into built-in ${external.pathName}`);
+		}
 		const cab = archiveFileName(external.pathName);
 		return this.objectIn(await this.bundleOfCab(cab, from.bundleIndex), cab, pptr.pathId);
 	}
