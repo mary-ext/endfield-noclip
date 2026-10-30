@@ -104,9 +104,10 @@ clustered local reflection probes (normalised the same way) and SSR are not impl
 
 HGRP Lit materials emit through one of their `_EMISSIVE_*` keywords
 ([`render/materials.ts`](../../packages/viewer/src/render/materials.ts)). `_EmissiveColor` is an HDR
-colour, decoded from gamma like Unity's (values above 1 by `x^2.2`), and the result is added to the
-lit colour without pre-exposure: panels authored around 20–30 land in the hundreds and read as
-white.
+colour, which Unity's HDR picker authors in linear space (`base × 2^intensity`), so it's used as
+stored, unlike the gamma-encoded LDR colours. the result is added to the lit colour without
+pre-exposure: the Hub's white ceiling panels store about 24, enough to read near-white with their
+grid still visible.
 
 | keyword           | emission                                                                                |
 | ----------------- | --------------------------------------------------------------------------------------- |

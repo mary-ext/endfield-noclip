@@ -39,8 +39,7 @@ or renders correctly.
   automatic gating
 - froxel volumetric fog
 - interiors, in order of impact:
-  - some thin emissive strips show as bright lines at silhouettes; per-instance emission overrides
-    aren't read
+  - per-instance emission overrides aren't read
   - normal-map roughness is read only when the mesh has tangents; normals are transformed by the
     model matrix rather than its inverse transpose, and every material lights the side facing the
     camera

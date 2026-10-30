@@ -234,7 +234,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		params.set([occlusion, 0.08 * specular, transmission], LookRow.surface2);
 	}
 
-	// emission: `_EmissiveColor` (HDR, authored gamma-encoded) times the emissive map's R channel
+	// emission: `_EmissiveColor` (HDR, authored linear) times the emissive map's R channel
 	// (`_EMISSIVE_MAP`), or times a channel of the base, normal or MRO map that `_EmissiveMaskChannel` picks
 	// (`_EMISSIVE_MASK`, where 0 turns emission off; mesh.wgsl reads the channel). the animated variants are
 	// drawn still, and `_EMISSIVE_NOMAP` only comes with the sweep animation, so it stays dark
@@ -249,7 +249,8 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 			emits = true;
 		}
 		if (emits && emissive !== undefined) {
-			params.set(linearRgb(emissive), LookRow.emissive);
+			// an HDR colour: Unity's HDR picker authors it in linear space, so it goes to the shader as stored
+			params.set([emissive[0], emissive[1], emissive[2]], LookRow.emissive);
 			params.set(
 				[
 					floatOf(entry, shader, '_AlbedoAffectEmissive', 1),
