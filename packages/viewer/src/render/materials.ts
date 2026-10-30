@@ -94,6 +94,9 @@ export const LookFlags = {
 	// bits UV1_SHIFT… pick each slot's UV set
 	/** `HGRP/Erosion`: slots and parameters as {@link erosionLook} lays them out */
 	Erosion: 1 << 25,
+	// bit 26 is the geometry's (mesh-renderer.ts)
+	/** `HGRP/Foliage/Leaf`: the sun shadow, vertex-normal lighting and canopy ramp of {@link LookRow.foliage} */
+	FoliageLeaf: 1 << 27,
 } as const;
 
 /** the slot flags of {@link LookFlags} by slot, which are cleared while a slot's texture isn't resident */
@@ -111,7 +114,7 @@ export const SLOT_FLAGS = [
  * floats of a material's draw parameters (`Draw` in mesh.wgsl after the dequantization); rows in
  * {@link LookRow}
  */
-export const LOOK_FLOATS = 108;
+export const LOOK_FLOATS = 128;
 
 /** one material as the mesh shader draws it */
 export interface MaterialLook {
@@ -186,6 +189,22 @@ export const LookRow = {
 	parallaxDark: 100,
 	/** the glow's brightening near the player: outer and inner radius, strength (0 without `_ParallaxCharPos`) */
 	parallaxBright: 104,
+	/**
+	 * leaves: `_OcclusionShadow` (how much the vertex AO shadows the sun), the fake directional shadow's
+	 * strength and power, `_DiffuseUseVertexNormal`
+	 */
+	foliage: 108,
+	/** leaves: the vertex AO ranges that fade transmission and subsurface in: start, range, start, range */
+	foliageAo: 112,
+	/**
+	 * leaves: `_SubsurfaceIntensity`, `_TransmissionDistanceFade`, the canopy ramp's intensity (0 without
+	 * `_CANOPY_COLOR_RAMP`), 1 when the ramp starts at the top
+	 */
+	foliage2: 116,
+	/** leaves: the canopy ramp's range, transition range, colour brighter scale, how much its colour covers */
+	canopy: 120,
+	/** leaves: `_CanopyRampColor`, linear */
+	canopyColor: 124,
 } as const;
 
 /**
@@ -363,6 +382,9 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		// the brighter scale in the row's last float is set above
 		params.set([occlusion, 0.08 * specular, transmission], LookRow.surface2);
 	}
+	if (family === 'leaf') {
+		leafParams(look, entry, shader);
+	}
 
 	// emission: `_EmissiveColor` (HDR, authored linear) times the emissive map's R channel
 	// (`_EMISSIVE_MAP`), or times a channel of the base, normal or MRO map that `_EmissiveMaskChannel` picks
@@ -437,6 +459,58 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		look.flags &= ~(LookFlags.ParallaxMap | LookFlags.ParallaxNoiseMap);
 	}
 	return look;
+};
+
+/**
+ * `HGRP/Foliage/Leaf`'s GBuffer inputs to the game's two-sided foliage lighting: a sun shadow from the vertex
+ * AO (vertex colour R) and a fake directional shadow on leaves facing away from the sun, the sun's N·L from
+ * the vertex normal, transmission and subsurface faded in by the vertex AO, and the canopy ramp, which tints
+ * the albedo toward a colour down the canopy (vertex colour A). the reflectance is quantized to 3 bits, as
+ * the GBuffer stores it
+ */
+const leafParams = (look: MaterialLook, entry: ReadyMaterial, shader: ShaderEntry): void => {
+	const params = look.params;
+	look.flags |= LookFlags.FoliageLeaf;
+	const reflectance = Math.round(Math.min(Math.max(floatOf(entry, shader, '_Reflectance', 0), 0), 1) * 7) / 7;
+	params[LookRow.surface2 + 1] = 0.08 * (0.5 + 0.75 * reflectance);
+	params.set(
+		[
+			floatOf(entry, shader, '_OcclusionShadow', 0),
+			floatOf(entry, shader, '_FakeDirectionalShadowStrength', 0),
+			floatOf(entry, shader, '_FakeDirectionalShadowPow', 1),
+			floatOf(entry, shader, '_DiffuseUseVertexNormal', 0),
+		],
+		LookRow.foliage,
+	);
+	params.set(
+		[
+			floatOf(entry, shader, '_AoAffectTransmissionStart', 0),
+			floatOf(entry, shader, '_AoAffectTransmissionRange', 0.01),
+			floatOf(entry, shader, '_AoAffectSubsurfaceStart', 0),
+			floatOf(entry, shader, '_AoAffectSubsurfaceRange', 0.01),
+		],
+		LookRow.foliageAo,
+	);
+	const canopy = entry.keywords.includes('_CANOPY_COLOR_RAMP');
+	params.set(
+		[
+			floatOf(entry, shader, '_SubsurfaceIntensity', 0),
+			floatOf(entry, shader, '_TransmissionDistanceFade', 0),
+			canopy ? floatOf(entry, shader, '_CanopyRampIntensity', 0) : 0,
+			floatOf(entry, shader, '_CanopyRampStartAtTop', 0) > 0 ? 1 : 0,
+		],
+		LookRow.foliage2,
+	);
+	params.set(
+		[
+			floatOf(entry, shader, '_CanopyRampRange', 0),
+			floatOf(entry, shader, '_CanopyRampTransitionRange', 0),
+			floatOf(entry, shader, '_CanopyRampColorBrighterScale', 1),
+			floatOf(entry, shader, '_CanopyRampColorCover', 0),
+		],
+		LookRow.canopy,
+	);
+	params.set(linearRgb(colorOf(entry, shader, '_CanopyRampColor') ?? [1, 1, 1, 1]), LookRow.canopyColor);
 };
 
 /** the tri-channel mask's properties per channel, R, G, B */

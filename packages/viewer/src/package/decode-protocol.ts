@@ -103,6 +103,8 @@ export interface DecodedGeometry {
 	uvTransforms: [uv0: UvTransform, uv1: UvTransform];
 	/** `snorm8x4` tangents (octahedral xy, bitangent sign z), or `null` if the mesh has none */
 	tangents: ArrayBuffer | null;
+	/** `unorm8x4` vertex colours (wider values clamped to [0, 1]), or `null` if the mesh has none */
+	colors: ArrayBuffer | null;
 	submeshes: { firstIndex: number; indexCount: number; baseVertex: number }[];
 }
 

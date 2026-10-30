@@ -1,12 +1,12 @@
 /**
  * geometry residency and the mesh family: each geometry gets one vertex buffer (quantized positions,
- * octahedral normals, UV sets 0 and 1, tangents) and one index buffer; each mesh bucket is one instanced
- * `drawIndexed` over its slice of the visible list. per-draw parameters (dequantization, the material look)
- * sit in a storage array indexed through a per-list-entry draw id, and the material's textures are in group 3
- * (a white texture for slots whose texture hasn't streamed in, with the slot's flag cleared). opaque draws
- * come before alpha-tested ones, which each pass draws with its own pipelines (see mesh.wgsl for why), and
- * alpha-blended ones come last, drawn in a pass of their own whose blending needs no sorting; within each,
- * draws are sorted by geometry, then material, so runs of draws share their bindings.
+ * octahedral normals, UV sets 0 and 1, tangents, colours) and one index buffer; each mesh bucket is one
+ * instanced `drawIndexed` over its slice of the visible list. per-draw parameters (dequantization, the
+ * material look) sit in a storage array indexed through a per-list-entry draw id, and the material's textures
+ * are in group 3 (a white texture for slots whose texture hasn't streamed in, with the slot's flag cleared).
+ * opaque draws come before alpha-tested ones, which each pass draws with its own pipelines (see mesh.wgsl for
+ * why), and alpha-blended ones come last, drawn in a pass of their own whose blending needs no sorting;
+ * within each, draws are sorted by geometry, then material, so runs of draws share their bindings.
  *
  * @module
  */
@@ -44,6 +44,7 @@ const ZERO_STRIDE = 8;
 const GeometryFlags = {
 	HasNormals: 1 << 9,
 	HasTangents: 1 << 10,
+	HasColors: 1 << 26,
 } as const;
 
 /** the face culling a draw's pipeline uses; each phase has a pipeline per value */
@@ -253,6 +254,7 @@ export class MeshRenderer {
 					{ arrayStride: uvStride, attributes: [{ shaderLocation: 2, offset: 0, format: uvFormat }] },
 					{ arrayStride: uvStride, attributes: [{ shaderLocation: 4, offset: 0, format: uvFormat }] },
 					{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
+					{ arrayStride: 4, attributes: [{ shaderLocation: 5, offset: 0, format: 'unorm8x4' }] },
 				],
 			};
 		};
@@ -316,7 +318,7 @@ export class MeshRenderer {
 	 * @returns the residency (geometry buffers aren't pooled; the memory budget bounds them)
 	 */
 	upload(blob: number, decoded: DecodedGeometry): ResidentGeometry {
-		const streams = [decoded.positions, decoded.normals, ...decoded.uvs, decoded.tangents];
+		const streams = [decoded.positions, decoded.normals, ...decoded.uvs, decoded.tangents, decoded.colors];
 		const offsets: (number | null)[] = [];
 		let size = 0;
 		for (const stream of streams) {
@@ -355,6 +357,7 @@ export class MeshRenderer {
 			uvFormat: decoded.uvFormat,
 			uvTransforms: decoded.uvTransforms,
 			tangentOffset: offsets[4],
+			colorOffset: offsets[5],
 			indices,
 			indexFormat: decoded.indexSize === 4 ? 'uint32' : 'uint16',
 			positionOffset: decoded.positionOffset,
@@ -493,7 +496,8 @@ export class MeshRenderer {
 			words[at + 3] =
 				flags |
 				(resident.normalOffset === null ? 0 : GeometryFlags.HasNormals) |
-				(resident.tangentOffset === null ? 0 : GeometryFlags.HasTangents);
+				(resident.tangentOffset === null ? 0 : GeometryFlags.HasTangents) |
+				(resident.colorOffset === null ? 0 : GeometryFlags.HasColors);
 			params.set(resident.positionScale, at + 4);
 			params[at + 7] = 0;
 			params.set(resident.uvTransforms[0], at + 8);
@@ -651,7 +655,13 @@ export class MeshRenderer {
 					const next: ResidentGeometry = draw.geometry;
 					geometry = next;
 					pass.setVertexBuffer(0, next.vertices, 0, next.positionBytes);
-					const optional = [next.normalOffset, next.uv0Offset, next.uv1Offset, next.tangentOffset];
+					const optional = [
+						next.normalOffset,
+						next.uv0Offset,
+						next.uv1Offset,
+						next.tangentOffset,
+						next.colorOffset,
+					];
 					optional.forEach((offset, slot) => {
 						if (offset === null) {
 							pass.setVertexBuffer(slot + 1, this.#zeros);

@@ -259,8 +259,16 @@ struct Surface {
 	// baked material occlusion
 	occlusion: f32,
 	emission: vec3f,
-	// light passing through thin foliage, 0 for opaque surfaces
+	// foliage: light passing through the leaf
 	transmission: f32,
+	// lit with the game's two-sided foliage model (`foliage_sun` below)
+	foliage: bool,
+	// foliage: light wrapped around the leaf's terminator
+	subsurface: f32,
+	// foliage: the material's own shadow on the sun's diffuse, specular and transmission
+	sun_shadow: f32,
+	// foliage: the N·L of the sun's diffuse, or negative to take the shading normal's
+	sun_n_dot_l: f32,
 }
 
 fn default_surface(albedo: vec3f, normal: vec3f) -> Surface {
@@ -273,6 +281,10 @@ fn default_surface(albedo: vec3f, normal: vec3f) -> Surface {
 	s.occlusion = 1.0;
 	s.emission = vec3f(0.0);
 	s.transmission = 0.0;
+	s.foliage = false;
+	s.subsurface = 0.0;
+	s.sun_shadow = 1.0;
+	s.sun_n_dot_l = -1.0;
 	return s;
 }
 
@@ -581,6 +593,32 @@ fn local_fog_lighting(rel: vec3f, px: vec2f, ray: vec3f, g: f32) -> vec3f {
 
 // #endregion
 
+// the game's two-sided foliage lighting for the sun, per unit of its illuminance before shadowing: Lambert
+// diffuse at the surface's own N·L, GGX specular faded for grazing back views, light transmitted through the leaf
+// towards a viewer looking at the sun (a GGX lobe of α² 0.36 about the light, in the albedo's hue), and diffuse
+// wrapped past the terminator by the subsurface amount. all of it is darkened by the material's sun shadow
+fn foliage_sun(s: Surface, n: vec3f, v: vec3f, l: vec3f, a2: f32, f0: vec3f, albedo: vec3f) -> vec3f {
+	let n_dot_l_signed = dot(n, l);
+	let n_dot_l = saturate(n_dot_l_signed);
+	let n_dot_v = clamp(abs(dot(n, v)), 1e-4, 1.0);
+	let v_dot_l = dot(v, l);
+	let diffuse_n_dot_l = select(n_dot_l, s.sun_n_dot_l, s.sun_n_dot_l >= 0.0);
+	var color = albedo * diffuse_n_dot_l;
+
+	let h = normalize(l + v);
+	let f = fresnel_schlick(f0, saturate(dot(v, h)));
+	let back_view = mix(saturate(dot(n, v) + 0.2) * saturate(saturate(v_dot_l) + 0.5), 1.0, saturate(v_dot_l + 1.0));
+	let specular = f * (ggx_distribution(saturate(dot(n, h)), a2) * smith_visibility(n_dot_v, n_dot_l, a2)) * back_view;
+	color += specular * PI * frame.sun_color.w * n_dot_l;
+
+	let towards_sun = saturate(-v_dot_l);
+	let lobe = (towards_sun * 0.36 - towards_sun) * towards_sun + 1.0;
+	let hue = albedo / max(0.01, max(albedo.r, max(albedo.g, albedo.b)));
+	color += hue * s.transmission * saturate(0.5 - n_dot_l_signed) * (0.36 / (lobe * lobe));
+	color += albedo * (saturate(n_dot_l_signed + s.subsurface) - n_dot_l);
+	return color * s.sun_shadow / PI;
+}
+
 // sun (shadowed) plus ambient probe; `rel` is the camera-relative position
 fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	let n = s.normal;
@@ -595,7 +633,10 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	let f0 = mix(vec3f(s.f0), s.albedo, s.metallic);
 
 	var direct = vec3f(0.0);
-	{
+	if (s.foliage) {
+		direct = foliage_sun(s, n, v, l, a2, f0, diffuse_color) * frame.sun_color.rgb * frame.sun.w *
+			sun_visibility(rel, n, px);
+	} else {
 		let h = normalize(l + v);
 		let n_dot_h = clamp(dot(n, h), 0.0, 1.0);
 		let v_dot_h = clamp(dot(v, h), 0.0, 1.0);
@@ -603,12 +644,9 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		let specular = f * (ggx_distribution(n_dot_h, a2) * smith_visibility(n_dot_v, n_dot_l, a2)) * frame.sun_color.w;
 		let diffuse = diffuse_color / PI * (vec3f(1.0) - f);
 		direct = (diffuse + specular) * n_dot_l;
-		// thin translucency: light from behind, wrapped around the leaf
-		let back = clamp(dot(-n, l), 0.0, 1.0);
-		direct += diffuse_color / PI * s.transmission * back;
 		// the shadow lookup only where the sun can reach
 		var visibility = vec3f(0.0);
-		if (n_dot_l > 0.0 || s.transmission * back > 0.0) {
+		if (n_dot_l > 0.0) {
 			visibility = sun_visibility(rel, n, px);
 		}
 		direct *= frame.sun_color.rgb * visibility * frame.sun.w;

@@ -207,6 +207,34 @@ const decodeFloatUvs = (
 	return out.buffer;
 };
 
+/**
+ * decodes the vertex colours to `unorm8x4`, so every mesh shares one vertex format. the shaders that read
+ * them want weights in [0, 1], so wider half-float colours are clamped
+ */
+const decodeColors = (blob: GeometryBlob): ArrayBuffer | null => {
+	const stream = findStream(blob, VertexAttribute.Color);
+	if (stream === undefined) {
+		return null;
+	}
+	const raw = decodeVertices(blob, stream);
+	switch (stream.format) {
+		case GeometryVertexFormat.Unorm8x4: {
+			return raw.buffer;
+		}
+		case GeometryVertexFormat.Float16x4: {
+			const view = new DataView(raw.buffer);
+			const out = new Uint8Array(raw.length / 2);
+			for (let i = 0; i < out.length; i++) {
+				out[i] = Math.round(Math.min(Math.max(view.getFloat16(i * 2, true), 0), 1) * 255);
+			}
+			return out.buffer;
+		}
+		default: {
+			throw new Error(`geometry colours have format ${stream.format}, expected unorm8x4 or float16x4`);
+		}
+	}
+};
+
 const decodeGeometry = (
 	id: number,
 	raw: Uint8Array,
@@ -220,12 +248,13 @@ const decodeGeometry = (
 	const normals = decodeNormals(blob);
 	const { uvs, uvFormat, uvTransforms } = decodeUvs(blob);
 	const tangents = decodeAttribute(blob, VertexAttribute.Tangent, GeometryVertexFormat.Snorm8x4);
+	const colors = decodeColors(blob);
 	const indexSize = blob.flags & GeometryFlags.IndexU32 ? 4 : 2;
 	// index buffers are bound whole and must be a multiple of 4 bytes
 	const indices = new Uint8Array(Math.ceil((blob.indexCount * indexSize) / 4) * 4);
 	MeshoptDecoder.decodeIndexBuffer(indices, blob.indexCount, indexSize, blob.indices);
 	const transfer: Transferable[] = [positions, indices.buffer];
-	for (const extra of [normals, ...uvs, tangents]) {
+	for (const extra of [normals, ...uvs, tangents, colors]) {
 		if (extra !== null) {
 			transfer.push(extra);
 		}
@@ -245,6 +274,7 @@ const decodeGeometry = (
 			uvFormat,
 			uvTransforms,
 			tangents,
+			colors,
 			submeshes: blob.submeshes.map(({ firstIndex, indexCount, baseVertex }) => ({
 				firstIndex,
 				indexCount,

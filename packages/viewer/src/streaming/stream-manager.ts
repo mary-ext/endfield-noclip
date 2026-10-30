@@ -91,7 +91,7 @@ export interface ResidentGeometry {
 	kind: 'geometry';
 	/** GPU bytes */
 	bytes: number;
-	/** positions, then normals, UV sets 0 and 1 and tangents where present, in one buffer */
+	/** positions, then normals, UV sets 0 and 1, tangents and colours where present, in one buffer */
 	vertices: GPUBuffer;
 	positionBytes: number;
 	normalOffset: number | null;
@@ -102,6 +102,8 @@ export interface ResidentGeometry {
 	/** each UV set's dequantization */
 	uvTransforms: [uv0: UvTransform, uv1: UvTransform];
 	tangentOffset: number | null;
+	/** `unorm8x4` vertex colours */
+	colorOffset: number | null;
 	indices: GPUBuffer;
 	indexFormat: GPUIndexFormat;
 	positionOffset: [x: number, y: number, z: number];

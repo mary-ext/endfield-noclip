@@ -32,9 +32,48 @@ atmosphere fog and `rotationHeightFogDirectionalInscattering` for the height fog
 art direction often moves these away from the light, so don't substitute the shading sun for them.
 
 direct lighting is GGX with height-correlated Smith visibility and Lambert diffuse in
-[`shaders/frame.wgsl`](../../packages/viewer/src/render/shaders/frame.wgsl), plus a wrapped
-back-light term for thin foliage. the game's foliage shading model (canopy ramps, sphere-shadow
-proxies) isn't reproduced.
+[`shaders/frame.wgsl`](../../packages/viewer/src/render/shaders/frame.wgsl); foliage takes the
+game's two-sided model ([below](#foliage)).
+
+### foliage
+
+the game lights foliage with its own deferred model, fed by what each foliage shader writes into the
+GBuffer: a sun shadow term, the diffuse N·L, a transmission amount and a subsurface amount. the
+viewer evaluates the same model per pixel (`foliage_sun` in `frame.wgsl`). per unit of the sun's
+illuminance, before the shadow map and cloud shadow:
+
+- diffuse: albedo × the stored N·L / π, with no `(1 − F)`
+- specular: the usual GGX, times `mix(sat(n·v + 0.2) · sat(sat(v·l) + 0.5), 1, sat(v·l + 1))`, which
+  dims it only for views from behind the leaf
+- transmission: the albedo divided by its largest channel, × the transmission × `sat(0.5 − n·l)` × a
+  GGX lobe of α² = 0.36 about the direction to the sun (peaking for a viewer looking at the sun),
+  over π
+- wrap: albedo × `(sat(n·l + subsurface) − sat(n·l))` / π
+- all four are multiplied by the sun shadow term
+
+`HGRP/Foliage/Leaf` fills the inputs from its material
+([`leafParams`](../../packages/viewer/src/render/materials.ts)) and the mesh's vertex colours (R
+ambient occlusion, A height in the canopy):
+
+| input                                                        | effect                                                                                                                                                        |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_OcclusionShadow`                                           | sun shadow × `mix(1, R, _OcclusionShadow)`                                                                                                                    |
+| `_FakeDirectionalShadowStrength`, `…Pow`                     | sun shadow × `sat(1 − pow(n·d · 0.5 + 0.5, pow) · strength)` with `d` the sun's direction of travel: leaves facing away from the sun darken                   |
+| `_DiffuseUseVertexNormal`                                    | the diffuse N·L takes the mesh's vertex normal as stored (not turned towards the viewer) instead of the normal-mapped one                                     |
+| `_OcclusionStrength`                                         | material occlusion `mix(1, R, strength)`, on ambient only                                                                                                     |
+| `_Transmission`, `_TransmissionDistanceFade`                 | transmission × (1 − the normal map's alpha), faded out between 50 and 60 m from the object with the fade on                                                   |
+| `_SubsurfaceIntensity`                                       | the wrap amount                                                                                                                                               |
+| `_AoAffect{Transmission,Subsurface}{Start,Range}`            | transmission and subsurface × a smoothstep of the material occlusion over the range                                                                           |
+| `_CANOPY_COLOR_RAMP`: `_CanopyRamp{Color,Intensity,Range,…}` | albedo blends toward the colour (times the albedo, brightened, or covering it) by `smoothstep(range + transition, range, A)` × (1 − normal alpha) × intensity |
+| `_Reflectance`                                               | F0 `0.08 · (0.5 + 0.75 · r)`, `r` quantized to 3 bits                                                                                                         |
+
+on the cherry trees of Marker Stone's pits, whose phases ship an 80–100 klx sun, this is what keeps
+the blossoms from blowing out. grass and card-mesh foliage take the same model with the transmission
+alone (shadow 1, N·L from the shading normal, no wrap); their shaders' own inputs aren't decoded.
+not drawn: trunk ramps and vertex AO (`_EnableTrunkRamp`, `_TrunkVertexAoStrength`; trunks otherwise
+shade as Lit), sphere-shadow proxies (`_UseSphereShadowProxy`), the vertical-normal AO boost,
+broadleaf indirect transmission, contact shadows on foliage, and the per-instance tint some leaves
+get.
 
 ## shadows
 

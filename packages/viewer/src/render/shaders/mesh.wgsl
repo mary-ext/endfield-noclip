@@ -59,6 +59,18 @@ struct Draw {
 	parallax_dark: vec4f,
 	// brightening near the player: outer radius, inner radius, strength
 	parallax_bright: vec4f,
+	// leaves (`leafParams` in materials.ts): how much the vertex AO shadows the sun, the fake directional
+	// shadow's strength and power, 1 when the sun's N·L takes the vertex normal
+	foliage: vec4f,
+	// leaves: the vertex AO ranges fading transmission (xy: start, range) and subsurface (zw) in
+	foliage_ao: vec4f,
+	// leaves: subsurface intensity, 1 when transmission fades out with distance, canopy ramp intensity, 1 when
+	// the ramp starts at the top
+	foliage2: vec4f,
+	// leaves: canopy ramp range, transition range, colour brighter scale, colour cover
+	canopy: vec4f,
+	// leaves: canopy ramp colour (linear)
+	canopy_color: vec4f,
 }
 
 const BASE_MAP = 1u;
@@ -79,11 +91,14 @@ const PARALLAX_MAP = 65536u;
 const PARALLAX_NOISE_MAP = 131072u;
 // `HGRP/Erosion` (`erosionLook` in materials.ts)
 const EROSION = 33554432u;
+// `HGRP/Foliage/Leaf` (`leafParams` in materials.ts)
+const FOLIAGE_LEAF = 134217728u;
 // slot i samples UV set 1 when bit UV1_SHIFT + i is set
 const UV1_SHIFT = 18u;
 // set per draw from the geometry's streams (`GeometryFlags` in mesh-renderer.ts)
 const HAS_NORMALS = 512u;
 const HAS_TANGENTS = 1024u;
+const HAS_COLORS = 67108864u;
 
 const BASE_SLOT = 0u;
 const NORMAL_SLOT = 1u;
@@ -117,6 +132,7 @@ struct VertexIn {
 	@location(4) uv1: vec2f,
 	// octahedral tangent, z = bitangent sign; zero without tangents
 	@location(3) tangent: vec4f,
+	@location(5) color: vec4f,
 }
 
 struct VertexOut {
@@ -133,6 +149,10 @@ struct VertexOut {
 	@location(5) @interpolate(flat) phase: f32,
 	// the object-space height, along which the erosion flow band runs
 	@location(6) object_y: f32,
+	// the vertex colour, white for meshes without one
+	@location(7) color: vec4f,
+	// the camera-relative object origin, which the leaves' transmission fades out by
+	@location(8) @interpolate(flat) origin: vec3f,
 }
 
 @vertex
@@ -171,6 +191,8 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	out.draw = draw_id;
 	out.phase = world.x + world.y + world.z;
 	out.object_y = p.y;
+	out.color = select(vec4f(1.0), v.color, (flags & HAS_COLORS) != 0u);
+	out.origin = origin;
 	return out;
 }
 
@@ -411,9 +433,58 @@ fn shade(in: VertexOut) -> Shaded {
 	}
 
 	if ((flags & FOLIAGE) != 0u) {
+		s.foliage = true;
 		s.transmission = draw.surface2.z;
+		if ((flags & FOLIAGE_LEAF) != 0u) {
+			s = leaf_surface(s, draw, in, has_normal, packed.a);
+		}
 	}
 	return shade_surface(s, in.rel, in.position.xy);
+}
+
+// smoothstep that also runs downhill (`low` > `high`), as HLSL's does
+fn hermite(low: f32, high: f32, x: f32) -> f32 {
+	let span = high - low;
+	let t = saturate((x - low) / select(span, 1e-6, span == 0.0));
+	return t * t * (3.0 - 2.0 * t);
+}
+
+// `HGRP/Foliage/Leaf`'s inputs to the two-sided foliage lighting (`leafParams` in materials.ts). the vertex
+// colour's R is ambient occlusion and A the height in the canopy; the normal map's alpha (`normal_a`) masks
+// transmission and the canopy ramp
+fn leaf_surface(surface: Surface, draw: Draw, in: VertexOut, has_normal: bool, normal_a: f32) -> Surface {
+	var s = surface;
+	let thin = select(1.0, saturate(1.0 - normal_a), has_normal);
+	let ao = saturate(mix(1.0, in.color.r, draw.surface2.x));
+	s.occlusion = ao;
+	let fade_in = vec2f(
+		hermite(draw.foliage_ao.x, draw.foliage_ao.x + draw.foliage_ao.y, ao),
+		hermite(draw.foliage_ao.z, draw.foliage_ao.z + draw.foliage_ao.w, ao),
+	);
+	// transmission fades out between 50 and 60 m from the object
+	let far = select(1.0, hermite(3600.0, 2500.0, dot(in.origin, in.origin)), draw.foliage2.y > 0.5);
+	s.transmission = draw.surface2.z * thin * far * fade_in.x;
+	s.subsurface = draw.foliage2.x * fade_in.y;
+
+	let height = select(in.color.a, 1.0 - in.color.a, draw.foliage2.w > 0.5);
+	let ramp = hermite(draw.canopy.x + draw.canopy.y, draw.canopy.x, height) * thin * draw.foliage2.z;
+	let tinted = mix(
+		saturate(s.albedo * draw.canopy_color.rgb * draw.canopy.z),
+		draw.canopy_color.rgb,
+		draw.canopy.w,
+	);
+	s.albedo = mix(s.albedo, tinted, ramp);
+
+	// the sun's shadow: the vertex AO, and a fake shadow on the side of the canopy facing away from the sun
+	let fake = saturate(1.0 - pow(saturate(dot(s.normal, -frame.sun.xyz) * 0.5 + 0.5), draw.foliage.z) * draw.foliage.y);
+	s.sun_shadow = mix(1.0, in.color.r, draw.foliage.x) * fake;
+	// the diffuse N·L, from the vertex normal as the mesh stores it (not turned towards the viewer)
+	var vertex_normal = s.normal;
+	if (dot(in.normal, in.normal) > 1e-6) {
+		vertex_normal = normalize(in.normal);
+	}
+	s.sun_n_dot_l = saturate(dot(mix(s.normal, vertex_normal, draw.foliage.w), frame.sun.xyz));
+	return s;
 }
 
 // a mask channel of the material's own maps, numbered like `_EmissiveMaskChannel`: 1 the base colour's alpha;
