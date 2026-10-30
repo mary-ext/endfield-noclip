@@ -193,7 +193,7 @@ map02, a third of the core):
 | `terrain`                                                 | position, `heightScale`, `terrainSize`, page size, hole bit, levels with pages, surface page size and border, close-up `detail`; `null` without terrain                   |
 | `levels`                                                  | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment |
 | `environments`, `environmentPhases`, `environmentVolumes` | see [environment.md](game-data/environment.md)                                                                                                                            |
-| `states`                                                  | progressions, toggles, conditional sets and visibility groups; see [conditions](#conditions)                                                                              |
+| `states`                                                  | progressions, toggles, conditional sets, visibility groups and stream areas; see [conditions](#conditions)                                                                |
 | `archives`                                                | `ArchiveInfo`: name, role, tile, size, `dataOffset`                                                                                                                       |
 | `global`                                                  | content refs drawn regardless of refinement                                                                                                                               |
 | `subset`                                                  | what `--level` / `--bounds` kept, or `null`                                                                                                                               |
@@ -379,8 +379,18 @@ they hold the camera, whichever level owns them, so only their condition gates t
 a `ConditionalSetInfo` is a list of alternatives, each a list of `{ control, mask }` requirements;
 the content is visible when any alternative has every requirement met, and a requirement is met when
 bit `value` of `mask` is set for the control's selected value. controls are `ProgressionInfo` ids
-(value = progression level) and `SceneToggleInfo` ids (value 0/1). unknown controls fail closed.
-equivalent expressions are interned to one set by the packer.
+(value = progression level), `SceneToggleInfo` ids (value 0/1) and `area:<id>` stream-area controls
+(value 0/1, set by the viewer, never by the user). unknown controls fail closed. equivalent
+expressions are interned to one set by the packer.
+
+### stream areas
+
+`StatesInfo.streamAreas` (`StreamAreasInfo`, `null` when no packed content lies in a non-default
+area) holds the areas content requires, the root list, each zone's list, and the zones' triggers (XZ
+box, height range, XZ ring). `zonesAt` is the game's trigger test, `areasShownIn` turns zones into
+areas, and `streamAreaValues` gives every required area its control value
+([stream-areas.ts](../packages/package-format/src/stream-areas.ts)). which content a stream area
+gates is in [world.md](game-data/world.md#how-the-packer-files-instances).
 [conditions.ts](../packages/package-format/src/conditions.ts) holds `conditionVisible`,
 `conditionResults`, `groupsShown` and `defaultSceneValues`; what the controls mean and how their
 defaults are chosen is in [scene-states.md](game-data/scene-states.md).

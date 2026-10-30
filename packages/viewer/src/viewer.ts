@@ -13,6 +13,12 @@ import {
 } from '@endfield-noclip/package-format/conditions';
 import type { EnvironmentProfile } from '@endfield-noclip/package-format/environment';
 import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
+import {
+	areasShownIn,
+	streamAreaValues,
+	zonesAround,
+	zonesAt,
+} from '@endfield-noclip/package-format/stream-areas';
 import { isTerrainHole, terrainHeight } from '@endfield-noclip/package-format/terrain';
 import { tileAt, tileId } from '@endfield-noclip/package-format/tiles';
 import type { ContentRef } from '@endfield-noclip/package-format/tree';
@@ -67,6 +73,11 @@ export interface ViewerOptions {
 	instances: boolean;
 	detail: boolean;
 	global: boolean;
+	/**
+	 * show the stream areas the game shows at the camera, as its trigger zones decide; off shows every area of
+	 * the level at once
+	 */
+	streamAreas: boolean;
 	/** enabled HLOD tiers 0–2 */
 	hlodTiers: [boolean, boolean, boolean];
 	wireframe: boolean;
@@ -127,6 +138,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	instances: true,
 	detail: true,
 	global: true,
+	streamAreas: true,
 	hlodTiers: [true, true, true],
 	wireframe: false,
 	boxes: true,
@@ -1082,11 +1094,69 @@ export class Viewer {
 		return this.#conditionResults;
 	}
 
-	/** re-evaluates conditions and visibility groups for the shown level and scene values, for every consumer */
+	/** stream areas the conditions were last evaluated with, or `null` for every area */
+	#visibleAreas: ReadonlySet<number> | null = null;
+	/** camera position {@link followStreamAreas} last tested */
+	#areasEye: Vec3 = [Number.NaN, 0, 0];
+
+	/**
+	 * @returns the stream areas shown at the camera, or `null` when every area shows (the option is off or the
+	 *   package has no stream areas)
+	 */
+	get visibleStreamAreas(): ReadonlySet<number> | null {
+		return this.#visibleAreas;
+	}
+
+	/** @returns the stream areas to show at the camera, or `null` for every area */
+	#streamAreasAtCamera(): ReadonlySet<number> | null {
+		const info = this.scene?.pkg.manifest.states.streamAreas ?? null;
+		if (info === null || !this.options.streamAreas) {
+			return null;
+		}
+		const eye = this.camera.position;
+		let zones = zonesAt(info, eye);
+		if (zones.size === 0) {
+			// above or below every trigger the game falls back to the root areas, which hides most of a zone's
+			// level from an overview, so a free camera keeps the zones whose footprint it's over
+			zones = zonesAround(info, eye);
+		}
+		return areasShownIn(info, zones);
+	}
+
+	/** re-evaluates visibility when the camera moved into a different set of stream areas */
+	#followStreamAreas(): void {
+		const eye = this.camera.position;
+		const last = this.#areasEye;
+		if (eye[0] === last[0] && eye[1] === last[1] && eye[2] === last[2]) {
+			return;
+		}
+		this.#areasEye = [...eye];
+		const visible = this.#streamAreasAtCamera();
+		const current = this.#visibleAreas;
+		const same =
+			visible === null || current === null
+				? visible === current
+				: visible.size === current.size && [...visible].every((area) => current.has(area));
+		if (!same) {
+			this.#updateVisibility();
+		}
+	}
+
+	/**
+	 * re-evaluates conditions and visibility groups for the shown level, scene values and stream areas at the
+	 * camera, for every consumer
+	 */
 	#updateVisibility(): void {
 		const scene = this.scene;
 		const states = scene?.pkg.manifest.states;
-		this.#conditionResults = states === undefined ? [] : conditionResults(states, this.#sceneValues);
+		this.#visibleAreas = this.#streamAreasAtCamera();
+		this.#areasEye = [...this.camera.position];
+		const areas = states?.streamAreas ?? null;
+		const values =
+			areas === null
+				? this.#sceneValues
+				: { ...this.#sceneValues, ...streamAreaValues(areas, this.#visibleAreas) };
+		this.#conditionResults = states === undefined ? [] : conditionResults(states, values);
 		const shown =
 			states === undefined ? [] : groupsShown(states, this.#level?.tag ?? null, this.#conditionResults);
 		scene?.selector.setGroupsShown(shown);
@@ -1105,6 +1175,9 @@ export class Viewer {
 		this.#post.taa.enabled = this.options.antialiasing;
 		if (patch.debugView !== undefined || patch.antialiasing !== undefined) {
 			this.#post.taa.reset();
+		}
+		if (patch.streamAreas !== undefined) {
+			this.#updateVisibility();
 		}
 		if (this.scene !== null) {
 			this.scene.stream.options.budgetBytes = this.options.budgetMiB * 2 ** 20;
@@ -1186,6 +1259,7 @@ export class Viewer {
 		this.#frameSpans.clear();
 
 		const moved = this.controls.update(dt) || this.#settleFirstPose();
+		this.#followStreamAreas();
 		const resized = this.#targets.update();
 		this.#blendEnvironment(false, dt);
 		this.#span('controls');

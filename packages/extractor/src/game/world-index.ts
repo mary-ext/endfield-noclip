@@ -58,6 +58,9 @@ export interface ChunkFile {
 	area: number;
 }
 
+/** where a chunk file sits in the game's load conditions: its scene state and stream area */
+export type ChunkSource = Pick<ChunkFile, 'sceneState' | 'area'>;
+
 /** an entity read from a chunk, with its membership */
 export interface IndexedEntity extends ChunkEntity {
 	source: ChunkFile;

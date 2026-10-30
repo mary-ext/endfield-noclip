@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { FormatError } from '../binary/binary-reader.ts';
 
-import { parseStreamAreas, triggerContains, visibleAreasAt } from './stream-area.ts';
+import { parseStreamAreas } from './stream-area.ts';
 
 // #region synthetic FlatBuffer writer
 
@@ -107,14 +107,6 @@ test('parses areas, visible slices and trigger polygons', () => {
 		maxHeight: 5,
 	});
 	assert.equal(table.bounds.maxHeight, 100);
-});
-
-test('visible areas switch from the root set to the zone slice inside a trigger', () => {
-	const table = parseStreamAreas(build());
-	assert.deepEqual([...visibleAreasAt(table, { x: 5, y: 1, z: 5 })], [0, 7]);
-	assert.deepEqual([...visibleAreasAt(table, { x: 20, y: 1, z: 5 })], [0, 8]);
-	// above the trigger's height range
-	assert.equal(triggerContains(table.triggers[0], { x: 5, y: 6, z: 5 }), false);
 });
 
 test('rejects a visible slice past the group vector', () => {

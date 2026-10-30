@@ -59,6 +59,7 @@ import type {
 	ProgressionInfo,
 	VisibilityGroup,
 } from '@endfield-noclip/package-format/states';
+import type { StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
 import type { TerrainSplatInfo, TerrainInfo } from '@endfield-noclip/package-format/terrain';
 import type { TextureTable } from '@endfield-noclip/package-format/textures';
 import {
@@ -94,7 +95,7 @@ import {
 } from '../game/scene-conditions.ts';
 import { loadProgressions, progressionId } from '../game/scenery-variants.ts';
 import { indexTerrain, loadTerrainSurfacesData, type TerrainSceneIndex } from '../game/terrain-source.ts';
-import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
+import type { ChunkFile, ChunkSource, WorldIndex } from '../game/world-index.ts';
 import { orderedPool } from '../pool.ts';
 import { zstd } from '../zstd.ts';
 
@@ -111,6 +112,7 @@ import { BlobDir } from './blob-file.ts';
 import { BlobStore, type PutOptions } from './blob-store.ts';
 import { aabbBounds, growBounds, squareOverlapsRect } from './bounds.ts';
 import { ChainTable } from './chains.ts';
+import { sourceVisibility } from './chunk-sources.ts';
 import { ConvertPool } from './convert-pool.ts';
 import {
 	type EnvironmentPlan,
@@ -222,6 +224,8 @@ interface HlodCluster {
 	name: string;
 	/** chunk-file index */
 	file: number;
+	/** index into the collector's conditions for clusters of a stream area, else `null` */
+	condition: number | null;
 }
 
 /**
@@ -618,13 +622,22 @@ const collectEntities = async (
 		excluded: 0,
 		packed: 0,
 	};
-	// stream areas share some entities, and a level is drawn with all of its areas, so one copy is enough
+	// an entity repeats in every file that loads it (cells it overlaps, scene states, stream areas); one row
+	// carries it, gated by all of those files
 	const seen = new Set<number>();
-	// rows of scene-state files, by entity id, with the state ids of every file holding them; added as
-	// conditional instances once all files are read, global ones (from Global chunks) as conditional globals
-	const stateRows = new Map<
+	// rows of scene-state and stream-area files, by entity id, with every file holding them; added once all
+	// files are read
+	const gatedRows = new Map<
 		number,
-		{ row: InstanceInput; tag: number; name: string; file: number; global: boolean; states: Set<number> }
+		{
+			row: InstanceInput;
+			tag: number;
+			name: string;
+			file: number;
+			global: boolean;
+			hlod: RegExpExecArray | null;
+			sources: ChunkSource[];
+		}
 	>();
 	/** per geometry id: whether its path names a card mesh */
 	const cards: boolean[] = [];
@@ -639,8 +652,68 @@ const collectEntities = async (
 		if (at.x === key.x && at.z === key.z) {
 			hlodNameMatches++;
 		}
-		collected.addHlod(cluster.tag, cluster.tier, key, cluster.row, cluster.name, cluster.file);
+		collected.addHlod(
+			cluster.tag,
+			cluster.condition,
+			cluster.tier,
+			key,
+			cluster.row,
+			cluster.name,
+			cluster.file,
+		);
 		pack.uses.note(cluster.row.chain, key);
+	};
+	/** sends a static row to its destination: HLOD node, Global block, detail leaf or conditional leaf */
+	const addRow = ({
+		row,
+		tag,
+		name,
+		file,
+		global,
+		hlod,
+		visibility,
+		stateGated,
+	}: {
+		row: InstanceInput;
+		tag: number;
+		name: string;
+		/** chunk-file index */
+		file: number;
+		/** from a Global chunk file */
+		global: boolean;
+		/** the HLOD name match, or `null` for other renderers */
+		hlod: RegExpExecArray | null;
+		/** when it loads, `null` for always */
+		visibility: ConditionalSetInfo | null;
+		/** whether a scene state gates it, so no HLOD stands in for it */
+		stateGated: boolean;
+	}): void => {
+		const condition = visibility === null ? null : collected.condition(visibility);
+		if (hlod !== null && !stateGated) {
+			const tier = Number(hlod[1]);
+			const named = { level: grid.hlodLevels[tier], x: Number(hlod[2]), z: Number(hlod[3]) };
+			const cluster = { tag, tier, named, row, name, file, condition };
+			if (mayBeClamped(named)) {
+				// resolved once every detail instance is known
+				clampedHlod.push(cluster);
+			} else {
+				addHlod(cluster, named);
+			}
+			return;
+		}
+		if (global) {
+			collected.addGlobal(tag, condition, row, name, file);
+			pack.uses.note(row.chain, null);
+			return;
+		}
+		const key = tileAt(grid, grid.leafLevel, row.bounds.center[0], row.bounds.center[2]);
+		if (stateGated && visibility !== null) {
+			collected.addConditional(tag, key, row, name, visibility, file);
+		} else {
+			collected.addDetail(tag, condition, key, row, name, file);
+			getOrInsert(detailBounds, `${tileId(key)}/${tag}`, () => []).push(row.bounds);
+		}
+		pack.uses.note(row.chain, key);
 	};
 
 	const chainDraw = (draw: RendererDraw, hlod: boolean): ChainDraw => {
@@ -677,13 +750,13 @@ const collectEntities = async (
 			}
 			for (const light of content.lights) {
 				if (subset.includesEntity(light.levelTag, light.position[0], light.position[2])) {
-					lights.add(light, file.sceneState);
+					lights.add(light, file);
 				}
 			}
 			for (const entity of content.entities) {
 				counts.read++;
 				if (seen.has(entity.id)) {
-					stateRows.get(entity.id)?.states.add(file.sceneState);
+					gatedRows.get(entity.id)?.sources.push(file);
 					continue;
 				}
 				seen.add(entity.id);
@@ -720,39 +793,40 @@ const collectEntities = async (
 					entityId: entity.id,
 				};
 
-				// HLOD clusters only occur in always-loaded files
-				if (file.sceneState !== 0) {
-					stateRows.set(entity.id, {
+				if (file.sceneState !== 0 || file.area !== 0) {
+					gatedRows.set(entity.id, {
 						row,
 						tag: entity.levelTag,
 						name: entity.name,
 						file: fileIndex,
 						global: file.cell === null,
-						states: new Set([file.sceneState]),
+						hlod,
+						sources: [file],
 					});
-				} else if (hlod !== null) {
-					const tier = Number(hlod[1]);
-					const named = { level: grid.hlodLevels[tier], x: Number(hlod[2]), z: Number(hlod[3]) };
-					const cluster = { tag: entity.levelTag, tier, named, row, name: entity.name, file: fileIndex };
-					if (mayBeClamped(named)) {
-						// resolved once every detail instance is known
-						clampedHlod.push(cluster);
-					} else {
-						addHlod(cluster, named);
-					}
-				} else if (file.cell === null) {
-					collected.addGlobal(entity.levelTag, null, row, entity.name, fileIndex);
-					pack.uses.note(row.chain, null);
 				} else {
-					const key = tileAt(grid, grid.leafLevel, x, z);
-					collected.addDetail(entity.levelTag, key, row, entity.name, fileIndex);
-					pack.uses.note(row.chain, key);
-					getOrInsert(detailBounds, `${tileId(key)}/${entity.levelTag}`, () => []).push(bounds);
+					addRow({
+						row,
+						tag: entity.levelTag,
+						name: entity.name,
+						file: fileIndex,
+						global: file.cell === null,
+						hlod,
+						visibility: null,
+						stateGated: false,
+					});
 				}
 				collected.noteOwner(entity.levelTag, bounds);
 			}
 		},
 	);
+	counts.gatedRenderers = gatedRows.size;
+	for (const { row, tag, name, file, global, hlod, sources } of gatedRows.values()) {
+		const visibility = collected.sourceVisibility(sources);
+		// HLOD clusters stand in for the rows of their own area, so area-only content keeps HLOD refinement;
+		// scene-state content has no HLODs and streams as conditional detail
+		const stateGated = visibility !== null && sources.some((source) => source.sceneState !== 0);
+		addRow({ row, tag, name, file, global, hlod, visibility, stateGated });
+	}
 	for (const cluster of clampedHlod) {
 		const key = resolveClampedHlodCell({
 			tree: grid,
@@ -762,18 +836,6 @@ const collectEntities = async (
 			detailAt: (leaf) => detailBounds.get(`${tileId(leaf)}/${cluster.tag}`) ?? [],
 		});
 		addHlod(cluster, key);
-	}
-	counts.sceneStateRenderers = stateRows.size;
-	for (const { row, tag, name, file, global, states } of stateRows.values()) {
-		const visibility = collected.stateVisibility([...states].map((id) => id - 1));
-		if (global) {
-			collected.addGlobal(tag, collected.condition(visibility), row, name, file);
-			pack.uses.note(row.chain, null);
-			continue;
-		}
-		const key = tileAt(grid, grid.leafLevel, row.bounds.center[0], row.bounds.center[2]);
-		collected.addConditional(tag, key, row, name, visibility, file);
-		pack.uses.note(row.chain, key);
 	}
 	const dynamic = await loadDynamicStructures(context, scene.options.scene, scene.partition);
 	for (const [key, count] of Object.entries(dynamic.counts)) {
@@ -956,10 +1018,10 @@ const gateByScene = (
 		volume.group = collected.groupOfStates(levelTag, sceneStates);
 	}
 	for (const [i, surface] of water.table.surfaces.entries()) {
-		const { levelTag, sceneStates } = water.surfaceOwners[i];
-		surface.group = collected.groupOfStates(levelTag, sceneStates);
+		const { levelTag, sources } = water.surfaceOwners[i];
+		surface.group = collected.groupOfSources(levelTag, sources);
 	}
-	const lightsTable = lights.finish((levelTag, states) => collected.groupOfStates(levelTag, states));
+	const lightsTable = lights.finish((levelTag, sources) => collected.groupOfSources(levelTag, sources));
 	const named = new Set(controls.map((control) => control.id));
 	const unnamed = [...collected.sceneStates]
 		.filter((index) => !named.has(sceneStateControl(index)))
@@ -1161,6 +1223,7 @@ interface SceneStateInfo {
 	conditionalSets: ConditionalSetInfo[];
 	groups: VisibilityGroup[];
 	toggles: SceneToggleInfo[];
+	streamAreas: StreamAreasInfo | null;
 }
 
 const sceneStates = async (
@@ -1190,6 +1253,41 @@ const sceneStates = async (
 		conditionalSets: collected.conditions,
 		groups: collected.groups,
 		toggles: collected.toggles,
+		streamAreas: await streamAreasInfo(world, scene.options.scene, collected.areas),
+	};
+};
+
+/**
+ * @param world world index
+ * @param scene streaming scene id
+ * @param areas stream areas packed content requires
+ * @returns the scene's stream-area table for the viewer, or `null` when no content needs it
+ * @throws {Error} if content needs areas but the scene has no stream-area table
+ */
+const streamAreasInfo = async (
+	world: WorldIndex,
+	scene: string,
+	areas: ReadonlySet<number>,
+): Promise<StreamAreasInfo | null> => {
+	if (areas.size === 0) {
+		return null;
+	}
+	const table = await world.streamAreas(scene);
+	if (table === undefined) {
+		throw new Error(`${scene} has stream-area content but no stream-area table`);
+	}
+	return {
+		areas: [...areas].toSorted((a, b) => a - b),
+		rootVisible: table.rootVisible,
+		shownInside: [...table.visibleWhileInside].map(([zone, shown]) => ({ zone, areas: shown })),
+		triggers: table.triggers.map(({ areaId, bounds, polygon }) => ({
+			zone: areaId,
+			min: [bounds.min.x, bounds.min.z],
+			max: [bounds.max.x, bounds.max.z],
+			minHeight: bounds.minHeight,
+			maxHeight: bounds.maxHeight,
+			polygon: polygon.map(({ x, z }): [number, number] => [x, z]),
+		})),
 	};
 };
 
@@ -1283,6 +1381,7 @@ const writePackage = async (
 			conditionalSets: states.conditionalSets,
 			groups: states.groups,
 			toggles: states.toggles,
+			streamAreas: states.streamAreas,
 		},
 		archives,
 		global: states.global,
@@ -1511,8 +1610,49 @@ class Collector {
 		return this.group(levelTag, states.length === 0 ? null : this.condition(this.stateVisibility(states)));
 	}
 
-	addDetail(level: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
-		this.#addDetail(this.group(level, null), false, key, row, name, file);
+	/**
+	 * @param sources the chunk files holding some content
+	 * @returns when it loads (see {@link sourceVisibility}), noting the scene states and stream areas it needs
+	 */
+	sourceVisibility(sources: readonly ChunkSource[]): ConditionalSetInfo | null {
+		const visibility = sourceVisibility(sources);
+		if (visibility !== null) {
+			for (const { sceneState, area } of sources) {
+				if (sceneState !== 0) {
+					this.sceneStates.add(sceneState - 1);
+				}
+				if (area !== 0) {
+					this.areas.add(area);
+				}
+			}
+		}
+		return visibility;
+	}
+
+	/**
+	 * @param levelTag the owning level's tag
+	 * @param sources the chunk files holding the content
+	 * @returns the visibility group of content loading with any of those files
+	 */
+	groupOfSources(levelTag: number, sources: readonly ChunkSource[]): number {
+		const visibility = this.sourceVisibility(sources);
+		return this.group(levelTag, visibility === null ? null : this.condition(visibility));
+	}
+
+	/**
+	 * adds a row HLODs stand in for
+	 *
+	 * @param condition index into {@link conditions} for rows of a stream area, else `null`
+	 */
+	addDetail(
+		level: number,
+		condition: number | null,
+		key: TileKey,
+		row: InstanceInput,
+		name: string,
+		file: number,
+	): void {
+		this.#addDetail(this.group(level, condition), false, key, row, name, file);
 		this.#countInstance(level);
 	}
 
@@ -1538,6 +1678,8 @@ class Collector {
 	facilities: ProgressionInfo[] = [];
 	/** MapConfig scene state indices some visibility expression requires */
 	readonly sceneStates = new Set<number>();
+	/** stream areas some visibility expression requires */
+	readonly areas = new Set<number>();
 	readonly #conditionIds = new Map<string, number>();
 
 	/**
@@ -1589,8 +1731,17 @@ class Collector {
 		return condition;
 	}
 
-	addHlod(level: number, tier: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
-		const group = getOrInsert(this.hlod, this.group(level, null), newGroup);
+	/** @param condition index into {@link conditions} for clusters of a stream area, else `null` */
+	addHlod(
+		level: number,
+		condition: number | null,
+		tier: number,
+		key: TileKey,
+		row: InstanceInput,
+		name: string,
+		file: number,
+	): void {
+		const group = getOrInsert(this.hlod, this.group(level, condition), newGroup);
 		const sortKey = nodeSortKey(key);
 		push(group, row, sortKey, name, file);
 		const node = this.hlodNodes.get(sortKey);

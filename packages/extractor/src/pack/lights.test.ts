@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import { type ChunkLight, LightType } from '@endfield-noclip/formats/endfield/chunk-lights';
 import { LightKind } from '@endfield-noclip/package-format/lights';
 
+import type { ChunkSource } from '../game/world-index.ts';
+
 import { LightCollector, lightEntry } from './lights.ts';
 
 const light = (patch: Partial<ChunkLight> = {}): ChunkLight => ({
@@ -65,17 +67,17 @@ test('spots keep their cone and lose the length field, which only tubes use', ()
 	assert.deepEqual([point.kind, point.spotAngle, point.tubeLength], [LightKind.Point, 0, 3]);
 });
 
-test('lights load unconditionally from always-loaded files and with their scene states otherwise', () => {
+test('lights carry every file holding them, for gating like instances', () => {
 	const collector = new LightCollector();
-	collector.add(light({ id: 1 }), 0);
-	collector.add(light({ id: 1 }), 3);
-	collector.add(light({ id: 2 }), 2);
-	collector.add(light({ id: 2 }), 5);
-	collector.add(light({ id: 3, shadowOnly: true }), 0);
-	collector.add(light({ id: 4, type: LightType.Directional }), 0);
-	const seen: [number, number[]][] = [];
-	const table = collector.finish((levelTag, states) => {
-		seen.push([levelTag, states]);
+	collector.add(light({ id: 1 }), { sceneState: 0, area: 0 });
+	collector.add(light({ id: 1 }), { sceneState: 3, area: 0 });
+	collector.add(light({ id: 2 }), { sceneState: 2, area: 0 });
+	collector.add(light({ id: 2 }), { sceneState: 0, area: 7 });
+	collector.add(light({ id: 3, shadowOnly: true }), { sceneState: 0, area: 0 });
+	collector.add(light({ id: 4, type: LightType.Directional }), { sceneState: 0, area: 0 });
+	const seen: [number, ChunkSource[]][] = [];
+	const table = collector.finish((levelTag, sources) => {
+		seen.push([levelTag, [...sources]]);
 		return seen.length;
 	});
 	assert.deepEqual(
@@ -85,10 +87,21 @@ test('lights load unconditionally from always-loaded files and with their scene 
 			[2, 2],
 		],
 	);
-	// MapConfig indices are the files' suffixes minus one
 	assert.deepEqual(seen, [
-		[2, []],
-		[2, [1, 4]],
+		[
+			2,
+			[
+				{ sceneState: 0, area: 0 },
+				{ sceneState: 3, area: 0 },
+			],
+		],
+		[
+			2,
+			[
+				{ sceneState: 2, area: 0 },
+				{ sceneState: 0, area: 7 },
+			],
+		],
 	]);
 	assert.deepEqual(collector.skipped, { 'shadow only': 1, 'type 1': 1 });
 });

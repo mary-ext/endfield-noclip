@@ -17,6 +17,8 @@ packs or renders correctly.
   authored pose ([assets](game-data/assets.md))
 - scene states, progressions, facility visual forms, script/event groups and dynamic load gates as
   manual preview controls with stored defaults ([scene states](game-data/scene-states.md))
+- static stream areas switched by the camera through the game's trigger zones
+  ([world](game-data/world.md#stream-areas))
 - terrain heights, baked surface pages and the close-up layer blend
   ([world](game-data/world.md#terrain))
 - environment profiles and volume blending, water, post-processing, base-bake irradiance and local
@@ -101,7 +103,10 @@ packs or renders correctly.
 - story-state expressions and script relationships beyond what client data proves; event and server
   conditions may never be recoverable
 - control labels still show internal identifiers or representative mesh names in many places
-- animated poses and nonzero blend shapes
+- animated poses and nonzero blend shapes; vertex-animation-texture meshes (`_vat`, e.g. floating
+  rocks) draw their rest pose
+- DynamicStreaming entities ignore stream areas (their `VisibleAreaGroup` values aren't read), and
+  the game's HLOD-unload triggers aren't decoded
 - some mesh/material references are missing from the install's path-hash table, and one texture
   format (`GraphicsFormat` 54) fails conversion. failed exact lookups stay explicit
 

@@ -21,6 +21,7 @@ import {
 	readSceneWater,
 	type SourcedWaterSurface,
 } from '../game/water-source.ts';
+import type { ChunkSource } from '../game/world-index.ts';
 
 import type { Place } from './asset-placement.ts';
 import type { PlacedTexture } from './assets.ts';
@@ -51,11 +52,8 @@ export interface WaterPlan {
 	 * packer interns {@link surfaceOwners}
 	 */
 	table: WaterTable;
-	/**
-	 * per table surface: its level's tag and the MapConfig scene state indices that load it, empty if always
-	 * loaded
-	 */
-	surfaceOwners: { levelTag: number; sceneStates: number[] }[];
+	/** per table surface: its level's tag and the chunk files that load it */
+	surfaceOwners: { levelTag: number; sources: ChunkSource[] }[];
 	textures: PlacedTexture[];
 	debug: WaterDebug;
 }
@@ -134,7 +132,7 @@ export const planWater = async (
 			continue;
 		}
 		plan.table.surfaces.push(surfaceEntry(surface, options.geometry(surface.meshHash), config));
-		plan.surfaceOwners.push({ levelTag: surface.levelTag, sceneStates: surface.sceneStates });
+		plan.surfaceOwners.push({ levelTag: surface.levelTag, sources: surface.sources });
 		plan.debug.rows.push({
 			id: surface.id,
 			name: surface.name,

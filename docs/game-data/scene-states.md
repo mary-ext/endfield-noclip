@@ -5,7 +5,8 @@ scene states and their quest, mission and variable conditions; the load gates on
 entities; progression levels (outposts, POI facilities, factory regions); facility visual forms;
 script-loaded groups; and how the package encodes all of these as one control/condition system that
 the viewer exposes as preview controls. spatial stream areas (interiors, caves, off-map places) are
-a separate axis, covered in [world.md](world.md); the package merges them into their owning levels.
+a separate axis, covered in [world.md](world.md#stream-areas); the package encodes them as controls
+the viewer sets from the camera.
 
 ## the selectors at a glance
 
@@ -224,9 +225,14 @@ types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo
   requirement and gate requirements, crossed with one state from each visible-state list. a model or
   ECS group referenced by several resource groups collects all their alternatives, so any complete
   alternative shows it.
-- static scene-state renderers, volumes and water surfaces use single-requirement alternatives, one
-  per state. volumes and surfaces store a `condition` index into `conditionalSets`, `null` when
-  always loaded.
+- static renderers, lights and water surfaces of scene-state or stream-area files get one
+  alternative per file holding them: the file's `sceneState:<index>` requirement, its `area:<id>`
+  requirement, or both. environment volumes come from default-area files only, so they have state
+  requirements alone. groups store a `condition` index into `conditionalSets`, `null` when always
+  loaded.
+- `area:<id>` controls aren't listed in `toggles` and get no default: the viewer sets them to 1 for
+  the areas shown at the camera and 0 otherwise (see
+  [package-format.md](../package-format.md#stream-areas)).
 - the packer canonicalises and deduplicates sets (`Collector.condition`), so equivalent expressions
   share one index. MapConfig controls come first in `toggles`, then unnamed states, then gates,
   scripts and logic toggles.
@@ -250,8 +256,9 @@ results to the instance selector, the water renderer and the environment blend.
   [environment.md](environment.md))
 
 toggles are listed where their `levelTags` include 0 or the shown level's tag. "Reset" restores the
-package defaults. conditional detail ignores HLOD refinement and stops streaming once its tile is
-below the screen error threshold.
+package defaults. stream areas have no controls here; the settings panel's "stream areas at camera"
+toggle switches between following the camera and showing every area. conditional detail ignores HLOD
+refinement and stops streaming once its tile is below the screen error threshold.
 
 ## rules
 

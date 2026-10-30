@@ -176,10 +176,20 @@ chunk file names and the visibility groups of DynamicStreaming entities. root sl
 (`HlodUnloadBounds`, `HlodUnloadTriggers`, `HlodUnloadPoints`), HLOD-unload trigger volumes in the
 same layout, are not decoded.
 
-the packer draws a level with all of its areas, deduplicating entities shared between areas; the
-trigger test (`visibleAreasAt`) exists for consumers that want the game's area switching.
+areas are not interiors only: a level can hold several versions of the same place's backdrop, each
+shown from its own zone. map02's Si's Painting has a cliff and floating-rock backdrop (area
+701638228 in one client build) that loads only inside a zone west of the inn, so drawing every area
+at once puts those rocks in front of the inn's view.
 
-code: [stream-area.ts](../../packages/formats/src/endfield/stream-area.ts)
+the packer gates non-default-area content by its areas (see
+[scene-states.md](scene-states.md#how-the-package-encodes-conditions)) and ships the table; the
+viewer runs the trigger test at the camera. of the scenes packed so far (map01, map02, base01_lv001,
+base01_lv002), only map02 has area content. DynamicStreaming entities carry `VisibleAreaGroup`
+values too, which aren't read yet, so dynamic content ignores areas.
+
+code: [stream-area.ts](../../packages/formats/src/endfield/stream-area.ts) (parsing),
+[stream-areas.ts](../../packages/package-format/src/stream-areas.ts) (the packaged table and the
+trigger test)
 
 ## dynamic streaming
 
@@ -324,18 +334,19 @@ level in very few triangles.
 
 the entity pass ([packer.ts](../../packages/extractor/src/pack/packer.ts), `collectEntities`) reads
 the scene's chunk files in a fixed order (always-loaded before scene-state files, the default area
-before stream areas, then by name) and keeps the first copy of each entity id, so an entity present
-in an always-loaded file stays unconditional. entities without a renderer or matrix, and decals, are
-skipped. every row goes to a block of one visibility group (its level tag and the condition that
-loads it, see [package-format.md](../package-format.md#visibility-groups)), so a level or a scene
-state can be shown or hidden as a whole:
+before stream areas, then by name). an entity first met in an always-loaded file of the default area
+stays unconditional; any other entity collects every file holding it and loads while any of them
+does: the file's scene state and stream area both on. entities without a renderer or matrix, and
+decals, are skipped. every row goes to a block of one visibility group (its level tag and the
+condition that loads it, see [package-format.md](../package-format.md#visibility-groups)), so a
+level, a scene state or a stream area can be shown or hidden as a whole:
 
-| destination | what goes there                                                                                                       | where it lives                           |
-| ----------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| HLOD        | scene-state-0 entities whose name matches the HLOD pattern; attached to the tile of tier `t` at tree level `leaf − t` | one block per group, in the core archive |
-| global      | other entities of `Global` chunks, scene-state ones with their states' condition                                      | one block per group, in the core archive |
-| detail      | other always-loaded entities, filed under the 64 m leaf containing their bounds centre                                | one block per (leaf, group)              |
-| conditional | entities of scene-state cell files, plus dynamic structures and facilities, with a visibility expression              | one block per (leaf, group)              |
+| destination | what goes there                                                                                                                                              | where it lives                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| HLOD        | scene-state-0 entities whose name matches the HLOD pattern, gated by their stream areas; attached to the tile of tier `t` at tree level `leaf − t`           | one block per group, in the core archive |
+| global      | other entities of `Global` chunks, with their files' condition                                                                                               | one block per group, in the core archive |
+| detail      | other scene-state-0 entities, gated by their stream areas, filed under the 64 m leaf containing their bounds centre; HLOD clusters of the same area stand in | one block per (leaf, group)              |
+| conditional | entities of scene-state cell files, plus dynamic structures and facilities, with a visibility expression                                                     | one block per (leaf, group)              |
 
 HLOD clusters stand in for instances already counted, so they're left out of a level's instance
 count. with `--level`, the subset keeps entities with that level's tag and terrain tiles touching

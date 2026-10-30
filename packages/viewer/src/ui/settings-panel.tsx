@@ -162,6 +162,7 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<Toggle viewer={viewer} name="boxes" label="boxes" />
 				<Toggle viewer={viewer} name="detail" label="detail" />
 				<Toggle viewer={viewer} name="global" label="global scenery" />
+				<Toggle viewer={viewer} name="streamAreas" label="stream areas at camera" />
 				<Toggle viewer={viewer} name="wireframe" label="wireframe" />
 			</fieldset>
 			<fieldset>

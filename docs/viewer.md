@@ -398,6 +398,11 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
   `environmentPhases`. `await import('/src/render/environment.ts')` gives `deriveEnvironment` for
   checking derived values against a profile.
 - scene states: `viewer.sceneValues`, `viewer.conditionResults`, `viewer.setSceneValue(id, value)`.
+- stream areas: `viewer.visibleStreamAreas` (the areas shown at the camera, `null` when every area
+  shows) and `viewer.options.streamAreas`. the viewer re-runs the trigger test whenever the camera
+  moves and re-evaluates conditions when the set changes. above or below every trigger the game
+  would fall back to the root areas; the viewer instead keeps the zones whose footprint the camera
+  is over, so an overview still shows the level.
 - look: `viewer.options.exposure` (EV on top of the level's and the auto exposure's),
   `viewer.options.autoExposure`, `viewer.stats.autoExposureEv` and `viewer.options.debugView`
   (`'clouds'` shows the raw cloud panorama).

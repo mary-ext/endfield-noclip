@@ -1,10 +1,12 @@
+import type { StreamAreasInfo } from './stream-areas.ts';
+
 /**
  * scenery variants. the game's stream areas (`<areaId>` chunk suffixes: interiors, caves, off-map places)
- * aren't kept apart: their content is merged into the levels that own it, so a level is drawn whole. scene
- * states (MapConfig states, the `<sceneStateId>` chunk suffix and dynamic state lists) are toggles whose
- * defaults evaluate the game's conditions for a player who finished the story. progressions
- * (outpost/settlement levels, POI facility levels, factory regions) are selected per progression, with
- * mutually exclusive levels, and manual gates for unrecovered script/logic conditions
+ * load by where the camera is, through `area:<id>` requirements (see {@link StreamAreasInfo}). scene states
+ * (MapConfig states, the `<sceneStateId>` chunk suffix and dynamic state lists) are toggles whose defaults
+ * evaluate the game's conditions for a player who finished the story. progressions (outpost/settlement
+ * levels, POI facility levels, factory regions) are selected per progression, with mutually exclusive levels,
+ * and manual gates for unrecovered script/logic conditions
  */
 export interface StatesInfo {
 	progressions: ProgressionInfo[];
@@ -18,6 +20,8 @@ export interface StatesInfo {
 	 * rather than per kind of content
 	 */
 	groups: VisibilityGroup[];
+	/** the scene's stream areas, or `null` when no packed content belongs to a non-default area */
+	streamAreas: StreamAreasInfo | null;
 }
 
 /** an owner and a load condition shared by placed content */

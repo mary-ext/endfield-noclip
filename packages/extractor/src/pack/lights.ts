@@ -2,44 +2,44 @@ import { type ChunkLight, LightType } from '@endfield-noclip/formats/endfield/ch
 import { unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
 import { type LightEntry, LightKind, type LightsTable } from '@endfield-noclip/package-format/lights';
 
-// local lights for `tables/lights.json`. lights repeat in every cell chunk they overlap and in stream areas, so
-// they're deduplicated by id; files arrive always-loaded first, so a light any always-loaded file holds stays
-// unconditional, and the rest load with the scene states of the files holding them, like instances.
+import type { ChunkSource } from '../game/world-index.ts';
+
+// local lights for `tables/lights.json`. lights repeat in every cell chunk they overlap, in scene states and in
+// stream areas, so they're deduplicated by id and load with the files holding them, like instances.
 
 /** collects a scene's lights across its chunk files */
 export class LightCollector {
-	readonly #lights = new Map<number, { light: ChunkLight; states: Set<number> | null }>();
+	readonly #lights = new Map<number, { light: ChunkLight; sources: ChunkSource[] }>();
 	/** lights left out, by reason */
 	readonly skipped: Record<string, number> = {};
 
 	/**
 	 * @param light a light from a chunk file
-	 * @param sceneState the file's scene-state suffix: 0 always loaded, `n` with MapConfig scene state `n − 1`
+	 * @param source the file's scene state and stream area
 	 */
-	add(light: ChunkLight, sceneState: number): void {
+	add(light: ChunkLight, source: ChunkSource): void {
+		const { sceneState, area } = source;
 		const known = this.#lights.get(light.id);
-		if (known !== undefined) {
-			known.states?.add(sceneState);
-			return;
+		if (known === undefined) {
+			this.#lights.set(light.id, { light, sources: [{ sceneState, area }] });
+		} else {
+			known.sources.push({ sceneState, area });
 		}
-		this.#lights.set(light.id, { light, states: sceneState === 0 ? null : new Set([sceneState]) });
 	}
 
 	/**
-	 * @param groupOf the visibility group of content a level owns that loads with any of these MapConfig scene
-	 *   states (always, when there are none)
+	 * @param groupOf the visibility group of content a level owns that loads with any of these files
 	 * @returns the table, lights in id order
 	 */
-	finish(groupOf: (levelTag: number, states: number[]) => number): LightsTable {
+	finish(groupOf: (levelTag: number, sources: readonly ChunkSource[]) => number): LightsTable {
 		const lights: LightEntry[] = [];
-		for (const { light, states } of [...this.#lights.values()].toSorted((a, b) => a.light.id - b.light.id)) {
+		for (const { light, sources } of [...this.#lights.values()].toSorted((a, b) => a.light.id - b.light.id)) {
 			const reason = skipReason(light);
 			if (reason !== null) {
 				this.skipped[reason] = (this.skipped[reason] ?? 0) + 1;
 				continue;
 			}
-			const sceneStates = states === null ? [] : [...states].map((id) => id - 1).toSorted((a, b) => a - b);
-			lights.push(lightEntry(light, groupOf(light.levelTag, sceneStates)));
+			lights.push(lightEntry(light, groupOf(light.levelTag, sources)));
 		}
 		return { lights };
 	}

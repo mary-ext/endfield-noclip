@@ -18,7 +18,7 @@ import { pptrField } from '@endfield-noclip/formats/unity/values';
 import { mapPool } from '../pool.ts';
 
 import type { AssetRef, AssetResolver, ObjectRef } from './assets.ts';
-import type { ChunkFile, WorldIndex } from './world-index.ts';
+import type { ChunkFile, ChunkSource, WorldIndex } from './world-index.ts';
 
 // #region placements
 
@@ -26,8 +26,8 @@ import type { ChunkFile, WorldIndex } from './world-index.ts';
 export interface SourcedWaterSurface extends WaterSurface {
 	/** the first file holding it */
 	source: ChunkFile;
-	/** MapConfig scene state indices of the files holding it, any of which loads it; empty if always loaded */
-	sceneStates: number[];
+	/** scene states and stream areas of the files holding it, any of which loads it */
+	sources: ChunkSource[];
 }
 
 /** a scene's water placements */
@@ -83,19 +83,20 @@ export const readSceneWater = async (
 	const surfaces: SourcedWaterSurface[] = [];
 	const globals: WaterGlobalBinding[] = [];
 	const seen = new Set<number>();
-	// scene state ids of the files holding each surface
-	const fileStates = new Map<number, Set<number>>();
+	const byId = new Map<number, SourcedWaterSurface>();
 	for (const read of perFile) {
 		if (read === null) {
 			continue;
 		}
+		const { sceneState, area } = read.file;
 		for (const surface of read.surfaces) {
-			const states = fileStates.get(surface.id);
-			if (states === undefined) {
-				fileStates.set(surface.id, new Set([read.file.sceneState]));
-				surfaces.push(Object.assign(surface, { source: read.file, sceneStates: [] }));
+			const known = byId.get(surface.id);
+			if (known === undefined) {
+				const sourced = Object.assign(surface, { source: read.file, sources: [{ sceneState, area }] });
+				byId.set(surface.id, sourced);
+				surfaces.push(sourced);
 			} else {
-				states.add(read.file.sceneState);
+				known.sources.push({ sceneState, area });
 			}
 		}
 		for (const binding of read.globals) {
@@ -103,12 +104,6 @@ export const readSceneWater = async (
 				seen.add(binding.id);
 				globals.push(binding);
 			}
-		}
-	}
-	for (const surface of surfaces) {
-		const states = fileStates.get(surface.id)!;
-		if (!states.has(0)) {
-			surface.sceneStates = [...states].map((id) => id - 1).toSorted((a, b) => a - b);
 		}
 	}
 	return { surfaces, globals };

@@ -28,6 +28,7 @@ it('selects mutually exclusive upgrades while preserving shared and script-gated
 		],
 		conditionalSets: [],
 		groups: [],
+		streamAreas: null,
 	};
 	const initial = defaultSceneValues(states);
 	const before = { alternatives: [[{ control: 'poi:facility', mask: 1 }]] };
@@ -80,6 +81,7 @@ it('shows a group when the level owns it or every level does, and its condition 
 			{ levelTag: 1, condition: 0 },
 			{ levelTag: 0, condition: 1 },
 		],
+		streamAreas: null,
 	};
 	const conditions = conditionResults(states, { 'sceneState:0': 1, 'sceneState:1': 0 });
 	assert.deepEqual(conditions, [true, false]);
