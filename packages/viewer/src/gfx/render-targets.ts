@@ -35,6 +35,28 @@ export const MAIN_TARGETS: GPUColorTargetState[] = [
 	{ format: REFLECTION_NORMAL_FORMAT },
 ];
 
+/**
+ * the transparent pass's colour targets (weighted blended order-independent transparency, McGuire and Bavoil
+ * 2013): the weighted sum of premultiplied colours with the weights' sum in alpha, and the revealage, the
+ * product of `1 − alpha` over the layers. the composite resolves them over the opaque scene
+ */
+export const TRANSPARENT_TARGETS: GPUColorTargetState[] = [
+	{
+		format: HDR_FORMAT,
+		blend: {
+			color: { srcFactor: 'one', dstFactor: 'one' },
+			alpha: { srcFactor: 'one', dstFactor: 'one' },
+		},
+	},
+	{
+		format: 'r8unorm',
+		blend: {
+			color: { srcFactor: 'zero', dstFactor: 'one-minus-src' },
+			alpha: { srcFactor: 'zero', dstFactor: 'one-minus-src' },
+		},
+	},
+];
+
 /** what a main-pass pipeline needs to know of the targets */
 export interface MainPassFormat {
 	targets: GPUColorTargetState[];
@@ -51,6 +73,10 @@ export interface SceneTextures {
 	/** xy: octahedral normal · 0.5 + 0.5, z: perceptual roughness */
 	reflectionNormal: GPUTextureView;
 	depth: GPUTextureView;
+	/** the transparent pass's weighted colour sum ({@link TRANSPARENT_TARGETS}) */
+	transparent: GPUTextureView;
+	/** the transparent pass's revealage: 1 where nothing transparent was drawn */
+	revealage: GPUTextureView;
 	/** bumped whenever the views or the output size change (resize, render scale) */
 	version: number;
 }
@@ -77,6 +103,7 @@ export class RenderTargets {
 	#textures: GPUTexture[] = [];
 	#depth: GPUTexture | null = null;
 	#colors: GPUTexture[] | null = null;
+	#transparent: GPUTexture[] | null = null;
 	#scene: SceneTextures | null = null;
 	#version = 0;
 
@@ -172,6 +199,10 @@ export class RenderTargets {
 			create({ label: 'reflection', size: [width, height], format: HDR_FORMAT, usage }),
 			create({ label: 'reflection normal', size: [width, height], format: REFLECTION_NORMAL_FORMAT, usage }),
 		];
+		this.#transparent = [
+			create({ label: 'transparent', size: [width, height], format: HDR_FORMAT, usage }),
+			create({ label: 'revealage', size: [width, height], format: 'r8unorm', usage }),
+		];
 		this.#version++;
 		this.#scene = {
 			radiance: this.#colors[0].createView(),
@@ -180,6 +211,8 @@ export class RenderTargets {
 			reflection: this.#colors[2].createView(),
 			reflectionNormal: this.#colors[3].createView(),
 			depth: this.#depth.createView(),
+			transparent: this.#transparent[0].createView(),
+			revealage: this.#transparent[1].createView(),
 			version: this.#version,
 		};
 		return true;
@@ -187,7 +220,7 @@ export class RenderTargets {
 
 	/** @returns bytes held by the targets (estimate; the swapchain counts as two buffers) */
 	get bytes(): number {
-		return this.width * this.height * (4 + 8 * 3 + 4) + this.outputWidth * this.outputHeight * 4 * 2;
+		return this.width * this.height * (4 + 8 * 3 + 4 + 8 + 1) + this.outputWidth * this.outputHeight * 4 * 2;
 	}
 
 	/** @returns the main pass's outputs */
@@ -221,6 +254,32 @@ export class RenderTargets {
 				depthLoadOp: 'clear',
 				depthStoreOp: 'store',
 			},
+		};
+	}
+
+	/**
+	 * @returns attachments for this frame's transparent pass: its targets cleared to nothing drawn, and the
+	 *   main pass's depth, tested but not written
+	 */
+	transparentPassAttachments(): {
+		colors: GPURenderPassColorAttachment[];
+		depth: GPURenderPassDepthStencilAttachment;
+	} {
+		if (this.#depth === null || this.#transparent === null) {
+			throw new Error('render targets used before update()');
+		}
+		const [sum, revealage] = this.#transparent;
+		return {
+			colors: [
+				{ view: sum.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
+				{
+					view: revealage.createView(),
+					clearValue: { r: 1, g: 1, b: 1, a: 1 },
+					loadOp: 'clear',
+					storeOp: 'store',
+				},
+			],
+			depth: { view: this.#depth.createView(), depthReadOnly: true },
 		};
 	}
 

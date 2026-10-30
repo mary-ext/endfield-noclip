@@ -377,7 +377,10 @@ export class PostProcess {
 		return pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) + outputPixels * 8 * (2 / 3) + this.taa.bytes;
 	}
 
-	/** the composite pass's group 2: the main pass's outputs, the blurred AO, the cloud panorama and reflections */
+	/**
+	 * the composite pass's group 2: the main and transparent passes' outputs, the blurred AO, the cloud
+	 * panorama and reflections
+	 */
 	#sceneGroup(scene: SceneTextures, aoBlurred: GPUTexture, ssr: GPUTexture): GPUBindGroup {
 		return this.#device.createBindGroup({
 			layout: this.#pipelines.composite.getBindGroupLayout(2),
@@ -389,6 +392,8 @@ export class PostProcess {
 				{ binding: 4, resource: this.#cloud.view },
 				{ binding: 5, resource: this.#cloud.sampler },
 				{ binding: 6, resource: ssr.createView() },
+				{ binding: 7, resource: scene.transparent },
+				{ binding: 8, resource: scene.revealage },
 			],
 		});
 	}

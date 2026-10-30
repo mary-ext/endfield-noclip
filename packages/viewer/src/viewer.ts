@@ -1394,6 +1394,20 @@ export class Viewer {
 			}
 		}
 		pass.end();
+		// always run, so the composite reads cleared targets when nothing is transparent
+		{
+			const attachments = this.#targets.transparentPassAttachments();
+			const transparent = encoder.beginRenderPass({
+				label: 'transparent',
+				colorAttachments: attachments.colors,
+				depthStencilAttachment: attachments.depth,
+			});
+			if (hasScene) {
+				transparent.setBindGroup(0, this.#frameBindGroup, [uniforms.offset]);
+				draws += this.#meshes.encodeTransparent(transparent);
+			}
+			transparent.end();
+		}
 		this.#post.encode(encoder, {
 			scene: this.#targets.scene,
 			swapchain: this.#targets.swapchainView(),

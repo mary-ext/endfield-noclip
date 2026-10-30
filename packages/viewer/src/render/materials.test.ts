@@ -95,6 +95,46 @@ test('matte paintings are unlit, cast no shadows and test the texture alpha agai
 	assert.deepEqual(Array.from(look.params.subarray(LookRow.surface, LookRow.surface + 2)), [1, 4]);
 });
 
+test('glass is transparent, casts no shadow and takes its opacity from the tint alpha and the picked map alpha', () => {
+	const shaders: ShaderEntry[] = [
+		{
+			name: 'HGRP/LitTransparent',
+			family: 'litTransparent',
+			floats: { _AlphaMaskChannel: 0 },
+			colors: { _BaseColor: [1, 1, 1, 1] },
+			vectors: {},
+			textures: {},
+			normalMaps: ['_NormalMap'],
+		},
+	];
+	const entry: ReadyMaterial = {
+		id: 0,
+		status: 'ready',
+		shader: 0,
+		keywords: ['_TWO_BASEMAP'],
+		renderQueue: 3000,
+		blend: 'alphaBlend',
+		blendFactors: [5, 10],
+		alphaClipThreshold: 0.5,
+		cull: 'back',
+		zWrite: false,
+		baseTextureMapCount: 1,
+		slots: {
+			_BaseColorMap: { texture: 1, uv: 0, scale: [1, 1], offset: [0, 0] },
+			_NormalMap: { texture: 2, uv: 0, scale: [1, 1], offset: [0, 0] },
+		},
+		floats: { _AlphaMaskChannel: 1 },
+		colors: { _BaseColor: [0.8, 0.8, 0.8, 0.5] },
+		vectors: {},
+	};
+	const [look] = materialLooks({ shaders, entries: [entry] });
+	assert.equal(look.transparent, true);
+	assert.equal(look.cutout, false);
+	assert.equal(look.castsShadows, false);
+	assert.equal(look.params[LookRow.emissive2 + 3], 0.5);
+	assert.notEqual(look.flags & LookFlags.AlphaNormal, 0);
+});
+
 test('erosion rock: its maps tile by their own properties on UV set 0, the ramp streams whole, HDR colours stay as stored', () => {
 	const shaders: ShaderEntry[] = [
 		{

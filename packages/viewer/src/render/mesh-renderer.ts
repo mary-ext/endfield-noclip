@@ -4,15 +4,21 @@
  * `drawIndexed` over its slice of the visible list. per-draw parameters (dequantization, the material look)
  * sit in a storage array indexed through a per-list-entry draw id, and the material's textures are in group 3
  * (a white texture for slots whose texture hasn't streamed in, with the slot's flag cleared). opaque draws
- * come before alpha-tested ones, which each pass draws with its own pipelines (see mesh.wgsl for why); within
- * each, draws are sorted by geometry, then material, so runs of draws share their bindings.
+ * come before alpha-tested ones, which each pass draws with its own pipelines (see mesh.wgsl for why), and
+ * alpha-blended ones come last, drawn in a pass of their own whose blending needs no sorting; within each,
+ * draws are sorted by geometry, then material, so runs of draws share their bindings.
  *
  * @module
  */
 
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
-import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
+import {
+	DEPTH_COMPARE,
+	DEPTH_FORMAT,
+	type MainPassFormat,
+	TRANSPARENT_TARGETS,
+} from '../gfx/render-targets.ts';
 import type { DecodedGeometry } from '../package/decode-protocol.ts';
 import type { MeshBucket } from '../streaming/mesh-selection.ts';
 import type { ResidentGeometry } from '../streaming/stream-manager.ts';
@@ -73,11 +79,13 @@ const faceCullOf = (bucket: MeshBucket): FaceCull => {
 	}
 };
 
-/** one run over a pass's opaque or alpha-tested draws, with a pipeline per face culling */
+/** the draws a phase runs over: prepared in this order */
+type DrawRange = 'opaque' | 'cutout' | 'transparent';
+
+/** one run over a pass's opaque, alpha-tested or alpha-blended draws, with a pipeline per face culling */
 interface DrawPhase {
 	key: string;
-	/** over the alpha-tested draws, else the opaque ones */
-	cutout: boolean;
+	range: DrawRange;
 	/** whether the pipeline reads the material's textures; if not, any material group will do */
 	textured: boolean;
 	/** over only the draws whose materials cast shadows */
@@ -85,14 +93,18 @@ interface DrawPhase {
 }
 
 const MAIN_PHASES: readonly DrawPhase[] = [
-	{ key: 'mesh/opaque', cutout: false, textured: true, shadow: false },
-	{ key: 'mesh/cutout-depth', cutout: true, textured: true, shadow: false },
-	{ key: 'mesh/cutout-shade', cutout: true, textured: true, shadow: false },
+	{ key: 'mesh/opaque', range: 'opaque', textured: true, shadow: false },
+	{ key: 'mesh/cutout-depth', range: 'cutout', textured: true, shadow: false },
+	{ key: 'mesh/cutout-shade', range: 'cutout', textured: true, shadow: false },
+];
+
+const TRANSPARENT_PHASES: readonly DrawPhase[] = [
+	{ key: 'mesh/transparent', range: 'transparent', textured: true, shadow: false },
 ];
 
 const SHADOW_PHASES: readonly DrawPhase[] = [
-	{ key: 'mesh/shadow/opaque', cutout: false, textured: false, shadow: true },
-	{ key: 'mesh/shadow/cutout', cutout: true, textured: true, shadow: true },
+	{ key: 'mesh/shadow/opaque', range: 'opaque', textured: false, shadow: true },
+	{ key: 'mesh/shadow/cutout', range: 'cutout', textured: true, shadow: true },
 ];
 
 interface PreparedDraw {
@@ -120,8 +132,8 @@ const uvFormatOf = (bucket: MeshBucket): UvFormat => {
 };
 
 /**
- * draw order within the opaque and the alpha-tested draws: shadow casters first, so shadow passes draw a
- * prefix; then face culling and UV format (one pipeline each), geometry, material and submesh
+ * draw order within the opaque, alpha-tested and alpha-blended draws: shadow casters first, so shadow passes
+ * draw a prefix; then face culling and UV format (one pipeline each), geometry, material and submesh
  */
 const byBindings = (a: MeshBucket, b: MeshBucket): number =>
 	Number(b.look.castsShadows) - Number(a.look.castsShadows) ||
@@ -161,11 +173,16 @@ export class MeshRenderer {
 	#versions: number[] = SLOTS.map(() => -1);
 	#opaqueOrder: MeshBucket[] = [];
 	#cutoutOrder: MeshBucket[] = [];
-	/** prepared draws, opaque ones first; entries past {@link #drawCount} are reused next frame */
+	#transparentOrder: MeshBucket[] = [];
+	/**
+	 * prepared draws, opaque, then alpha-tested, then alpha-blended; entries past {@link #drawCount} are reused
+	 * next frame
+	 */
 	#draws: PreparedDraw[] = [];
 	#drawCount = 0;
-	/** index of the first alpha-tested draw */
+	/** indices of the first alpha-tested and the first alpha-blended draw */
 	#cutoutStart = 0;
+	#transparentStart = 0;
 	/** ends of the shadow-casting opaque and alpha-tested draws */
 	#opaqueCastersEnd = 0;
 	#cutoutCastersEnd = 0;
@@ -273,6 +290,10 @@ export class MeshRenderer {
 		prepare(cutoutShade.key, {
 			fragment: shade,
 			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: 'equal' },
+		});
+		prepare(TRANSPARENT_PHASES[0].key, {
+			fragment: { module, entryPoint: 'fs_transparent', targets: TRANSPARENT_TARGETS },
+			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: DEPTH_COMPARE },
 		});
 		const [shadowOpaque, shadowCutout] = SHADOW_PHASES;
 		prepare(shadowOpaque.key, { depthStencil: SHADOW_DEPTH_STATE });
@@ -396,8 +417,10 @@ export class MeshRenderer {
 		this.clear();
 		const opaque = this.#opaqueOrder;
 		const cutout = this.#cutoutOrder;
+		const transparent = this.#transparentOrder;
 		opaque.length = 0;
 		cutout.length = 0;
+		transparent.length = 0;
 		for (const bucket of buckets) {
 			if (bucket.count === 0 || bucket.geometry.resident?.kind !== 'geometry') {
 				continue;
@@ -408,7 +431,9 @@ export class MeshRenderer {
 			if ((look.flags & LookFlags.Unlit) !== 0 && textures.binding(look.textures[0]) === null) {
 				continue;
 			}
-			if (look.cutout && textures.binding(alphaTextureOf(look)) !== null) {
+			if (look.transparent) {
+				transparent.push(bucket);
+			} else if (look.cutout && textures.binding(alphaTextureOf(look)) !== null) {
 				cutout.push(bucket);
 			} else {
 				opaque.push(bucket);
@@ -416,6 +441,19 @@ export class MeshRenderer {
 		}
 		opaque.sort(byBindings);
 		cutout.sort(byBindings);
+		transparent.sort(byBindings);
+		const cutoutFrom = opaque.length;
+		const transparentFrom = cutoutFrom + cutout.length;
+		const bucketCount = transparentFrom + transparent.length;
+		const bucketAt = (b: number): MeshBucket => {
+			if (b < cutoutFrom) {
+				return opaque[b];
+			}
+			if (b < transparentFrom) {
+				return cutout[b - cutoutFrom];
+			}
+			return transparent[b - transparentFrom];
+		};
 
 		const params = this.#paramData;
 		const words = this.#paramWords;
@@ -426,11 +464,16 @@ export class MeshRenderer {
 		let d = 0;
 		this.#opaqueCastersEnd = 0;
 		this.#cutoutCastersEnd = 0;
-		for (let b = 0; b < opaque.length + cutout.length; b++) {
-			if (b === opaque.length) {
+		this.#cutoutStart = 0;
+		this.#transparentStart = 0;
+		for (let b = 0; b < bucketCount; b++) {
+			if (b === cutoutFrom) {
 				this.#cutoutStart = d;
 			}
-			const bucket = b < opaque.length ? opaque[b] : cutout[b - opaque.length];
+			if (b === transparentFrom) {
+				this.#transparentStart = d;
+			}
+			const bucket = bucketAt(b);
 			const resident = bucket.geometry.resident;
 			const range = resident?.kind === 'geometry' ? resident.submeshes[bucket.submesh] : undefined;
 			if (resident?.kind !== 'geometry' || range === undefined || d >= MAX_DRAWS) {
@@ -488,9 +531,9 @@ export class MeshRenderer {
 			}
 			d++;
 			if (look.castsShadows) {
-				if (b < opaque.length) {
+				if (b < cutoutFrom) {
 					this.#opaqueCastersEnd = d;
-				} else {
+				} else if (b < transparentFrom) {
 					this.#cutoutCastersEnd = d;
 				}
 			}
@@ -502,8 +545,12 @@ export class MeshRenderer {
 			}
 		}
 		this.#drawCount = d;
-		if (cutout.length === 0) {
+		// ranges that start at or past the last bucket (empty ones, or draws past the cap) start at the end
+		if (cutoutFrom === bucketCount) {
 			this.#cutoutStart = d;
+		}
+		if (transparentFrom === bucketCount) {
+			this.#transparentStart = d;
 		}
 		this.#cutoutCastersEnd = Math.max(this.#cutoutCastersEnd, this.#cutoutStart);
 		if (d > 0) {
@@ -519,6 +566,14 @@ export class MeshRenderer {
 	 */
 	encode(pass: GPURenderPassEncoder): number {
 		return this.#encode(pass, MAIN_PHASES);
+	}
+
+	/**
+	 * @param pass the transparent pass, with group 0 bound
+	 * @returns draw calls issued
+	 */
+	encodeTransparent(pass: GPURenderPassEncoder): number {
+		return this.#encode(pass, TRANSPARENT_PHASES);
 	}
 
 	/**
@@ -551,10 +606,24 @@ export class MeshRenderer {
 		pass.setBindGroup(2, this.#drawGroup);
 		let draws = 0;
 		for (const phase of phases) {
-			const from = phase.cutout ? this.#cutoutStart : 0;
-			let to = phase.cutout ? this.#drawCount : this.#cutoutStart;
-			if (phase.shadow) {
-				to = phase.cutout ? this.#cutoutCastersEnd : this.#opaqueCastersEnd;
+			let from: number;
+			let to: number;
+			switch (phase.range) {
+				case 'opaque': {
+					from = 0;
+					to = phase.shadow ? this.#opaqueCastersEnd : this.#cutoutStart;
+					break;
+				}
+				case 'cutout': {
+					from = this.#cutoutStart;
+					to = phase.shadow ? this.#cutoutCastersEnd : this.#transparentStart;
+					break;
+				}
+				case 'transparent': {
+					from = this.#transparentStart;
+					to = this.#drawCount;
+					break;
+				}
 			}
 			if (from === to) {
 				continue;

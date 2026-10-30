@@ -1,5 +1,5 @@
 // composites the main pass into the HDR scene: screen-space reflections, ambient occlusion on the ambient part, the sky where nothing
-// was drawn, the atmosphere fog and the two-layer height fog. needs post-common.wgsl, atmosphere.wgsl and
+// was drawn, the transparent layers, the atmosphere fog and the two-layer height fog. needs post-common.wgsl, atmosphere.wgsl and
 // sky.wgsl.
 
 @group(2) @binding(0) var radiance_texture: texture_2d<f32>;
@@ -10,6 +10,9 @@
 @group(2) @binding(5) var cloud_sampler: sampler;
 // what the screen-space reflections change in the radiance (ssr.wgsl)
 @group(2) @binding(6) var ssr_texture: texture_2d<f32>;
+// the transparent pass's weighted sum and revealage (`TRANSPARENT_TARGETS` in render-targets.ts)
+@group(2) @binding(7) var transparent_texture: texture_2d<f32>;
+@group(2) @binding(8) var revealage_texture: texture_2d<f32>;
 
 // Jimenez et al.'s multi-bounce fit: occluded light that bounces off a bright surface comes back, so bright
 // surfaces darken less than `ao`. per channel in the game; here from the albedo's luminance
@@ -20,6 +23,16 @@ fn multi_bounce(ao: f32, albedo: f32) -> f32 {
 	return max(ao, ((a * ao + b) * ao + c) * ao);
 }
 
+// the transparent layers over `color`: their weighted mean colour covers 1 − revealage of it
+fn over_transparent(color: vec3f, px: vec2i) -> vec3f {
+	let revealage = textureLoad(revealage_texture, px, 0).r;
+	if (revealage >= 1.0) {
+		return color;
+	}
+	let sum = textureLoad(transparent_texture, px, 0);
+	return mix(sum.rgb / max(sum.a, 1e-5), color, revealage);
+}
+
 @fragment
 fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 	let px = vec2i(in.position.xy);
@@ -27,12 +40,13 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 	let ray = view_ray(in.uv);
 	let direction = normalize(ray);
 	if (depth <= 0.0) {
+		// transparent layers in front of the sky aren't fogged: their distance isn't kept
 		let painted = textureSampleLevel(cloud_texture, cloud_sampler, cloud_uv(direction), 0.0);
 		if (post.cloud.w > 0.5 && post.cloud_shape.w > 0.5) {
-			return vec4f(painted.rgb, 1.0);
+			return vec4f(over_transparent(painted.rgb, px), 1.0);
 		}
 		let froxels = froxels_at(in.uv, post.sky_fog.x * dot(direction, post.forward.xyz));
-		return vec4f(fogged_sky(direction, painted, froxels), 1.0);
+		return vec4f(over_transparent(fogged_sky(direction, painted, froxels), px), 1.0);
 	}
 	let radiance = textureLoad(radiance_texture, px, 0);
 	var color = max(radiance.rgb + textureLoad(ssr_texture, px, 0).rgb, vec3f(0.0));
@@ -42,6 +56,9 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 		let ao = min(textureLoad(ao_texture, px, 0).r, ambient.a);
 		color = max(color + ambient.rgb * (multi_bounce(ao, radiance.a) - ambient.a), vec3f(0.0));
 	}
+	// transparent layers are fogged as if they lay at the opaque surface behind them, which is near for most
+	// glass
+	color = over_transparent(color, px);
 	let eye_depth = view_depth(depth);
 	let distance = length(ray * eye_depth);
 	return vec4f(atmosphere_over(color, direction, distance, froxels_at(in.uv, eye_depth)), 1.0);

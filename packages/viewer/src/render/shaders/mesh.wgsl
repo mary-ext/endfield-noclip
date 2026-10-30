@@ -1,6 +1,6 @@
 // instanced meshes with the HGRP surface essentials: base colour, tangent-space normal map, roughness from
 // the normal map's B channel or an MRO map, emission, and Lit's tri-channel mask, detail map and parallax
-// glow, plus the erosion shader. quantized positions, octahedral normals and tangents and UV sets 0 and 1 from the geometry blob;
+// glow, plus the erosion shader, opaque, alpha-tested or alpha-blended. quantized positions, octahedral normals and tangents and UV sets 0 and 1 from the geometry blob;
 // instances from this frame's visible list; draw parameters by the list entry's draw id (see materials.ts for
 // their layout).
 
@@ -210,6 +210,44 @@ fn normal_z(xy: vec2f) -> f32 {
 
 @fragment
 fn fs_opaque(in: VertexOut) -> Shaded {
+	return shade(in);
+}
+
+// the transparent pass's outputs (`TRANSPARENT_TARGETS` in render-targets.ts)
+struct Accumulated {
+	// the premultiplied radiance times the layer's weight; a: alpha times the weight
+	@location(0) sum: vec4f,
+	// alpha, which the blend turns into the product of 1 − alpha
+	@location(1) revealage: vec4f,
+}
+
+// alpha-blended materials (`transparent` in materials.ts), shaded like opaque ones. the opacity is the alpha
+// the alpha test would read, times `_BaseColor.a`. the weight favours nearer layers a little, so the front
+// pane of overlapping glass shows more; it stays at most 1 so the half-float sum can't overflow
+@fragment
+fn fs_transparent(in: VertexOut) -> Accumulated {
+	let draw = draws[in.draw];
+	let flags = bitcast<u32>(draw.offset.w);
+	let bias = frame.params.y;
+	let base = textureSampleBias(base_map, base_sampler, slot_uv(in.draw, in.uv, flags, BASE_SLOT), bias);
+	let packed = textureSampleBias(normal_map, detail_sampler, slot_uv(in.draw, in.uv, flags, NORMAL_SLOT), bias);
+	let shaded = shade(in);
+	// a map still streaming leaves the tint's alpha alone
+	var alpha = select(base.a, packed.a, (flags & ALPHA_NORMAL) != 0u);
+	let alpha_map = select(BASE_MAP, NORMAL_MAP, (flags & ALPHA_NORMAL) != 0u);
+	if ((flags & alpha_map) == 0u) {
+		alpha = 1.0;
+	}
+	alpha = saturate(alpha * draw.emissive2.w);
+	let distance = length(in.rel) / 20.0;
+	let weight = alpha * max(0.01, 1.0 / (1.0 + distance * distance));
+	var out: Accumulated;
+	out.sum = vec4f(shaded.radiance.rgb * weight, weight);
+	out.revealage = vec4f(alpha);
+	return out;
+}
+
+fn shade(in: VertexOut) -> Shaded {
 	let draw = draws[in.draw];
 	let flags = bitcast<u32>(draw.offset.w);
 	// derivatives (and implicit-LOD sampling) must happen in uniform control flow

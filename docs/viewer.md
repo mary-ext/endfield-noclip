@@ -224,6 +224,7 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 | 2   | `shadow layer 0–3`                             | `shadows` on, a package loaded, `debugView` is `lit`                                                                                                             |
 | 2b  | `volumetric fog` (compute)                     | `heightFog` on, a package loaded, `lit`, and the environment's volumetric fog on ([`render/volumetric-fog.ts`](../packages/viewer/src/render/volumetric-fog.ts)) |
 | 3   | `main`                                         | always (empty without a package)                                                                                                                                 |
+| 3b  | `transparent`                                  | always, so the composite reads cleared targets ([glass](game-data/lighting.md#glass))                                                                            |
 | 4   | `transmittance lut`, `multiple scattering lut` | once per environment                                                                                                                                             |
 | 5   | `sky view lut`, `sky mean`                     | `sky` on                                                                                                                                                         |
 | 6   | `ao depth`, `gtao`, `gtao blur`                | `ao` on and the environment has AO settings                                                                                                                      |
@@ -250,7 +251,9 @@ details:
   glossy surfaces hand the screen-space reflections: the sky reflection the radiance holds with the
   weight of a screen-space hit (`rgba16float`) and the normal and roughness (`rgba8unorm`), with
   depth stored for post. draw order: terrain, meshes (opaque, then alpha-tested), instance boxes,
-  box outlines (boxes larger than `outlineMetres`), terrain wireframe.
+  box outlines (boxes larger than `outlineMetres`), terrain wireframe. alpha-blended meshes draw
+  afterwards in the `transparent` pass, which tests the main pass's depth without writing it; the
+  composite resolves them ([glass](game-data/lighting.md#glass)).
 - **antialiasing** is temporal with upsampling, as in the game, which has no MSAA. the main pass's
   projection is offset by a Halton (2, 3) subpixel jitter each frame (8 positions per cycle, more
   when upsampling), and the post passes that reconstruct view rays undo it. `taa` reconstructs each

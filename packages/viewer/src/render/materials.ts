@@ -123,6 +123,11 @@ export interface MaterialLook {
 	 * ({@link alphaTextureOf}); such draws need pipelines that can discard
 	 */
 	cutout: boolean;
+	/**
+	 * alpha-blended: drawn in the transparent pass with the opacity `fs_transparent` in mesh.wgsl computes, and
+	 * never alpha-tested or shadow-casting
+	 */
+	transparent: boolean;
 	/** the faces the game culls, for unmirrored instances */
 	cull: MaterialCull;
 	/** whether the material draws into shadow maps */
@@ -151,7 +156,8 @@ export const LookRow = {
 	emissive: 40,
 	/**
 	 * `_AlbedoAffectEmissive` (1: emission ignores the albedo), `_EmissiveMaskChannel`, `_IgnorePostExposure`
-	 * (1: emission keeps its brightness whatever the exposure)
+	 * (1: emission keeps its brightness whatever the exposure), the opacity of transparent looks before their
+	 * texture's alpha (`_BaseColor.a`)
 	 */
 	emissive2: 44,
 	/** three rows, the tri-channel mask's R, G and B: linear colour, strength */
@@ -198,6 +204,7 @@ const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => {
 	return {
 		drawn,
 		cutout: false,
+		transparent: false,
 		cull: 'none',
 		castsShadows: true,
 		textures: SLOTS.map(() => -1),
@@ -320,11 +327,24 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		params.set([...color, entry.alphaClipThreshold ?? -1], LookRow.tint);
 		// `_AlphaMaskChannel` picks the alpha the Lit family tests: 0 the base colour's, 1 the normal map's. in
 		// the `_BaseTextureMapCount` 1 layout the base colour's alpha is metallic, so testing it would cut holes in solid walls
-		if (family === 'lit' && floatOf(entry, shader, '_AlphaMaskChannel', 0) === 1) {
+		if (
+			(family === 'lit' || family === 'litTransparent') &&
+			floatOf(entry, shader, '_AlphaMaskChannel', 0) === 1
+		) {
 			look.flags |= LookFlags.AlphaNormal;
 		}
+		// alpha-blended (`HGRP/LitTransparent` glass): the opacity is the alpha the alpha test would read, times
+		// `_BaseColor.a`. glass casting a solid shadow would darken what lies behind it, so it casts none
+		if (entry.blend === 'alphaBlend') {
+			look.transparent = true;
+			look.castsShadows = false;
+			params[LookRow.emissive2 + 3] = tint?.[3] ?? 1;
+		}
 		look.cutout =
-			entry.alphaClipThreshold !== null && entry.alphaClipThreshold >= 0 && alphaTextureOf(look) >= 0;
+			!look.transparent &&
+			entry.alphaClipThreshold !== null &&
+			entry.alphaClipThreshold >= 0 &&
+			alphaTextureOf(look) >= 0;
 		params[LookRow.surface2 + 3] = brighter;
 		// untextured: the tint alone
 		params[LookRow.emissive + 3] = look.textures[0] < 0 ? 1 : cover;

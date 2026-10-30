@@ -226,6 +226,26 @@ alpha-tested HGRP Lit materials (`_ALPHATEST_ON`) test the alpha `_AlphaMaskChan
 channel 1, all in the two-basemap layout, where the base alpha is metallic; testing that instead
 cuts the Hub's white container walls down to their grime streaks.
 
+## glass
+
+`HGRP/LitTransparent` is the glass shader (16 materials on map01: windows and glass walls such as
+the Originium Science Park offices). its materials alpha-blend (`_EnableAlphaBlend`, source alpha
+over one minus source alpha, queue 3000, no depth write) and use Lit's texture layouts. the viewer
+shades them like Lit and takes the opacity from the alpha `_AlphaMaskChannel` picks, times
+`_BaseColor.a`; with the map still streaming, the tint's alpha alone. they cast no shadows.
+
+the transparent pass draws them after the main pass, tested against its depth, with weighted blended
+order-independent transparency (McGuire and Bavoil 2013): one target sums each layer's premultiplied
+radiance and alpha, both times a weight that falls off gently with distance so nearer panes show
+more, and another multiplies `1 − alpha` into the revealage. the composite lays the layers' mean
+colour over the opaque scene by `1 − revealage` before the atmosphere and height fog, which treat
+the glass as if it lay at the opaque surface behind it, and doesn't fog glass in front of the sky. a
+single layer resolves exactly; overlapping panes blend without sorting.
+
+not drawn: refraction (`_GLASS_REFRACTION_SCENECOLOR`, `_RefractTex`, `_IoR`, …), Fresnel opacity
+(`_UseFresnel`; off on every map01 material) and subsurface scattering. water draws after the
+composite, so glass in front of water is lost.
+
 ## matte paintings
 
 `HGRP/MattePainting` draws the painted mountain ranges on the horizon: a few alpha-tested ring

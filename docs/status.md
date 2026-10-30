@@ -61,6 +61,9 @@ packs or renders correctly.
   ignore the parallax layers' height, and have no ripples
 - screen-space reflections are the viewer's own (unprofiled, single ray, no blur for rough
   surfaces); off-screen reflections fall back to the sky cubemap
+- glass ([glass](game-data/lighting.md#glass)): refraction and Fresnel opacity aren't drawn, glass
+  in front of water is lost, glass against the sky isn't fogged, and nothing checks whether the game
+  lets glass cast shadows
 - foliage wind and transmission, grass instancing, decals, layered materials
 - Lit layers ([lit layers](game-data/lighting.md#lit-layers)): tri-channel switch textures, the
   parallax glow's global highlight and its world-space, PBR and deform variants
