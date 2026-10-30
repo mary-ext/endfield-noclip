@@ -104,13 +104,6 @@ fn fog_over(direction: vec3f, distance: f32, froxels: Froxels) -> Fog {
 	return Fog(fog.transmittance * light.a, fog.inscatter * light.a + light.rgb);
 }
 
-// the cloud panorama's uv along a direction: equirectangular over the whole sphere, v = 0 at the nadir (the
-// texture keeps Unity's bottom-up rows)
-fn cloud_uv(direction: vec3f) -> vec2f {
-	let azimuth = atan2(direction.x, direction.z) + post.cloud.x;
-	return vec2f(fract(azimuth / (2.0 * PI) + 0.5), 0.5 + asin(clamp(direction.y, -1.0, 1.0)) / PI);
-}
-
 // 1×1: the sky-view LUT's mean from fs_sky_mean, rendered once per frame after the LUT
 @group(1) @binding(4) var sky_mean_texture: texture_2d<f32>;
 
@@ -136,30 +129,14 @@ fn sky_scale() -> f32 {
 	return luminance(post.sky_up.rgb) / max(luminance(mean), 1e-6);
 }
 
-// the sky along a direction, given the cloud panorama's texel there (ignored without a cloud layer): the
-// atmosphere's sky with the cloud layer blended over it above the horizon, as HGRP/ProceduralSky does
-fn sky_radiance(direction: vec3f, painted: vec4f) -> vec3f {
+// the atmosphere's sky along a direction; the cloud panorama and what lies beyond the atmosphere go over it in
+// celestial.wgsl
+fn sky_radiance(direction: vec3f) -> vec3f {
 	if (post.flags.x == 0u) {
 		return vec3f(0.0);
 	}
-	if (post.cloud.w > 0.5 && post.cloud_shape.w > 0.5) {
-		return painted.rgb;
-	}
 	// the game fades its sky-view LUT out just below the horizon
-	var sky = sky_view(direction) * sky_scale() * clamp(1.0 + direction.y * 10.0, 0.0, 1.0);
-	if (post.cloud.w > 0.5 && direction.y >= 0.0) {
-		let contrasted = (painted.rgb - 0.5) * post.cloud.y + 0.5;
-		var cloud = vec4f(contrasted, painted.a) * vec4f(post.cloud_shape.xy, 1.0, 1.0);
-		cloud = mix(cloud, vec4f(max(cloud.r, cloud.g)), post.cloud.z) * post.cloud_tint;
-		sky = mix(sky, cloud.rgb, clamp(cloud.a, 0.0, 1.0));
-	}
-	return sky;
-}
-
-// the sky along a direction, fogged at the sky dome's distance
-fn fogged_sky(direction: vec3f, painted: vec4f, froxels: Froxels) -> vec3f {
-	let fog = fog_over(direction, post.sky_fog.x, froxels);
-	return sky_radiance(direction, painted) * fog.transmittance + fog.inscatter;
+	return sky_view(direction) * sky_scale() * clamp(1.0 + direction.y * 10.0, 0.0, 1.0);
 }
 
 // the fog over something `distance` metres away

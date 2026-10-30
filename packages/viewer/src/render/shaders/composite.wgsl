@@ -6,14 +6,12 @@
 @group(2) @binding(1) var ambient_texture: texture_2d<f32>;
 @group(2) @binding(2) var ao_texture: texture_2d<f32>;
 @group(2) @binding(3) var depth_texture: texture_depth_2d;
-@group(2) @binding(4) var cloud_texture: texture_2d<f32>;
-@group(2) @binding(5) var cloud_sampler: sampler;
 // what the screen-space reflections change in the radiance (ssr.wgsl)
 @group(2) @binding(6) var ssr_texture: texture_2d<f32>;
 // the transparent pass's weighted sum and revealage (`TRANSPARENT_TARGETS` in render-targets.ts)
 @group(2) @binding(7) var transparent_texture: texture_2d<f32>;
 @group(2) @binding(8) var revealage_texture: texture_2d<f32>;
-// the nebula and planets over the sky: s · (1 − a) + rgb (celestial.wgsl)
+// the sky planets, cloud panorama, nebula and stars over the sky: s · (1 − a) + rgb (celestial.wgsl)
 @group(2) @binding(9) var celestial_texture: texture_2d<f32>;
 
 // Jimenez et al.'s multi-bounce fit: occluded light that bounces off a bright surface comes back, so bright
@@ -43,13 +41,13 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 	let direction = normalize(ray);
 	if (depth <= 0.0) {
 		// transparent layers in front of the sky aren't fogged: their distance isn't kept
-		let painted = textureSampleLevel(cloud_texture, cloud_sampler, cloud_uv(direction), 0.0);
+		let layers = textureLoad(celestial_texture, px, 0);
+		// the `clouds` debug view: the raw panorama, unfogged
 		if (post.cloud.w > 0.5 && post.cloud_shape.w > 0.5) {
-			return vec4f(over_transparent(painted.rgb, px), 1.0);
+			return vec4f(over_transparent(layers.rgb, px), 1.0);
 		}
 		let froxels = froxels_at(in.uv, post.sky_fog.x * dot(direction, post.forward.xyz));
-		let layers = textureLoad(celestial_texture, px, 0);
-		let sky = sky_radiance(direction, painted) * (1.0 - layers.a) + layers.rgb;
+		let sky = sky_radiance(direction) * (1.0 - layers.a) + layers.rgb;
 		let fog = fog_over(direction, post.sky_fog.x, froxels);
 		return vec4f(over_transparent(sky * fog.transmittance + fog.inscatter, px), 1.0);
 	}

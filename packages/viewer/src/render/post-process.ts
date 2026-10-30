@@ -216,7 +216,7 @@ export class PostProcess {
 	#lutPasses: Record<'transmittance' | 'multiScattering' | 'skyView' | 'skyMean', Pass>;
 	#sized: Sized | null = null;
 	#environment: Environment;
-	/** the cloud panorama bound in the composite pass */
+	/** the cloud panorama bound in the celestial pass */
 	#cloud: TextureBinding;
 	#noCloud: TextureBinding;
 	#lutsReady = false;
@@ -437,10 +437,19 @@ export class PostProcess {
 		);
 	}
 
-	/**
-	 * the composite pass's group 2: the main and transparent passes' outputs, the blurred AO, the cloud
-	 * panorama and reflections
-	 */
+	/** the celestial pass's group 2: the main pass's depth and the cloud panorama */
+	#celestialGroup(scene: SceneTextures): GPUBindGroup {
+		return this.#device.createBindGroup({
+			layout: this.#pipelines.celestial.getBindGroupLayout(2),
+			entries: [
+				{ binding: 0, resource: scene.depth },
+				{ binding: 1, resource: this.#cloud.view },
+				{ binding: 2, resource: this.#cloud.sampler },
+			],
+		});
+	}
+
+	/** the composite pass's group 2: the main and transparent passes' outputs, the blurred AO and reflections */
 	#sceneGroup(scene: SceneTextures, aoBlurred: GPUTexture, celestial: GPUTexture): GPUBindGroup {
 		return this.#device.createBindGroup({
 			layout: this.#pipelines.composite.getBindGroupLayout(2),
@@ -449,8 +458,6 @@ export class PostProcess {
 				{ binding: 1, resource: scene.ambient },
 				{ binding: 2, resource: aoBlurred.createView() },
 				{ binding: 3, resource: scene.depth },
-				{ binding: 4, resource: this.#cloud.view },
-				{ binding: 5, resource: this.#cloud.sampler },
 				{ binding: 6, resource: this.reflections.output.createView() },
 				{ binding: 7, resource: scene.transparent },
 				{ binding: 8, resource: scene.revealage },
@@ -472,11 +479,7 @@ export class PostProcess {
 		this.#cloud = next;
 		const sized = this.#sized;
 		if (sized !== null) {
-			sized.passes.composite.groups[2] = this.#sceneGroup(
-				sized.sceneTextures,
-				sized.aoBlurred,
-				sized.celestial,
-			);
+			sized.passes.celestial.groups[2] = this.#celestialGroup(sized.sceneTextures);
 		}
 	}
 
@@ -705,10 +708,7 @@ export class PostProcess {
 					groups: [
 						this.#uniformsGroup(p.celestial),
 						this.celestial.group(p.celestial.getBindGroupLayout(1)),
-						device.createBindGroup({
-							layout: p.celestial.getBindGroupLayout(2),
-							entries: [{ binding: 0, resource: scene.depth }],
-						}),
+						this.#celestialGroup(scene),
 					],
 					target: celestialTexture.createView(),
 				},
@@ -785,7 +785,7 @@ export class PostProcess {
 		const cloud = environment.cloud;
 		set(31, [cloud?.rotation ?? 0, cloud?.contrast ?? 1, cloud?.singleChannel ? 1 : 0, 0]);
 		set(32, cloud?.tint ?? [1, 1, 1, 1]);
-		set(33, [cloud?.opacity[0] ?? 1, cloud?.opacity[1] ?? 1, 0, 0]);
+		set(33, [cloud?.opacity[0] ?? 1, cloud?.opacity[1] ?? 1, cloud?.afterPlanets ? 1 : 0, 0]);
 		const g = environment.grading;
 		set(41, [...g.colorBalance, g.postExposure]);
 		set(42, [...g.colorFilter, 0]);

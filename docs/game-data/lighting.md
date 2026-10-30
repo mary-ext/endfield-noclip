@@ -409,8 +409,10 @@ brightness comes from CPU factors that aren't recovered, so `sky_scale` in
 upper-hemisphere luminance to the ambient probe's luminance looking up. the sky fades out just below
 the horizon.
 
-the cloud panorama (`cloud.cloudTexture`, equirectangular, Unity's bottom-up rows) is blended over
-the sky by its alpha above the horizon. it's tinted by
+the cloud panorama (`cloud.cloudTexture`) is blended over the sky by its alpha above the horizon. it
+covers only the upper hemisphere: u is the azimuth (`atan2(x, z)`) turned back by `rotation`
+degrees, and v runs from the horizon (0, Unity's bottom row) to the zenith (1), so the texture's
+height spans 90° of elevation. it's tinted by
 `cloudTint × cloudFadeAlpha × cloudAbsoluteBrightness`; the brightness reaches alpha only with
 `brightnessAffectCloudAlpha`. `cloudBrightness` matters only with `lightAffectCloud`, which no
 shipped base profile sets, so the viewer ignores both. texture mode 0 takes
@@ -454,6 +456,12 @@ over the atmosphere's sky before fogging it: `sky · (1 − cover) + layers`. in
   (`_RingTex`, inner to outer radius over v) shadowed by the planet, and a single-scattering rim
   placed 2000 units out. they're added on top, faded below the horizon when `drawPlanetBelowHorizon`
   is set.
+
+the cloud panorama is drawn in the same pass, because the game layers it between these: the sky
+planets go onto the sky first, then the clouds cover them (with `drawCloudAfterPlanet`, as Wuling
+City's phases set; without it the discs show in front and only their glow off the disc is covered),
+then the nebula and stars are added, the stars thinned behind the clouds by `cloudRingStarCoverage`,
+and the ray-traced planet goes over everything.
 
 ## fog
 
@@ -690,12 +698,11 @@ are sampled toroidally in `ambient_irradiance`.
   that aren't recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient
   probe without the native diffuse-ambient scale.
 - not rendered: light shafts, lens flare, the moon's sky-wide ring (`HG_RING`), the sun disc,
-  aurora, local reflection probes, local light shadows and light beams,
-  precipitation and rain wetness (terrain puddles do render).
-- celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' order against
-  the cloud panorama (`drawCloudAfterPlanet`), their ring thinning the stars, and the brightness of
-  the ray-traced planet's light (taken as the viewer's pre-exposed sun) are unchecked against a
-  shot.
+  aurora, local reflection probes, local light shadows and light beams, precipitation and rain
+  wetness (terrain puddles do render).
+- celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' ring thinning
+  the stars, their blend modes (the viewer always adds them), and the brightness of the ray-traced
+  planet's light (taken as the viewer's pre-exposed sun) are unchecked against a shot.
 - the sun's units: the game shades its sun with the same lobe as local lights (no 1/π on diffuse),
   while the viewer treats the sun's colour as illuminance and divides diffuse by π. unless the CPU
   folds a 1/π into the sun's colour, the viewer's sun is π too dark. unchecked against a shot.

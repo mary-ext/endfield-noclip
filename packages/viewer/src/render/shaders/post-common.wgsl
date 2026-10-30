@@ -66,7 +66,7 @@ struct Post {
 	cloud: vec4f,
 	// multiplies the cloud texel (the game's _CloudTint)
 	cloud_tint: vec4f,
-	// opacity of the R and G layers, unused, w = 1 to show the raw texture
+	// opacity of the R and G layers, z = 1 when the clouds cover the sky planets, w = 1 to show the raw texture
 	cloud_shape: vec4f,
 	// towards the light the fog's directional inscattering comes from, w = its start distance (m)
 	fog_directional_direction: vec4f,

@@ -137,6 +137,34 @@ fn nebula_texel(direction: vec3f) -> vec3f {
 
 // #endregion
 
+// #region cloud panorama
+
+// the panorama (`cloud.cloudTexture`), with its own sampler
+@group(2) @binding(1) var cloud_texture: texture_2d<f32>;
+@group(2) @binding(2) var cloud_sampler: sampler;
+
+// the panorama's raw texel along a direction: equirectangular over the upper hemisphere, v = 0 at the horizon and
+// 1 at the zenith (the texture keeps Unity's bottom-up rows), turned back by the rotation
+fn cloud_texel(direction: vec3f) -> vec4f {
+	let azimuth = atan2(direction.x, direction.z) - post.cloud.x;
+	let uv = vec2f(fract(azimuth / (2.0 * PI) + 0.5), 2.0 * asin(clamp(direction.y, -1.0, 1.0)) / PI);
+	return textureSampleLevel(cloud_texture, cloud_sampler, uv, celestial_lod(cloud_texture, pixel_angle()));
+}
+
+// the cloud layer along a direction: tinted colour and its cover (0–1), none below the horizon or without a layer
+fn cloud_layer(direction: vec3f) -> vec4f {
+	if (post.cloud.w < 0.5 || direction.y < 0.0) {
+		return vec4f(0.0);
+	}
+	let texel = cloud_texel(direction);
+	let contrasted = (texel.rgb - 0.5) * post.cloud.y + 0.5;
+	var cloud = vec4f(contrasted, texel.a) * vec4f(post.cloud_shape.xy, 1.0, 1.0);
+	cloud = mix(cloud, vec4f(max(cloud.r, cloud.g)), post.cloud.z) * post.cloud_tint;
+	return vec4f(cloud.rgb, clamp(cloud.a, 0.0, 1.0));
+}
+
+// #endregion
+
 // #region stars
 
 // Dave Hoskins' hash13
@@ -482,8 +510,9 @@ fn ray_planet(direction: vec3f) -> RayPlanetHit {
 // the main pass's depth: the layers are drawn only where it's clear (sky)
 @group(2) @binding(0) var celestial_depth: texture_depth_2d;
 
-// the layers along `direction` in the game's order: the nebula, then the ray-traced planet over it, then the sky
-// planets added on top. over a sky radiance `s` they give `s · (1 − a) + rgb`
+// the layers along `direction` in the game's order: the sky planets added to the sky, the cloud panorama over
+// them (or behind them, without `drawCloudAfterPlanet`), the nebula and stars added, then the ray-traced planet
+// over everything. over a sky radiance `s` they give `s · (1 − a) + rgb`
 fn celestial_layers(direction: vec3f) -> vec4f {
 	var mask = 0.0;
 	var planets = vec3f(0.0);
@@ -500,27 +529,42 @@ fn celestial_layers(direction: vec3f) -> vec4f {
 		mask = max(mask, planet.a);
 	}
 	let unmasked = clamp(1.0 - mask, 0.0, 1.0);
+	// the clouds cover the sky and planets by `over`; drawn behind the planets (`behind` = 1), they leave the discs
+	// alone and the planets' glow off the discs is added back over them
+	let cloud = cloud_layer(direction);
+	let behind = 1.0 - post.cloud_shape.z;
+	let over = cloud.a * (1.0 - mask * behind);
+	var color = planets * (1.0 - over) + cloud.rgb * over + planets * (cloud.a * behind * unmasked);
 	let texel = nebula_texel(direction);
-	var color = texel * celestial.nebula.rgb * mix(1.0, unmasked, celestial.nebula_mask.x);
-	// stars fade where the nebula is bright (the game also thins them behind a sky planet's ring; not done here)
+	color += texel * celestial.nebula.rgb * mix(1.0, unmasked, celestial.nebula_mask.x);
+	// stars fade where the nebula is bright and behind the clouds (the game also thins them behind a sky planet's
+	// ring; not done here)
 	if (celestial.star_flags.x != 0u) {
-		color += stars(direction) * unmasked * clamp(1.0 - length(texel) * celestial.stars[4].w, 0.0, 1.0);
+		color += stars(direction) * unmasked * clamp(1.0 - length(texel) * celestial.stars[4].w, 0.0, 1.0) *
+			mix(1.0, 1.0 - cloud.a, celestial.stars[3].z);
 	}
-	var cover = 0.0;
+	var sky = 1.0 - over;
 	if (celestial.flags.y != 0u) {
 		let ray = ray_planet(direction);
 		color = color * (1.0 - ray.cover) + ray.radiance;
-		cover = ray.cover;
+		sky *= 1.0 - ray.cover;
 	}
-	return vec4f(color + planets, cover);
+	return vec4f(color, 1.0 - sky);
 }
 
-// the layers at each sky pixel, for the composite to put over the atmosphere's sky
+// the layers at each sky pixel, for the composite to put over the atmosphere's sky; the raw cloud texel with the
+// `clouds` debug view
 @fragment
 fn fs_celestial(in: FullscreenOut) -> @location(0) vec4f {
-	if (post.flags.x == 0u || all(celestial.flags == vec4u(0u)) ||
-		textureLoad(celestial_depth, vec2i(in.position.xy), 0) > 0.0) {
+	if (textureLoad(celestial_depth, vec2i(in.position.xy), 0) > 0.0) {
 		return vec4f(0.0);
 	}
-	return celestial_layers(normalize(view_ray(in.uv)));
+	let direction = normalize(view_ray(in.uv));
+	if (post.cloud.w > 0.5 && post.cloud_shape.w > 0.5) {
+		return vec4f(cloud_texel(direction).rgb, 1.0);
+	}
+	if (post.flags.x == 0u || (all(celestial.flags == vec4u(0u)) && post.cloud.w < 0.5)) {
+		return vec4f(0.0);
+	}
+	return celestial_layers(direction);
 }

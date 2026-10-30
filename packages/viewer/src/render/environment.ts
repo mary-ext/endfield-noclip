@@ -160,6 +160,7 @@ export type CloudInput = Pick<
 	| 'cloudContrast'
 	| 'cloudAbsoluteBrightness'
 	| 'brightnessAffectCloudAlpha'
+	| 'drawCloudAfterPlanet'
 	| 'cloudTextureMode'
 	| 'cloudOpacityR'
 	| 'cloudOpacityG'
@@ -383,6 +384,8 @@ export interface Environment {
 		singleChannel: boolean;
 		/** radians */
 		rotation: number;
+		/** the clouds cover the sky planets; otherwise the planets show in front of them */
+		afterPlanets: boolean;
 	} | null;
 	/**
 	 * a tiling texture projected along the sun onto the ground, darkening the sun's light where its red channel
@@ -729,6 +732,7 @@ const cloudLook = (cloud: CloudInput | null): Environment['cloud'] => {
 		opacity: singleChannel ? [cloud.cloudOpacityR, cloud.cloudOpacityG] : [1, 1],
 		singleChannel,
 		rotation: (cloud.rotation * Math.PI) / 180,
+		afterPlanets: cloud.drawCloudAfterPlanet,
 	};
 };
 
