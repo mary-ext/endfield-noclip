@@ -125,9 +125,9 @@ the phases run in this order and are timed individually in the report:
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | setup                  | prepare the output directory, index the scene: level partition, terrain surface and tile grid, the subset, scene states, chunk files                                                                                           |
 | entities               | read the scene's static chunk files with read-ahead, then dynamic structures, interactive facilities and the prefabs they place; intern draw chains and sort instances into detail, HLOD and resident groups by level and tile |
-| terrain                | encode and store terrain height pages                                                                                                                                                                                          |
+| terrain                | encode and store terrain height, surface and splat pages and layer textures (or recall them from the cache)                                                                                                                    |
 | environments and water | plan per-level environment profiles and volumes and the water surfaces and sectors, concurrently; then gate entities, volumes and water by scene state                                                                         |
-| irradiance             | store the base-bake irradiance volume cells                                                                                                                                                                                    |
+| irradiance             | store the base-bake irradiance volume cells (or recall them from the cache)                                                                                                                                                    |
 | instances              | encode and store instance blocks, attaching detail and HLOD blocks to the tile tree                                                                                                                                            |
 | assets                 | convert materials, then meshes, then textures (below)                                                                                                                                                                          |
 | states                 | build the manifest's levels and scene controls                                                                                                                                                                                 |
@@ -169,6 +169,13 @@ it), implemented in `pack/pack-cache.ts`:
   install update or a change to converter code reconverts exactly what it affects, without reading
   bundle bytes to find out. code outside the worker's import graph doesn't invalidate conversions,
   which is why anything that changes conversion output belongs in that graph.
+- `memo/` also holds whole steps whose output depends only on VFS files: terrain
+  ([pack/terrain.ts](../packages/extractor/src/pack/terrain.ts)) and irradiance
+  ([pack/irradiance.ts](../packages/extractor/src/pack/irradiance.ts)). a step's key covers its own
+  module's import graph, its options, the subset it keeps and the catalog data MD5 of every file it
+  reads; the memo lists its blobs in commit order plus what else the step returns, so a hit commits
+  the cached blobs without reading the terrain or the irradiance payloads (map02: 12 s → 0.3 s and 7
+  s → 0.1 s).
 - `roots/` has one file per package directory listing its blobs and memos. after each pack, roots
   whose directory no longer holds a `core.czar` are dropped and anything no root references is
   deleted, so the cache holds the union of the live packages' content. deleting a package directory

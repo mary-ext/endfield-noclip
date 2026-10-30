@@ -8,20 +8,11 @@ import { DrawFlags, type RendererDraw } from '@endfield-noclip/formats/endfield/
 import type { LevelPartition, PartitionLevel } from '@endfield-noclip/formats/endfield/level-partition';
 import { CELL_SIZE } from '@endfield-noclip/formats/endfield/map-config';
 import {
-	checkTerrainLayerTexture,
-	readTerrainBc3Page,
-	readTerrainControlPage,
-	readTerrainHeightSamples,
-	readTerrainTexture,
-	readTerrainTintPage,
 	TERRAIN_HEIGHT_HOLE,
 	TERRAIN_HEIGHT_PAGE_SIZE,
-	TERRAIN_LEAF_SIZE,
 	TERRAIN_PAGE_BORDER,
 	TERRAIN_PAGE_SIZE,
-	TERRAIN_SPLAT_CELL,
 	terrainLeafLevel,
-	terrainNodeIndex,
 	type TerrainSurfacesData,
 } from '@endfield-noclip/formats/hg/terrain';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
@@ -68,15 +59,7 @@ import type {
 	ProgressionInfo,
 	VisibilityGroup,
 } from '@endfield-noclip/package-format/states';
-import {
-	encodeSplatPage,
-	encodeHeightPage,
-	encodeSurfacePage,
-	isTerrainHole,
-	type TerrainSplatInfo,
-	type TerrainInfo,
-	terrainHeight,
-} from '@endfield-noclip/package-format/terrain';
+import type { TerrainSplatInfo, TerrainInfo } from '@endfield-noclip/package-format/terrain';
 import type { TextureTable } from '@endfield-noclip/package-format/textures';
 import {
 	type TileKey,
@@ -110,14 +93,8 @@ import {
 	unnamedSceneStateControl,
 } from '../game/scene-conditions.ts';
 import { loadProgressions, progressionId } from '../game/scenery-variants.ts';
-import {
-	indexTerrain,
-	loadTerrainSplatIndex,
-	loadTerrainSurfacesData,
-	type TerrainSceneIndex,
-} from '../game/terrain-source.ts';
+import { indexTerrain, loadTerrainSurfacesData, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
-import type { VfsFile } from '../hg/vfs.ts';
 import { orderedPool } from '../pool.ts';
 import { zstd } from '../zstd.ts';
 
@@ -147,6 +124,7 @@ import { type IrradianceReport, packIrradiance } from './irradiance.ts';
 import { LightCollector } from './lights.ts';
 import { type CacheReport, PackCache } from './pack-cache.ts';
 import { PhaseTimer } from './phase-timer.ts';
+import { packTerrain as packTerrainStep } from './terrain.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
 import { finishWater, planWater, type WaterDebug, type WaterPlan } from './water.ts';
 
@@ -295,6 +273,7 @@ export const packScene = async (
 		const pack: PackState = {
 			scene,
 			store,
+			cache,
 			builder: new TileTreeBuilder(scene.grid),
 			chains: new ChainTable(),
 			geometries: new AssetIds(),
@@ -338,7 +317,7 @@ export const packScene = async (
 			entities.counts[`lightsSkipped ${reason}`] = count;
 		}
 
-		const irradiance = await packIrradiance(context.vfs, store, {
+		const irradiance = await packIrradiance(context.vfs, store, cache, {
 			scene: options.scene,
 			includes: (x, z) =>
 				scene.subset.info === null ||
@@ -534,6 +513,7 @@ interface SceneIndex {
 interface PackState {
 	scene: SceneIndex;
 	store: BlobStore;
+	cache: PackCache | null;
 	builder: TileTreeBuilder;
 	chains: ChainTable;
 	geometries: AssetIds;
@@ -993,9 +973,7 @@ const syntheticEntityId = (levelTag: number, index: number): number => {
 };
 
 /**
- * stores the subset's terrain height pages, baked surface pages and close-up detail and attaches them to the
- * tree. a tile missing its albedo or normal page gets no surface page; a leaf missing its control or tint
- * page gets no splat page
+ * stores the subset's terrain (see `terrain.ts`) and attaches its pages to the tree
  *
  * @returns the levels that have height pages, ascending, and the detail section, `null` when the scene's
  *   layers can't be packed
@@ -1008,220 +986,44 @@ const packTerrain = async (
 	if (terrainScene === undefined || surface === undefined || terrain === null) {
 		return { levels: [], splat: null };
 	}
-	const readTexture = async (file: VfsFile) => readTerrainTexture(await context.vfs.readVerified(file));
-	const readPage = async (file: VfsFile): Promise<Uint8Array> => readTerrainBc3Page(await readTexture(file));
-	const layers = await packTerrainLayers(context, pack, terrainScene, surface);
-	const leafLevel = terrainLeafLevel(surface.terrainSize);
-	const indexSide = surface.terrainSize / TERRAIN_SPLAT_CELL;
-	const cells = TERRAIN_LEAF_SIZE / TERRAIN_SPLAT_CELL;
-	/** the 4 ordinals of a leaf's cells, cut from the scene's index map */
-	const leafIndex = (index: Uint8Array, key: TileKey): Uint8Array => {
-		const out = new Uint8Array(cells * cells * 4);
-		for (let row = 0; row < cells; row++) {
-			const from = ((key.z * cells + row) * indexSide + key.x * cells) * 4;
-			out.set(index.subarray(from, from + cells * 4), row * cells * 4);
-		}
-		return out;
-	};
-	const tiles = [...terrainScene.tiles.values()]
-		.filter(({ key }) => subset.includesTile(key))
-		.toSorted((a, b) => a.key.level - b.key.level || a.key.z - b.key.z || a.key.x - b.key.x);
-	for (let start = 0; start < tiles.length; start += BLOB_BATCH) {
-		const batch = tiles.slice(start, start + BLOB_BATCH);
-		// oxlint-disable-next-line no-await-in-loop -- batches bound memory and keep blob order stable
-		const read = await Promise.all(
-			batch.map(async ({ key, file, channels }) => {
-				const samples = readTerrainHeightSamples(await readTexture(file));
-				let page: Uint8Array | null = null;
-				if (channels.A !== undefined && channels.N !== undefined) {
-					const [albedo, normal] = await Promise.all([readPage(channels.A), readPage(channels.N)]);
-					page = encodeSurfacePage({ side: TERRAIN_PAGE_SIZE, albedo, normal });
-				}
-				let detail: Uint8Array | null = null;
-				if (
-					layers !== null &&
-					key.level === leafLevel &&
-					channels.S !== undefined &&
-					channels.T !== undefined
-				) {
-					const [control, tint] = await Promise.all([readTexture(channels.S), readTexture(channels.T)]);
-					detail = encodeSplatPage({
-						side: TERRAIN_PAGE_SIZE,
-						cells,
-						control: readTerrainControlPage(control),
-						tint: readTerrainTintPage(tint),
-						index: leafIndex(layers.index, key),
-					});
-				}
-				return { samples, page, detail };
-			}),
+	const packed = await packTerrainStep(context, pack.store, pack.cache, {
+		scene: pack.scene.options.scene,
+		terrainScene,
+		surface,
+		terrain,
+		grid,
+		includesTile: (key) => subset.includesTile(key),
+		stemOf: (key) => archiveForTile(pack, key),
+		layerStem: TERRAIN_LAYER_STEM,
+		zstdLevel: pack.scene.options.zstdLevel,
+		textureZstdLevel: pack.scene.options.textureZstdLevel,
+		log: pack.scene.options.log,
+	});
+	const whole = { tier: 0, group: SHARED_GROUP, first: 0, count: 1 };
+	for (const tile of packed.tiles) {
+		const { key } = tile;
+		pack.builder.addRef(
+			key,
+			{ ...whole, kind: ContentKind.TerrainHeights, blob: tile.heights, param: tile.maxHeightError },
+			NodeFlags.HasTerrain,
 		);
-		// oxlint-disable-next-line no-await-in-loop
-		const heights = await pack.store.putMany(
-			batch.map(({ key }, i) => ({
-				raw: encodeHeightPage(read[i].samples, TERRAIN_HEIGHT_PAGE_SIZE),
-				options: placement(BlobKind.TerrainHeights, archiveForTile(pack, key)),
-			})),
-		);
-		const withPages = batch.flatMap(({ key }, i) => {
-			const page = read[i].page;
-			return page === null ? [] : [{ key, page }];
-		});
-		// oxlint-disable-next-line no-await-in-loop
-		const pages = await pack.store.putMany(
-			withPages.map(({ key, page }) => ({
-				raw: page,
-				// block-compressed texels, so the texture level: higher levels barely shrink them
-				options: {
-					...placement(BlobKind.TerrainSurface, archiveForTile(pack, key)),
-					zstdLevel: pack.scene.options.textureZstdLevel,
-				},
-			})),
-		);
-		const withDetail = batch.flatMap(({ key }, i) => {
-			const detail = read[i].detail;
-			return detail === null ? [] : [{ key, detail }];
-		});
-		// oxlint-disable-next-line no-await-in-loop
-		const details = await pack.store.putMany(
-			withDetail.map(({ key, detail }) => ({
-				raw: detail,
-				options: placement(BlobKind.TerrainSplat, archiveForTile(pack, key)),
-			})),
-		);
-		const whole = { tier: 0, group: SHARED_GROUP, first: 0, count: 1 };
-		for (const [i, { key }] of batch.entries()) {
-			const node = surface.nodes?.[terrainNodeIndex(key)];
+		pack.builder.extend(key, tile.bounds);
+		if (tile.surface !== null) {
 			pack.builder.addRef(
 				key,
-				{ ...whole, kind: ContentKind.TerrainHeights, blob: heights[i], param: node?.maxHeightError ?? 0 },
-				NodeFlags.HasTerrain,
+				{ ...whole, kind: ContentKind.TerrainSurface, blob: tile.surface, param: 0 },
+				0,
 			);
-			pack.builder.extend(key, terrainBounds(grid, terrain, key, read[i].samples));
 		}
-		for (const [i, { key }] of withPages.entries()) {
-			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSurface, blob: pages[i], param: 0 }, 0);
-		}
-		for (const [i, { key }] of withDetail.entries()) {
-			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSplat, blob: details[i], param: 0 }, 0);
+		if (tile.splat !== null) {
+			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSplat, blob: tile.splat, param: 0 }, 0);
 		}
 	}
-	return { levels: [...new Set(tiles.map(({ key }) => key.level))], splat: layers?.info ?? null };
+	return { levels: packed.levels, splat: packed.splat };
 };
 
 /** the archive holding the terrain layer textures, which every splat page draws from */
 const TERRAIN_LAYER_STEM = 'assets/terrain-layers';
-
-/**
- * layer texture levels skipped from the top: the game's 1024² textures repeat every 2–9 m, so 512² still
- * gives 57–230 texels per metre, at a quarter of the size
- */
-const TERRAIN_LAYER_SKIP = 1;
-
-/**
- * stores the scene's terrain layer textures and reads its splat index map
- *
- * @returns the manifest's detail section and the index map, or `null` (logged) when the scene's layer table,
- *   index map or textures are missing or disagree
- */
-const packTerrainLayers = async (
-	context: Pick<Context, 'vfs' | 'world' | 'resolver'>,
-	pack: PackState,
-	terrainScene: TerrainSceneIndex,
-	surface: TerrainSurfacesData,
-): Promise<{ info: TerrainSplatInfo; index: Uint8Array } | null> => {
-	const log = pack.scene.options.log;
-	const scene = pack.scene.options.scene;
-	const { layers } = surface;
-	if (layers === undefined || layers.length === 0) {
-		log(`terrain splat: ${scene} has no terrain layers`);
-		return null;
-	}
-	const index = await loadTerrainSplatIndex(context, { ...surface, layers }, scene);
-	if (index === undefined) {
-		log(`terrain splat: ${scene} has no splat index map`);
-		return null;
-	}
-	const textureCount = Math.max(...layers.map((layer) => layer.texture)) + 1;
-	const files: { D: VfsFile; N: VfsFile }[] = [];
-	for (let texture = 0; texture < textureCount; texture++) {
-		const diffuse = terrainScene.layers.D.get(texture);
-		const normal = terrainScene.layers.N.get(texture);
-		if (diffuse === undefined || normal === undefined) {
-			log(`terrain splat: ${scene} is missing layer texture ${texture}`);
-			return null;
-		}
-		files.push({ D: diffuse, N: normal });
-	}
-
-	let size = 0;
-	let levels = 0;
-	/** @returns the texture's levels from the first packed one, concatenated */
-	const levelsOf = async (file: VfsFile, role: 'D' | 'N'): Promise<Uint8Array | string> => {
-		const texture = readTerrainTexture(await context.vfs.readVerified(file));
-		checkTerrainLayerTexture(texture, role);
-		const kept = texture.mips.slice(TERRAIN_LAYER_SKIP);
-		if (kept.length === 0) {
-			return `has ${texture.mips.length} levels`;
-		}
-		if (size === 0) {
-			size = kept[0].width;
-			levels = kept.length;
-		} else if (kept[0].width !== size || kept.length !== levels) {
-			return `is ${kept[0].width}² with ${kept.length} levels, unlike the others' ${size}² with ${levels}`;
-		}
-		const out = new Uint8Array(kept.reduce((sum, mip) => sum + mip.data.length, 0));
-		let at = 0;
-		for (const mip of kept) {
-			out.set(mip.data, at);
-			at += mip.data.length;
-		}
-		return out;
-	};
-	const raws: Uint8Array[] = [];
-	for (const [texture, pair] of files.entries()) {
-		for (const role of ['D', 'N'] as const) {
-			// oxlint-disable-next-line no-await-in-loop -- one texture's levels at a time bounds memory
-			const raw = await levelsOf(pair[role], role);
-			if (typeof raw === 'string') {
-				log(`terrain splat: ${scene} layer texture ${role} ${texture} ${raw}`);
-				return null;
-			}
-			raws.push(raw);
-		}
-	}
-	const blobs = await pack.store.putMany(
-		raws.map((raw) => ({
-			raw,
-			options: {
-				...placement(BlobKind.TerrainLayer, TERRAIN_LAYER_STEM),
-				zstdLevel: pack.scene.options.textureZstdLevel,
-			},
-		})),
-	);
-	return {
-		index,
-		info: {
-			cellSize: TERRAIN_SPLAT_CELL,
-			layers: layers.map((layer) => ({
-				texture: layer.texture,
-				tiling: layer.tiling / surface.terrainSize,
-				offset: layer.offset,
-				meanColor: layer.meanColor,
-				normalScale: layer.normalScale,
-				diffuseScale: layer.diffuseScale,
-				blendBorder: layer.blendBorder,
-				height: [layer.maskScale[2], layer.maskOffset[2]],
-				occlusion: [layer.maskScale[1], layer.maskOffset[1]],
-				roughness: [layer.maskScale[3], layer.maskOffset[3]],
-			})),
-			textureSize: size,
-			textureLevels: levels,
-			diffuse: files.map((_, texture) => blobs[texture * 2]),
-			normal: files.map((_, texture) => blobs[texture * 2 + 1]),
-		},
-	};
-};
 
 /** stores every instance block, attaching detail and HLOD blocks to the tree */
 const packInstances = async (
@@ -1861,31 +1663,6 @@ const levelInfo = (
 		contentBounds: collected.tagBounds.get(level.tag) ?? null,
 		environment,
 	};
-};
-
-// #endregion
-
-// #region terrain
-
-const terrainBounds = (
-	grid: TreeGrid,
-	terrain: Omit<TerrainInfo, 'levels' | 'splat'>,
-	key: TileKey,
-	samples: Uint16Array,
-): Bounds => {
-	let min = Infinity;
-	let max = -Infinity;
-	for (const sample of samples) {
-		if (!isTerrainHole(terrain, sample)) {
-			min = Math.min(min, sample);
-			max = Math.max(max, sample);
-		}
-	}
-	const base = terrain.position[1];
-	const minY = min === Infinity ? base : terrainHeight(terrain, min);
-	const maxY = max === -Infinity ? base : terrainHeight(terrain, max);
-	const { minX, minZ, size } = tileFootprint(grid, key);
-	return { min: [minX, minY, minZ], max: [minX + size, maxY, minZ + size] };
 };
 
 // #endregion

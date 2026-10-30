@@ -101,24 +101,30 @@ const terrainAssetDir = (scene: string): string => `assets/beyond/dynamicassets/
 const terrainSurfacesAssetPath = (scene: string): string =>
 	`${terrainAssetDir(scene)}hgterrainsurfacesdata.asset`;
 
+/** where a scene's splat index map lives */
+export interface TerrainSplatIndexSource {
+	/** asset path */
+	path: string;
+	/** manifest index of the bundle holding it */
+	bundleIndex: number;
+	/** the bundle's data md5, which changes with the map */
+	bundleMd5: string;
+}
+
 /**
- * reads a scene's splat index map (`terrain/splatindexmap.tga`). finding its path hash scans the
- * StringPathHash tables (about a second)
+ * finds a scene's splat index map (`terrain/splatindexmap.tga`) without reading it. finding its path hash
+ * scans the StringPathHash tables (about a second)
  *
  * @param context world index and asset resolver
- * @param surface the scene's terrain, with its layers
  * @param scene streaming scene
- * @returns 4 layer ordinals per 8 m cell (see `readTerrainSplatIndex`), or `undefined` if the scene has no
- *   map
- * @throws {Error} if the map can't be decoded or doesn't fit the terrain
+ * @returns its bundle, or `undefined` if the scene has no map
  */
-export const loadTerrainSplatIndex = async (
+export const findTerrainSplatIndex = async (
 	context: Pick<Context, 'world' | 'resolver'>,
-	surface: TerrainSurfacesData & { layers: TerrainLayer[] },
 	scene: string,
-): Promise<Uint8Array | undefined> => {
-	const wanted = `${terrainAssetDir(scene)}splatindexmap.tga`;
-	const [hash] = await context.world.hashesOf(wanted);
+): Promise<TerrainSplatIndexSource | undefined> => {
+	const path = `${terrainAssetDir(scene)}splatindexmap.tga`;
+	const [hash] = await context.world.hashesOf(path);
 	if (hash === undefined) {
 		return undefined;
 	}
@@ -127,8 +133,27 @@ export const loadTerrainSplatIndex = async (
 	if (asset === undefined) {
 		return undefined;
 	}
+	return { path, bundleIndex: asset.bundleIndex, bundleMd5: await resolver.bundleMd5(asset.bundleIndex) };
+};
+
+/**
+ * reads a scene's splat index map
+ *
+ * @param context asset resolver
+ * @param surface the scene's terrain, with its layers
+ * @param source the map, from {@link findTerrainSplatIndex}
+ * @returns 4 layer ordinals per 8 m cell (see `readTerrainSplatIndex`)
+ * @throws {Error} if the map can't be decoded or doesn't fit the terrain
+ */
+export const loadTerrainSplatIndex = async (
+	context: Pick<Context, 'resolver'>,
+	surface: TerrainSurfacesData & { layers: TerrainLayer[] },
+	source: TerrainSplatIndexSource,
+): Promise<Uint8Array> => {
+	const wanted = source.path;
+	const resolver = await context.resolver();
 	const [ref] = await resolver.findInBundle(
-		asset.bundleIndex,
+		source.bundleIndex,
 		`${wanted}##splatindexmap`,
 		UnityClass.Texture2D,
 	);

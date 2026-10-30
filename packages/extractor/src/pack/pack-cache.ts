@@ -5,16 +5,18 @@ import { fileURLToPath } from 'node:url';
 
 import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
+import { getOrInsert } from '../collections.ts';
 import { errorCode, ignoreMissing } from '../errors.ts';
 
-import { BlobDir, shortHash } from './blob-file.ts';
+import { BlobDir, type BlobMeta, shortHash } from './blob-file.ts';
 import type { BundleSource, ConvertResult } from './convert-pool.ts';
 
 // a persistent cache for packing: converted meshes and textures, and every blob a pack stores. blobs live in
 // a BlobDir that serves as the pack's blob store, so a re-pack reads cached blobs straight into its archives.
 // conversions are remembered by a key over the job (the object, the options) and a fingerprint of the
 // converter's code, along with the md5s (from the VFS catalog) of every bundle they read, so an install update
-// or a converter change misses.
+// or a converter change misses. whole pack steps (terrain, irradiance) are remembered the same way, keyed by
+// their own module's code and the content md5s of what they read.
 //
 // the cache keeps what the packages it built are made of: each pack records its blobs and conversions as a
 // root named after its output directory, and then deletes whatever no root references. a root goes away with
@@ -38,6 +40,14 @@ export interface CacheReport {
 	swept: { blobs: number; memos: number; bytes: number };
 }
 
+/** a pack step's remembered output (see {@link PackCache.stepKey}) */
+export interface StepMemo<T> {
+	/** the blobs it stored, in the order it commits them; they live in {@link PackCache.blobs} */
+	blobs: BlobMeta[];
+	/** what else it produced, as JSON */
+	value: T;
+}
+
 /** a root: what one package was built from */
 interface Root {
 	outDir: string;
@@ -55,6 +65,7 @@ export class PackCache {
 	/** conversion results as JSON, by key */
 	readonly #memos: BlobDir;
 	readonly #fingerprint: string;
+	readonly #stepFingerprints = new Map<string, Promise<string>>();
 	readonly #used = new Set<string>();
 
 	private constructor(root: string, fingerprint: string) {
@@ -74,7 +85,7 @@ export class PackCache {
 	static async open(root: string): Promise<PackCache> {
 		await mkdir(root, { recursive: true });
 		await lock(join(root, 'lock'));
-		return new PackCache(root, await converterFingerprint());
+		return new PackCache(root, await moduleFingerprint(CONVERTER_ENTRY));
 	}
 
 	/**
@@ -124,6 +135,53 @@ export class PackCache {
 	 */
 	async remember(key: string, result: ConvertResult): Promise<void> {
 		await this.#memos.replace(key, JSON.stringify(result));
+		this.#used.add(key);
+	}
+
+	/**
+	 * keys a whole pack step (terrain, irradiance) whose output depends only on its inputs and its code. inputs
+	 * should name what the step reads by content (VFS data md5s, bundle md5s), so an install update misses
+	 *
+	 * @param entry the step's module; the key covers it and every workspace module it imports
+	 * @param parts what the step's output depends on besides its code; bigints are allowed
+	 * @returns the step's key
+	 */
+	async stepKey(entry: URL, parts: object): Promise<string> {
+		const fingerprint = await getOrInsert(this.#stepFingerprints, entry.href, () => moduleFingerprint(entry));
+		return shortHash(
+			JSON.stringify(['step', fingerprint, parts], (_, value: unknown) =>
+				typeof value === 'bigint' ? value.toString() : value,
+			),
+		);
+	}
+
+	/**
+	 * @param key from {@link PackCache.stepKey}
+	 * @returns the step's remembered output, or `undefined` if there's none or a blob is gone
+	 */
+	async recallStep<T>(key: string): Promise<StepMemo<T> | undefined> {
+		const text = await ignoreMissing(readFile(this.#memos.path(key), 'utf8'), undefined);
+		if (text === undefined) {
+			return undefined;
+		}
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by rememberStep() under this key
+		const memo = JSON.parse(text) as StepMemo<T>;
+		const present = await Promise.all(memo.blobs.map((blob) => this.blobs.has(blob.hash)));
+		if (!present.every(Boolean)) {
+			return undefined;
+		}
+		this.#used.add(key);
+		return memo;
+	}
+
+	/**
+	 * remembers a step's output; its blobs must be in {@link PackCache.blobs} already
+	 *
+	 * @param key from {@link PackCache.stepKey}
+	 * @param memo the blobs the step stored, in the order it commits them, and whatever else it needs
+	 */
+	async rememberStep<T>(key: string, memo: StepMemo<T>): Promise<void> {
+		await this.#memos.replace(key, JSON.stringify(memo));
 		this.#used.add(key);
 	}
 
@@ -219,10 +277,10 @@ const isRunning = (pid: number): boolean => {
 };
 
 /**
- * @returns a hash over the code that decides conversion results (the worker's workspace import graph), the
- *   extractor's dependencies and Node's zstd
+ * @param entry a module that decides cached results (the conversion worker, a pack step)
+ * @returns a hash over its workspace import graph, the extractor's dependencies and Node's zstd
  */
-const converterFingerprint = async (): Promise<string> => {
+const moduleFingerprint = async (entry: URL): Promise<string> => {
 	const sources = new Map<string, Buffer>();
 	const visit = async (url: URL): Promise<void> => {
 		const path = fileURLToPath(url);
@@ -243,7 +301,7 @@ const converterFingerprint = async (): Promise<string> => {
 		}
 		await Promise.all(imports.map(visit));
 	};
-	await visit(CONVERTER_ENTRY);
+	await visit(entry);
 
 	const hash = createHash('sha256');
 	const base = fileURLToPath(WORKSPACE_PACKAGES);

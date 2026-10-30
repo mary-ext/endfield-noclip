@@ -46,7 +46,10 @@ const vfsWithLengths = (lengths: Map<string, number>) => {
 };
 
 const packOutsideRegion = (lengths: Map<string, number>) =>
-	packIrradiance(vfsWithLengths(lengths), {} as BlobStore, { scene: 'synthetic', includes: () => false });
+	packIrradiance(vfsWithLengths(lengths), {} as BlobStore, null, {
+		scene: 'synthetic',
+		includes: () => false,
+	});
 
 test('irradiance validates scene-state payloads even when packing no cells', async () => {
 	await assert.rejects(packOutsideRegion(new Map([['iv_0_0.bytes', 16]])), /iv_123_0.bytes/);
