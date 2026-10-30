@@ -232,7 +232,7 @@ fn normal_z(xy: vec2f) -> f32 {
 
 @fragment
 fn fs_opaque(in: VertexOut) -> Shaded {
-	return shade(in);
+	return shade(in, true);
 }
 
 // the transparent pass's outputs (`TRANSPARENT_TARGETS` in render-targets.ts)
@@ -253,7 +253,7 @@ fn fs_transparent(in: VertexOut) -> Accumulated {
 	let bias = frame.params.y;
 	let base = textureSampleBias(base_map, base_sampler, slot_uv(in.draw, in.uv, flags, BASE_SLOT), bias);
 	let packed = textureSampleBias(normal_map, detail_sampler, slot_uv(in.draw, in.uv, flags, NORMAL_SLOT), bias);
-	let shaded = shade(in);
+	let shaded = shade(in, false);
 	// a map still streaming leaves the tint's alpha alone
 	var alpha = select(base.a, packed.a, (flags & ALPHA_NORMAL) != 0u);
 	let alpha_map = select(BASE_MAP, NORMAL_MAP, (flags & ALPHA_NORMAL) != 0u);
@@ -269,7 +269,7 @@ fn fs_transparent(in: VertexOut) -> Accumulated {
 	return out;
 }
 
-fn shade(in: VertexOut) -> Shaded {
+fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let draw = draws[in.draw];
 	let flags = bitcast<u32>(draw.offset.w);
 	// derivatives (and implicit-LOD sampling) must happen in uniform control flow
@@ -301,7 +301,10 @@ fn shade(in: VertexOut) -> Shaded {
 		return unlit(clamp(c * mix(1.0, frame.ambient.y, draw.emissive2.z), vec3f(0.0), vec3f(1000.0)));
 	}
 	if ((flags & EROSION) != 0u) {
-		let s = erosion_surface(draw, in, flags, faceted, packed, mask, detail, uv0_dx, uv0_dy);
+		var s = erosion_surface(draw, in, flags, faceted, packed, mask, detail, uv0_dx, uv0_dy);
+		if (wet) {
+			s = rain_wet_surface(s, in.rel);
+		}
 		return shade_surface(s, in.rel, in.position.xy);
 	}
 
@@ -438,6 +441,10 @@ fn shade(in: VertexOut) -> Shaded {
 		if ((flags & FOLIAGE_LEAF) != 0u) {
 			s = leaf_surface(s, draw, in, has_normal, packed.a);
 		}
+	}
+	// the game wets what its deferred lighting shades, so not the forward-shaded glass
+	if (wet) {
+		s = rain_wet_surface(s, in.rel);
 	}
 	return shade_surface(s, in.rel, in.position.xy);
 }

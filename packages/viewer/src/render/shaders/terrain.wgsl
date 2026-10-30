@@ -331,6 +331,7 @@ fn fs_main(in: VertexOut) -> Shaded {
 		}
 		s = wet_surface(s, control.a - ground);
 	}
+	s = rain_wet_surface(s, in.rel);
 	return shade_surface(s, in.rel, in.position.xy);
 }
 

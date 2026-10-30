@@ -461,6 +461,8 @@ const applyPhase = (profile: EnvironmentProfile, phase: EnvironmentPhaseInfo, t:
 			target[name] = structuredClone(source[name]);
 		} else if (name === 'cloud') {
 			target[name] = lerpCloud(target[name], source[name], t);
+		} else if (name === 'rain' && target[name] !== undefined) {
+			target[name] = lerpRain(target[name], source[name], t);
 		} else {
 			target[name] = lerpObject(target[name], source[name], t);
 		}
@@ -514,6 +516,40 @@ const lerpCloud = (
 	} else if (aOn && a.cloudTexture !== b.cloudTexture) {
 		out.cloudTexture = t < 0.5 ? a.cloudTexture : b.cloudTexture;
 		out.cloudFadeAlpha = t < 0.5 ? fadeA * (1 - 2 * t) : fadeB * (2 * t - 1);
+	}
+	return out;
+};
+
+/** wetness fields `HGRainConfig.Lerp` takes from the side with wetness on, when only one has it */
+const WETNESS_FIELDS = [
+	'wetnessBasePorosity',
+	'wetnessPorosityFactor',
+	'baseWetnessLevel',
+	'verticalWetnessScalar',
+	'farSceneWetnessDistanceFactor',
+	'farSceneWetnessValue',
+	'rippleRoughnessMaskThreshold',
+];
+
+/**
+ * `HGRainConfig.Lerp`'s wetness: with wetness on one side only, it fades in from dry with that side's
+ * settings
+ */
+const lerpRain = (
+	a: Record<string, unknown>,
+	b: Record<string, unknown>,
+	t: number,
+): Record<string, unknown> => {
+	const out = lerpObject(a, b, t);
+	const aOn = a.enableWetness === true;
+	const bOn = b.enableWetness === true;
+	if (aOn !== bOn) {
+		const on = aOn ? a : b;
+		for (const key of WETNESS_FIELDS) {
+			out[key] = on[key];
+		}
+		out.enableWetness = true;
+		out.wetness = (typeof on.wetness === 'number' ? on.wetness : 0) * (aOn ? 1 - t : t);
 	}
 	return out;
 };

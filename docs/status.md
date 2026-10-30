@@ -36,9 +36,10 @@ packs or renders correctly.
   index tables, and other index magics
 - the game's own vignette (the viewer uses URP's); bloom dirt, additive upsampling and character
   bloom; colour curves are not packed
-- weather: rain/snow configs are not packed, and precipitation and rain wetness don't render. the
-  weather-script activation and property initialization are unknown, so weather stays a manual
-  preview
+- weather: snow isn't packed and precipitation (streaks, splashes, ripples) doesn't render; rain
+  wetness ignores shelter, since the rain occlusion map isn't rendered
+  ([environment](game-data/environment.md#wetness)). the weather-script activation and property
+  initialization are unknown, so weather stays a manual preview
 - environment volume initial enablement and `EnvironmentEnable` script conditions, needed before any
   automatic gating
 - volumetric fog: local fog volumes and flow noise aren't drawn, and the grid size and history
@@ -62,8 +63,8 @@ packs or renders correctly.
 - puddles ([world](game-data/world.md#puddles)) stop past the leaf splat pages' load distance,
   ignore the parallax layers' height, and have no ripples
 - screen-space reflections ([lighting](game-data/lighting.md#screen-space-reflections)): the rain
-  wetness variant isn't drawn, the GPU cost is unprofiled, and off-screen reflections fall back to
-  the sky cubemap
+  wetness variant's ripple normals aren't drawn, the GPU cost is unprofiled, and off-screen
+  reflections fall back to the sky cubemap
 - glass ([glass](game-data/lighting.md#glass)): refraction and Fresnel opacity aren't drawn, glass
   in front of water is lost, glass against the sky isn't fogged, and nothing checks whether the game
   lets glass cast shadows

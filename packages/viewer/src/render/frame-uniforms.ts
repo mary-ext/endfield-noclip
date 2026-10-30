@@ -11,7 +11,7 @@ import frameWgsl from './shaders/frame.wgsl?raw';
 export const FRAME_WGSL = brdfWgsl + frameWgsl;
 
 /** byte size of `Frame` */
-export const FRAME_UNIFORM_BYTES = 832;
+export const FRAME_UNIFORM_BYTES = 880;
 
 /** float offsets of `Frame` fields */
 export const FrameOffsets = {
@@ -42,6 +42,8 @@ export const FrameOffsets = {
 	renderSize: 188,
 	/** four vec4s, see `Frame.cloud_shadow` */
 	cloudShadow: 192,
+	/** three vec4s, see `Frame.wetness` */
+	wetness: 208,
 } as const;
 
 /**

@@ -220,16 +220,45 @@ weather appears in three ways:
   precipitates". that is a gameplay sensor; the renderer's own occlusion for falling precipitation
   is a separate mechanism.
 
-the viewer renders no precipitation or wetness, and the packer doesn't extract the rain and snow
-sections. the absence of rain in the viewer says nothing about whether the game's active phase is
-dry there.
+the viewer renders no precipitation, and the packer doesn't extract the snow section. the absence of
+rain in the viewer says nothing about whether the game's active phase is dry there.
+
+### wetness
+
+the game's deferred lighting wets every surface it shades (not forward-shaded glass or effects) from
+the blended rain section, whether or not rain falls; the viewer does the same in `rain_wet_surface`
+([`shaders/frame.wgsl`](../../packages/viewer/src/render/shaders/frame.wgsl),
+[`render/wetness.ts`](../../packages/viewer/src/render/wetness.ts)):
+
+- **blend.** with `enableWetness` on both sides, the fields lerp. with it on one side only, the
+  result is wet with that side's settings and `wetness` fading in from 0
+  ([`environment-blend.ts`](../../packages/viewer/src/render/environment-blend.ts), `lerpRain`).
+- **coverage.** full out to the rain occlusion range around the camera (measured as the larger of
+  the x and z distances), then fading to `farSceneWetnessValue` by `farSceneWetnessDistanceFactor`
+  times that range. surfaces the rain can't reach take `baseWetnessLevel`, and vertical faces
+  `verticalWetnessScalar` against 1 for faces looking up.
+- **porosity** `= saturate(smoothness · wetnessPorosityFactor + wetnessBasePorosity)`, 1 for metal.
+  porous surfaces darken, the albedo down to a quarter at `wetness` 1 (not metal, not faces looking
+  down); the smoothness rises towards `mix(0.9, 0.6, porosity) + mix(−0.6, 0.4, √smoothness)`,
+  capped at 0.99 and never lowered.
+- **standing water.** with `rippleRoughnessMaskThreshold` above 0 (the game's high-quality wetness),
+  flat ground facing straight up holds water: its normal turns up and its roughness drops to a
+  tenth, a near mirror for the screen-space reflections. it fades out between 15 m and about 80 m of
+  view depth, and needs the material occlusion to be high.
+
+not reproduced: the rain occlusion map (a depth map from above that keeps sheltered surfaces at
+`baseWetnessLevel`; the viewer treats everything as open to the sky), its range (the presetting
+asset holding it wasn't found; the viewer assumes 100 m), the jitter noise that breaks up the
+coverage edges, rain ripples and splashes, flowing water on walls, and the geometric-flatness test
+that also floods normal-mapped dips. Marker Stone's dam-side volumes keep wetness on at 0.5–1 in
+both dry and rainy phases, so its stone floors read wet even without rain.
 
 ## open
 
 - script activation of chunk volumes, and the starting state of each; which volumes are permanent vs
   story state.
-- extraction of `rainConfig`/`snowConfig` and dynamic LevelData volumes, and a weather render
-  (streaks, splashes, wetness, snow) with the game's enable/disable transition rules.
+- extraction of `snowConfig` and dynamic LevelData volumes, and a precipitation render (streaks,
+  splashes, ripples, snow) with the game's enable/disable transition rules.
 - `volumeType` 4 (cylinder; one map02 waterfall volume, no shape blob) and the game's equal-priority
   order beyond shape kind.
 - scenes without levels (indoor and instance scenes) get no environment; their global volume could

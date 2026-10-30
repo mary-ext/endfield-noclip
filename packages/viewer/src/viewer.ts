@@ -55,6 +55,7 @@ import { PAGE_SIDE, SURFACE_BORDER, SURFACE_SIDE, TerrainRenderer } from './rend
 import { type TextureBinding, TextureStore, placeholderView } from './render/texture-store.ts';
 import { VolumetricFog } from './render/volumetric-fog.ts';
 import { WaterRenderer } from './render/water-renderer.ts';
+import { wetnessParams } from './render/wetness.ts';
 import { Camera, type Vec3 } from './scene/camera.ts';
 import { type CameraPose, NoclipControls } from './scene/noclip-controls.ts';
 import { type TileTree, buildTileTree } from './scene/tile-tree.ts';
@@ -329,6 +330,8 @@ export class Viewer {
 	#environment: Environment = deriveEnvironment(null);
 	/** the nebula and planets of {@link #environment}'s profile */
 	#celestial: CelestialLook = NO_CELESTIAL;
+	/** `Frame.wetness` for {@link #environment}'s profile */
+	#wetness: Float32Array = wetnessParams(undefined);
 	/** the shown level's base environment, which the volumes blend over */
 	#baseProfile: EnvironmentProfile | null = null;
 	/** what the environment was last blended for */
@@ -825,6 +828,7 @@ export class Viewer {
 		this.#blendKey = key;
 		this.#environment = deriveEnvironment(profile);
 		this.#celestial = celestialLook(profile?.celestial, profile?.star);
+		this.#wetness = wetnessParams(profile?.rain);
 		this.#post.celestial.setLook(this.#celestial);
 		this.#post.setEnvironment(this.#environment);
 		this.#fog.setEnvironment(this.#environment, this.camera.near);
@@ -1661,6 +1665,7 @@ export class Viewer {
 				f32.set(cloud.projection, at + 12);
 			}
 		}
+		f32.set(this.#wetness, FrameOffsets.wetness);
 		this.#irradiance.centers().forEach((center, i) => {
 			const at = FrameOffsets.irradiance + i * 4;
 			f32.set(center ?? [0, 0, 0], at);

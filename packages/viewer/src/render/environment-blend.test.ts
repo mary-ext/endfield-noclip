@@ -249,3 +249,25 @@ it('overrides unknown activation without bypassing volume bounds or pinned phase
 		1,
 	);
 });
+
+it('fades wetness in from dry with the wet side’s settings when only one side has it on', () => {
+	const rain = (enableWetness: boolean, wetness: number, porosity: number) => ({
+		enableWetness,
+		wetness,
+		wetnessBasePorosity: porosity,
+	});
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a minimal stand-in
+	const base = { name: 'base', rain: rain(false, 0.25, 0), post: null } as unknown as EnvironmentProfile;
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above
+	const wet = {
+		name: 'wet',
+		active: ['rain'],
+		sections: { rain: rain(true, 1, 0.8) },
+	} as unknown as EnvironmentPhaseInfo;
+	const m = manifest([wet], [volume({ shape: square, blendDistance: 20 })]);
+	// 5 m inside a 20 m blend distance
+	const result = blendEnvironment(m, base, [5, 25, 50], options).profile.rain;
+	assert.equal(result?.enableWetness, true);
+	assert.equal(result?.wetness.toFixed(6), '0.250000');
+	assert.equal(result?.wetnessBasePorosity, 0.8);
+});

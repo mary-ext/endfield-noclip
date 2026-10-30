@@ -46,6 +46,10 @@ struct Frame {
 	// the cloud shadow (`Environment.cloudShadow`): [0] = centre (world), w = 1 when on; [1] = switch start (m),
 	// switch end (m), repeats per metre, 0; [2] = flow per second, alpha, far scale; [3] = projection, 0
 	cloud_shadow: array<vec4f, 4>,
+	// the rain wetness (wetness.ts): [0] = wetness (0: dry), base porosity, porosity factor, occlusion range (m);
+	// [1] = far distance factor, far wetness, sheltered wetness, vertical wetness; [2] = x: the standing water's
+	// mask threshold (0: none), yzw unused
+	wetness: array<vec4f, 3>,
 }
 
 @group(0) @binding(0) var<uniform> frame: Frame;
@@ -290,6 +294,56 @@ fn default_surface(albedo: vec3f, normal: vec3f) -> Surface {
 	s.subsurface = 0.0;
 	s.sun_shadow = 1.0;
 	s.sun_n_dot_l = -1.0;
+	return s;
+}
+
+// the game's rain wetness on a surface at a camera-relative position (docs/game-data/environment.md, "wetness"):
+// it covers surfaces out to a range around the camera, fading to the far wetness beyond, less on vertical
+// faces, and darkens porous surfaces or smooths sleek ones. flat ground near the camera holds standing water,
+// a near mirror. the game keeps sheltered surfaces drier through a rain occlusion map the viewer doesn't
+// render, so everything counts as open to the sky
+fn rain_wet_surface(s_in: Surface, rel: vec3f) -> Surface {
+	let p0 = frame.wetness[0];
+	if (p0.x <= 0.0) {
+		return s_in;
+	}
+	let p1 = frame.wetness[1];
+	let threshold = frame.wetness[2].x;
+	var s = s_in;
+	let up = saturate(s.normal.y);
+	let facing = mix(p1.w, 1.0, up);
+	let d = max(abs(rel.x), abs(rel.z));
+	// sheltered surfaces (none here) take the sheltered wetness inside the occlusion range
+	let open = mix(facing, 1.0, smoothstep(0.7 * p0.w, 0.75 * p0.w, d));
+	let near = mix(p1.z * facing, 1.0, open);
+	let coverage = mix(near, p1.y, smoothstep(p0.w, p1.x * p0.w, d));
+
+	// standing water: on surfaces facing straight up, fading out between 15 and about 80 m of view depth
+	var standing = 0.0;
+	if (threshold > 0.0) {
+		let flat = smoothstep(min(threshold, 0.99), threshold, smoothstep(0.97, 0.99, up));
+		let r = s.roughness;
+		let level = r * 0.3 * saturate((r - 0.1) * 100.0) * s.occlusion;
+		let fill = smoothstep(min(level, 0.99), saturate(level + 0.6), threshold);
+		let fade = 1.0 - saturate((dot(rel, frame.view_forward.xyz) - 15.0) * 0.015);
+		let wet = p0.x * flat;
+		let depth = saturate(mix(threshold * 0.5, 1.0, fill) + smoothstep(0.6, 1.0, threshold) * 0.6);
+		standing = smoothstep(0.0, max(s.occlusion * 0.2, 1e-4), wet * depth) * open * fade;
+		s.normal = normalize(mix(s.normal, vec3f(0.0, 1.0, 0.0), saturate(wet * fill * open * fade)));
+	}
+
+	let smoothness = 1.0 - s.roughness;
+	let porosity = mix(saturate(saturate(smoothness * p0.z + p0.y) + standing * 0.1 * s.roughness), 1.0, s.metallic);
+	let not_down = 1.0 - smoothstep(0.2, 0.5, -s.normal.y);
+	let darken = mix(1.0, 0.25, p0.x * porosity * (1.0 - s.metallic) * not_down);
+	let wet_smoothness = min(
+		max(saturate(mix(0.9, 0.6, porosity) + mix(-0.6, 0.4, sqrt(smoothness))), smoothness),
+		0.99,
+	);
+	let k = p0.x * saturate(2.0 - p0.x) * not_down * coverage;
+	let wet_roughness = (1.0 - mix(smoothness, wet_smoothness, k)) * mix(1.0, 0.1, standing);
+	s.roughness = mix(s.roughness, wet_roughness, coverage);
+	s.albedo *= mix(1.0, darken, coverage);
 	return s;
 }
 

@@ -201,8 +201,9 @@ only the sky term carries the normalisation above and the indirect specular fact
 
 the viewer runs these as fullscreen passes rather than the game's compute kernels, reprojects
 through the depth buffer and the previous camera instead of motion vectors (the scenery is static),
-and leaves out the game's rain-wetness variant, which re-derives the wet normal and roughness the
-way the deferred wetness does. off-screen reflections keep the sky reflection.
+and needs no rain-wetness variant: the game's re-derives the wet roughness the deferred wetness
+computes, which the viewer's surfaces already carry ([environment](environment.md#wetness)), plus
+rain ripple normals the viewer doesn't draw. off-screen reflections keep the sky reflection.
 
 ## local lights
 
@@ -698,8 +699,8 @@ are sampled toroidally in `ambient_irradiance`.
   that aren't recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient
   probe without the native diffuse-ambient scale.
 - not rendered: light shafts, lens flare, the moon's sky-wide ring (`HG_RING`), the sun disc,
-  aurora, local reflection probes, local light shadows and light beams, precipitation and rain
-  wetness (terrain puddles do render).
+  aurora, local reflection probes, local light shadows and light beams, precipitation (rain
+  wetness does render: [environment](environment.md#wetness)).
 - celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' ring thinning
   the stars, their blend modes (the viewer always adds them), and the brightness of the ray-traced
   planet's light (taken as the viewer's pre-exposed sun) are unchecked against a shot.
