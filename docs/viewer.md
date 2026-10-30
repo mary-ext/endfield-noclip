@@ -42,15 +42,13 @@ extracted packages under `/packages/` on both `vite dev` and `vite preview`. the
 the repo's `out/`; set `NOCLIP_PACKAGES=/path` to point it elsewhere
 ([`vite.config.ts`](../packages/viewer/vite.config.ts)).
 
-- `GET /packages/index.json` lists subdirectories that hold a core archive, with its size.
-- files are served with single-range `Range` support, since the viewer reads individual blobs out of
-  shard archives.
-- responses carry `cache-control: no-cache` plus an `ETag` of the file's inode, size and mtime,
-  because archives keep their names across re-packs and a cached copy would be read at the new
-  package's offsets. `Last-Modified` isn't used: its whole seconds can't tell apart reads within the
-  second a file was written, and the browser then kept serving stale ranges.
-- hidden directories (the packer's staging and replaced packages) aren't listed.
-- paths are confined to the root.
+- files are served as a static host would, by `sirv`: `Range` support, `ETag` and `Last-Modified`
+  validators, `cache-control: no-cache`, nothing package-specific. keep it that way, so the dev
+  setup behaves like a deployment. a deployment's host needs range requests and revalidation too,
+  because archives keep their names across re-packs; the packer never rewrites a file in place (it
+  swaps in a new package), so ordinary validators suffice.
+- `GET /packages/index.json` lists subdirectories that hold a core archive, with its size, skipping
+  hidden directories (the packer's staging and replaced packages). it's the one dev-only addition.
 
 ### opening
 

@@ -1,56 +1,45 @@
-import { createReadStream } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import { join, normalize, sep } from 'node:path';
+import type { ServerResponse } from 'node:http';
+import { join } from 'node:path';
 
 import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
 
+import sirv from 'sirv';
 import type { Connect, Plugin } from 'vite';
 
 import { DEV_PACKAGES_INDEX, DEV_PACKAGES_PREFIX, type DevPackage } from '../src/package/dev-packages.ts';
 
 /**
- * serves locally extracted viewer packages to the dev and preview servers, with HTTP range support so the
- * viewer can read single blobs out of the archives. `GET /packages/index.json` lists the directories holding
- * a core archive.
+ * serves locally extracted viewer packages to the dev and preview servers as plain static files, as a static
+ * host would, plus `GET /packages/index.json` listing the directories holding a core archive.
  *
  * @param root directory whose subdirectories are packages
  * @returns the plugin
  */
 export const packageServer = (root: string): Plugin => {
-	const handle = async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
-		const url = new URL(req.url ?? '/', 'http://localhost');
-		if (!url.pathname.startsWith(DEV_PACKAGES_PREFIX)) {
-			next();
+	// `dev` looks files up per request, since packages are rewritten while the server runs
+	const files = sirv(root, { dev: true, etag: true, extensions: [] });
+	const middleware: Connect.NextHandleFunction = (req, res) => {
+		// mounted under the prefix, so the URL is package-relative
+		if (new URL(req.url ?? '/', 'http://localhost').pathname === `/${DEV_PACKAGES_INDEX}`) {
+			listPackages(root, res).catch((err: unknown) => {
+				res.statusCode = 500;
+				res.end(String(err));
+			});
 			return;
 		}
-		const rest = decodeURIComponent(url.pathname.slice(DEV_PACKAGES_PREFIX.length));
-		if (rest === DEV_PACKAGES_INDEX) {
-			await listPackages(root, res);
-			return;
-		}
-		const path = normalize(join(root, rest));
-		if (!path.startsWith(root + sep)) {
-			res.statusCode = 403;
-			res.end();
-			return;
-		}
-		await serveFile(path, req, res);
-	};
-	const middleware: Connect.NextHandleFunction = (req, res, next) => {
-		handle(req, res, next).catch((err: unknown) => {
-			res.statusCode = 500;
-			res.end(String(err));
-		});
+		// without `next`, a missing file is a 404 rather than the app's index page
+		files(req, res);
 	};
 
+	const prefix = DEV_PACKAGES_PREFIX.slice(0, -1);
 	return {
 		name: 'endfield-noclip:package-server',
 		configureServer(server) {
-			server.middlewares.use(middleware);
+			server.middlewares.use(prefix, middleware);
 		},
 		configurePreviewServer(server) {
-			server.middlewares.use(middleware);
+			server.middlewares.use(prefix, middleware);
 		},
 	};
 };
@@ -70,62 +59,4 @@ const listPackages = async (root: string, res: ServerResponse): Promise<void> =>
 	res.setHeader('content-type', 'application/json');
 	res.setHeader('cache-control', 'no-cache');
 	res.end(JSON.stringify({ packages }));
-};
-
-const serveFile = async (path: string, req: IncomingMessage, res: ServerResponse): Promise<void> => {
-	const info = await stat(path).catch(() => null);
-	if (!info?.isFile()) {
-		res.statusCode = 404;
-		res.end();
-		return;
-	}
-	// archives keep their names across re-packs, so revalidate instead of caching blindly. Last-Modified has
-	// whole-second precision, too coarse for a file rewritten within a second of being read; a re-pack swaps
-	// in new files, so the inode changes with every package
-	res.setHeader('cache-control', 'no-cache');
-	const etag = `"${info.ino.toString(36)}-${info.size.toString(36)}-${info.mtimeMs.toString(36)}"`;
-	res.setHeader('etag', etag);
-	const ifRange = req.headers['if-range'];
-	if (req.headers['if-none-match'] === etag) {
-		res.statusCode = 304;
-		res.end();
-		return;
-	}
-	res.setHeader('accept-ranges', 'bytes');
-	res.setHeader('content-type', 'application/octet-stream');
-
-	let start = 0;
-	let end = info.size - 1;
-	// a cache holding parts of an older file asks for the range only if the file is unchanged
-	const range = ifRange === undefined || ifRange === etag ? req.headers.range : undefined;
-	if (range !== undefined) {
-		const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-		if (match === null) {
-			res.statusCode = 416;
-			res.end();
-			return;
-		}
-		if (match[1] === '') {
-			start = Math.max(0, info.size - Number(match[2]));
-		} else {
-			start = Number(match[1]);
-			if (match[2] !== '') {
-				end = Math.min(end, Number(match[2]));
-			}
-		}
-		if (start > end || start >= info.size) {
-			res.statusCode = 416;
-			res.setHeader('content-range', `bytes */${info.size}`);
-			res.end();
-			return;
-		}
-		res.statusCode = 206;
-		res.setHeader('content-range', `bytes ${start}-${end}/${info.size}`);
-	}
-	res.setHeader('content-length', String(end - start + 1));
-	if (req.method === 'HEAD') {
-		res.end();
-		return;
-	}
-	createReadStream(path, { start, end }).pipe(res);
 };
