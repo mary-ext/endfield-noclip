@@ -224,8 +224,19 @@ interface HlodCluster {
 	file: number;
 }
 
-/** files and directories a package consists of; only these are removed when replacing a package */
-const PACKAGE_ENTRIES = new Set([CORE_ARCHIVE, 'shards', 'assets', 'irradiance', 'debug', '.spool']);
+/**
+ * files and directories a package consists of; only these are removed when replacing a package. macOS Finder
+ * drops `.DS_Store` into any folder it shows, so it doesn't make a package directory foreign
+ */
+const PACKAGE_ENTRIES = new Set([
+	CORE_ARCHIVE,
+	'shards',
+	'assets',
+	'irradiance',
+	'debug',
+	'.spool',
+	'.DS_Store',
+]);
 
 /**
  * placeholder error model until the game's HLOD switch distances are known: a node's geometric error is this
