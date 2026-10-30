@@ -191,8 +191,14 @@ station starts at form 1).
 
 form numbers are positions in that list, not gameplay upgrade levels: how shop channel levels or
 depot levels map onto the list isn't recovered, so the viewer labels them "Visual form", not
-"Level". only these three templates are read, because they share the validated component layout;
-LevelData files with an unsupported layout are skipped whole and reported, never partially scanned.
+"Level". LevelData files with an unsupported layout are skipped whole and reported, never partially
+scanned.
+
+every other template draws only the base model its leading model component names, always shown:
+Dijiang's guest terminal desk, screens and doors, for instance. that ignores whatever runtime state
+the game keeps for them (open doors, unlocked region walls), and rows with another `createState` are
+left out. templates without a data file of their own (the weapon-wall racks, some doors) and
+templates that name no model are reported or skipped.
 
 ## script groups
 
@@ -292,6 +298,6 @@ refinement and stops streaming once its tile is below the screen error threshold
 - variable-driven entity levels and animator states (`controlLoad` 0), e.g. the bridge between The
   Hub and Valley Pass
 - irradiance scene-state bakes selected by the active states
-- the gameplay-level → visual-form mapping for shops and depots, and interactive templates beyond
-  the three supported
+- the gameplay-level → visual-form mapping for shops and depots, and the runtime state of other
+  interactives, which draw their base model
 - meaning of progression bit 0 per controller kind, and which entity's state the server sets

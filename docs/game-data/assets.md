@@ -245,10 +245,12 @@ visual forms come from three sources:
    `readLevelInteractives` decodes the sequential prefix through the interactive list: template id,
    `createState`, position, rotation, scale, `modelScale` (0 = no override).
 
-only templates whose components follow the validated layout are read (`int_system_domain_shop`,
-`int_system_domain_depot`, `int_doodad_core_recycle`); other interactive systems need their own
-component and visibility contracts first. placements with `createState` 0 are emitted, one model
-placement per visual form, each visible under its form's bit of a per-facility progression control.
+the three facility templates (`int_system_domain_shop`, `int_system_domain_depot`,
+`int_doodad_core_recycle`) are read through their model-upgrade component, and their placements with
+`createState` 0 are emitted one model per visual form, each visible under its form's bit of a
+per-facility progression control. other templates are read only through their leading model
+component (`readInteractiveBaseModel`), and their placements draw that base model, always visible
+([scene-states.md](scene-states.md#facility-visual-forms)).
 
 LevelData is a sequential format: an unread field's length is unknown, so scanning past it would
 misframe every later row. the reader fails closed with `UnsupportedLevelData` on any populated field

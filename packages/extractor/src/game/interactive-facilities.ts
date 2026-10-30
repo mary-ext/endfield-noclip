@@ -1,6 +1,10 @@
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
-import { readInteractiveModel } from '@endfield-noclip/formats/endfield/interactive-model';
 import {
+	readInteractiveBaseModel,
+	readInteractiveModel,
+} from '@endfield-noclip/formats/endfield/interactive-model';
+import {
+	type LevelInteractive,
 	readLevelInteractives,
 	UnsupportedLevelData,
 } from '@endfield-noclip/formats/endfield/level-interactives';
@@ -13,8 +17,8 @@ import { VfsGroup } from '../hg/vfs.ts';
 
 import type { StructureModel } from './dynamic-structures.ts';
 
-// these facility templates share the validated base-model component prefix. other interactive
-// systems need their own component and visibility contracts before their models can be included.
+// these facility templates share the validated model-upgrade component, so their visual forms become a
+// progression control. every other template draws its base model only.
 const TEMPLATES = new Map([
 	[
 		'int_system_domain_shop',
@@ -36,9 +40,12 @@ const TEMPLATES = new Map([
 	],
 ]);
 
+const templateDataPath = (template: string): string =>
+	`Data/Json/Interactive/InteractiveData/data_${template}.json`;
+
 /**
- * resolves shop, depot and recycling-station visual forms from referenced LevelData and the install's model
- * table
+ * resolves the models of interactives placed by referenced LevelData: shop, depot and recycling-station
+ * visual forms, and every other template's base model, always shown
  *
  * @param context install readers
  * @param scene owning map
@@ -58,8 +65,9 @@ export const loadInteractiveFacilities = async (
 	unsupported: { path: string; reason: string }[];
 }> => {
 	const { vfs, world } = context;
+	const find = (name: string) => vfs.find(VfsGroup.JsonData, name);
 	const read = async (name: string): Promise<Uint8Array> => {
-		const file = await vfs.find(VfsGroup.JsonData, name);
+		const file = await find(name);
 		if (!file) {
 			throw new FormatError(`missing interactive data ${name}`);
 		}
@@ -74,26 +82,95 @@ export const loadInteractiveFacilities = async (
 		throw new FormatError('invalid model table');
 	}
 	const modelData = objectField(table, 'data');
-	const authored: {
-		id: string;
-		name: string;
-		initial: number;
-		forms: { prefab: string; scale: number }[];
-	}[] = [];
-	for (const [id, template] of TEMPLATES) {
-		// oxlint-disable-next-line no-await-in-loop -- small facility templates, read once per map
-		const model = readInteractiveModel(await read(template.data), string);
-		const forms = model.levels.map((modelId) => {
-			const data = objectField(modelData, modelId);
-			return {
-				prefab: stringField(data, 'path').toLowerCase(),
-				scale: model.scale * numberField(data, 'scaleFactor'),
-			};
-		});
-		authored.push({ id, name: template.name, initial: model.levels.indexOf(model.id), forms });
+	const formOf = (modelId: string, scale: number): { prefab: string; scale: number } => {
+		const data = objectField(modelData, modelId);
+		return {
+			prefab: stringField(data, 'path').toLowerCase(),
+			scale: scale * numberField(data, 'scaleFactor'),
+		};
+	};
+	const unsupported: { path: string; reason: string }[] = [];
+
+	// placements first, so only the templates they use are read
+	const pathOf = await world.pathLookup();
+	const placed: { path: string; levelId: string; levelTag: number; row: LevelInteractive }[] = [];
+	{
+		const seen = new Set<bigint>();
+		for (const config of (await world.levelConfigs()).values()) {
+			if (config.mapId !== scene || (level !== null && config.id !== level)) {
+				continue;
+			}
+			const levelTag = partition?.levels.find((entry) => entry.id === config.id)?.tag ?? 0;
+			for (const hash of config.levelDataPathHashes ?? []) {
+				const path = pathOf(hash);
+				if (!path) {
+					throw new FormatError(`missing LevelData path ${hash}`);
+				}
+				let rows;
+				try {
+					// oxlint-disable-next-line no-await-in-loop -- level files are released after their prefix is decoded
+					rows = readLevelInteractives(await read(path), string);
+				} catch (error) {
+					if (!(error instanceof UnsupportedLevelData)) {
+						throw error;
+					}
+					unsupported.push({ path, reason: error.message });
+					continue;
+				}
+				for (const row of rows) {
+					if (row.createState !== 0 || seen.has(row.id)) {
+						continue;
+					}
+					seen.add(row.id);
+					placed.push({ path, levelId: config.id, levelTag, row });
+				}
+			}
+		}
 	}
+
+	// templates: facilities with their visual forms, the rest with their base model alone
+	const authored = new Map<
+		string,
+		{ name: string | null; initial: number; forms: { prefab: string; scale: number }[] }
+	>();
+	for (const template of new Set(placed.map(({ row }) => row.template))) {
+		const facility = TEMPLATES.get(template);
+		if (facility !== undefined) {
+			// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
+			const model = readInteractiveModel(await read(facility.data), string);
+			authored.set(template, {
+				name: facility.name,
+				initial: model.levels.indexOf(model.id),
+				forms: model.levels.map((modelId) => formOf(modelId, model.scale)),
+			});
+			continue;
+		}
+		const data = templateDataPath(template);
+		// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
+		const file = await find(data);
+		if (!file) {
+			// variants such as the weapon-wall racks have no template file of their own
+			unsupported.push({ path: data, reason: `no template file for ${template}` });
+			continue;
+		}
+		try {
+			// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
+			const model = readInteractiveBaseModel(await vfs.readVerified(file), string);
+			if (model !== null) {
+				authored.set(template, { name: null, initial: 0, forms: [formOf(model.id, model.scale)] });
+			}
+		} catch (error) {
+			if (!(error instanceof FormatError)) {
+				throw error;
+			}
+			unsupported.push({ path: data, reason: error.message });
+		}
+	}
+
 	// the manifest maps hashes to paths only, and each path decompresses on read: stop once all are found
-	const wanted = new Set(authored.flatMap((template) => template.forms.map((form) => form.prefab)));
+	const wanted = new Set(
+		[...authored.values()].flatMap((template) => template.forms.map((form) => form.prefab)),
+	);
 	const hashes = new Map<string, bigint>();
 	const manifest = await world.manifest();
 	for (const asset of manifest.assets()) {
@@ -105,81 +182,50 @@ export const loadInteractiveFacilities = async (
 			hashes.set(path, asset.pathHash);
 		}
 	}
-	const templates = new Map<
-		string,
-		{ name: string; initial: number; forms: { hash: bigint; scale: number }[] }
-	>();
-	for (const { id, name, initial, forms } of authored) {
-		templates.set(id, {
-			name,
-			initial,
-			forms: forms.map(({ prefab, scale }) => {
-				const hash = hashes.get(prefab);
-				if (hash === undefined) {
-					throw new FormatError(`missing facility prefab ${prefab}`);
-				}
-				return { hash, scale };
-			}),
-		});
-	}
-	const pathOf = await world.pathLookup();
+	const hashOf = (prefab: string): bigint => {
+		const hash = hashes.get(prefab);
+		if (hash === undefined) {
+			throw new FormatError(`missing interactive prefab ${prefab}`);
+		}
+		return hash;
+	};
+
 	const models: StructureModel[] = [];
 	const progressions: ProgressionInfo[] = [];
-	const unsupported: { path: string; reason: string }[] = [];
-	const seen = new Set<bigint>();
-	for (const config of (await world.levelConfigs()).values()) {
-		if (config.mapId !== scene || (level !== null && config.id !== level)) {
+	for (const { path, levelId, levelTag, row } of placed) {
+		const template = authored.get(row.template);
+		if (template === undefined) {
 			continue;
 		}
-		const levelTag = partition?.levels.find((entry) => entry.id === config.id)?.tag ?? 0;
-		for (const hash of config.levelDataPathHashes ?? []) {
-			const path = pathOf(hash);
-			if (!path) {
-				throw new FormatError(`missing LevelData path ${hash}`);
-			}
-			let rows;
-			try {
-				// oxlint-disable-next-line no-await-in-loop -- level files are released after their prefix is decoded
-				rows = readLevelInteractives(await read(path), string);
-			} catch (error) {
-				if (!(error instanceof UnsupportedLevelData)) {
-					throw error;
-				}
-				unsupported.push({ path, reason: error.message });
-				continue;
-			}
-			for (const row of rows) {
-				const template = templates.get(row.template);
-				if (!template || row.createState !== 0 || seen.has(row.id)) {
-					continue;
-				}
-				seen.add(row.id);
-				const id = `facility:${row.id}`;
-				progressions.push({
-					id,
-					kind: 'facility',
-					key: row.template,
-					name: `${template.name} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
-					levelId: config.id,
-					levels: template.forms.map((_, i) => i),
-					defaultLevel: template.initial,
-				});
-				for (const [form, model] of template.forms.entries()) {
-					// zero is the authored "no scale override" sentinel on LevelInteractiveData.
-					const scale = row.modelScale > 0 ? row.modelScale : model.scale;
-					models.push({
-						model: {
-							pathHash: model.hash,
-							position: row.position,
-							rotation: row.rotation,
-							scale: [row.scale[0] * scale, row.scale[1] * scale, row.scale[2] * scale],
-						},
-						levelTag,
-						source: `${path}#${row.id}`,
-						visibility: { alternatives: [[{ control: id, mask: (1 << form) >>> 0 }]] },
-					});
-				}
-			}
+		const id = `facility:${row.id}`;
+		if (template.name !== null) {
+			progressions.push({
+				id,
+				kind: 'facility',
+				key: row.template,
+				name: `${template.name} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
+				levelId,
+				levels: template.forms.map((_, i) => i),
+				defaultLevel: template.initial,
+			});
+		}
+		for (const [form, model] of template.forms.entries()) {
+			// zero is the authored "no scale override" sentinel on LevelInteractiveData.
+			const scale = row.modelScale > 0 ? row.modelScale : model.scale;
+			models.push({
+				model: {
+					pathHash: hashOf(model.prefab),
+					position: row.position,
+					rotation: row.rotation,
+					scale: [row.scale[0] * scale, row.scale[1] * scale, row.scale[2] * scale],
+				},
+				levelTag,
+				source: `${path}#${row.id}`,
+				visibility:
+					template.name === null
+						? { alternatives: [[]] }
+						: { alternatives: [[{ control: id, mask: (1 << form) >>> 0 }]] },
+			});
 		}
 	}
 	return { models, progressions, unsupported };
