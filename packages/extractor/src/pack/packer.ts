@@ -101,7 +101,7 @@ import {
 	sceneStateControl,
 	unnamedSceneStateControl,
 } from '../game/scene-conditions.ts';
-import { loadProgressions, progressionId } from '../game/scene-states.ts';
+import { loadProgressions, progressionId } from '../game/scenery-variants.ts';
 import {
 	indexTerrain,
 	loadTerrainSplatIndex,

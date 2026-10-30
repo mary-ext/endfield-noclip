@@ -24,7 +24,7 @@ import { VfsGroup } from '../hg/vfs.ts';
 
 import { gateControl, gateToggles } from './dynamic-gates.ts';
 import { sceneStateControl } from './scene-conditions.ts';
-import { controllerKey, progressionId } from './scene-states.ts';
+import { controllerKey, progressionId } from './scenery-variants.ts';
 
 /** a prefab placement and its owning level */
 export interface StructureModel {

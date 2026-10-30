@@ -30,13 +30,13 @@ import { defaultSceneStates, loadSceneStateControls } from '../game/scene-condit
 import type { IndexedEntity, WorldIndex } from '../game/world-index.ts';
 
 export const summary =
-	'world index: maps | levels <map> [--verify] | cells <level> | entities <map> <x> <z>|global | members <level> | env <map|level> | resolve <path|hash>';
+	'world index: scenes | levels <map> [--verify] | cells <level> | entities <scene> <x> <z>|global | members <level> | env <map|level> | resolve <path|hash>';
 
 const USAGE = `usage:
-  world maps                               streaming scenes, with level counts for open-world maps
+  world scenes                             streaming scenes, with level counts for open-world maps
   world levels <map> [--verify]            levels with tag, cells and names; --verify votes tags against cells
   world cells <level>                      cells a level owns and their chunk files
-  world entities <map> <x> <z> [--json]    entities in one cell's chunks (or 'global'); --scene-state/--area filter
+  world entities <scene> <x> <z> [--json]  entities in one cell's chunks (or 'global'); --scene-state/--area filter
   world members <level> [--json]           every entity the level owns, bucketed by placement
   world env <map|level>                    base environment per level (a map lists all), and why
   world resolve <path|hash>                path ↔ hash, then asset → bundle + dependencies`;
@@ -60,8 +60,8 @@ export const run = async (args: string[]): Promise<void> => {
 	await withContext(values.config, async (context) => {
 		const { world } = context;
 		switch (sub) {
-			case 'maps': {
-				await listMaps(world);
+			case 'scenes': {
+				await listScenes(world);
 				break;
 			}
 			case 'levels': {
@@ -73,7 +73,7 @@ export const run = async (args: string[]): Promise<void> => {
 				break;
 			}
 			case 'entities': {
-				await listEntities(world, need(rest[0], 'map'), need(rest[1], 'x'), rest[2], {
+				await listEntities(world, need(rest[0], 'scene'), need(rest[1], 'x'), rest[2], {
 					json: values.json,
 					sceneState: parseOptionalInteger(values['scene-state'], '--scene-state'),
 					area: parseOptionalInteger(values.area, '--area'),
@@ -111,7 +111,7 @@ const requirePartition = async (world: WorldIndex, mapId: string): Promise<Level
 
 // #region subcommands
 
-const listMaps = async (world: WorldIndex): Promise<void> => {
+const listScenes = async (world: WorldIndex): Promise<void> => {
 	const names = await world.names();
 	const files = await world.chunkFiles();
 	const scenes = await world.scenes();
@@ -209,17 +209,17 @@ const listCells = async (world: WorldIndex, levelId: string): Promise<void> => {
 
 const listEntities = async (
 	world: WorldIndex,
-	mapId: string,
+	scene: string,
 	xArg: string,
 	zArg: string | undefined,
 	options: { json: boolean; sceneState: number | undefined; area: number | undefined },
 ): Promise<void> => {
 	const cell =
 		xArg === 'global' ? 'global' : { x: parseInteger(xArg, 'cell x'), z: parseInteger(zArg ?? '', 'cell z') };
-	const partition = await world.partition(mapId);
-	const files = await world.cellChunkFiles(mapId, cell, options);
+	const partition = await world.partition(scene);
+	const files = await world.cellChunkFiles(scene, cell, options);
 	if (files.length === 0) {
-		throw new Error(`no InitChunkData for ${mapId} ${cell === 'global' ? 'Global' : `${cell.x},${cell.z}`}`);
+		throw new Error(`no InitChunkData for ${scene} ${cell === 'global' ? 'Global' : `${cell.x},${cell.z}`}`);
 	}
 
 	const perFile = await Promise.all(files.map((file) => world.readChunk(file, partition)));

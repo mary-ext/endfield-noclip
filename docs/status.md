@@ -4,8 +4,8 @@ what the extractor and viewer cover, where they knowingly differ from the game, 
 unknown. topic pages carry the detail; this page is the index of gaps. update it in the same commit
 that closes or opens one.
 
-map01 and map02 are the tested regions. a scene listed by `world maps` is not evidence that it packs
-or renders correctly.
+map01 and map02 are the tested scenes. a scene listed by `world scenes` is not evidence that it
+packs or renders correctly.
 
 ## covered
 

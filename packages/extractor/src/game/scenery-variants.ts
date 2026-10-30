@@ -68,18 +68,18 @@ export interface SceneProgression {
 	groupsPerLevel: Record<number, number>;
 }
 
-/** every selectable scenery state of a map */
-export interface SceneStates {
-	map: string;
+/** every selectable scenery variant of a scene */
+export interface SceneryVariants {
+	scene: string;
 	areas: StreamAreaInfo[];
 	progressions: SceneProgression[];
 }
 
-/** a choice of states to show */
-export interface StateSelection {
+/** a choice of variants to show */
+export interface VariantSelection {
 	/**
 	 * `all` shows every area (the whole world revealed); `root` what the client shows outside any trigger; a
-	 * list shows state 0 plus exactly those areas
+	 * list shows area 0 plus exactly those areas
 	 */
 	areas: 'all' | 'root' | number[];
 	/** progression level by {@link progressionId}; unset progressions use their default level */
@@ -94,14 +94,14 @@ export interface StateSelection {
 const READ_CONCURRENCY = 16;
 
 /**
- * catalogues a map's stream areas and progression controllers. reads every non-zero-area chunk file and every
- * `fb_main` file of the scene, so it takes a few seconds
+ * catalogues a scene's stream areas and progression controllers. reads every non-zero-area chunk file and
+ * every `fb_main` file of the scene, so it takes a few seconds
  *
  * @param world world index
  * @param scene streaming scene, e.g. `map02`
- * @returns the scene's selectable states
+ * @returns the scene's selectable variants
  */
-export const loadSceneStates = async (world: WorldIndex, scene: string): Promise<SceneStates> => {
+export const loadSceneryVariants = async (world: WorldIndex, scene: string): Promise<SceneryVariants> => {
 	const names = await world.names();
 	const partition = await world.partition(scene);
 	const table = await world.streamAreas(scene);
@@ -144,7 +144,7 @@ export const loadSceneStates = async (world: WorldIndex, scene: string): Promise
 		});
 	}
 
-	return { map: scene, areas, progressions: await loadProgressions(world, scene) };
+	return { scene, areas, progressions: await loadProgressions(world, scene) };
 };
 
 /**
@@ -213,7 +213,7 @@ const revealingAreas = (table: StreamAreaTable, area: number): number[] => {
 /**
  * @param kind progression kind
  * @param key its key within the kind
- * @returns the progression's id: `${kind}:${key}`, its key in {@link StateSelection.levels}
+ * @returns the progression's id: `${kind}:${key}`, its key in {@link VariantSelection.levels}
  */
 export const progressionId = (kind: ProgressionKind, key: string): string => `${kind}:${key}`;
 
@@ -332,19 +332,19 @@ export const maskLevels = (mask: number): number[] => {
 };
 
 /**
- * @param states the map's catalogue
+ * @param variants the scene's variants
  * @param table its stream-area table, for `root`
  * @param selection what to show
  * @returns area ids to load, always including 0
  */
 export const selectedAreas = (
-	states: SceneStates,
+	variants: SceneryVariants,
 	table: StreamAreaTable | undefined,
-	selection: StateSelection,
+	selection: VariantSelection,
 ): Set<number> => {
 	const ids = new Set<number>([0]);
 	if (selection.areas === 'all') {
-		for (const area of states.areas) {
+		for (const area of variants.areas) {
 			ids.add(area.id);
 		}
 	} else if (selection.areas === 'root') {
@@ -377,14 +377,18 @@ export const resolveChunkFiles = (
  * @returns the logic state to evaluate the entity's resource groups with: the selected (else default) level
  *   of its first progression controller, or 0 for entities without one
  */
-const entityLogicState = (entity: DynamicEntity, states: SceneStates, selection: StateSelection): number => {
+const entityLogicState = (
+	entity: DynamicEntity,
+	variants: SceneryVariants,
+	selection: VariantSelection,
+): number => {
 	for (const controller of entity.controllers) {
 		const key = controllerKey(controller);
 		const chosen = selection.levels[progressionId(controller.kind, key)];
 		if (chosen !== undefined) {
 			return chosen;
 		}
-		const progression = states.progressions.find((p) => p.kind === controller.kind && p.key === key);
+		const progression = variants.progressions.find((p) => p.kind === controller.kind && p.key === key);
 		if (progression) {
 			return progression.defaultLevel;
 		}
@@ -394,16 +398,16 @@ const entityLogicState = (entity: DynamicEntity, states: SceneStates, selection:
 
 /**
  * @param entity a DynamicStreaming entity
- * @param states the map's catalogue
+ * @param variants the scene's variants
  * @param selection chosen levels
  * @returns the entity's resource groups shown under the selection
  */
 export const shownResourceGroups = (
 	entity: DynamicEntity,
-	states: SceneStates,
-	selection: StateSelection,
+	variants: SceneryVariants,
+	selection: VariantSelection,
 ): DynamicResourceGroup[] => {
-	const state = entityLogicState(entity, states, selection);
+	const state = entityLogicState(entity, variants, selection);
 	return entity.resourceGroups.filter((group) => resourceGroupShown(group, state));
 };
 

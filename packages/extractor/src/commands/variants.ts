@@ -2,18 +2,18 @@ import { parseArgs } from 'node:util';
 
 import { withContext } from '../context.ts';
 import {
-	loadSceneStates,
+	loadSceneryVariants,
 	resolveChunkFiles,
 	selectedAreas,
-	type StateSelection,
-} from '../game/scene-states.ts';
+	type VariantSelection,
+} from '../game/scenery-variants.ts';
 
 export const summary =
-	'scenery states: stream areas and progression levels of a map [--json] [--areas all|root|<id,…>]';
+	'scenery variants: stream areas and progression levels of a scene [--json] [--areas all|root|<id,…>]';
 
 const USAGE = `usage:
-  states <map> [--json]                       stream areas (chunk sceneStateIds) and progression controllers
-  states <map> --areas all|root|<id,…>        also list the chunk files that selection loads`;
+  variants <scene> [--json]                   stream areas (chunk areaIds) and progression controllers
+  variants <scene> --areas all|root|<id,…>    also list the chunk files that selection loads`;
 
 export const run = async (args: string[]): Promise<void> => {
 	const { values, positionals } = parseArgs({
@@ -31,16 +31,16 @@ export const run = async (args: string[]): Promise<void> => {
 	}
 
 	await withContext(values.config, async ({ world }) => {
-		const states = await loadSceneStates(world, scene);
+		const variants = await loadSceneryVariants(world, scene);
 		if (values.json) {
-			console.log(JSON.stringify(states, null, '\t'));
+			console.log(JSON.stringify(variants, null, '\t'));
 		} else {
-			printStates(states);
+			printVariants(variants);
 		}
 
 		if (values.areas !== undefined) {
-			const selection: StateSelection = { areas: parseAreas(values.areas), levels: {} };
-			const ids = selectedAreas(states, await world.streamAreas(scene), selection);
+			const selection: VariantSelection = { areas: parseAreas(values.areas), levels: {} };
+			const ids = selectedAreas(variants, await world.streamAreas(scene), selection);
 			const files = resolveChunkFiles(await world.chunkFiles(), scene, ids);
 			console.log(
 				`\n${files.length} InitChunkData files for areas ${[...ids].toSorted((a, b) => a - b).join(',')}`,
@@ -52,7 +52,7 @@ export const run = async (args: string[]): Promise<void> => {
 	});
 };
 
-const parseAreas = (value: string): StateSelection['areas'] => {
+const parseAreas = (value: string): VariantSelection['areas'] => {
 	if (value === 'all' || value === 'root') {
 		return value;
 	}
@@ -63,20 +63,22 @@ const parseAreas = (value: string): StateSelection['areas'] => {
 	return ids;
 };
 
-const printStates = (states: Awaited<ReturnType<typeof loadSceneStates>>): void => {
-	console.log(`${states.map}: ${states.areas.length} stream areas with static chunks`);
+const printVariants = (variants: Awaited<ReturnType<typeof loadSceneryVariants>>): void => {
+	console.log(`${variants.scene}: ${variants.areas.length} stream areas with static chunks`);
 	console.log('        area  root  shown inside zones            files  entities  level');
-	for (const area of states.areas) {
+	for (const area of variants.areas) {
 		const inside = area.shownInside.join(',') || '-';
 		console.log(
 			`${String(area.id).padStart(12)}  ${area.rootVisible ? 'yes ' : '    '}  ${inside.padEnd(30)} ${String(area.chunkFiles).padStart(5)}  ${String(area.entities).padStart(8)}  ${area.levelId ?? '-'} ${area.levelName ?? ''}`,
 		);
 	}
-	console.log(`\n${states.progressions.length} progression controllers (DynamicStreaming LogicState levels)`);
+	console.log(
+		`\n${variants.progressions.length} progression controllers (DynamicStreaming LogicState levels)`,
+	);
 	console.log(
 		'kind           key                            level                         levels (groups)       default',
 	);
-	for (const p of states.progressions) {
+	for (const p of variants.progressions) {
 		const levels = p.levels.map((level) => `${level}(${p.groupsPerLevel[level]})`).join(' ');
 		console.log(
 			`${p.kind.padEnd(14)} ${p.key.padEnd(30)} ${`${p.levelId ?? '-'} ${p.levelName ?? ''}`.padEnd(29)} ${levels.padEnd(21)} ${p.defaultLevel}`,

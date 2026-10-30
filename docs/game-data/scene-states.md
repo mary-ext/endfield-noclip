@@ -149,8 +149,8 @@ not gated.
 
 ## progressions
 
-implemented in [`scene-states.ts`](../../packages/extractor/src/game/scene-states.ts);
-`states <map>` prints the catalogue.
+implemented in [`scenery-variants.ts`](../../packages/extractor/src/game/scenery-variants.ts);
+`variants <scene>` prints them with the scene's stream areas.
 
 settlements (outposts), POI facilities (Trial of Swordmancy, archery range, inn parts) and factory
 regions are DynamicStreaming entities with a `SettlementControlComp`, `PoiControlComp` or

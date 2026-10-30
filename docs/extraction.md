@@ -27,19 +27,19 @@ text is in its module; run it without arguments for the details. every command e
 through `withContext` in `context.ts`, which mounts the VFS, builds the world index and creates the
 asset resolver on first use.
 
-| command   | what it does                                                                                                                                                                                      |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`    | writes `endfield.local.json`: the `Endfield_Data` path and validated keys                                                                                                                         |
-| `pack`    | writes a viewer package for one streaming scene, optionally one level (`--level`) or a world rectangle (`--bounds`)                                                                               |
-| `world`   | the world index: client scenes (`maps`), a map's levels and their cells, a cell's entities, a level's members, the chosen base environment per level (`env`), and path ↔ hash ↔ bundle resolution |
-| `states`  | a map's stream areas and progression controllers, and which chunk files a stream-area selection loads                                                                                             |
-| `vfs`     | lists VFS groups and their files, and extracts one logical file                                                                                                                                   |
-| `bundle`  | inspects bundles: header and per-class counts, objects as JSON, an object's stream data, searching container paths and classes                                                                    |
-| `asset`   | decodes one mesh, texture or material by bundle and path id, follows an entity's draws, or exports a cell as glTF                                                                                 |
-| `terrain` | lists terrain scenes and tiles, and exports heightmaps as PNG                                                                                                                                     |
-| `water`   | lists water surfaces by map, level or cell, counts them, and dumps water configs                                                                                                                  |
+| command    | what it does                                                                                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`     | writes `endfield.local.json`: the `Endfield_Data` path and validated keys                                                                                                                           |
+| `pack`     | writes a viewer package for one streaming scene, optionally one level (`--level`) or a world rectangle (`--bounds`)                                                                                 |
+| `world`    | the world index: client scenes (`scenes`), a map's levels and their cells, a cell's entities, a level's members, the chosen base environment per level (`env`), and path ↔ hash ↔ bundle resolution |
+| `variants` | a scene's stream areas and progression controllers, and which chunk files a stream-area selection loads                                                                                             |
+| `vfs`      | lists VFS groups and their files, and extracts one logical file                                                                                                                                     |
+| `bundle`   | inspects bundles: header and per-class counts, objects as JSON, an object's stream data, searching container paths and classes                                                                      |
+| `asset`    | decodes one mesh, texture or material by bundle and path id, follows an entity's draws, or exports a cell as glTF                                                                                   |
+| `terrain`  | lists terrain scenes and tiles, and exports heightmaps as PNG                                                                                                                                       |
+| `water`    | lists water surfaces by map, level or cell, counts them, and dumps water configs                                                                                                                    |
 
-the inspection commands (`world`, `states`, `vfs`, `bundle`, `asset`, `terrain`, `water`) are for
+the inspection commands (`world`, `variants`, `vfs`, `bundle`, `asset`, `terrain`, `water`) are for
 research and debugging; only `init` and `pack` are needed to produce a package. their glTF/PNG/KTX2
 exports (`export/`) mirror Unity's X axis and use base colours only.
 
