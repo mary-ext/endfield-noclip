@@ -1580,6 +1580,7 @@ export type ShaderFamily =
 	| 'volumetricBeam'
 	| 'terrain'
 	| 'hlod'
+	| 'mattePainting'
 	| 'unknown';
 
 /** how a material composites */

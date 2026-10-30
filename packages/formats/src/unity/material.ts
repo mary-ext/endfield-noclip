@@ -286,6 +286,7 @@ export type ShaderFamily =
 	| 'volumetricBeam'
 	| 'terrain'
 	| 'hlod'
+	| 'mattePainting'
 	| 'unknown';
 
 const FAMILIES: [RegExp, ShaderFamily][] = [
@@ -309,6 +310,7 @@ const FAMILIES: [RegExp, ShaderFamily][] = [
 	[/^Hidden\/VLB_/i, 'volumetricBeam'],
 	[/terrain/i, 'terrain'],
 	[/hlod/i, 'hlod'],
+	[/^HGRP\/MattePainting$/i, 'mattePainting'],
 ];
 
 /**

@@ -40,6 +40,9 @@ const DEFAULT_ALBEDO: [r: number, g: number, b: number] = [0.5, 0.5, 0.5];
 /** the texture slots the mesh shader samples, in binding order */
 export const SLOTS = ['_BaseColorMap', '_NormalMap', '_MROMap', '_EmissiveMap'] as const;
 
+/** the matte painting's only texture, drawn in the base colour slot */
+const MATTE_PAINTING_TEXTURE = '_MainTex';
+
 /** {@link MaterialLook.flags} bits, matching `mesh.wgsl` */
 export const LookFlags = {
 	/** slot `i` of {@link SLOTS} has a texture: bit `i` */
@@ -60,6 +63,8 @@ export const LookFlags = {
 	// bits 9 and 10 are the geometry's flags (mesh-renderer.ts)
 	/** emission is the emissive colour times a channel of the material's own maps (`_EMISSIVE_MASK`) */
 	EmissiveMask: 1 << 11,
+	/** unlit: the tinted base colour is the radiance (matte paintings; see `mattePaintingLook`) */
+	Unlit: 1 << 12,
 } as const;
 
 /** the slot flags of {@link LookFlags}, which are cleared while a slot's texture isn't resident */
@@ -84,6 +89,8 @@ export interface MaterialLook {
 	cutout: boolean;
 	/** the faces the game culls, for unmirrored instances */
 	cull: MaterialCull;
+	/** whether the material draws into shadow maps */
+	castsShadows: boolean;
 	/** texture id per {@link SLOTS} entry, or -1 */
 	textures: [number, number, number, number];
 	/** largest UV scale of each slot, for picking the mip level to stream */
@@ -100,7 +107,7 @@ export const LookRow = {
 	tint: 0,
 	/** one UV transform per slot */
 	uv: 4,
-	/** roughness min, roughness max, metallic, normal scale */
+	/** roughness min, roughness max, metallic, normal scale; unlit looks: highlight threshold and intensity */
 	surface: 20,
 	/** occlusion strength, f0, transmission, base colour brighter scale */
 	surface2: 24,
@@ -123,6 +130,7 @@ const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => {
 		drawn,
 		cutout: false,
 		cull: 'none',
+		castsShadows: true,
 		textures: [-1, -1, -1, -1],
 		uvScales: [1, 1, 1, 1],
 		flags: 0,
@@ -164,7 +172,11 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 			looks[entry.id] = emptyLook({ drawn: false });
 			continue;
 		}
-		looks[entry.id] = lookOf(entry, shader);
+		if (shader.family === 'mattePainting') {
+			looks[entry.id] = mattePaintingLook(entry, shader);
+		} else {
+			looks[entry.id] = lookOf(entry, shader);
+		}
 	}
 	return looks;
 };
@@ -261,5 +273,43 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 			);
 		}
 	}
+	return look;
+};
+
+/**
+ * `HGRP/MattePainting`: painted backdrops on distant cards, unlit. the colour is `_MainTex` times `_TintColor
+ * · _TintColorIntensity`, brightened by `_ExpIntensity` above `_ExpThreshold`; alpha is the texture's times
+ * `_TintColor.a · _TintColorAlpha`, clamped to 1 and tested against `_AlphaClipThreshold`. the shader has no
+ * shadow caster pass. `_UseMainTexAsAlpha` (alpha from the texture's R, colour from the tint alone) isn't
+ * read: no packed material sets it
+ */
+const mattePaintingLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
+	const look = emptyLook({ drawn: true });
+	look.cull = entry.cull;
+	look.castsShadows = false;
+	look.flags |= LookFlags.Unlit;
+	const params = look.params;
+	const slot = entry.slots[MATTE_PAINTING_TEXTURE];
+	if (slot !== undefined && slot.uv === 0) {
+		look.textures[0] = slot.texture;
+		look.uvScales[0] = Math.max(Math.abs(slot.scale[0]), Math.abs(slot.scale[1]), 1e-3);
+		look.flags |= LookFlags.BaseMap;
+		params.set([...slot.scale, ...slot.offset], LookRow.uv);
+	}
+	const tint = colourOf(entry, shader, '_TintColor') ?? [1, 1, 1, 1];
+	const intensity = floatOf(entry, shader, '_TintColorIntensity', 1);
+	const colour = linearRgb(tint).map((c) => c * intensity);
+	// the alpha test on the texture's alpha alone: saturate(a · scale) < clip ⇔ a < clip / scale while
+	// clip ≤ 1; past 1 everything is discarded
+	let threshold = -1;
+	if (entry.alphaClip !== null && entry.alphaClip > 0) {
+		const scale = tint[3] * floatOf(entry, shader, '_TintColorAlpha', 1);
+		threshold = entry.alphaClip > 1 || scale <= 0 ? 2 : entry.alphaClip / scale;
+	}
+	params.set([...colour, threshold], LookRow.tint);
+	look.cutout = threshold >= 0 && look.textures[0] >= 0;
+	params[LookRow.surface] = floatOf(entry, shader, '_ExpThreshold', 1);
+	params[LookRow.surface + 1] = floatOf(entry, shader, '_ExpIntensity', 0);
+	params[LookRow.emission2 + 2] = floatOf(entry, shader, '_IgnorePostExposure', 1);
 	return look;
 };

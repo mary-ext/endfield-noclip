@@ -128,6 +128,7 @@ describe('shader helpers', () => {
 		assert.equal(shaderFamily('HGRP/Foliage/TreeFoliageCardMeshLod'), 'cardMesh');
 		assert.equal(shaderFamily('HGRP/Foliage/Grass'), 'grass');
 		assert.equal(shaderFamily('Hidden/VLB_Standard'), 'volumetricBeam');
+		assert.equal(shaderFamily('HGRP/MattePainting'), 'mattePainting');
 		assert.equal(shaderFamily('Custom/Thing'), 'unknown');
 	});
 

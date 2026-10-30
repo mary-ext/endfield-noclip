@@ -45,6 +45,7 @@ const FOLIAGE = 64u;
 const METALLIC_BASE_ALPHA = 128u;
 const NORMAL_OCCLUSION = 256u;
 const EMISSIVE_MASK = 2048u;
+const UNLIT = 4096u;
 // set per draw from the geometry's streams (`GeometryFlags` in mesh-renderer.ts)
 const HAS_NORMALS = 512u;
 const HAS_TANGENTS = 1024u;
@@ -135,6 +136,17 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 	let packed = textureSampleBias(normal_map, detail_sampler, in.uv * draw.normal_uv.xy + draw.normal_uv.zw, bias);
 	let mask = textureSampleBias(mask_map, detail_sampler, in.uv * draw.mask_uv.xy + draw.mask_uv.zw, bias);
 	let glow = textureSampleBias(emissive_map, base_sampler, in.uv * draw.emissive_uv.xy + draw.emissive_uv.zw, bias);
+
+	if ((flags & UNLIT) != 0u) {
+		// matte paintings (`mattePaintingLook` in materials.ts): the tinted texture brightened above a threshold,
+		// in pre-exposed units unless it ignores the post exposure
+		var c = draw.tint.rgb;
+		if ((flags & BASE_MAP) != 0u) {
+			c *= base.rgb;
+		}
+		c += max(c - vec3f(draw.surface.x), vec3f(0.0)) * draw.surface.y;
+		return unlit(clamp(c * mix(1.0, frame.ambient.y, draw.emission2.z), vec3f(0.0), vec3f(1000.0)));
+	}
 
 	var albedo = clamp(base.rgb * draw.surface2.w, vec3f(0.0), vec3f(1.0));
 	if ((flags & BASE_MAP) == 0u) {

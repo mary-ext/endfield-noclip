@@ -19,7 +19,7 @@ import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
-import { LOOK_FLOATS, LookRow, SLOTS, SLOT_FLAGS } from './materials.ts';
+import { LOOK_FLOATS, LookFlags, LookRow, SLOTS, SLOT_FLAGS } from './materials.ts';
 import meshWgsl from './shaders/mesh.wgsl?raw';
 import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
 import type { TextureBinding, TextureStore } from './texture-store.ts';
@@ -80,17 +80,19 @@ interface DrawPhase {
 	cutout: boolean;
 	/** whether the pipeline reads the material's textures; if not, any material group will do */
 	textured: boolean;
+	/** over only the draws whose materials cast shadows */
+	shadow: boolean;
 }
 
 const MAIN_PHASES: readonly DrawPhase[] = [
-	{ key: 'mesh/opaque', cutout: false, textured: true },
-	{ key: 'mesh/cutout-depth', cutout: true, textured: true },
-	{ key: 'mesh/cutout-shade', cutout: true, textured: true },
+	{ key: 'mesh/opaque', cutout: false, textured: true, shadow: false },
+	{ key: 'mesh/cutout-depth', cutout: true, textured: true, shadow: false },
+	{ key: 'mesh/cutout-shade', cutout: true, textured: true, shadow: false },
 ];
 
 const SHADOW_PHASES: readonly DrawPhase[] = [
-	{ key: 'mesh/shadow/opaque', cutout: false, textured: false },
-	{ key: 'mesh/shadow/cutout', cutout: true, textured: true },
+	{ key: 'mesh/shadow/opaque', cutout: false, textured: false, shadow: true },
+	{ key: 'mesh/shadow/cutout', cutout: true, textured: true, shadow: true },
 ];
 
 interface PreparedDraw {
@@ -118,10 +120,11 @@ const uvFormatOf = (bucket: MeshBucket): UvFormat => {
 };
 
 /**
- * draw order within the opaque and the alpha-tested draws: face culling and UV format (one pipeline each),
- * then geometry, material and submesh
+ * draw order within the opaque and the alpha-tested draws: shadow casters first, so shadow passes draw a
+ * prefix; then face culling and UV format (one pipeline each), geometry, material and submesh
  */
 const byBindings = (a: MeshBucket, b: MeshBucket): number =>
+	Number(b.look.castsShadows) - Number(a.look.castsShadows) ||
 	FACE_CULLS.indexOf(faceCullOf(a)) - FACE_CULLS.indexOf(faceCullOf(b)) ||
 	UV_FORMATS.indexOf(uvFormatOf(a)) - UV_FORMATS.indexOf(uvFormatOf(b)) ||
 	a.geometry.blob - b.geometry.blob ||
@@ -163,6 +166,9 @@ export class MeshRenderer {
 	#drawCount = 0;
 	/** index of the first alpha-tested draw */
 	#cutoutStart = 0;
+	/** ends of the shadow-casting opaque and alpha-tested draws */
+	#opaqueCastersEnd = 0;
+	#cutoutCastersEnd = 0;
 
 	/**
 	 * @param device the device
@@ -393,8 +399,12 @@ export class MeshRenderer {
 			if (bucket.count === 0 || bucket.geometry.resident?.kind !== 'geometry') {
 				continue;
 			}
-			// without its base colour there's no alpha to test yet
+			// without its base colour there's no alpha to test yet. unlit looks are their texture, so they wait
+			// for it rather than draw as solid cards
 			const look = bucket.look;
+			if ((look.flags & LookFlags.Unlit) !== 0 && textures.binding(look.textures[0]) === null) {
+				continue;
+			}
 			if (look.cutout && textures.binding(look.textures[0]) !== null) {
 				cutout.push(bucket);
 			} else {
@@ -411,6 +421,8 @@ export class MeshRenderer {
 		let listStart = LIST_CAPACITY;
 		let listEnd = 0;
 		let d = 0;
+		this.#opaqueCastersEnd = 0;
+		this.#cutoutCastersEnd = 0;
 		for (let b = 0; b < opaque.length + cutout.length; b++) {
 			if (b === opaque.length) {
 				this.#cutoutStart = d;
@@ -482,6 +494,13 @@ export class MeshRenderer {
 				draw.uvFormat = resident.uvFormat;
 			}
 			d++;
+			if (look.castsShadows) {
+				if (b < opaque.length) {
+					this.#opaqueCastersEnd = d;
+				} else {
+					this.#cutoutCastersEnd = d;
+				}
+			}
 
 			this.instanceCount += bucket.count;
 			this.triangles += (bucket.count * range.indexCount) / 3;
@@ -493,6 +512,7 @@ export class MeshRenderer {
 		if (cutout.length === 0) {
 			this.#cutoutStart = d;
 		}
+		this.#cutoutCastersEnd = Math.max(this.#cutoutCastersEnd, this.#cutoutStart);
 		if (d > 0) {
 			const queue = this.#device.queue;
 			queue.writeBuffer(this.#params, 0, params, 0, d * DRAW_FLOATS);
@@ -539,7 +559,10 @@ export class MeshRenderer {
 		let draws = 0;
 		for (const phase of phases) {
 			const from = phase.cutout ? this.#cutoutStart : 0;
-			const to = phase.cutout ? this.#drawCount : this.#cutoutStart;
+			let to = phase.cutout ? this.#drawCount : this.#cutoutStart;
+			if (phase.shadow) {
+				to = phase.cutout ? this.#cutoutCastersEnd : this.#opaqueCastersEnd;
+			}
 			if (from === to) {
 				continue;
 			}

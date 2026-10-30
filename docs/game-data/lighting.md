@@ -126,6 +126,19 @@ their brightness however the exposure adapts.
 not drawn: the animated variants' motion (they're drawn still), `_EmissiveType`'s extra G/B/A
 colours, the Fresnel term, emissive UV set 1, and per-instance emission overrides.
 
+## matte paintings
+
+`HGRP/MattePainting` draws the painted mountain ranges on the horizon: a few alpha-tested ring
+segments, 600–1000 m from their origin and 1000 m tall, carrying one wide texture (map01's is
+4096×512). they're unlit ([`mattePaintingLook`](../../packages/viewer/src/render/materials.ts)): the
+colour is `_MainTex` times `_TintColor · _TintColorIntensity`, plus `_ExpIntensity` times whatever
+exceeds `_ExpThreshold`, in pre-exposed units unless `_IgnorePostExposure` is set. alpha is the
+texture's times `_TintColor.a · _TintColorAlpha`, clamped to 1 and tested against
+`_AlphaClipThreshold`; the viewer folds the scale into the threshold so the shared alpha-test depth
+pass still applies. fog comes from the composite like everything else. the shader has no shadow
+pass, so they don't cast shadows, and the viewer holds them back until their texture is resident.
+`_UseMainTexAsAlpha` isn't read; no map01 material sets it.
+
 ## sky
 
 [`shaders/atmosphere.wgsl`](../../packages/viewer/src/render/shaders/atmosphere.wgsl) is a
