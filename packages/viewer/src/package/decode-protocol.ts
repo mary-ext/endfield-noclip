@@ -19,6 +19,7 @@ interface RequestBase {
 /** a decode job */
 export type DecodeRequest =
 	| (RequestBase & { kind: 'heights' })
+	| (RequestBase & { kind: 'surface' })
 	| (RequestBase & { kind: 'instances'; rowKinds: RowKinds })
 	| (RequestBase & { kind: 'geometry' })
 	| (RequestBase & { kind: 'texture' })
@@ -31,6 +32,16 @@ export interface DecodedHeights {
 	side: number;
 	/** raw samples (hole bit included), padded to an even count */
 	samples: Uint16Array<ArrayBuffer>;
+}
+
+/** a decoded terrain surface page: two BC3 images, see `SurfacePage` in package-format */
+export interface DecodedSurface {
+	id: number;
+	kind: 'surface';
+	/** texels per edge */
+	side: number;
+	albedo: ArrayBuffer;
+	normal: ArrayBuffer;
 }
 
 /** a decoded instance block */
@@ -78,6 +89,7 @@ export interface DecodedIrradiance {
 /** a successfully decoded blob */
 export type Decoded =
 	| DecodedHeights
+	| DecodedSurface
 	| DecodedInstances
 	| DecodedGeometry
 	| DecodedTexture

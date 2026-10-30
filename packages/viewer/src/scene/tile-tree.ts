@@ -33,6 +33,8 @@ export interface TileNode {
 	quadrants: (TileNode | null)[];
 	/** the node's height page, if it has one */
 	terrain: ContentRef | null;
+	/** the node's baked surface page, if it has one */
+	surface: ContentRef | null;
 	hlod: ContentRef[];
 	detail: ContentRef[];
 	conditional: ContentRef[];
@@ -69,6 +71,7 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 	const nodes = tree.nodes.map((raw, index): TileNode => {
 		const footprint = tileFootprint(info, raw);
 		let terrain: ContentRef | null = null;
+		let surface: ContentRef | null = null;
 		const hlod: ContentRef[] = [];
 		const detail: ContentRef[] = [];
 		const conditional: ContentRef[] = [];
@@ -91,8 +94,8 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 					conditional.push(ref);
 					break;
 				}
-				default: {
-					// baked terrain pages are not drawn yet
+				case ContentKind.TerrainSurface: {
+					surface = ref;
 					break;
 				}
 			}
@@ -109,6 +112,7 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 			geometricError: raw.geometricError,
 			quadrants: [null, null, null, null],
 			terrain,
+			surface,
 			hlod,
 			detail,
 			conditional,

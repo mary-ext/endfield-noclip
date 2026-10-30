@@ -41,7 +41,7 @@ import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
 import { type PostSettings, PostProcess, type Tonemapper, postExposure } from './render/post-process.ts';
 import { SHADOW_FORMAT, SHADOW_LAYERS, ShadowMap } from './render/shadow-map.ts';
-import { PAGE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
+import { PAGE_SIDE, SURFACE_BORDER, SURFACE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
 import { type TextureBinding, TextureStore, placeholderView } from './render/texture-store.ts';
 import { WaterRenderer } from './render/water-renderer.ts';
 import { Camera, type Vec3 } from './scene/camera.ts';
@@ -56,6 +56,8 @@ import { StreamManager } from './streaming/stream-manager.ts';
 /** user-facing switches */
 export interface ViewerOptions {
 	terrain: boolean;
+	/** draw the terrain's baked albedo and normal pages; off (or without BC textures) shows stand-in colours */
+	terrainSurface: boolean;
 	instances: boolean;
 	detail: boolean;
 	resident: boolean;
@@ -104,6 +106,7 @@ export interface ViewerOptions {
 /** defaults for {@link ViewerOptions} */
 export const DEFAULT_OPTIONS: ViewerOptions = {
 	terrain: true,
+	terrainSurface: true,
 	instances: true,
 	detail: true,
 	resident: true,
@@ -349,7 +352,10 @@ export class Viewer {
 		[this.#frameBindGroup, this.#shadowFrameBindGroup] = this.#frameGroups();
 		this.#profiler = new GpuProfiler(device, gfx.features.timestampQuery);
 		const format = this.#targets.format;
-		this.#terrain = new TerrainRenderer(device, this.#layouts, this.#pipelines, format, TERRAIN_SLOTS);
+		this.#terrain = new TerrainRenderer(device, this.#layouts, this.#pipelines, format, {
+			capacity: TERRAIN_SLOTS,
+			bc: gfx.features.textureCompressionBc,
+		});
 		this.#instances = new InstanceRenderer(device, this.#layouts, this.#pipelines, format, INSTANCE_ROWS);
 		this.#meshes = new MeshRenderer(
 			device,
@@ -394,6 +400,15 @@ export class Viewer {
 	): Promise<void> {
 		this.unload();
 		const pkg = await openViewerPackage(source, onProgress);
+		const surface = pkg.manifest.terrain;
+		if (
+			surface !== null &&
+			(surface.surfaceSize !== SURFACE_SIDE || surface.surfaceBorder !== SURFACE_BORDER)
+		) {
+			throw new Error(
+				`terrain surface pages of ${surface.surfaceSize}² with a ${surface.surfaceBorder}-texel border aren't supported`,
+			);
+		}
 		const tree = buildTileTree(pkg.manifest, pkg.tree);
 
 		const textures = new TextureStore(this.#gfx.device, pkg.textures, {
@@ -406,6 +421,7 @@ export class Viewer {
 			this.#pool,
 			{
 				uploadHeights: (decoded, options) => this.#terrain.upload(decoded, options),
+				uploadSurface: (decoded) => this.#terrain.uploadSurface(decoded),
 				uploadInstances: (decoded) => this.#instances.upload(decoded),
 				uploadGeometry: (blob, decoded) => this.#meshes.upload(blob, decoded),
 				uploadTexture: (blob, decoded) => textures.upload(blob, decoded),
@@ -414,6 +430,10 @@ export class Viewer {
 					switch (resident.kind) {
 						case 'heights': {
 							this.#terrain.release(resident);
+							break;
+						}
+						case 'surface': {
+							this.#terrain.releaseSurface(resident);
 							break;
 						}
 						case 'instances': {
@@ -442,11 +462,21 @@ export class Viewer {
 		const coreBlobs: number[] = [];
 		for (let i = 0; i < pkg.blobs.length; i++) {
 			const blob = pkg.blobs[i];
-			if (
-				blob.archive === CORE_ARCHIVE_INDEX &&
-				(blob.kind === BlobKind.TerrainHeights || blob.kind === BlobKind.Instances)
-			) {
-				coreBlobs.push(i);
+			if (blob.archive !== CORE_ARCHIVE_INDEX) {
+				continue;
+			}
+			switch (blob.kind) {
+				case BlobKind.TerrainHeights:
+				case BlobKind.Instances: {
+					coreBlobs.push(i);
+					break;
+				}
+				case BlobKind.TerrainSurface: {
+					if (this.#terrain.surfaces) {
+						coreBlobs.push(i);
+					}
+					break;
+				}
 			}
 		}
 		stream.pin(coreBlobs);
@@ -1151,7 +1181,11 @@ export class Viewer {
 			planes: this.camera.frustumPlanes(aspect),
 			pixelFactor: this.camera.pixelFactor(this.#targets.height),
 		};
-		const selection = scene.selector.run(view, options, this.#focusCells);
+		const selection = scene.selector.run(
+			view,
+			{ ...options, terrainSurface: options.terrainSurface && this.#terrain.surfaces },
+			this.#focusCells,
+		);
 		this.#visited = selection.visited;
 		this.#span('tree');
 		// per-instance LOD selection also requests geometry, so it runs before the stream update

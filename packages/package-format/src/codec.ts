@@ -1,9 +1,9 @@
 /**
  * binary encodings of the package's hot data: tree.bin, tables/chains.bin, tables/blobs.bin, instance blocks,
- * terrain height pages and the geometry blob container (its meshopt payloads are opaque here, so this module
- * stays dependency-free). texture blobs are raw texel data with no encoding of their own. all little-endian;
- * every section starts 4-byte aligned so decoders can take typed-array views when the input buffer is
- * aligned. compression (the blob codec) is applied outside these functions.
+ * terrain height and surface pages and the geometry blob container (its meshopt payloads are opaque here, so
+ * this module stays dependency-free). texture blobs are raw texel data with no encoding of their own. all
+ * little-endian; every section starts 4-byte aligned so decoders can take typed-array views when the input
+ * buffer is aligned. compression (the blob codec) is applied outside these functions.
  *
  * @module
  */
@@ -38,6 +38,7 @@ const MAGIC_INSTANCES = 0x4e_49_46_45; // 'EFIN'
 const MAGIC_HEIGHTS = 0x54_48_46_45; // 'EFHT'
 const MAGIC_GEOMETRY = 0x4d_47_46_45; // 'EFGM'
 const MAGIC_IRRADIANCE = 0x56_49_46_45; // 'EFIV'
+const MAGIC_SURFACE = 0x53_54_46_45; // 'EFTS'
 
 const TABLE_HEADER_SIZE = 16;
 const NODE_SIZE = 48;
@@ -49,6 +50,7 @@ const INSTANCE_HEADER_SIZE = 32;
 /** bytes per instance row across all sections, before padding the layer section */
 const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4 + 1;
 const HEIGHTS_HEADER_SIZE = 8;
+const SURFACE_HEADER_SIZE = 8;
 const GEOMETRY_HEADER_SIZE = 32;
 const GEOMETRY_STREAM_SIZE = 32;
 const GEOMETRY_SUBMESH_SIZE = 40;
@@ -591,6 +593,67 @@ export const decodeHeightPage = (data: Uint8Array): { side: number; samples: Uin
 		samples[i] = (predictHeight(samples, i, side) + signed) & 0xff_ff;
 	}
 	return { side, samples };
+};
+
+// #endregion
+
+// #region surface pages
+
+/** bytes of one BC3 image of `side`² texels */
+const bc3ImageBytes = (side: number): number => (side / 4) ** 2 * 16;
+
+/** a terrain tile's baked surface: two BC3 (DXT5) images of `side`² texels, rows along +Z */
+export interface SurfacePage {
+	side: number;
+	/** rgb linear albedo, a unused */
+	albedo: Uint8Array;
+	/** rg world normal x and z (`· 2 − 1`; y is reconstructed), b perceptual roughness, a occlusion */
+	normal: Uint8Array;
+}
+
+/**
+ * surface page: 8-byte header (`'EFTS'`, u16 version, u16 side), then the albedo's BC3 blocks, then the
+ * normal's, each in row-major block order as `writeTexture` takes them.
+ *
+ * @param page the images
+ * @returns the encoded page
+ * @throws {RangeError} if `side` isn't a multiple of 4 or an image isn't one BC3 image of that size
+ */
+export const encodeSurfacePage = (page: SurfacePage): Uint8Array => {
+	const { side } = page;
+	const bytes = bc3ImageBytes(side);
+	if (side % 4 !== 0 || page.albedo.length !== bytes || page.normal.length !== bytes) {
+		throw new RangeError(`surface page images must be ${bytes}-byte BC3 images of ${side}² texels`);
+	}
+	const out = new Uint8Array(SURFACE_HEADER_SIZE + bytes * 2);
+	const view = viewOf(out);
+	view.setUint32(0, MAGIC_SURFACE, true);
+	view.setUint16(4, PACKAGE_VERSION, true);
+	view.setUint16(6, side, true);
+	out.set(page.albedo, SURFACE_HEADER_SIZE);
+	out.set(page.normal, SURFACE_HEADER_SIZE + bytes);
+	return out;
+};
+
+/**
+ * @param data an encoded surface page
+ * @returns the page; its images are views into `data`
+ * @throws {PackageFormatError} on a bad header or length
+ */
+export const decodeSurfacePage = (data: Uint8Array): SurfacePage => {
+	const view = viewOf(data);
+	checkHeader(view, { magic: MAGIC_SURFACE, size: SURFACE_HEADER_SIZE, label: 'surface page' });
+	const side = view.getUint16(6, true);
+	if (side % 4 !== 0) {
+		throw new PackageFormatError(`surface page side ${side} isn't a multiple of 4`);
+	}
+	const bytes = bc3ImageBytes(side);
+	checkLength(data, SURFACE_HEADER_SIZE + bytes * 2, 'surface page');
+	return {
+		side,
+		albedo: data.subarray(SURFACE_HEADER_SIZE, SURFACE_HEADER_SIZE + bytes),
+		normal: data.subarray(SURFACE_HEADER_SIZE + bytes, SURFACE_HEADER_SIZE + bytes * 2),
+	};
 };
 
 // #endregion

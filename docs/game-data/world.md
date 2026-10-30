@@ -196,8 +196,22 @@ tiles form a quadtree over the scene's terrain square: level `l` splits it into 
 | `S`      | splat control, RGBA8                                                                               |
 | `C`      | 34² cliff index, R8G8                                                                              |
 
-pages are 132² with a 2-texel border around a 128² core. layers are per-scene material textures the
-renderer gathers into arrays by index: `D` diffuse (BC7 sRGB), `N` normal (BC7), `C` cone maps (R8).
+pages are 132² with a 2-texel border around a 128² core that covers the tile edge to edge, and have
+one level. every tile with a height page has all six channels, at every level. layers are per-scene
+material textures the renderer gathers into arrays by index: `D` diffuse (BC7 sRGB), `N` normal
+(BC7), `C` cone maps (R8).
+
+the baked `A` and `N` pages are what the game draws where its close-up layer blend doesn't reach:
+
+| channel | r                   | g                   | b                    | a                                        |
+| ------- | ------------------- | ------------------- | -------------------- | ---------------------------------------- |
+| `A`     | albedo, linear      | albedo              | albedo               | subsurface curvature input (unused here) |
+| `N`     | world normal x ·2−1 | world normal z ·2−1 | perceptual roughness | occlusion                                |
+
+`A` is linear despite its UNorm format, and the normal's y is `√(1 − x² − z²)`. the normal's
+orientation was checked against normals from the height page (r = +X, g = +Z, rows along +Z). the
+packer stores both pages as one surface page per tile
+([package format](../package-format.md#surface-page-tsp-efts)).
 
 the terrain's placement isn't in the tiles. it comes from the scene's `HGTerrainSurfacesData`
 MonoBehaviour at

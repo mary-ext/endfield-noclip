@@ -18,7 +18,7 @@ const storage = (binding: number, visibility: number): GPUBindGroupLayoutEntry =
 export interface BindLayouts {
 	/** group 0: `Frame` uniforms at a dynamic offset into the uniform ring */
 	frame: GPUBindGroupLayout;
-	/** group 1 of the terrain family: height pages, patch list */
+	/** group 1 of the terrain family: height pages, patch list, surface pages */
 	terrain: GPUBindGroupLayout;
 	/** group 1 of the instance families: instance rows, block origins, this frame's visible-instance list */
 	instances: GPUBindGroupLayout;
@@ -68,7 +68,14 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 	});
 	const terrain = device.createBindGroupLayout({
 		label: 'terrain',
-		entries: [storage(0, VERTEX), storage(1, VERTEX)],
+		entries: [
+			storage(0, VERTEX),
+			storage(1, VERTEX),
+			// surface pages: albedo and normal arrays and their sampler
+			{ binding: 2, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
+			{ binding: 3, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
+			{ binding: 4, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+		],
 	});
 	const instances = device.createBindGroupLayout({
 		label: 'instances',

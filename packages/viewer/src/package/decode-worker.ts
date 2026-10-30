@@ -1,5 +1,5 @@
 /**
- * decode worker: undoes the blob codec (zstd) and turns height pages, instance blocks and geometry (meshopt)
+ * decode worker: undoes the blob codec (zstd) and turns terrain pages, instance blocks and geometry (meshopt)
  * into GPU-ready arrays, transferring the results back.
  *
  * @module
@@ -9,6 +9,7 @@ import {
 	decodeGeometryBlob,
 	decodeHeightPage,
 	decodeInstanceBlock,
+	decodeSurfacePage,
 } from '@endfield-noclip/package-format/codec';
 import {
 	BlobCodec,
@@ -206,6 +207,16 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 			return {
 				response: { id: request.id, kind: 'heights', side, samples: padded },
 				transfer: [padded.buffer],
+			};
+		}
+		case 'surface': {
+			const page = decodeSurfacePage(raw);
+			// copies, so each image is a buffer of its own for the upload
+			const albedo = page.albedo.slice().buffer;
+			const normal = page.normal.slice().buffer;
+			return {
+				response: { id: request.id, kind: 'surface', side: page.side, albedo, normal },
+				transfer: [albedo, normal],
 			};
 		}
 		case 'instances': {

@@ -451,3 +451,41 @@ export const terrainHeightsToWorld = (samples: Uint16Array, surface: TerrainSurf
 };
 
 // #endregion
+
+// #region baked pages
+
+/** edge length of a baked page (`N`, `T`, `A`, `S`) in texels, border included */
+export const TERRAIN_PAGE_SIZE = 132;
+
+/** texels of each page edge outside the tile; the other 128 cover it edge to edge */
+export const TERRAIN_PAGE_BORDER = 2;
+
+/**
+ * reads a baked `A` or `N` page's BC3 blocks.
+ *
+ * - `A`: rgb albedo, stored linear despite the format's name; a feeds the game's subsurface curvature, which
+ *   the viewer doesn't use
+ * - `N`: rg world-space normal x and z as `· 2 − 1`, y reconstructed as `√(1 − x² − z²)`; b perceptual
+ *   roughness; a occlusion
+ *
+ * rows advance along world +Z like the height page's.
+ *
+ * @param texture a decoded `_A` or `_N` file
+ * @returns the page's single level of BC3 blocks; a view into the texture
+ * @throws {FormatError} if the texture isn't a one-level 132² DXT5 page
+ */
+export const readTerrainBc3Page = (texture: TerrainTexture): Uint8Array => {
+	if (
+		texture.format !== TerrainFormat.RGBA_DXT5_UNorm ||
+		texture.width !== TERRAIN_PAGE_SIZE ||
+		texture.height !== TERRAIN_PAGE_SIZE ||
+		texture.mips.length !== 1
+	) {
+		throw new FormatError(
+			`expected a one-level 132² DXT5 page, got ${texture.width}×${texture.height} format ${texture.format} with ${texture.mips.length} levels`,
+		);
+	}
+	return texture.mips[0].data;
+};
+
+// #endregion

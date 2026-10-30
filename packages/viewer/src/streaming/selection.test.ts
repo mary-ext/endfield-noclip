@@ -30,6 +30,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		geometricError: 0,
 		quadrants: [null, null, null, null],
 		terrain: null,
+		surface: null,
 		detail: [],
 		hlod: [],
 		conditional: [ref(1, 0, 1), ref(2, 1, 1), ref(3, 0, 2)],
@@ -76,6 +77,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 	selector.setLevel(1);
 	const options: SelectionOptions = {
 		terrain: false,
+		terrainSurface: false,
 		instances: true,
 		detail: true,
 		resident: true,

@@ -101,9 +101,9 @@ each frame that does work runs one traversal (`#traverseAndPrepare` in `viewer.t
 ### tile tree
 
 [`scene/tile-tree.ts`](../packages/viewer/src/scene/tile-tree.ts) links the package's quadtree nodes
-to their children and splits each node's content refs by kind: one terrain height page, HLOD refs
-(with a tier), detail refs and conditional refs. each node at or below the cell level records its
-cell id, for level focus. baked terrain refs are skipped because nothing draws them yet.
+to their children and splits each node's content refs by kind: one terrain height page, one terrain
+surface page, HLOD refs (with a tier), detail refs and conditional refs. each node at or below the
+cell level records its cell id, for level focus.
 
 ### instance selection
 
@@ -129,6 +129,12 @@ child page isn't resident is drawn from the parent page, and vertices morph to t
 the last 30% of a level's range. every selected page quadrant is an instance of one shared grid, so
 terrain is a single draw
 ([`render/terrain-renderer.ts`](../packages/viewer/src/render/terrain-renderer.ts)).
+
+each visited node also wants its surface page at the same priority. a patch is shaded from the
+finest resident surface page at or above its node, magnified when it's an ancestor's, so the ground
+keeps its colours while finer pages stream. the shader draws the pages as stored: albedo, normal,
+roughness and occlusion ([world.md](game-data/world.md#terrain)). patches with no resident page, or
+with `terrainSurface` off or no BC textures, fall back to stand-in colours by slope.
 
 ### per-instance LOD
 
@@ -170,9 +176,10 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
 - **wanting.** the traversal calls `want(blob, priority)` every frame. a resident blob that's wanted
   counts as used, even when a coarser stand-in is drawn, so a refinement in progress isn't evicted
   and refetched.
-- **pinning.** the core archive's height pages and instance blocks (coarse terrain, every HLOD
-  block, resident scenery) are pinned at load: queued first, uploaded first, never evicted. pinned
-  height pages keep their samples on the CPU for ground-height queries (the first pose).
+- **pinning.** the core archive's height and surface pages and instance blocks (coarse terrain,
+  every HLOD block, resident scenery) are pinned at load: queued first, uploaded first, never
+  evicted. pinned height pages keep their samples on the CPU for ground-height queries (the first
+  pose).
 - **fetching.** at most 8 requests in flight (`maxRequests`). queued blobs are sorted by priority,
   and each seed coalesces neighbours in the same archive (gaps ≤ 64 KiB, span ≤ 2 MiB, ≤ 96 blobs)
   into one range read. core blobs are read from memory without a request slot. requests whose blobs
@@ -241,8 +248,10 @@ details:
 - **range allocator** ([`gfx/range-allocator.ts`](../packages/viewer/src/gfx/range-allocator.ts)):
   first-fit over units, with frees coalescing neighbours so streaming in and out doesn't fragment
   the space without bound. it sub-allocates the instance-row mega storage buffer (1.5M rows, one
-  range per block) and the irradiance cell buffer. terrain pages use a fixed slot pool (4096 slots).
-  geometry gets one vertex and one index buffer per blob.
+  range per block) and the irradiance cell buffer. terrain height pages use a fixed slot pool (4096
+  slots); surface pages use a pair of BC3 texture arrays, one layer per page (1024 layers, or the
+  device's array-layer limit if lower; 34 MiB). geometry gets one vertex and one index buffer per
+  blob.
 - **uniform ring** ([`gfx/uniform-ring.ts`](../packages/viewer/src/gfx/uniform-ring.ts)): one
   uniform buffer in 3 per-frame regions, sub-allocated at `minUniformBufferOffsetAlignment`. callers
   fill CPU views; `flush` uploads the frame's region in one `writeBuffer`, and draws bind group 0 at
@@ -369,4 +378,5 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
 - terrain's GPU cost at high resolution is unexamined.
 - the profiler times every pass whenever `timestamp-query` exists; gate it on the stats panel if it
   shows up in measurements.
-- baked terrain pages are in the package but not drawn.
+- terrain surface pages swap with their level, without cross-fade, and the close-up layer blend
+  isn't drawn.

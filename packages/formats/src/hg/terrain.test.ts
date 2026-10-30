@@ -7,6 +7,7 @@ import { FormatError } from '../binary/binary-reader.ts';
 import {
 	parseTerrainPath,
 	parseTerrainTexture,
+	readTerrainBc3Page,
 	readTerrainHeightSamples,
 	readTerrainSurfacesData,
 	readTerrainTexture,
@@ -124,6 +125,26 @@ describe('readTerrainTexture', () => {
 	it('rejects non-height pages as heights', () => {
 		const texture = parseTerrainTexture(tret(4, 4, 1, TerrainFormat.R8G8_UNorm, new Uint8Array(32)));
 		assert.throws(() => readTerrainHeightSamples(texture), FormatError);
+	});
+});
+
+describe('readTerrainBc3Page', () => {
+	const bytes = 33 * 33 * 16;
+
+	it('returns the blocks of a 132² DXT5 page', () => {
+		const payload = new Uint8Array(bytes).map((_, i) => i);
+		const blocks = readTerrainBc3Page(
+			parseTerrainTexture(tret(132, 132, 1, TerrainFormat.RGBA_DXT5_UNorm, payload)),
+		);
+		assert.equal(blocks.length, bytes);
+		assert.equal(blocks[17], 17);
+	});
+
+	it('rejects other formats and sizes', () => {
+		const tint = tret(132, 132, 1, TerrainFormat.RGBA_DXT5_SRGB, new Uint8Array(bytes));
+		assert.throws(() => readTerrainBc3Page(parseTerrainTexture(tint)), FormatError);
+		const small = tret(128, 128, 1, TerrainFormat.RGBA_DXT5_UNorm, new Uint8Array(32 * 32 * 16));
+		assert.throws(() => readTerrainBc3Page(parseTerrainTexture(small)), FormatError);
 	});
 });
 

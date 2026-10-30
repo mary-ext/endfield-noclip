@@ -31,7 +31,8 @@ invalidates cached conversions.
 ```
 <package>/
   core.czar                       read whole when the package opens
-    blobs/<hash>.hgt              terrain pages coarser than the 128 m cells
+    blobs/<hash>.hgt              terrain height pages coarser than the 128 m cells
+    blobs/<hash>.tsp              terrain surface pages, likewise
     blobs/<hash>.inst             HLOD and resident instance blocks, one of each per level tag
     manifest.json                 PackageManifest
     tables/blobs.bin              blob index → archive, codec, kind, offset, lengths
@@ -43,7 +44,8 @@ invalidates cached conversions.
     tables/irradiance.bin         irradiance cell keys → blobs
     tree.bin                      tile nodes + content refs
   shards/<l>_<x>_<z>.czar         content of one shard-level tile's subtree
-    blobs/<hash>.hgt              terrain pages at the cell level and finer
+    blobs/<hash>.hgt              terrain height pages at the cell level and finer
+    blobs/<hash>.tsp              terrain surface pages, likewise
     blobs/<hash>.inst             detail and conditional instance blocks
   assets/<l>_<x>_<z>[.<n>].czar   geometry and texture blobs whose uses all lie under that tile
   assets/common[.<n>].czar        ... used by resident content or under several root tiles
@@ -78,9 +80,10 @@ view uncompressed members as typed arrays.
   member path is `blobs/<hash>.<ext>` (`BLOB_EXTENSIONS`).
 - **codec** (`BlobCodec`): `0` none, `1` one zstd frame. the packer keeps the zstd frame only when
   it saves at least 1/32 of the bytes, since a frame costs a decode pass and small BC7 mip tails
-  barely compress. levels: 19 for instance, terrain and geometry blobs; 9 for textures and
-  irradiance cells (19 saves about 2 % more at roughly 10× the time). the viewer decodes zstd with
-  zstddec's wasm build, because browsers' `DecompressionStream` can't be relied on for zstd.
+  barely compress. levels: 19 for instance, height page and geometry blobs; 9 for textures, terrain
+  surface pages and irradiance cells (19 saves about 2 % more at roughly 10× the time). the viewer
+  decodes zstd with zstddec's wasm build, because browsers' `DecompressionStream` can't be relied on
+  for zstd.
 - **offsets** are u32, so every archive stays below 4 GiB; asset archives roll over to a `.<n>` part
   at 1 GiB, which also suits HTTP and OPFS.
 - **the core's offsets**: `ArchiveInfo.dataOffset` is `null` for the core, because the core's header
@@ -138,7 +141,7 @@ the game's HLOD switch distances are known.
 | `Hlod` (1)           | rows `[first, first + count)` of a level's shared HLOD block | HLOD tier | level tag | 0                                       |
 | `Detail` (2)         | a whole instance block                                       | 0         | level tag | 0                                       |
 | `Conditional` (3)    | a whole instance block shown only while its condition holds  | 0         | level tag | index into `StatesInfo.conditionalSets` |
-| `TerrainPages` (4)   | reserved: baked terrain pages                                | channel   |           |                                         |
+| `TerrainSurface` (4) | one surface page, covering the same tile as the height page  | 0         | 0         | 0                                       |
 
 detail and conditional blocks are one per (leaf, level tag, condition); an instance goes to the leaf
 under its bounds centre. HLOD and resident rows form one block per level tag in the core, HLOD rows
@@ -156,7 +159,7 @@ sorted by node so each node's refs are one run. resident refs live in `manifest.
 | `scene`                                                   | streaming scene id and display name                                                                                                                                       |
 | `coordinates`                                             | `COORDINATE_CONVENTIONS`                                                                                                                                                  |
 | `tree`                                                    | `TreeInfo` plus node and ref counts                                                                                                                                       |
-| `terrain`                                                 | position, `heightScale`, `terrainSize`, page size, hole bit, levels with pages; `null` without terrain                                                                    |
+| `terrain`                                                 | position, `heightScale`, `terrainSize`, page size, hole bit, levels with pages, surface page size and border; `null` without terrain                                      |
 | `levels`                                                  | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment |
 | `environments`, `environmentPhases`, `environmentVolumes` | see [environment.md](game-data/environment.md)                                                                                                                            |
 | `states`                                                  | progressions, toggles and conditional sets; see [scene states](#conditions)                                                                                               |
@@ -214,6 +217,16 @@ the sample above. arithmetic wraps at 16 bits so the hole bit survives. the grad
 left-only prediction by about 10 % after zstd. the packer ships every level of the game's pyramid,
 not only leaves, so the viewer can run CDLOD from native data. `terrainHeight` and `isTerrainHole`
 decode samples: `y = position.y + (h & 0x7fff) · heightScale / 32768`.
+
+### surface page (`.tsp`, `EFTS`)
+
+8-byte header: `u32 magic, u16 version, u16 side`, then two BC3 images of `side²` texels (rows along
++Z), albedo then normal, each in `writeTexture` block order. they are the game's baked `A` and `N`
+tile pages as stored, one level each; [world.md](game-data/world.md#terrain) gives their channels.
+`terrain.surfaceSize` (132) is the side, and the outer `terrain.surfaceBorder` (2) texels of each
+edge lie outside the tile, so world `x` maps to
+`u = border / side + (x − tile.minX) / tile.size · (side − 2 · border) / side`. a tile missing
+either page has no surface ref. on map02 the 3,393 pages are 118 MB raw and 64 MB stored.
 
 ### geometry blob (`.mesh`, `EFGM`)
 
@@ -344,6 +357,7 @@ per-asset provenance lives here rather than in the manifest, which only identifi
   by its own bounds would spread it.
 - **texture size**: textures at native resolution dominate package size; a cap that drops leading
   levels would make a lite package.
-- **`TerrainPages`** content is reserved but unwritten.
+- **terrain detail**: only the baked albedo and normal pages are packed; the tint, splat control and
+  cliff-index pages and the per-scene layer arrays, which the close-up blend needs, are not.
 - **unsupported**: line and point topologies; skinned meshes are packed static or posed; the game's
   packed tangent bits are undecoded (generated tangents replace them); rect decals are skipped.

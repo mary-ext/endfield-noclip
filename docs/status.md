@@ -17,6 +17,8 @@ or renders correctly.
   authored pose ([assets](game-data/assets.md))
 - scene states, progressions, facility visual forms, script/event groups and dynamic load gates as
   manual preview controls with stored defaults ([scene states](game-data/scene-states.md))
+- terrain heights and baked surface pages (albedo, normal, roughness, occlusion)
+  ([world](game-data/world.md#terrain))
 - environment profiles and volume blending, water, post-processing and base-scenario irradiance
   ([environment](game-data/environment.md), [lighting](game-data/lighting.md),
   [water](game-data/water.md))
@@ -48,8 +50,9 @@ or renders correctly.
   - local point and spot lights and light beams aren't drawn
   - local reflection probes, GTAO in specular occlusion, contact shadows
 - the packed tangent frame isn't decoded; tangents are regenerated
-- terrain textures and blending, foliage wind and transmission, grass instancing, decals, layered
-  materials
+- terrain close up: only the baked albedo and normal pages are drawn. the layer blend (splat
+  control, layer arrays, tint, cliff projection, parallax) and wetness aren't packed
+- foliage wind and transmission, grass instancing, decals, layered materials
 - water foam, caustics, flow tiles (packed but unread) and geometry reflections; other fluid types
   are unverified
 - celestial bodies, VFX and temporal smoothing. unsupported effect meshes are suppressed rather than

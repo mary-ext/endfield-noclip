@@ -17,6 +17,7 @@ import type {
 	DecodedHeights,
 	DecodedInstances,
 	DecodedIrradiance,
+	DecodedSurface,
 	DecodedTexture,
 } from '../package/decode-protocol.ts';
 import { CORE_ARCHIVE_INDEX, type ViewerPackage } from '../package/viewer-package.ts';
@@ -36,6 +37,15 @@ export interface ResidentHeights {
 	slot: number;
 	/** the samples kept on the CPU for ground-height queries (pinned pages only) */
 	samples: Uint16Array | null;
+}
+
+/** GPU residency of a terrain surface page */
+export interface ResidentSurface {
+	kind: 'surface';
+	/** GPU bytes */
+	bytes: number;
+	/** layer of the surface texture arrays */
+	slot: number;
 }
 
 /** GPU residency of an instance block */
@@ -93,6 +103,7 @@ export interface ResidentIrradiance {
 /** what a ready blob holds on the GPU */
 export type Resident =
 	| ResidentHeights
+	| ResidentSurface
 	| ResidentInstances
 	| ResidentGeometry
 	| ResidentTexture
@@ -122,6 +133,8 @@ export interface ContentItem {
 export interface ContentStores {
 	/** @returns the residency, or `null` if there was no room */
 	uploadHeights(decoded: DecodedHeights, options: { keepSamples: boolean }): ResidentHeights | null;
+	/** @returns the residency, or `null` if there was no room */
+	uploadSurface(decoded: DecodedSurface): ResidentSurface | null;
 	/** @returns the residency, or `null` if there was no room */
 	uploadInstances(decoded: DecodedInstances): ResidentInstances | null;
 	/** @returns the residency */
@@ -568,6 +581,10 @@ export class StreamManager {
 				job = this.#pool.run({ kind: 'heights', ...base });
 				break;
 			}
+			case BlobKind.TerrainSurface: {
+				job = this.#pool.run({ kind: 'surface', ...base });
+				break;
+			}
 			case BlobKind.Instances: {
 				job = this.#pool.run({ kind: 'instances', ...base, rowKinds: this.#rowKinds.get(item.blob) ?? [] });
 				break;
@@ -662,6 +679,9 @@ export class StreamManager {
 		switch (decoded.kind) {
 			case 'heights': {
 				return this.#stores.uploadHeights(decoded, { keepSamples: item.pinned });
+			}
+			case 'surface': {
+				return this.#stores.uploadSurface(decoded);
 			}
 			case 'instances': {
 				return this.#stores.uploadInstances(decoded);

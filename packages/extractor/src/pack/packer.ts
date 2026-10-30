@@ -8,10 +8,13 @@ import { DrawFlags, type RendererDraw } from '@endfield-noclip/formats/endfield/
 import type { LevelPartition, PartitionLevel } from '@endfield-noclip/formats/endfield/level-partition';
 import { CELL_SIZE } from '@endfield-noclip/formats/endfield/map-config';
 import {
+	readTerrainBc3Page,
 	readTerrainHeightSamples,
 	readTerrainTexture,
 	TERRAIN_HEIGHT_HOLE,
 	TERRAIN_HEIGHT_PAGE_SIZE,
+	TERRAIN_PAGE_BORDER,
+	TERRAIN_PAGE_SIZE,
 	terrainLeafLevel,
 	terrainNodeIndex,
 	type TerrainSurface,
@@ -30,6 +33,7 @@ import {
 	encodeHeightPage,
 	encodeInstanceBlock,
 	encodeIrradianceTable,
+	encodeSurfacePage,
 	encodeTree,
 } from '@endfield-noclip/package-format/codec';
 import {
@@ -91,6 +95,7 @@ import {
 import { loadProgressions, progressionId } from '../game/scene-states.ts';
 import { indexTerrain, loadTerrainSurface, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
+import type { VfsFile } from '../hg/vfs.ts';
 import { orderedPool } from '../pool.ts';
 import { zstd } from '../zstd.ts';
 
@@ -510,6 +515,8 @@ const indexScene = async (
 						terrainSize: surface.terrainSize,
 						pageSize: TERRAIN_HEIGHT_PAGE_SIZE,
 						holeBit: TERRAIN_HEIGHT_HOLE,
+						surfaceSize: TERRAIN_PAGE_SIZE,
+						surfaceBorder: TERRAIN_PAGE_BORDER,
 					},
 		grid,
 		subset: buildSubset(options, partition, grid),
@@ -886,49 +893,68 @@ const syntheticEntityId = (levelTag: number, index: number): number => {
 };
 
 /**
- * stores the subset's terrain height pages and attaches them to the tree
+ * stores the subset's terrain height pages and baked surface pages and attaches them to the tree. a tile
+ * missing its albedo or normal page gets no surface page
  *
- * @returns the levels that have pages, ascending
+ * @returns the levels that have height pages, ascending
  */
 const packTerrain = async (context: Pick<Context, 'vfs'>, pack: PackState): Promise<number[]> => {
 	const { terrainScene, surface, terrain, subset, grid } = pack.scene;
 	if (terrainScene === undefined || surface === undefined || terrain === null) {
 		return [];
 	}
+	const readPage = async (file: VfsFile): Promise<Uint8Array> =>
+		readTerrainBc3Page(readTerrainTexture(await context.vfs.readVerified(file)));
 	const tiles = [...terrainScene.tiles.values()]
 		.filter(({ key }) => subset.includesTile(key))
 		.toSorted((a, b) => a.key.level - b.key.level || a.key.z - b.key.z || a.key.x - b.key.x);
 	for (let start = 0; start < tiles.length; start += BLOB_BATCH) {
 		const batch = tiles.slice(start, start + BLOB_BATCH);
 		// oxlint-disable-next-line no-await-in-loop -- batches bound memory and keep blob order stable
-		const samples = await Promise.all(
-			batch.map(async ({ file }) =>
-				readTerrainHeightSamples(readTerrainTexture(await context.vfs.readVerified(file))),
-			),
+		const read = await Promise.all(
+			batch.map(async ({ file, channels }) => {
+				const samples = readTerrainHeightSamples(readTerrainTexture(await context.vfs.readVerified(file)));
+				if (channels.A === undefined || channels.N === undefined) {
+					return { samples, page: null };
+				}
+				const [albedo, normal] = await Promise.all([readPage(channels.A), readPage(channels.N)]);
+				return { samples, page: encodeSurfacePage({ side: TERRAIN_PAGE_SIZE, albedo, normal }) };
+			}),
 		);
 		// oxlint-disable-next-line no-await-in-loop
-		const blobs = await pack.store.putMany(
+		const heights = await pack.store.putMany(
 			batch.map(({ key }, i) => ({
-				raw: encodeHeightPage(samples[i], TERRAIN_HEIGHT_PAGE_SIZE),
+				raw: encodeHeightPage(read[i].samples, TERRAIN_HEIGHT_PAGE_SIZE),
 				options: placement(BlobKind.TerrainHeights, archiveForTile(pack, key)),
 			})),
 		);
+		const withPages = batch.flatMap(({ key }, i) => {
+			const page = read[i].page;
+			return page === null ? [] : [{ key, page }];
+		});
+		// oxlint-disable-next-line no-await-in-loop
+		const pages = await pack.store.putMany(
+			withPages.map(({ key, page }) => ({
+				raw: page,
+				// block-compressed texels, so the texture level: higher levels barely shrink them
+				options: {
+					...placement(BlobKind.TerrainSurface, archiveForTile(pack, key)),
+					zstdLevel: pack.scene.options.textureZstdLevel,
+				},
+			})),
+		);
+		const whole = { tier: 0, level: 0, first: 0, count: 1 };
 		for (const [i, { key }] of batch.entries()) {
 			const node = surface.nodes?.[terrainNodeIndex(key)];
 			pack.builder.addRef(
 				key,
-				{
-					kind: ContentKind.TerrainHeights,
-					tier: 0,
-					level: 0,
-					blob: blobs[i],
-					first: 0,
-					count: 1,
-					param: node?.maxHeightError ?? 0,
-				},
+				{ ...whole, kind: ContentKind.TerrainHeights, blob: heights[i], param: node?.maxHeightError ?? 0 },
 				NodeFlags.HasTerrain,
 			);
-			pack.builder.extend(key, terrainBounds(grid, terrain, key, samples[i]));
+			pack.builder.extend(key, terrainBounds(grid, terrain, key, read[i].samples));
+		}
+		for (const [i, { key }] of withPages.entries()) {
+			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSurface, blob: pages[i], param: 0 }, 0);
 		}
 	}
 	return [...new Set(tiles.map(({ key }) => key.level))];

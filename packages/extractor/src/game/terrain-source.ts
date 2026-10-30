@@ -3,6 +3,7 @@ import {
 	readTerrainSurfacesData,
 	type TerrainLayerRole,
 	type TerrainSurface,
+	type TerrainTileChannel,
 	type TerrainTileKey,
 } from '@endfield-noclip/formats/hg/terrain';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
@@ -10,11 +11,20 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { Context } from '../context.ts';
 import { VfsGroup, type Vfs, type VfsFile } from '../hg/vfs.ts';
 
+/** one terrain tile's files */
+export interface TerrainTileFiles {
+	key: TerrainTileKey;
+	/** the `_H` height page */
+	file: VfsFile;
+	/** the other channels the tile has */
+	channels: Partial<Record<Exclude<TerrainTileChannel, 'H'>, VfsFile>>;
+}
+
 /** a scene's terrain files */
 export interface TerrainSceneIndex {
 	scene: string;
-	/** `_H` file of every tile, keyed `level/x/z` */
-	tiles: Map<string, { key: TerrainTileKey; file: VfsFile }>;
+	/** every tile with a height page, keyed `level/x/z` */
+	tiles: Map<string, TerrainTileFiles>;
 	layers: Record<TerrainLayerRole, number[]>;
 	/** finest level present */
 	leafLevel: number;
@@ -27,6 +37,8 @@ export interface TerrainSceneIndex {
 export const indexTerrain = async (vfs: Vfs): Promise<Map<string, TerrainSceneIndex>> => {
 	const group = await vfs.group(VfsGroup.Terrain);
 	const scenes = new Map<string, TerrainSceneIndex>();
+	// a tile's channels arrive in any order, so they're gathered before tiles without heights are dropped
+	const channels = new Map<TerrainSceneIndex, Map<string, TerrainTileFiles['channels']>>();
 	for (const entry of group.files.values()) {
 		const path = parseTerrainPath(entry.name);
 		if (path === undefined) {
@@ -36,20 +48,36 @@ export const indexTerrain = async (vfs: Vfs): Promise<Map<string, TerrainSceneIn
 		if (scene === undefined) {
 			scene = { scene: path.scene, tiles: new Map(), layers: { D: [], N: [], C: [] }, leafLevel: 0 };
 			scenes.set(path.scene, scene);
+			channels.set(scene, new Map());
 		}
 		switch (path.kind) {
 			case 'tile': {
+				const key = { level: path.level, x: path.x, z: path.z };
+				const id = `${key.level}/${key.x}/${key.z}`;
+				const file = { group, entry };
 				if (path.channel === 'H') {
-					const key = { level: path.level, x: path.x, z: path.z };
-					scene.tiles.set(`${key.level}/${key.x}/${key.z}`, { key, file: { group, entry } });
+					scene.tiles.set(id, { key, file, channels: {} });
 					scene.leafLevel = Math.max(scene.leafLevel, key.level);
+					break;
 				}
+				const sceneChannels = channels.get(scene)!;
+				let tile = sceneChannels.get(id);
+				if (tile === undefined) {
+					tile = {};
+					sceneChannels.set(id, tile);
+				}
+				tile[path.channel] = file;
 				break;
 			}
 			case 'layer': {
 				scene.layers[path.role].push(path.index);
 				break;
 			}
+		}
+	}
+	for (const [scene, sceneChannels] of channels) {
+		for (const [id, tile] of scene.tiles) {
+			tile.channels = sceneChannels.get(id) ?? {};
 		}
 	}
 	return new Map([...scenes].toSorted(([a], [b]) => a.localeCompare(b)));

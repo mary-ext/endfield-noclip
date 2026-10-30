@@ -19,7 +19,7 @@
 export const PACKAGE_FORMAT = 'endfield-noclip.package';
 
 /** bumped on any incompatible change to the manifest, a table or a blob encoding */
-export const PACKAGE_VERSION = 10;
+export const PACKAGE_VERSION = 11;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -65,6 +65,8 @@ export const BlobKind = {
 	 * package): a spatial hash over 4³-probe blocks, then 16-byte L1 probes
 	 */
 	Irradiance: 6,
+	/** one terrain tile's baked albedo and normal pages; see `encodeSurfacePage` */
+	TerrainSurface: 7,
 } as const;
 
 export type BlobKind = (typeof BlobKind)[keyof typeof BlobKind];
@@ -77,6 +79,7 @@ export const BLOB_EXTENSIONS: Record<BlobKind, string> = {
 	[BlobKind.Texture]: 'tex',
 	[BlobKind.Other]: 'bin',
 	[BlobKind.Irradiance]: 'iv',
+	[BlobKind.TerrainSurface]: 'tsp',
 };
 
 /** human-readable blob kind names, for stats and debug output */
@@ -87,6 +90,7 @@ export const BLOB_KIND_NAMES: Record<BlobKind, string> = {
 	[BlobKind.Texture]: 'texture',
 	[BlobKind.Other]: 'other',
 	[BlobKind.Irradiance]: 'irradiance',
+	[BlobKind.TerrainSurface]: 'terrain surface',
 };
 
 /** the outer compression of a stored blob */
@@ -108,8 +112,8 @@ export const ContentKind = {
 	Detail: 2,
 	/** independently streamed dynamic instances; `param` indexes {@link StatesInfo.conditionalSets} */
 	Conditional: 3,
-	/** reserved: baked terrain pages (albedo, normal, tint, splat, cliff); `tier` names the channel */
-	TerrainPages: 4,
+	/** the node's baked terrain surface page (albedo and normal); covers the same tile as its height page */
+	TerrainSurface: 4,
 } as const;
 
 export type ContentKind = (typeof ContentKind)[keyof typeof ContentKind];
@@ -120,7 +124,7 @@ export const CONTENT_KIND_NAMES: Record<ContentKind, string> = {
 	[ContentKind.Hlod]: 'hlod',
 	[ContentKind.Detail]: 'detail',
 	[ContentKind.Conditional]: 'conditional',
-	[ContentKind.TerrainPages]: 'terrainPages',
+	[ContentKind.TerrainSurface]: 'terrainSurface',
 };
 
 /** how a draw of a LOD chain is used */
@@ -362,6 +366,10 @@ export interface TerrainInfo {
 	holeBit: number;
 	/** levels that have height pages, ascending (the game ships a pyramid, not just leaves) */
 	levels: number[];
+	/** texels per surface page edge, border included; see {@link BlobKind.TerrainSurface} */
+	surfaceSize: number;
+	/** texels of each surface page edge outside the tile; the rest map the tile edge to edge */
+	surfaceBorder: number;
 }
 
 /** a level (named area) of the scene */

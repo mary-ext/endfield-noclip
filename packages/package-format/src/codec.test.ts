@@ -8,6 +8,7 @@ import {
 	decodeHeightPage,
 	decodeInstanceBlock,
 	decodeIrradianceTable,
+	decodeSurfacePage,
 	decodeTree,
 	encodeBlobTable,
 	encodeChains,
@@ -15,6 +16,7 @@ import {
 	encodeHeightPage,
 	encodeInstanceBlock,
 	encodeIrradianceTable,
+	encodeSurfacePage,
 	encodeTree,
 } from './codec.ts';
 import { PackageFormatError } from './errors.ts';
@@ -259,6 +261,28 @@ describe('height pages', () => {
 
 	it('rejects the wrong sample count', () => {
 		assert.throws(() => encodeHeightPage(new Uint16Array(10), 65), RangeError);
+	});
+});
+
+describe('surface pages', () => {
+	it('round-trips both images', () => {
+		const albedo = Uint8Array.from({ length: 4 * 16 }, (_, i) => i);
+		const normal = Uint8Array.from({ length: 4 * 16 }, (_, i) => 255 - i);
+		const decoded = decodeSurfacePage(encodeSurfacePage({ side: 8, albedo, normal }));
+		assert.equal(decoded.side, 8);
+		assert.deepEqual(decoded.albedo, albedo);
+		assert.deepEqual(decoded.normal, normal);
+	});
+
+	it('rejects images of the wrong size', () => {
+		const image = new Uint8Array(4 * 16);
+		assert.throws(() => encodeSurfacePage({ side: 8, albedo: image, normal: image.subarray(1) }), RangeError);
+	});
+
+	it('rejects truncated data', () => {
+		const image = new Uint8Array(4 * 16);
+		const encoded = encodeSurfacePage({ side: 8, albedo: image, normal: image });
+		assert.throws(() => decodeSurfacePage(encoded.subarray(0, encoded.length - 1)), PackageFormatError);
 	});
 });
 

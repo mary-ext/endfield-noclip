@@ -4,14 +4,20 @@
 struct Patch {
 	// x, z of the page's minimum corner relative to the eye; sample spacing (m); level
 	origin: vec4f,
-	// height pool slot, quadrant offset x and z (samples), 0
+	// height pool slot, quadrant offset x and z (samples), surface layer + 1 (0: none)
 	info: vec4u,
 	// morph start and end distance (m); morphing is off when start ≥ end
 	morph: vec4f,
+	// surface page uv = (rel.xz − xy) · z + w; the page may be an ancestor's
+	surface: vec4f,
 }
 
 @group(1) @binding(0) var<storage, read> heights: array<u32>;
 @group(1) @binding(1) var<storage, read> patches: array<Patch>;
+// baked surface pages: albedo rgb (linear); normal rg = world x, z, b roughness, a occlusion
+@group(1) @binding(2) var surface_albedo: texture_2d_array<f32>;
+@group(1) @binding(3) var surface_normal: texture_2d_array<f32>;
+@group(1) @binding(4) var surface_sampler: sampler;
 
 // samples per page edge, from `PAGE_SIDE`
 override SIDE: i32 = 65;
@@ -27,6 +33,8 @@ struct VertexOut {
 	@location(1) normal: vec3f,
 	@location(2) hole: f32,
 	@location(3) @interpolate(flat) level: u32,
+	@location(4) surface_uv: vec2f,
+	@location(5) @interpolate(flat) surface: u32,
 }
 
 fn raw_sample(slot: u32, x: i32, z: i32) -> u32 {
@@ -91,11 +99,13 @@ fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> 
 	out.normal = normal;
 	out.hole = hole;
 	out.level = u32(p.origin.w);
+	out.surface_uv = (rel.xz - p.surface.xy) * p.surface.z + p.surface.w;
+	out.surface = p.info.w;
 	return out;
 }
 
-// stand-in ground colours until the terrain's own textures are packed
-fn albedo(in: VertexOut, n: vec3f) -> vec3f {
+// stand-in ground colours for patches without a surface page
+fn stand_in_albedo(n: vec3f) -> vec3f {
 	let grass = vec3f(0.13, 0.19, 0.07);
 	let rock = vec3f(0.24, 0.22, 0.2);
 	return mix(rock, grass, smoothstep(0.72, 0.86, n.y));
@@ -106,9 +116,21 @@ fn fs_main(in: VertexOut) -> Shaded {
 	if (in.hole > 0.01) {
 		discard;
 	}
-	let n = normalize(in.normal);
-	var s = default_surface(albedo(in, n), n);
-	s.roughness = 0.9;
+	if (in.surface == 0u) {
+		let n = normalize(in.normal);
+		var s = default_surface(stand_in_albedo(n), n);
+		s.roughness = 0.9;
+		return shade_surface(s, in.rel, in.position.xy);
+	}
+	// the baked pages as stored; the close-up layer blend isn't drawn
+	let layer = in.surface - 1u;
+	let albedo = textureSampleLevel(surface_albedo, surface_sampler, in.surface_uv, layer, 0.0);
+	let packed = textureSampleLevel(surface_normal, surface_sampler, in.surface_uv, layer, 0.0);
+	let xz = packed.xy * 2.0 - 1.0;
+	let n = normalize(vec3f(xz.x, sqrt(max(1.0 - dot(xz, xz), 0.0)), xz.y));
+	var s = default_surface(albedo.rgb, n);
+	s.roughness = packed.z;
+	s.occlusion = packed.w;
 	return shade_surface(s, in.rel, in.position.xy);
 }
 

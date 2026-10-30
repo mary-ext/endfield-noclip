@@ -7,7 +7,8 @@
  *   keeps drawing its own HLOD, so there are no holes while streaming. disabled HLOD tiers are refined past.
  * - terrain: CDLOD. each level has a distance range derived from its sample spacing and the pixel-error target;
  *   a node subdivides while the next finer range reaches it, quadrants whose child page isn't resident are
- *   drawn from the parent page, and vertices morph to the coarser grid towards the end of their range.
+ *   drawn from the parent page, and vertices morph to the coarser grid towards the end of their range. each
+ *   patch is shaded from the finest resident surface page at or above its node.
  *
  * @module
  */
@@ -25,8 +26,21 @@ import type { ContentItem, StreamManager } from './stream-manager.ts';
 /** what the traversal draws and refines */
 export type SelectionOptions = Pick<
 	ViewerOptions,
-	'maxSse' | 'terrainPixels' | 'terrain' | 'instances' | 'detail' | 'resident' | 'hlodTiers'
+	| 'maxSse'
+	| 'terrainPixels'
+	| 'terrain'
+	| 'terrainSurface'
+	| 'instances'
+	| 'detail'
+	| 'resident'
+	| 'hlodTiers'
 >;
+
+/** a resident surface page and the node it covers */
+export interface SurfaceSource {
+	item: ContentItem;
+	node: TileNode;
+}
 
 /** a terrain patch: one page quadrant (or a whole page as four) */
 export interface TerrainPatch {
@@ -36,6 +50,8 @@ export interface TerrainPatch {
 	quadrant: number;
 	morphStart: number;
 	morphEnd: number;
+	/** the finest resident surface page at or above `node`, or `null` for stand-in colours */
+	surface: SurfaceSource | null;
 }
 
 /** a range of rows of one resident instance block */
@@ -296,7 +312,7 @@ export class Selector {
 
 	#terrainRoot(node: TileNode, view: SelectionView, options: SelectionOptions): void {
 		if (node.terrain !== null) {
-			this.#terrain(node, view, options);
+			this.#terrain(node, view, options, null);
 			return;
 		}
 		for (const child of node.quadrants) {
@@ -316,7 +332,13 @@ export class Selector {
 		return this.#rootSize / 2 ** level / this.#pageQuads;
 	}
 
-	#terrain(node: TileNode, view: SelectionView, options: SelectionOptions): void {
+	/** @param inherited the finest resident surface page above `node` */
+	#terrain(
+		node: TileNode,
+		view: SelectionView,
+		options: SelectionOptions,
+		inherited: SurfaceSource | null,
+	): void {
 		const terrain = node.terrain;
 		if (terrain === null) {
 			return;
@@ -325,7 +347,16 @@ export class Selector {
 		const inView = boxInFrustum(view.planes, node.bounds.min, node.bounds.max, eye);
 		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, eye), 1);
 		const sse = (this.#spacing(node.level) * view.pixelFactor) / distance;
-		const item = this.#stream.want(terrain.blob, this.#priority(node, sse, inView));
+		const priority = this.#priority(node, sse, inView);
+		const item = this.#stream.want(terrain.blob, priority);
+		// until a node's surface page arrives, its patches show the nearest ancestor's, magnified
+		let surface = inherited;
+		if (options.terrainSurface && node.surface !== null) {
+			const page = this.#stream.want(node.surface.blob, priority);
+			if (page !== null) {
+				surface = { item: page, node };
+			}
+		}
 		if (!inView || item === null) {
 			// a missing page is covered from its parent's
 			return;
@@ -338,19 +369,19 @@ export class Selector {
 		const finerRange = this.#range(level + 1, view, options);
 		const subdivide = level < this.#tree.terrainLeafLevel && distance < finerRange;
 		if (!subdivide) {
-			this.selection.patches.push({ item, node, quadrant: -1, morphStart, morphEnd });
+			this.selection.patches.push({ item, node, quadrant: -1, morphStart, morphEnd, surface });
 			return;
 		}
 		for (let quadrant = 0; quadrant < 4; quadrant++) {
 			const child = node.quadrants[quadrant];
 			if (child?.terrain != null && this.#stream.isReady(child.terrain.blob)) {
-				this.#terrain(child, view, options);
+				this.#terrain(child, view, options, surface);
 				continue;
 			}
 			if (child?.terrain != null) {
 				this.#stream.want(child.terrain.blob, this.#priority(child, sse * 2, true));
 			}
-			this.selection.patches.push({ item, node, quadrant, morphStart, morphEnd });
+			this.selection.patches.push({ item, node, quadrant, morphStart, morphEnd, surface });
 		}
 	}
 
