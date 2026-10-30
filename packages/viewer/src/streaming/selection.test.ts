@@ -7,6 +7,7 @@ import { Camera } from '../scene/camera.ts';
 import type { TileNode, TileTree } from '../scene/tile-tree.ts';
 
 import { Selector, type SelectionOptions } from './selection.ts';
+import type { ContentItem } from './stream-manager.ts';
 
 it('streams conditional scenery independently of coarse HLOD and never requests hidden variants', () => {
 	const ref = (blob: number, condition: number, level: number): ContentRef => ({
@@ -104,4 +105,67 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 	far.position = [1050, 0, 0];
 	selector.run({ ...view, camera: far }, options, null);
 	assert.deepEqual(wanted, [9]);
+});
+
+it('drops the HLOD of a nearby leaf with no detail instead of overlaying the scenery it stands for', () => {
+	const leaf: TileNode = {
+		index: 0,
+		level: 0,
+		x: 0,
+		z: 0,
+		minX: 0,
+		minZ: 0,
+		size: 64,
+		bounds: { min: [0, 0, 0], max: [64, 64, 64] },
+		geometricError: 4,
+		quadrants: [null, null, null, null],
+		terrain: null,
+		surface: null,
+		terrainDetail: null,
+		detail: [],
+		hlod: [{ kind: ContentKind.Hlod, tier: 0, level: 0, blob: 9, first: 0, count: 1, param: 0 }],
+		conditional: [],
+		cellId: null,
+	};
+	const tree: TileTree = {
+		nodes: [leaf],
+		roots: [leaf],
+		byId: new Map(),
+		terrainLeafLevel: -1,
+		terrainRootLevel: Infinity,
+	};
+	const item = { blob: 9 } as ContentItem;
+	const selector = new Selector(
+		tree,
+		{
+			want: () => item,
+			get: () => item,
+			markUsed: () => true,
+			isReady: () => true,
+		},
+		[],
+		65,
+		100,
+	);
+	const options: SelectionOptions = {
+		terrain: false,
+		terrainSurface: false,
+		terrainDetail: false,
+		instances: true,
+		detail: true,
+		resident: true,
+		maxSse: 12,
+		terrainPixels: 3,
+		hlodTiers: [true, true, true],
+	};
+	const near = new Camera();
+	near.position = [32, 32, -10];
+	const view = { camera: near, planes: [], pixelFactor: 1000 };
+	// 4 m of error 10 m away spans 400 px: the leaf refines into its (empty) detail
+	assert.equal(selector.run(view, options, null).instances.length, 0);
+	// with detail off the cluster is all there is to show
+	assert.equal(selector.run(view, { ...options, detail: false }, null).instances.length, 1);
+	const far = new Camera();
+	far.position = [32, 32, -1000];
+	assert.equal(selector.run({ ...view, camera: far }, options, null).instances.length, 1);
 });

@@ -111,7 +111,8 @@ refs. each node at or below the cell level records its cell id, for level focus.
 REPLACE refinement on screen-space error, `geometricError · pixelFactor / distance`:
 
 - a node draws its HLOD while SSE ≤ `maxSse` (default 12 px), otherwise its children; a leaf refines
-  into its detail blocks.
+  into its detail blocks, even when it has none: some clusters stand for scenery filed under
+  neighbouring leaves or as resident, which draws anyway, so keeping the cluster would overlay it.
 - until everything a refinement needs is resident, the node keeps drawing its own HLOD, so streaming
   never opens holes. disabled HLOD tiers are refined past.
 - conditional content has no HLOD stand-in, so it follows its own rule: drawn while its tile spans

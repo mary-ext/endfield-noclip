@@ -246,10 +246,6 @@ export class Selector {
 		return node.hlod.some((ref) => options.hlodTiers[ref.tier] && this.#shows(ref));
 	}
 
-	#hasDetail(node: TileNode): boolean {
-		return node.detail.some((ref) => this.#shows(ref));
-	}
-
 	/** @returns whether the node's area is fully covered by what was emitted (or needs nothing) */
 	#instances(node: TileNode, view: SelectionView, options: SelectionOptions): boolean {
 		const out = this.selection.instances;
@@ -263,7 +259,8 @@ export class Selector {
 		const priority = this.#priority(node, sse, true);
 		const hasHlod = this.#hasHlod(node, options);
 		const leaf = isLeaf(node);
-		const canRefine = !leaf || (options.detail && this.#hasDetail(node));
+		// a leaf refines even without detail of its own (see docs/viewer.md, instance selection)
+		const canRefine = !leaf || options.detail;
 		const refine = canRefine && (sse > options.maxSse || !hasHlod);
 
 		if (!refine) {
