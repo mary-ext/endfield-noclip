@@ -5,7 +5,7 @@ import {
 	TERRAIN_SPLAT_CELL,
 	type TerrainLayer,
 	type TerrainLayerRole,
-	type TerrainSurface,
+	type TerrainSurfacesData,
 	type TerrainTileChannel,
 	type TerrainTileKey,
 } from '@endfield-noclip/formats/hg/terrain';
@@ -103,7 +103,7 @@ const terrainSurfacesAssetPath = (scene: string): string =>
 
 /**
  * reads a scene's splat index map (`terrain/splatindexmap.tga`). finding its path hash scans the
- * StringPathHash catalogs (about a second)
+ * StringPathHash tables (about a second)
  *
  * @param context world index and asset resolver
  * @param surface the scene's terrain, with its layers
@@ -114,7 +114,7 @@ const terrainSurfacesAssetPath = (scene: string): string =>
  */
 export const loadTerrainSplatIndex = async (
 	context: Pick<Context, 'world' | 'resolver'>,
-	surface: TerrainSurface & { layers: TerrainLayer[] },
+	surface: TerrainSurfacesData & { layers: TerrainLayer[] },
 	scene: string,
 ): Promise<Uint8Array | undefined> => {
 	const wanted = `${terrainAssetDir(scene)}splatindexmap.tga`;
@@ -147,18 +147,18 @@ export const loadTerrainSplatIndex = async (
 
 /**
  * reads a scene's terrain parameters (position, height scale, size, node table) from its
- * `HGTerrainSurfacesData` MonoBehaviour. finding the asset's path hash scans the StringPathHash catalogs
- * (about a second)
+ * `HGTerrainSurfacesData` MonoBehaviour. finding the asset's path hash scans the StringPathHash tables (about
+ * a second)
  *
  * @param context world index and asset resolver
  * @param scene streaming scene
  * @returns the surface, or `undefined` if the scene has no such asset
  * @throws {Error} if the asset's bundle doesn't hold the MonoBehaviour
  */
-export const loadTerrainSurface = async (
+export const loadTerrainSurfacesData = async (
 	context: Pick<Context, 'world' | 'resolver'>,
 	scene: string,
-): Promise<TerrainSurface | undefined> => {
+): Promise<TerrainSurfacesData | undefined> => {
 	const wanted = terrainSurfacesAssetPath(scene);
 	const [hash] = await context.world.hashesOf(wanted);
 	if (hash === undefined) {

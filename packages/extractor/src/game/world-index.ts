@@ -91,7 +91,7 @@ export class WorldIndex {
 		this.vfs = vfs;
 	}
 
-	/** @returns the main StringPathHash catalog (≈170 MB, loaded once) */
+	/** @returns the main StringPathHash table (≈170 MB, loaded once) */
 	pathHash(): Promise<StringPathHashTable> {
 		this.#pathHash ??= this.#read(VfsGroup.ExtendData, STRING_PATH_HASH).then(
 			(b) => new StringPathHashTable(b),
@@ -99,7 +99,7 @@ export class WorldIndex {
 		return this.#pathHash;
 	}
 
-	/** @returns the initial-package StringPathHash catalog */
+	/** @returns the initial-package StringPathHash table */
 	initPathHash(): Promise<StringPathHashTable> {
 		this.#initPathHash ??= this.#read(VfsGroup.InitialExtendData, INIT_STRING_PATH_HASH).then(
 			(b) => new StringPathHashTable(b),
@@ -115,30 +115,30 @@ export class WorldIndex {
 
 	/**
 	 * @param hash a StringPathHash key
-	 * @returns the path from the main catalog, falling back to the initial one
+	 * @returns the path from the main table, falling back to the initial one
 	 */
 	async pathOf(hash: bigint): Promise<string | undefined> {
 		return (await this.pathLookup())(hash);
 	}
 
-	/** @returns {@link pathOf} as a synchronous function, once both catalogs are loaded */
+	/** @returns {@link pathOf} as a synchronous function, once both tables are loaded */
 	async pathLookup(): Promise<(hash: bigint) => string | undefined> {
 		const [main, initial] = await Promise.all([this.pathHash(), this.initPathHash()]);
 		return (hash) => main.lookup(hash) ?? initial.lookup(hash);
 	}
 
 	/**
-	 * finds the hashes a path is stored under by scanning both catalogs (about a second), since the hash
-	 * function for asset paths isn't ported
+	 * finds the hashes a path is stored under by scanning both tables (about a second), since the hash function
+	 * for asset paths isn't ported
 	 *
 	 * @param path asset path; matched case-insensitively, with `\` read as `/`
-	 * @returns distinct hashes, main catalog first
+	 * @returns distinct hashes, main table first
 	 */
 	async hashesOf(path: string): Promise<bigint[]> {
 		const wanted = path.toLowerCase().replaceAll('\\', '/');
 		const hashes: bigint[] = [];
 		for (const table of [await this.pathHash(), await this.initPathHash()]) {
-			// only strings of the right length are decoded; the catalogs keep the authoring case
+			// only strings of the right length are decoded; the tables keep the authoring case
 			for (const [hash, candidate] of table.entriesWithByteLength(wanted.length * 2)) {
 				if (candidate.toLowerCase() === wanted && !hashes.includes(hash)) {
 					hashes.push(hash);

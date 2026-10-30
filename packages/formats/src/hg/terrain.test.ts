@@ -17,7 +17,7 @@ import {
 	terrainNodeIndex,
 	terrainTileFootprint,
 	TerrainFormat,
-	type TerrainSurface,
+	type TerrainSurfacesData,
 } from './terrain.ts';
 
 const tret = (
@@ -67,7 +67,7 @@ const heightPage = (fill: (i: number) => number): Uint8Array => {
 	return tret(65, 65, 1, TerrainFormat.R8G8_UNorm, payload);
 };
 
-const surface: TerrainSurface = {
+const surface: TerrainSurfacesData = {
 	position: { x: -2048, y: 10, z: -1024 },
 	heightScale: 730,
 	terrainSize: 4096,

@@ -22,7 +22,7 @@ import {
 	TERRAIN_SPLAT_CELL,
 	terrainLeafLevel,
 	terrainNodeIndex,
-	type TerrainSurface,
+	type TerrainSurfacesData,
 } from '@endfield-noclip/formats/hg/terrain';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import {
@@ -105,7 +105,7 @@ import { loadProgressions, progressionId } from '../game/scenery-variants.ts';
 import {
 	indexTerrain,
 	loadTerrainSplatIndex,
-	loadTerrainSurface,
+	loadTerrainSurfacesData,
 	type TerrainSceneIndex,
 } from '../game/terrain-source.ts';
 import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
@@ -495,7 +495,7 @@ interface SceneIndex {
 	names: Map<string, string>;
 	partition: LevelPartition | undefined;
 	terrainScene: TerrainSceneIndex | undefined;
-	surface: TerrainSurface | undefined;
+	surface: TerrainSurfacesData | undefined;
 	/** the manifest's terrain section without its levels, or `null` without terrain */
 	terrain: Omit<TerrainInfo, 'levels' | 'detail'> | null;
 	grid: TreeGrid;
@@ -534,7 +534,7 @@ const indexScene = async (
 			world.names(),
 			world.partition(options.scene),
 			indexTerrain(context.vfs),
-			loadTerrainSurface(context, options.scene),
+			loadTerrainSurfacesData(context, options.scene),
 			world.chunkFiles(),
 			loadSceneStateControls(world, options.scene),
 		]);
@@ -1109,7 +1109,7 @@ const packTerrainLayers = async (
 	context: Pick<Context, 'vfs' | 'world' | 'resolver'>,
 	pack: PackState,
 	terrainScene: TerrainSceneIndex,
-	surface: TerrainSurface,
+	surface: TerrainSurfacesData,
 ): Promise<{ info: TerrainDetailInfo; index: Uint8Array } | null> => {
 	const log = pack.scene.options.log;
 	const scene = pack.scene.options.scene;
@@ -1489,7 +1489,7 @@ const writePackage = async (
  * @returns tree parameters aligned with the terrain quadtree; scenes without terrain get a 4096 m grid at the
  *   origin
  */
-const treeGrid = (surface: TerrainSurface | undefined): TreeGrid => {
+const treeGrid = (surface: TerrainSurfacesData | undefined): TreeGrid => {
 	const rootSize = surface?.terrainSize ?? 4096;
 	const origin: [number, number] =
 		surface === undefined ? [-rootSize / 2, -rootSize / 2] : [surface.position.x, surface.position.z];

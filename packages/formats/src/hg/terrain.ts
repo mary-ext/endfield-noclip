@@ -260,10 +260,10 @@ const asLayerRole = (value: string): TerrainLayerRole | undefined => {
 // #region surface and placement
 
 /**
- * per-scene terrain parameters. the game keeps them in the `HGTerrainSurfacesData` MonoBehaviour at
+ * per-scene terrain parameters: the game's `HGTerrainSurfacesData` MonoBehaviour at
  * `assets/beyond/dynamicassets/scenes/pc/<scene>/terrain/hgterrainsurfacesdata.asset`, not in the tiles.
  */
-export interface TerrainSurface {
+export interface TerrainSurfacesData {
 	/** world position of the terrain square's minimum corner; `y` is the height of a zero sample */
 	position: { x: number; y: number; z: number };
 	/** metres spanned by the full 15-bit height range */
@@ -362,7 +362,10 @@ export interface TerrainTileFootprint {
  * @returns the tile's world footprint
  * @throws {RangeError} if the address lies outside the root square
  */
-export const terrainTileFootprint = (surface: TerrainSurface, tile: TerrainTileKey): TerrainTileFootprint => {
+export const terrainTileFootprint = (
+	surface: TerrainSurfacesData,
+	tile: TerrainTileKey,
+): TerrainTileFootprint => {
 	const count = 2 ** tile.level;
 	if (tile.x < 0 || tile.z < 0 || tile.x >= count || tile.z >= count) {
 		throw new RangeError(`tile ${tile.level}/${tile.x}/${tile.z} is outside the ${count}² grid`);
@@ -411,9 +414,9 @@ const vector4Field = (parent: TypeTreeObject, name: string): [number, number, nu
  *   `layerData`)
  * @throws {FormatError} if a required field is missing or has the wrong type
  */
-export const readTerrainSurfacesData = (object: TypeTreeObject): TerrainSurface => {
+export const readTerrainSurfacesData = (object: TypeTreeObject): TerrainSurfacesData => {
 	const [x, y, z] = vector3Field(object, 'terrainPosition');
-	const surface: TerrainSurface = {
+	const surface: TerrainSurfacesData = {
 		position: { x, y, z },
 		heightScale: numberField(object, 'heightScale'),
 		terrainSize: numberField(object, 'terrainSize'),
@@ -504,7 +507,7 @@ export const readTerrainHeightSamples = (texture: TerrainTexture): Uint16Array =
  * @param surface scene terrain parameters
  * @returns world Y per sample, `NaN` for holes
  */
-export const terrainHeightsToWorld = (samples: Uint16Array, surface: TerrainSurface): Float32Array => {
+export const terrainHeightsToWorld = (samples: Uint16Array, surface: TerrainSurfacesData): Float32Array => {
 	const scale = surface.heightScale / TERRAIN_HEIGHT_HOLE;
 	const out = new Float32Array(samples.length);
 	for (let i = 0; i < samples.length; i++) {

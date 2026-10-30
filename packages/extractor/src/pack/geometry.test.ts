@@ -8,7 +8,7 @@ import {
 	MeshTopology,
 	TEXCOORD_COUNT,
 	unpackHgNormal,
-	VertexFormat,
+	VertexAttributeFormat,
 } from '@endfield-noclip/formats/unity/mesh';
 import { decodeGeometryBlob } from '@endfield-noclip/package-format/codec';
 import {
@@ -32,7 +32,7 @@ const UV0 = [0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 0, 1];
 const attribute = (
 	dimension: number,
 	values: number[],
-	format: number = VertexFormat.Float32,
+	format: number = VertexAttributeFormat.Float32,
 ): MeshAttribute => ({
 	dimension,
 	format,
@@ -47,7 +47,7 @@ const testMesh = (overrides: Partial<DecodedMesh> = {}): DecodedMesh => {
 	uvs[2] = attribute(
 		4,
 		Array.from({ length: 24 }, (_, i) => ((i % 5) - 2) / 127),
-		VertexFormat.SNorm8,
+		VertexAttributeFormat.SNorm8,
 	);
 	const box = {
 		center: [1, 0, 0.5] as [number, number, number],

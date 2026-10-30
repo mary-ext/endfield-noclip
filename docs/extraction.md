@@ -55,9 +55,9 @@ lengths on load and tells the user to run `init` when it's missing.
 `init` builds the keys in three steps (`hg/key-derive.ts`):
 
 1. derive what the install yields: the bundle cipher's substitution box, key and IV are recovered
-   from the installed client, and the chain constant is searched for there too.
-2. take the rest from `--keys-from`: the VFS key, and the chain constant when the search finds none
-   (the case for the current client), aren't stored in the install in a recoverable form.
+   from the installed client, and the chain XOR constant (`chainXor`) is searched for there too.
+2. take the rest from `--keys-from`: the VFS key, and `chainXor` when the search finds none (the
+   case for the current client), aren't stored in the install in a recoverable form.
    `hg/key-import.ts` reads them from local checkouts of tools that embed them
    (Endfield-map-extractor for the VFS key, AnimeStudio for the bundle cipher). without
    `--keys-from`, `init` fails naming the missing key.

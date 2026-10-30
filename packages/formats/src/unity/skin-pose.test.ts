@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { FormatError } from '../binary/binary-reader.ts';
 
-import { type DecodedMesh, VertexFormat } from './mesh.ts';
+import { type DecodedMesh, VertexAttributeFormat } from './mesh.ts';
 import { bakeSkinPose } from './skin-pose.ts';
 import { trsMatrix } from './transform.ts';
 
@@ -16,7 +16,7 @@ const mesh = (): DecodedMesh => ({
 	packedNormals: null,
 	tangents: {
 		dimension: 4,
-		format: VertexFormat.Float32,
+		format: VertexAttributeFormat.Float32,
 		data: new Float32Array([Math.SQRT1_2, -Math.SQRT1_2, 0, 1]),
 	},
 	colors: null,
@@ -30,8 +30,12 @@ const mesh = (): DecodedMesh => ({
 		boneNameHashCount: 2,
 		hasBlendWeights: true,
 		hasBlendIndices: true,
-		weights: { dimension: 4, format: VertexFormat.Float32, data: new Float32Array([0.25, 0.75, 0, 0]) },
-		indices: { dimension: 4, format: VertexFormat.UInt8, data: new Float32Array([0, 1, 0, 0]) },
+		weights: {
+			dimension: 4,
+			format: VertexAttributeFormat.Float32,
+			data: new Float32Array([0.25, 0.75, 0, 0]),
+		},
+		indices: { dimension: 4, format: VertexAttributeFormat.UInt8, data: new Float32Array([0, 1, 0, 0]) },
 	},
 });
 const near = (actual: ArrayLike<number>, expected: number[]): void => {

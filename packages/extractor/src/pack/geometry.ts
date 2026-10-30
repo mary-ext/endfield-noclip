@@ -7,7 +7,7 @@ import {
 	OCT10_RANGE,
 	TEXCOORD_COUNT,
 	unpackOct10,
-	VertexFormat,
+	VertexAttributeFormat,
 } from '@endfield-noclip/formats/unity/mesh';
 import { encodeGeometryBlob } from '@endfield-noclip/package-format/codec';
 import {
@@ -502,8 +502,8 @@ const uvStream = (
 	const component = (v: number, k: number): number => (k < dimension ? data[vertexOf(v) * dimension + k] : 0);
 
 	// 8-bit normalized sources keep their exact values
-	if (format === VertexFormat.SNorm8 || format === VertexFormat.UNorm8) {
-		const signed = format === VertexFormat.SNorm8;
+	if (format === VertexAttributeFormat.SNorm8 || format === VertexAttributeFormat.UNorm8) {
+		const signed = format === VertexAttributeFormat.SNorm8;
 		const out = signed ? new Int8Array(order.length * 4) : new Uint8Array(order.length * 4);
 		const range = signed ? 127 : 255;
 		for (const [i, v] of order.entries()) {

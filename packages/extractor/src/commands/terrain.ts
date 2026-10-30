@@ -9,7 +9,7 @@ import {
 	terrainHeightsToWorld,
 	terrainLeafLevel,
 	terrainTileFootprint,
-	type TerrainSurface,
+	type TerrainSurfacesData,
 	type TerrainTileKey,
 } from '@endfield-noclip/formats/hg/terrain';
 import type { Rect } from '@endfield-noclip/package-format/format';
@@ -24,7 +24,7 @@ import {
 	type HeightMosaic,
 	type HeightTile,
 } from '../export/terrain-mosaic.ts';
-import { indexTerrain, loadTerrainSurface, type TerrainSceneIndex } from '../game/terrain-source.ts';
+import { indexTerrain, loadTerrainSurfacesData, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { Vfs, VfsFile } from '../hg/vfs.ts';
 import { squareOverlapsRect } from '../pack/bounds.ts';
 
@@ -68,7 +68,7 @@ export const run = async (args: string[]): Promise<void> => {
 			}
 			case 'tiles': {
 				const entry = requireScene(index, scene);
-				printTiles(entry, await loadTerrainSurface(context, entry.scene), bounds);
+				printTiles(entry, await loadTerrainSurfacesData(context, entry.scene), bounds);
 				break;
 			}
 			case 'export-heights': {
@@ -76,7 +76,7 @@ export const run = async (args: string[]): Promise<void> => {
 					throw new Error('terrain export-heights needs -o <dir>');
 				}
 				const entry = requireScene(index, scene);
-				const surface = resolveSurface(entry, await loadTerrainSurface(context, entry.scene), {
+				const surface = resolveSurface(entry, await loadTerrainSurfacesData(context, entry.scene), {
 					heightScale: values['height-scale'],
 					origin: values.origin,
 					size: values.size,
@@ -131,7 +131,7 @@ const countLevels = (keys: Iterable<TerrainTileKey>): Map<number, TerrainTileKey
 
 /** a surface plus which of its fields were guessed */
 interface ResolvedSurface {
-	surface: TerrainSurface;
+	surface: TerrainSurfacesData;
 	/** false when heights are in units of the (unknown) height scale */
 	heightScaleKnown: boolean;
 	inferred: string[];
@@ -146,7 +146,7 @@ interface ResolvedSurface {
  */
 const resolveSurface = (
 	entry: TerrainSceneIndex,
-	loaded: TerrainSurface | undefined,
+	loaded: TerrainSurfacesData | undefined,
 	flags: { heightScale: string | undefined; origin: string | undefined; size: string | undefined },
 ): ResolvedSurface => {
 	const inferred: string[] = [];
@@ -161,7 +161,7 @@ const resolveSurface = (
 		inferred.push('terrainSize');
 	}
 
-	let position: TerrainSurface['position'];
+	let position: TerrainSurfacesData['position'];
 	if (flags.origin !== undefined) {
 		const [x, y, z] = parseNumbers(flags.origin, 3, '--origin');
 		position = { x, y, z };
@@ -210,7 +210,7 @@ const printScenes = (index: Map<string, TerrainSceneIndex>): void => {
 
 const printTiles = (
 	entry: TerrainSceneIndex,
-	loaded: TerrainSurface | undefined,
+	loaded: TerrainSurfacesData | undefined,
 	bounds: Rect | undefined,
 ): void => {
 	// placement only needs the size and origin, which don't depend on the height scale
@@ -253,7 +253,7 @@ const printTiles = (
 
 const selectTiles = (
 	entry: TerrainSceneIndex,
-	surface: TerrainSurface,
+	surface: TerrainSurfacesData,
 	bounds: Rect | undefined,
 ): { key: TerrainTileKey; file: VfsFile }[] => {
 	const tiles = [...entry.tiles.values()];
@@ -359,7 +359,12 @@ const exportHeights = async (
 	console.log(`wrote ${mosaic.width}×${mosaic.height} heights to ${options.outDir}`);
 };
 
-const clipCells = (cells: CellRange, surface: TerrainSurface, leafLevel: number, bounds: Rect): CellRange => {
+const clipCells = (
+	cells: CellRange,
+	surface: TerrainSurfacesData,
+	leafLevel: number,
+	bounds: Rect,
+): CellRange => {
 	const size = surface.terrainSize / 2 ** leafLevel;
 	return {
 		minX: Math.max(cells.minX, Math.floor((bounds.minX - surface.position.x) / size)),

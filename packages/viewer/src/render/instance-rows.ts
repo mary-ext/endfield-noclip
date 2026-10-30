@@ -57,7 +57,7 @@ export const entityTag = (entityId: number): number => entityId >>> 27;
 
 /**
  * row: f32×12 transform rows (relative to the block origin), f32×3 bounds centre (relative), u32 block slot,
- * f32×3 half extents, u32 info (`tag | kind << 8 | layer << 16`, see {@link entityTag}).
+ * f32×3 half extents, u32 info (`tag | kind << 8 | sceneState << 16`, see {@link entityTag}).
  *
  * the block slot is left 0; {@link assignBlockSlot} sets it once the block gets a slot.
  *

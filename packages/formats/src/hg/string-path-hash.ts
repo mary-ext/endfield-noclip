@@ -16,7 +16,7 @@ import { hashSlot, type HashSlot, slotAt } from './hash-slots.ts';
 const SLOTS_START = 8;
 const BUCKET_SIZE = 16;
 
-/** read-only view of a StringPathHash catalog; lookups decode only what they touch */
+/** read-only view of a StringPathHash table; lookups decode only what they touch */
 export class StringPathHashTable {
 	readonly #view: ByteView;
 	readonly #stringsOffset: number;

@@ -41,16 +41,16 @@ world data names assets two ways:
   `<container path>` or, for a sub-asset of an FBX, `<container path>##<sub-asset name>`.
 - **PPtrs**, inside a prefab, material or renderer once an object has been reached.
 
-### catalogs
+### lookup tables
 
 | file                                                                                        | maps                                                                                                                               |
 | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `Data/ExtendData/Main/StringPathHash.bin`, `Data/ExtendData/Initial/InitStringPathHash.bin` | hash → path; lookups try main, then initial                                                                                        |
 | `Data/Bundles/Windows/manifest.hgmmap`                                                      | hash → `AssetInfo` (bundle index, size, compressed path); bundle → name, direct dependencies and the transitive dependency closure |
 
-the asset path hash function isn't ported, so path → hash (`WorldIndex.hashesOf`) scans the
-catalogs, about a second per lookup. `world resolve <path|hash>` prints both directions plus the
-holding bundle and its dependencies.
+the path hash (the game's `ManifestDataBinary.HashCodeEx`, over the lowercased path) isn't ported,
+so path → hash (`WorldIndex.hashesOf`) scans the StringPathHash tables, about a second per lookup.
+`world resolve <path|hash>` prints both directions plus the holding bundle and its dependencies.
 
 code: [string-path-hash.ts](../../packages/formats/src/hg/string-path-hash.ts),
 [bundle-manifest.ts](../../packages/formats/src/hg/bundle-manifest.ts),
@@ -269,4 +269,4 @@ viewer doesn't use it.
 - animated poses and non-zero blend shapes
 - LevelData members after the interactive list, and the facility layouts not yet supported
 - the per-controller meaning of progression bit 0 ("unbuilt" versus level 1)
-- the asset path hash function, which would replace the catalog scans in path → hash lookups
+- the path hash function, which would replace the StringPathHash table scans in path → hash lookups

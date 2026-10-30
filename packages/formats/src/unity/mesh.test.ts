@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { FormatError } from '../binary/binary-reader.ts';
 
-import { decodeMesh, streamLayout, unpackHgNormal, VertexFormat } from './mesh.ts';
+import { decodeMesh, streamLayout, unpackHgNormal, VertexAttributeFormat } from './mesh.ts';
 import type { TypeTreeObject } from './type-tree.ts';
 import { streamingInfo } from './values.ts';
 
@@ -118,11 +118,11 @@ describe('decodeMesh', () => {
 		return {
 			data,
 			channels: {
-				0: channel(0, 0, VertexFormat.Float32, 3),
+				0: channel(0, 0, VertexAttributeFormat.Float32, 3),
 				// Endfield's packed normal: one 32-bit component, dimension byte 0x31
-				1: channel(1, 0, VertexFormat.Float32, 0x31),
-				3: channel(1, 8, VertexFormat.UNorm8, 4),
-				4: channel(1, 4, VertexFormat.Float16, 2),
+				1: channel(1, 0, VertexAttributeFormat.Float32, 0x31),
+				3: channel(1, 8, VertexAttributeFormat.UNorm8, 4),
+				4: channel(1, 4, VertexAttributeFormat.Float16, 2),
 			},
 		};
 	};
@@ -216,8 +216,8 @@ describe('decodeMesh', () => {
 		const base = {
 			vertexCount: 1,
 			channels: {
-				0: channel(0, 0, VertexFormat.Float32, 3),
-				13: channel(1, 0, VertexFormat.UInt8, 0x14),
+				0: channel(0, 0, VertexAttributeFormat.Float32, 3),
+				13: channel(1, 0, VertexAttributeFormat.UInt8, 0x14),
 			},
 			data,
 			indices: new Uint16Array(0),
@@ -267,9 +267,9 @@ describe('decodeMesh', () => {
 describe('streamLayout', () => {
 	it('aligns consecutive streams to 16 bytes', () => {
 		const channels = [
-			{ channel: 0, stream: 0, offset: 0, format: VertexFormat.Float32, dimension: 3, packing: 0 },
-			{ channel: 4, stream: 1, offset: 0, format: VertexFormat.Float16, dimension: 2, packing: 0 },
-			{ channel: 3, stream: 2, offset: 0, format: VertexFormat.UNorm8, dimension: 4, packing: 0 },
+			{ channel: 0, stream: 0, offset: 0, format: VertexAttributeFormat.Float32, dimension: 3, packing: 0 },
+			{ channel: 4, stream: 1, offset: 0, format: VertexAttributeFormat.Float16, dimension: 2, packing: 0 },
+			{ channel: 3, stream: 2, offset: 0, format: VertexAttributeFormat.UNorm8, dimension: 4, packing: 0 },
 		];
 		assert.deepEqual(streamLayout(channels, 5), [
 			{ offset: 0, stride: 12 },

@@ -5,7 +5,7 @@ import { FormatError } from '../binary/binary-reader.ts';
 
 import { StringPathHashTable } from './string-path-hash.ts';
 
-/** builds a catalog the way the game lays it out: slot = hash mod count */
+/** builds a StringPathHash table the way the game lays it out: slot = hash mod count */
 const build = (pairs: [bigint, string][]): Uint8Array => {
 	const count = pairs.length;
 	const stringsOffset = 8 + 24 * count;

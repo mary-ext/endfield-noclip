@@ -29,7 +29,7 @@ import {
 // #region enums
 
 /** Unity 2019+ `VertexAttributeFormat` */
-export const VertexFormat = {
+export const VertexAttributeFormat = {
 	Float32: 0,
 	Float16: 1,
 	UNorm8: 2,
@@ -44,11 +44,11 @@ export const VertexFormat = {
 	SInt32: 11,
 } as const;
 
-/** byte size of one component, by {@link VertexFormat} */
+/** byte size of one component, by {@link VertexAttributeFormat} */
 const FORMAT_SIZES = [4, 2, 1, 1, 2, 2, 1, 1, 2, 2, 4, 4];
 
-/** Unity 2018+ shader channel order of `m_VertexData.m_Channels` */
-export const VertexChannel = {
+/** Unity 2018+ `VertexAttribute`, the order of `m_VertexData.m_Channels` */
+export const VertexAttribute = {
 	Position: 0,
 	Normal: 1,
 	Tangent: 2,
@@ -76,12 +76,12 @@ export const MeshTopology = {
 
 /** one entry of `m_VertexData.m_Channels`, in source form */
 export interface VertexChannelInfo {
-	/** shader channel index, see {@link VertexChannel} */
+	/** shader channel index, see {@link VertexAttribute} */
 	channel: number;
 	stream: number;
 	/** byte offset within the stream's vertex */
 	offset: number;
-	/** {@link VertexFormat} */
+	/** {@link VertexAttributeFormat} */
 	format: number;
 	/** component count (low nibble of the dimension byte) */
 	dimension: number;
@@ -106,7 +106,7 @@ export interface MeshSubmesh {
 /** a decoded vertex attribute: `dimension` floats per vertex */
 export interface MeshAttribute {
 	dimension: number;
-	/** the source {@link VertexFormat}, for choosing a packed output format */
+	/** the source {@link VertexAttributeFormat}, for choosing a packed output format */
 	format: number;
 	data: Float32Array;
 }
@@ -222,7 +222,7 @@ export const decodeMesh = (mesh: TypeTreeObject, streamData: Uint8Array | undefi
 		};
 	};
 
-	const position = present(VertexChannel.Position);
+	const position = present(VertexAttribute.Position);
 	if (position === undefined || position.dimension < 3) {
 		throw new FormatError(`mesh ${name} has no 3D positions`);
 	}
@@ -230,7 +230,7 @@ export const decodeMesh = (mesh: TypeTreeObject, streamData: Uint8Array | undefi
 
 	let normals: Float32Array | null = null;
 	let packedNormals: Uint32Array | null = null;
-	const normal = present(VertexChannel.Normal);
+	const normal = present(VertexAttribute.Normal);
 	if (normal !== undefined) {
 		if (normal.dimension === 1 && FORMAT_SIZES[normal.format] === 4) {
 			const stream = streams[normal.stream];
@@ -252,11 +252,11 @@ export const decodeMesh = (mesh: TypeTreeObject, streamData: Uint8Array | undefi
 		}
 	}
 
-	const tangent = present(VertexChannel.Tangent);
-	const color = present(VertexChannel.Color);
+	const tangent = present(VertexAttribute.Tangent);
+	const color = present(VertexAttribute.Color);
 	const uvs: (MeshAttribute | null)[] = [];
 	for (let i = 0; i < TEXCOORD_COUNT; i++) {
-		const uv = present(VertexChannel.TexCoord0 + i);
+		const uv = present(VertexAttribute.TexCoord0 + i);
 		uvs.push(uv === undefined ? null : read(uv));
 	}
 
@@ -291,10 +291,10 @@ export const decodeMesh = (mesh: TypeTreeObject, streamData: Uint8Array | undefi
 
 	const bindPoseCount = arrayField(mesh, 'm_BindPose').length;
 	const boneNameHashCount = arrayField(mesh, 'm_BoneNameHashes').length;
-	const weightChannel = present(VertexChannel.BlendWeight);
-	const indexChannel = present(VertexChannel.BlendIndices);
+	const weightChannel = present(VertexAttribute.BlendWeight);
+	const indexChannel = present(VertexAttribute.BlendIndices);
 	const hasBlendWeights = weightChannel !== undefined;
-	const hasBlendIndices = present(VertexChannel.BlendIndices) !== undefined;
+	const hasBlendIndices = present(VertexAttribute.BlendIndices) !== undefined;
 	const bonesPerVertex = optionalNumberField(mesh, 'm_BonesPerVertex') ?? 0;
 	let weights = weightChannel === undefined ? null : read(weightChannel);
 	const boneIndices = indexChannel === undefined ? null : read(indexChannel);
@@ -304,7 +304,11 @@ export const decodeMesh = (mesh: TypeTreeObject, streamData: Uint8Array | undefi
 		for (let v = 0; v < vertexCount; v++) {
 			implicitWeights[v * boneIndices.dimension] = 1;
 		}
-		weights = { dimension: boneIndices.dimension, format: VertexFormat.Float32, data: implicitWeights };
+		weights = {
+			dimension: boneIndices.dimension,
+			format: VertexAttributeFormat.Float32,
+			data: implicitWeights,
+		};
 	}
 	const skinned = bindPoseCount > 0 || boneNameHashCount > 0 || hasBlendWeights || hasBlendIndices;
 
@@ -386,51 +390,51 @@ const readChannel = (
 			const at = base + d * size;
 			let value: number;
 			switch (format) {
-				case VertexFormat.Float32: {
+				case VertexAttributeFormat.Float32: {
 					value = view.getFloat32(at, true);
 					break;
 				}
-				case VertexFormat.Float16: {
+				case VertexAttributeFormat.Float16: {
 					value = view.getFloat16(at, true);
 					break;
 				}
-				case VertexFormat.UNorm8: {
+				case VertexAttributeFormat.UNorm8: {
 					value = view.getUint8(at) / 255;
 					break;
 				}
-				case VertexFormat.SNorm8: {
+				case VertexAttributeFormat.SNorm8: {
 					value = Math.max(view.getInt8(at) / 127, -1);
 					break;
 				}
-				case VertexFormat.UNorm16: {
+				case VertexAttributeFormat.UNorm16: {
 					value = view.getUint16(at, true) / 65535;
 					break;
 				}
-				case VertexFormat.SNorm16: {
+				case VertexAttributeFormat.SNorm16: {
 					value = Math.max(view.getInt16(at, true) / 32767, -1);
 					break;
 				}
-				case VertexFormat.UInt8: {
+				case VertexAttributeFormat.UInt8: {
 					value = view.getUint8(at);
 					break;
 				}
-				case VertexFormat.SInt8: {
+				case VertexAttributeFormat.SInt8: {
 					value = view.getInt8(at);
 					break;
 				}
-				case VertexFormat.UInt16: {
+				case VertexAttributeFormat.UInt16: {
 					value = view.getUint16(at, true);
 					break;
 				}
-				case VertexFormat.SInt16: {
+				case VertexAttributeFormat.SInt16: {
 					value = view.getInt16(at, true);
 					break;
 				}
-				case VertexFormat.UInt32: {
+				case VertexAttributeFormat.UInt32: {
 					value = view.getUint32(at, true);
 					break;
 				}
-				case VertexFormat.SInt32: {
+				case VertexAttributeFormat.SInt32: {
 					value = view.getInt32(at, true);
 					break;
 				}
