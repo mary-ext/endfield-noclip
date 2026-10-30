@@ -88,7 +88,9 @@ height. the light direction is `rotationCloudShadow`'s, divided by the sine of i
 
 no shipped phase enables the far texture set (`enableFarCloudShadowTexture`); the viewer ignores it.
 rain phases set high alphas: on Marker Stone 0.75–1 against 0.49–0.70 for its dry phases, which is
-most of what makes the rain look overcast. the volumetric fog doesn't take the cloud shadow yet.
+most of what makes the rain look overcast. the volumetric fog takes the same cloud shadow on its
+sun; where a phase sets the alpha to 1, as Marker Stone's cave volumes do, fog under a dark patch
+gets no sun at all, and without it the haze over such places reads near-white.
 
 ## ambient
 
@@ -402,11 +404,11 @@ fog over it, then the froxels.
   height fog's layer density at its height, halved and times `volumetricFogExtinctionScale`, as
   extinction; `volumetricFogAlbedo` times it scatters. it scatters the sun (raw `directColor` times
   the pre-exposed intensity and `volumetricFogDirectLightingScatteringIntensity`, through one
-  shadow-map comparison and the shadow's strength and sun-off override, with a Henyey-Greenstein
-  phase of `volumetricFogScatteringDistribution` towards the atmosphere's sun direction) and the
-  ambient probe's linear part (times `volumetricFogSkyLightingScatteringIntensity` / π), and adds
-  `volumetricFogEmissive` / 1000 per metre. a column is integrated front to back, fading in over
-  `volumetricFogNearFadeInDistance`.
+  shadow-map comparison times the [cloud shadow](#cloud-shadows), then the shadow's sun-off override
+  and strength, with a Henyey-Greenstein phase of `volumetricFogScatteringDistribution` towards the
+  atmosphere's sun direction) and the ambient probe's linear part (times
+  `volumetricFogSkyLightingScatteringIntensity` / π), and adds `volumetricFogEmissive` / 1000 per
+  metre. a column is integrated front to back, fading in over `volumetricFogNearFadeInDistance`.
   - while it's on, the height fog integrates only the part of each ray past `volumetricFogDistance`
     of view depth, though its start and cutoff ramps and opacity cap still measure the whole ray.
     nothing nearer than the start distance is fogged.
@@ -610,9 +612,9 @@ are sampled toroidally in `ambient_irradiance`.
 - the volumetric fog's grid size, depth distribution and history weight come from quality presets
   that aren't recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient
   probe without the native diffuse-ambient scale.
-- not rendered: light shafts, lens flare, cloud shadows in the volumetric fog, the moon's sky-wide
-  ring (`HG_RING`), the sun disc, aurora, local reflection probes, the game's own SSR, local light
-  shadows and light beams, precipitation and rain wetness (terrain puddles do render).
+- not rendered: light shafts, lens flare, the moon's sky-wide ring (`HG_RING`), the sun disc,
+  aurora, local reflection probes, the game's own SSR, local light shadows and light beams,
+  precipitation and rain wetness (terrain puddles do render).
 - celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' order against
   the cloud panorama (`drawCloudAfterPlanet`), their ring thinning the stars, and the brightness of
   the ray-traced planet's light (taken as the viewer's pre-exposed sun) are unchecked against a

@@ -64,10 +64,10 @@ fn henyey_greenstein(g: f32, mu: f32) -> f32 {
 }
 
 // the sun's visibility at a camera-relative position: one comparison in the sharpest layer holding it, as the
-// game takes one filtered lookup per froxel, then the environment's override and strength
+// game takes one filtered lookup per froxel, times the cloud shadow, then the environment's override and strength
 fn froxel_sun(rel: vec3f) -> f32 {
 	if (frame.shadow_fade.w < 0.5) {
-		return 1.0;
+		return cloud_shadow(rel);
 	}
 	var shadow = 1.0;
 	for (var i = 0u; i < 4u; i++) {
@@ -81,7 +81,7 @@ fn froxel_sun(rel: vec3f) -> f32 {
 			break;
 		}
 	}
-	shadow = mix(shadow, frame.shadow_look.z, frame.shadow_look.y);
+	shadow = mix(shadow * cloud_shadow(rel), frame.shadow_look.z, frame.shadow_look.y);
 	return mix(1.0, min(1.0, shadow), frame.shadow_look.x);
 }
 
