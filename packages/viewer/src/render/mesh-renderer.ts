@@ -1,6 +1,6 @@
 /**
  * geometry residency and the mesh family: each geometry gets one vertex buffer (quantized positions,
- * octahedral normals, UV set 0, tangents) and one index buffer; each mesh bucket is one instanced
+ * octahedral normals, UV sets 0 and 1, tangents) and one index buffer; each mesh bucket is one instanced
  * `drawIndexed` over its slice of the visible list. per-draw parameters (dequantization, the material look)
  * sit in a storage array indexed through a per-list-entry draw id, and the material's textures are in group 3
  * (a white texture for slots whose texture hasn't streamed in, with the slot's flag cleared). opaque draws
@@ -19,16 +19,16 @@ import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
-import { alphaTextureOf, LOOK_FLOATS, LookFlags, LookRow, SLOTS, SLOT_FLAGS } from './materials.ts';
+import { alphaTextureOf, LOOK_FLOATS, LookFlags, SLOTS, SLOT_FLAGS } from './materials.ts';
 import meshWgsl from './shaders/mesh.wgsl?raw';
 import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
 import type { TextureBinding, TextureStore } from './texture-store.ts';
 
-/** floats of `Draw` in mesh.wgsl: dequantization offset and scale, then the material look */
-const DRAW_FLOATS = 8 + LOOK_FLOATS;
+/** floats of `Draw` in mesh.wgsl: the position and UV dequantizations, then the material look */
+const DRAW_FLOATS = 16 + LOOK_FLOATS;
 /** draws per frame at most; buckets past it aren't drawn */
 const MAX_DRAWS = 16_384;
-/** bytes per vertex of the zero buffer bound in place of missing streams (the widest is UV set 0) */
+/** bytes per vertex of the zero buffer bound in place of missing streams (the widest are float UVs) */
 const ZERO_STRIDE = 8;
 /**
  * draw flags of the geometry, next to the material's `LookFlags` (`HAS_*` in mesh.wgsl). the shader can't
@@ -50,7 +50,7 @@ type FaceCull = (typeof FACE_CULLS)[number];
  */
 const FRONT_FACE: GPUFrontFace = 'cw';
 
-/** the vertex formats of UV set 0: as the package stores 16-bit UVs, else dequantized floats */
+/** the vertex formats of UV sets 0 and 1: as the package stores 16-bit UVs, else dequantized floats */
 const UV_FORMATS = ['unorm16x2', 'float32x2'] as const;
 type UvFormat = (typeof UV_FORMATS)[number];
 
@@ -157,8 +157,8 @@ export class MeshRenderer {
 	#defaultSampler: GPUSampler;
 	/** material bind groups by material id */
 	#bindings = new Map<number, MaterialBinding>();
-	#slotBindings: (TextureBinding | null)[] = [null, null, null, null];
-	#versions: number[] = [-1, -1, -1, -1];
+	#slotBindings: (TextureBinding | null)[] = SLOTS.map(() => null);
+	#versions: number[] = SLOTS.map(() => -1);
 	#opaqueOrder: MeshBucket[] = [];
 	#cutoutOrder: MeshBucket[] = [];
 	/** prepared draws, opaque ones first; entries past {@link #drawCount} are reused next frame */
@@ -225,19 +225,20 @@ export class MeshRenderer {
 			mipmapFilter: 'linear',
 		});
 		const module = pipelines.module('mesh', FRAME_WGSL + meshWgsl);
-		const vertex = (uvFormat: UvFormat): GPUVertexState => ({
-			module,
-			entryPoint: 'vs_main',
-			buffers: [
-				{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }] },
-				{ arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'snorm16x2' }] },
-				{
-					arrayStride: uvFormat === 'unorm16x2' ? 4 : 8,
-					attributes: [{ shaderLocation: 2, offset: 0, format: uvFormat }],
-				},
-				{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
-			],
-		});
+		const vertex = (uvFormat: UvFormat): GPUVertexState => {
+			const uvStride = uvFormat === 'unorm16x2' ? 4 : 8;
+			return {
+				module,
+				entryPoint: 'vs_main',
+				buffers: [
+					{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }] },
+					{ arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'snorm16x2' }] },
+					{ arrayStride: uvStride, attributes: [{ shaderLocation: 2, offset: 0, format: uvFormat }] },
+					{ arrayStride: uvStride, attributes: [{ shaderLocation: 4, offset: 0, format: uvFormat }] },
+					{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
+				],
+			};
+		};
 		const prepare = (
 			key: string,
 			stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil'>,
@@ -294,7 +295,7 @@ export class MeshRenderer {
 	 * @returns the residency (geometry buffers aren't pooled; the memory budget bounds them)
 	 */
 	upload(blob: number, decoded: DecodedGeometry): ResidentGeometry {
-		const streams = [decoded.positions, decoded.normals, decoded.uvs, decoded.tangents];
+		const streams = [decoded.positions, decoded.normals, ...decoded.uvs, decoded.tangents];
 		const offsets: (number | null)[] = [];
 		let size = 0;
 		for (const stream of streams) {
@@ -328,10 +329,11 @@ export class MeshRenderer {
 			vertices,
 			positionBytes: decoded.positions.byteLength,
 			normalOffset: offsets[1],
-			uvOffset: offsets[2],
+			uv0Offset: offsets[2],
+			uv1Offset: offsets[3],
 			uvFormat: decoded.uvFormat,
-			uvTransform: [decoded.uvScale[0], decoded.uvScale[1], decoded.uvOffset[0], decoded.uvOffset[1]],
-			tangentOffset: offsets[3],
+			uvTransforms: decoded.uvTransforms,
+			tangentOffset: offsets[4],
 			indices,
 			indexFormat: decoded.indexSize === 4 ? 'uint32' : 'uint16',
 			positionOffset: decoded.positionOffset,
@@ -367,8 +369,9 @@ export class MeshRenderer {
 			layout: this.#layouts.materials,
 			entries: [
 				...slots.map((slot, i) => ({ binding: i, resource: slot?.view ?? this.#white })),
-				{ binding: 4, resource: slots[0]?.sampler ?? this.#defaultSampler },
-				{ binding: 5, resource: detail?.sampler ?? this.#defaultSampler },
+				{ binding: SLOTS.length, resource: slots[0]?.sampler ?? this.#defaultSampler },
+				{ binding: SLOTS.length + 1, resource: detail?.sampler ?? this.#defaultSampler },
+				{ binding: SLOTS.length + 2, resource: slots[5]?.sampler ?? this.#defaultSampler },
 			],
 		});
 		this.#bindings.set(material, { versions: [...versions], group });
@@ -450,19 +453,9 @@ export class MeshRenderer {
 				(resident.tangentOffset === null ? 0 : GeometryFlags.HasTangents);
 			params.set(resident.positionScale, at + 4);
 			params[at + 7] = 0;
-			params.set(look.params, at + 8);
-			{
-				// fold the UVs' dequantization into each slot's transform: (value · s + o) · S + O
-				const [su, sv, ou, ov] = resident.uvTransform;
-				for (let slot = 0; slot < SLOTS.length; slot++) {
-					const uv = at + 8 + LookRow.uv + slot * 4;
-					const [scaleU, scaleV] = [params[uv], params[uv + 1]];
-					params[uv + 2] += ou * scaleU;
-					params[uv + 3] += ov * scaleV;
-					params[uv] = su * scaleU;
-					params[uv + 1] = sv * scaleV;
-				}
-			}
+			params.set(resident.uvTransforms[0], at + 8);
+			params.set(resident.uvTransforms[1], at + 12);
+			params.set(look.params, at + 16);
 			ids.fill(d, bucket.first, bucket.first + bucket.count);
 			listStart = Math.min(listStart, bucket.first);
 			listEnd = Math.max(listEnd, bucket.first + bucket.count);
@@ -589,7 +582,7 @@ export class MeshRenderer {
 					const next: ResidentGeometry = draw.geometry;
 					geometry = next;
 					pass.setVertexBuffer(0, next.vertices, 0, next.positionBytes);
-					const optional = [next.normalOffset, next.uvOffset, next.tangentOffset];
+					const optional = [next.normalOffset, next.uv0Offset, next.uv1Offset, next.tangentOffset];
 					optional.forEach((offset, slot) => {
 						if (offset === null) {
 							pass.setVertexBuffer(slot + 1, this.#zeros);

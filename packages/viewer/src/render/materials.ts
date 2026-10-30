@@ -1,11 +1,15 @@
 /**
- * how the viewer's mesh shader draws each package material: whether at all, which textures fill its four
- * slots (base colour, normal, mask, emission), and the draw parameters `mesh.wgsl` reads.
+ * how the viewer's mesh shader draws each package material: whether at all, which textures fill its slots
+ * ({@link SLOTS}), and the draw parameters `mesh.wgsl` reads.
  *
  * the HGRP Lit family has two texture layouts (`_BaseTextureMapCount`): with an MRO map (R metallic, G
  * roughness, B occlusion) the normal map is `RAG`; without one (`_TWO_BASEMAP`, most materials) the normal
  * map's B channel holds roughness and A occlusion, and metallic is the base colour's alpha
  * (`_BaseTextureMapCount` 1) or `_Metallic` (2). foliage normal maps hold roughness in B the same way.
+ *
+ * Lit's optional layers, by keyword: `_TRI_CHANNEL_MASK` blends the surface toward three authored colours by
+ * the channels of `_MaskMap`, `_DETAIL_MAP` adds a tiling normal (and optionally colour and roughness) map
+ * that fades with view depth, and `_PARALLAX_MAP` glows with a pattern ray-marched below the surface.
  *
  * @module
  */
@@ -37,15 +41,30 @@ const FOLIAGE_FAMILIES = new Set(['leaf', 'grass', 'cardMesh']);
 /** stand-in albedo for materials without a base colour texture, linear */
 const DEFAULT_ALBEDO: [r: number, g: number, b: number] = [0.5, 0.5, 0.5];
 
-/** the texture slots the mesh shader samples, in binding order */
-export const SLOTS = ['_BaseColorMap', '_NormalMap', '_MROMap', '_EmissiveMap'] as const;
+/**
+ * the texture slots the mesh shader samples, in binding order. the third holds `_MROMap` in the MRO layout
+ * and the tri-channel `_MaskMap` otherwise ({@link LookFlags.TriChannelMask}): the frame group leaves seven
+ * sampled textures of WebGPU's default sixteen, and a material using both is rare
+ */
+export const SLOTS = [
+	'_BaseColorMap',
+	'_NormalMap',
+	'_MROMap',
+	'_EmissiveMap',
+	'_DetailMap',
+	'_ParallaxMap',
+	'_ParallaxNoiseMap',
+] as const;
 
 /** the matte painting's only texture, drawn in the base colour slot */
 const MATTE_PAINTING_TEXTURE = '_MainTex';
 
+/** a slot samples UV set 1 when bit `UV1_SHIFT + slot` of {@link MaterialLook.flags} is set, else UV set 0 */
+export const UV1_SHIFT = 18;
+
 /** {@link MaterialLook.flags} bits, matching `mesh.wgsl` */
 export const LookFlags = {
-	/** slot `i` of {@link SLOTS} has a texture: bit `i` */
+	/** the slots of {@link SLOTS} that have a texture ({@link SLOT_FLAGS}) */
 	BaseMap: 1 << 0,
 	NormalMap: 1 << 1,
 	MaskMap: 1 << 2,
@@ -67,18 +86,30 @@ export const LookFlags = {
 	Unlit: 1 << 12,
 	/** the alpha test reads the normal map's alpha instead of the base colour's (`_AlphaMaskChannel` 1) */
 	AlphaNormal: 1 << 13,
+	/** the mask slot holds the tri-channel `_MaskMap` rather than an MRO map */
+	TriChannelMask: 1 << 14,
+	DetailMap: 1 << 15,
+	ParallaxMap: 1 << 16,
+	ParallaxNoiseMap: 1 << 17,
+	// bits UV1_SHIFT… pick each slot's UV set
 } as const;
 
-/** the slot flags of {@link LookFlags}, which are cleared while a slot's texture isn't resident */
-export const SLOT_FLAGS = [LookFlags.BaseMap, LookFlags.NormalMap, LookFlags.MaskMap, LookFlags.EmissiveMap];
+/** the slot flags of {@link LookFlags} by slot, which are cleared while a slot's texture isn't resident */
+export const SLOT_FLAGS = [
+	LookFlags.BaseMap,
+	LookFlags.NormalMap,
+	LookFlags.MaskMap,
+	LookFlags.EmissiveMap,
+	LookFlags.DetailMap,
+	LookFlags.ParallaxMap,
+	LookFlags.ParallaxNoiseMap,
+];
 
 /**
- * floats of a material's draw parameters, nine vec4s (`Draw` in mesh.wgsl after the dequantization): tint
- * (rgb, alpha-test threshold), the four slots' UV transforms, surface (roughness min, max, metallic, normal
- * scale), surface 2 (occlusion strength, f0, transmission, brighter scale), emission (rgb, tint cover),
- * emission 2 (albedo affect, mask channel, ignore post exposure)
+ * floats of a material's draw parameters (`Draw` in mesh.wgsl after the dequantization); rows in
+ * {@link LookRow}
  */
-export const LOOK_FLOATS = 36;
+export const LOOK_FLOATS = 104;
 
 /** one material as the mesh shader draws it */
 export interface MaterialLook {
@@ -95,9 +126,9 @@ export interface MaterialLook {
 	/** whether the material draws into shadow maps */
 	castsShadows: boolean;
 	/** texture id per {@link SLOTS} entry, or -1 */
-	textures: [number, number, number, number];
+	textures: number[];
 	/** largest UV scale of each slot, for picking the mip level to stream */
-	uvScales: [number, number, number, number];
+	uvScales: number[];
 	/** {@link LookFlags}, with every slot that has a texture set */
 	flags: number;
 	/** {@link LOOK_FLOATS} draw parameters */
@@ -111,16 +142,40 @@ export const LookRow = {
 	/** one UV transform per slot */
 	uv: 4,
 	/** roughness min, roughness max, metallic, normal scale; unlit looks: highlight threshold and intensity */
-	surface: 20,
+	surface: 32,
 	/** occlusion strength, f0, transmission, base colour brighter scale */
-	surface2: 24,
+	surface2: 36,
 	/** emissive colour (linear), how much the tint covers the base colour */
-	emissive: 28,
+	emissive: 40,
 	/**
 	 * `_AlbedoAffectEmissive` (1: emission ignores the albedo), `_EmissiveMaskChannel`, `_IgnorePostExposure`
 	 * (1: emission keeps its brightness whatever the exposure)
 	 */
-	emission2: 32,
+	emission2: 44,
+	/** three rows, the tri-channel mask's R, G and B: linear colour, strength */
+	maskAlbedo: 48,
+	/** the roughness each mask channel blends toward */
+	maskRoughness: 60,
+	/** the metallic each mask channel blends toward */
+	maskMetallic: 64,
+	/** per channel, the mask's contrast (`_Mask*Scale`) */
+	maskScale: 68,
+	/** per channel, the mask's offset (`_Mask*Offset`) */
+	maskOffset: 72,
+	/** `_DetailMode` (0 colour overlay, 1 PBR), `_DetailMaskMode`, normal intensity, PBR intensity */
+	detail: 76,
+	/** view depths where the detail starts and finishes fading out, overlay brighter scale */
+	detail2: 80,
+	/** `_DetailOverlayColor`: linear colour, how much it covers */
+	detailOverlay: 84,
+	/** parallax depth (`_ParallaxStrength`), march steps, Fresnel power, minimum brightness */
+	parallax: 88,
+	/** pulse speed, pulse phase per metre of the object's position, ignore post exposure, intensity */
+	parallax2: 92,
+	/** `_ParallaxColor` (HDR, as stored), mask channel */
+	parallaxColour: 96,
+	/** `_ParallaxColorDark` */
+	parallaxDark: 100,
 } as const;
 
 /**
@@ -141,8 +196,8 @@ const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => {
 		cutout: false,
 		cull: 'none',
 		castsShadows: true,
-		textures: [-1, -1, -1, -1],
-		uvScales: [1, 1, 1, 1],
+		textures: SLOTS.map(() => -1),
+		uvScales: SLOTS.map(() => 1),
 		flags: 0,
 		params,
 	};
@@ -198,18 +253,32 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	const foliage = FOLIAGE_FAMILIES.has(family);
 	const params = look.params;
 
-	// the slots: HLOD normal maps aren't tangent-space maps we understand yet, and the MRO and emissive maps
-	// are only sampled where the material's layout and keywords use them
-	const emissiveMap = entry.keywords.includes('_EMISSIVE_MAP');
-	const used = [true, family !== 'hlod', entry.usesMro, emissiveMap];
-	SLOTS.forEach((name, i) => {
-		const slot = entry.slots[name];
-		if (slot === undefined || !used[i] || slot.uv !== 0) {
+	// the slots: HLOD normal maps aren't tangent-space maps we understand yet, and the optional maps are only
+	// sampled where the material's layout and keywords use them. the geometry carries UV sets 0 and 1
+	const keywords = entry.keywords;
+	const lit = family === 'lit';
+	const emissiveMap = keywords.includes('_EMISSIVE_MAP');
+	const triChannel = lit && keywords.includes('_TRI_CHANNEL_MASK') && !entry.usesMro;
+	// a separate parallax mask texture (`_UseParallaxMask`) has no slot; such materials stay dark
+	const parallax =
+		lit && keywords.includes('_PARALLAX_MAP') && floatOf(entry, shader, '_UseParallaxMask', 0) === 0;
+	const names: (string | null)[] = [
+		'_BaseColorMap',
+		family === 'hlod' ? null : '_NormalMap',
+		maskSlotOf(entry, triChannel),
+		emissiveMap ? '_EmissiveMap' : null,
+		lit && keywords.includes('_DETAIL_MAP') ? '_DetailMap' : null,
+		parallax ? '_ParallaxMap' : null,
+		parallax ? '_ParallaxNoiseMap' : null,
+	];
+	names.forEach((name, i) => {
+		const slot = name === null ? undefined : entry.slots[name];
+		if (slot === undefined || slot.uv > 1) {
 			return;
 		}
 		look.textures[i] = slot.texture;
 		look.uvScales[i] = Math.max(Math.abs(slot.scale[0]), Math.abs(slot.scale[1]), 1e-3);
-		look.flags |= SLOT_FLAGS[i];
+		look.flags |= SLOT_FLAGS[i] | (slot.uv << (UV1_SHIFT + i));
 		params.set([...slot.scale, ...slot.offset], LookRow.uv + i * 4);
 	});
 
@@ -288,7 +357,149 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 			);
 		}
 	}
+
+	// tri-channel mask: each channel, remapped by its contrast and offset and scaled by its colour's alpha,
+	// blends albedo, roughness and metallic toward its own values, B first and R last
+	if (triChannel && look.textures[2] >= 0) {
+		look.flags |= LookFlags.TriChannelMask;
+		// the switch-texture variants take G and B from textures of their own, which have no slot: only R blends
+		const switched = keywords.some((keyword) => keyword.startsWith('_TRI_CHANNEL_MASK_SWITCH_TEXTURE'));
+		MASK_CHANNELS.forEach((channel, i) => {
+			const colour = colourOf(entry, shader, channel.albedo) ?? [1, 1, 1, 0];
+			params.set([...linearRgb(colour), switched && i > 0 ? 0 : colour[3]], LookRow.maskAlbedo + i * 4);
+			params[LookRow.maskRoughness + i] = floatOf(entry, shader, channel.roughness, 1);
+			params[LookRow.maskMetallic + i] = floatOf(entry, shader, channel.metallic, 0);
+			params[LookRow.maskScale + i] = floatOf(entry, shader, channel.scale, 0);
+			params[LookRow.maskOffset + i] = floatOf(entry, shader, channel.offset, 0);
+		});
+	}
+
+	if (look.textures[4] >= 0) {
+		params.set(
+			[
+				floatOf(entry, shader, '_DetailMode', 1),
+				floatOf(entry, shader, '_DetailMaskMode', 0),
+				floatOf(entry, shader, '_DetailNormalIntensity', 1),
+				floatOf(entry, shader, '_DetailPBRIntensity', 0),
+			],
+			LookRow.detail,
+		);
+		params.set(
+			[
+				floatOf(entry, shader, '_DetailFalloffStart', 0),
+				floatOf(entry, shader, '_DetailFalloffEnd', 0),
+				floatOf(entry, shader, '_DetailBaseColorBrighterScale', 1),
+			],
+			LookRow.detail2,
+		);
+		const overlay = colourOf(entry, shader, '_DetailOverlayColor') ?? [0, 0, 0, 0];
+		params.set([...linearRgb(overlay), overlay[3]], LookRow.detailOverlay);
+	}
+
+	if (look.textures[5] >= 0 && look.textures[6] >= 0) {
+		parallaxParams(look, entry, shader);
+	} else {
+		look.textures[5] = look.textures[6] = -1;
+		look.flags &= ~(LookFlags.ParallaxMap | LookFlags.ParallaxNoiseMap);
+	}
 	return look;
+};
+
+/** the tri-channel mask's properties per channel, R, G, B */
+const MASK_CHANNELS = [
+	{
+		albedo: '_MaskAlbedoR',
+		roughness: '_MaskRoghnessR',
+		metallic: '_MaskMetallicR',
+		scale: '_MaskRScale',
+		offset: '_MaskROffset',
+	},
+	{
+		albedo: '_MaskAlbedoG',
+		roughness: '_MaskRoghnessG',
+		metallic: '_MaskMetallicG',
+		scale: '_MaskGScale',
+		offset: '_MaskGOffset',
+	},
+	{
+		albedo: '_MaskAlbedoB',
+		roughness: '_MaskRoghnessB',
+		metallic: '_MaskMetallicB',
+		scale: '_MaskBScale',
+		offset: '_MaskBOffset',
+	},
+] as const;
+
+/** @returns the texture in the mask slot: the MRO map in that layout, else the tri-channel mask if it's on */
+const maskSlotOf = (entry: ReadyMaterial, triChannel: boolean): string | null => {
+	if (entry.usesMro) {
+		return '_MROMap';
+	}
+	if (triChannel) {
+		return '_MaskMap';
+	}
+	return null;
+};
+
+/**
+ * `_PARALLAX_MAP`: a few steps march the view ray through `_ParallaxNoiseMap` as a height field below the
+ * surface; where it hits, `_ParallaxMap`'s G picks between the dark and bright colours. the glow is masked by
+ * a channel of the material's own maps (squared), a Fresnel power, and a pulse over time whose phase follows
+ * the object's position. both maps ignore their `_ST` and tile by their own scale.
+ *
+ * the bright-near-character term (`_ParallaxCharPos`) and a global highlight aren't drawn
+ */
+const parallaxParams = (look: MaterialLook, entry: ReadyMaterial, shader: ShaderEntry): void => {
+	const params = look.params;
+	const tiling = floatOf(entry, shader, '_ParallaxTilling', 1);
+	const noiseTiling = floatOf(entry, shader, '_ParallaxNoiseMapTilling', 1);
+	params.set([tiling, tiling, 0, 0], LookRow.uv + 5 * 4);
+	params.set([noiseTiling, noiseTiling, 0, 0], LookRow.uv + 6 * 4);
+	look.uvScales[5] = Math.max(Math.abs(tiling), 1e-3);
+	look.uvScales[6] = Math.max(Math.abs(noiseTiling), 1e-3);
+	// the noise follows the pattern's UV set
+	look.flags &= ~(1 << (UV1_SHIFT + 6));
+	if ((look.flags & (1 << (UV1_SHIFT + 5))) !== 0) {
+		look.flags |= 1 << (UV1_SHIFT + 6);
+	}
+
+	// the step count is an integer uniform: the float property truncates. the pulse runs between the minimum
+	// brightness and 1
+	const steps = Math.min(Math.max(Math.trunc(floatOf(entry, shader, '_ParallaxMarchNum', 3)), 1), 20);
+	const minimum = floatOf(entry, shader, '_ParallaxMinBrightness', 0);
+	params.set(
+		[
+			floatOf(entry, shader, '_ParallaxStrength', 0),
+			steps,
+			Math.floor(floatOf(entry, shader, '_ParallaxFresnelStrength', 1)),
+			(1 - minimum) / 2,
+		],
+		LookRow.parallax,
+	);
+	// the pulse's phase advances 0.05 · speed per tick of a global clock, assumed to tick in seconds
+	params.set(
+		[
+			0.05 * floatOf(entry, shader, '_ParallaxAnimSpeed', 0),
+			floatOf(entry, shader, '_ParallaxAnimRandom', 0),
+			floatOf(entry, shader, '_ParallaxIgnorePostExposure', 1),
+			(1 + minimum) / 2,
+		],
+		LookRow.parallax2,
+	);
+	// HDR colours, as stored (see the emission above)
+	const intensity = floatOf(entry, shader, '_ParallaxIntensity', 1);
+	const bright = colourOf(entry, shader, '_ParallaxColor') ?? [0, 0, 0, 1];
+	const dark = colourOf(entry, shader, '_ParallaxColorDark') ?? [0, 0, 0, 1];
+	params.set(
+		[
+			bright[0] * intensity,
+			bright[1] * intensity,
+			bright[2] * intensity,
+			floatOf(entry, shader, '_ParallaxMaskChannel', 0),
+		],
+		LookRow.parallaxColour,
+	);
+	params.set([dark[0] * intensity, dark[1] * intensity, dark[2] * intensity], LookRow.parallaxDark);
 };
 
 /**

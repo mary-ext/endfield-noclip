@@ -58,6 +58,8 @@ or renders correctly.
 - terrain close up: smooth triplanar replaces the game's random plane choice, and the cliff
   projection, cone-map parallax and wetness aren't drawn; the blend's GPU cost is unprofiled
 - foliage wind and transmission, grass instancing, decals, layered materials
+- Lit layers ([lit layers](game-data/lighting.md#lit-layers)): tri-channel switch textures, the
+  parallax glow's near-player brightening and its world-space, PBR and deform variants
 - water foam, caustics, flow tiles (packed but unread) and geometry reflections; other fluid types
   are unverified
 - celestial bodies, VFX and temporal smoothing. unsupported effect meshes are suppressed rather than

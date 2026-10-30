@@ -27,7 +27,7 @@ import { MeshoptDecoder } from 'meshoptimizer/decoder';
 
 import { buildInstanceRows } from '../render/instance-rows.ts';
 
-import type { DecodedGeometry, DecodeRequest, DecodeResponse } from './decode-protocol.ts';
+import type { DecodedGeometry, DecodeRequest, DecodeResponse, UvTransform } from './decode-protocol.ts';
 import { decompressZstd, zstdReady } from './zstd.ts';
 
 const unwrap = (data: ArrayBuffer, codec: BlobCodec, rawLength: number): Uint8Array<ArrayBuffer> => {
@@ -109,31 +109,71 @@ const decodeNormals = (blob: GeometryBlob): ArrayBuffer | null => {
 	return raw.buffer;
 };
 
-type DecodedUvs = Pick<DecodedGeometry, 'uvs' | 'uvFormat' | 'uvOffset' | 'uvScale'>;
+type DecodedUvs = Pick<DecodedGeometry, 'uvs' | 'uvFormat' | 'uvTransforms'>;
+
+const IDENTITY_UV: UvTransform = [1, 1, 0, 0];
+
+/** one UV set as decoded, before both sets agree on a format */
+interface UvSet {
+	data: ArrayBuffer;
+	format: 'unorm16x2' | 'float32x2';
+	transform: UvTransform;
+}
 
 /**
- * decodes UV set 0: 16-bit UVs as stored, with their dequantization (most meshes; the shader applies it), and
- * anything else as `float32x2`
+ * decodes one UV set: 16-bit UVs as stored, with their dequantization (most meshes; the shader applies it),
+ * and anything else as `float32x2`
  */
-const decodeUvs = (blob: GeometryBlob): DecodedUvs => {
-	const stream = findStream(blob, VertexAttribute.TexCoord0);
+const decodeUvSet = (blob: GeometryBlob, attribute: number): UvSet | null => {
+	const stream = findStream(blob, attribute);
 	if (stream === undefined) {
-		return { uvs: null, uvFormat: 'float32x2', uvOffset: [0, 0], uvScale: [1, 1] };
+		return null;
 	}
 	const raw = decodeVertices(blob, stream);
 	if (stream.format === GeometryVertexFormat.Unorm16x2) {
 		const dequantize = (stream.flags & GeometryStreamFlags.Dequantize) !== 0;
 		return {
-			uvs: ownBuffer(raw),
-			uvFormat: 'unorm16x2',
-			uvOffset: dequantize ? [stream.offset[0], stream.offset[1]] : [0, 0],
-			uvScale: dequantize ? [stream.scale[0], stream.scale[1]] : [1, 1],
+			data: ownBuffer(raw),
+			format: 'unorm16x2',
+			transform: dequantize
+				? [stream.scale[0], stream.scale[1], stream.offset[0], stream.offset[1]]
+				: IDENTITY_UV,
 		};
 	}
-	return { uvs: decodeFloatUvs(blob, stream, raw), uvFormat: 'float32x2', uvOffset: [0, 0], uvScale: [1, 1] };
+	const data = decodeFloatUvs(blob, stream, raw);
+	return data === null ? null : { data, format: 'float32x2', transform: IDENTITY_UV };
 };
 
-/** @returns UV set 0 as dequantized `float32x2`, or `null` for a format the viewer doesn't read */
+/** @returns a `unorm16x2` set as dequantized `float32x2` */
+const widenUvSet = (set: UvSet): UvSet => {
+	const values = new Uint16Array(set.data);
+	const out = new Float32Array(values.length);
+	const [su, sv, ou, ov] = set.transform;
+	for (let i = 0; i < values.length; i += 2) {
+		out[i] = ou + (values[i] / 65_535) * su;
+		out[i + 1] = ov + (values[i + 1] / 65_535) * sv;
+	}
+	return { data: out.buffer, format: 'float32x2', transform: IDENTITY_UV };
+};
+
+/**
+ * decodes UV sets 0 and 1 into one vertex format, so a pipeline per format covers both: a 16-bit set paired
+ * with a float one is widened
+ */
+const decodeUvs = (blob: GeometryBlob): DecodedUvs => {
+	let sets = [decodeUvSet(blob, VertexAttribute.TexCoord0), decodeUvSet(blob, VertexAttribute.TexCoord0 + 1)];
+	if (sets.some((set) => set?.format === 'float32x2')) {
+		sets = sets.map((set) => (set?.format === 'unorm16x2' ? widenUvSet(set) : set));
+	}
+	const [uv0, uv1] = sets;
+	return {
+		uvs: [uv0?.data ?? null, uv1?.data ?? null],
+		uvFormat: uv0?.format ?? uv1?.format ?? 'float32x2',
+		uvTransforms: [uv0?.transform ?? IDENTITY_UV, uv1?.transform ?? IDENTITY_UV],
+	};
+};
+
+/** @returns a UV set as dequantized `float32x2`, or `null` for a format the viewer doesn't read */
 const decodeFloatUvs = (
 	blob: GeometryBlob,
 	stream: GeometryStream,
@@ -178,14 +218,14 @@ const decodeGeometry = (
 		throw new Error('geometry has no positions');
 	}
 	const normals = decodeNormals(blob);
-	const { uvs, uvFormat, uvOffset, uvScale } = decodeUvs(blob);
+	const { uvs, uvFormat, uvTransforms } = decodeUvs(blob);
 	const tangents = decodeAttribute(blob, VertexAttribute.Tangent, GeometryVertexFormat.Snorm8x4);
 	const indexSize = blob.flags & GeometryFlags.IndexU32 ? 4 : 2;
 	// index buffers are bound whole and must be a multiple of 4 bytes
 	const indices = new Uint8Array(Math.ceil((blob.indexCount * indexSize) / 4) * 4);
 	MeshoptDecoder.decodeIndexBuffer(indices, blob.indexCount, indexSize, blob.indices);
 	const transfer: Transferable[] = [positions, indices.buffer];
-	for (const extra of [normals, uvs, tangents]) {
+	for (const extra of [normals, ...uvs, tangents]) {
 		if (extra !== null) {
 			transfer.push(extra);
 		}
@@ -203,8 +243,7 @@ const decodeGeometry = (
 			normals,
 			uvs,
 			uvFormat,
-			uvOffset,
-			uvScale,
+			uvTransforms,
 			tangents,
 			submeshes: blob.submeshes.map(({ firstIndex, indexCount, baseVertex }) => ({
 				firstIndex,

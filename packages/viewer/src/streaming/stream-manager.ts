@@ -21,6 +21,7 @@ import type {
 	DecodedIrradiance,
 	DecodedSurface,
 	DecodedTexture,
+	UvTransform,
 } from '../package/decode-protocol.ts';
 import { PackageChangedError } from '../package/package-source.ts';
 import { type BlobRange, CORE_ARCHIVE_INDEX, type ViewerPackage } from '../package/viewer-package.ts';
@@ -90,15 +91,16 @@ export interface ResidentGeometry {
 	kind: 'geometry';
 	/** GPU bytes */
 	bytes: number;
-	/** positions, then normals, UV set 0 and tangents where present, in one buffer */
+	/** positions, then normals, UV sets 0 and 1 and tangents where present, in one buffer */
 	vertices: GPUBuffer;
 	positionBytes: number;
 	normalOffset: number | null;
-	uvOffset: number | null;
-	/** the UV stream's vertex format */
+	uv0Offset: number | null;
+	uv1Offset: number | null;
+	/** the UV streams' vertex format */
 	uvFormat: 'unorm16x2' | 'float32x2';
-	/** the UVs' dequantization as a `_ST` transform: `uv = value · xy + zw` */
-	uvTransform: [scaleU: number, scaleV: number, offsetU: number, offsetV: number];
+	/** each UV set's dequantization */
+	uvTransforms: [uv0: UvTransform, uv1: UvTransform];
 	tangentOffset: number | null;
 	indices: GPUBuffer;
 	indexFormat: GPUIndexFormat;

@@ -71,12 +71,12 @@ without it instances draw as boxes.
 blob's buffer. [`package/decode-worker.ts`](../packages/viewer/src/package/decode-worker.ts) undoes
 the blob codec and builds GPU-ready arrays:
 
-| kind                | worker output                                                                                                                                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| heights             | raw `u16` samples, padded to whole words for the storage buffer                                                                                                                                             |
-| instances           | instance rows, per-row cull data and (chain, first, count) runs, built by `buildInstanceRows`                                                                                                               |
-| geometry            | meshopt-decoded vertex streams (quantized positions, octahedral normals, UV0, tangents) and indices padded to 4 bytes; UV0 stays `unorm16x2` where the package stores it so (most meshes), else `float32x2` |
-| texture, irradiance | the decompressed bytes as stored                                                                                                                                                                            |
+| kind                | worker output                                                                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| heights             | raw `u16` samples, padded to whole words for the storage buffer                                                                                                                                                                    |
+| instances           | instance rows, per-row cull data and (chain, first, count) runs, built by `buildInstanceRows`                                                                                                                                      |
+| geometry            | meshopt-decoded vertex streams (quantized positions, octahedral normals, UV0, UV1, tangents) and indices padded to 4 bytes; UV0 and UV1 stay `unorm16x2` where the package stores both so (most meshes), else both are `float32x2` |
+| texture, irradiance | the decompressed bytes as stored                                                                                                                                                                                                   |
 
 zstd uses `zstddec`'s wasm build ([`package/zstd.ts`](../packages/viewer/src/package/zstd.ts)),
 which is an order of magnitude faster than a JS decoder on texture blobs. each realm instantiates
@@ -167,8 +167,8 @@ over the selected row ranges. per instance it:
 
 meshes cull the faces their material culls (front faces are clockwise, as Unity's are), with front
 and back swapped for mirrored buckets. each mesh phase, shadows included, has a pipeline per face
-culling and UV format, and draws are sorted by both. a 16-bit UV stream's dequantization is folded
-into the draw's per-slot UV transforms on the CPU, so the shaders see one kind of UV.
+culling and UV format, and draws are sorted by both. the vertex shader dequantizes 16-bit UVs with
+per-draw transforms, so the fragment shader sees one kind of UV.
 
 shadow-only draws and materials that aren't drawn are dropped from the chain once, when it's first
 used. textures are then requested per bucket, coarse to fine, down to the mip that gives about one

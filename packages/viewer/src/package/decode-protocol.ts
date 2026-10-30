@@ -16,6 +16,9 @@ interface RequestBase {
 	rawLength: number;
 }
 
+/** a UV dequantization as a `_ST` transform: `uv = value · xy + zw` */
+export type UvTransform = [scaleU: number, scaleV: number, offsetU: number, offsetV: number];
+
 /** a decode job */
 export type DecodeRequest =
 	| (RequestBase & { kind: 'heights' })
@@ -91,14 +94,13 @@ export interface DecodedGeometry {
 	/** `snorm16x2` octahedral normals, or `null` if the mesh has none */
 	normals: ArrayBuffer | null;
 	/**
-	 * UV set 0 as {@link uvFormat}, or `null` if the mesh has none. 16-bit UVs stay as the package stores them
-	 * (the game's own quantization), at half the size
+	 * UV sets 0 and 1 as {@link uvFormat}, `null` where the mesh lacks one. 16-bit UVs stay as the package
+	 * stores them (the game's own quantization), at half the size, unless the other set is stored as floats
 	 */
-	uvs: ArrayBuffer | null;
+	uvs: [uv0: ArrayBuffer | null, uv1: ArrayBuffer | null];
 	uvFormat: 'unorm16x2' | 'float32x2';
-	/** `uv = uvOffset + value · uvScale`, per component (identity for `float32x2`) */
-	uvOffset: [u: number, v: number];
-	uvScale: [u: number, v: number];
+	/** per set, its dequantization (identity for `float32x2`) */
+	uvTransforms: [uv0: UvTransform, uv1: UvTransform];
 	/** `snorm8x4` tangents (octahedral xy, bitangent sign z), or `null` if the mesh has none */
 	tangents: ArrayBuffer | null;
 	submeshes: { firstIndex: number; indexCount: number; baseVertex: number }[];

@@ -168,7 +168,42 @@ exposure (the [auto exposure](#auto-exposure) times the viewer's exposure option
 their brightness however the exposure adapts.
 
 not drawn: the animated variants' motion (they're drawn still), `_EmissiveType`'s extra G/B/A
-colours, the Fresnel term, emissive UV set 1, and per-instance emission overrides.
+colours, the Fresnel term, and per-instance emission overrides.
+
+## lit layers
+
+three optional Lit layers come from the game's shader for these keywords
+([`render/materials.ts`](../../packages/viewer/src/render/materials.ts), `shaders/mesh.wgsl`). each
+texture slot samples UV set 0 or 1, as its `m_UVSetIndex` says; the originium crystals' base colour
+and detail map tile ×5 over UV set 1.
+
+- **`_TRI_CHANNEL_MASK`** (~450 map01 materials, mostly rock): each channel of `_MaskMap` becomes a
+  weight `saturate(s/2 + mix(−s, 1, m + offset)) · _MaskAlbedo*.a`, with contrast `s` from
+  `_Mask*Scale` and the offset from `_Mask*Offset`. albedo, roughness and metallic then blend toward
+  `_MaskAlbedo*` (an LDR colour, linearized), `_MaskRoghness*` and `_MaskMetallic*`, B first and R
+  last. the originium crystals are grey rock tinted brown at strength 0.5 where R is set. the mask
+  shares the MRO map's slot, so the few MRO-layout materials with a mask go untinted. the
+  `_TRI_CHANNEL_MASK_SWITCH_TEXTURE*` variants take G and B from extra textures, so only R blends
+  there.
+- **`_DETAIL_MAP`**: a weight from `_DetailMaskMode` (1, the detail's alpha, the base colour's
+  alpha, or the normal map's B or A) fades out with view depth between `_DetailFalloffStart` and
+  `…End`. the detail normal (`× _DetailNormalIntensity`) is reoriented onto the base normal.
+  `_DetailMode` 1 blends roughness toward the detail's alpha and occlusion by `_DetailPBRIntensity`;
+  mode 0 overlays `_DetailOverlayColor` where the detail's B is dark, and blends roughness toward B.
+- **`_PARALLAX_MAP`** (the originium crystals' glow): the view ray, in the geometric tangent frame,
+  steps `trunc(_ParallaxMarchNum)` times (at most 20) through `_ParallaxNoiseMap` (tiled by
+  `_ParallaxNoiseMapTilling`) as a height field `_ParallaxStrength` deep, and the hit is refined
+  between the last two steps. at the hit, `_ParallaxMap`'s G (tiled by `_ParallaxTilling`; both maps
+  ignore their `_ST`) picks between `_ParallaxColorDark` and the HDR `_ParallaxColor`. the result is
+  emission: times the mask channel squared (`_ParallaxMaskChannel`, numbered like the emission mask
+  minus one), times `N·V` to the power `floor(_ParallaxFresnelStrength)`, and times a pulse
+  `cos(0.05 · _ParallaxAnimSpeed · t + _ParallaxAnimRandom · (x + y + z))` remapped to
+  `[_ParallaxMinBrightness, 1]`, where `x + y + z` is the object's world position. the pulse moves
+  only while frames render (the `continuous` option); its clock is assumed to tick in seconds.
+
+not drawn: the parallax brightening near the player (`_ParallaxCharPos`), a global highlight term, a
+separate parallax mask texture (`_UseParallaxMask`; such materials don't glow), and the
+`_PARALLAX_MAP_WORLDSPACE`, `_PBR` and `_DEFORM` variants.
 
 ## alpha testing
 
