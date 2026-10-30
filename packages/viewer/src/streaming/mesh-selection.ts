@@ -2,7 +2,8 @@
  * per-instance selection for packages with geometry: frustum and small-feature culling, then LOD selection
  * with the game's LODGroup thresholds, bucketing visible instances by (geometry, submesh, material, mirrored)
  * for instanced draws; mirrored instances flip their winding, so they cull the opposite face. instances whose
- * chosen LOD isn't resident yet fall back to their box, and request the geometry.
+ * chosen LOD isn't resident yet request its geometry and draw the nearest resident LOD meanwhile, or their
+ * box if none is.
  *
  * this is the CPU version of the planned GPU cull pass: the output (an instance list plus per-bucket ranges)
  * is what a compute shader would write next to indirect draw arguments.
@@ -74,6 +75,7 @@ export interface MeshSelectorInit {
 
 /** a drawn (non-shadow, visible-material) draw of a chain */
 interface ChainSlot {
+	lod: number;
 	minSquared: number;
 	maxSquared: number;
 	geometry: number;
@@ -209,27 +211,30 @@ export class MeshSelector {
 
 					let pendingCount = 0;
 					let ready = true;
-					let any = false;
+					let lod = -1;
 					for (let s = 0; s < slots.length; s++) {
 						const slot = slots[s];
 						if (!(squared > slot.minSquared && squared <= slot.maxSquared)) {
 							continue;
 						}
-						any = true;
+						lod = slot.lod;
 						if (this.#geometryReady(slot.geometry, priority, frame)) {
 							pending[pendingCount++] = slot;
 						} else {
 							ready = false;
 						}
 					}
-					if (!any) {
+					if (lod < 0) {
 						// culled by the LOD chain's smallest threshold
 						continue;
 					}
 					const row = instances.alloc.start + i;
 					if (!ready) {
-						boxes.push(row);
-						continue;
+						pendingCount = this.#residentLod(slots, lod);
+						if (pendingCount === 0) {
+							boxes.push(row);
+							continue;
+						}
 					}
 					// the sign of the transform's determinant (its rows are the matrix rows)
 					const mirrored =
@@ -291,6 +296,63 @@ export class MeshSelector {
 		return this.#ready[geometry] === 1;
 	}
 
+	/**
+	 * finds a stand-in for an instance whose wanted LOD is still streaming: the nearest LOD whose geometry is
+	 * all resident, coarser first on ties because far LODs are smaller and more often loaded. usually that's
+	 * the LOD drawn before the switch, so the instance keeps its shape instead of dropping to its box.
+	 * stand-ins are kept in use but not requested, so they don't add to the streaming queue.
+	 *
+	 * @returns how many of the stand-in's slots were written to `#pending` (0 when no LOD is resident)
+	 */
+	#residentLod(slots: readonly ChainSlot[], wanted: number): number {
+		let maxLod = 0;
+		for (const slot of slots) {
+			maxLod = Math.max(maxLod, slot.lod);
+		}
+		const pending = this.#pending;
+		for (let step = 1; step <= Math.max(wanted, maxLod - wanted); step++) {
+			for (let side = 0; side < 2; side++) {
+				const lod = side === 0 ? wanted + step : wanted - step;
+				if (lod < 0 || lod > maxLod) {
+					continue;
+				}
+				let count = 0;
+				let resident = true;
+				for (const slot of slots) {
+					if (slot.lod !== lod) {
+						continue;
+					}
+					if (!this.#geometryResident(slot.geometry)) {
+						resident = false;
+						break;
+					}
+					pending[count++] = slot;
+				}
+				if (resident && count > 0) {
+					for (let p = 0; p < count; p++) {
+						this.#keepGeometry(pending[p].geometry);
+					}
+					return count;
+				}
+			}
+		}
+		return 0;
+	}
+
+	/** whether a geometry is resident, without requesting it or marking it used */
+	#geometryResident(geometry: number): boolean {
+		const entry = this.#geometries[geometry];
+		return entry?.status === 'ready' && this.#stream.isReady(entry.blob);
+	}
+
+	/** marks a resident geometry used this frame, so it isn't evicted */
+	#keepGeometry(geometry: number): void {
+		const entry = this.#geometries[geometry];
+		if (entry?.status === 'ready') {
+			this.#stream.markUsed(entry.blob);
+		}
+	}
+
 	#chainSlots(chain: number): ChainSlot[] {
 		let slots = this.#slots[chain];
 		if (slots === undefined) {
@@ -301,6 +363,7 @@ export class MeshSelector {
 					continue;
 				}
 				slots.push({
+					lod: draw.lod,
 					minSquared: draw.minSquared,
 					maxSquared: draw.maxSquared,
 					geometry: draw.geometry,

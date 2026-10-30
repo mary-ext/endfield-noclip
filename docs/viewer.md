@@ -163,9 +163,11 @@ over the selected row ranges. per instance it:
    draw whose `(minSquared, maxSquared]` band contains it. an instance past the chain's smallest
    threshold is culled, matching the game;
 3. if all picked geometries are resident, appends the row to a bucket keyed by (geometry, submesh,
-   material, mirrored); otherwise draws its box and requests the geometry at a priority of its
-   projected pixel height. an instance is mirrored when its transform's determinant is negative,
-   which flips its triangles' winding.
+   material, mirrored). otherwise it requests the geometry at a priority of its projected pixel
+   height and draws the nearest LOD whose geometry is all resident (coarser first on ties), which is
+   usually the one it drew before the switch. that stand-in is kept from eviction but not requested;
+   only an instance with no resident LOD draws its box. an instance is mirrored when its transform's
+   determinant is negative, which flips its triangles' winding.
 
 meshes cull the faces their material culls (front faces are clockwise, as Unity's are), with front
 and back swapped for mirrored buckets. each mesh phase, shadows included, has a pipeline per face
