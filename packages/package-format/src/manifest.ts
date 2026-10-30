@@ -25,7 +25,7 @@ export const PACKAGE_FORMAT = 'endfield-noclip.package';
  * bumped on any incompatible change to the manifest or a table. binary encodings carry their own versions in
  * their headers
  */
-export const PACKAGE_VERSION = 16;
+export const PACKAGE_VERSION = 17;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -62,9 +62,9 @@ export interface PackageManifest {
 	terrain: TerrainInfo | null;
 	/**
 	 * every level of the scene, whether or not the package's subset includes its content. a viewer shows one
-	 * level at a time: the instance refs carrying its tag (each level's content includes its own backdrop),
-	 * plus those with tag 0 (shared content, on maps with several levels), over the shared terrain. empty for
-	 * scenes without levels, whose instances are all shown
+	 * level at a time: the content whose group carries its tag (each level's content includes its own
+	 * backdrop), plus groups with tag 0 (shared content, on maps with several levels), over the shared terrain.
+	 * empty for scenes without levels, whose content is all shown
 	 */
 	levels: LevelInfo[];
 	/** environment profiles, deduplicated; {@link LevelInfo.environment} indexes this list */
@@ -76,7 +76,10 @@ export interface PackageManifest {
 	states: StatesInfo;
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
 	archives: ArchiveInfo[];
-	/** content drawn regardless of the tree's refinement (the game's always-loaded Global scenery) */
+	/**
+	 * content drawn regardless of the tree's refinement while its group shows (the game's Global chunk scenery,
+	 * conditional where it comes from scene-state chunks)
+	 */
 	global: ContentRef[];
 	/** the slice of the scene that was packed, or `null` for all of it */
 	subset: SubsetInfo | null;

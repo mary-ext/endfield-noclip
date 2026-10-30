@@ -1,5 +1,4 @@
 import {
-	align4,
 	viewOf,
 	checkHeader,
 	enumGuard,
@@ -87,17 +86,18 @@ export interface InstanceBlock {
 	transforms: Float32Array;
 	/** 6 floats per row: world AABB centre (relative to `origin`) then half-extents, from the game */
 	bounds: Float32Array;
-	/** the game's entity id per row; `id >>> 27` is the owning level's tag */
+	/**
+	 * the game's entity id per row, or an id the packer made up for a prefab renderer; for tracing a row back
+	 * through the debug index. ownership and visibility come from the block's group, not from the id
+	 */
 	entityIds: Uint32Array;
-	/** the chunk file's scene state id per row: 0 always loaded, `n` with MapConfig scene state `n − 1` */
-	sceneStates: Uint8Array;
 }
 
 const CHAIN_SIZE = 8;
 const DRAW_SIZE = 24;
 const INSTANCE_HEADER_SIZE = 32;
-/** bytes per instance row across all sections, before padding the layer section */
-const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4 + 1;
+/** bytes per instance row across all sections */
+const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4;
 
 /** 'EFCH' */
 const CHAINS_HEADER: HeaderShape = {
@@ -109,7 +109,7 @@ const CHAINS_HEADER: HeaderShape = {
 /** 'EFIN' */
 const INSTANCES_HEADER: HeaderShape = {
 	magic: 0x4e_49_46_45,
-	version: 1,
+	version: 2,
 	size: INSTANCE_HEADER_SIZE,
 	label: 'instance block',
 };
@@ -202,8 +202,7 @@ export const decodeChains = (data: Uint8Array): Chain[] => {
 
 /**
  * instance block: 32-byte header (`'EFIN'`, u16 version, u16 flags, u32 count, f32×3 origin, u32×2 0), then
- * sections of `count` elements each: u32 chain, f32×12 transform, f32×6 bounds, u32 entity id, u8 scene state
- * (padded to 4 bytes).
+ * sections of `count` elements each: u32 chain, f32×12 transform, f32×6 bounds, u32 entity id.
  *
  * @param block rows
  * @returns the encoded block
@@ -214,8 +213,7 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 	if (
 		block.transforms.length !== count * 12 ||
 		block.bounds.length !== count * 6 ||
-		block.entityIds.length !== count ||
-		block.sceneStates.length !== count
+		block.entityIds.length !== count
 	) {
 		throw new RangeError('instance block sections differ in length');
 	}
@@ -228,16 +226,14 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 		view.setFloat32(12 + i * 4, block.origin[i], true);
 	}
 	let at = INSTANCE_HEADER_SIZE;
-	for (const section of [block.chains, block.transforms, block.bounds, block.entityIds, block.sceneStates]) {
+	for (const section of [block.chains, block.transforms, block.bounds, block.entityIds]) {
 		out.set(new Uint8Array(section.buffer, section.byteOffset, section.byteLength), at);
-		at += align4(section.byteLength);
+		at += section.byteLength;
 	}
 	return out;
 };
 
-const instanceBlockSize = (count: number): number => {
-	return INSTANCE_HEADER_SIZE + count * (INSTANCE_ROW_SIZE - 1) + align4(count);
-};
+const instanceBlockSize = (count: number): number => INSTANCE_HEADER_SIZE + count * INSTANCE_ROW_SIZE;
 
 /**
  * @param data an instance block
@@ -258,8 +254,6 @@ export const decodeInstanceBlock = (data: Uint8Array): InstanceBlock => {
 	const bounds = f32Section(data, at, count * 6);
 	at += count * 24;
 	const entityIds = u32Section(data, at, count);
-	at += count * 4;
-	const sceneStates = data.slice(at, at + count);
 	return {
 		flags: view.getUint16(6, true),
 		origin: [view.getFloat32(12, true), view.getFloat32(16, true), view.getFloat32(20, true)],
@@ -267,6 +261,5 @@ export const decodeInstanceBlock = (data: Uint8Array): InstanceBlock => {
 		transforms,
 		bounds,
 		entityIds,
-		sceneStates,
 	};
 };

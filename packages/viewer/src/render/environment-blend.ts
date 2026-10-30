@@ -83,6 +83,7 @@ const volumesOf = (manifest: PackageManifest): { id: number; volume: Environment
  *   volumes (mode 3) don't, and others do when their scene states load them
  */
 const volumeApplies = (
+	manifest: PackageManifest,
 	volume: EnvironmentVolumeInfo,
 	id: number,
 	{ enabled, loaded }: Pick<BlendOptions, 'enabled' | 'loaded'>,
@@ -91,7 +92,8 @@ const volumeApplies = (
 	if (volume.phase === null || manual === false) {
 		return false;
 	}
-	if (manual !== true && volume.condition !== null && loaded !== undefined && !loaded[volume.condition]) {
+	const condition = volumeCondition(manifest, volume);
+	if (manual !== true && condition !== null && loaded !== undefined && !loaded[condition]) {
 		return false;
 	}
 	switch (volume.blendMode) {
@@ -108,6 +110,22 @@ const volumeApplies = (
 		}
 	}
 };
+
+/**
+ * @param manifest the volume's package manifest
+ * @param volume an environment volume
+ * @returns the tag of the level that owns it, 0 for scene-wide volumes
+ */
+export const volumeLevelTag = (manifest: PackageManifest, volume: EnvironmentVolumeInfo): number =>
+	manifest.states.groups[volume.group]?.levelTag ?? 0;
+
+/**
+ * @param manifest the volume's package manifest
+ * @param volume an environment volume
+ * @returns the conditional set that loads it, or `null` when it always loads
+ */
+export const volumeCondition = (manifest: PackageManifest, volume: EnvironmentVolumeInfo): number | null =>
+	manifest.states.groups[volume.group]?.condition ?? null;
 
 /** a camera move longer than this in one frame (m) is a jump, and time fades snap */
 const JUMP_DISTANCE = 5;
@@ -209,7 +227,7 @@ export const blendEnvironment = (
 	} else {
 		const speed = time?.fades.step(eye) ?? JUMP_SPEED;
 		for (const { id, volume } of volumesOf(manifest)) {
-			if (!volumeApplies(volume, id, options)) {
+			if (!volumeApplies(manifest, volume, id, options)) {
 				continue;
 			}
 			const distance = distanceInside(volume.shape, eye);
@@ -293,16 +311,19 @@ export const eyeInLevelVolume = (
 	eye: Vec3,
 	options: { clear?: (point: Vec3) => boolean } & Pick<BlendOptions, 'enabled' | 'loaded'>,
 ): Vec3 | null => {
-	const applicable = manifest.environmentVolumes.filter((volume, id) => volumeApplies(volume, id, options));
+	const applicable = manifest.environmentVolumes.filter((volume, id) =>
+		volumeApplies(manifest, volume, id, options),
+	);
+	const owner = (volume: EnvironmentVolumeInfo): number => volumeLevelTag(manifest, volume);
 	const own = applicable.find(
 		(volume) =>
-			(volume.levelTag === level || volume.levelTag === 0) &&
+			(owner(volume) === level || owner(volume) === 0) &&
 			manifest.environmentPhases[volume.phase].name === base.name,
 	);
 	if (own === undefined) {
 		return null;
 	}
-	const others = applicable.filter((volume) => volume.levelTag !== 0 && volume.levelTag !== level);
+	const others = applicable.filter((volume) => owner(volume) !== 0 && owner(volume) !== level);
 	// time-faded volumes apply fully anywhere inside; keep a metre off the edge
 	const margin = Math.max(own.blendMode === 1 ? own.blendDistance : 0, 1);
 	for (let step = VIEW_STEPS; step >= 0; step--) {

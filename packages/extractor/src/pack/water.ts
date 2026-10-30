@@ -47,12 +47,15 @@ export interface WaterDebug {
 /** water planned before asset conversion */
 export interface WaterPlan {
 	/**
-	 * texture fields hold indices into {@link textures} until {@link finishWater}; surface conditions are `null`
-	 * until the packer interns {@link surfaceStates}
+	 * texture fields hold indices into {@link textures} until {@link finishWater}; surface groups are 0 until the
+	 * packer interns {@link surfaceOwners}
 	 */
 	table: WaterTable;
-	/** per table surface: the MapConfig scene state indices that load it, empty if always loaded */
-	surfaceStates: number[][];
+	/**
+	 * per table surface: its level's tag and the MapConfig scene state indices that load it, empty if always
+	 * loaded
+	 */
+	surfaceOwners: { levelTag: number; sceneStates: number[] }[];
 	textures: PlacedTexture[];
 	debug: WaterDebug;
 }
@@ -88,7 +91,7 @@ export const planWater = async (
 	const selected = selectSurfaces(water.surfaces, options.includes);
 	const plan: WaterPlan = {
 		table: { global: null, configs: [], surfaces: [] },
-		surfaceStates: [],
+		surfaceOwners: [],
 		textures: [],
 		debug: {
 			surfaces: { scene: water.surfaces.length, packed: 0 },
@@ -131,7 +134,7 @@ export const planWater = async (
 			continue;
 		}
 		plan.table.surfaces.push(surfaceEntry(surface, options.geometry(surface.meshHash), config));
-		plan.surfaceStates.push(surface.sceneStates);
+		plan.surfaceOwners.push({ levelTag: surface.levelTag, sceneStates: surface.sceneStates });
 		plan.debug.rows.push({
 			id: surface.id,
 			name: surface.name,
@@ -367,8 +370,8 @@ const surfaceEntry = (surface: SourcedWaterSurface, geometry: number, config: nu
 	const m = surface.matrix;
 	return {
 		id: surface.id,
-		levelTag: surface.levelTag,
-		condition: null,
+		// interned once every surface's owner is known
+		group: 0,
 		geometry,
 		// top three rows of the column-major matrix, row-major
 		transform: [m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14]],

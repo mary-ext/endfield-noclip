@@ -63,8 +63,8 @@ describe('tree', () => {
 				},
 			],
 			refs: [
-				{ kind: ContentKind.TerrainHeights, tier: 0, levelTag: 0, blob: 7, first: 0, count: 1, param: 1.5 },
-				{ kind: ContentKind.Hlod, tier: 2, levelTag: 10, blob: 3, first: 10, count: 4, param: 0 },
+				{ kind: ContentKind.TerrainHeights, tier: 0, group: 0, blob: 7, first: 0, count: 1, param: 1.5 },
+				{ kind: ContentKind.Hlod, tier: 2, group: 10, blob: 3, first: 10, count: 4, param: 0 },
 			],
 		};
 		assert.deepEqual(decodeTree(encodeTree(tree)), tree);
@@ -212,10 +212,9 @@ describe('instance blocks', () => {
 		transforms: Float32Array.from({ length: count * 12 }, (_, i) => i / 4),
 		bounds: Float32Array.from({ length: count * 6 }, (_, i) => -i),
 		entityIds: Uint32Array.from({ length: count }, (_, i) => 0xf000_0000 + i),
-		sceneStates: Uint8Array.from({ length: count }, (_, i) => i % 12),
 	});
 
-	it('round-trips counts that need layer padding', () => {
+	it('round-trips any count', () => {
 		for (const count of [0, 1, 3, 4, 5]) {
 			assert.deepEqual(decodeInstanceBlock(encodeInstanceBlock(block(count))), block(count));
 		}
@@ -227,7 +226,7 @@ describe('instance blocks', () => {
 	});
 
 	it('rejects mismatched sections', () => {
-		assert.throws(() => encodeInstanceBlock({ ...block(2), sceneStates: new Uint8Array(1) }), RangeError);
+		assert.throws(() => encodeInstanceBlock({ ...block(2), entityIds: new Uint32Array(1) }), RangeError);
 	});
 });
 

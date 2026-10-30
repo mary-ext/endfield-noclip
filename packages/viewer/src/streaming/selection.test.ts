@@ -10,14 +10,15 @@ import { Selector, type SelectionOptions } from './selection.ts';
 import type { ContentItem } from './stream-manager.ts';
 
 it('streams conditional scenery independently of coarse HLOD and never requests hidden variants', () => {
-	const ref = (blob: number, condition: number, level: number): ContentRef => ({
+	// groups: 0 level 1 with condition 0, 1 level 1 with condition 1, 2 level 2 with condition 0, 3 level 1
+	const ref = (blob: number, group: number): ContentRef => ({
 		kind: ContentKind.Conditional,
 		tier: 0,
-		levelTag: level,
+		group,
 		blob,
 		first: 0,
 		count: 1,
-		param: condition,
+		param: 0,
 	});
 	const child: TileNode = {
 		index: 1,
@@ -35,7 +36,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		terrainSplat: null,
 		detail: [],
 		hlod: [],
-		conditional: [ref(1, 0, 1), ref(2, 1, 1), ref(3, 0, 2)],
+		conditional: [ref(1, 0), ref(2, 1), ref(3, 2)],
 		cellId: null,
 	};
 	const root: TileNode = {
@@ -45,7 +46,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		size: 100,
 		quadrants: [child, null, null, null],
 		conditional: [],
-		hlod: [{ ...ref(9, 0, 1), kind: ContentKind.Hlod }],
+		hlod: [{ ...ref(9, 3), kind: ContentKind.Hlod }],
 	};
 	const tree: TileTree = {
 		nodes: [root, child],
@@ -76,7 +77,6 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		65,
 		100,
 	);
-	selector.setLevel(1);
 	const options: SelectionOptions = {
 		terrain: false,
 		terrainSurface: false,
@@ -89,11 +89,13 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		hlodTiers: [true, true, true],
 	};
 	const view = { camera: new Camera(), planes: [], pixelFactor: 100 };
-	selector.setConditions([true, false]);
+	// level 1 shown, condition 0 holds
+	selector.setGroupsShown([true, false, false, true]);
 	selector.run(view, options, null);
 	assert.deepEqual(wanted, [9, 1]);
 	wanted.length = 0;
-	selector.setConditions([false, true]);
+	// condition 1 holds instead
+	selector.setGroupsShown([false, true, false, true]);
 	selector.run(view, options, null);
 	assert.deepEqual(wanted, [9, 2]);
 	wanted.length = 0;
@@ -123,7 +125,7 @@ it('drops the HLOD of a nearby leaf with no detail instead of overlaying the sce
 		surface: null,
 		terrainSplat: null,
 		detail: [],
-		hlod: [{ kind: ContentKind.Hlod, tier: 0, levelTag: 0, blob: 9, first: 0, count: 1, param: 0 }],
+		hlod: [{ kind: ContentKind.Hlod, tier: 0, group: 0, blob: 9, first: 0, count: 1, param: 0 }],
 		conditional: [],
 		cellId: null,
 	};
@@ -147,6 +149,7 @@ it('drops the HLOD of a nearby leaf with no detail instead of overlaying the sce
 		65,
 		100,
 	);
+	selector.setGroupsShown([true]);
 	const options: SelectionOptions = {
 		terrain: false,
 		terrainSurface: false,

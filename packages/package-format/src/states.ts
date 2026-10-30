@@ -10,8 +10,22 @@ export interface StatesInfo {
 	progressions: ProgressionInfo[];
 	/** independent controls for scene states, scripts and logic gates */
 	toggles: SceneToggleInfo[];
-	/** visibility expressions of conditional instances, environment volumes and water surfaces */
+	/** visibility expressions; {@link VisibilityGroup.condition} indexes this list */
 	conditionalSets: ConditionalSetInfo[];
+	/**
+	 * who owns placed content and when it loads, deduplicated. every instance block, light, water surface and
+	 * environment volume names one group, so a viewer evaluates visibility once per group (see `groupsShown`)
+	 * rather than per kind of content
+	 */
+	groups: VisibilityGroup[];
+}
+
+/** an owner and a load condition shared by placed content */
+export interface VisibilityGroup {
+	/** the owning level's tag, matching `LevelInfo.tag`; 0 for content every level shows */
+	levelTag: number;
+	/** index into {@link StatesInfo.conditionalSets}, or `null` for content that always loads */
+	condition: number | null;
 }
 
 /** a selectable progression */

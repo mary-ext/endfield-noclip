@@ -130,9 +130,9 @@ the manifest carries three lists
 - `environmentPhases`: every phase a volume applies, uncomposed, with the list of sections it marks
   active. deduplicated by name.
 - `environmentVolumes`: every volume with a shape the packer understands (global, box, prism): name
-  without its `#…` suffix, owning level tag, shape in world coordinates, blend mode, priority, blend
-  distance, fade durations, phase index (or `null` when the phase can't be read; the viewer skips
-  those), `condition`, and `activation: 'unknown'`.
+  without its `#…` suffix, visibility `group` (owning level tag and loading condition), shape in
+  world coordinates, blend mode, priority, blend distance, fade durations, phase index (or `null`
+  when the phase can't be read; the viewer skips those), and `activation: 'unknown'`.
 
 ## blending at the camera
 

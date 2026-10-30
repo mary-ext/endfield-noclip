@@ -70,7 +70,7 @@ describe('TileTreeBuilder', () => {
 
 	it('creates ancestors, child masks and merged bounds', () => {
 		const builder = new TileTreeBuilder(grid);
-		const ref = { kind: ContentKind.Detail, tier: 0, levelTag: 0, blob: 0, first: 0, count: 1, param: 0 };
+		const ref = { kind: ContentKind.Detail, tier: 0, group: 0, blob: 0, first: 0, count: 1, param: 0 };
 		builder.addRef({ level: 2, x: 1, z: 0 }, ref, 4);
 		builder.extend({ level: 2, x: 1, z: 0 }, { min: [-1000, 10, -2000], max: [-900, 20, -1900] });
 		builder.addRef({ level: 2, x: 0, z: 1 }, { ...ref, blob: 1 }, 4);
@@ -164,7 +164,6 @@ describe('InstanceBlockBuilder', () => {
 				{
 					chain,
 					entityId,
-					sceneState: 1,
 					matrix: matrix(100 + entityId, 50, -200),
 					bounds: { center: [100, 50, -200], extents: [1, 2, 3] },
 				},
@@ -253,7 +252,6 @@ describe('BlobStore', () => {
 				{
 					chain: 1,
 					entityId: 42,
-					sceneState: 0,
 					matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 6, 7, 1]),
 					bounds: { center: [5, 6, 7], extents: [1, 1, 1] },
 				},

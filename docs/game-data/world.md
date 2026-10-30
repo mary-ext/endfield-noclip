@@ -311,15 +311,16 @@ the entity pass ([packer.ts](../../packages/extractor/src/pack/packer.ts), `coll
 the scene's chunk files in a fixed order (always-loaded before scene-state files, the default area
 before stream areas, then by name) and keeps the first copy of each entity id, so an entity present
 in an always-loaded file stays unconditional. entities without a renderer or matrix, and decals, are
-skipped. every row keeps its level tag, and each destination is grouped per tag, so a level can be
-shown or hidden as a whole:
+skipped. every row goes to a block of one visibility group (its level tag and the condition that
+loads it, see [package-format.md](../package-format.md#visibility-groups)), so a level or a scene
+state can be shown or hidden as a whole:
 
-| destination | what goes there                                                                                                       | where it lives                               |
-| ----------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| HLOD        | scene-state-0 entities whose name matches the HLOD pattern; attached to the tile of tier `t` at tree level `leaf − t` | one block per level tag, in the core archive |
-| global      | other entities of the `Global` chunk                                                                                  | one block per level tag, in the core archive |
-| detail      | other always-loaded entities, filed under the 64 m leaf containing their bounds centre                                | one block per (leaf, level tag)              |
-| conditional | entities of scene-state files, plus dynamic structures and facilities, with a visibility expression                   | one block per (leaf, level tag, condition)   |
+| destination | what goes there                                                                                                       | where it lives                           |
+| ----------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| HLOD        | scene-state-0 entities whose name matches the HLOD pattern; attached to the tile of tier `t` at tree level `leaf − t` | one block per group, in the core archive |
+| global      | other entities of `Global` chunks, scene-state ones with their states' condition                                      | one block per group, in the core archive |
+| detail      | other always-loaded entities, filed under the 64 m leaf containing their bounds centre                                | one block per (leaf, group)              |
+| conditional | entities of scene-state cell files, plus dynamic structures and facilities, with a visibility expression              | one block per (leaf, group)              |
 
 HLOD clusters stand in for instances already counted, so they're left out of a level's instance
 count. with `--level`, the subset keeps entities with that level's tag and terrain tiles touching

@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 
-import { volumeReaches } from '../render/environment-blend.ts';
+import { volumeCondition, volumeLevelTag, volumeReaches } from '../render/environment-blend.ts';
 import type { Viewer } from '../viewer.ts';
 
 import { useViewerState } from './use-viewer.ts';
@@ -51,12 +51,15 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 	);
 	// volumes apply wherever they hold the camera, so a neighbour's volume reaching into this level is listed too
 	const volumes = manifest.environmentVolumes
-		.map((volume, id) => ({ volume, id }))
+		.map((volume, id) => ({
+			volume,
+			id,
+			owner: volumeLevelTag(manifest, volume),
+			condition: volumeCondition(manifest, volume),
+		}))
 		.filter(
-			({ volume }) =>
-				(volume.levelTag === 0 ||
-					volume.levelTag === level?.tag ||
-					(level !== undefined && volumeReaches(volume, level.rect))) &&
+			({ volume, owner }) =>
+				(owner === 0 || owner === level?.tag || (level !== undefined && volumeReaches(volume, level.rect))) &&
 				matches(volume.name),
 		);
 	const levelNames = new Map(manifest.levels.map((entry) => [entry.tag, entry.name ?? entry.id]));
@@ -163,15 +166,14 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 					Volumes follow the scene states that load them; ticking one here overrides that. Enabled volumes
 					still follow camera bounds and priority. A pinned phase overrides these choices.
 				</p>
-				{volumes.map(({ volume, id }) => (
+				{volumes.map(({ volume, id, owner, condition }) => (
 					<label className="toggle scene-toggle" key={id}>
 						<input
 							type="checkbox"
 							disabled={volume.phase === null}
 							checked={
 								viewer.options.environmentEnabled[id] ??
-								(volume.blendMode !== 3 &&
-									(volume.condition === null || viewer.conditionResults[volume.condition]))
+								(volume.blendMode !== 3 && (condition === null || viewer.conditionResults[condition]))
 							}
 							onChange={(event) =>
 								viewer.setOptions({
@@ -190,10 +192,10 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 									: volume.blendMode === 3
 										? 'Scripted blend · preview at full strength'
 										: `Priority ${volume.priority}`}
-								{volume.condition !== null && ` · with ${loadingStates(volume.condition)}`}
-								{volume.levelTag !== 0 &&
-									volume.levelTag !== level?.tag &&
-									` · from ${levelNames.get(volume.levelTag) ?? `level ${volume.levelTag}`}`}
+								{condition !== null && ` · with ${loadingStates(condition)}`}
+								{owner !== 0 &&
+									owner !== level?.tag &&
+									` · from ${levelNames.get(owner) ?? `level ${owner}`}`}
 							</small>
 						</span>
 					</label>

@@ -18,7 +18,7 @@ it.
 
 ## versioning
 
-`PACKAGE_VERSION` (16) is written to `manifest.version` and covers the manifest, the JSON tables and
+`PACKAGE_VERSION` (17) is written to `manifest.version` and covers the manifest, the JSON tables and
 how the parts fit together. each binary encoding (tree, chains, blob table, irradiance table,
 instance blocks, height, surface and splat pages, geometry blobs) carries its own version in its
 header, next to its codec. readers accept exactly the versions they know and reject any other, and
@@ -38,7 +38,7 @@ the manifest, the tree or instance blocks leaves cached mesh and texture convers
   core.czar                       read whole when the package opens
     blobs/<hash>.hgt              terrain height pages coarser than the 128 m cells
     blobs/<hash>.tsp              terrain surface pages, likewise
-    blobs/<hash>.inst             HLOD and global instance blocks, one of each per level tag
+    blobs/<hash>.inst             HLOD and global instance blocks, one of each per visibility group
     manifest.json                 PackageManifest
     tables/blobs.bin              blob index → archive, codec, kind, offset, lengths
     tables/chains.bin             LOD-chain templates
@@ -143,25 +143,26 @@ stands for.
 its screen-space error, `geometricError · viewportHeight / (2 · distance · tan(fovY / 2))`, is
 within the threshold; otherwise it refines to its children, and a refined leaf draws its detail
 blocks. this is how the game swaps HLODs, seams included. per-instance LOD inside detail uses the
-chain thresholds. `manifest.global` content (the game's always-loaded Global chunk scenery) is
-always drawn and never replaced. `geometricError` is a placeholder, `edge / 16` (64 m leaf → 4 m),
+chain thresholds. `manifest.global` content (the game's Global chunk scenery) is drawn whenever its
+group shows and never replaced. `geometricError` is a placeholder, `edge / 16` (64 m leaf → 4 m),
 until the game's HLOD switch distances are known.
 
 **content refs** (`ContentRef`, `ContentKind`):
 
-| kind                 | points at                                                    | `tier`    | `levelTag` | `param`                                 |
-| -------------------- | ------------------------------------------------------------ | --------- | ---------- | --------------------------------------- |
-| `TerrainHeights` (0) | one height page                                              | 0         | 0          | the game's `maxHeightError`, m          |
-| `Hlod` (1)           | rows `[first, first + count)` of a level's shared HLOD block | HLOD tier | level tag  | 0                                       |
-| `Detail` (2)         | a whole instance block                                       | 0         | level tag  | 0                                       |
-| `Conditional` (3)    | a whole instance block shown only while its condition holds  | 0         | level tag  | index into `StatesInfo.conditionalSets` |
-| `TerrainSurface` (4) | one surface page, covering the same tile as the height page  | 0         | 0          | 0                                       |
-| `TerrainSplat` (5)   | a leaf's splat page                                          | 0         | 0          | 0                                       |
+| kind                 | points at                                                                      | `tier`    | `param`                        |
+| -------------------- | ------------------------------------------------------------------------------ | --------- | ------------------------------ |
+| `TerrainHeights` (0) | one height page                                                                | 0         | the game's `maxHeightError`, m |
+| `Hlod` (1)           | rows `[first, first + count)` of a group's shared HLOD block                   | HLOD tier | 0                              |
+| `Detail` (2)         | a whole instance block the HLODs stand in for                                  | 0         | 0                              |
+| `Conditional` (3)    | a whole instance block no HLOD stands in for (scene-state and dynamic content) | 0         | 0                              |
+| `TerrainSurface` (4) | one surface page, covering the same tile as the height page                    | 0         | 0                              |
+| `TerrainSplat` (5)   | a leaf's splat page                                                            | 0         | 0                              |
 
-detail and conditional blocks are one per (leaf, level tag, condition); an instance goes to the leaf
-under its bounds centre. HLOD and global rows form one block per level tag in the core, HLOD rows
-sorted by node so each node's refs are one run. global refs live in `manifest.global` with kind
-`Detail`.
+every ref names a [visibility group](#visibility-groups); terrain refs use group 0 (shared, always
+loaded). detail and conditional blocks are one per (leaf, group); an instance goes to the leaf under
+its bounds centre. HLOD and global rows form one block per group in the core, HLOD rows sorted by
+node so each node's refs are one run. global refs live in `manifest.global` with kind `Detail`;
+Global chunks of scene states become conditional global blocks, drawn whole while their state is on.
 
 ## manifest
 
@@ -177,13 +178,13 @@ sorted by node so each node's refs are one run. global refs live in `manifest.gl
 | `terrain`                                                 | position, `heightScale`, `terrainSize`, page size, hole bit, levels with pages, surface page size and border, close-up `detail`; `null` without terrain                   |
 | `levels`                                                  | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment |
 | `environments`, `environmentPhases`, `environmentVolumes` | see [environment.md](game-data/environment.md)                                                                                                                            |
-| `states`                                                  | progressions, toggles and conditional sets; see [scene states](#conditions)                                                                                               |
+| `states`                                                  | progressions, toggles, conditional sets and visibility groups; see [conditions](#conditions)                                                                              |
 | `archives`                                                | `ArchiveInfo`: name, role, tile, size, `dataOffset`                                                                                                                       |
 | `global`                                                  | content refs drawn regardless of refinement                                                                                                                               |
 | `subset`                                                  | what `--level` / `--bounds` kept, or `null`                                                                                                                               |
 | `source`                                                  | the bundle manifest's build guid and content hash: identifies the game build                                                                                              |
 
-a viewer shows one level at a time: content refs carrying the level's tag plus tag 0 (shared
+a viewer shows one level at a time: content whose group carries the level's tag or tag 0 (shared
 content), over the shared terrain. scenes without levels show everything.
 
 ## binary encodings
@@ -193,7 +194,7 @@ all little-endian, every section 4-byte aligned. the tables share a 16-byte head
 
 | member                  | magic  | layout                                                                                                                                                                                                                                                      |
 | ----------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tree.bin`              | `EFTR` | header (nodes, refs); 48-byte nodes: `u8 level, u8 childMask, u16 flags, i32 x, i32 z, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs: `u8 kind, u8 tier, u16 0, u32 level, u32 blob, u32 first, u32 count, f32 param` |
+| `tree.bin`              | `EFTR` | header (nodes, refs); 48-byte nodes: `u8 level, u8 childMask, u16 flags, i32 x, i32 z, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs: `u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, f32 param` |
 | `tables/chains.bin`     | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 lodCount, u8 flags`; 24-byte draws: `u32 geometry, u32 material, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u32 sourceFlags`                                    |
 | `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 32-byte records: `16-byte hash, u16 archive, u8 codec, u8 kind, u32 offset, u32 length, u32 rawLength`                                                                                                                                   |
 | `tables/irradiance.bin` | `EFIV` | header (cells, 0); u32 cell keys ascending, then u32 blob indices                                                                                                                                                                                           |
@@ -214,11 +215,10 @@ for bits not yet understood.
 32-byte header: `u32 magic, u16 version, u16 flags, u32 count, f32×3 origin, u32×2 0`. then
 struct-of-arrays sections of `count` elements: `u32 chain`, `f32×12 transform` (rows3x4, translation
 relative to origin), `f32×6 bounds` (world AABB centre relative to origin, then half-extents, as the
-game stores them), `u32 entity id`, `u8 scene state` (padded to 4 bytes). origin is the leaf's
-minimum corner (y 0) for detail blocks and the tree origin for core blocks. rows are sorted by
-(group, chain) (`SortedByChain`), so equal chains form instanced ranges; `id >>> 27` is the level
-tag. the scene state column is the source chunk file's suffix: 0 always loaded, `n` with MapConfig
-scene state `n − 1`.
+game stores them), `u32 entity id`. origin is the leaf's minimum corner (y 0) for detail blocks and
+the tree origin for core blocks. rows are sorted by (HLOD node, chain) (`SortedByChain`), so equal
+chains form instanced ranges. the entity id traces a row through the debug index (prefab renderers
+get made-up ids); who owns a row and when it loads is the block's group, not the id.
 
 full 3×4 matrices are kept rather than quantized TRS because Unity hierarchies bake shear and
 non-uniform scale into them.
@@ -309,7 +309,7 @@ fast iteration on the instance side.
 | `materials`  | `shaders`: each shader's declared properties and defaults (floats, colours as authored: gamma-encoded, or linear for HDR colours, vectors, texture built-in defaults, `[Normal]` slots) and its `ShaderFamily`. `entries`: `ReadyMaterial` with shader index, keywords, render queue, blend, cull, `zWrite`, alpha clip threshold, `baseTextureMapCount`, bound `slots` (texture id, UV set, `_ST` scale/offset) and only the floats/colours/vectors that differ from the shader's defaults |
 | `textures`   | `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler as `GPUSamplerDescriptor` fields plus Unity's `mipBias`, `pieces` coarse to fine                                                                                                                                                                                                                                                                                                                        |
 | `water`      | see [water.md](game-data/water.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `lights`     | `LightEntry`: kind (spot, point), entity id, level tag, condition, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                                   |
+| `lights`     | `LightEntry`: kind (spot, point), entity id, visibility group, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                                       |
 
 materials store overrides only because lit materials declare ~190 floats each; undeclared (stale)
 properties Unity keeps from earlier shaders are dropped
@@ -348,15 +348,27 @@ majority placement would give smaller per-tile archives but lose the ancestor gu
 
 ## conditions
 
-conditional content (conditional instance blocks, environment volumes, water surfaces, lights)
-references `StatesInfo.conditionalSets` by index. a `ConditionalSetInfo` is a list of alternatives,
-each a list of `{ control, mask }` requirements; the content is visible when any alternative has
-every requirement met, and a requirement is met when bit `value` of `mask` is set for the control's
-selected value. controls are `ProgressionInfo` ids (value = progression level) and `SceneToggleInfo`
-ids (value 0/1). unknown controls fail closed. equivalent expressions are interned to one set by the
-packer. [conditions.ts](../packages/package-format/src/conditions.ts) holds `conditionVisible` and
-`defaultSceneValues`; what the controls mean and how their defaults are chosen is in
-[scene-states.md](game-data/scene-states.md).
+### visibility groups
+
+every piece of placed content (instance blocks through their refs, lights, water surfaces,
+environment volumes) names one `StatesInfo.groups` entry: the level that owns it (`levelTag`, 0 for
+content every level shows) and the conditional set that loads it (`condition`, `null` for content
+that always loads). the packer interns equal pairs into one group, and group 0 is always the shared,
+always-loaded one. a viewer evaluates `groupsShown` once whenever the shown level or a scene value
+changes, and every consumer filters by that one array, so "belongs to this level and is loaded" has
+a single definition. environment volumes are the exception that reads the parts: they apply wherever
+they hold the camera, whichever level owns them, so only their condition gates them.
+
+### conditional sets
+
+a `ConditionalSetInfo` is a list of alternatives, each a list of `{ control, mask }` requirements;
+the content is visible when any alternative has every requirement met, and a requirement is met when
+bit `value` of `mask` is set for the control's selected value. controls are `ProgressionInfo` ids
+(value = progression level) and `SceneToggleInfo` ids (value 0/1). unknown controls fail closed.
+equivalent expressions are interned to one set by the packer.
+[conditions.ts](../packages/package-format/src/conditions.ts) holds `conditionVisible`,
+`conditionResults`, `groupsShown` and `defaultSceneValues`; what the controls mean and how their
+defaults are chosen is in [scene-states.md](game-data/scene-states.md).
 
 ## viewer side
 

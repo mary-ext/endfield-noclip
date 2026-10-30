@@ -6,7 +6,11 @@
  * @module
  */
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
-import { conditionVisible, defaultSceneValues } from '@endfield-noclip/package-format/conditions';
+import {
+	conditionResults,
+	defaultSceneValues,
+	groupsShown,
+} from '@endfield-noclip/package-format/conditions';
 import type { EnvironmentProfile } from '@endfield-noclip/package-format/environment';
 import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
 import { isTerrainHole, terrainHeight } from '@endfield-noclip/package-format/terrain';
@@ -27,6 +31,7 @@ import {
 	blendEnvironment,
 	EnvironmentFades,
 	eyeInLevelVolume,
+	volumeLevelTag,
 } from './render/environment-blend.ts';
 import { type Environment, deriveEnvironment } from './render/environment.ts';
 import { DEBUG_VIEWS, type DebugView, FRAME_UNIFORM_BYTES, FrameOffsets } from './render/frame-uniforms.ts';
@@ -547,14 +552,12 @@ export class Viewer {
 			})),
 		};
 		this.#sceneValues = defaultSceneValues(manifest.states);
-		this.#updateConditions();
 		const showable = manifest.levels.filter((level) => level.instances > 0);
 		this.#level = showable.find((level) => level.id === initialLevel) ?? showable[0] ?? null;
-		selector.setLevel(this.#level?.tag ?? null);
 		this.#post.autoExposure.reset();
 		this.#water.setTable(pkg.water);
 		this.#lights.setLights(pkg.lights.lights);
-		this.#lights.setLevel(this.#level?.tag ?? null);
+		this.#updateVisibility();
 		this.#applyEnvironment();
 		if (this.#level !== null) {
 			this.#focusCells = this.#cellIds(this.#level);
@@ -778,7 +781,8 @@ export class Viewer {
 		}
 		const indices = new Set<number>();
 		for (const volume of manifest.environmentVolumes) {
-			if (volume.phase !== null && (volume.levelTag === level.tag || volume.levelTag === 0)) {
+			const owner = volumeLevelTag(manifest, volume);
+			if (volume.phase !== null && (owner === level.tag || owner === 0)) {
 				indices.add(volume.phase);
 			}
 		}
@@ -1005,8 +1009,7 @@ export class Viewer {
 			return;
 		}
 		this.#level = level;
-		this.scene.selector.setLevel(level.tag);
-		this.#lights.setLevel(level.tag);
+		this.#updateVisibility();
 		this.#post.autoExposure.reset();
 		this.#applyEnvironment();
 		this.#flyOver(level);
@@ -1039,7 +1042,7 @@ export class Viewer {
 			return;
 		}
 		this.#sceneValues = { ...this.#sceneValues, [id]: value };
-		this.#updateConditions();
+		this.#updateVisibility();
 		this.#emitState();
 	}
 
@@ -1050,7 +1053,7 @@ export class Viewer {
 		this.options.environmentEnabled = {};
 		this.options.environmentPin = null;
 		this.#fades.reset();
-		this.#updateConditions();
+		this.#updateVisibility();
 		this.#emitState();
 	}
 
@@ -1062,17 +1065,16 @@ export class Viewer {
 		return this.#conditionResults;
 	}
 
-	#updateConditions(): void {
+	/** re-evaluates conditions and visibility groups for the shown level and scene values, for every consumer */
+	#updateVisibility(): void {
 		const scene = this.scene;
-		this.#conditionResults =
-			scene?.pkg.manifest.states.conditionalSets.map((condition) =>
-				conditionVisible(condition, this.#sceneValues),
-			) ?? [];
-		if (scene) {
-			scene.selector.setConditions(this.#conditionResults);
-		}
-		this.#water.setConditions(this.#conditionResults);
-		this.#lights.setConditions(this.#conditionResults);
+		const states = scene?.pkg.manifest.states;
+		this.#conditionResults = states === undefined ? [] : conditionResults(states, this.#sceneValues);
+		const shown =
+			states === undefined ? [] : groupsShown(states, this.#level?.tag ?? null, this.#conditionResults);
+		scene?.selector.setGroupsShown(shown);
+		this.#water.setGroupsShown(shown);
+		this.#lights.setGroupsShown(shown);
 		this.#dirty = true;
 	}
 
@@ -1267,7 +1269,6 @@ export class Viewer {
 		this.#updateSkyTextures(scene);
 		if (options.water) {
 			this.#water.prepare({
-				level: this.#level?.tag ?? null,
 				eye: this.camera.position,
 				planes: view.planes,
 				stream,

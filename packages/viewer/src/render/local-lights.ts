@@ -47,9 +47,8 @@ export class LocalLights {
 	readonly #lightData = new Float32Array(MAX_LOCAL_LIGHTS * LIGHT_VEC4S * 4);
 	#bins = new Uint32Array(0);
 	#entries: readonly LightEntry[] = [];
-	#level: number | null = null;
-	#conditions: readonly boolean[] = [];
-	/** the entries the shown level and scene values allow; rebuilt when either changes */
+	#groupsShown: readonly boolean[] = [];
+	/** the entries whose visibility group shows; rebuilt when the groups change */
 	#shown: LightEntry[] | null = null;
 	readonly #candidates: Candidate[] = [];
 
@@ -74,15 +73,9 @@ export class LocalLights {
 		this.#shown = null;
 	}
 
-	/** @param tag the shown level's tag; `null` shows every light (scenes without levels) */
-	setLevel(tag: number | null): void {
-		this.#level = tag;
-		this.#shown = null;
-	}
-
-	/** @param results per conditional set, whether the selected scene values satisfy it */
-	setConditions(results: readonly boolean[]): void {
-		this.#conditions = results;
+	/** @param shown per visibility group of the package, whether its content shows */
+	setGroupsShown(shown: readonly boolean[]): void {
+		this.#groupsShown = shown;
 		this.#shown = null;
 	}
 
@@ -186,11 +179,7 @@ export class LocalLights {
 
 	/** @returns this frame's lights, nearest first, at most {@link MAX_LOCAL_LIGHTS} */
 	#select(camera: Camera, aspect: number): Candidate[] {
-		this.#shown ??= this.#entries.filter(
-			(entry) =>
-				(this.#level === null || entry.levelTag === this.#level || entry.levelTag === 0) &&
-				(entry.condition === null || (this.#conditions[entry.condition] ?? false)),
-		);
+		this.#shown ??= this.#entries.filter((entry) => this.#groupsShown[entry.group] ?? false);
 		const candidates = this.#candidates;
 		candidates.length = 0;
 		const eye = camera.position;

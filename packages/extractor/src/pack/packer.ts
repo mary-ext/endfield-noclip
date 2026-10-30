@@ -66,6 +66,7 @@ import type {
 	ConditionalSetInfo,
 	SceneToggleInfo,
 	ProgressionInfo,
+	VisibilityGroup,
 } from '@endfield-noclip/package-format/states';
 import {
 	encodeSplatPage,
@@ -615,10 +616,10 @@ const collectEntities = async (
 	// stream areas share some entities, and a level is drawn with all of its areas, so one copy is enough
 	const seen = new Set<number>();
 	// rows of scene-state files, by entity id, with the state ids of every file holding them; added as
-	// conditional instances once all files are read
+	// conditional instances once all files are read, global ones (from Global chunks) as conditional globals
 	const stateRows = new Map<
 		number,
-		{ row: InstanceInput; tag: number; name: string; file: number; states: Set<number> }
+		{ row: InstanceInput; tag: number; name: string; file: number; global: boolean; states: Set<number> }
 	>();
 	/** per geometry id: whether its path names a card mesh */
 	const cards: boolean[] = [];
@@ -712,16 +713,16 @@ const collectEntities = async (
 					matrix: entity.matrix,
 					bounds,
 					entityId: entity.id,
-					sceneState: file.sceneState,
 				};
 
-				// HLOD clusters only occur in always-loaded files; scene-state content streams as detail
+				// HLOD clusters only occur in always-loaded files
 				if (file.sceneState !== 0) {
 					stateRows.set(entity.id, {
 						row,
 						tag: entity.levelTag,
 						name: entity.name,
 						file: fileIndex,
+						global: file.cell === null,
 						states: new Set([file.sceneState]),
 					});
 				} else if (hlod !== null) {
@@ -735,7 +736,7 @@ const collectEntities = async (
 						addHlod(cluster, named);
 					}
 				} else if (file.cell === null) {
-					collected.addGlobal(entity.levelTag, row, entity.name, fileIndex);
+					collected.addGlobal(entity.levelTag, null, row, entity.name, fileIndex);
 					pack.uses.note(row.chain, null);
 				} else {
 					const key = tileAt(grid, grid.leafLevel, x, z);
@@ -758,16 +759,15 @@ const collectEntities = async (
 		addHlod(cluster, key);
 	}
 	counts.sceneStateRenderers = stateRows.size;
-	for (const { row, tag, name, file, states } of stateRows.values()) {
+	for (const { row, tag, name, file, global, states } of stateRows.values()) {
+		const visibility = collected.stateVisibility([...states].map((id) => id - 1));
+		if (global) {
+			collected.addGlobal(tag, collected.condition(visibility), row, name, file);
+			pack.uses.note(row.chain, null);
+			continue;
+		}
 		const key = tileAt(grid, grid.leafLevel, row.bounds.center[0], row.bounds.center[2]);
-		collected.addConditional(
-			tag,
-			key,
-			row,
-			name,
-			collected.stateVisibility([...states].map((id) => id - 1)),
-			file,
-		);
+		collected.addConditional(tag, key, row, name, visibility, file);
 		pack.uses.note(row.chain, key);
 	}
 	const dynamic = await loadDynamicStructures(context, scene.options.scene, scene.partition);
@@ -816,7 +816,6 @@ const collectEntities = async (
 				matrix: entity.matrix,
 				bounds: entity.bounds,
 				entityId: entity.id,
-				sceneState: 0,
 			},
 			entity.levelTag,
 			entity.name,
@@ -910,7 +909,6 @@ const collectEntities = async (
 					matrix,
 					bounds,
 					entityId: syntheticEntityId(levelTag, modelId++),
-					sceneState: 0,
 				},
 				levelTag,
 				renderer.name,
@@ -930,14 +928,14 @@ const collectEntities = async (
 };
 
 /**
- * gives environment volumes, water surfaces and lights of scene-state files their conditions, and puts the
- * scene state controls (one per MapConfig state, plus any state an expression requires that the MapConfig
- * doesn't name) ahead of the other toggles
+ * gives environment volumes, water surfaces and lights their visibility groups (their level, and the scene
+ * states of the files holding them), and puts the scene state controls (one per MapConfig state, plus any
+ * state an expression requires that the MapConfig doesn't name) ahead of the other toggles
  *
- * @param collected the entity pass's collector; its conditions and toggles are extended
+ * @param collected the entity pass's collector; its conditions, groups and toggles are extended
  * @param controls the MapConfig scene state controls
- * @param environments planned environments; volume conditions are filled in
- * @param water planned water; surface conditions are filled in
+ * @param environments planned environments; volume groups are filled in
+ * @param water planned water; surface groups are filled in
  * @param lights the entity pass's lights
  * @returns the lights table
  */
@@ -948,15 +946,15 @@ const gateByScene = (
 	water: WaterPlan,
 	lights: LightCollector,
 ): LightsTable => {
-	const conditionOf = (states: readonly number[]): number | null =>
-		states.length === 0 ? null : collected.condition(collected.stateVisibility(states));
 	for (const [i, volume] of environments.volumes.entries()) {
-		volume.condition = conditionOf(environments.volumeStates[i]);
+		const { levelTag, sceneStates } = environments.volumeOwners[i];
+		volume.group = collected.groupOfStates(levelTag, sceneStates);
 	}
 	for (const [i, surface] of water.table.surfaces.entries()) {
-		surface.condition = conditionOf(water.surfaceStates[i]);
+		const { levelTag, sceneStates } = water.surfaceOwners[i];
+		surface.group = collected.groupOfStates(levelTag, sceneStates);
 	}
-	const lightsTable = lights.finish(conditionOf);
+	const lightsTable = lights.finish((levelTag, states) => collected.groupOfStates(levelTag, states));
 	const named = new Set(controls.map((control) => control.id));
 	const unnamed = [...collected.sceneStates]
 		.filter((index) => !named.has(sceneStateControl(index)))
@@ -1077,7 +1075,7 @@ const packTerrain = async (
 				options: placement(BlobKind.TerrainSplat, archiveForTile(pack, key)),
 			})),
 		);
-		const whole = { tier: 0, levelTag: 0, first: 0, count: 1 };
+		const whole = { tier: 0, group: SHARED_GROUP, first: 0, count: 1 };
 		for (const [i, { key }] of batch.entries()) {
 			const node = surface.nodes?.[terrainNodeIndex(key)];
 			pack.builder.addRef(
@@ -1230,7 +1228,7 @@ const packInstances = async (
 	};
 
 	const detailGroups = [...collected.detail.values()].toSorted(
-		(a, b) => a.key.z - b.key.z || a.key.x - b.key.x || a.level - b.level,
+		(a, b) => a.key.z - b.key.z || a.key.x - b.key.x || a.visibility - b.visibility,
 	);
 	for (let start = 0; start < detailGroups.length; start += BLOB_BATCH) {
 		const encoded = detailGroups.slice(start, start + BLOB_BATCH).map((group) => {
@@ -1249,13 +1247,13 @@ const packInstances = async (
 			builder.addRef(
 				group.key,
 				{
-					kind: group.condition === null ? ContentKind.Detail : ContentKind.Conditional,
+					kind: group.conditional ? ContentKind.Conditional : ContentKind.Detail,
 					tier: 0,
-					levelTag: group.level,
+					group: group.visibility,
 					blob: blobs[i],
 					first: 0,
 					count: group.rows.length,
-					param: group.condition ?? 0,
+					param: 0,
 				},
 				NodeFlags.HasDetail,
 			);
@@ -1265,13 +1263,13 @@ const packInstances = async (
 		}
 	}
 
-	// HLOD and global rows form one block per level, in the core
+	// HLOD and global rows form one block per visibility group, in the core
 	const coreBlocks = async (groups: Map<number, Group>) => {
 		const encoded = [...groups]
 			.toSorted((a, b) => a[0] - b[0])
-			.map(([level, group]) => {
+			.map(([visibility, group]) => {
 				const { block, order } = group.rows.toBlock([scene.grid.origin[0], 0, scene.grid.origin[1]]);
-				return { level, group, block, order };
+				return { visibility, group, block, order };
 			});
 		const blobs = await store.putMany(
 			encoded.map(({ block }) => ({
@@ -1283,12 +1281,12 @@ const packInstances = async (
 			// oxlint-disable-next-line no-await-in-loop -- lines go out in block order
 			await debugLog.block(store.hashOf(blobs[i]), group, block, order);
 		}
-		return encoded.map(({ level, group, order }, i) => ({ level, group, order, blob: blobs[i] }));
+		return encoded.map(({ visibility, group, order }, i) => ({ visibility, group, order, blob: blobs[i] }));
 	};
 
 	let hlodClusters = 0;
 	const tierCounts = [0, 0, 0];
-	for (const { level, group, order, blob } of await coreBlocks(collected.hlod)) {
+	for (const { visibility, group, order, blob } of await coreBlocks(collected.hlod)) {
 		// rows are sorted by node, so each node's clusters are one run
 		const groups = group.rows.groupsInOrder(order);
 		for (let first = 0; first < groups.length;) {
@@ -1302,7 +1300,7 @@ const packInstances = async (
 				{
 					kind: ContentKind.Hlod,
 					tier: node.tier,
-					levelTag: level,
+					group: visibility,
 					blob,
 					first,
 					count: end - first,
@@ -1317,10 +1315,10 @@ const packInstances = async (
 		}
 	}
 
-	const global = (await coreBlocks(collected.global)).map(({ level, group, blob }): ContentRef => ({
+	const global = (await coreBlocks(collected.global)).map(({ visibility, group, blob }): ContentRef => ({
 		kind: ContentKind.Detail,
 		tier: 0,
-		levelTag: level,
+		group: visibility,
 		blob,
 		first: 0,
 		count: group.rows.length,
@@ -1334,6 +1332,7 @@ interface SceneStateInfo {
 	levels: LevelInfo[];
 	progressions: ProgressionInfo[];
 	conditionalSets: ConditionalSetInfo[];
+	groups: VisibilityGroup[];
 	toggles: SceneToggleInfo[];
 }
 
@@ -1362,6 +1361,7 @@ const sceneStates = async (
 		levels,
 		progressions: [...progressions, ...collected.facilities],
 		conditionalSets: collected.conditions,
+		groups: collected.groups,
 		toggles: collected.toggles,
 	};
 };
@@ -1453,6 +1453,7 @@ const writePackage = async (
 		states: {
 			progressions: states.progressions,
 			conditionalSets: states.conditionalSets,
+			groups: states.groups,
 			toggles: states.toggles,
 		},
 		archives,
@@ -1627,30 +1628,84 @@ interface Group {
 const nodeSortKey = (key: TileKey): number =>
 	key.level * 2 ** 40 + (key.z + 2 ** 19) * 2 ** 20 + (key.x + 2 ** 19);
 
-/** gathers instances by destination while the entity pass runs */
+/**
+ * the visibility group of content every level shows and that always loads; the collector interns it first.
+ * terrain uses it
+ */
+const SHARED_GROUP = 0;
+
+/** a block of detail rows: one leaf, one visibility group */
+interface DetailGroup extends Group {
+	key: TileKey;
+	/** index into the visibility groups */
+	visibility: number;
+	/** whether HLODs don't stand in for the rows (scene-state and dynamic content) */
+	conditional: boolean;
+}
+
+/** gathers instances by destination while the entity pass runs, and interns visibility */
 class Collector {
-	/** detail rows by `tileId/levelTag` */
-	readonly detail = new Map<string, Group & { key: TileKey; level: number; condition: number | null }>();
-	/** HLOD rows by level tag */
+	/** detail rows by `tileId/visibility` */
+	readonly detail = new Map<string, DetailGroup>();
+	/** HLOD rows by visibility group */
 	readonly hlod = new Map<number, Group>();
 	/** HLOD nodes by sort key */
 	readonly hlodNodes = new Map<number, { key: TileKey; tier: number; bounds: Bounds }>();
-	/** rows of the Global chunk files by level tag */
+	/** rows of the Global chunk files by visibility group */
 	readonly global = new Map<number, Group>();
 	/** packed instance count by level tag, without HLOD clusters */
 	readonly tagInstances = new Map<number, number>();
 	/** world bounds of packed instances by level tag */
 	readonly tagBounds = new Map<number, Bounds>();
 
+	readonly groups: VisibilityGroup[] = [];
+	readonly #groupIds = new Map<string, number>();
+
+	constructor() {
+		this.group(0, null);
+	}
+
+	/**
+	 * @param levelTag the owning level's tag, 0 for shared content
+	 * @param condition index into {@link conditions}, or `null` for content that always loads
+	 * @returns the visibility group's index, shared by equal owners and conditions
+	 */
+	group(levelTag: number, condition: number | null): number {
+		return getOrInsert(this.#groupIds, `${levelTag}/${condition}`, () => {
+			this.groups.push({ levelTag, condition });
+			return this.groups.length - 1;
+		});
+	}
+
+	/**
+	 * @param levelTag the owning level's tag
+	 * @param states MapConfig scene state indices that load the content; empty when it always loads
+	 * @returns the visibility group of content loading with any of them
+	 */
+	groupOfStates(levelTag: number, states: readonly number[]): number {
+		return this.group(levelTag, states.length === 0 ? null : this.condition(this.stateVisibility(states)));
+	}
+
 	addDetail(level: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
-		const id = `${tileId(key)}/${level}`;
-		let group = this.detail.get(id);
-		if (group === undefined) {
-			group = { ...newGroup(), key, level, condition: null };
-			this.detail.set(id, group);
-		}
-		push(group, row, 0, name, file);
+		this.#addDetail(this.group(level, null), false, key, row, name, file);
 		this.#countInstance(level);
+	}
+
+	#addDetail(
+		visibility: number,
+		conditional: boolean,
+		key: TileKey,
+		row: InstanceInput,
+		name: string,
+		file: number,
+	): void {
+		const group = getOrInsert(this.detail, `${tileId(key)}/${visibility}`, () => ({
+			...newGroup(),
+			key,
+			visibility,
+			conditional,
+		}));
+		push(group, row, 0, name, file);
 	}
 
 	readonly conditions: ConditionalSetInfo[] = [];
@@ -1679,14 +1734,7 @@ class Collector {
 		visibility: ConditionalSetInfo,
 		file: number,
 	): void {
-		const condition = this.condition(visibility);
-		const id = `${tileId(key)}/${level}/${condition}`;
-		let group = this.detail.get(id);
-		if (!group) {
-			group = { ...newGroup(), key, level, condition };
-			this.detail.set(id, group);
-		}
-		push(group, row, 0, name, file);
+		this.#addDetail(this.group(level, this.condition(visibility)), true, key, row, name, file);
 		this.#countInstance(level);
 	}
 
@@ -1717,7 +1765,7 @@ class Collector {
 	}
 
 	addHlod(level: number, tier: number, key: TileKey, row: InstanceInput, name: string, file: number): void {
-		const group = getOrInsert(this.hlod, level, newGroup);
+		const group = getOrInsert(this.hlod, this.group(level, null), newGroup);
 		const sortKey = nodeSortKey(key);
 		push(group, row, sortKey, name, file);
 		const node = this.hlodNodes.get(sortKey);
@@ -1728,8 +1776,12 @@ class Collector {
 		}
 	}
 
-	addGlobal(level: number, row: InstanceInput, name: string, file: number): void {
-		push(getOrInsert(this.global, level, newGroup), row, 0, name, file);
+	/**
+	 * @param level the owning level's tag
+	 * @param condition index into {@link conditions} for Global chunks of scene states, else `null`
+	 */
+	addGlobal(level: number, condition: number | null, row: InstanceInput, name: string, file: number): void {
+		push(getOrInsert(this.global, this.group(level, condition), newGroup), row, 0, name, file);
 		this.#countInstance(level);
 	}
 

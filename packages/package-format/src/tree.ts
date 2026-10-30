@@ -16,9 +16,12 @@ export const ContentKind = {
 	TerrainHeights: 0,
 	/** HLOD cluster rows `[first, first + count)` of an instance block; `tier` is the HLOD tier */
 	Hlod: 1,
-	/** detail instances of one level: a whole instance block */
+	/** detail instances the HLODs stand in for: a whole instance block, drawn once its leaf refines */
 	Detail: 2,
-	/** independently streamed dynamic instances; `param` indexes {@link StatesInfo.conditionalSets} */
+	/**
+	 * instances the HLODs don't stand in for (scene-state and dynamic content): a whole instance block,
+	 * streamed by its tile's screen size regardless of refinement
+	 */
 	Conditional: 3,
 	/** the node's baked terrain surface page (albedo and normal); covers the same tile as its height page */
 	TerrainSurface: 4,
@@ -78,10 +81,10 @@ export interface ContentRef {
 	/** HLOD tier for {@link ContentKind.Hlod}; 0 otherwise */
 	tier: number;
 	/**
-	 * the instances' level tag (`entityId >>> 27`, matching {@link LevelInfo.tag}) for instance content; 0 for
-	 * terrain
+	 * index into `StatesInfo.groups`: who owns the content and when it loads. terrain uses an always-shown
+	 * group
 	 */
-	levelTag: number;
+	group: number;
 	/** blob index */
 	blob: number;
 	/** first row, for refs into a shared instance block; 0 otherwise */
@@ -123,7 +126,7 @@ export interface Tree {
 /** 'EFTR' */
 const TREE_HEADER: HeaderShape = {
 	magic: 0x52_54_46_45,
-	version: 1,
+	version: 2,
 	size: TABLE_HEADER_SIZE,
 	label: 'package tree',
 };
@@ -139,7 +142,7 @@ const isContentKind = enumGuard(ContentKind);
  * then 24-byte content refs.
  *
  * node: u8 level, u8 childMask, u16 flags, i32 x, i32 z, f32×3 min, f32×3 max, f32 geometricError, u32
- * refFirst, u32 refCount. ref: u8 kind, u8 tier, u16 0, u32 level, u32 blob, u32 first, u32 count, f32
+ * refFirst, u32 refCount. ref: u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, f32
  * param.
  *
  * @param tree nodes and refs; node ref slices must lie inside `refs`
@@ -182,7 +185,7 @@ const writeRef = (view: DataView, at: number, ref: ContentRef): void => {
 	view.setUint8(at, ref.kind);
 	view.setUint8(at + 1, ref.tier);
 	view.setUint16(at + 2, 0, true);
-	view.setUint32(at + 4, ref.levelTag, true);
+	view.setUint32(at + 4, ref.group, true);
 	view.setUint32(at + 8, ref.blob, true);
 	view.setUint32(at + 12, ref.first, true);
 	view.setUint32(at + 16, ref.count, true);
@@ -223,7 +226,7 @@ export const decodeTree = (data: Uint8Array): Tree => {
 		refs.push({
 			kind: checkedEnum(isContentKind, view.getUint8(at), 'content kind'),
 			tier: view.getUint8(at + 1),
-			levelTag: view.getUint32(at + 4, true),
+			group: view.getUint32(at + 4, true),
 			blob: view.getUint32(at + 8, true),
 			first: view.getUint32(at + 12, true),
 			count: view.getUint32(at + 16, true),

@@ -3,8 +3,8 @@ import type { Bounds, Color, Vec2, Vec4 } from './values.ts';
 
 /**
  * `tables/water.json`: the scene's open-world water. every surface is resident (the game keeps them in its
- * Global chunks), so the table is loaded with the core. a viewer shows the surfaces carrying the current
- * level's tag plus tag 0, like instances, and shades them with their config and the global maps
+ * Global chunks), so the table is loaded with the core. a viewer shows the surfaces whose group shows, like
+ * instances, and shades them with their config and the global maps
  */
 export interface WaterTable {
 	/** the scene's global water, or `null` if the scene has none or the package holds no surface */
@@ -126,13 +126,11 @@ export interface WaterConfig {
 export interface WaterSurfaceEntry {
 	/** the game's entity id */
 	id: number;
-	/** the owning level's tag (`id >>> 27`), matching {@link LevelInfo.tag} */
-	levelTag: number;
 	/**
-	 * index into {@link StatesInfo.conditionalSets} when the surface only loads with some scene states (map02's
-	 * paddy-field pools), `null` when it's always loaded
+	 * index into `StatesInfo.groups`: the owning level and the scene states that load the surface (map02's
+	 * paddy-field pools load with some)
 	 */
-	condition: number | null;
+	group: number;
 	/**
 	 * geometry-table id. only positions are needed (the shading works in world x, z), and some meshes have no
 	 * UVs; no tangents are generated

@@ -26,10 +26,11 @@ export class LightCollector {
 	}
 
 	/**
-	 * @param conditionOf the conditional set of content that loads with any of these MapConfig scene states
+	 * @param groupOf the visibility group of content a level owns that loads with any of these MapConfig scene
+	 *   states (always, when there are none)
 	 * @returns the table, lights in id order
 	 */
-	finish(conditionOf: (states: number[]) => number | null): LightsTable {
+	finish(groupOf: (levelTag: number, states: number[]) => number): LightsTable {
 		const lights: LightEntry[] = [];
 		for (const { light, states } of [...this.#lights.values()].toSorted((a, b) => a.light.id - b.light.id)) {
 			const reason = skipReason(light);
@@ -37,9 +38,8 @@ export class LightCollector {
 				this.skipped[reason] = (this.skipped[reason] ?? 0) + 1;
 				continue;
 			}
-			const condition =
-				states === null ? null : conditionOf([...states].map((id) => id - 1).toSorted((a, b) => a - b));
-			lights.push(lightEntry(light, condition));
+			const sceneStates = states === null ? [] : [...states].map((id) => id - 1).toSorted((a, b) => a - b);
+			lights.push(lightEntry(light, groupOf(light.levelTag, sceneStates)));
 		}
 		return { lights };
 	}
@@ -65,17 +65,16 @@ const skipReason = (light: ChunkLight): string | null => {
 
 /**
  * @param light a spot or point light
- * @param condition its conditional set, or `null`
+ * @param group its visibility group
  * @returns its table entry
  */
-export const lightEntry = (light: ChunkLight, condition: number | null): LightEntry => {
+export const lightEntry = (light: ChunkLight, group: number): LightEntry => {
 	const spot = light.type === LightType.Spot;
 	const box = light.cullingBox;
 	return {
 		kind: spot ? LightKind.Spot : LightKind.Point,
 		id: light.id,
-		levelTag: light.levelTag,
-		condition,
+		group,
 		position: light.position,
 		direction: light.direction,
 		color: light.color,

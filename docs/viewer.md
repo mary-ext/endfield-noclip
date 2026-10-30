@@ -123,11 +123,12 @@ REPLACE refinement on screen-space error, `geometricError · pixelFactor / dista
 - until everything a refinement needs is resident, the node keeps drawing its own HLOD, so streaming
   never opens holes. disabled HLOD tiers are refined past.
 - conditional content has no HLOD stand-in, so it follows its own rule: drawn while its tile spans
-  more than `maxSse` pixels and its conditional set evaluates true (see
-  [game-data/scene-states.md](game-data/scene-states.md)).
+  more than `maxSse` pixels.
 - manifest `global` refs are pinned and drawn whenever they're resident, never requested.
-- `setLevel(tag)` limits content to that level's tag plus shared tag 0, which is how one level is
-  shown alone over the shared terrain.
+- every ref is drawn only while its visibility group shows. the viewer evaluates `groupsShown` (see
+  [package-format.md](package-format.md#visibility-groups)) whenever the level or a scene value
+  changes and hands the same array to the selector, the water and the local lights, which is how one
+  level is shown alone over the shared terrain and how scene states switch content.
 
 ### terrain selection
 

@@ -78,10 +78,10 @@ export interface EnvironmentPlan {
 	profiles: PendingProfile[];
 	/** every phase a volume applies, uncomposed */
 	phases: PendingPhase[];
-	/** owned; `condition` is `null` until the packer interns {@link volumeStates} */
+	/** owned; `group` is 0 until the packer interns {@link volumeOwners} */
 	volumes: EnvironmentVolumeInfo[];
-	/** per volume: the MapConfig scene state indices that load it, empty if always loaded */
-	volumeStates: number[][];
+	/** per volume: its level's tag and the MapConfig scene state indices that load it, empty if always loaded */
+	volumeOwners: { levelTag: number; sceneStates: number[] }[];
 	/** textures the profiles and phases reference; slots index this list */
 	textures: ObjectRef[];
 	debug: LevelEnvironmentDebug[];
@@ -134,7 +134,7 @@ export const planEnvironments = async (
 		profiles: [],
 		phases: [],
 		volumes: [],
-		volumeStates: [],
+		volumeOwners: [],
 		textures: [],
 		debug: [],
 	};
@@ -244,7 +244,7 @@ export const planEnvironments = async (
 					);
 		plan.volumes.push({
 			name: volume.name.replace(/#.*$/, ''),
-			levelTag: tag,
+			group: 0,
 			shape,
 			blendMode: volume.blendMode,
 			priority: volume.priority,
@@ -252,10 +252,9 @@ export const planEnvironments = async (
 			fadeInDuration: volume.fadeInDuration,
 			fadeOutDuration: volume.fadeOutDuration,
 			phase: index,
-			condition: null,
 			activation: 'unknown',
 		});
-		plan.volumeStates.push(sceneStates);
+		plan.volumeOwners.push({ levelTag: tag, sceneStates });
 	}
 	return plan;
 };

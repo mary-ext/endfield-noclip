@@ -43,7 +43,7 @@ test('a culling box maps its centre to 0 and its faces to ±1, rotated by Unity 
 		light({
 			cullingBox: { offset: [1, 2, 3], halfExtents: [2, 4, 8], rotation: [0, 90, 0], falloffThreshold: 0.8 },
 		}),
-		null,
+		0,
 	);
 	const matrix = entry.cullingBox?.matrix ?? [];
 	const close = (actual: number[], expected: number[]) =>
@@ -58,10 +58,10 @@ test('a culling box maps its centre to 0 and its faces to ±1, rotated by Unity 
 });
 
 test('spots keep their cone and lose the length field, which only tubes use', () => {
-	const spot = lightEntry(light({ type: LightType.Spot }), null);
+	const spot = lightEntry(light({ type: LightType.Spot }), 0);
 	assert.equal(spot.kind, LightKind.Spot);
 	assert.deepEqual([spot.spotAngle, spot.innerSpotAngle, spot.tubeLength], [30, 20, 0]);
-	const point = lightEntry(light(), null);
+	const point = lightEntry(light(), 0);
 	assert.deepEqual([point.kind, point.spotAngle, point.tubeLength], [LightKind.Point, 0, 3]);
 });
 
@@ -73,19 +73,22 @@ test('lights load unconditionally from always-loaded files and with their scene 
 	collector.add(light({ id: 2 }), 5);
 	collector.add(light({ id: 3, shadowOnly: true }), 0);
 	collector.add(light({ id: 4, type: LightType.Directional }), 0);
-	const seen: number[][] = [];
-	const table = collector.finish((states) => {
-		seen.push(states);
-		return 7;
+	const seen: [number, number[]][] = [];
+	const table = collector.finish((levelTag, states) => {
+		seen.push([levelTag, states]);
+		return seen.length;
 	});
 	assert.deepEqual(
-		table.lights.map((entry) => [entry.id, entry.condition]),
+		table.lights.map((entry) => [entry.id, entry.group]),
 		[
-			[1, null],
-			[2, 7],
+			[1, 1],
+			[2, 2],
 		],
 	);
 	// MapConfig indices are the files' suffixes minus one
-	assert.deepEqual(seen, [[1, 4]]);
+	assert.deepEqual(seen, [
+		[2, []],
+		[2, [1, 4]],
+	]);
 	assert.deepEqual(collector.skipped, { 'shadow only': 1, 'type 1': 1 });
 });

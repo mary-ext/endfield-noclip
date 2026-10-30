@@ -30,9 +30,19 @@ const phase = (name: string, density: number): EnvironmentPhaseInfo =>
 		sections: { heightFog: { heightFogDensity: density, enable: true } },
 	}) as unknown as EnvironmentPhaseInfo;
 
+/** the fixture's visibility groups */
+const LEVEL_1 = 0;
+const LEVEL_2 = 1;
+const LEVEL_1_WITH_STATE = 2;
+const groups = [
+	{ levelTag: 1, condition: null },
+	{ levelTag: 2, condition: null },
+	{ levelTag: 1, condition: 0 },
+];
+
 const volume = (patch: Partial<EnvironmentVolumeInfo>): EnvironmentVolumeInfo => ({
 	name: 'v',
-	levelTag: 1,
+	group: LEVEL_1,
 	shape: { kind: 'global' },
 	blendMode: 1,
 	priority: 100,
@@ -40,14 +50,17 @@ const volume = (patch: Partial<EnvironmentVolumeInfo>): EnvironmentVolumeInfo =>
 	fadeInDuration: 0,
 	fadeOutDuration: 0,
 	phase: 0,
-	condition: null,
 	activation: 'unknown',
 	...patch,
 });
 
 const manifest = (phases: EnvironmentPhaseInfo[], volumes: EnvironmentVolumeInfo[]): PackageManifest =>
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the blend reads only these lists
-	({ environmentPhases: phases, environmentVolumes: volumes }) as unknown as PackageManifest;
+	({
+		environmentPhases: phases,
+		environmentVolumes: volumes,
+		states: { groups },
+	}) as unknown as PackageManifest;
 
 const density = (result: ReturnType<typeof blendEnvironment>): number =>
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the stand-in's field
@@ -99,7 +112,7 @@ describe('environment blend', () => {
 	});
 
 	it('skips volumes whose scene states are off, unless previewed by hand', () => {
-		const m = manifest([phase('night', 5)], [volume({ condition: 0, blendMode: 0 })]);
+		const m = manifest([phase('night', 5)], [volume({ group: LEVEL_1_WITH_STATE, blendMode: 0 })]);
 		const at: Vec3 = [0, 0, 0];
 		assert.equal(density(blendEnvironment(m, profile(0), at, { ...options, loaded: [false] })), 0);
 		assert.equal(density(blendEnvironment(m, profile(0), at, { ...options, loaded: [true] })), 5);
@@ -176,7 +189,7 @@ describe('eyeInLevelVolume', () => {
 		} as const satisfies EnvironmentVolumeShape;
 		const m = manifest(
 			[phase('base', 1), phase('next door', 2)],
-			[volume({ shape: square, blendDistance: 1 }), volume({ levelTag: 2, phase: 1, shape: neighbour })],
+			[volume({ shape: square, blendDistance: 1 }), volume({ group: LEVEL_2, phase: 1, shape: neighbour })],
 		);
 		const eye = eyeInLevelVolume(m, 1, profile(0), target, [-50, 10, 50], {});
 		assert.ok(eye !== null);
@@ -199,7 +212,7 @@ describe('eyeInLevelVolume', () => {
 			[
 				volume({ shape: elsewhere, blendMode: 3 }),
 				volume({ shape: square, blendDistance: 1 }),
-				volume({ levelTag: 2, phase: 1, shape: square }),
+				volume({ group: LEVEL_2, phase: 1, shape: square }),
 			],
 		);
 		// the scripted volume isn't the level's own, and the switched-off neighbour doesn't block the view

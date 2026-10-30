@@ -16,7 +16,7 @@ export const ROW_BYTES = ROW_WORDS * 4;
 /** f32 per row in {@link InstanceRows.cull}: bounding radius, largest half extent */
 export const CULL_FLOATS = 2;
 
-/** what a row draws as, packed into bits 8–11 of its info word; tiers 0–2 are HLOD tiers */
+/** what a row draws as, its info word; tiers 0–2 are HLOD tiers */
 export const RowKind = {
 	Hlod0: 0,
 	Hlod1: 1,
@@ -50,14 +50,8 @@ export interface InstanceRows {
 }
 
 /**
- * @param entityId the game's entity id
- * @returns the tag of the level that owns the entity
- */
-export const entityTag = (entityId: number): number => entityId >>> 27;
-
-/**
  * row: f32×12 transform rows (relative to the block origin), f32×3 bounds centre (relative), u32 block slot,
- * f32×3 half extents, u32 info (`tag | kind << 8 | sceneState << 16`, see {@link entityTag}).
+ * f32×3 half extents, u32 info (the row's {@link RowKind}, for the debug boxes).
  *
  * the block slot is left 0; {@link assignBlockSlot} sets it once the block gets a slot.
  *
@@ -90,7 +84,7 @@ export const buildInstanceRows = (block: InstanceBlock, kinds: RowKinds): Instan
 		f32[at + 16] = ex;
 		f32[at + 17] = ey;
 		f32[at + 18] = ez;
-		rows[at + 19] = entityTag(block.entityIds[i]) | (rowKinds[i] << 8) | (block.sceneStates[i] << 16);
+		rows[at + 19] = rowKinds[i];
 		// from the f32-rounded extents, as the GPU sees them
 		const fx = f32[at + 16];
 		const fy = f32[at + 17];

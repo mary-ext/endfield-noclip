@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 
-import { conditionVisible, defaultSceneValues } from './conditions.ts';
+import { conditionResults, conditionVisible, defaultSceneValues, groupsShown } from './conditions.ts';
 import type { ConditionalSetInfo, StatesInfo } from './states.ts';
 
 it('selects mutually exclusive upgrades while preserving shared and script-gated resources', () => {
@@ -27,6 +27,7 @@ it('selects mutually exclusive upgrades while preserving shared and script-gated
 			},
 		],
 		conditionalSets: [],
+		groups: [],
 	};
 	const initial = defaultSceneValues(states);
 	const before = { alternatives: [[{ control: 'poi:facility', mask: 1 }]] };
@@ -62,4 +63,27 @@ it('selects mutually exclusive upgrades while preserving shared and script-gated
 		true,
 	);
 	assert.deepEqual(initial, { 'poi:facility': 0, 'script:course': 0 });
+});
+
+it('shows a group when the level owns it or every level does, and its condition holds', () => {
+	const states: StatesInfo = {
+		progressions: [],
+		toggles: [],
+		conditionalSets: [
+			{ alternatives: [[{ control: 'sceneState:0', mask: 2 }]] },
+			{ alternatives: [[{ control: 'sceneState:1', mask: 2 }]] },
+		],
+		groups: [
+			{ levelTag: 0, condition: null },
+			{ levelTag: 1, condition: null },
+			{ levelTag: 2, condition: null },
+			{ levelTag: 1, condition: 0 },
+			{ levelTag: 0, condition: 1 },
+		],
+	};
+	const conditions = conditionResults(states, { 'sceneState:0': 1, 'sceneState:1': 0 });
+	assert.deepEqual(conditions, [true, false]);
+	assert.deepEqual(groupsShown(states, 1, conditions), [true, true, false, true, false]);
+	assert.deepEqual(groupsShown(states, 2, conditions), [true, false, true, false, false]);
+	assert.deepEqual(groupsShown(states, null, conditions), [true, true, true, true, false]);
 });

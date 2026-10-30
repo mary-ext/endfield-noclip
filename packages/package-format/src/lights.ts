@@ -2,8 +2,8 @@ import type { Vec3 } from './values.ts';
 
 /**
  * `tables/lights.json`: the scene's local point and spot lights, loaded with the core. a viewer lights with
- * the ones carrying the current level's tag plus tag 0, like instances. the game's directional lights, lights
- * that only cast shadows and lights that only light characters are left out
+ * the ones whose group shows, like instances. the game's directional lights, lights that only cast shadows
+ * and lights that only light characters are left out
  */
 export interface LightsTable {
 	lights: LightEntry[];
@@ -23,13 +23,8 @@ export interface LightEntry {
 	kind: LightKind;
 	/** the game's entity id */
 	id: number;
-	/** the owning level's tag (`id >>> 27`), matching {@link LevelInfo.tag} */
-	levelTag: number;
-	/**
-	 * index into {@link StatesInfo.conditionalSets} when the light only loads with some scene states, else
-	 * `null`
-	 */
-	condition: number | null;
+	/** index into `StatesInfo.groups`: the owning level and the scene states that load the light */
+	group: number;
 	position: Vec3;
 	/** unit direction the light points along (a spot's axis, a tube's segment) */
 	direction: Vec3;

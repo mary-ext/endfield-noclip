@@ -64,8 +64,11 @@ export type EnvironmentVolumeShape =
 export interface EnvironmentVolumeInfo {
 	/** the object's name */
 	name: string;
-	/** the owning level's tag (0 for scene-wide) */
-	levelTag: number;
+	/**
+	 * index into `StatesInfo.groups`: the owning level (tag 0 for scene-wide) and the scene states that load
+	 * it. a volume applies wherever it holds the camera, whichever level is shown, once its condition holds
+	 */
+	group: number;
 	shape: EnvironmentVolumeShape;
 	blendMode: number;
 	priority: number;
@@ -74,11 +77,6 @@ export interface EnvironmentVolumeInfo {
 	fadeOutDuration: number;
 	/** index into {@link PackageManifest.environmentPhases}, or `null` if the phase is unset or unreadable */
 	phase: number | null;
-	/**
-	 * index into {@link StatesInfo.conditionalSets} when the volume only loads with some scene states, `null`
-	 * when it's always loaded
-	 */
-	condition: number | null;
 	/** script activation has not been recovered; previewing this volume assumes it is enabled */
 	activation: 'unknown';
 }

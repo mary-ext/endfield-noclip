@@ -80,7 +80,7 @@ fn load_box(ii: u32) -> Box {
 	var box: Box;
 	box.center = blocks[row.block].xyz + row.center;
 	box.extent = max(row.extent, vec3f(0.05));
-	box.color = kind_color((row.info >> 8u) & 0xfu);
+	box.color = kind_color(row.info & 0xfu);
 	// small-feature culling: drop boxes below the projected size threshold
 	let pixels = length(box.extent) * frame.viewport.z / max(length(box.center), 1.0);
 	box.visible = pixels >= frame.viewport.w;

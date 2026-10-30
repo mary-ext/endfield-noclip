@@ -101,8 +101,7 @@ export class Selector {
 	#pageQuads: number;
 	#rootSize: number;
 	#focusCells: ReadonlySet<string> | null = null;
-	#level: number | null = null;
-	#conditions: readonly boolean[] = [];
+	#groupsShown: readonly boolean[] = [];
 
 	/**
 	 * @param tree the linked tree
@@ -167,17 +166,12 @@ export class Selector {
 	// #region instances
 
 	/**
-	 * limits instances to one level's, plus shared (tag 0) content
+	 * limits instances to the shown level's and shared content that the scene values load
 	 *
-	 * @param tag the level's tag, or `null` to show every instance
+	 * @param shown per visibility group of the package, whether its content shows
 	 */
-	setLevel(tag: number | null): void {
-		this.#level = tag;
-	}
-
-	/** @param conditions visibility of each manifest conditional set */
-	setConditions(conditions: readonly boolean[]): void {
-		this.#conditions = [...conditions];
+	setGroupsShown(shown: readonly boolean[]): void {
+		this.#groupsShown = shown;
 	}
 
 	/**
@@ -197,7 +191,7 @@ export class Selector {
 			return;
 		}
 		for (const ref of node.conditional) {
-			if (!this.#shows(ref) || !this.#conditions[ref.param]) {
+			if (!this.#shows(ref)) {
 				continue;
 			}
 			const item = this.#stream.want(ref.blob, this.#priority(node, view.pixelFactor / distance, true));
@@ -213,7 +207,7 @@ export class Selector {
 	}
 
 	#shows(ref: ContentRef): boolean {
-		return this.#level === null || ref.levelTag === this.#level || ref.levelTag === 0;
+		return this.#groupsShown[ref.group] ?? false;
 	}
 
 	#priority(node: TileNode, sse: number, inView: boolean): number {

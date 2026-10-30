@@ -153,14 +153,11 @@ export class WaterRenderer {
 		this.#device.queue.writeBuffer(this.#configs, 0, data);
 	}
 
-	#conditions: readonly boolean[] = [];
+	#groupsShown: readonly boolean[] = [];
 
-	/**
-	 * @param results per conditional set of the package, whether the selected scene values satisfy it; surfaces
-	 *   whose condition is unsatisfied aren't drawn
-	 */
-	setConditions(results: readonly boolean[]): void {
-		this.#conditions = results;
+	/** @param shown per visibility group of the package, whether its content shows; others aren't drawn */
+	setGroupsShown(shown: readonly boolean[]): void {
+		this.#groupsShown = shown;
 	}
 
 	/** draws nothing until the next {@link prepare} */
@@ -171,17 +168,16 @@ export class WaterRenderer {
 	/**
 	 * picks this frame's surfaces and streams what they need.
 	 *
-	 * @param input the shown level's tag (`null` shows every surface), the camera, the stream and tables
+	 * @param input the camera, the stream and tables
 	 */
 	prepare(input: {
-		level: number | null;
 		eye: Vec3;
 		planes: readonly Plane[];
 		stream: StreamManager;
 		geometries: readonly GeometryEntry[];
 		textures: TextureStore;
 	}): void {
-		const { level, eye, planes, stream, geometries, textures } = input;
+		const { eye, planes, stream, geometries, textures } = input;
 		const table = this.#table;
 		this.clear();
 		if (table === null) {
@@ -191,11 +187,7 @@ export class WaterRenderer {
 		const words = this.#surfaceWords;
 		let slot = 0;
 		for (const surface of table.surfaces) {
-			// level 0 surfaces belong to no level and show with every one
-			if (level !== null && surface.levelTag !== level && surface.levelTag !== 0) {
-				continue;
-			}
-			if (surface.condition !== null && !this.#conditions[surface.condition]) {
+			if (!(this.#groupsShown[surface.group] ?? false)) {
 				continue;
 			}
 			const entry = geometries[surface.geometry];
