@@ -182,10 +182,11 @@ implemented in
 
 stock redistribution facilities (`int_system_domain_shop`), depots (`int_system_domain_depot`) and
 recycling stations (`int_doodad_core_recycle`) are placed by LevelData interactive rows rather than
-DynamicStreaming. their template's model-upgrade component lists ModelTable ids in authored order;
-each entry is one visual form with its own prefab. every placement (`createState` 0, deduplicated by
-id) becomes a `facility:<id>` progression whose levels are the list indices and whose default is the
-index of the template's base model (a recycling station starts at form 1).
+DynamicStreaming. their template's model-upgrade component (`InteractiveModelLevelUpComponentData`)
+lists ModelTable ids in authored order; each entry is one visual form with its own prefab. every
+placement (`createState` 0, deduplicated by id) becomes a `facility:<id>` progression whose levels
+are the list indices and whose default is the index of the template's base model (a recycling
+station starts at form 1).
 
 form numbers are positions in that list, not gameplay upgrade levels: how shop channel levels or
 depot levels map onto the list isn't recovered, so the viewer labels them "Visual form", not

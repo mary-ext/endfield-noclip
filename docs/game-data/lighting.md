@@ -39,8 +39,9 @@ proxies) isn't reproduced.
 ## shadows
 
 the game's PC high layout: three sharp cascades out to 12, 30 and 80 m, then a coarse layer the game
-keeps as a cached shadow map out to 800 m. the viewer draws all four as 2048² `depth32float` layers
-fitted to bounding spheres of frustum slices and snapped to world texels so edges don't crawl
+keeps as a cached, tiled shadow map out to 800 m (its ASM, `HGASMManager`, which the package's
+`asm*` shadow fields configure). the viewer draws all four as 2048² `depth32float` layers fitted to
+bounding spheres of frustum slices and snapped to world texels so edges don't crawl
 ([`render/shadow-map.ts`](../../packages/viewer/src/render/shadow-map.ts)). turning the camera
 doesn't change a sphere's fit. casters are what the main pass draws that frame, so geometry outside
 the view doesn't cast.

@@ -136,7 +136,8 @@ the manifest carries three lists
 ## blending at the camera
 
 [`render/environment-blend.ts`](../../packages/viewer/src/render/environment-blend.ts) follows the
-game's environment manager:
+game's environment manager, which blends `HGEnvironmentPhase`s into an interpolated phase (a
+"profile" here is a phase plus the post profile, not a Unity `VolumeProfile`):
 
 - start from the shown level's base profile.
 - visit volumes in ascending priority, then shape kind (global, box, prism). each that applies and

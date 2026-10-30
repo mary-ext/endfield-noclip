@@ -35,15 +35,15 @@ the game has three units, and this project names them the same way:
 counts (18 at the root, 3 in `defaultState`) and that the payload ends exactly at EOF, so any layout
 change fails loudly. fields the project uses:
 
-| field                                             | meaning                                                                                                              |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `id`, `idNum`                                     | string id and the numeric id MapConfig's grid stores                                                                 |
-| `mapId`                                           | the level's map (stored as `mapIdStr`), e.g. `map02`; not always its streaming scene, see below                      |
-| `defaultState.exportedSceneConfigPath`            | streaming scene asset, e.g. `map02/map02_streaming.asset`                                                            |
-| `defaultState.sourceSceneName`                    | the level's art sub-scene, e.g. `map02_lv001_art`                                                                    |
-| `levelGrids`                                      | the 128 m cells the level owns                                                                                       |
-| `levelDataPathHashes`                             | StringPathHash keys of the level's LevelData files (interactives, see [assets.md](assets.md#interactive-facilities)) |
-| `rectLeftBottom`, `rectRightTop`, `playerInitPos` | level rect and spawn point, used for the viewer's level list                                                         |
+| field                                             | meaning                                                                                                                                           |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `idNum`                                     | string id and the numeric id MapConfig's grid stores                                                                                              |
+| `mapId`                                           | the level's map (stored as `mapIdStr`), e.g. `map02`; not always its streaming scene, see below                                                   |
+| `defaultState.exportedSceneConfigPath`            | streaming scene asset, e.g. `map02/map02_streaming.asset`                                                                                         |
+| `defaultState.sourceSceneName`                    | the level's art sub-scene, e.g. `map02_lv001_art`                                                                                                 |
+| `levelGrids`                                      | the 128 m cells the level owns                                                                                                                    |
+| `levelDataPathHashes`                             | StringPathHash keys (stored as `levelDataPaths`) of the level's LevelData files (interactives, see [assets.md](assets.md#interactive-facilities)) |
+| `rectLeftBottom`, `rectRightTop`, `playerInitPos` | level rect and spawn point, used for the viewer's level list                                                                                      |
 
 code: [level-config.ts](../../packages/formats/src/endfield/level-config.ts)
 

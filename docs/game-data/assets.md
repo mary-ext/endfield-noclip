@@ -237,8 +237,9 @@ shops, depots and recycling stations are interactives whose look depends on an u
 visual forms come from three sources:
 
 1. the facility template `Data/Json/Interactive/InteractiveData/data_<template>.json` (pooled
-   MemoryPack). `readInteractiveModel` walks its components up to the model-upgrade component, which
-   lists model ids in visual-form order and must contain the base model id.
+   MemoryPack). `readInteractiveModel` walks its components up to the model-upgrade component
+   (`InteractiveModelLevelUpComponentData`), which lists model ids in visual-form order and must
+   contain the base model id.
 2. `Data/Json/GameplayConfig/ModelTable.json` maps each model id to a prefab path and `scaleFactor`.
 3. LevelData files (from LevelConfig `levelDataPathHashes`) place interactives.
    `readLevelInteractives` decodes the sequential prefix through the interactive list: template id,
