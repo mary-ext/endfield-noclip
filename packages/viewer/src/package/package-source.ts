@@ -19,19 +19,41 @@ export interface PackageSource {
 	readFile(path: string, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;
 	/**
 	 * @param path package-relative path
-	 * @param offset first byte
-	 * @param length byte count
+	 * @param range the bytes to read, and the file's size as the manifest records it
 	 * @param signal aborts the read
-	 * @returns exactly `length` bytes
+	 * @returns exactly `range.length` bytes
+	 * @throws {PackageChangedError} if the file's size differs from `range.fileSize`
 	 * @throws {Error} if the file is shorter than the range
 	 */
-	readRange(
-		path: string,
-		offset: number,
-		length: number,
-		signal?: AbortSignal,
-	): Promise<Uint8Array<ArrayBuffer>>;
+	readRange(path: string, range: ByteRange, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;
 }
+
+/** a byte range of a package file */
+export interface ByteRange {
+	/** first byte */
+	offset: number;
+	/** byte count */
+	length: number;
+	/** the whole file's size in the opened package's manifest */
+	fileSize: number;
+}
+
+/**
+ * thrown when a file no longer matches the opened package's manifest, as after a re-pack while the page was
+ * open; its ranges would point at the wrong bytes
+ */
+export class PackageChangedError extends Error {
+	override name = 'PackageChangedError';
+}
+
+/** @throws {PackageChangedError} unless `actual` is `expected` */
+const checkSize = (path: string, actual: number, expected: number): void => {
+	if (actual !== expected) {
+		throw new PackageChangedError(
+			`${path} is ${actual} bytes, but the package was opened with ${expected}; reload to read the new package`,
+		);
+	}
+};
 
 // #region http
 
@@ -54,14 +76,20 @@ export const httpSource = (baseUrl: string): PackageSource => {
 			const response = await fetchOk(path, { signal });
 			return new Uint8Array(await response.arrayBuffer());
 		},
-		async readRange(path, offset, length, signal) {
+		async readRange(path, { offset, length, fileSize }, signal) {
 			const response = await fetchOk(path, {
 				signal,
 				headers: { range: `bytes=${offset}-${offset + length - 1}` },
 			});
 			const bytes = new Uint8Array(await response.arrayBuffer());
+			const partial = response.status === 206;
+			// `bytes <first>-<last>/<size>`; the size may be `*` (unknown)
+			const total = partial ? /\/(\d+)$/.exec(response.headers.get('content-range') ?? '')?.[1] : undefined;
+			if (!partial || total !== undefined) {
+				checkSize(path, partial ? Number(total) : bytes.byteLength, fileSize);
+			}
 			// a server ignoring Range answers 200 with the whole file
-			const view = response.status === 206 ? bytes : bytes.subarray(offset, offset + length);
+			const view = partial ? bytes : bytes.subarray(offset, offset + length);
 			if (view.byteLength !== length) {
 				throw new Error(`${path}: short read at ${offset} (${view.byteLength} of ${length} bytes)`);
 			}
@@ -77,9 +105,9 @@ export const httpSource = (baseUrl: string): PackageSource => {
 const sliceFile = async (
 	file: Blob,
 	path: string,
-	offset: number,
-	length: number,
+	{ offset, length, fileSize }: ByteRange,
 ): Promise<Uint8Array<ArrayBuffer>> => {
+	checkSize(path, file.size, fileSize);
 	if (offset + length > file.size) {
 		throw new Error(`${path}: range ${offset}+${length} runs past ${file.size} bytes`);
 	}
@@ -116,8 +144,8 @@ export const directorySource = (root: FileSystemDirectoryHandle): PackageSource 
 		async readFile(path) {
 			return new Uint8Array(await (await open(path)).arrayBuffer());
 		},
-		async readRange(path, offset, length) {
-			return sliceFile(await open(path), path, offset, length);
+		async readRange(path, range) {
+			return sliceFile(await open(path), path, range);
 		},
 	};
 };
@@ -154,8 +182,8 @@ export const fileListSource = (files: Iterable<File>): PackageSource => {
 		async readFile(path) {
 			return new Uint8Array(await get(path).arrayBuffer());
 		},
-		readRange(path, offset, length) {
-			return sliceFile(get(path), path, offset, length);
+		readRange(path, range) {
+			return sliceFile(get(path), path, range);
 		},
 	};
 };

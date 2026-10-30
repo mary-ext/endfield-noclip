@@ -113,6 +113,17 @@ body,
 	}
 }
 
+.warning {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8px;
+	padding: 6px 8px;
+	border: 1px solid rgb(255 120 100 / 0.5);
+	border-radius: 6px;
+}
+
 .muted {
 	color: var(--muted);
 }

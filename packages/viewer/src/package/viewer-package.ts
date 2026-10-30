@@ -43,6 +43,8 @@ export interface BlobRange {
 	path: string;
 	start: number;
 	length: number;
+	/** the archive's size, which a read checks to notice a re-packed package */
+	archiveSize: number;
 }
 
 /** everything the viewer reads from the core archive up front */
@@ -164,14 +166,15 @@ export const openViewerPackage = async (
 		blobRange(index) {
 			const blob = blobs[index];
 			const info = manifest.archives[blob.archive];
-			if (info.dataOffset === null) {
-				throw new PackageError(`archive ${info.name} has no data offset`);
+			if (info.dataOffset === null || info.size === null) {
+				throw new PackageError(`archive ${info.name} has no data offset or size`);
 			}
 			return {
 				archive: blob.archive,
 				path: info.name,
 				start: info.dataOffset + blob.offset,
 				length: blob.length,
+				archiveSize: info.size,
 			};
 		},
 	};

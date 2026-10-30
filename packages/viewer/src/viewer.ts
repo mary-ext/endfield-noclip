@@ -194,6 +194,8 @@ export interface ViewerStats {
 	requests: number;
 	evictions: number;
 	failed: number;
+	/** the package was re-packed since it was opened; streaming has stopped until a reload */
+	packageChanged: boolean;
 	geometriesReady: number;
 	geometriesTotal: number;
 	camera: { position: Vec3; yaw: number; pitch: number; speed: number };
@@ -1149,6 +1151,7 @@ export class Viewer {
 			requests: 0,
 			evictions: 0,
 			failed: 0,
+			packageChanged: false,
 			geometriesReady: 0,
 			geometriesTotal: 0,
 			camera: { position: [0, 0, 0], yaw: 0, pitch: 0, speed: 0 },
@@ -1550,6 +1553,7 @@ export class Viewer {
 			requests: stream?.requests ?? 0,
 			evictions: stream?.evictions ?? 0,
 			failed: stream?.failed ?? 0,
+			packageChanged: stream?.packageChanged ?? false,
 			camera: {
 				position: [...camera.position],
 				yaw: camera.yaw,

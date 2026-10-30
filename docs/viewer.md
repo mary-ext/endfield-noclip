@@ -26,6 +26,11 @@ whole-file reads and byte-range reads:
 | `directorySource` | a folder picked with the File System Access API (`showDirectoryPicker`), or a package copied into OPFS              |
 | `fileListSource`  | a `<input webkitdirectory>` fallback where `showDirectoryPicker` is missing                                         |
 
+every range read passes the archive's size from the manifest. a source whose file has another size
+throws `PackageChangedError`; the stream manager then stops fetching shards (resident content stays
+drawn) and the stats panel offers a reload, instead of decoding wrong bytes into dozens of failed
+blobs.
+
 the package panel ([`ui/package-panel.tsx`](../packages/viewer/src/ui/package-panel.tsx)) offers all
 three. "copy to browser storage" imports a picked folder into OPFS (skipping `debug/`, which the
 viewer never reads) so it can be reopened without picking it again.
@@ -356,7 +361,9 @@ agent-browser --webgpu open 'http://localhost:5199/?package=map02&level=map02_lv
 - after `agent-browser close`, reopen with `--webgpu` again.
 - `agent-browser console` keeps lines from before a reload; read only what follows
   `[vite] connected`.
-- after re-packing, reload once without cache, so no shard range is served from the old archive.
+- after re-packing, reload: an open page keeps the old core archive's offsets. it notices when a
+  shard's size no longer matches its manifest, stops streaming and offers a reload (see
+  [sources](#sources)), but a re-pack that keeps a shard's size goes unnoticed.
 - wrap multi-statement `agent-browser eval` code in an IIFE: top-level `const` collides across
   evals.
 

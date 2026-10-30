@@ -22,7 +22,8 @@ import type {
 	DecodedSurface,
 	DecodedTexture,
 } from '../package/decode-protocol.ts';
-import { CORE_ARCHIVE_INDEX, type ViewerPackage } from '../package/viewer-package.ts';
+import { PackageChangedError } from '../package/package-source.ts';
+import { type BlobRange, CORE_ARCHIVE_INDEX, type ViewerPackage } from '../package/viewer-package.ts';
 import type { RowKinds } from '../render/instance-rows.ts';
 
 // #region types
@@ -189,6 +190,8 @@ export interface StreamStats {
 	requests: number;
 	evictions: number;
 	failed: number;
+	/** a shard no longer matches the manifest (re-packed since opening); fetching has stopped */
+	packageChanged: boolean;
 }
 
 /** tunables */
@@ -239,6 +242,7 @@ export class StreamManager {
 		requests: 0,
 		evictions: 0,
 		failed: 0,
+		packageChanged: false,
 	};
 	/** bumped whenever content becomes resident or is evicted, so the frame loop knows to redraw */
 	version = 0;
@@ -462,10 +466,12 @@ export class StreamManager {
 	}
 
 	#enqueue(item: ContentItem): void {
-		item.state = 'queued';
 		if (item.archive === CORE_ARCHIVE_INDEX) {
+			item.state = 'queued';
 			this.#queuedCore.add(item);
-		} else {
+		} else if (!this.stats.packageChanged) {
+			// once the shards changed, their blobs stay idle so the stream can settle
+			item.state = 'queued';
 			this.#queued.add(item);
 		}
 	}
@@ -492,6 +498,13 @@ export class StreamManager {
 	}
 
 	#dispatch(): void {
+		if (this.stats.packageChanged) {
+			// every shard read would hit the wrong bytes; resident content stays drawn
+			for (const item of this.#queued) {
+				item.state = 'idle';
+			}
+			this.#queued.clear();
+		}
 		if (this.#saturated) {
 			this.#dequeue(this.#queued, { unpinned: true });
 			this.#dequeue(this.#queuedCore, { unpinned: true });
@@ -556,16 +569,20 @@ export class StreamManager {
 				item.state = 'fetching';
 				this.#queued.delete(item);
 			}
-			this.#fetch(this.#package.blobRange(seed.blob).path, start, end, members);
+			this.#fetch(this.#package.blobRange(seed.blob), start, end, members);
 		}
 	}
 
-	#fetch(path: string, start: number, end: number, members: QueuedRange[]): void {
+	#fetch(range: BlobRange, start: number, end: number, members: QueuedRange[]): void {
 		const request = { items: members.map((member) => member.item), abort: new AbortController() };
 		this.#inFlight.add(request);
 		this.stats.requests++;
 		this.#package.source
-			.readRange(path, start, end - start, request.abort.signal)
+			.readRange(
+				range.path,
+				{ offset: start, length: end - start, fileSize: range.archiveSize },
+				request.abort.signal,
+			)
 			.then((bytes) => {
 				this.stats.downloadedBytes += bytes.byteLength;
 				const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
@@ -583,11 +600,16 @@ export class StreamManager {
 			})
 			.catch((err: unknown) => {
 				const aborted = request.abort.signal.aborted;
+				const changed = err instanceof PackageChangedError;
+				if (changed && !this.stats.packageChanged) {
+					this.stats.packageChanged = true;
+					console.warn(String(err));
+				}
 				for (const { item } of members) {
 					if (item.state !== 'fetching') {
 						continue;
 					}
-					if (aborted) {
+					if (aborted || changed) {
 						item.state = 'idle';
 					} else {
 						this.#fail(item, err);

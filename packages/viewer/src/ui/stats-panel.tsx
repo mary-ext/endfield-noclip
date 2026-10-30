@@ -31,6 +31,14 @@ export const StatsPanel = ({ viewer }: { viewer: Viewer }) => {
 	}
 	return (
 		<section className="panel stats" aria-label="statistics">
+			{s.packageChanged && (
+				<div className="warning" role="alert">
+					<p>The package changed on disk. Streaming has stopped.</p>
+					<button type="button" onClick={() => location.reload()}>
+						Reload
+					</button>
+				</div>
+			)}
 			<dl>
 				{rows.map(([label, value]) => (
 					<div key={label}>
