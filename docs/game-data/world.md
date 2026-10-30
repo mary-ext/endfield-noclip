@@ -275,8 +275,23 @@ near the camera the game draws a blend of tiling material layers instead of the 
 - **projection**: world position times the layer's repeats per metre, on the x, y or z plane picked
   by the baked normal's `|n|⁸` weights (the game picks one plane per pixel at random)
 
-not reproduced: the cliff projection driven by the `C` page, parallax from the cone maps, and
-wetness from `S.a`.
+### puddles
+
+the `S` page's alpha is a puddle level, independent of weather. water stands where it rises above
+the ground: close up the ground is the layers' heights weighted by the splat weights (`Σ w · h`, the
+same `w` as above), far away a flat 0.5. with `w = sat((S.a − ground) / 0.46)`:
+
+- albedo × `1 − 0.35 w`
+- roughness → 0 and occlusion × `1 − 0.1 w`
+- the normal bends towards straight up by `0.98 w`
+
+layers with parallax enabled use a parallax-weighted height instead of `Σ w · h` in the game; the
+viewer doesn't pack those settings, so it always uses the plain weighted height. the viewer only has
+leaf `S` pages, so puddles stop where splat pages stop loading. the reflections in the puddles come
+from the viewer's screen-space reflections ([lighting](lighting.md#ambient)).
+
+not reproduced: the cliff projection driven by the `C` page, parallax from the cone maps, and rain
+ripples on puddles.
 
 `terrain scenes|tiles|export-heights` inspects and exports the data.
 

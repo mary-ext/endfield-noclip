@@ -63,6 +63,9 @@ const CELLS = 8u;
 const DETAIL_FADE_START = 96.0;
 const DETAIL_FADE_END = 144.0;
 const EPSILON = 6.103515625e-05;
+// puddle depth (level above the ground) at which a puddle is fully wet; the baked pages' ground is 0.5
+const PUDDLE_FULL = 0.46;
+const BAKED_GROUND = 0.5;
 
 struct VertexOut {
 	@builtin(position) position: vec4f,
@@ -188,19 +191,33 @@ fn sample_layer(tex: texture_2d_array<f32>, layer: Layer, f: Footprint) -> vec4f
 	return sum / max(weight, EPSILON);
 }
 
-// the close-up layer blend of one leaf: 4 layers per 8 m cell, weighted by the splat control and a height
-// blend, then tinted. `base` is the baked surface, whose normal orients the layers' normal maps
-fn detail_surface(in: VertexOut, base: Surface, f: Footprint) -> Surface {
-	let slot = in.detail - 1u;
-	let local = clamp(in.local, vec2f(0.0), vec2f(LEAF_METRES - 0.001));
-	let cell = vec2u(local / CELL_METRES);
-	let ordinals = unpack4xU8(detail_index[slot * CELLS * CELLS + cell.y * CELLS + cell.x]);
+fn leaf_local(in: VertexOut) -> vec2f {
+	return clamp(in.local, vec2f(0.0), vec2f(LEAF_METRES - 0.001));
+}
 
-	// the weights belong to this cell's layers, so filtering stays half a texel inside the cell
+// the leaf's splat control: rgb weight a cell's slots 0–2, a is the puddle level. the weights belong to the
+// cell's layers, so filtering stays half a texel inside the cell
+fn sample_control(slot: u32, local: vec2f) -> vec4f {
+	let cell = floor(local / CELL_METRES);
 	let inside = clamp(fract(local / CELL_METRES), vec2f(1.0 / 32.0), vec2f(31.0 / 32.0));
 	let texels_per_cell = (PAGE_TEXELS - 2.0 * PAGE_BORDER) / f32(CELLS);
-	let control_uv = (PAGE_BORDER + (vec2f(cell) + inside) * texels_per_cell) / PAGE_TEXELS;
-	let control = textureSampleLevel(detail_control, surface_sampler, control_uv, slot, 0.0);
+	let uv = (PAGE_BORDER + (cell + inside) * texels_per_cell) / PAGE_TEXELS;
+	return textureSampleLevel(detail_control, surface_sampler, uv, slot, 0.0);
+}
+
+struct Detail {
+	surface: Surface,
+	// the layers' height under the splat weights, which puddles fill up to
+	height: f32,
+}
+
+// the close-up layer blend of one leaf: 4 layers per 8 m cell, weighted by the splat control and a height
+// blend, then tinted. `base` is the baked surface, whose normal orients the layers' normal maps
+fn detail_surface(in: VertexOut, base: Surface, f: Footprint, control: vec4f) -> Detail {
+	let slot = in.detail - 1u;
+	let local = leaf_local(in);
+	let cell = vec2u(local / CELL_METRES);
+	let ordinals = unpack4xU8(detail_index[slot * CELLS * CELLS + cell.y * CELLS + cell.x]);
 	let weights = vec4f(control.rgb, clamp(1.0 - control.r - control.g - control.b, 0.0, 1.0));
 	let page_uv = (PAGE_BORDER + local * ((PAGE_TEXELS - 2.0 * PAGE_BORDER) / LEAF_METRES)) / PAGE_TEXELS;
 	let tint = textureSampleLevel(detail_tint, surface_sampler, page_uv, slot, 0.0);
@@ -257,7 +274,18 @@ fn detail_surface(in: VertexOut, base: Surface, f: Footprint) -> Surface {
 	s.normal = normalize(t * tangent_normal.x + b * tangent_normal.y + nb * tangent_normal.z);
 	s.roughness = clamp(roughness, 0.0, 1.0);
 	s.occlusion = clamp(occlusion, 0.0, 1.0);
-	return s;
+	return Detail(s, dot(heights, weights));
+}
+
+// standing water where the puddle level rises above the ground: darker, mirror-smooth and flat
+fn wet_surface(s: Surface, depth: f32) -> Surface {
+	let w = clamp(depth / PUDDLE_FULL, 0.0, 1.0);
+	var out = s;
+	out.albedo = s.albedo * mix(1.0, 0.65, w);
+	out.occlusion = s.occlusion * mix(1.0, 0.9, w);
+	out.roughness = mix(s.roughness, 0.0, w);
+	out.normal = normalize(mix(s.normal, vec3f(0.0, 1.0, 0.0), w * 0.98));
+	return out;
 }
 
 @fragment
@@ -286,15 +314,22 @@ fn fs_main(in: VertexOut) -> Shaded {
 		s.roughness = packed.z;
 		s.occlusion = packed.w;
 	}
-	let fade = 1.0 - smoothstep(DETAIL_FADE_START, DETAIL_FADE_END, length(in.rel));
-	if (in.detail != 0u && fade > 0.0) {
-		let a = pow(abs(s.normal), vec3f(8.0));
-		f.axes = a / (a.x + a.y + a.z + EPSILON);
-		let d = detail_surface(in, s, f);
-		s.albedo = mix(s.albedo, d.albedo, fade);
-		s.normal = normalize(mix(s.normal, d.normal, fade));
-		s.roughness = mix(s.roughness, d.roughness, fade);
-		s.occlusion = mix(s.occlusion, d.occlusion, fade);
+	if (in.detail != 0u) {
+		let control = sample_control(in.detail - 1u, leaf_local(in));
+		// puddles fill to the control's alpha: over the layers' height close up, over a flat ground far away
+		var ground = BAKED_GROUND;
+		let fade = 1.0 - smoothstep(DETAIL_FADE_START, DETAIL_FADE_END, length(in.rel));
+		if (fade > 0.0) {
+			let a = pow(abs(s.normal), vec3f(8.0));
+			f.axes = a / (a.x + a.y + a.z + EPSILON);
+			let d = detail_surface(in, s, f, control);
+			s.albedo = mix(s.albedo, d.surface.albedo, fade);
+			s.normal = normalize(mix(s.normal, d.surface.normal, fade));
+			s.roughness = mix(s.roughness, d.surface.roughness, fade);
+			s.occlusion = mix(s.occlusion, d.surface.occlusion, fade);
+			ground = mix(ground, d.height, fade);
+		}
+		s = wet_surface(s, control.a - ground);
 	}
 	return shade_surface(s, in.rel, in.position.xy);
 }

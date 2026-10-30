@@ -34,7 +34,7 @@ packs or renders correctly.
   index tables, and other index magics
 - the game's own vignette (the viewer uses URP's); bloom dirt, additive upsampling and character
   bloom; colour curves are not packed
-- weather: rain/snow configs are not packed, and precipitation and wetness don't render. the
+- weather: rain/snow configs are not packed, and precipitation and rain wetness don't render. the
   weather-script activation and property initialization are unknown, so weather stays a manual
   preview
 - environment volume initial enablement and `EnvironmentEnable` script conditions, needed before any
@@ -56,7 +56,9 @@ packs or renders correctly.
   - local reflection probes, GTAO in specular occlusion, contact shadows
 - the packed tangent frame isn't decoded; tangents are regenerated
 - terrain close up: smooth triplanar replaces the game's random plane choice, and the cliff
-  projection, cone-map parallax and wetness aren't drawn; the blend's GPU cost is unprofiled
+  projection and cone-map parallax aren't drawn; the blend's GPU cost is unprofiled
+- puddles ([world](game-data/world.md#puddles)) stop past the leaf splat pages' load distance,
+  ignore the parallax layers' height, and have no ripples
 - screen-space reflections are the viewer's own (unprofiled, single ray, no blur for rough
   surfaces); off-screen reflections fall back to the sky cubemap
 - foliage wind and transmission, grass instancing, decals, layered materials
