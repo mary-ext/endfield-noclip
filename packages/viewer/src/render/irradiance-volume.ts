@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { IrradianceTable } from '@endfield-noclip/package-format/format';
+import type { IrradianceTable } from '@endfield-noclip/package-format/irradiance';
 
 import { GrowableBuffer } from '../gfx/growable-buffer.ts';
 import type { DecodedIrradiance } from '../package/decode-protocol.ts';

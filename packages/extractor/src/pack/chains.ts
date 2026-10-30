@@ -1,4 +1,4 @@
-import { type Chain, ChainFlags, type ChainDraw, DrawRole } from '@endfield-noclip/package-format/format';
+import { type Chain, ChainFlags, type ChainDraw, DrawRole } from '@endfield-noclip/package-format/instances';
 
 // float bits make the dedupe key exact: two thresholds are the same only if their f32 bits are
 const f32 = new Float32Array(1);

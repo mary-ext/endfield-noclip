@@ -32,62 +32,69 @@ import {
 	unityEulerQuaternion,
 } from '@endfield-noclip/formats/unity/transform';
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
+import { encodeBlobTable } from '@endfield-noclip/package-format/blob-table';
+import { BLOB_KIND_NAMES, BlobKind } from '@endfield-noclip/package-format/blobs';
+import type {
+	EnvironmentPhaseInfo,
+	EnvironmentProfile,
+	EnvironmentVolumeInfo,
+} from '@endfield-noclip/package-format/environment';
+import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
 import {
-	encodeBlobTable,
 	encodeChains,
-	encodeSplatPage,
-	encodeHeightPage,
 	encodeInstanceBlock,
-	encodeIrradianceTable,
-	encodeSurfacePage,
-	encodeTree,
-} from '@endfield-noclip/package-format/codec';
+	type ChainDraw,
+	DrawRole,
+	type InstanceBlock,
+} from '@endfield-noclip/package-format/instances';
+import { encodeIrradianceTable, type IrradianceTable } from '@endfield-noclip/package-format/irradiance';
+import type { LightsTable } from '@endfield-noclip/package-format/lights';
 import {
 	type ArchiveInfo,
-	BLOB_KIND_NAMES,
-	BlobKind,
-	type Bounds,
-	type ChainDraw,
-	CONTENT_KIND_NAMES,
-	ContentKind,
-	type ContentRef,
-	type ConditionalSetInfo,
-	type SceneToggleInfo,
 	COORDINATE_CONVENTIONS,
 	CORE_ARCHIVE,
 	CORE_PATHS,
-	DrawRole,
-	type EnvironmentPhaseInfo,
-	type EnvironmentProfile,
-	type EnvironmentVolumeInfo,
-	type GeometryTable,
-	type InstanceBlock,
-	type IrradianceTable,
-	isTerrainHole,
 	type LevelInfo,
-	type LightsTable,
-	type MaterialTable,
-	NodeFlags,
 	PACKAGE_FORMAT,
 	PACKAGE_VERSION,
 	type PackageManifest,
-	type ProgressionInfo,
-	type Rect,
 	shardArchiveName,
 	type SubsetInfo,
+} from '@endfield-noclip/package-format/manifest';
+import type { MaterialTable } from '@endfield-noclip/package-format/materials';
+import type {
+	ConditionalSetInfo,
+	SceneToggleInfo,
+	ProgressionInfo,
+} from '@endfield-noclip/package-format/states';
+import {
+	encodeSplatPage,
+	encodeHeightPage,
+	encodeSurfacePage,
+	isTerrainHole,
 	type TerrainSplatInfo,
 	type TerrainInfo,
 	terrainHeight,
-	type TextureTable,
+} from '@endfield-noclip/package-format/terrain';
+import type { TextureTable } from '@endfield-noclip/package-format/textures';
+import {
 	type TileKey,
 	tileAncestor,
 	tileAt,
 	tileFootprint,
 	tileId,
+} from '@endfield-noclip/package-format/tiles';
+import {
+	encodeTree,
+	CONTENT_KIND_NAMES,
+	ContentKind,
+	type ContentRef,
+	NodeFlags,
 	type Tree,
 	type TreeInfo,
-	type WaterTable,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/tree';
+import type { Bounds, Rect } from '@endfield-noclip/package-format/values';
+import type { WaterTable } from '@endfield-noclip/package-format/water';
 
 import { getOrInsert } from '../collections.ts';
 import type { Context } from '../context.ts';

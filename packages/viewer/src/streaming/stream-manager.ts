@@ -7,7 +7,7 @@
  * @module
  */
 
-import { BlobKind } from '@endfield-noclip/package-format/format';
+import { BlobKind } from '@endfield-noclip/package-format/blobs';
 
 import type { RangeAllocation } from '../gfx/range-allocator.ts';
 import type { DecodePool } from '../package/decode-pool.ts';

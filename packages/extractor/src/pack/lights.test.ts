@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { type ChunkLight, LightType } from '@endfield-noclip/formats/endfield/chunk-lights';
-import { LightKind } from '@endfield-noclip/package-format/format';
+import { LightKind } from '@endfield-noclip/package-format/lights';
 
 import { LightCollector, lightEntry } from './lights.ts';
 

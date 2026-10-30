@@ -7,7 +7,8 @@
  */
 
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
-import { type TileKey, type TreeInfo, tileAt } from '@endfield-noclip/package-format/format';
+import { type TileKey, tileAt } from '@endfield-noclip/package-format/tiles';
+import type { TreeInfo } from '@endfield-noclip/package-format/tree';
 
 /** slack when testing whether a cluster's bounds contain a detail instance's, m */
 const CONTAIN_SLACK = 0.5;

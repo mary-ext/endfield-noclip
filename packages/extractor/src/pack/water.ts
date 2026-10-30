@@ -1,14 +1,14 @@
 import type { WaterGlobalConfig, WaterSurfaceConfig } from '@endfield-noclip/formats/endfield/water';
 import type { PPtr } from '@endfield-noclip/formats/unity/values';
+import type { TextureRef } from '@endfield-noclip/package-format/textures';
+import type { Rect } from '@endfield-noclip/package-format/values';
 import type {
-	Rect,
-	TextureRef,
 	WaterConfig,
 	WaterConfigEntry,
 	WaterGlobal,
 	WaterSurfaceEntry,
 	WaterTable,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/water';
 
 import { intern } from '../collections.ts';
 import type { Context } from '../context.ts';

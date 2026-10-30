@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { it } from 'node:test';
 
 import { conditionVisible, defaultSceneValues } from './conditions.ts';
-import type { ConditionalSetInfo, StatesInfo } from './format.ts';
+import type { ConditionalSetInfo, StatesInfo } from './states.ts';
 
 it('selects mutually exclusive upgrades while preserving shared and script-gated resources', () => {
 	const states: StatesInfo = {

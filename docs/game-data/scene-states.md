@@ -206,7 +206,7 @@ them. they are labels for finding the control, not evidence of what activates it
 
 ## how the package encodes conditions
 
-types in [`format.ts`](../../packages/package-format/src/format.ts) (`StatesInfo`,
+types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo`,
 `SceneToggleInfo`, `ProgressionInfo`, `ConditionalSetInfo`); evaluation in
 [`conditions.ts`](../../packages/package-format/src/conditions.ts). the container layout is in
 [package-format.md](../package-format.md).

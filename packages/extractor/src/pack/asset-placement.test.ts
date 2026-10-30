@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { DrawRole } from '@endfield-noclip/package-format/format';
+import { DrawRole } from '@endfield-noclip/package-format/instances';
 
 import { AssetArchives, AssetPlacement, commonAncestor, mergePlaces } from './asset-placement.ts';
 

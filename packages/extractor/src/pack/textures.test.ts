@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { VkFormat } from '@endfield-noclip/formats/binary/ktx2';
 import type { DecodedTexture } from '@endfield-noclip/formats/unity/texture';
-import { TEXTURE_TAIL_BYTES } from '@endfield-noclip/package-format/format';
+import { TEXTURE_TAIL_BYTES } from '@endfield-noclip/package-format/textures';
 
 import { convertTexture, splitLevels } from './textures.ts';
 

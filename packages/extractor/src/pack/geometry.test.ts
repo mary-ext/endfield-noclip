@@ -10,15 +10,15 @@ import {
 	unpackHgNormal,
 	VertexAttributeFormat,
 } from '@endfield-noclip/formats/unity/mesh';
-import { decodeGeometryBlob } from '@endfield-noclip/package-format/codec';
 import {
+	decodeGeometryBlob,
 	GEOMETRY_VERTEX_FORMATS,
 	GeometryFlags,
 	type GeometryStream,
 	GeometryStreamFlags,
 	GeometryVertexFormat,
 	VertexAttribute,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/geometry';
 
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
 

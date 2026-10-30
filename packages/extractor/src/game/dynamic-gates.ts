@@ -1,6 +1,6 @@
 import type { DynamicGate } from '@endfield-noclip/formats/endfield/dynamic-scene';
 import type { CompareOperator, SceneCondition } from '@endfield-noclip/formats/endfield/map-config';
-import type { SceneToggleInfo } from '@endfield-noclip/package-format/format';
+import type { SceneToggleInfo } from '@endfield-noclip/package-format/states';
 
 import { describe, evaluate } from './scene-conditions.ts';
 

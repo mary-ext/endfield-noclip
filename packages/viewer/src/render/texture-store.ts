@@ -13,7 +13,7 @@ import {
 	TEXTURE_FORMATS,
 	type TextureTable,
 	textureLevelLayout,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/textures';
 
 import type { DecodedTexture } from '../package/decode-protocol.ts';
 import type { ResidentTexture } from '../streaming/stream-manager.ts';

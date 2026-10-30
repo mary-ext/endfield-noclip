@@ -3,7 +3,7 @@ import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { crc32 } from 'node:zlib';
 
-import { BlobCodec } from '@endfield-noclip/package-format/format';
+import { BlobCodec } from '@endfield-noclip/package-format/blobs';
 
 import { getOrInsert } from '../collections.ts';
 import { ignoreMissing } from '../errors.ts';

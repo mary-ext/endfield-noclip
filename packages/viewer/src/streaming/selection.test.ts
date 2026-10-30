@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 
-import { ContentKind, type ContentRef } from '@endfield-noclip/package-format/format';
+import { ContentKind, type ContentRef } from '@endfield-noclip/package-format/tree';
 
 import { Camera } from '../scene/camera.ts';
 import type { TileNode, TileTree } from '../scene/tile-tree.ts';

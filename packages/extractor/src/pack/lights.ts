@@ -1,6 +1,6 @@
 import { type ChunkLight, LightType } from '@endfield-noclip/formats/endfield/chunk-lights';
 import { unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
-import { type LightEntry, LightKind, type LightsTable } from '@endfield-noclip/package-format/format';
+import { type LightEntry, LightKind, type LightsTable } from '@endfield-noclip/package-format/lights';
 
 // local lights for `tables/lights.json`. lights repeat in every cell chunk they overlap and in stream areas, so
 // they're deduplicated by id; files arrive always-loaded first, so a light any always-loaded file holds stays

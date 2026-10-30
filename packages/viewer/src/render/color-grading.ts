@@ -7,7 +7,8 @@
  * @module
  */
 
-import type { ColorGradingConfig, Vec4 } from '@endfield-noclip/package-format/format';
+import type { ColorGradingConfig } from '@endfield-noclip/package-format/environment';
+import type { Vec4 } from '@endfield-noclip/package-format/values';
 
 import type { Vec3 } from '../scene/camera.ts';
 

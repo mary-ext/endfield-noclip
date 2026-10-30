@@ -1,4 +1,4 @@
-import type { ConditionalSetInfo, StatesInfo } from './format.ts';
+import type { ConditionalSetInfo, StatesInfo } from './states.ts';
 
 /**
  * @param states exported scene controls

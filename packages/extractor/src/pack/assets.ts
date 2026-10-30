@@ -1,16 +1,11 @@
 import { createHash } from 'node:crypto';
 
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
-import {
-	BlobKind,
-	type Chain,
-	type GeometryEntry,
-	type MaterialEntry,
-	type MaterialTable,
-	type ReadyMaterial,
-	type TextureEntry,
-	textureLevelLayout,
-} from '@endfield-noclip/package-format/format';
+import { BlobKind } from '@endfield-noclip/package-format/blobs';
+import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
+import type { Chain } from '@endfield-noclip/package-format/instances';
+import type { MaterialEntry, MaterialTable, ReadyMaterial } from '@endfield-noclip/package-format/materials';
+import { type TextureEntry, textureLevelLayout } from '@endfield-noclip/package-format/textures';
 
 import { failureReason } from '../errors.ts';
 import { loadMaterial } from '../game/asset-decode.ts';

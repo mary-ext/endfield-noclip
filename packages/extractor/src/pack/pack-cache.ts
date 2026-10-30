@@ -3,7 +3,7 @@ import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
+import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
 import { errorCode, ignoreMissing } from '../errors.ts';
 

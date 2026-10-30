@@ -1,10 +1,6 @@
-import {
-	assetArchiveName,
-	type Chain,
-	type TileKey,
-	tileAncestor,
-	tileId,
-} from '@endfield-noclip/package-format/format';
+import type { Chain } from '@endfield-noclip/package-format/instances';
+import { assetArchiveName } from '@endfield-noclip/package-format/manifest';
+import { type TileKey, tileAncestor, tileId } from '@endfield-noclip/package-format/tiles';
 
 // where geometry and texture blobs go. an asset lives in the archive of the smallest tile (at or above the
 // shard level) whose subtree contains every use of it, so fetching a region means its tile archives and their

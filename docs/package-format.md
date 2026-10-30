@@ -4,10 +4,12 @@ a package is what `pnpm -s extract pack <scene>` writes and the viewer streams: 
 (one world, one coordinate frame) as czar archives holding content-addressed blobs and a few tables.
 this page covers the layout on disk, every table and binary encoding, the versioning rule, and the
 design reasons behind them. the types are the contract:
-[format.ts](../packages/package-format/src/format.ts) (types, enums, constants, tile helpers) and
-[codec.ts](../packages/package-format/src/codec.ts) (binary encoders and decoders) are shared by the
-packer and the viewer, and their JSDoc wins where this page is less precise. `package-format` stays
-free of node APIs and of other workspace packages so both sides can import it.
+[package-format](../packages/package-format/src/) has one module per concern (`manifest`, `tree`,
+`instances`, `geometry`, `textures`, `materials`, `terrain`, `environment`, `water`, `lights`,
+`irradiance`, `states`, `blobs`, `blob-table`), each holding that concern's types and binary codec.
+the packer and the viewer share them, and their JSDoc wins where this page is less precise.
+`package-format` stays free of node APIs and of other workspace packages so both sides can import
+it.
 
 | side   | code                                                                                                                                               |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -16,15 +18,18 @@ free of node APIs and of other workspace packages so both sides can import it.
 
 ## versioning
 
-`PACKAGE_VERSION` (15) is written to `manifest.version` and to the header of every binary encoding
-(tree, chains, blob table, irradiance table, instance blocks, height pages, geometry blobs). readers
-accept exactly that version and reject any other, and nothing migrates old packages: a package from
-another version is re-extracted. bump the version on any incompatible change to the manifest, a
-table or a blob encoding. the JSON tables carry no version of their own and are trusted once the
-manifest's version matches.
+`PACKAGE_VERSION` (16) is written to `manifest.version` and covers the manifest, the JSON tables and
+how the parts fit together. each binary encoding (tree, chains, blob table, irradiance table,
+instance blocks, height, surface and splat pages, geometry blobs) carries its own version in its
+header, next to its codec. readers accept exactly the versions they know and reject any other, and
+nothing migrates old packages: a package from another version is re-extracted. bump the package
+version on any incompatible change to the manifest or a table, and an encoding's version when its
+layout changes. the JSON tables carry no version of their own and are trusted once the manifest's
+version matches.
 
-the pack cache fingerprints the converter's code, `package-format` included, so a format change also
-invalidates cached conversions.
+the pack cache fingerprints the converter's code, which imports only the `geometry`, `textures` and
+`blobs` modules of `package-format`. versioning encodings separately keeps it that way: a change to
+the manifest, the tree or instance blocks leaves cached mesh and texture conversions valid.
 
 ## layout
 

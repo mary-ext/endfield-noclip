@@ -4,17 +4,10 @@
  * @module
  */
 
-import {
-	type Bounds,
-	ContentKind,
-	type ContentRef,
-	type PackageManifest,
-	type Tree,
-	tileAncestor,
-	tileFootprint,
-	tileId,
-	tileQuadrant,
-} from '@endfield-noclip/package-format/format';
+import type { PackageManifest } from '@endfield-noclip/package-format/manifest';
+import { tileAncestor, tileFootprint, tileId, tileQuadrant } from '@endfield-noclip/package-format/tiles';
+import { ContentKind, type ContentRef, type Tree } from '@endfield-noclip/package-format/tree';
+import type { Bounds } from '@endfield-noclip/package-format/values';
 
 /** a tree node with its children linked and its refs split by kind */
 export interface TileNode {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 
-import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
+import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
 import { fileListSource, PackageChangedError } from './package-source.ts';
 

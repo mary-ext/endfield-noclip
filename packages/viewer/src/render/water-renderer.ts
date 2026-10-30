@@ -6,7 +6,8 @@
  * @module
  */
 
-import type { GeometryEntry, WaterConfig, WaterTable } from '@endfield-noclip/package-format/format';
+import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
+import type { WaterConfig, WaterTable } from '@endfield-noclip/package-format/water';
 
 import { HDR_FORMAT, type SceneTextures } from '../gfx/render-targets.ts';
 import { type Plane, type Vec3, boxInFrustum } from '../scene/camera.ts';

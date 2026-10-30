@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { ReadyMaterial, ShaderEntry } from '@endfield-noclip/package-format/format';
+import type { ReadyMaterial, ShaderEntry } from '@endfield-noclip/package-format/materials';
 
 import { ErosionRow, LookFlags, LookRow, materialLooks, UV1_SHIFT } from './materials.ts';
 

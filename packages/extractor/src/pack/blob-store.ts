@@ -5,7 +5,8 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { crc32 } from 'node:zlib';
 
-import { blobPath, type BlobKind, type BlobRecord } from '@endfield-noclip/package-format/format';
+import type { BlobRecord } from '@endfield-noclip/package-format/blob-table';
+import { blobPath, type BlobKind } from '@endfield-noclip/package-format/blobs';
 
 import { type ArchivePlan, encodeArchive, encodeArchiveStream, planArchive } from '@mary-ext/czar';
 

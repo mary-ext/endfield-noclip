@@ -5,29 +5,23 @@
  * @module
  */
 
+import { decodeBlobTable, type BlobRecord } from '@endfield-noclip/package-format/blob-table';
+import { blobPath } from '@endfield-noclip/package-format/blobs';
+import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
+import { decodeChains, type Chain } from '@endfield-noclip/package-format/instances';
+import { decodeIrradianceTable, type IrradianceTable } from '@endfield-noclip/package-format/irradiance';
+import type { LightsTable } from '@endfield-noclip/package-format/lights';
 import {
-	decodeBlobTable,
-	decodeChains,
-	decodeIrradianceTable,
-	decodeTree,
-} from '@endfield-noclip/package-format/codec';
-import {
-	type BlobRecord,
-	type Chain,
 	CORE_ARCHIVE,
 	CORE_PATHS,
-	type GeometryTable,
-	type IrradianceTable,
-	type LightsTable,
-	type MaterialTable,
 	PACKAGE_FORMAT,
 	PACKAGE_VERSION,
 	type PackageManifest,
-	type TextureTable,
-	type Tree,
-	type WaterTable,
-	blobPath,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/manifest';
+import type { MaterialTable } from '@endfield-noclip/package-format/materials';
+import type { TextureTable } from '@endfield-noclip/package-format/textures';
+import { decodeTree, type Tree } from '@endfield-noclip/package-format/tree';
+import type { WaterTable } from '@endfield-noclip/package-format/water';
 
 import { fromUint8Array, openArchive } from '@mary-ext/czar';
 

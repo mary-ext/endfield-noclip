@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { InstanceBlock } from '@endfield-noclip/package-format/format';
+import type { InstanceBlock } from '@endfield-noclip/package-format/instances';
 
 /** 32-bit words per row: transform (12), bounds centre + block slot (4), half extents + info (4) */
 export const ROW_WORDS = 20;

@@ -6,7 +6,7 @@ import {
 } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import { isObject, numberField, objectField, stringField } from '@endfield-noclip/formats/unity/values';
-import type { ProgressionInfo } from '@endfield-noclip/package-format/format';
+import type { ProgressionInfo } from '@endfield-noclip/package-format/states';
 
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';

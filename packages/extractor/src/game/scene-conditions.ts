@@ -1,5 +1,5 @@
 import type { CompareOperator, SceneCondition } from '@endfield-noclip/formats/endfield/map-config';
-import type { SceneToggleInfo } from '@endfield-noclip/package-format/format';
+import type { SceneToggleInfo } from '@endfield-noclip/package-format/states';
 
 import type { WorldIndex } from './world-index.ts';
 

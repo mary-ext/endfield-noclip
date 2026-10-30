@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { TerrainSplatInfo } from '@endfield-noclip/package-format/format';
+import type { TerrainSplatInfo } from '@endfield-noclip/package-format/terrain';
 
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import { GrowableBuffer } from '../gfx/growable-buffer.ts';

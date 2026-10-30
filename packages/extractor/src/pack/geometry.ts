@@ -9,8 +9,8 @@ import {
 	unpackOct10,
 	VertexAttributeFormat,
 } from '@endfield-noclip/formats/unity/mesh';
-import { encodeGeometryBlob } from '@endfield-noclip/package-format/codec';
 import {
+	encodeGeometryBlob,
 	GEOMETRY_VERTEX_FORMATS,
 	GeometryFlags,
 	type GeometryStream,
@@ -19,7 +19,7 @@ import {
 	GeometryVertexFormat,
 	type ReadyGeometry,
 	VertexAttribute,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/geometry';
 
 import { MeshoptEncoder } from 'meshoptimizer/encoder';
 import { MeshoptTangents } from 'meshoptimizer/tangents';

@@ -5,7 +5,7 @@
  * @module
  */
 
-import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
+import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
 /** random access to a package's files by package-relative path */
 export interface PackageSource {

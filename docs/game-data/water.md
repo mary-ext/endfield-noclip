@@ -135,7 +135,7 @@ the global flow map's content at `flowmapPrecision`. its `rippleLayerBuffer` is 
 [pack/water.ts](../../packages/extractor/src/pack/water.ts) plans the table before asset conversion
 and fills in texture ids after it (`planWater` → `finishWater`, the same split as environments). the
 types, with field-level JSDoc, are `WaterTable`, `WaterGlobal`, `WaterSector`, `WaterConfigEntry`,
-`WaterConfig` and `WaterSurfaceEntry` in [format.ts](../../packages/package-format/src/format.ts).
+`WaterConfig` and `WaterSurfaceEntry` in [water.ts](../../packages/package-format/src/water.ts).
 
 ```
 WaterTable

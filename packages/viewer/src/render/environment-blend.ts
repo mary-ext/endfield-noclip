@@ -21,9 +21,9 @@ import type {
 	EnvironmentSections,
 	EnvironmentVolumeInfo,
 	EnvironmentVolumeShape,
-	PackageManifest,
-	Rect,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/environment';
+import type { PackageManifest } from '@endfield-noclip/package-format/manifest';
+import type { Rect } from '@endfield-noclip/package-format/values';
 
 import type { Vec3 } from '../scene/camera.ts';
 

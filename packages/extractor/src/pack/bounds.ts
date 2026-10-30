@@ -1,5 +1,5 @@
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
-import type { Bounds, Rect } from '@endfield-noclip/package-format/format';
+import type { Bounds, Rect } from '@endfield-noclip/package-format/values';
 
 /** @returns the min/max form of a centre/extents box */
 export const aabbBounds = ({ center, extents }: Aabb): Bounds => ({

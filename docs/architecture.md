@@ -52,9 +52,9 @@ either, so game-format knowledge stays on the extractor side and a package can b
   scene states select content, and how game data maps onto package concepts live in
   `extractor/src/game/` and `extractor/src/pack/`.
 - **`package-format` is the only shared contract.** the extractor writes and the viewer reads
-  through its types and codecs, and `PACKAGE_VERSION` is bumped on any incompatible change, so a
-  stale package fails at load instead of rendering wrongly. it stays free of node and browser APIs
-  for the same reason as `formats`.
+  through its types and codecs, and the package and encoding versions are bumped on any incompatible
+  change, so a stale package fails at load instead of rendering wrongly. it stays free of node and
+  browser APIs for the same reason as `formats`.
 - **failures are explicit.** decoders throw `FormatError` on layouts they don't recognize rather
   than guessing, and the packer records unsupported or failed inputs in its debug outputs instead of
   substituting something similar. a wrong mesh or texture is harder to notice and trace than a

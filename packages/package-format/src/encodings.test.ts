@@ -1,45 +1,39 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import {
-	decodeBlobTable,
-	decodeChains,
-	decodeSplatPage,
-	decodeGeometryBlob,
-	decodeHeightPage,
-	decodeInstanceBlock,
-	decodeIrradianceTable,
-	decodeSurfacePage,
-	decodeTree,
-	encodeBlobTable,
-	encodeChains,
-	encodeSplatPage,
-	encodeGeometryBlob,
-	encodeHeightPage,
-	encodeInstanceBlock,
-	encodeIrradianceTable,
-	encodeSurfacePage,
-	encodeTree,
-} from './codec.ts';
+import { decodeBlobTable, encodeBlobTable } from './blob-table.ts';
+import { BlobCodec, BlobKind, blobPath } from './blobs.ts';
 import { PackageFormatError } from './errors.ts';
 import {
-	BlobCodec,
-	BlobKind,
-	blobPath,
-	type Chain,
-	ContentKind,
-	DrawRole,
+	decodeGeometryBlob,
+	encodeGeometryBlob,
 	type GeometryBlob,
 	GeometryFlags,
 	GeometryStreamFlags,
 	GeometryVertexFormat,
-	type InstanceBlock,
-	textureLevelLayout,
-	tileAncestor,
-	tileAt,
-	type Tree,
 	VertexAttribute,
-} from './format.ts';
+} from './geometry.ts';
+import {
+	decodeChains,
+	decodeInstanceBlock,
+	encodeChains,
+	encodeInstanceBlock,
+	type Chain,
+	DrawRole,
+	type InstanceBlock,
+} from './instances.ts';
+import { decodeIrradianceTable, encodeIrradianceTable } from './irradiance.ts';
+import {
+	decodeSplatPage,
+	decodeHeightPage,
+	decodeSurfacePage,
+	encodeSplatPage,
+	encodeHeightPage,
+	encodeSurfacePage,
+} from './terrain.ts';
+import { textureLevelLayout } from './textures.ts';
+import { tileAncestor, tileAt } from './tiles.ts';
+import { decodeTree, encodeTree, ContentKind, type Tree } from './tree.ts';
 
 describe('tree', () => {
 	it('round-trips nodes and refs', () => {

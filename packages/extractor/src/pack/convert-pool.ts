@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads';
 
-import type { ReadyGeometry, ReadyTexture } from '@endfield-noclip/package-format/format';
+import type { ReadyGeometry } from '@endfield-noclip/package-format/geometry';
+import type { ReadyTexture } from '@endfield-noclip/package-format/textures';
 
 import type { Keys } from '../config.ts';
 import type { AssetRef, ObjectLocator } from '../game/assets.ts';

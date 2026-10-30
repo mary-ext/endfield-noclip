@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
+import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
 import { parseBounds, parseInteger, parseZstdLevel } from '../cli-args.ts';
 import { withContext } from '../context.ts';

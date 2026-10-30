@@ -8,7 +8,7 @@ import {
 	TEXTURE_TAIL_BYTES,
 	textureLevelByteLength,
 	type TextureSampler,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/textures';
 
 // turns a decoded Unity texture into the package's form: the game's texel blocks untouched, split into a mip
 // tail piece plus one piece per larger level, with format and sampler in WebGPU terms.

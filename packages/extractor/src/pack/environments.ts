@@ -17,7 +17,7 @@ import type {
 	EnvironmentVolumeInfo,
 	EnvironmentVolumeShape,
 	PostProfile,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/environment';
 
 import { getOrInsert, intern } from '../collections.ts';
 import type { Context } from '../context.ts';

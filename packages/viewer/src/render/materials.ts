@@ -15,12 +15,12 @@
  */
 
 import type {
-	Color,
 	MaterialCull,
 	MaterialTable,
 	ReadyMaterial,
 	ShaderEntry,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/materials';
+import type { Color } from '@endfield-noclip/package-format/values';
 
 import { linearRgb } from './color.ts';
 

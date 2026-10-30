@@ -10,7 +10,7 @@ import type {
 	ShaderEntry,
 	ShaderFamily,
 	TextureSlot,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/materials';
 
 // material table rows: a shader table holding each shader's declared property defaults, and per material only
 // what differs from them. Unity keeps stale properties from earlier shaders in a material; undeclared ones are

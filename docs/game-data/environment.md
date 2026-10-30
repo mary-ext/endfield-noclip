@@ -38,7 +38,8 @@ other sections the phase has (`rainConfig`, `snowConfig`, `celestialConfig`, `st
 `volumetricCloudConfig`, `lensFlareConfig`, …) are not extracted. to add one, extend
 `ENVIRONMENT_SECTIONS` and `mapSections`, the `SECTION_KEYS` map in
 [`pack/environments.ts`](../../packages/extractor/src/pack/environments.ts), and the matching
-interface in [`package-format/src/format.ts`](../../packages/package-format/src/format.ts).
+interface in
+[`package-format/src/environment.ts`](../../packages/package-format/src/environment.ts).
 
 section values keep the game's field names. colours stay raw (no sRGB decode; HDR colours exceed 1),
 because the game feeds them to its shaders raw. `SphericalHarmonicsL2` is 27 numbers, channel-major.

@@ -10,7 +10,8 @@
  * @module
  */
 
-import type { AutoExposureConfig, Vec2 } from '@endfield-noclip/package-format/format';
+import type { AutoExposureConfig } from '@endfield-noclip/package-format/environment';
+import type { Vec2 } from '@endfield-noclip/package-format/values';
 
 /** histogram bins, as the game's */
 export const BINS = 16;

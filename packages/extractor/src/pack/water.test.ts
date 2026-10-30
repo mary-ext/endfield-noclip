@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
-import type { Bounds, WaterGlobal, WaterTable } from '@endfield-noclip/package-format/format';
+import type { Bounds } from '@endfield-noclip/package-format/values';
+import type { WaterGlobal, WaterTable } from '@endfield-noclip/package-format/water';
 
 import { finishWater, sectorsOverlapping, selectSurfaces, type WaterPlan } from './water.ts';
 

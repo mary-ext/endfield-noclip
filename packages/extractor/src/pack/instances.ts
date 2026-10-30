@@ -1,5 +1,5 @@
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
-import { type InstanceBlock, InstanceBlockFlags } from '@endfield-noclip/package-format/format';
+import { type InstanceBlock, InstanceBlockFlags } from '@endfield-noclip/package-format/instances';
 
 /** one placed instance, in world space */
 export interface InstanceInput {

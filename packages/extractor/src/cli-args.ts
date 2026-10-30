@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { ParseArgsOptionsConfig } from 'node:util';
 
-import type { Rect } from '@endfield-noclip/package-format/format';
+import type { Rect } from '@endfield-noclip/package-format/values';
 
 // argument helpers shared by the commands. they live outside `commands/`, where every file is a command
 

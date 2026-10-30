@@ -15,16 +15,14 @@ import type {
 	AtmosphereConfig,
 	BloomSettings,
 	CloudConfig,
-	Color,
 	FogConfig,
 	HeightFogLayers,
 	LightConfig,
-	Quat,
 	ShadowConfig,
 	SkyConfig,
-	Vec2,
 	VignetteSettings,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/environment';
+import type { Color, Quat, Vec2 } from '@endfield-noclip/package-format/values';
 
 import type { Vec3 } from '../scene/camera.ts';
 

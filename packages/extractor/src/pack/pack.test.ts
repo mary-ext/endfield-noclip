@@ -6,16 +6,15 @@ import { describe, it } from 'node:test';
 import { zstdDecompressSync } from 'node:zlib';
 
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
-import { decodeInstanceBlock, encodeInstanceBlock } from '@endfield-noclip/package-format/codec';
+import { BlobCodec, BlobKind, blobPath } from '@endfield-noclip/package-format/blobs';
 import {
-	BlobCodec,
-	BlobKind,
-	blobPath,
+	decodeInstanceBlock,
+	encodeInstanceBlock,
 	type ChainDraw,
 	ChainFlags,
-	ContentKind,
 	DrawRole,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/instances';
+import { ContentKind } from '@endfield-noclip/package-format/tree';
 
 import { openArchive } from '@mary-ext/czar';
 import { fromFileHandle } from '@mary-ext/czar/node';

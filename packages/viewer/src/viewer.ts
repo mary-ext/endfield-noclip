@@ -1,4 +1,3 @@
-import { conditionVisible, defaultSceneValues } from '@endfield-noclip/package-format/conditions';
 /**
  * the viewer: owns the device, the frame loop, the camera and the loaded package, and wires traversal →
  * streaming → renderers. the React UI drives it through {@link Viewer.setOptions} and the level actions, and
@@ -6,16 +5,13 @@ import { conditionVisible, defaultSceneValues } from '@endfield-noclip/package-f
  *
  * @module
  */
-import {
-	BlobKind,
-	type ContentRef,
-	type EnvironmentProfile,
-	type LevelInfo,
-	isTerrainHole,
-	terrainHeight,
-	tileAt,
-	tileId,
-} from '@endfield-noclip/package-format/format';
+import { BlobKind } from '@endfield-noclip/package-format/blobs';
+import { conditionVisible, defaultSceneValues } from '@endfield-noclip/package-format/conditions';
+import type { EnvironmentProfile } from '@endfield-noclip/package-format/environment';
+import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
+import { isTerrainHole, terrainHeight } from '@endfield-noclip/package-format/terrain';
+import { tileAt, tileId } from '@endfield-noclip/package-format/tiles';
+import type { ContentRef } from '@endfield-noclip/package-format/tree';
 
 import { type BindLayouts, createBindLayouts } from './gfx/bind-layouts.ts';
 import { type GfxDevice, createGfxDevice } from './gfx/device.ts';

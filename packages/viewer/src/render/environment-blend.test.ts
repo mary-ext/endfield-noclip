@@ -6,8 +6,8 @@ import type {
 	EnvironmentProfile,
 	EnvironmentVolumeInfo,
 	EnvironmentVolumeShape,
-	PackageManifest,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/environment';
+import type { PackageManifest } from '@endfield-noclip/package-format/manifest';
 
 import type { Vec3 } from '../scene/camera.ts';
 

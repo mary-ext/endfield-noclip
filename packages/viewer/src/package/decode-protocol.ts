@@ -4,7 +4,7 @@
  * @module
  */
 
-import type { BlobCodec } from '@endfield-noclip/package-format/format';
+import type { BlobCodec } from '@endfield-noclip/package-format/blobs';
 
 import type { InstanceRows, RowKinds } from '../render/instance-rows.ts';
 

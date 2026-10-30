@@ -17,7 +17,7 @@ import type {
 	ConditionalSetInfo,
 	SceneRequirement,
 	SceneToggleInfo,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/states';
 
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';

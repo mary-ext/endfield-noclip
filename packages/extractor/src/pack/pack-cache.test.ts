@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { BlobCodec } from '@endfield-noclip/package-format/format';
+import { BlobCodec } from '@endfield-noclip/package-format/blobs';
 
 import { BlobDir } from './blob-file.ts';
 import type { ConvertResult } from './convert-pool.ts';

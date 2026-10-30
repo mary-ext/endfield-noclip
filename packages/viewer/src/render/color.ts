@@ -4,7 +4,7 @@
  * @module
  */
 
-import type { Color } from '@endfield-noclip/package-format/format';
+import type { Color } from '@endfield-noclip/package-format/values';
 
 import type { Vec3 } from '../scene/camera.ts';
 

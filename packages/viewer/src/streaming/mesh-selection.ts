@@ -10,12 +10,9 @@
  * @module
  */
 
-import {
-	type Chain,
-	DrawRole,
-	type GeometryEntry,
-	type ReadyTexture,
-} from '@endfield-noclip/package-format/format';
+import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
+import { type Chain, DrawRole } from '@endfield-noclip/package-format/instances';
+import type { ReadyTexture } from '@endfield-noclip/package-format/textures';
 
 import { CULL_FLOATS, ROW_WORDS } from '../render/instance-rows.ts';
 import type { MaterialLook } from '../render/materials.ts';

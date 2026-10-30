@@ -1,16 +1,12 @@
 import {
-	type Bounds,
-	type ContentRef,
 	type TileKey,
 	tileAncestor,
 	tileFootprint,
 	tileId,
 	tileQuadrant,
-	type Tree,
-	type TreeInfo,
-	type TreeNode,
-	unionBounds,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/tiles';
+import type { ContentRef, Tree, TreeInfo, TreeNode } from '@endfield-noclip/package-format/tree';
+import { type Bounds, unionBounds } from '@endfield-noclip/package-format/values';
 
 /** a node under construction */
 interface BuildNode {

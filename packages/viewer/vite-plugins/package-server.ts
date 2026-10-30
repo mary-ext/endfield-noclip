@@ -2,7 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import type { ServerResponse } from 'node:http';
 import { join } from 'node:path';
 
-import { CORE_ARCHIVE } from '@endfield-noclip/package-format/format';
+import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
 import sirv from 'sirv';
 import type { Connect, Plugin } from 'vite';

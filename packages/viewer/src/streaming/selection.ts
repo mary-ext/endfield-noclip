@@ -13,7 +13,7 @@
  * @module
  */
 
-import type { ContentRef } from '@endfield-noclip/package-format/format';
+import type { ContentRef } from '@endfield-noclip/package-format/tree';
 
 import { type Camera, type Plane, boxInFrustum, distanceToBox } from '../scene/camera.ts';
 import { type TileNode, type TileTree, isLeaf } from '../scene/tile-tree.ts';

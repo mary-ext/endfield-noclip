@@ -5,15 +5,9 @@
  * @module
  */
 
+import { BlobCodec } from '@endfield-noclip/package-format/blobs';
 import {
 	decodeGeometryBlob,
-	decodeHeightPage,
-	decodeSplatPage,
-	decodeInstanceBlock,
-	decodeSurfacePage,
-} from '@endfield-noclip/package-format/codec';
-import {
-	BlobCodec,
 	GEOMETRY_VERTEX_FORMATS,
 	type GeometryBlob,
 	GeometryFlags,
@@ -21,7 +15,13 @@ import {
 	GeometryStreamFlags,
 	GeometryVertexFormat,
 	VertexAttribute,
-} from '@endfield-noclip/package-format/format';
+} from '@endfield-noclip/package-format/geometry';
+import { decodeInstanceBlock } from '@endfield-noclip/package-format/instances';
+import {
+	decodeHeightPage,
+	decodeSplatPage,
+	decodeSurfacePage,
+} from '@endfield-noclip/package-format/terrain';
 
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
 

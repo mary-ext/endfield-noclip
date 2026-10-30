@@ -8,11 +8,8 @@ import {
 	irradianceCellOrigin,
 	parseIrradianceIndex,
 } from '@endfield-noclip/formats/hg/irradiance';
-import {
-	BlobKind,
-	type IrradianceTable,
-	irradianceArchiveName,
-} from '@endfield-noclip/package-format/format';
+import { BlobKind } from '@endfield-noclip/package-format/blobs';
+import { type IrradianceTable, irradianceArchiveName } from '@endfield-noclip/package-format/irradiance';
 
 import type { Context } from '../context.ts';
 

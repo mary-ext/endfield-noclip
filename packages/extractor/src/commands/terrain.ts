@@ -12,7 +12,7 @@ import {
 	type TerrainSurfacesData,
 	type TerrainTileKey,
 } from '@endfield-noclip/formats/hg/terrain';
-import type { Rect } from '@endfield-noclip/package-format/format';
+import type { Rect } from '@endfield-noclip/package-format/values';
 
 import { parseBounds, parseInteger, parseNumber, parseNumbers } from '../cli-args.ts';
 import { withContext } from '../context.ts';

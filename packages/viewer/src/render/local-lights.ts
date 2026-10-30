@@ -8,7 +8,7 @@
  * @module
  */
 
-import { type LightEntry, LightKind } from '@endfield-noclip/package-format/format';
+import { type LightEntry, LightKind } from '@endfield-noclip/package-format/lights';
 
 import type { Camera, Vec3 } from '../scene/camera.ts';
 
