@@ -24,6 +24,8 @@ export const ENVIRONMENT_SECTIONS = [
 	'colorGradingConfig',
 	'autoExposureConfig',
 	'shadowConfig',
+	'celestialConfig',
+	'starConfig',
 ] as const;
 
 /** a section's field name */
@@ -35,11 +37,14 @@ export interface EnvironmentSection {
 	active: boolean;
 	/**
 	 * the section's fields under their own names (see `unity/plain-object.ts` for the value mapping), without
-	 * `m_*` bookkeeping fields, colour curves, or object references other than textures, which are `null`
+	 * `m_*` bookkeeping fields, colour curves, or object references other than textures and materials, which
+	 * are `null`
 	 */
 	value: PlainObject;
 	/** the texture references, by field path within {@link value} */
 	textures: PlainResult['pptrs'];
+	/** the material references (the celestial bodies' draw materials), by field path within {@link value} */
+	materials: PlainResult['pptrs'];
 }
 
 /** a decoded phase */
@@ -49,6 +54,7 @@ export interface EnvironmentPhase {
 }
 
 const TEXTURE_PPTR = /^PPtr<\$?(?:Texture|Texture2D|Texture3D|Cubemap|Texture2DArray|CubemapArray)>$/;
+const MATERIAL_PPTR = /^PPtr<\$?Material>$/;
 
 /** sub-structs that are big and unused outside the editor */
 const DROPPED_TYPES = new Set(['HGColorCurve']);
@@ -65,7 +71,8 @@ export const readEnvironmentPhase = (
 ): EnvironmentPhase => {
 	const { value, pptrs } = toPlainObject(nodes, object, {
 		// editor-only previews (`customIVCubemapMapForEdit`) aren't shipped textures the client samples
-		keepPPtr: (type, name) => TEXTURE_PPTR.test(type) && !name.endsWith('ForEdit'),
+		keepPPtr: (type, name) =>
+			(TEXTURE_PPTR.test(type) || MATERIAL_PPTR.test(type)) && !name.endsWith('ForEdit'),
 		// `m_active` is read separately below; `m_backup*`/`m_prev*` are editor state
 		dropField: (name, type) => (name.startsWith('m_') && name !== 'm_Name') || DROPPED_TYPES.has(type),
 	});
@@ -81,12 +88,14 @@ export const readEnvironmentPhase = (
 		) {
 			throw new FormatError(`environment phase has no ${name}`);
 		}
+		const own = pptrs
+			.filter((pptr) => pptr.path[0] === name)
+			.map(({ path, type, pptr }) => ({ path: path.slice(1), type, pptr }));
 		return {
 			active: raw.m_active === undefined ? true : raw.m_active !== 0 && raw.m_active !== false,
 			value: converted,
-			textures: pptrs
-				.filter((pptr) => pptr.path[0] === name)
-				.map(({ path, type, pptr }) => ({ path: path.slice(1), type, pptr })),
+			textures: own.filter(({ type }) => TEXTURE_PPTR.test(type)),
+			materials: own.filter(({ type }) => MATERIAL_PPTR.test(type)),
 		};
 	};
 	return { name: stringField(object, 'm_Name'), sections: mapSections(section) };
@@ -111,4 +120,6 @@ export const mapSections = <T>(
 	colorGradingConfig: fn('colorGradingConfig'),
 	autoExposureConfig: fn('autoExposureConfig'),
 	shadowConfig: fn('shadowConfig'),
+	celestialConfig: fn('celestialConfig'),
+	starConfig: fn('starConfig'),
 });

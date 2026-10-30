@@ -33,20 +33,24 @@ the extractor reads these sections
 | `colorGradingConfig`  | `colorGrading`  | grading                                                       |
 | `autoExposureConfig`  | `autoExposure`  | packed, not used                                              |
 | `shadowConfig`        | `shadow`        | sun shadow softness, strength, penumbra ramp, sun-off         |
+| `celestialConfig`     | `celestial`     | planets in the sky                                            |
+| `starConfig`          | `star`          | star field and nebula                                         |
 
-other sections the phase has (`rainConfig`, `snowConfig`, `celestialConfig`, `starConfig`,
-`volumetricCloudConfig`, `lensFlareConfig`, …) are not extracted. to add one, extend
-`ENVIRONMENT_SECTIONS` and `mapSections`, the `SECTION_KEYS` map in
+other sections the phase has (`rainConfig`, `snowConfig`, `volumetricCloudConfig`,
+`lensFlareConfig`, …) are not extracted. to add one, extend `ENVIRONMENT_SECTIONS` and
+`mapSections`, the `SECTION_KEYS` map in
 [`pack/environments.ts`](../../packages/extractor/src/pack/environments.ts), and the matching
 interface in
 [`package-format/src/environment.ts`](../../packages/package-format/src/environment.ts).
 
 section values keep the game's field names. colours stay raw (no sRGB decode; HDR colours exceed 1),
 because the game feeds them to its shaders raw. `SphericalHarmonicsL2` is 27 numbers, channel-major.
-colour curves, `m_*` editor fields and non-texture object references are dropped; texture references
-become texture-table ids. the textures that resolve in practice are the sky reflection cubemap
-(BC6H), the cloud panorama, its flow map and the cloud-shadow texture. editor-only previews
-(`*ForEdit`) are skipped.
+colour curves, `m_*` editor fields and object references other than textures and materials are
+dropped; texture references become texture-table ids. material references (the celestial bodies'
+draw materials) become the material flattened: shader name, keywords, floats, colours as stored,
+texture-table ids and texture scale/offset per slot. the textures that resolve in practice are the
+sky reflection cubemap (BC6H), the cloud panorama, its flow map and the cloud-shadow texture.
+editor-only previews (`*ForEdit`) are skipped.
 
 ## environment volumes
 

@@ -21,6 +21,7 @@ import type {
 
 import { getOrInsert, intern } from '../collections.ts';
 import type { Context } from '../context.ts';
+import { type LoadedMaterial, loadMaterial } from '../game/asset-decode.ts';
 import { type AssetResolver, objectKey, type ObjectRef } from '../game/assets.ts';
 import {
 	type LevelEnvironmentChoice,
@@ -54,6 +55,8 @@ const SECTION_KEYS = {
 	colorGradingConfig: 'colorGrading',
 	autoExposureConfig: 'autoExposure',
 	shadowConfig: 'shadow',
+	celestialConfig: 'celestial',
+	starConfig: 'star',
 } as const satisfies Record<EnvironmentSectionName, keyof EnvironmentProfile>;
 
 /** what a level resolved to, for the pack report and debug index */
@@ -285,22 +288,46 @@ const volumeShape = (volume: EnvironmentVolume): EnvironmentVolumeShape | null =
 	}
 };
 
-/** @returns a phase's texture objects per section, resolved against its own file */
+/** @returns a phase's texture and material objects per section, resolved against its own file */
 const resolvePhaseTextures = async (
 	resolver: AssetResolver,
 	loaded: LoadedPhase,
 ): Promise<SectionTextures> => {
 	const entries = await Promise.all(
-		ENVIRONMENT_SECTIONS.map(async (name) => {
-			const refs = await Promise.all(
-				loaded.phase.sections[name].textures.map(({ pptr }) =>
-					resolver.resolve(loaded.ref, pptr).catch(() => null),
-				),
-			);
-			return [name, refs] as const;
-		}),
+		ENVIRONMENT_SECTIONS.map(
+			async (name) =>
+				[name, await resolveSection(resolver, loaded.ref, loaded.phase.sections[name])] as const,
+		),
 	);
 	return new Map(entries);
+};
+
+/** a section's references resolved: per texture and per material reference, its object or `null` */
+interface SectionRefs {
+	textures: (ObjectRef | null)[];
+	materials: (LoadedMaterial | null)[];
+}
+
+/** @returns the section's references, resolved against the phase file `from` */
+const resolveSection = async (
+	resolver: AssetResolver,
+	from: ObjectRef,
+	section: EnvironmentSection,
+): Promise<SectionRefs> => {
+	const [textures, materials] = await Promise.all([
+		Promise.all(section.textures.map(({ pptr }) => resolver.resolve(from, pptr).catch(() => null))),
+		Promise.all(
+			section.materials.map(async ({ pptr }) => {
+				try {
+					const ref = await resolver.resolve(from, pptr);
+					return ref === null ? null : await loadMaterial(resolver, ref);
+				} catch {
+					return null;
+				}
+			}),
+		),
+	]);
+	return { textures, materials };
 };
 
 const buildPhase = (
@@ -326,23 +353,55 @@ const buildPhase = (
 	return { phase: { name: phase.name, active, sections: typed }, slots };
 };
 
-/** nulls a section's texture fields and records where each resolved texture goes */
+/**
+ * nulls a section's texture fields and records where each resolved texture goes; material fields become
+ * flattened materials whose texture slots are recorded the same way
+ */
 const fillTextureSlots = (
 	value: PlainObject,
 	section: EnvironmentSection,
-	refs: (ObjectRef | null)[] | undefined,
+	refs: SectionRefs | undefined,
 	slots: TextureSlot[],
 	textures: ObjectRef[],
 	textureIndex: Map<string, number>,
 ): void => {
-	for (const [i, { path }] of section.textures.entries()) {
-		const holder = objectAt(value, path.slice(0, -1));
-		const key = path.at(-1)!;
+	const slotFor = (holder: PlainObject, key: string, ref: ObjectRef | null): void => {
 		holder[key] = null;
-		const ref = refs?.[i] ?? null;
 		if (ref !== null) {
 			slots.push({ holder, key, texture: intern(textures, textureIndex, objectKey(ref), () => ref) });
 		}
+	};
+	for (const [i, { path }] of section.textures.entries()) {
+		slotFor(objectAt(value, path.slice(0, -1)), path.at(-1)!, refs?.textures[i] ?? null);
+	}
+	for (const [i, { path }] of section.materials.entries()) {
+		const holder = objectAt(value, path.slice(0, -1));
+		const key = path.at(-1)!;
+		const material = refs?.materials[i] ?? null;
+		if (material === null) {
+			holder[key] = null;
+			continue;
+		}
+		const { record } = material;
+		const materialTextures: PlainObject = {};
+		const textureTransforms: PlainObject = {};
+		for (const [slot, resolved] of Object.entries(material.textures)) {
+			if (resolved.ref === null) {
+				continue;
+			}
+			const { scale, offset } = record.textures[slot];
+			textureTransforms[slot] = [scale[0], scale[1], offset[0], offset[1]];
+			slotFor(materialTextures, slot, resolved.ref);
+		}
+		// the package's EnvironmentMaterial
+		holder[key] = {
+			shader: material.shader.name,
+			keywords: record.keywords.join(' '),
+			floats: { ...record.floats },
+			colors: { ...record.colors },
+			textures: materialTextures,
+			textureTransforms,
+		};
 	}
 };
 
@@ -390,8 +449,8 @@ const levelDebug = (level: PartitionLevel, choice: LevelEnvironmentChoice): Leve
 	};
 };
 
-/** per section, per texture reference in it: the texture object, or `null` if unset or not found */
-type SectionTextures = Map<EnvironmentSectionName, (ObjectRef | null)[]>;
+/** per section, its resolved references */
+type SectionTextures = Map<EnvironmentSectionName, SectionRefs>;
 
 const resolveTextures = async (
 	resolver: AssetResolver,
@@ -402,10 +461,7 @@ const resolveTextures = async (
 			const { source, section } = composed[name];
 			// PPtrs are relative to the file of the phase the section came from
 			const from = source === 'global' && global !== null ? global : own;
-			const refs = await Promise.all(
-				section.textures.map(({ pptr }) => resolver.resolve(from.ref, pptr).catch(() => null)),
-			);
-			return [name, refs] as const;
+			return [name, await resolveSection(resolver, from.ref, section)] as const;
 		}),
 	);
 	return new Map(entries);

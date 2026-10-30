@@ -5,8 +5,8 @@ import type { Color, Vec2, Vec3, Vec4, Quat } from './values.ts';
  * one environment: an `HGEnvironmentPhase` (`EnvParse/Env_*.asset`) plus the post-processing profile of the
  * level's global `Volume`. each section is the game's `HG*Config` with the game's field names: colours as
  * {@link Color}, vectors as arrays, `SphericalHarmonicsL2` as 27 numbers in the game's order, flags as
- * booleans, nested structs as objects, textures as {@link TextureRef}s. colour curves, editor state and
- * non-texture object references are left out.
+ * booleans, nested structs as objects, textures as {@link TextureRef}s and materials as
+ * {@link EnvironmentMaterial}s. colour curves, editor state and other object references are left out.
  *
  * the game blends environment volumes by priority, and a phase only sets the sections it marks active. a
  * section the level's phase leaves inactive is taken from the scene's global volume's phase (what the game
@@ -27,6 +27,8 @@ export interface EnvironmentProfile {
 	colorGrading: ColorGradingConfig;
 	autoExposure: AutoExposureConfig;
 	shadow: ShadowConfig;
+	celestial: CelestialConfig;
+	star: StarConfig;
 	/** the level's global post-processing volume, or `null` if it has none */
 	post: PostProfile | null;
 }
@@ -315,6 +317,132 @@ export interface CloudConfig {
 	enableCloudShadow: boolean;
 	cloudShadowConfig: CloudShadowConfig;
 	cloudFadeAlpha: number;
+}
+
+/**
+ * a material an environment section draws with (the celestial bodies'), flattened: its shader's name and its
+ * properties under Unity's names
+ */
+export interface EnvironmentMaterial {
+	/** e.g. `HGRP/SkydomeStar` */
+	shader: string;
+	/** enabled keywords, space-separated as in Unity's `m_ShaderKeywords` */
+	keywords: string;
+	floats: Record<string, number>;
+	colors: Record<string, Color>;
+	/** texture slots that resolved, by property name */
+	textures: Record<string, TextureRef>;
+	/** texture scale (xy) and offset (zw) per slot, as the material stores them */
+	textureTransforms: Record<string, Vec4>;
+}
+
+/** `RingProperty`: a planet's ring, in the planet's radius units */
+export interface RingProperty {
+	outerRadius: number;
+	width: number;
+	ringColor: Color;
+	planetRingMap: TextureRef;
+}
+
+/** `CelestialObjectProperty` */
+export interface CelestialObjectProperty {
+	radius: number;
+	/** degrees */
+	selfTiltX: number;
+	selfTiltZ: number;
+	selfRotationY: number;
+}
+
+/** `CelestialDrawer`: how a body is painted on the sky dome */
+export interface CelestialDrawer {
+	drawMode: number;
+	drawMaterial: EnvironmentMaterial | null;
+	/** degrees: where on the sky the body sits */
+	pitchYaw: Vec2;
+	/** degrees: where its light comes from */
+	incidentLightingPitchYaw: Vec2;
+}
+
+/** `AtmosphereProperty`: a body's atmosphere rim */
+export interface AtmosphereProperty {
+	bakeFaceVisibility: boolean;
+	atmosphereHeight: number;
+	numInscatteredSamplePoints: number;
+	numOpticalDepthSamplePoints: number;
+	coff_R: number;
+	heightScale_R: number;
+	atmosphereBrightness: number;
+	atmosphereHueshift: number;
+}
+
+/** `HGCelestialAtmosphereObjectConfig`: a planet painted on the sky dome */
+export interface CelestialAtmosphereObjectConfig {
+	drawPlanetInSkydome: boolean;
+	drawPlanetBelowHorizon: boolean;
+	objectProperty: CelestialObjectProperty;
+	skydomeDrawer: CelestialDrawer;
+	enableRing: boolean;
+	ring: RingProperty;
+	enableAtmosphere: boolean;
+	atmosphere: AtmosphereProperty;
+}
+
+/** `HGCelestialObjectConfig`: the procedural moon */
+export interface CelestialObjectConfig {
+	radius: number;
+	orbitRadius: number;
+	enableRing: boolean;
+	drawPlanetBelowHorizon: boolean;
+	worldLongitude: number;
+	worldLatitude: number;
+	rotationAroundUp: number;
+	ring: RingProperty;
+}
+
+/** `HGCelestialAdvancedObjectConfig`: a ray-traced planet with its own material */
+export interface CelestialAdvancedObjectConfig {
+	drawAdvancedPlanet: boolean;
+	advancedPlanetMat: EnvironmentMaterial | null;
+}
+
+/** `HGCelestialConfig`: planets and moons in the sky */
+export interface CelestialConfig {
+	moonConfig: CelestialObjectConfig;
+	/** the smaller planet */
+	talosAlphaConfig: CelestialAtmosphereObjectConfig;
+	/** Talos-II as seen from its surface */
+	planetConfig: CelestialAtmosphereObjectConfig;
+	advancedPlanetConfig: CelestialAdvancedObjectConfig;
+}
+
+/** `HGStarConfig`: the star field and nebula */
+export interface StarConfig {
+	enableStars: boolean;
+	starsTilling: number;
+	starsFlickerSpeed: number;
+	minMaxRange: Vec2;
+	starsTint: Color;
+	starsTint1: Color;
+	thresholdSoftness: number;
+	starsDensity: number;
+	starsExposure: number;
+	brightnessRandomSeed: number;
+	colorRandomSeed: number;
+	distributionRandomSeed: number;
+	skyBoxStarRangeMap: TextureRef;
+	/** degrees */
+	skyBoxStarDensityMapRotation: number;
+	starRingStarCoverage: number;
+	cloudRingStarCoverage: number;
+	starDensityMapMaskThres: number;
+	debugMode: number;
+	enableNebula: boolean;
+	nebulaMap: TextureRef;
+	nebulaTint: Color;
+	/** degrees */
+	nebulaMapRotation: number;
+	nebulaStarConverage: number;
+	celestialNebulaConverage: number;
 }
 
 /** `HGShadowConfig`: the sun shadow's look and the cached and contact shadows' settings */

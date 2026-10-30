@@ -130,7 +130,12 @@ test('volumes of inactive scene states are not candidates', () => {
 const phase = (name: string, inactive: EnvironmentSectionName[]): EnvironmentPhase => {
 	const sections = {} as EnvironmentPhase['sections'];
 	for (const section of ENVIRONMENT_SECTIONS) {
-		sections[section] = { active: !inactive.includes(section), value: { from: name }, textures: [] };
+		sections[section] = {
+			active: !inactive.includes(section),
+			value: { from: name },
+			textures: [],
+			materials: [],
+		};
 	}
 	return { name, sections };
 };
