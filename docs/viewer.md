@@ -346,9 +346,12 @@ details:
   or scene value changed (`#dirty`), the stream's `version` changed, the auto exposure is still
   moving (or waiting on its first histogram), or `continuous` is on. after any of those it renders
   32 more frames of the same view (`SETTLE_FRAMES`, reusing the last selection) so the temporal
-  antialiasing converges, unless `antialiasing` is off. it traverses without rendering while
-  streaming is in progress (`!stream.idle`), and does nothing at all when the view is still and
-  streaming is idle. the environment re-blends only when the eye, its settings or a fade changed.
+  antialiasing converges, unless `antialiasing` is off. drifting fog
+  ([flow noise](game-data/lighting.md#flow-noise)) also renders every frame, reusing the last
+  selection, while `flowNoisePlaying` is on and the environment has it; turning that off freezes its
+  time. it traverses without rendering while streaming is in progress (`!stream.idle`), and does
+  nothing at all when the view is still and streaming is idle. the environment re-blends only when
+  the eye, its settings or a fade changed.
 - **stats** publish every 250 ms and notify subscribers only when the JSON differs, so the React
   panels don't re-render on a still view.
 - **one traversal, many passes.** selection runs once per frame; shadow layers reuse its buckets.

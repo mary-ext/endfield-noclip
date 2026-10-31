@@ -36,6 +36,24 @@ fn over_transparent(color: vec3f, px: vec2i) -> vec3f {
 	return mix(sum.rgb / max(sum.a, 1e-5), color, revealage);
 }
 
+// the height fog's flow noise (one channel, in red) and its repeating sampler
+@group(3) @binding(0) var flow_noise_texture: texture_3d<f32>;
+@group(3) @binding(1) var flow_noise_sampler: sampler;
+
+// the game's drifting fog on surfaces: scrolling noise at the surface's world position sways how much of the
+// fog it gets, from none to up to twice as much, less with distance. `transmittance` is what the fog lets
+// through of the surface, which bounds how far past the fogged colour the mix may go
+fn drift_fog(unfogged: vec3f, fogged: vec3f, transmittance: vec3f, position: vec3f, distance: f32) -> vec3f {
+	let strength = post.flow_noise.w * clamp(1.0 - distance * post.flow_noise_scale.y, 0.0, 1.0);
+	if (strength <= 0.0) {
+		return fogged;
+	}
+	let noise = textureSampleLevel(flow_noise_texture, flow_noise_sampler,
+		position * post.flow_noise_scale.x + post.flow_noise.xyz, 0.0).r;
+	let amount = min(1.0 - strength + 2.0 * noise * strength, 1.0 + dot(transmittance, vec3f(1.0 / 3.0)));
+	return mix(unfogged, fogged, amount);
+}
+
 fn glow(px: vec2i) -> vec3f {
 	return max(textureLoad(glow_texture, px, 0).rgb, vec3f(0.0));
 }
@@ -71,5 +89,8 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 	color = over_transparent(color, px);
 	let eye_depth = view_depth(depth);
 	let distance = length(ray * eye_depth);
-	return vec4f(atmosphere_over(color, direction, distance, froxels_at(in.uv, eye_depth)) + glow(px), 1.0);
+	let fog = fog_over(direction, distance, froxels_at(in.uv, eye_depth));
+	let fogged = drift_fog(color, color * fog.transmittance + fog.inscatter, fog.transmittance,
+		post.eye.xyz + ray * eye_depth, distance);
+	return vec4f(fogged + glow(px), 1.0);
 }

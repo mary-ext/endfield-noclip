@@ -42,8 +42,11 @@ packs or renders correctly.
   initialization are unknown, so weather stays a manual preview
 - environment volume initial enablement and `EnvironmentEnable` script conditions, needed before any
   automatic gating
-- volumetric fog: local fog volumes and flow noise aren't drawn, and the grid size and history
-  weight are Unreal's defaults rather than the game's quality preset
+- volumetric fog: local fog volumes and the volumetric light's flow noise (`enableVLFlowNoise`)
+  aren't drawn, and the grid size and history weight are Unreal's defaults rather than the game's
+  quality preset. the height fog's [flow noise](game-data/lighting.md#flow-noise) is unchecked on
+  water and glass, and its volume blend is read from the height-fog section's and assumed for the
+  volumetric one
 - local lights ([lighting](game-data/lighting.md#local-lights)): no shadows, shadow-only lights,
   flicker or multiple-scattering term; light beams aren't drawn; lights inside prefabs and dynamic
   structures aren't packed
@@ -129,8 +132,8 @@ packs or renders correctly.
   rocks) draw their rest pose
 - DynamicStreaming entities ignore stream areas (their `VisibleAreaGroup` values aren't read), and
   the game's HLOD-unload triggers aren't decoded
-- some mesh/material references are missing from the install's path-hash table, and one texture
-  format (`GraphicsFormat` 54) fails conversion. failed exact lookups stay explicit
+- some mesh/material references are missing from the install's path-hash table. failed exact lookups
+  stay explicit
 
 ## packaging
 

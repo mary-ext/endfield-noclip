@@ -564,7 +564,7 @@ export const streamWholeTexture = (request: {
 	stream: StreamManager;
 	textures: TextureStore;
 	id: number | null;
-	kind: '2d' | 'cube' | '2d-array';
+	kind: '2d' | 'cube' | '2d-array' | '3d';
 	priority: number;
 }): StreamedTexture | null => {
 	const { stream, textures, id, kind, priority } = request;

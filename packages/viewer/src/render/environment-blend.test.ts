@@ -271,3 +271,36 @@ it('fades wetness in from dry with the wet side’s settings when only one side 
 	assert.equal(result?.wetness.toFixed(6), '0.250000');
 	assert.equal(result?.wetnessBasePorosity, 0.8);
 });
+
+it('fades the flow noise in from one side, and crossfades noises of different speeds at the halfway point', () => {
+	const fog = (enableFlowNoise: boolean, flowNoiseIntensity: number, flowNoiseSpeed: number) => ({
+		enableFlowNoise,
+		flowNoiseIntensity,
+		flowNoiseSpeed,
+		flowNoiseTilling: 0.01,
+		flowNoiseDistance: 100,
+		flowNoiseDir: [0, 0, 1],
+	});
+	const blend = (from: ReturnType<typeof fog>, to: ReturnType<typeof fog>, x: number) => {
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a minimal stand-in
+		const base = { name: 'base', volumetricFog: from, post: null } as unknown as EnvironmentProfile;
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above
+		const next = {
+			name: 'next',
+			active: ['volumetricFog'],
+			sections: { volumetricFog: to },
+		} as unknown as EnvironmentPhaseInfo;
+		const m = manifest([next], [volume({ shape: square, blendDistance: 20 })]);
+		// x m inside a 20 m blend distance
+		return blendEnvironment(m, base, [x, 25, 50], options).profile.volumetricFog;
+	};
+	// a quarter in: the noise only the base has keeps its settings at three quarters of its intensity
+	const fading = blend(fog(true, 0.8, 0.1), fog(false, 0, 0.5), 5);
+	assert.equal(fading.enableFlowNoise, true);
+	assert.equal(fading.flowNoiseIntensity.toFixed(6), '0.600000');
+	assert.equal(fading.flowNoiseSpeed, 0.1);
+	// three quarters in: the base's noise is gone and the next one is halfway faded in
+	const crossing = blend(fog(true, 0.8, 0.1), fog(true, 0.4, 0.5), 15);
+	assert.equal(crossing.flowNoiseIntensity.toFixed(6), '0.200000');
+	assert.equal(crossing.flowNoiseSpeed, 0.5);
+});

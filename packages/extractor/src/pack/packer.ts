@@ -1345,6 +1345,7 @@ const writePackage = async (
 		environments: EnvironmentProfile[];
 		environmentPhases: EnvironmentPhaseInfo[];
 		environmentVolumes: EnvironmentVolumeInfo[];
+		heightFogFlowNoise: number | null;
 		water: WaterTable;
 		lights: LightsTable;
 		irradiance: IrradianceTable;
@@ -1420,6 +1421,7 @@ const writePackage = async (
 		environments: states.environments,
 		environmentPhases: states.environmentPhases,
 		environmentVolumes: states.environmentVolumes,
+		heightFogFlowNoise: states.heightFogFlowNoise,
 		states: {
 			progressions: states.progressions,
 			conditionalSets: states.conditionalSets,

@@ -159,9 +159,10 @@ game's environment manager, which blends `HGEnvironmentPhase`s into an interpola
     stay off unless ticked in the scene-conditions panel, which previews them at full strength.
 - a factor ≥ 1 copies the section. below that, numbers and colours lerp, mode/type fields and
   references switch at ½, and the cloud panorama crossfades through `cloudFadeAlpha` (the old
-  texture fades out to ½, the new one in after), as the game's cloud lerp does. the game's
-  per-section lerps have more special cases (the precipitation transitions, for one); the generic
-  lerp is an approximation.
+  texture fades out to ½, the new one in after), as the game's cloud lerp does. the height fog's
+  flow noise has its own rule ([flow noise](lighting.md#flow-noise)). the game's per-section lerps
+  have more special cases (the precipitation transitions, for one); the generic lerp is an
+  approximation.
 
 the "volumes at camera" toggle turns blending off (the base profile alone). a pinned phase replaces
 the volume blend with that one phase over the base. per-volume checkboxes override the scene-state

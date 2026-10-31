@@ -10,6 +10,7 @@ import {
 	type EnvironmentSectionName,
 } from '@endfield-noclip/formats/hg/environment-phase';
 import type { PlainObject } from '@endfield-noclip/formats/unity/plain-object';
+import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type {
 	EnvironmentPhaseInfo,
 	EnvironmentProfile,
@@ -88,6 +89,8 @@ export interface EnvironmentPlan {
 	volumeOwners: { levelTag: number; sceneStates: number[] }[];
 	/** textures the profiles and phases reference; slots index this list */
 	textures: ObjectRef[];
+	/** index into {@link textures} of the height fog's flow noise, or `null` if the install lacks it */
+	flowNoise: number | null;
 	debug: LevelEnvironmentDebug[];
 }
 
@@ -115,7 +118,31 @@ export interface FinishedEnvironments {
 	environments: EnvironmentProfile[];
 	environmentPhases: EnvironmentPhaseInfo[];
 	environmentVolumes: EnvironmentVolumeInfo[];
+	heightFogFlowNoise: number | null;
 }
+
+/**
+ * the noise the height fog's flow noise samples. it's one of the render pipeline's default resources rather
+ * than something a phase references
+ */
+const FLOW_NOISE_PATH =
+	'Packages/com.hg.render-pipelines/Runtime/RenderPipelineResources/Texture/HeightFogFlowNoise.asset';
+
+/** @returns the flow noise texture, or `null` if the install doesn't have it where expected */
+const findFlowNoise = async (
+	context: Pick<Context, 'world'>,
+	resolver: AssetResolver,
+): Promise<ObjectRef | null> => {
+	const [hash] = await context.world.hashesOf(FLOW_NOISE_PATH);
+	if (hash === undefined) {
+		return null;
+	}
+	try {
+		return await resolver.findUnique({ hash, path: FLOW_NOISE_PATH }, UnityClass.Texture3D);
+	} catch {
+		return null;
+	}
+};
 
 /**
  * resolves every level's environment and loads the phases and profiles involved
@@ -140,6 +167,7 @@ export const planEnvironments = async (
 		volumes: [],
 		volumeOwners: [],
 		textures: [],
+		flowNoise: null,
 		debug: [],
 	};
 	if (levels.length === 0) {
@@ -150,6 +178,10 @@ export const planEnvironments = async (
 		context.world.pathLookup(),
 		context.resolver(),
 	]);
+	const flowNoise = await findFlowNoise(context, resolver);
+	if (flowNoise !== null) {
+		plan.flowNoise = plan.textures.push(flowNoise) - 1;
+	}
 
 	// levels mostly share phases and profiles, so loads are cached; they run for all levels at once
 	const phaseLoads = new Map<bigint, Promise<LoadedPhase>>();
@@ -432,6 +464,7 @@ export const finishEnvironments = (
 			return phase;
 		}),
 		environmentVolumes: plan.volumes,
+		heightFogFlowNoise: plan.flowNoise === null ? null : (textureIds[plan.flowNoise] ?? null),
 	};
 };
 

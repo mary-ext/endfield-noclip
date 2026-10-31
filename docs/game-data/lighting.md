@@ -640,8 +640,31 @@ fog over it, then the froxels.
     (a dozen pixels across on a 2000-pixel-wide view) fully lit or fully dark, and the temporal
     antialiasing can't average a pattern that coarse.
 
-the volumetric fog's local fog volumes and flow noise are not drawn; its local lights are (see
-[local lights](#local-lights)), unshadowed.
+the volumetric fog's local fog volumes and its volumetric light flow noise are not drawn; its local
+lights are (see [local lights](#local-lights)), unshadowed.
+
+### flow noise
+
+a phase's height-fog set can make the fog drift: `enableFlowNoise` sways how much fog each opaque
+surface gets with a scrolling 3D noise, the drifting fog banks at Marker Stone. the set is the
+volumetric section's while volumetric fog is on, else the height-fog section's, as for the layers.
+the game applies it in its deferred lighting after all the fog; the viewer in the composite, on
+opaque surfaces only (not the sky).
+
+- the noise is the render pipeline's `HeightFogFlowNoise`, a 64³ alpha-only texture, packed once as
+  the manifest's `heightFogFlowNoise`. it's sampled with repeat at the surface's world position ×
+  `flowNoiseTilling`, plus `flowNoiseDir · flowNoiseSpeed` × time.
+- strength `k = flowNoiseIntensity · saturate(1 − distance / flowNoiseDistance)`; the surface
+  becomes `mix(unfogged, fogged, min(1 − k + 2 · noise · k, 1 + T))`, `T` the mean of what the fog
+  lets through. so noise 0.5 leaves the fog as it is, low noise clears it and high noise thickens it
+  up to twice as much.
+- across volumes, two noises with the same speed and tiling blend their intensity, distance and
+  direction; otherwise the first fades out to the halfway point and the second fades in. a noise on
+  one side only fades in from zero intensity with that side's settings.
+
+where a phase without the noise applies fully, there is none: Wuling City's own phase turns off what
+its outskirts' phase sets. the viewer's "drifting fog" toggle turns it off, and "animate drifting
+fog" pauses it; while it plays the viewer renders every frame.
 
 ## post chain
 

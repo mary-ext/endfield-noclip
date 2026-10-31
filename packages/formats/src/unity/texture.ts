@@ -120,6 +120,9 @@ const GRAPHICS_FORMATS: ReadonlyMap<number, SourceFormat & { isSrgb: boolean }> 
 	[49, { name: 'R32_SFloat', linear: VkFormat.R32_SFLOAT, isSrgb: false }],
 	[50, { name: 'R32G32_SFloat', linear: VkFormat.R32G32_SFLOAT, isSrgb: false }],
 	[52, { name: 'R32G32B32A32_SFloat', linear: VkFormat.R32G32B32A32_SFLOAT, isSrgb: false }],
+	// alpha alone, one byte per texel (the height fog's flow noise, which shaders read as `.a`); kept in red, as
+	// TextureFormat Alpha8 is
+	[54, { name: 'A8_UNorm', linear: VkFormat.R8_UNORM, isSrgb: false }],
 	[57, { name: 'B8G8R8A8_SRGB', linear: VkFormat.B8G8R8A8_SRGB, isSrgb: true }],
 	[59, { name: 'B8G8R8A8_UNorm', linear: VkFormat.B8G8R8A8_UNORM, isSrgb: false }],
 	[96, { name: 'RGBA_DXT1_SRGB', linear: VkFormat.BC1_RGBA_SRGB_BLOCK, isSrgb: true }],

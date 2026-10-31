@@ -58,6 +58,9 @@ const viewDimension = (kind: ReadyTexture['kind']): GPUTextureViewDimension => {
 		case '2d-array': {
 			return '2d-array';
 		}
+		case '3d': {
+			return '3d';
+		}
 		default: {
 			return '2d';
 		}
@@ -77,12 +80,13 @@ export const placeholderView = (
 		label,
 		dimension,
 		format = 'rgba8unorm',
-	}: { label: string; dimension: '2d' | '2d-array' | 'cube'; format?: GPUTextureFormat },
+	}: { label: string; dimension: '2d' | '2d-array' | 'cube' | '3d'; format?: GPUTextureFormat },
 ): GPUTextureView =>
 	device
 		.createTexture({
 			label,
 			size: [1, 1, dimension === 'cube' ? 6 : 1],
+			dimension: dimension === '3d' ? '3d' : '2d',
 			format,
 			usage: GPUTextureUsage.TEXTURE_BINDING,
 		})
@@ -132,7 +136,7 @@ export class TextureStore {
 	 * @param kind the kind the caller binds it as
 	 * @returns the entry if this viewer can stream it (that kind, a supported format, block-aligned size)
 	 */
-	streamable(id: number, kind: '2d' | 'cube' | '2d-array'): ReadyTexture | null {
+	streamable(id: number, kind: '2d' | 'cube' | '2d-array' | '3d'): ReadyTexture | null {
 		const entry = this.#table.entries[id];
 		if (entry?.status !== 'ready' || entry.kind !== kind) {
 			return null;
@@ -280,6 +284,7 @@ export class TextureStore {
 		return this.#device.createTexture({
 			label: `texture ${entry.id}@${top}`,
 			size: [layout.width, layout.height, layout.depthOrArrayLayers],
+			dimension: entry.kind === '3d' ? '3d' : '2d',
 			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TEXTURE_FORMATS keys are WebGPU format names
 			format: entry.format as GPUTextureFormat,
 			mipLevelCount: entry.mipCount - top,

@@ -170,6 +170,8 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 				<Toggle viewer={viewer} name="sky" label="sky" />
 				<Toggle viewer={viewer} name="heightFog" label="height and volumetric fog" />
 				<Toggle viewer={viewer} name="atmosphereFog" label="atmosphere fog" />
+				<Toggle viewer={viewer} name="flowNoise" label="drifting fog" />
+				<Toggle viewer={viewer} name="flowNoisePlaying" label="animate drifting fog" />
 				<Toggle viewer={viewer} name="shadows" label="shadows" />
 				<Toggle viewer={viewer} name="cloudShadows" label="cloud shadows" />
 				<Toggle viewer={viewer} name="water" label="water" />

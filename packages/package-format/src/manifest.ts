@@ -14,6 +14,7 @@
 import type { EnvironmentProfile, EnvironmentPhaseInfo, EnvironmentVolumeInfo } from './environment.ts';
 import type { StatesInfo } from './states.ts';
 import type { TerrainInfo } from './terrain.ts';
+import type { TextureRef } from './textures.ts';
 import { type TileKey, tileId } from './tiles.ts';
 import type { TreeInfo, ContentRef } from './tree.ts';
 import type { Rect, Bounds } from './values.ts';
@@ -73,6 +74,11 @@ export interface PackageManifest {
 	environmentPhases: EnvironmentPhaseInfo[];
 	/** the scene's environment volumes, for blending at the camera */
 	environmentVolumes: EnvironmentVolumeInfo[];
+	/**
+	 * the 3D noise the height fog's flow noise samples (one channel), or `null` if the install lacks it. absent
+	 * in packages written before it was extracted
+	 */
+	heightFogFlowNoise?: TextureRef;
 	states: StatesInfo;
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
 	archives: ArchiveInfo[];

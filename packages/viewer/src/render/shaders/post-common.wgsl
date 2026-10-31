@@ -113,6 +113,10 @@ struct Post {
 	froxel_range: vec4f,
 	// x = 1 with screen-space reflections, yzw unused
 	reflections: vec4f,
+	// the height fog's flow noise: how far it has scrolled (texture repeats), w = intensity (0 when off)
+	flow_noise: vec4f,
+	// x = texture repeats per metre, y = 1 / the distance it fades out over (m), zw unused
+	flow_noise_scale: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> post: Post;

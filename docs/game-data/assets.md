@@ -141,7 +141,9 @@ so BC blocks pass through unchanged. `Texture2D`-family classes name their forma
 `TextureFormat` and their colour space with `m_ColorSpace` (1 = sRGB); array and 3D classes use
 `GraphicsFormat`, which encodes sRGB itself. sRGB-ness comes from the texture, never from the
 material slot. scenery textures are overwhelmingly BC7 with full mip chains, plus BC5 normals, a few
-BC1 and RGBAHalf vertex-animation textures.
+BC1 and RGBAHalf vertex-animation textures. alpha-only textures (`TextureFormat` Alpha8,
+`GraphicsFormat` 54, one byte per texel) are stored as `r8unorm`, so shaders read their alpha from
+red.
 
 ### material and shader
 

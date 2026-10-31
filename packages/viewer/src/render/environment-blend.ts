@@ -463,6 +463,8 @@ const applyPhase = (profile: EnvironmentProfile, phase: EnvironmentPhaseInfo, t:
 			target[name] = lerpCloud(target[name], source[name], t);
 		} else if (name === 'rain' && target[name] !== undefined) {
 			target[name] = lerpRain(target[name], source[name], t);
+		} else if (name === 'heightFog' || name === 'volumetricFog') {
+			target[name] = lerpFlowNoise(target[name], source[name], t);
 		} else {
 			target[name] = lerpObject(target[name], source[name], t);
 		}
@@ -550,6 +552,64 @@ const lerpRain = (
 		}
 		out.enableWetness = true;
 		out.wetness = (typeof on.wetness === 'number' ? on.wetness : 0) * (aOn ? 1 - t : t);
+	}
+	return out;
+};
+
+const number = (value: unknown): number => (typeof value === 'number' ? value : 0);
+
+/**
+ * the height-fog sections' `Lerp` for their flow noise. when both sides have it with the same speed and
+ * tiling, it blends; otherwise a noise that changes speed or tiling fades out to the halfway point and the
+ * other fades in, and a noise on one side only fades in from nothing with that side's settings
+ */
+const lerpFlowNoise = (
+	a: Record<string, unknown>,
+	b: Record<string, unknown>,
+	t: number,
+): Record<string, unknown> => {
+	const out = lerpObject(a, b, t);
+	const aOn = a.enableFlowNoise === true;
+	const bOn = b.enableFlowNoise === true;
+	const keep = (from: Record<string, unknown>): void => {
+		for (const key of ['flowNoiseSpeed', 'flowNoiseTilling', 'flowNoiseDir']) {
+			out[key] = structuredClone(from[key]);
+		}
+	};
+	if (aOn && bOn) {
+		// Unity's Mathf.Approximately
+		const close = (key: string): boolean => {
+			const x = number(a[key]);
+			const y = number(b[key]);
+			return Math.abs(x - y) < Math.max(Math.max(Math.abs(x), Math.abs(y)) * 1e-6, 8 * 1.401298e-45);
+		};
+		if (close('flowNoiseSpeed') && close('flowNoiseTilling')) {
+			return out;
+		}
+		if (t <= 0.5) {
+			keep(a);
+			out.flowNoiseIntensity = (1 - 2 * t) * number(a.flowNoiseIntensity);
+		} else {
+			keep(b);
+			out.flowNoiseIntensity = (2 * t - 1) * number(b.flowNoiseIntensity);
+		}
+	} else if (aOn !== bOn) {
+		const on = aOn ? a : b;
+		keep(on);
+		out.enableFlowNoise = true;
+		out.flowNoiseDistance = on.flowNoiseDistance;
+		out.flowNoiseIntensity = number(on.flowNoiseIntensity) * (aOn ? 1 - t : t);
+	} else {
+		for (const key of [
+			'enableFlowNoise',
+			'flowNoiseIntensity',
+			'flowNoiseDistance',
+			'flowNoiseSpeed',
+			'flowNoiseTilling',
+			'flowNoiseDir',
+		]) {
+			out[key] = structuredClone(a[key]);
+		}
 	}
 	return out;
 };

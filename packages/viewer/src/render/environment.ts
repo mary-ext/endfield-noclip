@@ -101,6 +101,12 @@ export type HeightFogInput = Pick<
 	| 'heightFogDirectionalInscatteringExponent'
 	| 'heightFogDirectionalInscatteringStartDistance'
 	| 'heightFogDirectionalInscattering'
+	| 'enableFlowNoise'
+	| 'flowNoiseIntensity'
+	| 'flowNoiseDistance'
+	| 'flowNoiseTilling'
+	| 'flowNoiseDir'
+	| 'flowNoiseSpeed'
 >;
 
 /** `HGVolumetricFogConfig`: its height-fog set plus the volumetric fog's own parameters */
@@ -260,6 +266,23 @@ export interface HeightFog {
 	directionalDirection: Vec3;
 	directionalExponent: number;
 	directionalStartDistance: number;
+	/** drifting noise in how much fog surfaces get, or `null` when it's off */
+	flowNoise: FlowNoise | null;
+}
+
+/**
+ * the height fog's flow noise (`_HeightFogFlowNoiseParams0..1`): a scrolling 3D noise that scales how much of
+ * the fog a surface gets, fading out with distance
+ */
+export interface FlowNoise {
+	/** how far the noise scrolls per second, in texture repeats */
+	velocity: Vec3;
+	/** how strongly the noise sways the fog at the camera */
+	intensity: number;
+	/** texture repeats per metre */
+	tiling: number;
+	/** metres at which the noise has faded out */
+	distance: number;
 }
 
 /**
@@ -546,6 +569,12 @@ const DEFAULT_HEIGHT_FOG: HeightFogInput = {
 	heightFogDirectionalInscatteringExponent: 4,
 	heightFogDirectionalInscatteringStartDistance: 0,
 	heightFogDirectionalInscattering: [0, 0, 0, 1],
+	enableFlowNoise: false,
+	flowNoiseIntensity: 0,
+	flowNoiseDistance: 60,
+	flowNoiseTilling: 0.01,
+	flowNoiseDir: [0, 0, 1],
+	flowNoiseSpeed: 0,
 };
 
 /** the default look: a clear late-afternoon sky, for packages without environment profiles */
@@ -811,7 +840,7 @@ const cloudShadowLook = (cloud: CloudInput | null, light: LightInput): Environme
 	};
 };
 
-/** HGAtmosphereRenderer.SetupShaderVariablesGlobalHeightFog, minus the flow noise */
+/** HGAtmosphereRenderer.SetupShaderVariablesGlobalHeightFog */
 const heightFogLook = (fog: HeightFogInput, light: LightInput): HeightFog => ({
 	enabled: fog.enable,
 	layers: [
@@ -840,6 +869,19 @@ const heightFogLook = (fog: HeightFogInput, light: LightInput): HeightFog => ({
 	directionalDirection: towardsRotatedLight(light.rotationHeightFogDirectionalInscattering),
 	directionalExponent: fog.heightFogDirectionalInscatteringExponent,
 	directionalStartDistance: fog.heightFogDirectionalInscatteringStartDistance,
+	flowNoise:
+		fog.enableFlowNoise && fog.flowNoiseIntensity > 0
+			? {
+					velocity: [
+						fog.flowNoiseDir[0] * fog.flowNoiseSpeed,
+						fog.flowNoiseDir[1] * fog.flowNoiseSpeed,
+						fog.flowNoiseDir[2] * fog.flowNoiseSpeed,
+					],
+					intensity: fog.flowNoiseIntensity,
+					tiling: fog.flowNoiseTilling,
+					distance: fog.flowNoiseDistance,
+				}
+			: null,
 });
 
 /** HGVolumetricFogRenderer's constants, minus the flow noise, local fog volumes and local lights */

@@ -114,6 +114,13 @@ export interface ViewerOptions {
 	shadows: boolean;
 	/** darken the sun under the environment's projected cloud shadow texture */
 	cloudShadows: boolean;
+	/** sway how much fog surfaces get with the environment's drifting 3D noise, where it has one */
+	flowNoise: boolean;
+	/**
+	 * let the flow noise drift: the viewer keeps rendering while it moves. off freezes it, so a still view
+	 * costs nothing
+	 */
+	flowNoisePlaying: boolean;
 	water: boolean;
 	ao: boolean;
 	/** screen-space reflections, as on puddles, wet floors and metal */
@@ -164,6 +171,8 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	atmosphereFog: true,
 	shadows: true,
 	cloudShadows: true,
+	flowNoise: true,
+	flowNoisePlaying: true,
 	water: true,
 	ao: true,
 	reflections: true,
@@ -372,6 +381,8 @@ export class Viewer {
 	#viewProj = new Float32Array(16);
 	/** frames still to render so the temporal antialiasing settles after the view stopped changing */
 	#settleFrames = 0;
+	/** seconds the flow noise has drifted; it only advances while playing */
+	#flowTime = 0;
 
 	private constructor(gfx: GfxDevice, canvas: HTMLCanvasElement) {
 		this.#gfx = gfx;
@@ -630,6 +641,7 @@ export class Viewer {
 		this.#meshes.releaseMaterials();
 		// the destroyed store's sky textures
 		this.#post.setCloud(null);
+		this.#post.setFlowNoise(null);
 		this.#post.celestial.setTextures(() => null);
 		this.#setReflection(this.#noReflection, 1);
 		this.#setShadowRamp(null);
@@ -700,6 +712,18 @@ export class Viewer {
 			priority: 1e6,
 		});
 		this.#post.setCloud(cloud?.binding ?? null);
+		// the flow noise is one texture for the whole package, wanted only while an environment drifts
+		const flowNoise =
+			environment.heightFog.flowNoise === null || !this.options.flowNoise
+				? null
+				: streamWholeTexture({
+						stream,
+						textures,
+						id: scene.pkg.manifest.heightFogFlowNoise ?? null,
+						kind: '3d',
+						priority: 1e6,
+					});
+		this.#post.setFlowNoise(flowNoise?.binding ?? null);
 
 		const celestialIds = celestialTextures(this.#celestial);
 		this.#post.celestial.setTextures(
@@ -1337,6 +1361,12 @@ export class Viewer {
 			this.#settleFrames--;
 			render = true;
 		}
+		// drifting fog moves on its own, so it renders every frame, reusing the last selection; paused, its time
+		// stands still and a still view costs nothing
+		if (scene !== null && options.flowNoisePlaying && this.#post.drifts(post)) {
+			this.#flowTime += dt;
+			render = true;
+		}
 		if (render) {
 			this.#lastDraws = this.#render(scene !== null);
 			this.#frameMs = this.#frameMs * 0.9 + dt * 1000 * 0.1;
@@ -1566,6 +1596,8 @@ export class Viewer {
 			sky: options.sky,
 			heightFog: options.heightFog,
 			atmosphereFog: options.atmosphereFog,
+			flowNoise: options.flowNoise,
+			flowTime: this.#flowTime,
 			ao: options.ao,
 			reflections: options.reflections,
 			bloom: options.bloom,

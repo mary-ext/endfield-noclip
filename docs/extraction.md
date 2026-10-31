@@ -213,5 +213,5 @@ to entities and chunk files, and `assets.json` says why an asset didn't convert.
   still start workers.
 - LevelData files with populated blackbox settings (factory puzzle scenes) are listed in
   `unsupported-interactives.json` rather than partially read.
-- some texture formats aren't convertible (e.g. GraphicsFormat 54); they appear as failures in the
-  report and `assets.json`.
+- texture formats without a mapping in `texture.ts` aren't convertible; they appear as failures in
+  the report and `assets.json`.

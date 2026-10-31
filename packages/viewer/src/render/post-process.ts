@@ -33,7 +33,7 @@ import type { VolumetricFog } from './volumetric-fog.ts';
 import type { WaterRenderer } from './water-renderer.ts';
 
 /** byte size of `Post` in post-common.wgsl */
-const POST_BYTES = 61 * 16;
+const POST_BYTES = 63 * 16;
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
@@ -74,6 +74,10 @@ export interface PostSettings {
 	sky: boolean;
 	heightFog: boolean;
 	atmosphereFog: boolean;
+	/** sway the fog with the environment's flow noise */
+	flowNoise: boolean;
+	/** seconds the flow noise has drifted */
+	flowTime: number;
 	ao: boolean;
 	/** screen-space reflections */
 	reflections: boolean;
@@ -95,6 +99,7 @@ const effectiveSettings = (settings: PostSettings): PostSettings => {
 		tonemapper: 'none',
 		heightFog: false,
 		atmosphereFog: false,
+		flowNoise: false,
 		ao: false,
 		reflections: false,
 		bloom: false,
@@ -221,6 +226,10 @@ export class PostProcess {
 	/** the cloud panorama bound in the celestial pass */
 	#cloud: TextureBinding;
 	#noCloud: TextureBinding;
+	/** the height fog's flow noise bound in the composite pass */
+	#flowNoise: TextureBinding;
+	#noFlowNoise: TextureBinding;
+	#repeatSampler: GPUSampler;
 	#lutsReady = false;
 	/** the volumetric fog the composite and water passes add in front */
 	#fog: VolumetricFog;
@@ -284,6 +293,20 @@ export class PostProcess {
 			version: -1,
 		};
 		this.#cloud = this.#noCloud;
+		this.#repeatSampler = device.createSampler({
+			label: 'flow noise',
+			magFilter: 'linear',
+			minFilter: 'linear',
+			addressModeU: 'repeat',
+			addressModeV: 'repeat',
+			addressModeW: 'repeat',
+		});
+		this.#noFlowNoise = {
+			view: placeholderView(device, { label: 'no flow noise', dimension: '3d', format: 'r8unorm' }),
+			sampler: this.#repeatSampler,
+			version: -1,
+		};
+		this.#flowNoise = this.#noFlowNoise;
 
 		const module = (label: string, parts: string[]): GPUShaderModule =>
 			device.createShaderModule({ label, code: postShaderSource(parts) });
@@ -486,6 +509,48 @@ export class PostProcess {
 		if (sized !== null) {
 			sized.passes.celestial.groups[2] = this.#celestialGroup(sized.sceneTextures);
 		}
+	}
+
+	/**
+	 * binds the height fog's flow noise, once it streams in.
+	 *
+	 * @param noise the 3D texture's binding, or `null` for none
+	 */
+	setFlowNoise(noise: TextureBinding | null): void {
+		const next = noise ?? this.#noFlowNoise;
+		if (next === this.#flowNoise) {
+			return;
+		}
+		this.#flowNoise = next;
+		const sized = this.#sized;
+		if (sized !== null) {
+			sized.passes.composite.groups[3] = this.#flowNoiseGroup();
+		}
+	}
+
+	/**
+	 * @param settings the post settings
+	 * @returns whether the composite draws drifting fog, which changes from frame to frame
+	 */
+	drifts(settings: PostSettings): boolean {
+		const effective = effectiveSettings(settings);
+		return (
+			effective.flowNoise &&
+			effective.heightFog &&
+			this.#environment.heightFog.flowNoise !== null &&
+			this.#flowNoise !== this.#noFlowNoise
+		);
+	}
+
+	/** the composite pass's group 3: the flow noise and the repeating sampler the game reads it with */
+	#flowNoiseGroup(): GPUBindGroup {
+		return this.#device.createBindGroup({
+			layout: this.#pipelines.composite.getBindGroupLayout(3),
+			entries: [
+				{ binding: 0, resource: this.#flowNoise.view },
+				{ binding: 1, resource: this.#repeatSampler },
+			],
+		});
 	}
 
 	/**
@@ -720,7 +785,11 @@ export class PostProcess {
 				},
 				composite: {
 					pipeline: p.composite,
-					groups: [...this.#skyGroups(p.composite), this.#sceneGroup(scene, aoBlurred, celestialTexture)],
+					groups: [
+						...this.#skyGroups(p.composite),
+						this.#sceneGroup(scene, aoBlurred, celestialTexture),
+						this.#flowNoiseGroup(),
+					],
 					target: sceneView,
 				},
 				taa: this.#uniformsGroup(this.taa.pipeline),
@@ -864,6 +933,12 @@ export class PostProcess {
 			set(59, [sampling?.start ?? 0, 0, 0, 0]);
 		}
 		set(60, [settings.reflections ? 1 : 0, 0, 0, 0]);
+		{
+			const flow = this.drifts(settings) ? environment.heightFog.flowNoise : null;
+			const time = settings.flowTime;
+			set(61, flow === null ? [0, 0, 0, 0] : [...flow.velocity.map((v) => v * time), flow.intensity]);
+			set(62, [flow?.tiling ?? 0, flow === null ? 0 : 1 / flow.distance, 0, 0]);
+		}
 		f[31 * 4 + 3] = environment.cloud !== null && this.#cloud !== this.#noCloud ? 1 : 0;
 		f[33 * 4 + 3] = settings.debugView === 'clouds' ? 1 : 0;
 		this.#device.queue.writeBuffer(this.#uniforms, 0, f);
