@@ -3,7 +3,15 @@ import { test } from 'node:test';
 
 import type { ReadyMaterial, ShaderEntry } from '@endfield-noclip/package-format/materials';
 
-import { ErosionRow, LookFlags, LookRow, materialLooks, TopLayerRow, UV1_SHIFT } from './materials.ts';
+import {
+	ErosionRow,
+	LayerBlendRow,
+	LayerSource,
+	LookFlags,
+	LookRow,
+	materialLooks,
+	UV1_SHIFT,
+} from './materials.ts';
 
 test('effect geometry cannot become opaque walls through the fallback, while ordinary unknown shaders remain visible', () => {
 	const shaders: ShaderEntry[] = [
@@ -332,12 +340,108 @@ test('moss rock: the top layer takes the parallax slots and rows, its own tiling
 		],
 	});
 	assert.deepEqual(look.textures, [-1, 1, -1, -1, -1, 2, 3]);
-	assert.notEqual(look.flags & LookFlags.TopLayer, 0);
+	assert.notEqual(look.flags & LookFlags.LayerBlend, 0);
 	const row = (at: number) => Array.from(look.params.subarray(at, at + 4));
 	assert.deepEqual(row(LookRow.uv + 5 * 4), [2, 2, 0.25, 0.5]);
 	assert.deepEqual(row(LookRow.uv + 6 * 4), [2, 2, 0.25, 0.5]);
-	assert.deepEqual(row(TopLayerRow.coverage), [0, -1, 0.5, 2]);
-	assert.deepEqual(row(TopLayerRow.height), [1, Math.fround(0.056), 0.5, 0]);
+	assert.deepEqual(row(LayerBlendRow.coverage), [0, -1, 0.5, 2]);
+	assert.deepEqual(row(LayerBlendRow.height), [1, Math.fround(0.056), 0.5, LayerSource.Top]);
 	// the tint linearized, times the brighter scale; saturation 1 − 0.25
-	assert.deepEqual(row(TopLayerRow.color), [2, 0.42808229, 0, 0.75].map(Math.fround));
+	assert.deepEqual(row(LayerBlendRow.color), [2, 0.42808229, 0, 0.75].map(Math.fround));
+	// no moss: the fuzzy shading is neutral
+	assert.deepEqual(row(LayerBlendRow.fuzzy), [0, 0, 1, 0]);
+	assert.deepEqual(row(LayerBlendRow.fuzzy2), [0, 1, 1, 0]);
+});
+
+test('moss mounds: the mask layer takes its mask map into the emissive slot, on the UV set its type picks, and shades as moss', () => {
+	const shaders: ShaderEntry[] = [
+		{
+			name: 'HGRP/Lit',
+			family: 'lit',
+			floats: { _LayerBlendMaskUVType: 0, _Layer1FuzzyDarkPower: 1, _Layer1FuzzyBrightPower: 6 },
+			colors: {},
+			vectors: {},
+			textures: { _LayerBlendMaskMap: 'white' },
+			normalMaps: [],
+		},
+	];
+	const slot = (texture: number, uv = 0) => ({
+		texture,
+		uv,
+		scale: [3, 3] as [number, number],
+		offset: [0, 0] as [number, number],
+	});
+	const entry = (
+		id: number,
+		keywords: string[],
+		slots: ReadyMaterial['slots'],
+		floats: Record<string, number>,
+	): ReadyMaterial => ({
+		id,
+		status: 'ready',
+		shader: 0,
+		keywords,
+		renderQueue: 2450,
+		blend: 'alphaTest',
+		blendFactors: null,
+		alphaClipThreshold: 0.5,
+		cull: 'back',
+		zWrite: true,
+		baseTextureMapCount: 2,
+		slots,
+		floats,
+		colors: {},
+		vectors: {},
+	});
+	const layerSlots = { _BaseColorMap: slot(0), _Layer1BaseMap: slot(2), _Layer1BumpMap: slot(3) };
+	const moss = ['_ALPHATEST_ON', '_LAYERBLEND_MASK', '_LAYERBLEND_MOSS', '_TWO_BASEMAP'];
+	const [mound] = materialLooks({
+		shaders,
+		entries: [
+			entry(
+				0,
+				moss,
+				// the slot's own UV set (2) and tiling don't matter: the type picks the set and the map isn't tiled
+				{ ...layerSlots, _LayerBlendMaskMap: slot(4, 2) },
+				{ _Layer1FuzzyCoreDarkness: 0.2, _Layer1FuzzyEdgeShadowRange: 0.01, _Layer1FuzzyDarkPower: 0.05 },
+			),
+		],
+	});
+	assert.deepEqual(mound.textures, [0, -1, -1, 4, -1, 2, 3]);
+	assert.notEqual(mound.flags & LookFlags.LayerBlend, 0);
+	assert.notEqual(mound.flags & LookFlags.EmissiveMap, 0);
+	assert.notEqual(mound.flags & (1 << (UV1_SHIFT + 3)), 0);
+	const row = (at: number) => Array.from(mound.params.subarray(at, at + 4));
+	assert.deepEqual(row(LookRow.uv + 3 * 4), [1, 1, 0, 0]);
+	assert.equal(row(LayerBlendRow.height)[3], LayerSource.MaskMap);
+	assert.deepEqual(row(LayerBlendRow.fuzzy), [0.2, 0, 0.01, 0].map(Math.fround));
+	// the dark power is floored at 0.1
+	assert.deepEqual(row(LayerBlendRow.fuzzy2), [0, 0.1, 6, 0].map(Math.fround));
+
+	// a mask type reads a map channel instead; an emissive map leaves no slot for the mask map, and the noise
+	// variant isn't ported
+	const [channel, emissive, noise] = materialLooks({
+		shaders,
+		entries: [
+			entry(0, ['_LAYERBLEND_MASK', '_TWO_BASEMAP'], layerSlots, { _LayerBlendMaskType: 2 }),
+			entry(
+				1,
+				['_EMISSIVE_MAP', '_LAYERBLEND_MASK', '_TWO_BASEMAP'],
+				{ ...layerSlots, _EmissiveMap: slot(5), _LayerBlendMaskMap: slot(4) },
+				{},
+			),
+			entry(
+				2,
+				['_LAYERBLEND_MASK', '_LAYERBLEND_NOISEBLEND', '_TWO_BASEMAP'],
+				{ ...layerSlots, _LayerBlendMaskMap: slot(4) },
+				{},
+			),
+		],
+	});
+	assert.equal(channel.params[LayerBlendRow.height + 3], LayerSource.BaseAlpha);
+	assert.equal(channel.textures[3], -1);
+	for (const look of [emissive, noise]) {
+		assert.equal(look.flags & LookFlags.LayerBlend, 0);
+		assert.deepEqual(look.textures.slice(5), [-1, -1]);
+	}
 });

@@ -282,7 +282,7 @@ the Lit, LitTransparent and foliage shaders start from the base colour map times
 `_BaseColorTintCover`. the tint matters: Dijiang's black floors and walls are a light grey map
 tinted by about 0.3. `HGRP/LitHLOD` ignores the tint.
 
-four optional Lit layers come from the game's shader for these keywords
+these optional Lit layers come from the game's shader for these keywords
 ([`render/materials.ts`](../../packages/viewer/src/render/materials.ts), `shaders/mesh.wgsl`). each
 map samples UV set 0 or 1 as a float of its own says: `_BaseUVSet` for the base colour,
 `_BasePbrMapUVSet` for the normal and MRO maps, `_DetailUVSet`, `_MaskUVSet` and `_EmissiveUVSet`.
@@ -338,6 +338,21 @@ originium crystals' base colour and detail map tile ×5 over UV set 1. not drawn
   binds set 0 in place of a missing set 1. two all-moss rock materials have no base colour map, so
   their base is white and the layer is all they show. the layer takes the parallax slots, so
   `_BaseHeightMap` has none and reads as the shader's grey default.
+- **`_LAYERBLEND_MASK`** (~200 map02 materials): the same layer, covering by a mask instead of
+  facing up: `_LayerBlendMaskMap`'s R, sampled untiled from UV set 0 (UV set 1 when
+  `_LayerBlendMaskUVType` is 0, whatever the slot's own set), or with `_LayerBlendMaskType` 1 to 4
+  the layer bump map's alpha, the base colour's alpha, the normal map's alpha, or 1. the mask map
+  sits in the emissive slot, so the few materials with both an emissive map and a mask map draw
+  without the layer. not drawn: the `_LAYERBLEND_NOISEBLEND` and `_LAYERBLEND_MASK_PARALLAX_PBR`
+  variants, which draw without the layer.
+- **`_LAYERBLEND_MOSS`** (with either layer; the rabbit-hole resource mounds): shades the layer as
+  moss. with `f = 1 − N·V` of the blended normal and the raw coverage `c` (the mask, or the top
+  coverage before the height blend), the edge term
+  `e = saturate(1 − (c − _Layer1FuzzyEdgeShadowOffset)² / _Layer1FuzzyEdgeShadowRange)` darkens the
+  layer's colour by `_Layer1FuzzyEdgeShadowIntensity`; the colour is then scaled by
+  `mix(1 − _Layer1FuzzyCoreDarkness, 1, f^_Layer1FuzzyDarkPower)` and brightened towards the
+  silhouette by `_Layer1FuzzyEdgeBrightness` times twice its luma, by `f^_Layer1FuzzyBrightPower`
+  (both powers at least 0.1). the world normal tips down by `e · _Layer1FuzzyNormalStrength`.
 
 not drawn: a global highlight term around a point on the ground, a separate parallax mask texture
 (`_UseParallaxMask`; such materials don't glow), and the `_PARALLAX_MAP_WORLDSPACE`, `_PBR` and
