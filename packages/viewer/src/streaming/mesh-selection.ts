@@ -18,6 +18,7 @@ import type { ReadyTexture } from '@endfield-noclip/package-format/textures';
 
 import { CULL_FLOATS, ROW_WORDS } from '../render/instance-rows.ts';
 import { type MaterialLook, alphaTextureOf } from '../render/materials.ts';
+import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../render/shadow-map.ts';
 import type { TextureBinding, TextureStore } from '../render/texture-store.ts';
 import type { Plane, Vec3 } from '../scene/camera.ts';
 
@@ -34,13 +35,18 @@ export interface MeshBucket {
 	mirrored: boolean;
 	/** whether the instances are outside the view and only draw into the shadow map */
 	castOnly: boolean;
-	/** global row indices; reset every frame */
-	rows: number[];
+	/**
+	 * global row indices, grouped by the first shadow layer each instance can cast into (the last group for
+	 * none), so each layer draws a prefix of the bucket; reset every frame
+	 */
+	rows: number[][];
 	/** largest projected size of an instance this frame, px */
 	pixels: number;
 	/** offset and count of the rows in this frame's visible list, set by `InstanceRenderer.prepareList` */
 	first: number;
 	count: number;
+	/** per shadow layer, how many of the listed rows it draws (the prefix through its group) */
+	layerCounts: number[];
 	/** last frame the bucket had rows */
 	frame: number;
 	/** the bucket's draw order, computed by `MeshRenderer` on first use; -1 until then */
@@ -66,6 +72,8 @@ export interface MeshView {
 	textureBias: number;
 	/** instances outside the view but in this volume are selected as shadow casters; `null` for none */
 	casters: CasterVolume | null;
+	/** the shadow layers instances are grouped by; `null` without shadows */
+	shadowLayers: ShadowLayerVolumes | null;
 }
 
 /** what the selector reads */
@@ -139,6 +147,39 @@ const sphereInPlanes = (
 	return true;
 };
 
+/**
+ * @returns the first shadow layer a camera-relative sphere can cast into, or {@link SHADOW_LAYERS} for none.
+ *   each layer draws the instances whose first layer is it or an earlier one: that holds every caster it
+ *   needs, plus a few near the camera that only the nearer layers need
+ */
+const firstShadowLayer = (
+	volumes: ShadowLayerVolumes,
+	x: number,
+	y: number,
+	z: number,
+	radius: number,
+): number => {
+	const axes = volumes.axes;
+	const layers = volumes.layers;
+	const u = x * axes[0] + y * axes[1] + z * axes[2];
+	const v = x * axes[3] + y * axes[4] + z * axes[5];
+	const w = x * axes[6] + y * axes[7] + z * axes[8];
+	for (let layer = 0; layer < SHADOW_LAYERS; layer++) {
+		const at = layer * 4;
+		const reach = layers[at + 3] + radius;
+		const dw = w - layers[at + 2];
+		if (
+			Math.abs(u - layers[at]) <= reach &&
+			Math.abs(v - layers[at + 1]) <= reach &&
+			dw <= reach &&
+			dw >= -reach - volumes.reach
+		) {
+			return layer;
+		}
+	}
+	return SHADOW_LAYERS;
+};
+
 /** selects LODs and buckets instances */
 export class MeshSelector {
 	readonly selection: MeshSelection = { buckets: [], boxes: [] };
@@ -188,7 +229,7 @@ export class MeshSelector {
 		const boxes = selection.boxes;
 		buckets.length = 0;
 		boxes.length = 0;
-		const { eye, pixelFactor, viewportHeight, minPixels, casters } = view;
+		const { eye, pixelFactor, viewportHeight, minPixels, casters, shadowLayers } = view;
 		const planes = this.#planes;
 		const planeFloats = Math.min(view.planes.length * 4, planes.length);
 		for (let p = 0; p < planeFloats; p++) {
@@ -288,6 +329,8 @@ export class MeshSelector {
 							continue;
 						}
 					}
+					const group =
+						shadowLayers === null ? SHADOW_LAYERS : firstShadowLayer(shadowLayers, x, y, z, radius);
 					// the sign of the transform's determinant (its rows are the matrix rows)
 					const mirrored =
 						f32[at] * (f32[at + 5] * f32[at + 10] - f32[at + 6] * f32[at + 9]) -
@@ -302,11 +345,13 @@ export class MeshSelector {
 							slot.buckets[bucketIndex(mirrored, castOnly)] ?? this.#bucketOf(slot, mirrored, castOnly);
 						if (bucket.frame !== frame) {
 							bucket.frame = frame;
-							bucket.rows.length = 0;
+							for (const rows of bucket.rows) {
+								rows.length = 0;
+							}
 							bucket.pixels = 0;
 							buckets.push(bucket);
 						}
-						bucket.rows.push(row);
+						bucket.rows[group].push(row);
 						if (priority > bucket.pixels) {
 							bucket.pixels = priority;
 						}
@@ -462,10 +507,11 @@ export class MeshSelector {
 				look: this.#looks[material],
 				mirrored: mirrored === 1,
 				castOnly,
-				rows: [],
+				rows: Array.from({ length: SHADOW_LAYERS + 1 }, () => []),
 				pixels: 0,
 				first: 0,
 				count: 0,
+				layerCounts: Array.from({ length: SHADOW_LAYERS }, () => 0),
 				frame: -1,
 				sortKey: -1,
 			};

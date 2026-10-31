@@ -36,13 +36,18 @@ export const LIST_CAPACITY = 1 << 20;
 const BOX_FILL_VERTICES = 36;
 const BOX_WIRE_VERTICES = 24;
 
-/** rows to place in the visible list; {@link InstanceRenderer.prepareList} sets where they landed */
+/**
+ * rows to place in the visible list, in groups listed one after another; {@link InstanceRenderer.prepareList}
+ * sets where they landed
+ */
 export interface ListedRows {
-	readonly rows: readonly number[];
+	readonly rows: readonly (readonly number[])[];
 	/** list offset of the rows */
 	first: number;
 	/** rows that fit into the list */
 	count: number;
+	/** per group but the last, the listed rows up to the end of that group */
+	layerCounts: number[];
 }
 
 type DrawMode = 'ranges' | 'list';
@@ -274,7 +279,7 @@ export class InstanceRenderer {
 	 * each set where its rows landed. rows past the list capacity are dropped.
 	 *
 	 * @param boxes rows to draw as boxes
-	 * @param sets rows of the mesh draws; their `first` and `count` are set
+	 * @param sets rows of the mesh draws; their `first`, `count` and `layerCounts` are set
 	 * @returns the end of the list
 	 */
 	prepareList(boxes: readonly number[], sets: readonly ListedRows[]): number {
@@ -287,14 +292,20 @@ export class InstanceRenderer {
 		this.instanceCount = at;
 		this.#drawCount = at > 0 ? 1 : 0;
 		for (const set of sets) {
-			const rows = set.rows;
-			const count = Math.min(rows.length, LIST_CAPACITY - at);
-			for (let i = 0; i < count; i++) {
-				list[at + i] = rows[i];
-			}
 			set.first = at;
-			set.count = count;
-			at += count;
+			const groups = set.rows;
+			for (let g = 0; g < groups.length; g++) {
+				const rows = groups[g];
+				const count = Math.min(rows.length, LIST_CAPACITY - at);
+				for (let i = 0; i < count; i++) {
+					list[at + i] = rows[i];
+				}
+				at += count;
+				if (g < set.layerCounts.length) {
+					set.layerCounts[g] = at - set.first;
+				}
+			}
+			set.count = at - set.first;
 		}
 		if (at > 0) {
 			this.#device.queue.writeBuffer(this.#list, 0, list, 0, at);

@@ -170,6 +170,8 @@ interface PreparedDraw {
 	baseVertex: number;
 	first: number;
 	count: number;
+	/** per shadow layer, how many of the rows from `first` it draws */
+	layerCounts: readonly number[];
 	/** the material group; `null` for an effect until the transparent pass builds it */
 	material: GPUBindGroup | null;
 	cull: FaceCull;
@@ -764,6 +766,7 @@ export class MeshRenderer {
 					baseVertex: range.baseVertex,
 					first: bucket.first,
 					count: bucket.count,
+					layerCounts: bucket.layerCounts,
 					material,
 					cull,
 					uvFormat: resident.uvFormat,
@@ -776,6 +779,7 @@ export class MeshRenderer {
 				draw.baseVertex = range.baseVertex;
 				draw.first = bucket.first;
 				draw.count = bucket.count;
+				draw.layerCounts = bucket.layerCounts;
 				draw.material = material;
 				draw.cull = cull;
 				draw.uvFormat = resident.uvFormat;
@@ -860,14 +864,18 @@ export class MeshRenderer {
 	 * draws this frame's meshes into a shadow cascade.
 	 *
 	 * @param pass a shadow pass, with group 0 bound
+	 * @param layer the shadow layer, which draws only the instances that can cast into it
 	 * @returns draw calls issued
 	 */
-	encodeShadow(pass: GPURenderPassEncoder): number {
-		return this.#encode(pass, SHADOW_PHASES);
+	encodeShadow(pass: GPURenderPassEncoder, layer: number): number {
+		return this.#encode(pass, SHADOW_PHASES, layer);
 	}
 
-	/** encodes the phases in order; nothing if any phase's pipeline isn't ready */
-	#encode(pass: GPURenderPassEncoder, phases: readonly DrawPhase[]): number {
+	/**
+	 * encodes the phases in order; nothing if any phase's pipeline isn't ready. `layer` limits each draw to the
+	 * rows that shadow layer draws, or is -1 for all of them
+	 */
+	#encode(pass: GPURenderPassEncoder, phases: readonly DrawPhase[], layer = -1): number {
 		if (this.#drawCount === 0) {
 			return 0;
 		}
@@ -936,8 +944,9 @@ export class MeshRenderer {
 			let material: GPUBindGroup | null = null;
 			for (let i = from; i < to; i++) {
 				const draw = this.#draws[i];
+				const count = layer < 0 ? draw.count : draw.layerCounts[layer];
 				// only an effect drawn outside the transparent pass would lack its group
-				if (draw.material === null) {
+				if (draw.material === null || count === 0) {
 					continue;
 				}
 				if (draw.cull !== cull || draw.uvFormat !== uvFormat) {
@@ -958,9 +967,9 @@ export class MeshRenderer {
 					this.#bindStreams(pass, bindings, geometry, phase.streams);
 					pass.setIndexBuffer(geometry.indices, geometry.indexFormat);
 				}
-				pass.drawIndexed(draw.indexCount, draw.count, draw.firstIndex, draw.baseVertex, draw.first);
+				pass.drawIndexed(draw.indexCount, count, draw.firstIndex, draw.baseVertex, draw.first);
+				draws++;
 			}
-			draws += to - from;
 		}
 		return draws;
 	}

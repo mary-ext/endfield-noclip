@@ -1426,6 +1426,11 @@ export class Viewer {
 		this.#span('tree');
 		// per-instance LOD selection also requests geometry, so it runs before the stream update
 		let meshSelection: MeshSelection | null = null;
+		if (shadows) {
+			// mesh selection groups instances by the shadow layers they reach; #render fits the same layers again,
+			// which changes nothing while the camera holds still
+			this.#shadows.fit(this.camera, aspect, this.#environment.sunDirection);
+		}
 		if (scene.meshes !== null && options.instances) {
 			meshSelection = scene.meshes.run(selection.instances, {
 				eye: this.camera.position,
@@ -1435,6 +1440,7 @@ export class Viewer {
 				minPixels: options.minBoxPixels,
 				textureBias: options.textureBias,
 				casters: view.casters,
+				shadowLayers: shadows ? this.#shadows.volumes : null,
 			});
 		}
 		this.#span('mesh select');
@@ -1517,7 +1523,7 @@ export class Viewer {
 			if (this.options.terrain) {
 				draws += this.#terrain.encodeShadow(pass);
 			}
-			draws += this.#meshes.encodeShadow(pass);
+			draws += this.#meshes.encodeShadow(pass, i);
 			pass.end();
 		});
 		// after the shadow layers, which it reads

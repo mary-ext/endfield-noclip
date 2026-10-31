@@ -284,7 +284,12 @@ details:
   cast-only buckets, drawn first in each phase so the shadow passes draw a prefix and the main pass
   skips it. they stream at a tenth of their on-screen priority, only their alpha texture is
   requested, they never draw as boxes, and their tiles never hold back the HLOD refinement of tiles
-  in view.
+  in view. each bucket's rows are grouped by the first layer they can cast into (within the layer's
+  radius across the light, and up to the caster reach towards the sun), so a layer draws a prefix of
+  each bucket: the three sharp cascades skip everything beyond their 80 m, and instances no layer
+  reaches don't draw into the shadow map at all. this cut draws by more than half at every profiled
+  pose. the depth-only stages (shadow casters, alpha-tested depth) bind only the vertex streams they
+  read: positions, plus the UV sets for alpha testing.
 - **post** ([`render/post-process.ts`](../packages/viewer/src/render/post-process.ts)) is fullscreen
   triangles with `auto` layouts. the `ssr` passes march every lit pixel's reflection into last
   frame's composited scene, filter it over frames and blur it by roughness
@@ -488,10 +493,10 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
 
 - per-instance culling and LOD selection run on the CPU and dominate CPU time at dense views; a
   compute cull pass writing the visible list plus indirect arguments is the planned replacement.
-- shadows redraw every caster into all four layers on every rendered frame. per-layer culling and
-  caching a cascade while its snapped fit doesn't move are unbuilt. off-screen casters added about
-  14k rows and roughly 2–3 ms of CPU time at a street-level Wuling City view (unprofiled beyond
-  that).
+- shadows redraw their casters on every rendered frame; caching a cascade while its snapped fit
+  doesn't move is unbuilt. the terrain still draws whole into every layer. off-screen casters added
+  about 14k rows and roughly 2–3 ms of CPU time at a street-level Wuling City view (unprofiled
+  beyond that).
 - the temporal antialiasing has no sharpening, and nothing handles moving surfaces beyond the
   neighbourhood clip: water waves and the GTAO noise pattern rely on it. with temporal smoothing in
   place, the terrain's close-up layers could sample one projection plane per pixel at random, as the

@@ -79,6 +79,21 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
 	a[0] * b[1] - a[1] * b[0],
 ];
 
+/**
+ * the layers' volumes in the light's frame, for culling casters per layer: unit axes x, y (across the light)
+ * and z (along it), and per layer the camera-relative centre's coordinates along them and the radius. a
+ * caster reaches a layer while it's within the radius across the light, and between the layer's far side and
+ * {@link CASTER_REACH} beyond its near side along it
+ */
+export interface ShadowLayerVolumes {
+	/** x, y and z, three floats each */
+	axes: Float64Array;
+	/** per layer: the centre along x, y and z, and the radius */
+	layers: Float64Array;
+	/** how far towards the sun casters are kept beyond a layer's radius, m */
+	reach: number;
+}
+
 /** owns the shadow map and fits its layers */
 export class ShadowMap {
 	readonly texture: GPUTexture;
@@ -91,6 +106,12 @@ export class ShadowMap {
 	/** raw depth reads, for the sharp cascades' gathers */
 	readonly gatherSampler: GPUSampler;
 	readonly layers: ShadowLayer[];
+	/** the fitted layers' volumes, updated by {@link fit} */
+	readonly volumes: ShadowLayerVolumes = {
+		axes: new Float64Array(9),
+		layers: new Float64Array(4 * SHADOW_LAYERS),
+		reach: CASTER_REACH,
+	};
 	/** the sharp cascades' reach squared and the reciprocal of their fade span in squared distance */
 	readonly fade: readonly [number, number] = [
 		SHARP_REACH ** 2,
@@ -158,6 +179,7 @@ export class ShadowMap {
 		const x = normalize(cross(reference, z));
 		const y = cross(z, x);
 		const eye = camera.position;
+		this.volumes.axes.set([...x, ...y, ...z]);
 		let near = camera.near;
 		for (let i = 0; i < SHADOW_LAYERS; i++) {
 			const far = SPLITS[i];
@@ -189,6 +211,7 @@ export class ShadowMap {
 			const depthRange = back + radius;
 			const layer = this.layers[i];
 			layer.sphere = [c[0], c[1], c[2], radius * radius];
+			this.volumes.layers.set([dot(c, x), dot(c, y), dot(c, z), radius], i * 4);
 			const m = layer.render;
 			// rows: x / r, y / r, (z + back) / range, 1
 			const rows = [
