@@ -201,9 +201,12 @@ lifecycle (`idle → queued → fetching → decoding → uploading → ready`, 
   every HLOD block, global scenery), plus the terrain layer textures, are pinned at load: queued
   first, uploaded first, never evicted. pinned height pages keep their samples on the CPU for
   ground-height queries (the first pose).
-- **fetching.** at most 8 requests in flight (`maxRequests`). queued blobs are sorted by priority,
-  and each seed coalesces neighbours in the same archive (gaps ≤ 64 KiB, span ≤ 2 MiB, ≤ 96 blobs)
-  into one range read. core blobs are read from memory without a request slot. requests whose blobs
+- **fetching.** at most 32 requests in flight (`maxRequests`): a dense view wants thousands of blobs
+  averaging ~60 KiB, so latency, not bandwidth, bounds loading. from the dev server, 32 instead of 8
+  brought Wuling's first views from 9–12 s to 3–4 s; 64 gained little more, and coalescing more
+  widely saved less while fetching up to 75% more bytes. queued blobs are sorted by priority, and
+  each seed coalesces neighbours in the same archive (gaps ≤ 64 KiB, span ≤ 2 MiB, ≤ 96 blobs) into
+  one range read. core blobs are read from memory without a request slot. requests whose blobs
   nobody wanted for more than 2 frames are aborted; queued blobs not wanted this frame return to
   idle.
 - **uploading.** at most 24 MiB per frame, pinned first, then by priority. decoded content nobody

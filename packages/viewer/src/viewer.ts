@@ -547,7 +547,7 @@ export class Viewer {
 				},
 			},
 			instanceRowKinds(tree, pkg.manifest.global),
-			{ budgetBytes: this.options.budgetMiB * 2 ** 20, maxRequests: 8, uploadBytesPerFrame: 24 * 2 ** 20 },
+			{ budgetBytes: this.options.budgetMiB * 2 ** 20, maxRequests: 32, uploadBytesPerFrame: 24 * 2 ** 20 },
 		);
 		// the coarse layer: everything in the core (coarse terrain pages, every HLOD block, global scenery)
 		const coreBlobs: number[] = [];
