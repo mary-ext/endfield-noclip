@@ -1,101 +1,100 @@
-// the water pass's reflection march (the viewer's own, not the game's ssr.wgsl): a mirror ray steps through the
-// depth buffer until it passes behind something drawn. needs post-common.wgsl and a `depth_texture` (the main
-// pass's depth) declared by the pass.
+// the water pass's reflection march, the same screen-space march as the game's (and ssr.wgsl's `fs_march`): the
+// mirror ray is projected to the screen, stretched to its edge and stepped in equal steps of uv and device depth,
+// so it has no reach limit in metres. needs post-common.wgsl and a `depth_texture` (the main pass's depth)
+// declared by the pass.
 
-const SSR_STEPS = 48u;
-const SSR_REFINE = 5u;
-// the first step (m) and how much each step grows, which reach ~190 m together
-const SSR_FIRST_STEP = 0.15;
-const SSR_STEP_GROWTH = 1.09;
-// a hit must lie within this much of the depth buffer's surface: a fixed part plus a share of the step
-const SSR_THICKNESS = 0.3;
-// rays fade out within this fraction of the screen edge
-const SSR_EDGE_FADE = 0.08;
+// PC high quality's `ssrRayMarchingSampleCount`, which glossy surfaces such as water always take
+const SSR_STEPS = 32.0;
+// the ScreenSpaceReflectionVolume's fadenessOnScreen, fadenessOnMirrorMul and fadenessOnMirrorAdd, the same in
+// every shipped profile
+const SSR_FADE_ON_SCREEN = 0.1;
+const SSR_FADE_MIRROR_MUL = 2.0;
+const SSR_FADE_MIRROR_ADD = -1.0;
 
-struct Projected {
-	// uv of the main pass's (jittered) targets
-	uv: vec2f,
-	// view depth along the forward axis (m)
-	depth: f32,
-}
-
-// a camera-relative position on the main pass's targets
-fn project(rel: vec3f) -> Projected {
+// a camera-relative point on the main pass's (jittered) targets: xy uv, z device depth
+fn ssr_project(rel: vec3f) -> vec3f {
 	let d = dot(rel, post.forward.xyz);
 	let right = post.right.xyz;
 	let up = post.up.xyz;
 	let ndc = vec2f(dot(rel, right) / dot(right, right), dot(rel, up) / dot(up, up)) / d + post.jitter.xy;
-	return Projected(vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5), d);
+	return vec3f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, post.forward.w / d);
 }
 
-// the scene's view depth under a uv, or 0 where nothing was drawn (sky)
-fn scene_depth(uv: vec2f) -> f32 {
-	let px = vec2i(uv * post.viewport.xy);
-	let depth = textureLoad(depth_texture, px, 0);
-	if (depth <= 0.0) {
-		return 0.0;
-	}
-	return view_depth(depth);
+// the main pass's (reversed-Z) device depth under a uv, 0 for the sky
+fn ssr_device_depth(uv: vec2f) -> f32 {
+	let px = clamp(vec2i(uv * post.viewport.xy), vec2i(0), vec2i(post.viewport.xy) - 1);
+	return textureLoad(depth_texture, px, 0);
 }
 
 struct SsrHit {
 	// where the ray hit, on the main pass's targets
 	uv: vec2f,
-	// 0 for a miss, fading towards the screen's edges and for rays turning towards the camera
+	// 0 for a miss, fading towards the screen's edges and for surfaces seen head-on
 	confidence: f32,
 }
 
-// marches the unit ray `r` from the camera-relative `start` (already pushed off its surface); `px` seeds the
-// per-pixel step offset that the temporal resolve averages out
-fn ssr_trace(start: vec3f, r: vec3f, px: vec2f) -> SsrHit {
+// marches the mirror ray `r` of the surface at the camera-relative `start` with normal `n`; `px` seeds the
+// per-frame start offset
+fn ssr_trace(start_rel: vec3f, r: vec3f, n: vec3f, px: vec2f) -> SsrHit {
 	let miss = SsrHit(vec2f(0.0), 0.0);
-	// rays towards the camera leave the screen through surfaces the depth buffer can't see behind
-	let facing = smoothstep(-0.1, 0.2, dot(r, post.forward.xyz));
-	if (facing <= 0.0) {
+	let eye = dot(start_rel, post.forward.xyz);
+	let end_rel = start_rel + r * eye;
+	if (dot(end_rel, post.forward.xyz) <= post.forward.w) {
 		return miss;
 	}
-	var step = SSR_FIRST_STEP * (0.5 + ign(px + f32(u32(post.eye.w) % 8u) * 5.588238));
-	var t = 0.0;
-	var previous = 0.0;
+	let start = ssr_project(start_rel);
+	let end = ssr_project(end_rel);
+	// stretch the ray to the screen's edge (Unreal's clip-to-screen)
+	let start_ndc = vec2f(start.x * 2.0 - 1.0, 1.0 - start.y * 2.0);
+	var delta = vec3f((end.x - start.x) * 2.0, (start.y - end.y) * 2.0, end.z - start.z);
+	{
+		let half_length = max(0.5 * length(delta.xy), 1e-9);
+		let scale =
+			1.0 - max(abs(delta.xy + start_ndc * half_length) - half_length, vec2f(0.0)) / max(abs(delta.xy), vec2f(1e-9));
+		delta *= min(scale.x, scale.y) / half_length;
+	}
+	let tolerance = max(abs(delta.z) / SSR_STEPS, 1e-4);
+	let step = vec3f(delta.x * 0.5, -delta.y * 0.5, delta.z) / SSR_STEPS;
+	var offset: f32;
+	{
+		let pixels = abs(step.xy * post.viewport.xy);
+		let longest = max(pixels.x, pixels.y);
+		if (longest < 1.0) {
+			offset = 1.0 / (longest + 0.001);
+		} else {
+			offset = ign(px + vec2f(2.083, 4.867) * post.eye.w);
+		}
+	}
+	var position = start + step * offset;
+	var last = position.z - ssr_device_depth(position.xy);
 	var hit = false;
-	for (var i = 0u; i < SSR_STEPS; i++) {
-		previous = t;
-		t += step;
-		let p = project(start + r * t);
-		if (p.depth <= post.forward.w || any(p.uv < vec2f(0.0)) || any(p.uv > vec2f(1.0))) {
-			break;
-		}
-		let surface = scene_depth(p.uv);
-		let behind = p.depth - surface;
-		if (surface > 0.0 && behind > 0.0) {
-			if (behind < SSR_THICKNESS + step) {
-				hit = true;
+	for (var i = 0.0; i < SSR_STEPS; i += 4.0) {
+		var diff: array<f32, 4>;
+		var found = -1;
+		for (var k = 0; k < 4; k++) {
+			let tap = position + step * f32(k + 1);
+			diff[k] = tap.z - ssr_device_depth(tap.xy);
+			// a hit lies behind the depth buffer's surface by less than two steps' depth
+			if (found < 0 && abs(diff[k] + tolerance) < tolerance) {
+				found = k;
 			}
+		}
+		if (found >= 0) {
+			let before = select(diff[max(found - 1, 0)], last, found == 0);
+			let after = diff[found];
+			position += step * (f32(found) + clamp(before / (before - after), 0.0, 1.0));
+			hit = true;
 			break;
 		}
-		step *= SSR_STEP_GROWTH;
+		position += step * 4.0;
+		last = diff[3];
 	}
 	if (!hit) {
 		return miss;
 	}
-	// binary search between the last step in front and the first behind
-	var lo = previous;
-	var hi = t;
-	for (var i = 0u; i < SSR_REFINE; i++) {
-		let mid = 0.5 * (lo + hi);
-		let p = project(start + r * mid);
-		let surface = scene_depth(p.uv);
-		if (surface > 0.0 && p.depth > surface) {
-			hi = mid;
-		} else {
-			lo = mid;
-		}
-	}
-	let p = project(start + r * hi);
-	let surface = scene_depth(p.uv);
-	if (surface <= 0.0 || abs(p.depth - surface) > SSR_THICKNESS + (hi - lo) * 4.0 + 0.02 * surface) {
-		return miss;
-	}
-	let edge = min(p.uv, 1.0 - p.uv) / SSR_EDGE_FADE;
-	return SsrHit(p.uv, facing * clamp(min(edge.x, edge.y), 0.0, 1.0));
+	let edge = min(1.0 - max(position.x, position.y), min(position.x, position.y));
+	let on_screen = clamp(select(edge / SSR_FADE_ON_SCREEN, 1.0, edge > SSR_FADE_ON_SCREEN), 0.0, 1.0);
+	let v = normalize(start_rel);
+	let mirror = 1.0 - clamp(abs(dot(n, v)) * SSR_FADE_MIRROR_MUL + SSR_FADE_MIRROR_ADD, 0.0, 1.0);
+	return SsrHit(position.xy, on_screen * mirror);
 }

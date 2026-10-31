@@ -180,8 +180,7 @@ fn fs_water(in: VertexOut) -> @location(0) vec4f {
 	var reflected = sky;
 	var found = 0.0;
 	if (post.reflections.x > 0.5) {
-		// off the surface by two pixels' footprint, so the ray doesn't hit where it starts
-		let hit = ssr_trace(in.rel + up * 2.0 * surface_distance / post.right.w, r, in.position.xy);
+		let hit = ssr_trace(in.rel, r, n, in.position.xy);
 		if (hit.confidence > 0.0) {
 			reflected = mix(sky, textureLoad(background, vec2i(hit.uv * size), 0).rgb, hit.confidence);
 			found = hit.confidence;
