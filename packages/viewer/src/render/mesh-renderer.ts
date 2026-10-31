@@ -101,6 +101,14 @@ interface DrawPhase {
 	streams: VertexStreams;
 }
 
+/**
+ * the opaque meshes' depth, laid down before the terrain and the shading so each pixel is shaded once: the
+ * opaque phase then shades only where its depth equals this
+ */
+const PREPASS_PHASES: readonly DrawPhase[] = [
+	{ key: 'mesh/prepass', range: 'opaque', textured: false, shadow: false, streams: 'position' },
+];
+
 const MAIN_PHASES: readonly DrawPhase[] = [
 	{ key: 'mesh/opaque', range: 'opaque', textured: true, shadow: false, streams: 'all' },
 	{ key: 'mesh/cutout-depth', range: 'cutout', textured: true, shadow: false, streams: 'uv' },
@@ -392,7 +400,20 @@ export class MeshRenderer {
 		};
 		const shade: GPUFragmentState = { module, entryPoint: 'fs_opaque', targets: format.targets };
 		const [opaque, cutoutDepth, cutoutShade] = MAIN_PHASES;
-		prepare(opaque, { fragment: shade, depthStencil: depthWrite });
+		const depthEqual: GPUDepthStencilState = {
+			format: DEPTH_FORMAT,
+			depthWriteEnabled: false,
+			depthCompare: 'equal',
+		};
+		prepare(PREPASS_PHASES[0], {
+			fragment: {
+				module,
+				entryPoint: 'fs_depth',
+				targets: format.targets.map((target) => ({ ...target, writeMask: 0 })),
+			},
+			depthStencil: depthWrite,
+		});
+		prepare(opaque, { fragment: shade, depthStencil: depthEqual });
 		prepare(cutoutDepth, {
 			fragment: {
 				module,
@@ -403,7 +424,7 @@ export class MeshRenderer {
 		});
 		prepare(cutoutShade, {
 			fragment: shade,
-			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: 'equal' },
+			depthStencil: depthEqual,
 		});
 		prepare(TRANSPARENT_PHASES[0], {
 			fragment: { module, entryPoint: 'fs_transparent', targets: TRANSPARENT_TARGETS },
@@ -852,7 +873,39 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encode(pass: GPURenderPassEncoder): number {
+		if (!this.#ready(PREPASS_PHASES)) {
+			return 0;
+		}
 		return this.#encode(pass, MAIN_PHASES);
+	}
+
+	/**
+	 * lays down the opaque meshes' depth; call before anything else draws into the main pass, then
+	 * {@link encode}.
+	 *
+	 * @param pass the main pass, with group 0 bound
+	 * @returns draw calls issued
+	 */
+	encodePrepass(pass: GPURenderPassEncoder): number {
+		// the shading only shows where the prepass drew, so neither draws until both can
+		if (!this.#ready(MAIN_PHASES)) {
+			return 0;
+		}
+		return this.#encode(pass, PREPASS_PHASES);
+	}
+
+	/** @returns whether every pipeline of the phases is compiled */
+	#ready(phases: readonly DrawPhase[]): boolean {
+		for (const phase of phases) {
+			for (const cull of FACE_CULLS) {
+				for (const uvFormat of UV_FORMATS) {
+					if (this.#pipelines.get(pipelineKey(phase.key, cull, uvFormat)) === undefined) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -891,14 +944,8 @@ export class MeshRenderer {
 		}
 		// cutout depth and depth-equal shading must rasterize identically, so nothing draws until every variant
 		// is ready
-		for (const phase of phases) {
-			for (const cull of FACE_CULLS) {
-				for (const uvFormat of UV_FORMATS) {
-					if (this.#pipelines.get(pipelineKey(phase.key, cull, uvFormat)) === undefined) {
-						return 0;
-					}
-				}
-			}
+		if (!this.#ready(phases)) {
+			return 0;
 		}
 		pass.setBindGroup(1, this.#instances.bindGroup);
 		pass.setBindGroup(2, this.#drawGroup);

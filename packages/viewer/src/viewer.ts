@@ -1546,6 +1546,8 @@ export class Viewer {
 		});
 		if (hasScene) {
 			pass.setBindGroup(0, this.#frameBindGroup, [uniforms.offset]);
+			// the meshes' depth first, so the terrain and the meshes shade only what stays visible
+			draws += this.#meshes.encodePrepass(pass);
 			draws += this.#terrain.encode(pass);
 			draws += this.#meshes.encode(pass);
 			draws += this.#instances.encode(pass);

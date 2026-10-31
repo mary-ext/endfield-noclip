@@ -228,10 +228,14 @@ fn instance_rel(position: vec3f, ii: u32, draw: Draw) -> vec3f {
 }
 
 @vertex
-fn vs_depth(v: DepthIn, @builtin(instance_index) ii: u32) -> @builtin(position) vec4f {
+fn vs_depth(v: DepthIn, @builtin(instance_index) ii: u32) -> @builtin(position) @invariant vec4f {
 	let draw = draws[draw_ids[ii]];
 	return frame.view_proj * vec4f(instance_rel(v.position.xyz, ii, draw), 1.0);
 }
+
+// the opaque depth prepass writes depth alone; the targets' write masks are 0
+@fragment
+fn fs_depth() {}
 
 // what fs_cutout_depth reads, at VertexOut's locations so vs_main can feed it too
 struct CutoutDepthVaryings {

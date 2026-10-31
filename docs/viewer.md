@@ -253,15 +253,15 @@ details:
 - **main pass.** one sample per pixel into radiance and its ambient part (`rgba16float`), plus what
   lit surfaces hand the screen-space reflections: the sky reflection the radiance holds
   (`rgba16float`) and the normal, roughness and hit weight packed in `rg32uint`, which fills
-  WebGPU's default 32 bytes per sample; depth is stored for post. draw order: terrain, meshes
-  (opaque, then alpha-tested), instance boxes, box outlines (boxes larger than `outlineMetres`),
-  terrain wireframe. alpha-blended meshes draw afterwards in the `transparent` pass, which tests the
-  main pass's depth without writing it; the composite resolves them
-  ([glass](game-data/lighting.md#glass)). the pass's third target, the glow, sums additively blended
-  light, which the weighted sum and revealage can't hold. the composite adds it after the fog,
-  unfogged: the game's additive effects fog themselves at their own distance if at all, and fogging
-  them at the surface behind would hide those in front of the sky. effects hidden for blending
-  additively can draw into it.
+  WebGPU's default 32 bytes per sample; depth is stored for post. draw order: the opaque meshes'
+  depth, terrain, meshes (opaque, then alpha-tested), instance boxes, box outlines (boxes larger
+  than `outlineMetres`), terrain wireframe. alpha-blended meshes draw afterwards in the
+  `transparent` pass, which tests the main pass's depth without writing it; the composite resolves
+  them ([glass](game-data/lighting.md#glass)). the pass's third target, the glow, sums additively
+  blended light, which the weighted sum and revealage can't hold. the composite adds it after the
+  fog, unfogged: the game's additive effects fog themselves at their own distance if at all, and
+  fogging them at the surface behind would hide those in front of the sky. effects hidden for
+  blending additively can draw into it.
 - **antialiasing** is temporal with upsampling, as in the game, which has no MSAA. the main pass's
   projection is offset by a Halton (2, 3) subpixel jitter each frame (8 positions per cycle, more
   when upsampling), and the post passes that reconstruct view rays undo it. `taa` reconstructs each
@@ -361,8 +361,14 @@ details:
   panels don't re-render on a still view.
 - **one traversal, many passes.** selection runs once per frame; shadow layers reuse its buckets.
 - **few draws.** terrain is one draw; each mesh bucket is one instanced `drawIndexed` over its slice
-  of the visible list; draws are sorted by geometry then material so runs share bindings
-  ([`render/mesh-renderer.ts`](../packages/viewer/src/render/mesh-renderer.ts)).
+  of the visible list; alpha-blended draws are sorted by geometry then material so runs share
+  bindings, and depth-writing ones nearest first within each pipeline, which early depth testing
+  rewards more ([`render/mesh-renderer.ts`](../packages/viewer/src/render/mesh-renderer.ts)).
+- **each pixel shades once.** a depth prepass draws the opaque meshes' positions alone (no fragment
+  work) before anything else; the terrain then skips what they cover, and the opaque meshes shade
+  with `depthCompare: 'equal'`. the prepass and the shading compute positions through the same
+  `@invariant` function, so their depths match exactly. on an RDNA 2 GPU at 2560×1600 this saved
+  1.1–1.6 ms of 7–11 ms at dense views and cost about 0.1 ms where little overlaps.
 - **early depth survives alpha testing.** a shader that may discard loses early depth and, on
   tile-based GPUs, hidden-surface removal. opaque meshes use non-discarding pipelines, and shadow
   pipelines for them have no fragment stage. alpha-tested meshes lay down cut-out depth first, then
