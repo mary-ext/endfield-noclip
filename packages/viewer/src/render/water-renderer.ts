@@ -284,7 +284,10 @@ export class WaterRenderer {
 			data.set(resident.positionOffset, at + 12);
 			words[at + 15] = surface.config;
 			data.set(resident.positionScale, at + 16);
-			data[at + 19] = resident.normalOffset === null ? 0 : 1;
+			// the game draws LOD surfaces as a grid shaded with its own upward normals, so their mesh normals (wrong
+			// on some polygon meshes) never show; proxy-only surfaces take theirs
+			const lod = (surface.renderTypeMask & 2) !== 0;
+			data[at + 19] = resident.normalOffset === null || lod ? 0 : 1;
 			this.#draws.push({ geometry: resident, slot });
 			slot++;
 		}

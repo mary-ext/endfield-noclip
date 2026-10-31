@@ -204,8 +204,10 @@ counts per level, chunk file, mask, mesh and config, and single config assets
 
 - **pass**: drawn in the post chain after compositing, over a copy of the HDR scene, and only in the
   `lit` debug view. both faces are drawn so water reads from below. transforms are made eye-relative
-  on the CPU; the vertex stage reads the dequantized `unorm16x4` positions and, where the mesh has
-  them, its octahedral normals (else up). the pass binds the main pass's frame group, so water is
+  on the CPU; the vertex stage reads the dequantized `unorm16x4` positions and, for proxy-only
+  surfaces whose mesh has them, its octahedral normals. LOD surfaces face straight up: the game
+  shades them through its grid, whose normals point up, so their mesh normals never show (some
+  polygon meshes have triangles whose normals point down). the pass binds the main pass's frame group, so water is
   lit like the rest of the scene: the sun through its shadow maps, the irradiance volume, and the
   level's sky reflection.
 - **textures**: the wave-normal array, the global flow map and the caustic map are streamed whole.
