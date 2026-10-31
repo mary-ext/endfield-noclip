@@ -146,11 +146,14 @@ const StoryControls = ({
 	controls,
 	missions,
 	describe,
+	levelName,
 }: {
 	viewer: Viewer;
 	controls: readonly SceneControl[];
 	missions: ReadonlyMap<string, MissionInfo>;
 	describe: (rule: string) => string;
+	/** a level id's display name */
+	levelName: (id: string) => string;
 }) => {
 	const grouped = new Map<string | null, SceneControl[]>();
 	for (const control of controls) {
@@ -179,7 +182,12 @@ const StoryControls = ({
 								<summary>
 									{mission.name ?? mission.id}
 									<small className="muted">
-										{[mission.chapter, mission.episode, mission.name && mission.id]
+										{[
+											mission.levelId && `takes place in ${levelName(mission.levelId)}`,
+											mission.chapter,
+											mission.episode,
+											mission.name && mission.id,
+										]
 											.filter(Boolean)
 											.join(' · ')}
 									</small>
@@ -283,7 +291,13 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 						</summary>
 						<p className="muted small">{note}</p>
 						{kinds.includes('quest') ? (
-							<StoryControls viewer={viewer} controls={listed} missions={missions} describe={describe} />
+							<StoryControls
+								viewer={viewer}
+								controls={listed}
+								missions={missions}
+								describe={describe}
+								levelName={(id) => manifest.levels.find((entry) => entry.id === id)?.name ?? id}
+							/>
 						) : (
 							listed.map((entry) => (
 								<ControlRow key={entry.id} viewer={viewer} control={entry} describe={describe} />

@@ -39,6 +39,11 @@ export interface MissionInfo {
 	chapter: string | null;
 	/** the main story episode, inferred from the mission id (`e<n>…`); `null` for other missions */
 	episode: string | null;
+	/**
+	 * the level the mission takes place in (its quest log's level), or `null`. a quest can switch scenery of
+	 * other levels, so this needn't be a level its controls are listed for
+	 */
+	levelId: string | null;
 }
 
 /** where a quest or mission control sits in the story */

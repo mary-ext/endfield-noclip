@@ -65,6 +65,7 @@ test('quests take their objective text, step and mission; unknown missions keep 
 			category: 'main',
 			chapter: 'Part A · Sample Chapter',
 			episode: null,
+			levelId: 'map01_lv002',
 		},
 	]);
 	assert.deepEqual(

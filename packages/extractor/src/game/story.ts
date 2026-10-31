@@ -89,6 +89,7 @@ const missionInfo = (mission: MissionRuntime, plain: (key: string | null) => str
 				: [plain(`chapter${chapter}_num`), plain(`chapter${chapter}_name`)].filter(Boolean).join(' · ') ||
 					null,
 		episode: episode === undefined ? null : plain(`ep${episode}_name`),
+		levelId: mission.levelId,
 	};
 };
 

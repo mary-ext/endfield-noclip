@@ -299,7 +299,9 @@ string, with `<@…>…</>` rich-text tags, stripped for labels).
 - **mission**: `missionName.key` names it; `missionType` (0 Main, 1 Char, 2 Factory, 4 Hide, 5 Misc,
   7 World, 8 WeekRaid, 9 FakeMain, 10 Side, 11 Activity, 12 TBCMain) gives the quest log tab, as the
   client's mission type table groups them (main, side, discovery, events; the rest as other).
-  internal flag missions (`hidden*`, `dm*`) have no name.
+  internal flag missions (`hidden*`, `dm*`) have no name. `levelId` is where it takes place; its
+  quests can switch scenery of other levels (Valley Pass's fort mission switches The Hub's states),
+  so the panel lists a quest for the levels it gates and shows where its mission takes place.
 - **chapter**: `missionChapterBitmask` bit 1 is chapter one, 2 chapter two (texts `chapter<n>_num`,
   `chapter<n>_name`); 4 is indie, without text. prologue missions (`e0m…`) carry chapter one's bit,
   so only their id marks them as `chapter0`.
