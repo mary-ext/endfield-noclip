@@ -33,7 +33,10 @@ import {
 	vfxDecalLook,
 } from './effect-looks.ts';
 
-/** shader families that aren't drawn as opaque surfaces (fog volumes, light beams, effects) */
+/**
+ * shader families that aren't drawn as opaque surfaces (fog volumes, light beams, effects, and the water
+ * pipeline's own proxy shader, which the water pass stands in for)
+ */
 const SKIPPED_FAMILIES = new Set([
 	'fogSimple',
 	'volumetricBeam',
@@ -43,6 +46,7 @@ const SKIPPED_FAMILIES = new Set([
 	'vfxRefract',
 	'vfxDitherAlpha',
 	'waterDecal',
+	'waterProxy',
 ]);
 
 const FOLIAGE_FAMILIES = new Set(['leaf', 'grass', 'cardMesh']);

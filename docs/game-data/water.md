@@ -270,8 +270,11 @@ config sets it.
 ### WaterProxy and WaterDecal
 
 no static InitChunkData renderer uses an `HGRP/WaterProxy` or `HGRP/WaterDecal` material, so water
-in static scenery is only the surfaces above. these shader families can arrive through prefab
-content. the mesh renderer skips `waterDecal` and has no dedicated path for `waterProxy`.
+in static scenery is only the surfaces above. both arrive through prefab content. `HGRP/WaterProxy`
+has only the water pipeline's passes (top-down prepass, wetness mask, depth, the water G-buffer),
+none of which a scene renderer draws in the main view, so the mesh renderer skips the ten map02
+river meshes that carry it (`M_river_proxy_22`). WaterDecal boxes put foam on pools and channels
+at the foot of waterfalls; the mesh renderer doesn't draw them yet.
 
 ## open
 
@@ -280,5 +283,4 @@ content. the mesh renderer skips `waterDecal` and has no dedicated path for `wat
 - sector tiles: near the camera the game reads the flow (and most authored foam) from the 128 m
   sector tiles, blending to the global map at the edge of a 3 × 3 window; the viewer reads only the
   global map.
-- what WaterProxy meshes render and what WaterDecal projects.
 - rain ripples, wetness and character ripples aren't drawn.
