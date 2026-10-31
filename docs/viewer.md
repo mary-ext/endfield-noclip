@@ -199,7 +199,14 @@ emitter's place, the system and its index, so any moment can be evaluated on its
 - emissions are the rate's steady stream (one every `1 / rate` seconds, a random rate taking its
   mean) and each loop's bursts (count rounded, each fired with its probability), within the window
   the longest lifetime reaches back; non-looping systems stop emitting after one duration. the
-  newest `maxParticles` live ones are kept.
+  newest `maxParticles` live ones are kept. with a ring buffer a particle stays until newer ones
+  replace it, so the window reaches back far enough for `maxParticles` emissions; past its lifetime
+  it shows its end (or replays its loop range).
+- a texture sheet picks each particle's tile from its age (over its lifetime, or by frames per
+  second). the tile goes into the row's info word next to its kind (`rowInfo` in
+  [`render/instance-rows.ts`](../packages/viewer/src/render/instance-rows.ts)), and `sheet_uv` in
+  `frame.wgsl` remaps the mesh's UVs into it in the mesh and effect vertex stages; other rows carry
+  a 1×1 sheet, which leaves UVs alone.
 - start values read their curves at the emission's place in its loop. the shape gives the start
   position and direction (cones towards the matching point of their far end, volumes anywhere up to
   their length), placed by the shape's own transform.

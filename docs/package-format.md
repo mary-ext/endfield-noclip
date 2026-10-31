@@ -18,7 +18,7 @@ it.
 
 ## versioning
 
-`PACKAGE_VERSION` (20) is written to `manifest.version` and covers the manifest, the JSON tables and
+`PACKAGE_VERSION` (21) is written to `manifest.version` and covers the manifest, the JSON tables and
 how the parts fit together. each binary encoding (tree, chains, blob table, irradiance table,
 instance blocks, height, surface and splat pages, geometry blobs) carries its own version in its
 header, next to its codec. readers accept exactly the versions they know and reject any other, and
@@ -341,7 +341,9 @@ ones interned to one entry ([particles.ts](../packages/package-format/src/partic
 viewer can evaluate in closed form, so every live particle's state follows from its emission time
 and its own random values. values are Unity `MinMaxCurve`s (a constant, a curve times a scalar, or
 random between two of either). an emitter is an ordinary instance row: its transform is the system's
-frame and its bounds cover everywhere a particle reaches, so the row culls like any other.
+frame and its bounds cover everywhere a particle reaches, so the row culls like any other. a
+ring-buffered system's particles outlive their lifetime until replaced, held at their end or looping
+part of it; a texture sheet names the flipbook tile each particle's mesh UVs are remapped into.
 
 ### textures (`.tex`)
 

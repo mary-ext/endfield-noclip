@@ -18,20 +18,26 @@ import {
 	ParticleShapeKind,
 	type ParticleSystemInfo,
 	type ParticlesTable,
+	type ParticleTextureSheetInfo,
+	SheetRow,
 } from '@endfield-noclip/package-format/particles';
 
 import type { RangeAllocation } from '../gfx/range-allocator.ts';
 import type { Vec3 } from '../scene/camera.ts';
 import type { ResidentInstances } from '../streaming/stream-manager.ts';
 
-import { ROW_WORDS, RowKind } from './instance-rows.ts';
+import { linearRgb } from './color.ts';
+import { ROW_COLORED, ROW_WORDS, RowKind, packRowColor, rowInfo } from './instance-rows.ts';
 import { evaluateCurve } from './lens-flare-layout.ts';
 
 /** Unity's gravity, m/s² */
 const GRAVITY = 9.81;
 
-/** floats per particle in {@link ParticleSimulation.evaluate}'s output: position, rotation (xyzw), size */
-export const PARTICLE_FLOATS = 10;
+/**
+ * floats per particle in {@link ParticleSimulation.evaluate}'s output: position, rotation (xyzw), size, then
+ * the texture sheet's tile (0 without a sheet)
+ */
+export const PARTICLE_FLOATS = 11;
 
 /** the most particles one emitter shows */
 const MAX_PARTICLES = 1024;
@@ -81,6 +87,9 @@ const Channel = {
 	SpinZ: 26,
 	SizeOverLifetime: 27,
 	Burst: 28,
+	SheetRow: 29,
+	StartFrame: 30,
+	FrameOverTime: 31,
 } as const;
 
 /**
@@ -120,6 +129,71 @@ export const evaluateMinMax = (curve: MinMaxCurveInfo, time: number, r: number):
 		}
 		case CurveMode.TwoConstants: {
 			return curve.min + (curve.scalar - curve.min) * r;
+		}
+	}
+};
+
+/**
+ * @param lived a ring-buffered particle's age over its lifetime, which can pass 1
+ * @param loopRange the span of the lifetime it replays once it reaches the span's end, or `null` to hold it
+ *   at the end of its lifetime
+ * @returns the age over its lifetime it shows
+ */
+export const ringBufferAge = (lived: number, loopRange: readonly [number, number] | null): number => {
+	if (loopRange === null) {
+		return Math.min(lived, 1);
+	}
+	const [start, end] = loopRange;
+	if (lived <= end) {
+		return lived;
+	}
+	const span = end - start;
+	return span > 0 ? start + ((lived - end) % span) : end;
+};
+
+/**
+ * the tile of a texture sheet a particle shows
+ *
+ * @param sheet the system's texture sheet
+ * @param lived the particle's age over its lifetime, 0–1
+ * @param age its age, s
+ * @param loop the emission's place in its loop, where the start frame is read
+ * @param randomOf the particle's random value for a channel
+ * @param mesh the index of the particle's mesh
+ * @returns the tile, counted from the sheet's top-left along its rows
+ */
+export const sheetTile = (
+	sheet: ParticleTextureSheetInfo,
+	lived: number,
+	age: number,
+	loop: number,
+	randomOf: (channel: number) => number,
+	mesh: number,
+): number => {
+	const [columns, rows] = sheet.tiles;
+	const frames = sheet.row === null ? columns * rows : columns;
+	let frame = evaluateMinMax(sheet.startFrame, loop, randomOf(Channel.StartFrame));
+	if (sheet.frameOverTime === null) {
+		frame += (age * sheet.fps) / frames;
+	} else {
+		// a particle held at the end of its lifetime keeps the last cycle's end
+		const t = lived * sheet.cycles;
+		const phase = lived >= 1 ? 1 : t - Math.floor(t);
+		frame += evaluateMinMax(sheet.frameOverTime, phase, randomOf(Channel.FrameOverTime));
+	}
+	const index = Math.min(Math.floor((frame - Math.floor(frame)) * frames), frames - 1);
+	switch (sheet.row) {
+		case null: {
+			return index;
+		}
+		case SheetRow.Random: {
+			return Math.floor(randomOf(Channel.SheetRow) * rows) * columns + index;
+		}
+		case SheetRow.MeshIndex: {
+			return Math.min(mesh, rows - 1) * columns + index;
+		}
+		default: {
+			return sheet.row * columns + index;
 		}
 	}
 };
@@ -219,6 +293,8 @@ export class ParticleSimulation {
 	readonly #seed: number;
 	/** the longest a particle lives, s */
 	readonly #longest: number;
+	/** how far back emissions can still be alive, s: their lifetime, or until enough newer ones replace them */
+	readonly #lookback: number;
 	/** particles per second */
 	readonly #rate: number;
 	readonly #meshTotal: number;
@@ -234,6 +310,21 @@ export class ParticleSimulation {
 		this.#seed = seed;
 		this.#longest = Math.max(upperBound(info.startLifetime), 0);
 		this.#rate = Math.max(meanOf(info.rate), 0);
+		this.#lookback = this.#longest;
+		if (info.ringBuffer !== null) {
+			// the newest `maxParticles` emissions stay; look back far enough to find that many
+			const burstsPerLoop = info.bursts.reduce(
+				(sum, burst) => sum + Math.max(upperBound(burst.count), 0) * burst.cycles * burst.probability,
+				0,
+			);
+			const perSecond = this.#rate + burstsPerLoop / info.duration;
+			const kept = Math.min(info.maxParticles, MAX_PARTICLES) + 1;
+			if (!info.looping) {
+				this.#lookback = Infinity;
+			} else if (perSecond > 0) {
+				this.#lookback = Math.max(this.#longest, kept / perSecond + info.duration);
+			}
+		}
 		this.#meshTotal = info.meshWeights.reduce((sum, weight) => sum + weight, 0);
 		const rotation = info.shape?.rotation ?? [0, 0, 0];
 		this.#shapeRotation = eulerQuaternion(
@@ -245,7 +336,7 @@ export class ParticleSimulation {
 
 	/** seconds a looping system needs to look as if it had always played */
 	get settleTime(): number {
-		return this.info.startDelay + this.#longest + this.info.duration;
+		return this.info.startDelay + this.#lookback + this.info.duration;
 	}
 
 	/**
@@ -254,26 +345,31 @@ export class ParticleSimulation {
 	 * @param time seconds of system time (the viewer's time times the simulation speed)
 	 * @param down world down in the emitter's frame, unit length per metre of world (gravity's direction)
 	 * @param worldToLocal turns a world direction into the emitter's frame (for world-space velocities)
-	 * @param out {@link PARTICLE_FLOATS} floats per particle: position in the emitter's frame, rotation, size
+	 * @param out {@link PARTICLE_FLOATS} floats per particle: position in the emitter's frame, rotation, size,
+	 *   texture sheet tile
 	 * @returns how many particles were written (at most `out.length / PARTICLE_FLOATS`)
 	 */
 	evaluate(time: number, down: Vec3, worldToLocal: (direction: Vec3) => Vec3, out: Float32Array): number {
 		const emissions = this.#emitted(time);
 		const capacity = Math.floor(out.length / PARTICLE_FLOATS);
+		const ringBuffer = this.info.ringBuffer;
 		let count = 0;
-		// the newest particles win when there are more than the system allows; the game would skip the newest
-		// emissions instead, which the closed form can't tell apart
+		// the newest particles win when there are more than the system allows. without a ring buffer the game
+		// would skip the newest emissions instead, which the closed form can't tell apart
 		let alive = 0;
 		for (let i = emissions.length - 1; i >= 0 && alive < this.info.maxParticles && count < capacity; i--) {
 			const { time: born, id } = emissions[i];
-			const age = time - born;
+			let age = time - born;
 			const life = evaluateMinMax(
 				this.info.startLifetime,
 				this.#loopFraction(born),
 				random(this.#seed, id, Channel.Lifetime),
 			);
-			if (age < 0 || age >= life) {
+			if (age < 0 || (ringBuffer === null && age >= life)) {
 				continue;
+			}
+			if (ringBuffer !== null && life > 0) {
+				age = life * ringBufferAge(age / life, ringBuffer.loop ? ringBuffer.loopRange : null);
 			}
 			alive++;
 			if (this.#drawsMesh(id)) {
@@ -289,7 +385,7 @@ export class ParticleSimulation {
 		const emissions = this.#emissions;
 		emissions.length = 0;
 		const { duration, looping, startDelay, bursts } = this.info;
-		const from = Math.max(time - this.#longest, startDelay);
+		const from = Math.max(time - this.#lookback, startDelay);
 		const end = looping ? time : Math.min(time, startDelay + duration);
 		if (end < from) {
 			return emissions;
@@ -555,6 +651,10 @@ export class ParticleSimulation {
 		out.set(position, at);
 		out.set(rotation, at + 3);
 		out.set(size, at + 7);
+		out[at + 10] =
+			info.textureSheet === null
+				? 0
+				: sheetTile(info.textureSheet, lived, age, u, (channel) => random(seed, id, channel), info.mesh);
 	}
 }
 
@@ -715,6 +815,10 @@ export class ParticleField {
 		const out = this.#rowsF32;
 		const words = this.#rows;
 		const block = instances.blockSlot;
+		const sheet = info.textureSheet;
+		const color = info.startColor;
+		const tinted = color.some((channel) => channel !== 1);
+		const colorWord = tinted ? packRowColor([...linearRgb(color), color[3]]) : 0;
 		emitter.live.length = 0;
 		for (let i = 0; i < count; i++) {
 			const p = scratch.subarray(i * PARTICLE_FLOATS, i * PARTICLE_FLOATS + 3);
@@ -765,7 +869,15 @@ export class ParticleField {
 			out[o + 16] = extent;
 			out[o + 17] = extent;
 			out[o + 18] = extent;
-			words[o + 19] = RowKind.Detail;
+			let rowWord =
+				sheet === null
+					? RowKind.Detail
+					: rowInfo(RowKind.Detail, sheet.tiles, scratch[i * PARTICLE_FLOATS + 10], sheet.uvChannels);
+			if (tinted) {
+				words[o + 18] = colorWord;
+				rowWord = (rowWord | ROW_COLORED) >>> 0;
+			}
+			words[o + 19] = rowWord;
 			emitter.live.push(emitter.rows.start + i);
 		}
 		if (count > 0) {

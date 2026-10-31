@@ -120,6 +120,8 @@ export interface ParticleSystemInfo {
 	simulationSpeed: number;
 	/** seconds; read at the emission time over the duration */
 	startLifetime: MinMaxCurveInfo;
+	/** every particle's colour, rgba as authored (sRGB rgb); it multiplies the mesh's vertex colours */
+	startColor: [number, number, number, number];
 	/** m/s along the shape's start direction */
 	startSpeed: MinMaxCurveInfo;
 	/** x, y and z scale of the mesh, m */
@@ -149,6 +151,56 @@ export interface ParticleSystemInfo {
 	meshWeights: number[];
 	/** which of {@link meshWeights} the draw naming this entry shows */
 	mesh: number;
+	/**
+	 * particles outlive their lifetime until newer ones replace them (Unity's ring buffer); `null` when they
+	 * die at the end of it
+	 */
+	ringBuffer: ParticleRingBufferInfo | null;
+	/** a flipbook the particles step through (Unity's `TextureSheetAnimationModule`); `null` without */
+	textureSheet: ParticleTextureSheetInfo | null;
+}
+
+/** how a ring-buffered particle carries on past its lifetime */
+export interface ParticleRingBufferInfo {
+	/** `false` holds it at its end state; `true` replays the part of its lifetime in {@link loopRange} */
+	loop: boolean;
+	/** the replayed span, as fractions of the lifetime */
+	loopRange: [number, number];
+}
+
+/** {@link ParticleTextureSheetInfo.row} values besides a fixed row */
+export const SheetRow = {
+	/** a random row per particle */
+	Random: -1,
+	/** the row of the particle's mesh, {@link ParticleSystemInfo.mesh} */
+	MeshIndex: -2,
+} as const;
+
+/**
+ * a grid of tiles the particle mesh's UVs are remapped into, one tile at a time. tiles count left to right,
+ * then top to bottom, from the texture's top-left. tile `i` maps a UV `uv` to `(uv + (i mod x, y − 1 −
+ * floor(i / x))) / (x, y)`, UV (0, 0) being the texture's bottom-left as in Unity
+ */
+export interface ParticleTextureSheetInfo {
+	/** tiles across and down, 1–64 each */
+	tiles: [number, number];
+	/**
+	 * `null` steps through the whole sheet; a row number steps along that row alone, or a {@link SheetRow} value
+	 * picks the row per particle
+	 */
+	row: number | null;
+	/**
+	 * the frame, as a fraction of the frames: read at the particle's age over its lifetime, repeated
+	 * {@link cycles} times. `null` when frames advance by {@link fps} instead
+	 */
+	frameOverTime: MinMaxCurveInfo | null;
+	/** frames per second, when {@link frameOverTime} is `null` */
+	fps: number;
+	/** added to the frame, as a fraction of the frames; read at the emission's place in its loop */
+	startFrame: MinMaxCurveInfo;
+	cycles: number;
+	/** which UV sets take the tile: bit 0 for UV0, bit 1 for UV1 */
+	uvChannels: number;
 }
 
 /** Unity's `VelocityModule`, with constant (or two-constant) terms */

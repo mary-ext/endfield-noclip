@@ -8,7 +8,13 @@
 
 import { multiplyMatrices, trsMatrix, unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
-import { booleanField, numberField, objectField, vector3Field } from '@endfield-noclip/formats/unity/values';
+import {
+	booleanField,
+	isObject,
+	numberField,
+	objectField,
+	vector3Field,
+} from '@endfield-noclip/formats/unity/values';
 
 /** a Transform's local placement */
 export interface LocalTransform {
@@ -61,8 +67,8 @@ const curveValue = (curve: TypeTreeObject): number | null => {
  * @param renderer its `ParticleSystemRenderer`
  * @param emitter the emitter's local transform
  * @returns the particle mesh's matrix in the emitter's parent space, or `null` when the system doesn't keep a
- *   single mesh particle in a fixed orientation (camera-facing alignment, random shapes, several particles,
- *   curves)
+ *   single mesh particle in a fixed orientation and look (camera-facing alignment, random shapes, several
+ *   particles, curves, a texture sheet)
  */
 export const frozenParticleMatrix = (
 	system: TypeTreeObject,
@@ -76,7 +82,9 @@ export const frozenParticleMatrix = (
 		// ring buffer mode 0 lets particles die at the end of their lifetime
 		numberField(system, 'ringBufferMode') === 0 ||
 		!booleanField(system, 'playOnAwake') ||
-		numberField(initial, 'maxNumParticles') !== 1
+		numberField(initial, 'maxNumParticles') !== 1 ||
+		// a flipbook changes the particle's tile as it ages, which a still mesh can't show
+		(isObject(system['UVModule']) && booleanField(system['UVModule'], 'enabled'))
 	) {
 		return null;
 	}

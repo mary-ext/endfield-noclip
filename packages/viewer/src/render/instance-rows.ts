@@ -27,6 +27,49 @@ export const RowKind = {
 
 export type RowKind = (typeof RowKind)[keyof typeof RowKind];
 
+/**
+ * a row's info word: its {@link RowKind} in bits 0–3, then the texture sheet tile its mesh's UVs are remapped
+ * into (`sheet_uv` in frame.wgsl): tiles across − 1 in bits 4–9, down − 1 in bits 10–15, the tile in bits
+ * 16–27, and which UV sets take it (bit 28 UV0, bit 29 UV1). a 1×1 sheet leaves the UVs as they are
+ *
+ * @param kind the row's kind
+ * @param tiles tiles across and down, 1–64 each
+ * @param tile the tile, counted from the sheet's top-left along its rows
+ * @param uvChannels bit 0 for UV0, bit 1 for UV1
+ * @returns the info word
+ */
+export const rowInfo = (
+	kind: RowKind,
+	tiles: readonly [number, number],
+	tile: number,
+	uvChannels: number,
+): number =>
+	(kind |
+		((tiles[0] - 1) << 4) |
+		((tiles[1] - 1) << 10) |
+		((tile & 0xfff) << 16) |
+		((uvChannels & 3) << 28)) >>>
+	0;
+
+/**
+ * info bit of a row whose last half-extent word holds a colour instead (RGBA8, `instance_color` in
+ * frame.wgsl) that multiplies the mesh's vertex colours. only particle rows set it: their extents are equal,
+ * so the other two keep the size
+ */
+export const ROW_COLORED = 1 << 30;
+
+/**
+ * @param rgba linear colour and alpha, 0–1
+ * @returns them as the RGBA8 word of a {@link ROW_COLORED} row
+ */
+export const packRowColor = (rgba: readonly number[]): number => {
+	let word = 0;
+	for (let i = 0; i < 4; i++) {
+		word |= Math.round(Math.min(Math.max(rgba[i], 0), 1) * 255) << (i * 8);
+	}
+	return word >>> 0;
+};
+
 /** a span of rows sharing a tier, as listed by the tree's HLOD refs */
 export interface TierSpan {
 	first: number;

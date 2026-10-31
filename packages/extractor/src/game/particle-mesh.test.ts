@@ -47,8 +47,10 @@ test('a frozen mesh particle sits at the emitter with its start size, scaled by 
 	assert.deepEqual(Array.from(m.subarray(12, 15)), [1, 2, 3]);
 });
 
-test('mesh particles that die, multiply, face the camera or follow curves are not frozen', () => {
+test('mesh particles that die, multiply, face the camera, follow curves or flip through a sheet are not frozen', () => {
 	assert.equal(frozenParticleMatrix(system({ ringBufferMode: 0 }), renderer(4), emitter), null);
+	assert.equal(frozenParticleMatrix(system({ UVModule: { enabled: true } }), renderer(1), emitter), null);
+	assert.notEqual(frozenParticleMatrix(system({ UVModule: { enabled: false } }), renderer(1), emitter), null);
 	assert.equal(frozenParticleMatrix(system(), renderer(0), emitter), null);
 	assert.equal(frozenParticleMatrix(system(), { m_RenderMode: 0, m_RenderAlignment: 1 }, emitter), null);
 	assert.equal(frozenParticleMatrix(system({ initial: { maxNumParticles: 5 } }), renderer(1), emitter), null);

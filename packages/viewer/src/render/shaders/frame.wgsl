@@ -806,3 +806,21 @@ fn oct_decode(e: vec2f) -> vec3f {
 	}
 	return normalize(n);
 }
+
+// a mesh's UV sets (xy: UV0, zw: UV1) remapped into the texture sheet tile of an instance row's info word
+// (`rowInfo` in instance-rows.ts). tiles count from the sheet's top-left; UV (0, 0) is its bottom-left
+fn sheet_uv(info: u32, uv: vec4f) -> vec4f {
+	let tiles = vec2u(((info >> 4u) & 63u) + 1u, ((info >> 10u) & 63u) + 1u);
+	let tile = (info >> 16u) & 4095u;
+	let size = 1.0 / vec2f(tiles);
+	let corner = vec2f(f32(tile % tiles.x), f32(tiles.y - 1u - min(tile / tiles.x, tiles.y - 1u))) * size;
+	let uv0 = select(uv.xy, uv.xy * size + corner, (info & (1u << 28u)) != 0u);
+	let uv1 = select(uv.zw, uv.zw * size + corner, (info & (1u << 29u)) != 0u);
+	return vec4f(uv0, uv1);
+}
+
+// an instance row's colour (`ROW_COLORED` in instance-rows.ts), which multiplies the mesh's vertex colours;
+// `extent_z` is the row's last half-extent word, which holds it
+fn instance_color(info: u32, extent_z: f32) -> vec4f {
+	return select(vec4f(1.0), unpack4x8unorm(bitcast<u32>(extent_z)), (info & (1u << 30u)) != 0u);
+}

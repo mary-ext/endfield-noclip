@@ -1,8 +1,8 @@
 /**
  * mesh particle systems a viewer can play: a `ParticleSystem` whose renderer draws one mesh per particle and
  * whose modules all have closed forms (constant or two-constant velocities, gravity, orbits, size and
- * rotation over lifetime), read into the package's {@link ParticleSystemInfo}. the floating rocks rising over
- * Origin Lodespring's crater are such systems.
+ * rotation over lifetime, flipbooks), read into the package's {@link ParticleSystemInfo}. the floating rocks
+ * rising over Origin Lodespring's crater and the Hub's campfire flames are such systems.
  *
  * @module
  */
@@ -27,10 +27,13 @@ import {
 	type MinMaxCurveInfo,
 	ParticleAlignment,
 	type ParticleBurstInfo,
+	type ParticleRingBufferInfo,
 	type ParticleShapeInfo,
 	ParticleShapeKind,
 	type ParticleSystemInfo,
+	type ParticleTextureSheetInfo,
 	type ParticleVelocityInfo,
+	SheetRow,
 } from '@endfield-noclip/package-format/particles';
 
 /** `ParticleSystemRenderer.m_RenderMode` that draws a mesh per particle */
@@ -68,7 +71,6 @@ const UNSUPPORTED_MODULES = [
 	'SubModule',
 	'LightsModule',
 	'TrailModule',
-	'UVModule',
 	'ColorModule',
 	'ColorBySpeedModule',
 	'SizeBySpeedModule',
@@ -172,14 +174,14 @@ export const curveReach = (curve: MinMaxCurveInfo): number => {
 const enabled = (system: TypeTreeObject, module: string): boolean =>
 	isObject(system[module]) && booleanField(system[module], 'enabled');
 
-/** @returns the start colour if it isn't plain white, which the viewer can't apply per particle */
-const tinted = (initial: TypeTreeObject): boolean => {
+/** @returns the start colour when it's one colour for every particle, else `null` (gradients, random picks) */
+const startColorOf = (initial: TypeTreeObject): [number, number, number, number] | null => {
 	const color = objectField(initial, 'startColor');
 	if (numberField(color, 'minMaxState') !== 0) {
-		return true;
+		return null;
 	}
 	const max = objectField(color, 'maxColor');
-	return ['r', 'g', 'b', 'a'].some((channel) => numberField(max, channel) !== 1);
+	return [numberField(max, 'r'), numberField(max, 'g'), numberField(max, 'b'), numberField(max, 'a')];
 };
 
 const readShape = (shape: TypeTreeObject): ParticleShapeInfo | string => {
@@ -236,14 +238,101 @@ const readBurst = (burst: TypeTreeObject): ParticleBurstInfo => ({
 	probability: numberField(burst, 'probability'),
 });
 
+/** `UVModule` enums the viewer evaluates */
+const SheetMode = { Grid: 0 } as const;
+const SheetTime = { Lifetime: 0, Fps: 2 } as const;
+const SheetAnimation = { WholeSheet: 0, SingleRow: 1 } as const;
+const SheetRowMode = { Custom: 0, Random: 1, MeshIndex: 2 } as const;
+
+/** the most tiles along either side of a sheet, so a tile fits the viewer's instance info word */
+const MAX_SHEET_TILES = 64;
+
+const readTextureSheet = (uv: TypeTreeObject): ParticleTextureSheetInfo | string => {
+	if (numberField(uv, 'mode') !== SheetMode.Grid) {
+		return 'sprite sheet';
+	}
+	const tiles: [number, number] = [numberField(uv, 'tilesX'), numberField(uv, 'tilesY')];
+	if (tiles.some((n) => n < 1 || n > MAX_SHEET_TILES)) {
+		return `sheet of ${tiles[0]}×${tiles[1]} tiles`;
+	}
+	let row: number | null;
+	switch (numberField(uv, 'animationType')) {
+		case SheetAnimation.WholeSheet: {
+			row = null;
+			break;
+		}
+		case SheetAnimation.SingleRow: {
+			const mode = optionalNumberField(uv, 'rowMode') ?? SheetRowMode.Custom;
+			switch (mode) {
+				case SheetRowMode.Custom: {
+					row = Math.min(Math.max(numberField(uv, 'rowIndex'), 0), tiles[1] - 1);
+					break;
+				}
+				case SheetRowMode.Random: {
+					row = SheetRow.Random;
+					break;
+				}
+				case SheetRowMode.MeshIndex: {
+					row = SheetRow.MeshIndex;
+					break;
+				}
+				default: {
+					return `sheet row mode ${mode}`;
+				}
+			}
+			break;
+		}
+		default: {
+			return `sheet animation ${numberField(uv, 'animationType')}`;
+		}
+	}
+	const timeMode = numberField(uv, 'timeMode');
+	if (timeMode !== SheetTime.Lifetime && timeMode !== SheetTime.Fps) {
+		return `sheet time mode ${timeMode}`;
+	}
+	return {
+		tiles,
+		row,
+		frameOverTime: timeMode === SheetTime.Lifetime ? readMinMaxCurve(objectField(uv, 'frameOverTime')) : null,
+		fps: numberField(uv, 'fps'),
+		startFrame: readMinMaxCurve(objectField(uv, 'startFrame')),
+		cycles: numberField(uv, 'cycles'),
+		// -1 (every channel) and other masks keep the two UV sets the viewer's shaders read
+		uvChannels: numberField(uv, 'uvChannelMask') & 3,
+	};
+};
+
+/** `ParticleSystem.ringBufferMode` values */
+const RingBufferMode = { Disabled: 0, PauseUntilReplaced: 1, LoopUntilReplaced: 2 } as const;
+
+const readRingBuffer = (system: TypeTreeObject): ParticleRingBufferInfo | null | string => {
+	const mode = numberField(system, 'ringBufferMode');
+	switch (mode) {
+		case RingBufferMode.Disabled: {
+			return null;
+		}
+		case RingBufferMode.PauseUntilReplaced:
+		case RingBufferMode.LoopUntilReplaced: {
+			const range = objectField(system, 'ringBufferLoopRange');
+			return {
+				loop: mode === RingBufferMode.LoopUntilReplaced,
+				loopRange: [numberField(range, 'x'), numberField(range, 'y')],
+			};
+		}
+		default: {
+			return `ring buffer mode ${mode}`;
+		}
+	}
+};
+
 /**
  * reads a mesh particle system that plays on its own once loaded.
  *
  * @param system the emitter's `ParticleSystem`
  * @param renderer its `ParticleSystemRenderer`
  * @returns the system and the meshes its particles draw, or why the viewer can't play it: another render
- *   mode, a frozen single particle (see `frozenParticleMatrix`), a module or shape it doesn't evaluate,
- *   velocity curves, a rate curve, a tinted start colour, no mesh, or velocity alignment
+ *   mode, a module, shape, texture sheet or ring buffer mode it doesn't evaluate, velocity curves, a rate
+ *   curve, a start colour that varies, no mesh, or velocity alignment
  */
 export const readParticleSystem = (system: TypeTreeObject, renderer: TypeTreeObject): ParticleSystemRead => {
 	if (numberField(renderer, 'm_RenderMode') !== RENDER_MODE_MESH) {
@@ -252,8 +341,9 @@ export const readParticleSystem = (system: TypeTreeObject, renderer: TypeTreeObj
 	if (!booleanField(system, 'playOnAwake')) {
 		return { reason: 'not played on awake' };
 	}
-	if (numberField(system, 'ringBufferMode') !== 0) {
-		return { reason: 'ring buffer' };
+	const ringBuffer = readRingBuffer(system);
+	if (typeof ringBuffer === 'string') {
+		return { reason: ringBuffer };
 	}
 	const unsupported = UNSUPPORTED_MODULES.find((module) => enabled(system, module));
 	if (unsupported !== undefined) {
@@ -294,7 +384,8 @@ export const readParticleSystem = (system: TypeTreeObject, renderer: TypeTreeObj
 		}
 	}
 	const initial = objectField(system, 'InitialModule');
-	if (tinted(initial)) {
+	const startColor = startColorOf(initial);
+	if (startColor === null) {
 		return { reason: 'start colour' };
 	}
 	const emission = objectField(system, 'EmissionModule');
@@ -364,6 +455,14 @@ export const readParticleSystem = (system: TypeTreeObject, renderer: TypeTreeObj
 		}
 		rotationOverLifetime = axes;
 	}
+	let textureSheet: ParticleTextureSheetInfo | null = null;
+	if (enabled(system, 'UVModule')) {
+		const read = readTextureSheet(objectField(system, 'UVModule'));
+		if (typeof read === 'string') {
+			return { reason: read };
+		}
+		textureSheet = read;
+	}
 
 	const delay = curve(system, 'startDelay');
 	return {
@@ -377,6 +476,7 @@ export const readParticleSystem = (system: TypeTreeObject, renderer: TypeTreeObj
 			maxParticles: numberField(initial, 'maxNumParticles'),
 			simulationSpeed: numberField(system, 'simulationSpeed'),
 			startLifetime: curve(initial, 'startLifetime'),
+			startColor,
 			startSpeed: curve(initial, 'startSpeed'),
 			startSize,
 			startRotation,
@@ -391,6 +491,8 @@ export const readParticleSystem = (system: TypeTreeObject, renderer: TypeTreeObj
 			pivot: vector3Field(renderer, 'm_Pivot'),
 			meshWeights,
 			mesh: 0,
+			ringBuffer,
+			textureSheet,
 		},
 		meshes,
 	};

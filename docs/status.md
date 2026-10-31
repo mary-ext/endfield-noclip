@@ -93,9 +93,10 @@ packs or renders correctly.
   place lose their start colour and take the midpoint of random start values. other mesh systems
   play only without colour, force, noise, sub-emitter and other modules without a closed form, from
   the viewer's own random values, and move only while frames render; per-particle colour and custom
-  data never reach the effect shaders. Marker Stone's low mist banks over the valley are still
-  missing; their source is unknown. rect decals (`HGRP/DecalLit`, `HGRP/TerrainDecalLit`,
-  InitChunkData components 27 and 28) aren't packed
+  data never reach the effect shaders. texture sheets play in grid mode only (no sprite lists or
+  speed timing), and all copies of one flipbook step in phase. Marker Stone's low mist banks over
+  the valley are still missing; their source is unknown. rect decals (`HGRP/DecalLit`,
+  `HGRP/TerrainDecalLit`, InitChunkData components 27 and 28) aren't packed
 - temporal smoothing of effects
 - light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term and the
   cloud mask aren't drawn; unchecked against an in-game shot facing the sun. the

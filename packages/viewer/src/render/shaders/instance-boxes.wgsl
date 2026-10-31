@@ -79,7 +79,9 @@ fn load_box(ii: u32) -> Box {
 	let row = rows[index];
 	var box: Box;
 	box.center = blocks[row.block].xyz + row.center;
-	box.extent = max(row.extent, vec3f(0.05));
+	// a coloured particle row keeps its colour in extent.z; its extents are all equal
+	let extent = select(row.extent, row.extent.xxx, (row.info & (1u << 30u)) != 0u);
+	box.extent = max(extent, vec3f(0.05));
 	box.color = kind_color(row.info & 0xfu);
 	// small-feature culling: drop boxes below the projected size threshold
 	let pixels = length(box.extent) * frame.viewport.z / max(length(box.center), 1.0);

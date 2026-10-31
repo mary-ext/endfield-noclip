@@ -162,8 +162,8 @@ fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 	);
 	let inverse = transpose(inverse3(m));
 	let flags = bitcast<u32>(offset.w);
-	let uv = vec4f(v.uv0 * uv0.xy + uv0.zw, v.uv1 * uv1.xy + uv1.zw);
-	let color = select(vec4f(1.0), v.color, (flags & FX_HAS_COLORS) != 0u);
+	let uv = sheet_uv(row.info, vec4f(v.uv0 * uv0.xy + uv0.zw, v.uv1 * uv1.xy + uv1.zw));
+	let color = select(vec4f(1.0), v.color, (flags & FX_HAS_COLORS) != 0u) * instance_color(row.info, row.extent.z);
 	let normal = oct_decode(v.normal);
 	var rel = m * p + origin;
 	if (fx_row(draw_id, FX_OFFSET_MODE).x != 0.0) {

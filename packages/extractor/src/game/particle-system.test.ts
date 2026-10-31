@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
-import { CurveMode, ParticleAlignment, ParticleShapeKind } from '@endfield-noclip/package-format/particles';
+import {
+	CurveMode,
+	ParticleAlignment,
+	ParticleShapeKind,
+	SheetRow,
+} from '@endfield-noclip/package-format/particles';
 
 import { particleReach, readParticleSystem } from './particle-system.ts';
 
@@ -29,6 +34,7 @@ const system = (
 	looping: true,
 	playOnAwake: true,
 	ringBufferMode: 0,
+	ringBufferLoopRange: { x: 0, y: 1 },
 	simulationSpeed: 1,
 	scalingMode: 1,
 	startDelay: constant(0),
@@ -160,6 +166,65 @@ test('particles pick among the renderer meshes evenly, or by weight when the dis
 	assert.deepEqual(weighted.info.meshWeights, [2, 0.5]);
 });
 
+const sheet = (overrides: Record<string, unknown> = {}) => ({
+	enabled: true,
+	mode: 0,
+	timeMode: 0,
+	fps: 30,
+	frameOverTime: {
+		...curve([
+			[0, 0],
+			[1, 1],
+		]),
+		scalar: 0.9999,
+	},
+	startFrame: constant(0),
+	tilesX: 8,
+	tilesY: 8,
+	animationType: 0,
+	rowIndex: 0,
+	cycles: 1,
+	uvChannelMask: -1,
+	rowMode: 1,
+	...overrides,
+});
+
+test('a ring-buffered flipbook particle keeps its sheet and how it outlives its lifetime', () => {
+	const faint = { startColor: { minMaxState: 0, maxColor: { r: 1, g: 1, b: 1, a: 0.25 } } };
+	const read = readParticleSystem(system({ ringBufferMode: 1, UVModule: sheet() }, faint), renderer());
+	assert.ok('info' in read);
+	assert.deepEqual(read.info.startColor, [1, 1, 1, 0.25]);
+	assert.deepEqual(read.info.ringBuffer, { loop: false, loopRange: [0, 1] });
+	const textureSheet = read.info.textureSheet;
+	assert.deepEqual(textureSheet?.tiles, [8, 8]);
+	// the whole sheet ignores the row mode
+	assert.equal(textureSheet?.row, null);
+	assert.equal(textureSheet?.frameOverTime?.scalar, 0.9999);
+	assert.equal(textureSheet?.uvChannels, 3);
+
+	const looped = readParticleSystem(
+		system({ ringBufferMode: 2, ringBufferLoopRange: { x: 0.2, y: 0.8 } }),
+		renderer(),
+	);
+	assert.ok('info' in looped);
+	assert.deepEqual(looped.info.ringBuffer, { loop: true, loopRange: [0.2, 0.8] });
+	assert.equal(looped.info.textureSheet, null);
+
+	// a single row: a fixed one, a random one, or the mesh's; frames per second leave no curve
+	const row = (overrides: Record<string, unknown>) => {
+		const result = readParticleSystem(
+			system({ UVModule: sheet({ animationType: 1, ...overrides }) }),
+			renderer(),
+		);
+		assert.ok('info' in result);
+		return result.info.textureSheet;
+	};
+	assert.equal(row({ rowMode: 0, rowIndex: 3 })?.row, 3);
+	assert.equal(row({ rowMode: 1 })?.row, SheetRow.Random);
+	assert.equal(row({ rowMode: 2 })?.row, SheetRow.MeshIndex);
+	assert.equal(row({ rowMode: 0, timeMode: 2 })?.frameOverTime, null);
+});
+
 test('systems the viewer cannot play say why', () => {
 	const reason = (s: TypeTreeObject, r: TypeTreeObject = renderer()) => {
 		const read = readParticleSystem(s, r);
@@ -167,11 +232,14 @@ test('systems the viewer cannot play say why', () => {
 	};
 	assert.equal(reason(system(), renderer({ m_RenderMode: 0 })), 'not mesh particles');
 	assert.equal(reason(system({ NoiseModule: { enabled: true } })), 'NoiseModule');
-	assert.equal(reason(system({ ringBufferMode: 1 })), 'ring buffer');
+	assert.equal(reason(system({ ringBufferMode: 3 })), 'ring buffer mode 3');
+	assert.equal(reason(system({ UVModule: sheet({ mode: 1 }) })), 'sprite sheet');
+	assert.equal(reason(system({ UVModule: sheet({ timeMode: 1 }) })), 'sheet time mode 1');
+	assert.equal(reason(system({ UVModule: sheet({ tilesX: 65 }) })), 'sheet of 65×8 tiles');
 	assert.equal(reason(system(), renderer({ m_RenderAlignment: 4 })), 'alignment 4');
 	assert.equal(reason(system(), renderer({ m_Mesh: pointer(0n) })), 'no mesh');
 	assert.equal(
-		reason(system({}, { startColor: { minMaxState: 0, maxColor: { r: 1, g: 0.5, b: 1, a: 1 } } })),
+		reason(system({}, { startColor: { minMaxState: 2, maxColor: { r: 1, g: 1, b: 1, a: 1 } } })),
 		'start colour',
 	);
 	assert.equal(

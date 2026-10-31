@@ -7,11 +7,20 @@ import {
 	ParticleAlignment,
 	ParticleShapeKind,
 	type ParticleSystemInfo,
+	type ParticleTextureSheetInfo,
+	SheetRow,
 } from '@endfield-noclip/package-format/particles';
 
 import type { Vec3 } from '../scene/camera.ts';
 
-import { PARTICLE_FLOATS, ParticleSimulation, evaluateMinMax } from './particles.ts';
+import { RowKind, packRowColor, rowInfo } from './instance-rows.ts';
+import {
+	PARTICLE_FLOATS,
+	ParticleSimulation,
+	evaluateMinMax,
+	ringBufferAge,
+	sheetTile,
+} from './particles.ts';
 
 const constant = (value: number): MinMaxCurveInfo => ({
 	mode: CurveMode.Constant,
@@ -67,6 +76,7 @@ const system = (overrides: Partial<ParticleSystemInfo> = {}): ParticleSystemInfo
 	maxParticles: 150,
 	simulationSpeed: 1,
 	startLifetime: constant(80),
+	startColor: [1, 1, 1, 1],
 	startSpeed: constant(0),
 	startSize: [constant(4), constant(4), constant(4)],
 	startRotation: [constant(0), constant(0), between(0, Math.PI * 2)],
@@ -94,6 +104,19 @@ const system = (overrides: Partial<ParticleSystemInfo> = {}): ParticleSystemInfo
 	pivot: [0, 0, 0],
 	meshWeights: [1],
 	mesh: 0,
+	ringBuffer: null,
+	textureSheet: null,
+	...overrides,
+});
+
+const sheet = (overrides: Partial<ParticleTextureSheetInfo> = {}): ParticleTextureSheetInfo => ({
+	tiles: [8, 8],
+	row: null,
+	frameOverTime: { ...line(0, 1), scalar: 0.9999 },
+	fps: 30,
+	startFrame: constant(0),
+	cycles: 1,
+	uvChannels: 3,
 	...overrides,
 });
 
@@ -108,8 +131,48 @@ const run = (info: ParticleSystemInfo, time: number, seed = 7) => {
 	return Array.from({ length: count }, (_, i) => ({
 		position: Array.from(out.subarray(i * PARTICLE_FLOATS, i * PARTICLE_FLOATS + 3)),
 		size: Array.from(out.subarray(i * PARTICLE_FLOATS + 7, i * PARTICLE_FLOATS + 10)),
+		tile: out[i * PARTICLE_FLOATS + 10],
 	}));
 };
+
+describe('ringBufferAge', () => {
+	it('holds a particle at its end, or replays its loop range', () => {
+		assert.equal(ringBufferAge(0.5, null), 0.5);
+		assert.equal(ringBufferAge(3.2, null), 1);
+		assert.equal(ringBufferAge(0.5, [0.2, 0.8]), 0.5);
+		assert.ok(Math.abs(ringBufferAge(1.1, [0.2, 0.8]) - 0.5) < 1e-9);
+		assert.ok(Math.abs(ringBufferAge(1.25, [0, 1]) - 0.25) < 1e-9);
+	});
+});
+
+describe('sheetTile', () => {
+	const r = () => 0.5;
+	it('steps through the whole sheet over the lifetime, cycles times', () => {
+		assert.equal(sheetTile(sheet(), 0, 0, 0, r, 0), 0);
+		assert.equal(sheetTile(sheet(), 0.5, 0, 0, r, 0), 31);
+		assert.equal(sheetTile(sheet(), 1, 0, 0, r, 0), 63);
+		assert.equal(sheetTile(sheet({ cycles: 2 }), 0.75, 0, 0, r, 0), 31);
+	});
+
+	it('steps by frames per second, and along a single row', () => {
+		// 30 fps through 64 frames: one second in, the 30th frame, wrapping after 64
+		assert.equal(sheetTile(sheet({ frameOverTime: null }), 0, 1, 0, r, 0), 30);
+		assert.equal(sheetTile(sheet({ frameOverTime: null }), 0, 3, 0, r, 0), 90 % 64);
+		assert.equal(sheetTile(sheet({ row: 2 }), 0.5, 0, 0, r, 0), 2 * 8 + 3);
+		assert.equal(sheetTile(sheet({ row: SheetRow.MeshIndex }), 0, 0, 0, r, 1), 8);
+		assert.equal(sheetTile(sheet({ row: SheetRow.Random }), 0, 0, 0, r, 0), 4 * 8);
+	});
+
+	it('packs into the row info word next to the row kind', () => {
+		const info = rowInfo(RowKind.Detail, [8, 4], 63, 1);
+		assert.equal(info & 0xf, RowKind.Detail);
+		assert.equal(((info >>> 4) & 63) + 1, 8);
+		assert.equal(((info >>> 10) & 63) + 1, 4);
+		assert.equal((info >>> 16) & 0xfff, 63);
+		assert.equal(info >>> 28, 1);
+		assert.equal(packRowColor([1, 0, 0.5, 0.25]), (64 << 24) | (128 << 16) | 255);
+	});
+});
 
 describe('evaluateMinMax', () => {
 	it('reads constants, curves and the random ends of either', () => {
@@ -172,6 +235,34 @@ describe('ParticleSimulation', () => {
 			assert.ok(Math.abs(size[0] - 3) < 1e-3);
 		}
 		assert.equal(run(once, 10.5).length, 0);
+	});
+
+	it('keeps a ring-buffered particle past its lifetime until the next replaces it, flipping its sheet', () => {
+		// the campfire flames: one particle per two-second loop, living two seconds, through an 8×8 sheet
+		const flame = system({
+			duration: 2,
+			maxParticles: 1,
+			rate: constant(0),
+			startLifetime: constant(2),
+			bursts: [{ time: 0, count: constant(1), cycles: 1, interval: 0.01, probability: 1 }],
+			shape: null,
+			gravityModifier: constant(0),
+			ringBuffer: { loop: false, loopRange: [0, 1] },
+			textureSheet: sheet(),
+		});
+		const tiles = [100.25, 101, 101.75].map((time) => {
+			const particles = run(flame, time);
+			assert.equal(particles.length, 1);
+			return particles[0].tile;
+		});
+		// an eighth of the way through: 0.9999 · ⅛ · 64 frames, just short of the 8th
+		assert.deepEqual(tiles, [7, 31, 55]);
+		// a longer loop than the lifetime holds the last tile until the next emission
+		const held = run({ ...flame, duration: 3 }, 3 * 40 + 2.5);
+		assert.equal(held.length, 1);
+		assert.equal(held[0].tile, 63);
+		// without the ring buffer the particle is gone by then
+		assert.equal(run({ ...flame, duration: 3, ringBuffer: null }, 3 * 40 + 2.5).length, 0);
 	});
 
 	it('caps the live particles at the system maximum', () => {

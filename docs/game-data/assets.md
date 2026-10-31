@@ -182,14 +182,15 @@ root:
 - a particle system that holds one mesh particle for good is read as a mesh
   ([particle-mesh.ts](../../packages/extractor/src/game/particle-mesh.ts)): a mesh-mode
   `ParticleSystemRenderer` (`m_RenderMode` 4) whose `ParticleSystem` plays on awake, allows one
-  particle and keeps it past its lifetime (`ringBufferMode` not 0). the particle takes the
-  renderer's `m_Mesh` and materials at the shape's centre, oriented by world, local or (for a box
-  shape, which emits along the emitter's forward axis) velocity alignment, then its start rotation
-  (Euler, Z then X then Y) and start size, scaled by the emitter's local scale unless `scalingMode`
-  is Shape. random ranges between two constants take their midpoint, since the game's draws can't be
-  reproduced; curves, camera-facing alignments and several particles are skipped. the drift and spin
-  over its lifetime and the particle's start colour are dropped. Wuling City's threads swirling over
-  the pillar array (`p_fxmap_lv002_fangyuzhenlie_*`) are such particles.
+  particle and keeps it past its lifetime (`ringBufferMode` not 0), without a texture sheet. the
+  particle takes the renderer's `m_Mesh` and materials at the shape's centre, oriented by world,
+  local or (for a box shape, which emits along the emitter's forward axis) velocity alignment, then
+  its start rotation (Euler, Z then X then Y) and start size, scaled by the emitter's local scale
+  unless `scalingMode` is Shape. random ranges between two constants take their midpoint, since the
+  game's draws can't be reproduced; curves, camera-facing alignments and several particles are
+  skipped. the drift and spin over its lifetime and the particle's start colour are dropped. Wuling
+  City's threads swirling over the pillar array (`p_fxmap_lv002_fangyuzhenlie_*`) are such
+  particles.
 - any other mesh-mode particle system that plays on awake is packed whole when a viewer can play it
   from the package alone
   ([particle-system.ts](../../packages/extractor/src/game/particle-system.ts)): the renderer becomes
@@ -201,14 +202,21 @@ root:
   the bursts; the shape (sphere, hemisphere, cone, cone volume, box or circle, with its radius,
   thickness, angle, length, arc, placement and random-direction and -position amounts); the velocity
   module (linear, orbital about an offset, radial, speed modifier); size and rotation over lifetime;
-  the render alignment (Facing is kept as View) and pivot. each particle draws one of up to four
-  meshes (`m_Mesh` … `m_Mesh3`), evenly or by `m_MeshWeighting*` when `m_MeshDistribution` is 1, so
-  a renderer with several becomes one emitter per mesh, its entry naming which. systems are skipped
-  when they use a module whose effect the viewer doesn't evaluate (force, noise, collision,
-  sub-emitters, lights, trails, texture sheets, colour, the by-speed modules, custom data, velocity
-  limits), velocity or rotation curves, a rate curve, a tinted start colour or velocity alignment.
-  the floating rocks over Origin Lodespring's crater (`Rock02` in `P_fxmap_common_brokentree_01/02`,
-  four rock meshes each) are such systems; [viewer](../viewer.md#particles) describes how they play.
+  the render alignment (Facing is kept as View) and pivot; the ring buffer (`ringBufferMode` 1 holds
+  a particle at its end until a newer one replaces it, 2 replays `ringBufferLoopRange`); and the
+  texture sheet (`UVModule` in grid mode, up to 64×64 tiles, the whole sheet or one row, fixed,
+  random or by mesh, timed over the lifetime by `frameOverTime` and `cycles` or by `fps`, offset by
+  `startFrame`, both read as fractions of the frames, on the UV sets of `uvChannelMask`). each
+  particle draws one of up to four meshes (`m_Mesh` … `m_Mesh3`), evenly or by `m_MeshWeighting*`
+  when `m_MeshDistribution` is 1, so a renderer with several becomes one emitter per mesh, its entry
+  naming which. systems are skipped when they use a module whose effect the viewer doesn't evaluate
+  (force, noise, collision, sub-emitters, lights, trails, colour, the by-speed modules, custom data,
+  velocity limits), sprite sheets or sheets timed by speed, velocity or rotation curves, a rate
+  curve, a tinted start colour or velocity alignment. the floating rocks over Origin Lodespring's
+  crater (`Rock02` in `P_fxmap_common_brokentree_01/02`, four rock meshes each) and the campfire
+  flames (`fire01`/`fire02` in `P_fxmap_common_damagefire_small_2501`, one ring-buffered particle
+  stepping through an 8×8 flipbook every loop) are such systems; [viewer](../viewer.md#particles)
+  describes how they play.
 - a skinned renderer's pose is each bone's prefab-space matrix times its bind pose; bounds are the
   union of the mesh bounds under every bone so weighted vertices stay inside. non-zero blend shape
   weights throw, since baking ignores them.

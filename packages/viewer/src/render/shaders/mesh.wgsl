@@ -198,11 +198,11 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	out.rel = rel;
 	out.normal = n;
 	out.tangent = t;
-	out.uv = vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw);
+	out.uv = sheet_uv(row.info, vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw));
 	out.draw = draw_id;
 	out.phase = world.x + world.y + world.z;
 	out.object_y = p.y;
-	out.color = select(vec4f(1.0), v.color, (flags & HAS_COLORS) != 0u);
+	out.color = select(vec4f(1.0), v.color, (flags & HAS_COLORS) != 0u) * instance_color(row.info, row.extent.z);
 	out.origin = origin;
 	return out;
 }
@@ -255,7 +255,8 @@ fn vs_cutout_depth(v: CutoutDepthIn, @builtin(instance_index) ii: u32) -> Cutout
 	let draw = draws[draw_id];
 	var out: CutoutDepthOut;
 	out.position = frame.view_proj * vec4f(instance_rel(v.position.xyz, ii, draw), 1.0);
-	out.uv = vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw);
+	let row = rows[list[ii]];
+	out.uv = sheet_uv(row.info, vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw));
 	out.draw = draw_id;
 	return out;
 }
