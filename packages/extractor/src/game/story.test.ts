@@ -50,6 +50,7 @@ const control = (kind: 'quest' | 'mission', id: string): SceneControl => ({
 	rule: null,
 	assumption: 'story finished',
 	story: null,
+	drivers: [],
 	levelTags: [],
 	values: [],
 	default: 3,

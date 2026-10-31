@@ -1097,6 +1097,23 @@ export class Viewer {
 	}
 
 	/**
+	 * flies to view a point from the south, above and behind it
+	 *
+	 * @param target Unity-space point to look at
+	 * @param distance how far back to stand, in metres
+	 */
+	flyToPoint(target: Vec3, distance: number): void {
+		const back = Math.max(distance, 10);
+		const up = back * 0.6;
+		this.controls.flyTo({
+			position: [target[0], target[1] + up, target[2] - back],
+			yaw: 0,
+			pitch: -Math.atan2(up, back),
+		});
+		this.#dirty = true;
+	}
+
+	/**
 	 * flies to a vantage point over a level and prioritises its cells.
 	 *
 	 * @param id level id

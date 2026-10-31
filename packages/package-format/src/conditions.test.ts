@@ -11,6 +11,7 @@ const control = (
 	rule: null,
 	assumption: '',
 	story: null,
+	drivers: [],
 	levelTags: [0],
 	values: [
 		{ value: 0, label: 'off' },

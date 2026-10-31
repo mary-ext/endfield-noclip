@@ -112,6 +112,7 @@ export const loadDynamicStructures = async (
 							? 'authored to load until a script hides it'
 							: 'loads only when a level script shows it',
 				story: null,
+				drivers: [],
 				levelTags: [],
 				values: SWITCH_VALUES,
 				default: Number(enabled),
@@ -158,6 +159,7 @@ export const loadDynamicStructures = async (
 							rule: null,
 							assumption: 'standing, as before the player fells them',
 							story: null,
+							drivers: [],
 							levelTags: [],
 							values: [
 								{ value: 0, label: 'standing' },

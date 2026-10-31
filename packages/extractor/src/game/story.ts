@@ -1,5 +1,5 @@
 import type { MissionRuntime } from '@endfield-noclip/formats/endfield/mission-runtime';
-import type { MissionInfo, SceneControl } from '@endfield-noclip/package-format/states';
+import type { MissionInfo, QuestRef, SceneControl } from '@endfield-noclip/package-format/states';
 
 import type { WorldIndex } from './world-index.ts';
 
@@ -110,6 +110,30 @@ const missionInfo = (mission: MissionRuntime, plain: (key: string | null) => str
 					null,
 		episode: episode === undefined ? null : plain(`ep${episode}_name`),
 		levelId: mission.levelId,
+	};
+};
+
+/**
+ * @param world world index
+ * @param id a quest id (`<mission>_q#<step>`) or a mission id
+ * @returns its mission's name and its own text, as quest controls are labelled
+ */
+export const questRef = async (world: WorldIndex, id: string): Promise<QuestRef> => {
+	const text = await world.text();
+	const plain = (key: string | null): string | null => {
+		const value = key === null ? undefined : text(key);
+		return value === undefined ? null : stripMarkup(value);
+	};
+	const missionId = id.split('_q#')[0];
+	const mission = await world.mission(missionId);
+	if (mission === undefined) {
+		return { id, mission: null, name: null };
+	}
+	const quest = mission.quests.find((entry) => entry.id === id);
+	return {
+		id,
+		mission: plain(mission.nameKey),
+		name: quest === undefined ? null : (plain(quest.objectiveKey) ?? plain(quest.descriptionKey)),
 	};
 };
 

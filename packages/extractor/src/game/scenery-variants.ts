@@ -347,6 +347,7 @@ export const progressionControl = (
 		rule: null,
 		assumption,
 		story: null,
+		drivers: [],
 		levelTags: [],
 		values: levels.map((value) => ({ value, label: `${unit} ${value}` })),
 		default: initial,

@@ -330,6 +330,16 @@ button {
 		padding-block: 6px;
 		overflow-wrap: anywhere;
 	}
+	& .drivers {
+		margin: 0 0 6px;
+		padding-left: 16px;
+		font-size: 11px;
+		& button {
+			margin-left: 6px;
+			padding: 0 6px;
+			font: inherit;
+		}
+	}
 	& .story-category h3 {
 		margin: 10px 0 2px;
 		font-size: 11px;

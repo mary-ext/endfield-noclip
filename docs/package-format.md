@@ -410,8 +410,10 @@ condition in words. derived controls require only controls listed before them, s
 `default` is that value under no picks. only controls some group requires are listed. quest and
 mission controls of a known mission carry a `story` place (mission id, main-flow step), and
 `StatesInfo.missions` names those missions (`MissionInfo`: name, quest log category, chapter,
-episode), so a viewer can group them; the names are the install's English text, extracted at pack
-time.
+episode, where it takes place), so a viewer can group them; the names are the install's English
+text, extracted at pack time. script controls carry `drivers`, what sets them in game according to
+the level scripts (`ControlDriver`: quests, a switch, a trigger area, the script's area, another
+level, the server), each with the visibility it sets and a position where it has one.
 
 ### stream areas
 

@@ -52,6 +52,12 @@ for the bundle cipher). it matches the gitignored `*.local.json` pattern and is 
 [architecture.md](architecture.md#decisions) for why). `config.ts` validates its shape and key
 lengths on load and tells the user to run `init` when it's missing.
 
+`pack` also reads the install's IL2CPP metadata
+(`Endfield_Data/il2cpp_data/Metadata/ global-metadata.dat`) and `GameAssembly.dll` beside
+`Endfield_Data`, for the schema of MemoryPack game data such as level scripts (see
+[scene-states.md](game-data/scene-states.md#level-scripts)). the schema is derived on each run, in
+under a second, and never written out.
+
 `init` builds the keys in three steps (`hg/key-derive.ts`):
 
 1. derive what the install yields: the bundle cipher's substitution box, key and IV are recovered

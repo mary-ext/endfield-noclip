@@ -245,6 +245,56 @@ content such as a limited-time race course lands here, typically off.
 toggle names for script and logic controls are the one or two most frequent renderer names under
 them. they are labels for finding the control, not evidence of what activates it.
 
+### what sets a script group
+
+implemented in [`script-drivers.ts`](../../packages/extractor/src/game/script-drivers.ts) over the
+level scripts the [MemoryPack decoder](#level-scripts) reads.
+
+level scripts (`Data/Json/LevelScriptData/<level>/<script id>.json`) show and hide groups with
+`ShowSceneDecorationNew` (also `…WithHandle`, `ForceShowDecorationWithHandle`): a constant
+`targetDynamicEntity` (the group's entity id) and a `visible` flag. the client shows a group at the
+value a script last set, else at its default-load flag. a script is a graph: `actionList` and
+`headerList` nodes by `ID`, linked by `nextID`, `IfElseAction.onTrueID`/`onFalseID` (the guard is
+its `condition` param), switch `caseIDList`/`defaultID` (guard `value`), branch `idList` and other
+`…ID` fields. a param is a constant (`paramSource` 0), the current script (1002), or a
+`$<id>@_<field>` path into a getter node (`CheckQuestState`, `CompareQuestState`, …). headers are
+the events:
+
+- `ScriptEvent_OnScriptActive` (`…OnScriptStart`, `…OnScriptPreActive`): the script running. the
+  server sets script state by progress, and a script runs while the player is inside its start or
+  active shape (`startShapeList`/`activeShapeList`: `offset`, `radius`). `ManualStartLevelScript` in
+  another script also starts it
+- `ScriptEvent_OnLeaderEnterTriggerVolume` (and leave, list): the player entering one of the
+  script's `triggerVolumes` (shape `position`, `radius`)
+- `EntityEvent_*`: an interactive's event; `targetEntity` names a slot of the script's own
+  `interactives` (template `entityDataIdKey`, `position`) or a LevelData placement by logic id
+- `LevelEvent_OnQuestStateChanged` / `…OnMissionStateChanged`: a quest event (`filtedQuestId`)
+- `ScriptEvent_OnCustomEvent` / `LevelEvent_OnCustomEvent`: raised by `RaiseCustomScriptEvent` (to a
+  receiver script) or `RaiseCustomLevelEvent` (to the level) with the same key, so the raiser's own
+  causes apply
+- stage, property and other events: no client node sets script stages or properties; the server does
+
+the packer follows every path from each header to each show/hide action (up to 16 guard sets per
+node), and custom events and script starts back up to five hops. each root cause becomes a
+`ControlDriver` of the group's control, with the `visible` the action sets: quest ids found on the
+way (in guards and quest events), a switch, a trigger area, the script's own area, or the server.
+scripts of other levels that name a scene's group (dungeons reusing the open world, such as the
+racing courses) become `level` drivers; they're found by the group's id in their bytes. missions
+whose objectives check a script (stage, property) are listed as quest drivers of its activation,
+since the server runs such scripts as those missions progress. the viewer lists each control's
+drivers and flies to a driver's position.
+
+### level scripts
+
+level scripts and other MemoryPack game data are decoded by
+[`memory-pack.ts`](../../packages/formats/src/endfield/memory-pack.ts), with the schema read at
+extract time from the install's IL2CPP metadata (`il2cpp_data/Metadata/global-metadata.dat`,
+version 29) and `GameAssembly.dll` ([`il2cpp/`](../../packages/formats/src/il2cpp)): the generated
+`<Type>ForMemoryPack` wrappers' setter properties give each object's members in order, and their
+`MemoryPackUnion` attributes the union tags. the formatting rules beyond the wrappers are described
+in the decoder. 5503 of the client's 5505 level scripts decode to their exact length; two hold an
+NPC dictionary with an unknown header.
+
 ## how the package encodes conditions
 
 types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo`, `SceneControl`,
@@ -341,7 +391,9 @@ environment blend.
 - **progression**: one select per progression, "Level n", "Visual form n" or "Group level n"
 - **stream areas**: a select per area, "Follow camera (shown/hidden)", shown or hidden
 - **harvest**: standing or felled
-- **script / event scenery**, **logic-gate previews**: checkboxes
+- **script / event scenery**, **logic-gate previews**: checkboxes; a script group lists its drivers
+  ("Shown when the player uses …", "Hidden by quest progress: …"), with "Go" flying to a driver's
+  place
 - **lighting / environment volumes**: volumes owned by the shown level or reaching into it. a volume
   follows its scene-state condition unless ticked or unticked here, which overrides it.
   scripted-blend volumes (blend mode 3) are off unless ticked. packed volumes carry

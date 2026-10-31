@@ -98,6 +98,7 @@ import {
 	unnamedSceneStateControl,
 } from '../game/scene-conditions.ts';
 import { loadProgressions, progressionControl, progressionId } from '../game/scenery-variants.ts';
+import { loadScriptDrivers } from '../game/script-drivers.ts';
 import { labelStory } from '../game/story.ts';
 import { indexTerrain, loadTerrainSurfacesData, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, ChunkSource, WorldIndex } from '../game/world-index.ts';
@@ -268,10 +269,7 @@ const BLOB_BATCH = 64;
  * @returns sizes, counts and timings
  * @throws {Error} if the output directory holds something other than a package, or the scene is unknown
  */
-export const packScene = async (
-	context: Pick<Context, 'config' | 'keys' | 'vfs' | 'world' | 'resolver'>,
-	options: PackOptions,
-): Promise<PackReport> => {
+export const packScene = async (context: Context, options: PackOptions): Promise<PackReport> => {
 	const timer = new PhaseTimer(options.log);
 	// a package being replaced lends its unchanged archives to the new one
 	const previous = (await checkOutDir(options.outDir)) ? options.outDir : null;
@@ -901,6 +899,24 @@ const collectEntities = async (
 	}
 	counts.dynamicRenderers = 0;
 	collected.controls = dynamic.controls;
+	{
+		// what level scripts show and hide script groups for
+		const scripted = new Map(
+			dynamic.controls
+				.filter((control) => control.kind === 'script')
+				.map((control) => [control.id.slice('script:'.length), control]),
+		);
+		const found = await loadScriptDrivers(context, scene.options.scene, new Set(scripted.keys()));
+		for (const [id, drivers] of found.drivers) {
+			const control = scripted.get(id);
+			if (control !== undefined) {
+				control.drivers = drivers;
+			}
+		}
+		counts.levelScripts = found.counts.scripts;
+		counts.levelScriptsUndecoded = found.counts.undecoded;
+		counts.scriptGroupsWithDrivers = found.counts.targeted;
+	}
 	for (const index of dynamic.sceneStates) {
 		collected.sceneStates.add(index);
 	}
@@ -1313,6 +1329,7 @@ const sceneStates = async (
 			rule: null,
 			assumption: 'follows the camera, like the game',
 			story: null,
+			drivers: [],
 			levelTags: [],
 			values: [
 				{ value: 0, label: 'hidden' },

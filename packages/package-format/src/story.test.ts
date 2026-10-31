@@ -16,6 +16,7 @@ const control = (
 	rule: null,
 	assumption: '',
 	story: { mission, step },
+	drivers: [],
 	levelTags: [0],
 	values: [],
 	default: 3,

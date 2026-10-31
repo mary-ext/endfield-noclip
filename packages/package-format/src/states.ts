@@ -1,4 +1,5 @@
 import type { StreamAreasInfo } from './stream-areas.ts';
+import type { Vec3 } from './values.ts';
 
 /**
  * what decides whether placed content shows. controls hold the game's own state (a quest's state, a variable,
@@ -112,6 +113,8 @@ export interface SceneControl {
 	assumption: string;
 	/** for a quest or mission control of a known mission, where it sits in the story; `null` otherwise */
 	story: StoryPlace | null;
+	/** for a script control, what sets it in game, deduplicated; empty when no client script does */
+	drivers: ControlDriver[];
 	/** level tags whose content (or derived controls) this control gates; 0 means content every level shows */
 	levelTags: number[];
 	/** the selectable values, ascending; each below 32 */
@@ -124,6 +127,37 @@ export interface SceneControl {
 	 * listed before them
 	 */
 	derived: number | null;
+}
+
+/**
+ * something that sets a script-controlled group in game, found by following the level scripts that show or
+ * hide it back to what starts them. `shows` is the value the script sets: true shows the group, false hides
+ * it, `null` when the script computes it
+ *
+ * - `quest`: a quest or mission state the chain listens for or checks
+ * - `switch`: an interactive's event (a switch, lever or other object the player uses), with its template and
+ *   placement when known
+ * - `area`: the player entering a trigger volume (centre and radius)
+ * - `script`: the script running at all, which the server enables by progress while the player is inside its
+ *   area (centre and radius when the script has one)
+ * - `level`: a script of another level, e.g. a dungeon that reuses the map
+ * - `server`: script stages, properties or events only the server sets
+ */
+export type ControlDriver =
+	| { kind: 'quest'; quests: QuestRef[]; shows: boolean | null }
+	| { kind: 'switch'; template: string | null; position: Vec3 | null; shows: boolean | null }
+	| { kind: 'area'; position: Vec3; radius: number; shows: boolean | null }
+	| { kind: 'script'; position: Vec3 | null; radius: number | null; shows: boolean | null }
+	| { kind: 'level'; levelId: string; name: string | null; shows: boolean | null }
+	| { kind: 'server'; shows: boolean | null };
+
+/** a quest or mission named by a driver, labelled like quest controls */
+export interface QuestRef {
+	id: string;
+	/** its mission's name, or `null` when the client lacks the mission */
+	mission: string | null;
+	/** the quest's text, or `null` for a mission or a hidden step */
+	name: string | null;
 }
 
 /** a value of a {@link SceneControl} */

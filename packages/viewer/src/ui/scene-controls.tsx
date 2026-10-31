@@ -1,4 +1,9 @@
-import type { MissionInfo, SceneControl, SceneControlKind } from '@endfield-noclip/package-format/states';
+import type {
+	ControlDriver,
+	MissionInfo,
+	SceneControl,
+	SceneControlKind,
+} from '@endfield-noclip/package-format/states';
 import {
 	storyOrder,
 	storyPointPicks,
@@ -65,6 +70,63 @@ const SECTIONS: { kinds: SceneControlKind[]; title: string; note: string; open: 
 	},
 ];
 
+/** @returns a driver in words: what it does to the group, and why */
+const driverText = (driver: ControlDriver): string => {
+	const verb = driver.shows === null ? 'Set' : driver.shows ? 'Shown' : 'Hidden';
+	switch (driver.kind) {
+		case 'quest': {
+			const quests = driver.quests.map((quest) =>
+				quest.mission === null
+					? quest.id
+					: quest.name === null
+						? quest.mission
+						: `${quest.mission}: ${quest.name}`,
+			);
+			return `${verb} by quest progress: ${quests.join('; ')}`;
+		}
+		case 'switch': {
+			return `${verb} when the player uses ${driver.template ?? 'an interactive'}`;
+		}
+		case 'area': {
+			return `${verb} when the player enters an area (${Math.round(driver.radius)} m)`;
+		}
+		case 'script': {
+			return `${verb} while its level script runs${driver.radius === null ? '' : ` (area ${Math.round(driver.radius)} m)`}`;
+		}
+		case 'level': {
+			return `${verb} by ${driver.name ?? driver.levelId}, another level reusing the map`;
+		}
+		case 'server': {
+			return `${verb} by script stages or server events`;
+		}
+	}
+};
+
+/** what sets a script group in game, with a button to fly to each place it starts from */
+const Drivers = ({ viewer, drivers }: { viewer: Viewer; drivers: readonly ControlDriver[] }) => {
+	if (drivers.length === 0) {
+		return null;
+	}
+	return (
+		<ul className="drivers">
+			{drivers.map((driver) => {
+				const position = 'position' in driver ? driver.position : null;
+				const radius = 'radius' in driver ? (driver.radius ?? 20) : 20;
+				return (
+					<li key={JSON.stringify(driver)}>
+						{driverText(driver)}
+						{position !== null && (
+							<button type="button" onClick={() => viewer.flyToPoint(position, Math.min(radius, 120) * 1.5)}>
+								Go
+							</button>
+						)}
+					</li>
+				);
+			})}
+		</ul>
+	);
+};
+
 /** kinds whose controls are plain on/off switches */
 const SWITCH_KINDS: ReadonlySet<SceneControlKind> = new Set(['sceneState', 'script', 'logic']);
 
@@ -90,41 +152,47 @@ const ControlRow = ({
 	const follows = control.kind === 'area' ? 'Follow camera' : control.derived === null ? null : 'Follow game';
 	if (follows === null && SWITCH_KINDS.has(control.kind)) {
 		return (
-			<label className="toggle scene-toggle">
-				<input
-					type="checkbox"
-					checked={value === 1}
-					onChange={(event) => viewer.setSceneValue(control.id, Number(event.currentTarget.checked))}
-				/>
+			<div>
+				<label className="toggle scene-toggle">
+					<input
+						type="checkbox"
+						checked={value === 1}
+						onChange={(event) => viewer.setSceneValue(control.id, Number(event.currentTarget.checked))}
+					/>
+					<span>
+						{control.name}
+						<small className="muted">{detail}</small>
+					</span>
+				</label>
+				<Drivers viewer={viewer} drivers={control.drivers} />
+			</div>
+		);
+	}
+	return (
+		<div>
+			<label className="scene-choice">
 				<span>
 					{control.name}
 					<small className="muted">{detail}</small>
 				</span>
+				<select
+					value={follows !== null && !picked ? '' : String(value)}
+					onChange={(event) => {
+						const text = event.currentTarget.value;
+						viewer.setSceneValue(control.id, text === '' ? null : Number(text));
+					}}
+				>
+					{follows !== null && <option value="">{picked ? follows : `${follows} (${label(value)})`}</option>}
+					{control.values.map((entry) => (
+						<option key={entry.value} value={entry.value}>
+							{entry.label}
+							{follows === null && entry.value === control.default ? ' (initial)' : ''}
+						</option>
+					))}
+				</select>
 			</label>
-		);
-	}
-	return (
-		<label className="scene-choice">
-			<span>
-				{control.name}
-				<small className="muted">{detail}</small>
-			</span>
-			<select
-				value={follows !== null && !picked ? '' : String(value)}
-				onChange={(event) => {
-					const text = event.currentTarget.value;
-					viewer.setSceneValue(control.id, text === '' ? null : Number(text));
-				}}
-			>
-				{follows !== null && <option value="">{picked ? follows : `${follows} (${label(value)})`}</option>}
-				{control.values.map((entry) => (
-					<option key={entry.value} value={entry.value}>
-						{entry.label}
-						{follows === null && entry.value === control.default ? ' (initial)' : ''}
-					</option>
-				))}
-			</select>
-		</label>
+			<Drivers viewer={viewer} drivers={control.drivers} />
+		</div>
 	);
 };
 

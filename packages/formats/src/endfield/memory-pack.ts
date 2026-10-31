@@ -8,7 +8,7 @@ import type { Il2CppRuntime, Il2CppTypeRef } from '../il2cpp/registration.ts';
 // a polymorphic base is a union, a tag byte (250 then a u16 for large tags, 255 for null) choosing the subtype
 // from the wrapper's `[MemoryPackUnion(tag, typeof(subtype))]` attributes. the schema is read from the user's
 // install (its IL2CPP metadata and binary), never stored in this repo. collections are an int32 count (-1 for
-// null, decoded as empty) and their elements; strings are ids into the JsonData string pool (negative: null).
+// null, decoded as empty) and their elements; strings are ids into the JsonData string pool.
 //
 // rules beyond the generated wrappers, found by decoding every level script of the client to its exact length:
 //
@@ -316,7 +316,7 @@ const PRIMITIVE_KINDS = new Map([
 /** decodes MemoryPack bytes with a client's schema */
 export class MemoryPackReader {
 	readonly schema: MemoryPackSchema;
-	readonly #strings: (id: number) => string | undefined;
+	readonly #strings: (id: number) => string | null | undefined;
 	readonly #layouts = new Map<string, Layout | null>();
 	#bytes: Uint8Array = new Uint8Array();
 	#view: DataView = new DataView(this.#bytes.buffer);
@@ -324,9 +324,10 @@ export class MemoryPackReader {
 
 	/**
 	 * @param schema the client's wrappers
-	 * @param strings JsonData string pool lookup
+	 * @param strings JsonData string pool lookup: the string, `null` for a null string, `undefined` for an id
+	 *   the pool lacks (decoded as `#<id>`, or `null` when negative)
 	 */
-	constructor(schema: MemoryPackSchema, strings: (id: number) => string | undefined) {
+	constructor(schema: MemoryPackSchema, strings: (id: number) => string | null | undefined) {
 		this.schema = schema;
 		this.#strings = strings;
 	}
@@ -393,9 +394,9 @@ export class MemoryPackReader {
 		const name = runtime.typeName(type);
 		if (type.kind === 'primitive') {
 			if (type.name === 'string') {
-				// negative ids are null strings
 				const id = this.#i32();
-				return id < 0 ? null : (this.#strings(id) ?? `#${id}`);
+				const text = this.#strings(id);
+				return text === undefined ? (id < 0 ? null : `#${id}`) : text;
 			}
 			return this.#raw(type);
 		}
