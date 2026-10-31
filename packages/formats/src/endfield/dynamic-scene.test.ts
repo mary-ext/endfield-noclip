@@ -145,9 +145,10 @@ const build = (
 	];
 	w.link(grid.get(12)!, w.structs(88, [group(0, 0b00011), group(1, 0b10000), group(2, 0)]));
 
-	const ids = w.structs(8, [
-		[10200000003 % 2 ** 32, Math.floor(10200000003 / 2 ** 32)],
-		[7, 0],
+	// UniqueId then OverrideId; the override differs so a misread stride fails
+	const ids = w.structs(16, [
+		[10200000003 % 2 ** 32, Math.floor(10200000003 / 2 ** 32), 99, 0],
+		[7, 0, 98, 0],
 	]);
 	w.link(grid.get(17)!, ids);
 	w.link(grid.get(29)!, w.structs(20, [[0, 0, 0, 0, 1]]));

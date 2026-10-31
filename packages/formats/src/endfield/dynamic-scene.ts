@@ -10,7 +10,7 @@ import { FlatBuffer } from '../binary/flatbuffer.ts';
 //
 //   root: 3 [SingleGrid table]   4 [string] (root string table: settlement ids, POI ids, level ids …)
 //   grid: 0 u32 uniqueId (L<<16 | i<<8 | j)   5 [DataIndex 16 B]   12 [ResourceGroupWithStateDesc 88 B]
-//         17 [IdComp u64]   29 [SettlementControlComp 20 B]   30 [FactoryRegionControlComp 8 B]
+//         17 [IdComp 16 B]   29 [SettlementControlComp 20 B]   30 [FactoryRegionControlComp 8 B]
 //         32 [ResourceComp 132 B]   33 [RootComp 84 B, one per entity]   55 [PoiControlComp 8 B]
 //   DataGroup (24 B) = i32 invalid, i32 type, u32 grid, i32 index, i32 num, i32 total: a typed slice of the vector
 //     `type` selects, in grid `grid`
@@ -21,6 +21,7 @@ import { FlatBuffer } from '../binary/flatbuffer.ts';
 //     u32 sceneState @24, u32 logicState @28, i32 levelNum @32 (LevelConfig idNum), i32 factoryIndex @36
 //   SettlementControlComp: i32 settlement (root string) @0, bool controlLoad @4, i32 compareType @8,
 //     i32 compareValue @12, bool isMain @16
+//   IdComp: u64 uniqueId @0, u64 overrideId @8 (0 on every entity seen; IL2CPP `FBDynamicSceneIdComp`)
 //   FactoryRegionControlComp: i32 region (root string, a level id) @0, i32 @4
 //   PoiControlComp: i32 poi (root string) @0, i32 domainType @4
 //   16 [MissionCondition 16 B] = i32 id (root string), i32 isQuest, i32 state, i32 isSame
@@ -157,7 +158,7 @@ const Width = {
 	DataIndex: 16,
 	ResourceGroupWithStateDesc: 88,
 	MissionCondition: 16,
-	IdComp: 8,
+	IdComp: 16,
 	MissionControlComp: 32,
 	GlobalVarControlComp: 40,
 	SettlementControlComp: 20,
