@@ -103,6 +103,66 @@ test('matte paintings are unlit, cast no shadows and test the texture alpha agai
 	assert.deepEqual(Array.from(look.params.subarray(LookRow.surface, LookRow.surface + 2)), [1, 4]);
 });
 
+test('dither-alpha effects shade as opaque two-sided surfaces from the tinted main texture and their normal map', () => {
+	const shaders: ShaderEntry[] = [
+		{
+			name: 'HGRP/Effect/VFXDitherAlpha',
+			family: 'vfxDitherAlpha',
+			floats: { _UseLighting: 1, _TintColorIntensity: 1, _Roughness: 0.5, _NormalScale: 1 },
+			colors: { _TintColor: [1, 1, 1, 1], _MainTex2Color: [1, 1, 1, 1] },
+			vectors: {},
+			textures: { _MainTex: 'white', _MainTex2: 'white', _NormalMap: 'bump' },
+			normalMaps: [],
+		},
+	];
+	const material = (id: number, overrides: Partial<ReadyMaterial>): ReadyMaterial => ({
+		id,
+		status: 'ready',
+		shader: 0,
+		keywords: ['_NORMAL_MAP', '_USE_MAIN2'],
+		renderQueue: 2450,
+		blend: 'alphaTest',
+		blendFactors: null,
+		alphaClipThreshold: 0.5,
+		cull: 'none',
+		zWrite: true,
+		baseTextureMapCount: null,
+		slots: {
+			_MainTex: { texture: 3, uv: 0, scale: [4, 4], offset: [0, 0] },
+			_MainTex2: { texture: 4, uv: 0, scale: [1, 1], offset: [0, 0] },
+			_NormalMap: { texture: 5, uv: 0, scale: [1, 1], offset: [0, 0] },
+		},
+		floats: { _UseMainTex2AsAlpha: 1, _TintColorIntensity: 10, _NormalScale: 1.5, _Roughness: 1 },
+		colors: { _TintColor: [1, 0.5, 0, 1] },
+		vectors: {},
+		...overrides,
+	});
+	const [rock, colored, dissolving] = materialLooks({
+		shaders,
+		entries: [
+			material(0, {}),
+			// a second texture's colour can't be drawn yet
+			material(1, { floats: { _UseMainTex2AsAlpha: 0 } }),
+			material(2, { keywords: ['_USE_DISSOLVE'] }),
+		],
+	});
+	assert.equal(rock.drawn, true);
+	assert.equal(rock.cutout, false);
+	assert.equal(rock.castsShadows, false);
+	assert.equal(rock.cull, 'none');
+	assert.deepEqual(rock.textures.slice(0, 3), [3, 5, -1]);
+	assert.equal(rock.flags, LookFlags.BaseMap | LookFlags.NormalMap | LookFlags.NormalRag);
+	// the tint times its intensity, linear; the shader saturates the product with the texture
+	assert.deepEqual(
+		Array.from(rock.params.subarray(LookRow.tint, LookRow.tint + 4), (v) => Math.round(v * 1000) / 1000),
+		[10, 2.14, 0, -1],
+	);
+	assert.deepEqual(Array.from(rock.params.subarray(LookRow.surface, LookRow.surface + 4)), [1, 1, 0, 1.5]);
+	assert.deepEqual(Array.from(rock.params.subarray(LookRow.uv, LookRow.uv + 4)), [4, 4, 0, 0]);
+	assert.equal(colored.drawn, false);
+	assert.equal(dissolving.drawn, false);
+});
+
 test('glass is transparent, casts no shadow and takes its opacity from the tint alpha and the picked map alpha', () => {
 	const shaders: ShaderEntry[] = [
 		{

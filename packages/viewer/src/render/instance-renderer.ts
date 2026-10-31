@@ -18,6 +18,7 @@
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import { GrowableBuffer } from '../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
+import type { RangeAllocation } from '../gfx/range-allocator.ts';
 import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
 import type { DecodedInstances } from '../package/decode-protocol.ts';
 import type { Vec3 } from '../scene/camera.ts';
@@ -25,7 +26,7 @@ import type { InstanceRange } from '../streaming/selection.ts';
 import type { ResidentInstances } from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
-import { ROW_BYTES, assignBlockSlot } from './instance-rows.ts';
+import { ROW_BYTES, ROW_WORDS, assignBlockSlot } from './instance-rows.ts';
 import boxesWgsl from './shaders/instance-boxes.wgsl?raw';
 
 const BLOCK_SLOTS = 16_384;
@@ -210,6 +211,31 @@ export class InstanceRenderer {
 			rowsF32: new Float32Array(decoded.rows.buffer),
 			cull: decoded.cull,
 		};
+	}
+
+	/**
+	 * reserves rows outside any block, for rows the viewer writes itself (particles). they use the block origin
+	 * of whichever slot their words name
+	 *
+	 * @param count rows
+	 * @returns the range, or `null` if the buffer is full
+	 */
+	allocateRows(count: number): RangeAllocation | null {
+		return this.#pool.allocate(count);
+	}
+
+	/** @param alloc rows from {@link allocateRows} */
+	freeRows(alloc: RangeAllocation): void {
+		this.#pool.free(alloc);
+	}
+
+	/**
+	 * @param start the first row to write
+	 * @param rows {@link ROW_WORDS} words per row
+	 * @param count rows to write
+	 */
+	writeRows(start: number, rows: Uint32Array<ArrayBuffer>, count: number): void {
+		this.#device.queue.writeBuffer(this.#pool.buffer, start * ROW_BYTES, rows, 0, count * ROW_WORDS);
 	}
 
 	/** @param resident a block from {@link upload}; its rows and slot are freed */

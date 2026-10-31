@@ -292,6 +292,11 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 			looks[entry.id] = effect;
 			continue;
 		}
+		const dither = shader.family === 'vfxDitherAlpha' ? ditherAlphaLook(entry, shader) : null;
+		if (dither !== null) {
+			looks[entry.id] = dither;
+			continue;
+		}
 		// other effect meshes need their own opacity, distortion and animation passes. the opaque mesh fallback
 		// turns their bounding surfaces into solid walls
 		if (
@@ -1016,6 +1021,74 @@ const erosionLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook =>
 		],
 		ErosionRow.flow,
 	);
+	return look;
+};
+
+/** keywords a `HGRP/Effect/VFXDitherAlpha` material can have and still be drawn by {@link ditherAlphaLook} */
+const DITHER_ALPHA_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2']);
+
+/**
+ * `HGRP/Effect/VFXDitherAlpha`: an effect shader that writes the G-buffer like an opaque surface, used for
+ * solid effect meshes such as the rocks floating over Origin Lodespring's crater. the colour is `_TintColor ·
+ * _TintColorIntensity` times `_MainTex` (or the tint alone with `_UseMainTexAsAlpha`), times `_MainTex2Color`
+ * when `_USE_MAIN2` takes only its alpha from `_MainTex2` (`_UseMainTex2AsAlpha`) and multiplies
+ * (`_MainTex2BlendMode` 0). it is the albedo with `_UseLighting` (saturated, as the G-buffer stores it), else
+ * the emitted radiance. `_NORMAL_MAP` adds a tangent-space normal map (`_NormalScale`, read like Unity's
+ * `UnpackNormal`), roughness and metallic are `_Roughness` and `_Metallic`. the shader has no shadow caster
+ * pass. its depth pass discards by the alpha against a screen-space dither; no drawn material fades, so the
+ * dither isn't drawn
+ *
+ * @returns the look, or `null` with keywords or texture combinations the viewer doesn't draw
+ */
+const ditherAlphaLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook | null => {
+	const keywords = entry.keywords;
+	if (keywords.some((keyword) => !DITHER_ALPHA_KEYWORDS.has(keyword))) {
+		return null;
+	}
+	const float = (name: string, fallback: number): number => floatOf(entry, shader, name, fallback);
+	let second: [number, number, number] = [1, 1, 1];
+	if (keywords.includes('_USE_MAIN2')) {
+		if (float('_UseMainTex2AsAlpha', 0) === 0 || float('_MainTex2BlendMode', 0) !== 0) {
+			return null;
+		}
+		second = linearRgb(colorOf(entry, shader, '_MainTex2Color') ?? [1, 1, 1, 1]);
+	}
+	const look = emptyLook({ drawn: true });
+	look.cull = entry.cull;
+	look.castsShadows = false;
+	const params = look.params;
+	const slots: [string | null, number][] = [
+		[float('_UseMainTexAsAlpha', 0) === 0 ? '_MainTex' : null, 0],
+		[keywords.includes('_NORMAL_MAP') ? '_NormalMap' : null, 1],
+	];
+	for (const [name, i] of slots) {
+		const slot = name === null ? undefined : entry.slots[name];
+		if (slot === undefined || slot.uv !== 0) {
+			continue;
+		}
+		look.textures[i] = slot.texture;
+		look.uvScales[i] = Math.max(Math.abs(slot.scale[0]), Math.abs(slot.scale[1]), 1e-3);
+		look.flags |= SLOT_FLAGS[i];
+		params.set([...slot.scale, ...slot.offset], LookRow.uv + i * 4);
+	}
+	const intensity = float('_TintColorIntensity', 1);
+	const tint = linearRgb(colorOf(entry, shader, '_TintColor') ?? [1, 1, 1, 1]);
+	const color = tint.map((c, i) => c * intensity * second[i]);
+	if (float('_UseLighting', 1) === 0) {
+		// unlit: the radiance, as the matte painting's path draws it, with no highlight (zero intensity)
+		look.flags |= LookFlags.Unlit;
+		params.set([...color, -1], LookRow.tint);
+		params[LookRow.emissive2 + 2] = float('_IgnorePostExposure', 1);
+		return look;
+	}
+	look.flags |= LookFlags.NormalRag;
+	// untextured, the tint is the albedo, which the G-buffer saturates
+	const untextured = look.textures[0] < 0;
+	params.set([...(untextured ? color.map((c) => Math.min(c, 1)) : color), -1], LookRow.tint);
+	const roughness = float('_Roughness', 1);
+	params.set([roughness, roughness, float('_Metallic', 0), float('_NormalScale', 1)], LookRow.surface);
+	params.set([1, 0.04, 0, 1], LookRow.surface2);
+	params[LookRow.emissive + 3] = untextured ? 1 : 0;
 	return look;
 };
 

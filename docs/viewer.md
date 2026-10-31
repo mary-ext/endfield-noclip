@@ -183,6 +183,43 @@ are streamed whole (`streamWholeTexture`).
 the output (a visible row list plus per-bucket ranges) has the shape a GPU cull pass would write
 next to indirect draw arguments; that pass isn't built yet.
 
+### particles
+
+a chain draw that names a particle system ([package format](package-format.md#particles)) makes its
+instance an emitter: the emitter culls and streams its geometry like any instance, but its bucket
+takes the rows of its live particles instead of its own
+([`render/particles.ts`](../packages/viewer/src/render/particles.ts)). `ParticleField` keeps
+`maxParticles` rows per emitter in the instance buffer, using the emitter's block origin, and
+rewrites them once per frame the emitter is selected. so every mesh shader draws particles
+unchanged, and shadow and effect passes need nothing of their own.
+
+each particle follows in closed form from its emission time and random values hashed from the
+emitter's place, the system and its index, so any moment can be evaluated on its own:
+
+- emissions are the rate's steady stream (one every `1 / rate` seconds, a random rate taking its
+  mean) and each loop's bursts (count rounded, each fired with its probability), within the window
+  the longest lifetime reaches back; non-looping systems stop emitting after one duration. the
+  newest `maxParticles` live ones are kept.
+- start values read their curves at the emission's place in its loop. the shape gives the start
+  position and direction (cones towards the matching point of their far end, volumes anywhere up to
+  their length), placed by the shape's own transform.
+- at age `a` a particle has moved `(start speed + linear velocity) · a` plus `½ g a²` down the
+  world's y in the emitter's frame (Unity's gravity, 9.81 m/s² times the modifier) and the radial
+  push, then turned about the orbit's centre by `ω · a`. turning the whole path is exact when the
+  rest of the motion runs along the orbit's axis.
+- size is the start size times the size over lifetime at `a / lifetime`; rotation is the start Euler
+  angles (Unity's Z, X, Y order) plus the angular velocity times `a`, applied in the emitter's frame
+  (Local), the world's (World) or the camera's (View, so the meshes turn with the camera, as the
+  game's do).
+- a renderer with several meshes is several emitters at one place; they share their random values,
+  so each draws the particles that picked its mesh.
+
+the game's random sequence can't be reproduced, so particles start elsewhere than in the game with
+the same distributions. looping systems are evaluated as if they had played since long before the
+package opened; others start when their emitter is first selected. particles move by the time of the
+frame that renders them, so they hold still while the view does, like the effects' scrolling
+textures (`continuous` keeps them moving).
+
 ### priority
 
 priority is SSE (or projected pixels for geometry and textures). content in the focused level's

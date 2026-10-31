@@ -442,8 +442,9 @@ near unity −905, 228, −1505) is one: `VFXDecal` boxes stain the ground and `
 from it as red and blue smoke, all in script group `script:458752:41` with the shrine's damaged
 pieces (on by default). two shaders are drawn
 ([`effect-looks.ts`](../../packages/viewer/src/render/effect-looks.ts),
-[`shaders/effect.wgsl`](../../packages/viewer/src/render/shaders/effect.wgsl)); every other effect
-shader stays hidden, since the opaque fallback would turn its bounding surfaces into walls.
+[`shaders/effect.wgsl`](../../packages/viewer/src/render/shaders/effect.wgsl)), besides the mist and
+the [solid effects](#solid-effects); every other effect shader stays hidden, since the opaque
+fallback would turn its bounding surfaces into walls.
 
 both are unlit and premultiplied (one, one minus source alpha), and build their colour from a stack
 of textures by role:
@@ -500,6 +501,22 @@ down the box's y (UV = local xz + 0.5). its roles are fixed: `_MainTex`, `_MaskT
 to the power `_AngleBlendFallOff`, N from the main pass's packed surface normal). the colour is
 premultiplied by the alpha twice, as the game does.
 
+### solid effects
+
+`HGRP/Effect/VFXDitherAlpha` writes the G-buffer like an opaque surface, for effect meshes that are
+solid, such as the rocks floating over Origin Lodespring's crater (mesh particles,
+[viewer](../viewer.md#particles)). the viewer shades it through the opaque mesh path
+([`materials.ts`](../../packages/viewer/src/render/materials.ts), `ditherAlphaLook`): the colour is
+`_TintColor · _TintColorIntensity` times `_MainTex` (the tint alone with `_UseMainTexAsAlpha`),
+times `_MainTex2Color` when `_USE_MAIN2` takes only the alpha of `_MainTex2` (`_UseMainTex2AsAlpha`)
+and multiplies (`_MainTex2BlendMode` 0). with `_UseLighting` it is the albedo, saturated as the
+G-buffer stores it, else emitted. `_NORMAL_MAP` adds a tangent-space normal map (`_NormalScale`; x
+from alpha times red, as Unity unpacks it); roughness and metallic are `_Roughness` and `_Metallic`.
+the shader has no shadow caster pass. its depth pass discards where the alpha falls below a
+screen-space dither, which fades a mesh out; nothing drawn fades, so the dither isn't drawn. the
+rocks' material multiplies a gold mask by a tint twelve times over, so the saturated albedo is black
+rock with gold veins.
+
 ### mist
 
 the drifting mist banks are effects too: `HGRP/FogSimple` cards (841 on map02, `SimpleFogCard*`) and
@@ -548,8 +565,8 @@ and particle-data terms, brightening that is a scan line or centred on a fixed p
 screen-space UVs, lighting, breathing, edge colour, vertex animation textures or water blending, the
 flipbook and particle inputs, VFXDecal's parallax, 3D texture, weight and particle variants, the
 effects' own fog (`_USE_FOG`; the composite fogs them at the surface behind instead), the scene
-effect colour grade, and every other effect shader (`VFXAdvance`, `VFXDitherAlpha`, `VFXRefract`,
-`VFXWater`, …).
+effect colour grade, VFXDitherAlpha's dither fade and its keyword variants other than the normal map
+and `_MainTex2`'s alpha, and every other effect shader (`VFXAdvance`, `VFXRefract`, `VFXWater`, …).
 
 ## sky
 

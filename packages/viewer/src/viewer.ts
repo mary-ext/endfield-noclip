@@ -49,6 +49,7 @@ import { lensFlareLook } from './render/lens-flare-layout.ts';
 import { LocalLights } from './render/local-lights.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
+import { ParticleField } from './render/particles.ts';
 import { type PostSettings, PostProcess, type Tonemapper, postExposure } from './render/post-process.ts';
 import { SHADOW_FORMAT, SHADOW_LAYERS, ShadowMap, offscreenCasters } from './render/shadow-map.ts';
 import { SETTLE_FRAMES } from './render/temporal-aa.ts';
@@ -498,6 +499,7 @@ export class Viewer {
 		});
 		const irradiance = new IrradianceVolume(this.#gfx.device, pkg.irradiance);
 		this.#setIrradiance(irradiance);
+		const particles = new ParticleField(pkg.particles, this.#instances);
 		const stream = new StreamManager(
 			pkg,
 			this.#pool,
@@ -529,6 +531,7 @@ export class Viewer {
 							break;
 						}
 						case 'instances': {
+							particles.release(resident);
 							this.#instances.release(resident);
 							break;
 						}
@@ -602,6 +605,7 @@ export class Viewer {
 							looks: materialLooks(pkg.materials),
 							stream,
 							textures,
+							particles,
 						})
 					: null,
 			textures,
@@ -1451,6 +1455,13 @@ export class Viewer {
 				textureBias: options.textureBias,
 				casters: view.casters,
 				shadowLayers: shadows ? this.#shadows.volumes : null,
+				// the clock the effects' shaders scroll by
+				particles: {
+					time: performance.now() / 1000,
+					right: this.camera.right(),
+					up: this.camera.up(),
+					forward: this.camera.forward(),
+				},
 			});
 		}
 		this.#span('mesh select');

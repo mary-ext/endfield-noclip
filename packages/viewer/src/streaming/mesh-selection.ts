@@ -18,6 +18,7 @@ import type { ReadyTexture } from '@endfield-noclip/package-format/textures';
 
 import { CULL_FLOATS, ROW_WORDS } from '../render/instance-rows.ts';
 import { type MaterialLook, alphaTextureOf } from '../render/materials.ts';
+import type { ParticleField, ParticleView } from '../render/particles.ts';
 import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../render/shadow-map.ts';
 import type { TextureBinding, TextureStore } from '../render/texture-store.ts';
 import type { Plane, Vec3 } from '../scene/camera.ts';
@@ -76,6 +77,8 @@ export interface MeshView {
 	casters: CasterVolume | null;
 	/** the shadow layers instances are grouped by; `null` without shadows */
 	shadowLayers: ShadowLayerVolumes | null;
+	/** the clock and camera axes particles are placed by */
+	particles: ParticleView;
 }
 
 /** what the selector reads */
@@ -88,6 +91,8 @@ export interface MeshSelectorInit {
 	looks: readonly MaterialLook[];
 	stream: StreamManager;
 	textures: TextureStore;
+	/** writes the rows of emitters' particles */
+	particles: ParticleField;
 }
 
 /** a drawn (non-shadow, visible-material) draw of a chain */
@@ -99,6 +104,8 @@ interface ChainSlot {
 	submesh: number;
 	material: number;
 	castsShadows: boolean;
+	/** the particle system the draw plays, whose particles stand in for the instance; `null` for a mesh */
+	particles: number | null;
 	/** the slot's buckets, once they had rows, by {@link bucketIndex} */
 	buckets: (MeshBucket | null)[];
 }
@@ -190,6 +197,7 @@ export class MeshSelector {
 	#looks: readonly MaterialLook[];
 	#stream: StreamManager;
 	#textures: TextureStore;
+	#particles: ParticleField;
 	#buckets = new Map<number, MeshBucket>();
 	/** drawn draws per chain, built on first use */
 	#slots: (ChainSlot[] | null)[];
@@ -211,6 +219,7 @@ export class MeshSelector {
 		this.#looks = init.looks;
 		this.#stream = init.stream;
 		this.#textures = init.textures;
+		this.#particles = init.particles;
 		// filled up front: an array written at scattered indices turns into a slow dictionary
 		this.#slots = Array.from({ length: init.chains.length }, () => null);
 		const count = init.geometries.length;
@@ -325,7 +334,8 @@ export class MeshSelector {
 					if (!ready) {
 						pendingCount = this.#residentLod(slots, lod, castOnly);
 						if (pendingCount === 0) {
-							if (!castOnly) {
+							// an emitter's box spans everywhere its particles reach, so it doesn't stand in for them
+							if (!castOnly && !slots.some((slot) => slot.particles !== null)) {
 								boxes.push(row);
 							}
 							continue;
@@ -354,7 +364,14 @@ export class MeshSelector {
 							bucket.nearest = Infinity;
 							buckets.push(bucket);
 						}
-						bucket.rows[group].push(row);
+						if (slot.particles === null) {
+							bucket.rows[group].push(row);
+						} else {
+							const particles = this.#particles.rows(instances, i, slot.particles, frame, view.particles);
+							for (const particle of particles) {
+								bucket.rows[group].push(particle);
+							}
+						}
 						if (priority > bucket.pixels) {
 							bucket.pixels = priority;
 						}
@@ -476,8 +493,7 @@ export class MeshSelector {
 			slots = [];
 			for (const draw of this.#chains[chain].draws) {
 				const look = draw.material < this.#looks.length ? this.#looks[draw.material] : undefined;
-				// particle systems aren't played yet
-				if (draw.role === DrawRole.ShadowOnly || draw.particles !== null || look?.drawn !== true) {
+				if (draw.role === DrawRole.ShadowOnly || look?.drawn !== true) {
 					continue;
 				}
 				slots.push({
@@ -488,6 +504,7 @@ export class MeshSelector {
 					submesh: draw.submesh,
 					material: draw.material,
 					castsShadows: look.castsShadows,
+					particles: draw.particles,
 					buckets: [null, null, null, null],
 				});
 			}

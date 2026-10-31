@@ -208,7 +208,7 @@ root:
   sub-emitters, lights, trails, texture sheets, colour, the by-speed modules, custom data, velocity
   limits), velocity or rotation curves, a rate curve, a tinted start colour or velocity alignment.
   the floating rocks over Origin Lodespring's crater (`Rock02` in `P_fxmap_common_brokentree_01/02`,
-  four rock meshes each) are such systems.
+  four rock meshes each) are such systems; [viewer](../viewer.md#particles) describes how they play.
 - a skinned renderer's pose is each bone's prefab-space matrix times its bind pose; bounds are the
   union of the mesh bounds under every bone so weighted vertices stay inside. non-zero blend shape
   weights throw, since baking ignores them.

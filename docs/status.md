@@ -82,17 +82,20 @@ packs or renders correctly.
 - erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
 - water foam, caustics and flow tiles (packed but unread); other fluid types are unverified
-- scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal and
-  the mist (FogSimple, VFXFakeVolumeFog) draw, without the first two's additive, vertex-offset mask,
-  polar-UV, lighting and particle variants, the effects' own fog, the game's global scene-effect
-  colour adjustment (the Jingyu blight reads less saturated than in game) or the mist boxes' 3D
-  noise; other effect shaders are suppressed rather than drawn opaque. billboard particle systems
-  (sparkles, smoke) aren't packed; mesh particles frozen in place lose their start colour and take
-  the midpoint of random start values, and other mesh particle systems are packed only without
-  colour, force, noise, sub-emitter and other modules a viewer can't evaluate in closed form
-  ([prefabs](game-data/assets.md#prefabs)), and aren't played yet. Marker Stone's low mist banks
-  over the valley are still missing; their source is unknown. rect decals (`HGRP/DecalLit`,
-  `HGRP/TerrainDecalLit`, InitChunkData components 27 and 28) aren't packed
+- scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal,
+  the mist (FogSimple, VFXFakeVolumeFog) and VFXDitherAlpha's plain variant draw, without the first
+  two's additive, vertex-offset mask, polar-UV, lighting and particle variants, the effects' own
+  fog, the game's global scene-effect colour adjustment (the Jingyu blight reads less saturated than
+  in game), the mist boxes' 3D noise or VFXDitherAlpha's dither fade; other effect shaders are
+  suppressed rather than drawn opaque
+- particles ([prefabs](game-data/assets.md#prefabs), [viewer](viewer.md#particles)): billboard
+  systems (sparkles, smoke, the crater column's glitter) aren't packed. mesh particles frozen in
+  place lose their start colour and take the midpoint of random start values. other mesh systems
+  play only without colour, force, noise, sub-emitter and other modules without a closed form, from
+  the viewer's own random values, and move only while frames render; per-particle colour and custom
+  data never reach the effect shaders. Marker Stone's low mist banks over the valley are still
+  missing; their source is unknown. rect decals (`HGRP/DecalLit`, `HGRP/TerrainDecalLit`,
+  InitChunkData components 27 and 28) aren't packed
 - temporal smoothing of effects
 - light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term and the
   cloud mask aren't drawn; unchecked against an in-game shot facing the sun. the
