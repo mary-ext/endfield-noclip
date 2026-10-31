@@ -34,6 +34,12 @@ const SECTIONS: { kinds: SceneControlKind[]; title: string; note: string; open: 
 		open: true,
 	},
 	{
+		kinds: ['area'],
+		title: 'Stream areas',
+		note: 'Interiors, caves and other places the game loads by where the camera is. Each follows the camera unless you pick a value.',
+		open: false,
+	},
+	{
 		kinds: ['harvest'],
 		title: 'Harvest',
 		note: 'Trees the player fells; each tree’s state is the player’s, so one choice previews them all.',
@@ -53,14 +59,21 @@ const SECTIONS: { kinds: SceneControlKind[]; title: string; note: string; open: 
 	},
 ];
 
-/** a scene control: a checkbox for an on/off control only the user sets, otherwise a select */
+/** kinds whose controls are plain on/off switches */
+const SWITCH_KINDS: ReadonlySet<SceneControlKind> = new Set(['sceneState', 'script', 'logic']);
+
+/**
+ * a scene control: a checkbox for an on/off switch only the user sets, otherwise a select. derived controls
+ * and stream areas offer to follow the game or the camera
+ */
 const ControlRow = ({ viewer, control }: { viewer: Viewer; control: SceneControl }) => {
 	const value = viewer.sceneValues[control.id] ?? control.default;
 	const picked = control.id in viewer.scenePicks;
 	const label = (entry: number): string =>
 		control.values.find((candidate) => candidate.value === entry)?.label ?? String(entry);
 	const detail = [control.rule, control.assumption].filter(Boolean).join(' · ');
-	if (control.derived === null && control.values.length === 2 && control.values[1].value === 1) {
+	const follows = control.kind === 'area' ? 'Follow camera' : control.derived === null ? null : 'Follow game';
+	if (follows === null && SWITCH_KINDS.has(control.kind)) {
 		return (
 			<label className="toggle scene-toggle">
 				<input
@@ -82,19 +95,17 @@ const ControlRow = ({ viewer, control }: { viewer: Viewer; control: SceneControl
 				<small className="muted">{detail}</small>
 			</span>
 			<select
-				value={control.derived !== null && !picked ? '' : String(value)}
+				value={follows !== null && !picked ? '' : String(value)}
 				onChange={(event) => {
 					const text = event.currentTarget.value;
 					viewer.setSceneValue(control.id, text === '' ? null : Number(text));
 				}}
 			>
-				{control.derived !== null && (
-					<option value="">{picked ? 'Follow game' : `Follow game (${label(value)})`}</option>
-				)}
+				{follows !== null && <option value="">{picked ? follows : `${follows} (${label(value)})`}</option>}
 				{control.values.map((entry) => (
 					<option key={entry.value} value={entry.value}>
 						{entry.label}
-						{control.derived === null && entry.value === control.default ? ' (initial)' : ''}
+						{follows === null && entry.value === control.default ? ' (initial)' : ''}
 					</option>
 				))}
 			</select>

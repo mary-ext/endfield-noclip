@@ -60,7 +60,7 @@ import type {
 	StatesInfo,
 	VisibilityGroup,
 } from '@endfield-noclip/package-format/states';
-import type { StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
+import { streamAreaControl, type StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
 import type { TerrainSplatInfo, TerrainInfo } from '@endfield-noclip/package-format/terrain';
 import type { TextureTable } from '@endfield-noclip/package-format/textures';
 import {
@@ -1303,9 +1303,31 @@ const sceneStates = async (
 	const levels = (partition?.levels ?? []).map((level, i) =>
 		levelInfo(level, scene, collected, environments[i] ?? null),
 	);
+	const areas = [...collected.areas]
+		.toSorted((a, b) => a - b)
+		.map((area): SceneControl => ({
+			kind: 'area',
+			id: streamAreaControl(area),
+			name: `Stream area ${area}`,
+			rule: null,
+			assumption: 'follows the camera, like the game',
+			levelTags: [],
+			values: [
+				{ value: 0, label: 'hidden' },
+				{ value: 1, label: 'shown' },
+			],
+			default: 1,
+			derived: null,
+		}));
 	const states: StatesInfo = {
 		// quests, missions and variables first: scene states derive from them
-		controls: [...scene.game.controls(), ...progressions, ...collected.facilities, ...collected.controls],
+		controls: [
+			...scene.game.controls(),
+			...progressions,
+			...collected.facilities,
+			...areas,
+			...collected.controls,
+		],
 		conditionalSets: collected.conditions,
 		groups: collected.groups,
 		streamAreas: await streamAreasInfo(world, scene.options.scene, collected.areas),
@@ -1333,9 +1355,6 @@ const finishControls = (states: StatesInfo): SceneControl[] => {
 	const note = (set: number, levelTags: Iterable<number>): void => {
 		for (const requirements of states.conditionalSets[set].alternatives) {
 			for (const { control } of requirements) {
-				if (control.startsWith('area:')) {
-					continue;
-				}
 				if (!byId.has(control)) {
 					throw new Error(`a visibility expression requires unknown control ${control}`);
 				}

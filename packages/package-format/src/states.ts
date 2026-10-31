@@ -5,8 +5,8 @@ import type { StreamAreasInfo } from './stream-areas.ts';
  * a progression level, a script group's flag), so every combination the controls allow is one the game's
  * state model can produce. scene states are derived from those controls by their MapConfig condition. content
  * names a visibility group, whose condition requires control values. stream areas (`<areaId>` chunk suffixes:
- * interiors, caves, off-map places) load by where the camera is, through `area:<id>` requirements that aren't
- * listed as controls (see {@link StreamAreasInfo})
+ * interiors, caves, off-map places) load by where the camera is, through `area:<id>` controls a viewer sets
+ * from the camera unless the user pins them (see {@link StreamAreasInfo})
  */
 export interface StatesInfo {
 	/**
@@ -46,6 +46,8 @@ export interface VisibilityGroup {
  * - `logic`: a logic-state gate with no recovered controller
  * - `harvest`: one level's harvestable trees, standing (0) or felled (1); each tree's state is the player's, at
  *   runtime
+ * - `area`: a stream area, shown (1) or hidden (0). unless the user picks a value, a viewer sets it from the
+ *   camera (see {@link StreamAreasInfo}); its `default` is only what holds without a camera
  * - `settlement` / `poi` / `factoryRegion`: a progression level; `facility`: an interactive's visual form;
  *   `doodadGroups`: one level's resource node group level (1 to 4)
  */
@@ -58,6 +60,7 @@ export type SceneControlKind =
 	| 'script'
 	| 'logic'
 	| 'harvest'
+	| 'area'
 	| 'settlement'
 	| 'poi'
 	| 'factoryRegion'

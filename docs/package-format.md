@@ -393,9 +393,10 @@ they hold the camera, whichever level owns them, so only their condition gates t
 
 a `ConditionalSetInfo` is a list of alternatives, each a list of `{ control, mask }` requirements;
 the content is visible when any alternative has every requirement met, and a requirement is met when
-bit `value` of `mask` is set for the control's value. controls are `StatesInfo.controls` ids and
-`area:<id>` stream-area controls (value 0/1, set by the viewer from the camera). unknown controls
-fail closed. equivalent expressions are interned to one set by the packer.
+bit `value` of `mask` is set for the control's value. controls are `StatesInfo.controls` ids, among
+them `area:<id>` stream-area controls (value 0/1), which a viewer sets from the camera unless the
+user picks a value. unknown controls fail closed. equivalent expressions are interned to one set by
+the packer.
 
 ### controls
 

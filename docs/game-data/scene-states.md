@@ -274,12 +274,13 @@ types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo
   requirement, or both. environment volumes come from default-area files only, so they have state
   requirements alone. groups store a `condition` index into `conditionalSets`, `null` when always
   loaded.
-- `area:<id>` controls aren't listed in `controls` and get no default: the viewer sets them to 1 for
-  the areas shown at the camera and 0 otherwise (see
-  [package-format.md](../package-format.md#stream-areas)).
+- `area:<id>` controls hold whether a stream area shows. unless the user picks a value, the viewer
+  sets them to 1 for the areas shown at the camera and 0 otherwise (see
+  [package-format.md](../package-format.md#stream-areas)); their stored default (shown) only holds
+  without a camera.
 - the packer canonicalises and deduplicates sets (`Collector.condition`), so equivalent expressions
   share one index. quests, missions and variables come first in `controls`, then progressions,
-  facilities, script, logic and harvest controls, then scene states.
+  facilities, stream areas, script, logic and harvest controls, then scene states.
 - only controls some visibility group requires, directly or through a derived scene state, are
   listed. each control's `levelTags` are those of the groups it gates, and a derived state passes
   its tags on to the quests and variables it reads.
@@ -295,7 +296,9 @@ environment blend.
 - **quests and missions**, **variables**: a select of states or ranges, the default marked
   "(initial)"
 - **progression**: one select per progression, "Level n", "Visual form n" or "Group level n"
-- **harvest**, **script / event scenery**, **logic-gate previews**: checkboxes
+- **stream areas**: a select per area, "Follow camera (shown/hidden)", shown or hidden
+- **harvest**: standing or felled
+- **script / event scenery**, **logic-gate previews**: checkboxes
 - **lighting / environment volumes**: volumes owned by the shown level or reaching into it. a volume
   follows its scene-state condition unless ticked or unticked here, which overrides it.
   scripted-blend volumes (blend mode 3) are off unless ticked. packed volumes carry
@@ -303,10 +306,10 @@ environment blend.
   [environment.md](environment.md))
 
 every row shows the control's rule and the assumption behind its default. controls are listed where
-their `levelTags` include 0 or the shown level's tag. "Reset" drops every pick. stream areas have no
-controls here; the settings panel's "stream areas at camera" toggle switches between following the
-camera and showing every area. conditional detail ignores HLOD refinement and stops streaming once
-its tile is below the screen error threshold.
+their `levelTags` include 0 or the shown level's tag. "Reset" drops every pick. the settings panel's
+"stream areas at camera" toggle switches every area that follows the camera between following it and
+showing. conditional detail ignores HLOD refinement and stops streaming once its tile is below the
+screen error threshold.
 
 ## rules
 

@@ -1248,11 +1248,13 @@ export class Viewer {
 		this.#visibleAreas = this.#streamAreasAtCamera();
 		this.#areasEye = [...this.camera.position];
 		const areas = states?.streamAreas ?? null;
-		this.#sceneValues = states === undefined ? {} : resolveSceneValues(states, this.#scenePicks);
-		const values =
+		// stream areas follow the camera unless pinned, so the camera's values go under the picks
+		const picks =
 			areas === null
-				? this.#sceneValues
-				: { ...this.#sceneValues, ...streamAreaValues(areas, this.#visibleAreas) };
+				? this.#scenePicks
+				: { ...streamAreaValues(areas, this.#visibleAreas), ...this.#scenePicks };
+		this.#sceneValues = states === undefined ? {} : resolveSceneValues(states, picks);
+		const values = this.#sceneValues;
 		this.#conditionResults = states === undefined ? [] : conditionResults(states, values);
 		const shown =
 			states === undefined ? [] : groupsShown(states, this.#level?.tag ?? null, this.#conditionResults);
