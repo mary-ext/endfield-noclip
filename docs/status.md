@@ -86,7 +86,14 @@ packs or renders correctly.
 - erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
 - water ([water](game-data/water.md#open)): sector flow tiles (packed but unread), the LOD surfaces'
-  displaced wave grid, rain ripples and wetness; other fluid types are unverified
+  displaced wave grid, rain ripples and wetness; `HGRP/WaterDecal` foam at the foot of waterfalls
+  (it most likely feeds the water's own foam rather than adding to the scene, and its per-placement
+  `HGWaterDecalRenderer` values aren't packed); the mist and splash at falls (billboard particles,
+  below); other fluid types are unverified
+- waterfalls missing or ungated: some falls are mesh particle systems that store a particle cap of 0
+  and never spawn in the viewer (Jingyu's pool falls near unity −763, 209, −1190), and a falls at Si's
+  Painting (effect row near 589, 483, 1550) shows without the conditional cliff it pours over, with no
+  gate the extractor reads
 - scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal,
   the mist (FogSimple, VFXFakeVolumeFog), VFXWater's waterfall sheets and VFXDitherAlpha's plain
   variant draw, without the first two's additive, vertex-offset mask, polar-UV, lighting and
