@@ -351,7 +351,9 @@ export const vfxBaseLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLo
 			uv1(`_SampleTex${n}`);
 		setSlot(look, i, { ...transform, texture: slot.texture }, animOf(`_SampleTex${n}`), bits);
 	});
-	if (look.textures[0] < 0) {
+	// without a main texture the shader samples its default; slot 0 is always sampled, and an unset slot binds
+	// white
+	if (look.textures[0] < 0 && shader.textures['_MainTex'] !== 'white') {
 		return null;
 	}
 	setShared(look, entry, shader, intensity);

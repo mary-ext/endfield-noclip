@@ -145,6 +145,31 @@ test('effects with features the viewer lacks, or additive blending, stay hidden'
 	);
 });
 
+test('a VFXBaseV2 without a main texture draws with its shader default only when that is white', () => {
+	const looks = materialLooks({
+		shaders: [
+			{ ...shader('HGRP/Effect/VFXBaseV2'), textures: { _MainTex: 'white' } },
+			{ ...shader('HGRP/Effect/VFXBaseV2'), textures: { _MainTex: 'black' } },
+		],
+		entries: [
+			material({
+				id: 0,
+				shader: 0,
+				keywords: ['_SAMPLE_TEX0'],
+				slots: { _SampleTex0: slot(2) },
+				floats: { _SampleTex0UseWeight3: 1 },
+			}),
+			material({ id: 1, shader: 1 }),
+		],
+	});
+	assert.deepEqual(
+		looks.map((look) => look.drawn),
+		[true, false],
+	);
+	// slot 0 binds white; the mask still applies
+	assert.deepEqual(looks[0].textures.slice(0, 2), [-1, 2]);
+});
+
 test('a VFXBaseV2 draws when its vertex offset is cancelled by particle mode and its glow follows the player', () => {
 	const [look] = materialLooks({
 		shaders: [shader('HGRP/Effect/VFXBaseV2')],

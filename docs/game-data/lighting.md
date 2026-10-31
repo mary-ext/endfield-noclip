@@ -470,8 +470,9 @@ layer in between `_NearCameraFadeDistanceStart` and `…End` metres of view dept
 dissolve), with the `_ST` of that role's own texture property (`_DisturbTex1`, `_DisturbTex2`,
 `_WeightTex`, `_MaskTex`, `_BlendTex`, `_DissolveTex`). the colour starts from
 `_TintColor · _TintColorIntensity` times the vertex colour, alpha from
-`_TintColor.a · _TintColorAlpha`; it's brightened by `_ExpIntensity` above `_ExpThreshold`. alpha
-fades by a Fresnel term (`saturate(N·V + _FresnelBias)^_FresnelPower`, flipped by `_FresnelFlip`,
+`_TintColor.a · _TintColorAlpha`; it's brightened by `_ExpIntensity` above `_ExpThreshold`. a
+material without a main texture samples the shader's default, white, as the game does (the base
+ring of Origin Lodespring's crater column is one). alpha fades by a Fresnel term (`saturate(N·V + _FresnelBias)^_FresnelPower`, flipped by `_FresnelFlip`,
 applied by `_FresnelAffectOpacity`) and, with `_USE_SOFTBLEND`, where the surface comes within
 `_SoftDistance` metres of what lies behind it.
 
