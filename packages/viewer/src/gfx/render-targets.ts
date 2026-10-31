@@ -9,8 +9,17 @@
  * @module
  */
 
-/** reversed-Z depth: 1 at the near plane, 0 at infinity; cleared to 0 and tested with `greater` */
+/**
+ * reversed-Z depth: 1 at the near plane, 0 at infinity; cleared to 0 and tested with `greater`. with a
+ * stencil buffer, {@link DEPTH_STENCIL_FORMAT} instead
+ */
 export const DEPTH_FORMAT: GPUTextureFormat = 'depth32float';
+
+/**
+ * {@link DEPTH_FORMAT} plus a stencil buffer, cleared to 0 and written only by the effects that mask each
+ * other (`LookStencil` in materials.ts); needs the `depth32float-stencil8` feature
+ */
+export const DEPTH_STENCIL_FORMAT: GPUTextureFormat = 'depth32float-stencil8';
 
 /** the depth clear value under reversed-Z */
 export const DEPTH_CLEAR = 0;
@@ -70,6 +79,10 @@ export const TRANSPARENT_TARGETS: GPUColorTargetState[] = [
 /** what a main-pass pipeline needs to know of the targets */
 export interface MainPassFormat {
 	targets: GPUColorTargetState[];
+	/** {@link DEPTH_FORMAT} or {@link DEPTH_STENCIL_FORMAT}, which the transparent pass shares */
+	depth: GPUTextureFormat;
+	/** whether {@link depth} has a stencil aspect */
+	stencil: boolean;
 }
 
 /** the main pass's outputs, which the post passes read */
@@ -85,6 +98,7 @@ export interface SceneTextures {
 	reflection: GPUTextureView;
 	/** the surface's normal, roughness and screen-space reflection weight, packed; 0 where nothing lit was drawn */
 	reflectionSurface: GPUTextureView;
+	/** the depth aspect alone, for sampling */
 	depth: GPUTextureView;
 	/** the transparent pass's weighted colour sum ({@link TRANSPARENT_TARGETS}) */
 	transparent: GPUTextureView;
@@ -101,6 +115,8 @@ export class RenderTargets {
 	readonly context: GPUCanvasContext;
 	/** swapchain format */
 	readonly colorFormat: GPUTextureFormat;
+	/** the main pass's targets */
+	readonly format: MainPassFormat;
 	/** the main pass's size, px */
 	width = 1;
 	height = 1;
@@ -126,11 +142,13 @@ export class RenderTargets {
 	 * @param device the device
 	 * @param canvas the canvas to present to; observed for size changes
 	 * @param colorFormat swapchain format
+	 * @param stencil whether depth gets a stencil buffer; needs the `depth32float-stencil8` feature
 	 */
-	constructor(device: GPUDevice, canvas: HTMLCanvasElement, colorFormat: GPUTextureFormat) {
+	constructor(device: GPUDevice, canvas: HTMLCanvasElement, colorFormat: GPUTextureFormat, stencil: boolean) {
 		this.#device = device;
 		this.#canvas = canvas;
 		this.colorFormat = colorFormat;
+		this.format = { targets: MAIN_TARGETS, depth: stencil ? DEPTH_STENCIL_FORMAT : DEPTH_FORMAT, stencil };
 		const context = canvas.getContext('webgpu');
 		if (context === null) {
 			throw new Error(`couldn't get a WebGPU canvas context`);
@@ -152,11 +170,6 @@ export class RenderTargets {
 		}
 		const rect = canvas.getBoundingClientRect();
 		this.#cssSize = [rect.width, rect.height];
-	}
-
-	/** @returns the main pass's target formats */
-	get format(): MainPassFormat {
-		return { targets: MAIN_TARGETS };
 	}
 
 	/**
@@ -202,7 +215,7 @@ export class RenderTargets {
 			return texture;
 		};
 		const usage = GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING;
-		this.#depth = create({ label: 'depth', size: [width, height], format: DEPTH_FORMAT, usage });
+		this.#depth = create({ label: 'depth', size: [width, height], format: this.format.depth, usage });
 		this.#colors = [
 			create({
 				label: 'radiance',
@@ -231,7 +244,7 @@ export class RenderTargets {
 			ambient: this.#colors[1].createView(),
 			reflection: this.#colors[2].createView(),
 			reflectionSurface: this.#colors[3].createView(),
-			depth: this.#depth.createView(),
+			depth: this.#depth.createView({ aspect: 'depth-only' }),
 			transparent: this.#transparent[0].createView(),
 			revealage: this.#transparent[1].createView(),
 			glow: this.#transparent[2].createView(),
@@ -242,7 +255,11 @@ export class RenderTargets {
 
 	/** @returns bytes held by the targets (estimate; the swapchain counts as two buffers) */
 	get bytes(): number {
-		return this.width * this.height * (4 + 8 * 4 + 8 + 1 + 8) + this.outputWidth * this.outputHeight * 4 * 2;
+		// depth with stencil is commonly stored as 8 bytes
+		const depth = this.format.stencil ? 8 : 4;
+		return (
+			this.width * this.height * (depth + 8 * 4 + 8 + 1 + 8) + this.outputWidth * this.outputHeight * 4 * 2
+		);
 	}
 
 	/** @returns the main pass's outputs */
@@ -268,20 +285,24 @@ export class RenderTargets {
 			loadOp: 'clear',
 			storeOp: 'store',
 		}));
-		return {
-			colors,
-			depth: {
-				view: this.#depth.createView(),
-				depthClearValue: DEPTH_CLEAR,
-				depthLoadOp: 'clear',
-				depthStoreOp: 'store',
-			},
+		const depth: GPURenderPassDepthStencilAttachment = {
+			view: this.#depth.createView(),
+			depthClearValue: DEPTH_CLEAR,
+			depthLoadOp: 'clear',
+			depthStoreOp: 'store',
 		};
+		if (this.format.stencil) {
+			depth.stencilClearValue = 0;
+			depth.stencilLoadOp = 'clear';
+			depth.stencilStoreOp = 'store';
+		}
+		return { colors, depth };
 	}
 
 	/**
 	 * @returns attachments for this frame's transparent pass: its targets cleared to nothing drawn, and the
-	 *   main pass's depth, tested but not written
+	 *   main pass's depth, tested but not written. the stencil stays writable, since some effects mask the ones
+	 *   drawn after them
 	 */
 	transparentPassAttachments(): {
 		colors: GPURenderPassColorAttachment[];
@@ -291,6 +312,14 @@ export class RenderTargets {
 			throw new Error('render targets used before update()');
 		}
 		const [sum, revealage, glow] = this.#transparent;
+		const depth: GPURenderPassDepthStencilAttachment = {
+			view: this.#depth.createView(),
+			depthReadOnly: true,
+		};
+		if (this.format.stencil) {
+			depth.stencilLoadOp = 'load';
+			depth.stencilStoreOp = 'discard';
+		}
 		return {
 			colors: [
 				{ view: sum.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
@@ -307,7 +336,7 @@ export class RenderTargets {
 					storeOp: 'store',
 				},
 			],
-			depth: { view: this.#depth.createView(), depthReadOnly: true },
+			depth,
 		};
 	}
 

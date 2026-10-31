@@ -6,19 +6,16 @@
  * are in group 3 (a white texture for slots whose texture hasn't streamed in, with the slot's flag cleared).
  * opaque draws come before alpha-tested ones, which each pass draws with its own pipelines (see mesh.wgsl for
  * why), and alpha-blended ones come last, drawn in a pass of their own whose blending needs no sorting;
- * within each, draws are sorted by geometry, then material, so runs of draws share their bindings.
+ * within each, draws are sorted by geometry, then material, so runs of draws share their bindings. effects
+ * that mask each other through the stencil (`LookStencil`) get pipeline variants of their phase, compiled on
+ * first use; their masks write the stencil at the end of the main pass, or first in the transparent pass.
  *
  * @module
  */
 
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
-import {
-	DEPTH_COMPARE,
-	DEPTH_FORMAT,
-	type MainPassFormat,
-	TRANSPARENT_TARGETS,
-} from '../gfx/render-targets.ts';
+import { DEPTH_COMPARE, type MainPassFormat, TRANSPARENT_TARGETS } from '../gfx/render-targets.ts';
 import type { DecodedGeometry } from '../package/decode-protocol.ts';
 import type { MeshBucket } from '../streaming/mesh-selection.ts';
 import type { ResidentGeometry } from '../streaming/stream-manager.ts';
@@ -26,7 +23,14 @@ import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 import { OFFSET_SLOT } from './effect-looks.ts';
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
-import { LOOK_FLOATS, LookFlags, type MaterialLook, SLOTS, SLOT_FLAGS } from './materials.ts';
+import {
+	LOOK_FLOATS,
+	LookFlags,
+	type LookStencil,
+	type MaterialLook,
+	SLOTS,
+	SLOT_FLAGS,
+} from './materials.ts';
 import effectWgsl from './shaders/effect.wgsl?raw';
 import meshWgsl from './shaders/mesh.wgsl?raw';
 import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
@@ -82,8 +86,48 @@ const faceCullOf = (bucket: MeshBucket): FaceCull => {
 	}
 };
 
+/** @returns the cache key of a phase's pipeline variant for a stencil state */
+const stencilPipelineKey = (base: string, stencil: LookStencil): string =>
+	`${base}/stencil:${stencil.compare}:${stencil.replace ? 'replace' : 'keep'}:${stencil.readMask}:${stencil.writeMask}:${stencil.depthCompare}`;
+
+/** @returns a pipeline descriptor with a stencil state's stencil and depth tests in place of its own */
+const withStencil = (
+	descriptor: GPURenderPipelineDescriptor,
+	stencil: LookStencil,
+): GPURenderPipelineDescriptor => {
+	const depthStencil = descriptor.depthStencil;
+	if (depthStencil === undefined) {
+		throw new Error(`a stencil variant of ${descriptor.label} needs a depth-stencil state`);
+	}
+	const face: GPUStencilFaceState = {
+		compare: stencil.compare,
+		passOp: stencil.replace ? 'replace' : 'keep',
+		failOp: 'keep',
+		depthFailOp: 'keep',
+	};
+	return {
+		...descriptor,
+		depthStencil: {
+			...depthStencil,
+			depthCompare: stencil.depthCompare,
+			stencilFront: face,
+			stencilBack: face,
+			stencilReadMask: stencil.readMask,
+			stencilWriteMask: stencil.writeMask,
+		},
+	};
+};
+
 /** the draws a phase runs over: prepared in this order */
-type DrawRange = 'opaque' | 'cutout' | 'transparent' | 'effect' | 'effectDecal' | 'mist' | 'mistVolume';
+type DrawRange =
+	| 'opaque'
+	| 'cutout'
+	| 'stencilMask'
+	| 'transparent'
+	| 'effect'
+	| 'effectDecal'
+	| 'mist'
+	| 'mistVolume';
 
 /**
  * the vertex streams a phase's pipelines read, in buffer slot order: every stream, positions alone (opaque
@@ -114,6 +158,8 @@ const MAIN_PHASES: readonly DrawPhase[] = [
 	{ key: 'mesh/opaque', range: 'opaque', textured: true, shadow: false, streams: 'all' },
 	{ key: 'mesh/cutout-depth', range: 'cutout', textured: true, shadow: false, streams: 'uv' },
 	{ key: 'mesh/cutout-shade', range: 'cutout', textured: true, shadow: false, streams: 'all' },
+	// after the surfaces the masks are tested against
+	{ key: 'mesh/stencil-mask', range: 'stencilMask', textured: false, shadow: false, streams: 'position' },
 ];
 
 const TRANSPARENT_PHASES: readonly DrawPhase[] = [
@@ -192,6 +238,8 @@ interface PreparedDraw {
 	uvFormat: UvFormat;
 	/** for scene effects: the material id and slot bindings their group is built from at encode */
 	effect: { material: number; slots: (TextureBinding | null)[] } | null;
+	/** the stencil state its pipeline variant uses, or `null` for the phase's own pipeline */
+	stencil: LookStencil | null;
 }
 
 /** what a material's draws take from its textures' current bindings */
@@ -243,6 +291,16 @@ const sortKeyOf = (bucket: MeshBucket): number => {
 
 const byBindings = (a: MeshBucket, b: MeshBucket): number => sortKeyOf(a) - sortKeyOf(b);
 
+/** 0 for a bucket whose draws write the stencil, else 1 */
+const stencilWriteRank = (bucket: MeshBucket): number => (bucket.look.stencil?.replace === true ? 0 : 1);
+
+/**
+ * draw order for effects: as {@link byBindings}, but those that write the stencil first, so the effects
+ * testing it see the whole mask
+ */
+const byStencilWritesThenBindings = (a: MeshBucket, b: MeshBucket): number =>
+	stencilWriteRank(a) - stencilWriteRank(b) || byBindings(a, b);
+
 /** the part of {@link sortKeyOf} above the geometry: the shadow role and the pipeline */
 const PIPELINE_KEY = 2 ** 45;
 
@@ -285,6 +343,7 @@ export class MeshRenderer {
 	#versions: number[] = SLOTS.map(() => -1);
 	#opaqueOrder: MeshBucket[] = [];
 	#cutoutOrder: MeshBucket[] = [];
+	#stencilMaskOrder: MeshBucket[] = [];
 	#transparentOrder: MeshBucket[] = [];
 	#effectOrder: MeshBucket[] = [];
 	#decalOrder: MeshBucket[] = [];
@@ -304,9 +363,14 @@ export class MeshRenderer {
 	 */
 	#draws: PreparedDraw[] = [];
 	#drawCount = 0;
-	/** indices of the first alpha-tested and the first alpha-blended draw */
+	/** indices of the first alpha-tested draw, the first stencil mask and the first alpha-blended draw */
 	#cutoutStart = 0;
+	#stencilMaskStart = 0;
 	#transparentStart = 0;
+	/** whether the depth buffer has a stencil; without one, draws that use it are skipped */
+	#stencil: boolean;
+	/** each phase's pipeline descriptor by face culling and UV format, for its stencil variants */
+	#describers = new Map<string, (cull: FaceCull, uvFormat: UvFormat) => GPURenderPipelineDescriptor>();
 	/** ends of the shadow-casting opaque and alpha-tested draws */
 	#opaqueCastersEnd = 0;
 	#cutoutCastersEnd = 0;
@@ -333,6 +397,7 @@ export class MeshRenderer {
 		this.#layouts = layouts;
 		this.#pipelines = pipelines;
 		this.#instances = instances;
+		this.#stencil = format.stencil;
 		this.#zeros = this.#zeroBuffer(ZERO_STRIDE * 65_536);
 		this.#params = device.createBuffer({
 			label: 'mesh draws',
@@ -401,40 +466,51 @@ export class MeshRenderer {
 				}
 			}
 		};
+		/** registers a phase's descriptor and compiles its pipeline for every face culling and UV format */
+		const describe = (
+			key: string,
+			describer: (cullMode: FaceCull, uvFormat: UvFormat) => GPURenderPipelineDescriptor,
+		): void => {
+			this.#describers.set(key, describer);
+			for (const cullMode of FACE_CULLS) {
+				for (const uvFormat of UV_FORMATS) {
+					void pipelines.prepare(pipelineKey(key, cullMode, uvFormat), () => describer(cullMode, uvFormat));
+				}
+			}
+		};
 		const prepare = (
 			{ key, streams }: DrawPhase,
 			stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil'>,
 		): void => {
-			for (const cullMode of FACE_CULLS) {
-				for (const uvFormat of UV_FORMATS) {
-					void pipelines.prepare(pipelineKey(key, cullMode, uvFormat), () => ({
-						layout: layouts.meshPipeline,
-						vertex: vertex(uvFormat, streams),
-						primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
-						...stages,
-					}));
-				}
-			}
+			describe(key, (cullMode, uvFormat) => ({
+				layout: layouts.meshPipeline,
+				vertex: vertex(uvFormat, streams),
+				primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
+				...stages,
+			}));
 		};
 		const depthWrite: GPUDepthStencilState = {
-			format: DEPTH_FORMAT,
+			format: format.depth,
 			depthWriteEnabled: true,
 			depthCompare: DEPTH_COMPARE,
 		};
 		const shade: GPUFragmentState = { module, entryPoint: 'fs_opaque', targets: format.targets };
-		const [opaque, cutoutDepth, cutoutShade] = MAIN_PHASES;
+		const [opaque, cutoutDepth, cutoutShade, stencilMask] = MAIN_PHASES;
 		const depthEqual: GPUDepthStencilState = {
-			format: DEPTH_FORMAT,
+			format: format.depth,
 			depthWriteEnabled: false,
 			depthCompare: 'equal',
 		};
-		prepare(PREPASS_PHASES[0], {
-			fragment: {
-				module,
-				entryPoint: 'fs_depth',
-				targets: format.targets.map((target) => ({ ...target, writeMask: 0 })),
-			},
-			depthStencil: depthWrite,
+		const depthOnly: GPUFragmentState = {
+			module,
+			entryPoint: 'fs_depth',
+			targets: format.targets.map((target) => ({ ...target, writeMask: 0 })),
+		};
+		prepare(PREPASS_PHASES[0], { fragment: depthOnly, depthStencil: depthWrite });
+		// each mask draws through a stencil variant; this one only completes the phase
+		prepare(stencilMask, {
+			fragment: depthOnly,
+			depthStencil: { format: format.depth, depthWriteEnabled: false, depthCompare: DEPTH_COMPARE },
 		});
 		prepare(opaque, { fragment: shade, depthStencil: depthEqual });
 		prepare(cutoutDepth, {
@@ -451,7 +527,7 @@ export class MeshRenderer {
 		});
 		prepare(TRANSPARENT_PHASES[0], {
 			fragment: { module, entryPoint: 'fs_transparent', targets: TRANSPARENT_TARGETS },
-			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: DEPTH_COMPARE },
+			depthStencil: { format: format.depth, depthWriteEnabled: false, depthCompare: DEPTH_COMPARE },
 		});
 		const [shadowOpaque, shadowCutout] = SHADOW_PHASES;
 		prepare(shadowOpaque, { depthStencil: SHADOW_DEPTH_STATE });
@@ -494,17 +570,13 @@ export class MeshRenderer {
 				// fog boxes measure their thickness up to the depth buffer the same way
 				[mistVolume, 'fs_mist_volume', 'always'],
 			] as const) {
-				for (const cullMode of FACE_CULLS) {
-					for (const uvFormat of UV_FORMATS) {
-						void pipelines.prepare(pipelineKey(phase.key, cullMode, uvFormat), () => ({
-							layout,
-							vertex: { ...vertex(uvFormat), module: effectModule, entryPoint: 'vs_effect' },
-							primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
-							fragment: { module: effectModule, entryPoint, targets: TRANSPARENT_TARGETS },
-							depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare },
-						}));
-					}
-				}
+				describe(phase.key, (cullMode, uvFormat) => ({
+					layout,
+					vertex: { ...vertex(uvFormat), module: effectModule, entryPoint: 'vs_effect' },
+					primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
+					fragment: { module: effectModule, entryPoint, targets: TRANSPARENT_TARGETS },
+					depthStencil: { format: format.depth, depthWriteEnabled: false, depthCompare },
+				}));
 			}
 		}
 		// #endregion
@@ -690,6 +762,7 @@ export class MeshRenderer {
 		this.clear();
 		const opaque = this.#opaqueOrder;
 		const cutout = this.#cutoutOrder;
+		const stencilMasks = this.#stencilMaskOrder;
 		const transparent = this.#transparentOrder;
 		const effects = this.#effectOrder;
 		const decals = this.#decalOrder;
@@ -697,6 +770,7 @@ export class MeshRenderer {
 		const mistVolumes = this.#mistVolumeOrder;
 		opaque.length = 0;
 		cutout.length = 0;
+		stencilMasks.length = 0;
 		transparent.length = 0;
 		effects.length = 0;
 		decals.length = 0;
@@ -710,6 +784,14 @@ export class MeshRenderer {
 			// they wait for it rather than draw as solid cards
 			const look = bucket.look;
 			if (bucket.castOnly && (!look.castsShadows || look.transparent)) {
+				continue;
+			}
+			// a portal's effects would show unmasked, and its mask would draw as a solid surface
+			if (look.stencil !== null && !this.#stencil) {
+				continue;
+			}
+			if (look.stencil?.maskOnly === true) {
+				stencilMasks.push(bucket);
 				continue;
 			}
 			const state = this.#materialState(bucket.material, look, textures);
@@ -738,13 +820,15 @@ export class MeshRenderer {
 		}
 		opaque.sort(byPipelineThenNearest);
 		cutout.sort(byPipelineThenNearest);
+		stencilMasks.sort(byBindings);
 		transparent.sort(byBindings);
-		effects.sort(byBindings);
+		effects.sort(byStencilWritesThenBindings);
 		decals.sort(byBindings);
 		mists.sort(byBindings);
 		mistVolumes.sort(byBindings);
 		const cutoutFrom = opaque.length;
-		const transparentFrom = cutoutFrom + cutout.length;
+		const stencilMaskFrom = cutoutFrom + cutout.length;
+		const transparentFrom = stencilMaskFrom + stencilMasks.length;
 		const effectFrom = transparentFrom + transparent.length;
 		const decalFrom = effectFrom + effects.length;
 		const mistFrom = decalFrom + decals.length;
@@ -754,8 +838,11 @@ export class MeshRenderer {
 			if (b < cutoutFrom) {
 				return opaque[b];
 			}
-			if (b < transparentFrom) {
+			if (b < stencilMaskFrom) {
 				return cutout[b - cutoutFrom];
+			}
+			if (b < transparentFrom) {
+				return stencilMasks[b - stencilMaskFrom];
 			}
 			if (b < effectFrom) {
 				return transparent[b - transparentFrom];
@@ -783,6 +870,7 @@ export class MeshRenderer {
 		this.#opaqueCastOnlyEnd = 0;
 		this.#cutoutCastOnlyEnd = 0;
 		this.#cutoutStart = 0;
+		this.#stencilMaskStart = 0;
 		this.#transparentStart = 0;
 		this.#effectStart = 0;
 		this.#decalStart = 0;
@@ -791,6 +879,9 @@ export class MeshRenderer {
 		for (let b = 0; b < bucketCount; b++) {
 			if (b === cutoutFrom) {
 				this.#cutoutStart = d;
+			}
+			if (b === stencilMaskFrom) {
+				this.#stencilMaskStart = d;
 			}
 			if (b === transparentFrom) {
 				this.#transparentStart = d;
@@ -863,6 +954,7 @@ export class MeshRenderer {
 					cull,
 					uvFormat: resident.uvFormat,
 					effect,
+					stencil: look.stencil,
 				};
 			} else {
 				draw.geometry = resident;
@@ -876,12 +968,13 @@ export class MeshRenderer {
 				draw.cull = cull;
 				draw.uvFormat = resident.uvFormat;
 				draw.effect = effect;
+				draw.stencil = look.stencil;
 			}
 			d++;
 			if (look.castsShadows) {
 				if (b < cutoutFrom) {
 					this.#opaqueCastersEnd = d;
-				} else if (b < transparentFrom) {
+				} else if (b < stencilMaskFrom) {
 					this.#cutoutCastersEnd = d;
 				}
 			}
@@ -904,6 +997,9 @@ export class MeshRenderer {
 		// ranges that start at or past the last bucket (empty ones, or draws past the cap) start at the end
 		if (cutoutFrom === bucketCount) {
 			this.#cutoutStart = d;
+		}
+		if (stencilMaskFrom === bucketCount) {
+			this.#stencilMaskStart = d;
 		}
 		if (transparentFrom === bucketCount) {
 			this.#transparentStart = d;
@@ -1024,7 +1120,12 @@ export class MeshRenderer {
 				}
 				case 'cutout': {
 					from = phase.shadow ? this.#cutoutStart : this.#cutoutCastOnlyEnd;
-					to = phase.shadow ? this.#cutoutCastersEnd : this.#transparentStart;
+					to = phase.shadow ? this.#cutoutCastersEnd : this.#stencilMaskStart;
+					break;
+				}
+				case 'stencilMask': {
+					from = this.#stencilMaskStart;
+					to = this.#transparentStart;
 					break;
 				}
 				case 'transparent': {
@@ -1058,6 +1159,8 @@ export class MeshRenderer {
 			}
 			let cull: FaceCull | null = null;
 			let uvFormat: UvFormat | null = null;
+			let stencil: LookStencil | null = null;
+			let reference = -1;
 			let geometry: ResidentGeometry | null = null;
 			let material: GPUBindGroup | null = null;
 			for (let i = from; i < to; i++) {
@@ -1067,14 +1170,29 @@ export class MeshRenderer {
 				if (draw.material === null || count === 0) {
 					continue;
 				}
-				if (draw.cull !== cull || draw.uvFormat !== uvFormat) {
+				if (draw.cull !== cull || draw.uvFormat !== uvFormat || draw.stencil !== stencil) {
+					if (draw.stencil === null) {
+						const pipeline = this.#pipelines.get(pipelineKey(phase.key, draw.cull, draw.uvFormat));
+						if (pipeline === undefined) {
+							return draws;
+						}
+						pass.setPipeline(pipeline);
+					} else {
+						// a variant still compiling skips its draws; the next draw picks a pipeline again
+						const pipeline = this.#stencilPipeline(phase.key, draw.cull, draw.uvFormat, draw.stencil);
+						if (pipeline === undefined) {
+							cull = null;
+							continue;
+						}
+						pass.setPipeline(pipeline);
+						if (draw.stencil.reference !== reference) {
+							reference = draw.stencil.reference;
+							pass.setStencilReference(reference);
+						}
+					}
 					cull = draw.cull;
 					uvFormat = draw.uvFormat;
-					const pipeline = this.#pipelines.get(pipelineKey(phase.key, cull, uvFormat));
-					if (pipeline === undefined) {
-						return draws;
-					}
-					pass.setPipeline(pipeline);
+					stencil = draw.stencil;
 				}
 				if ((phase.textured || material === null) && draw.material !== material) {
 					material = draw.material;
@@ -1090,6 +1208,33 @@ export class MeshRenderer {
 			}
 		}
 		return draws;
+	}
+
+	/**
+	 * @param phase the phase's key
+	 * @param cull the draw's face culling
+	 * @param uvFormat the draw's UV format
+	 * @param stencil the draw's stencil state
+	 * @returns the phase's pipeline variant for the stencil state, or `undefined` while it compiles (compiling
+	 *   starts on the first call)
+	 */
+	#stencilPipeline(
+		phase: string,
+		cull: FaceCull,
+		uvFormat: UvFormat,
+		stencil: LookStencil,
+	): GPURenderPipeline | undefined {
+		const variant = stencilPipelineKey(pipelineKey(phase, cull, uvFormat), stencil);
+		const pipeline = this.#pipelines.get(variant);
+		if (pipeline !== undefined) {
+			return pipeline;
+		}
+		const describer = this.#describers.get(phase);
+		if (describer === undefined) {
+			throw new Error(`phase ${phase} has no pipeline descriptor`);
+		}
+		void this.#pipelines.prepare(variant, () => withStencil(describer(cull, uvFormat), stencil));
+		return undefined;
 	}
 
 	/** binds a geometry's vertex streams in the slots a phase's pipelines read, zeros where it lacks one */

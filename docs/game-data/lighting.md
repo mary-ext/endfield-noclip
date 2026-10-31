@@ -501,6 +501,25 @@ down the box's y (UV = local xz + 0.5). its roles are fixed: `_MainTex`, `_MaskT
 to the power `_AngleBlendFallOff`, N from the main pass's packed surface normal). the colour is
 premultiplied by the alpha twice, as the game does.
 
+### portals
+
+VFXBaseV2 takes its stencil test and write (`_StencilComp`, `_StencilOp`, `_StencilRef`,
+`_StencilReadMask`, `_StencilWriteMask`) and its depth test (`_ZTest`) from material properties, and
+`_UseVFXPortal` materials use them to show one effect only through another. the glowing cracks in
+the Hub's plaza (map01_lv001, near unity −365, 95, −439) are one: an opaque mask on the crack mesh
+writes 7 (queue 2000), and the crack's glow and a cylinder of red chasm walls draw only where the
+stencil equals 7, without a depth test, so the chasm shows below the ground through the crack. drawn
+whole, the cylinder stands on the ground as a solid red ring. other pairs write the stencil from a
+transparent layer and draw a second layer only where it didn't (`NotEqual`).
+
+the viewer draws them with a stencil buffer
+([`materials.ts`](../../packages/viewer/src/render/materials.ts), `LookStencil`). an opaque mask
+writes only the stencil, at the end of the main pass, tested against the depth there; the game also
+shades it and writes its depth, but its effects cover it wherever it shows. in the transparent pass,
+effects that write the stencil draw before the rest, and each effect's stencil state and depth test
+pick a pipeline variant. stencil operations other than keep and replace aren't drawn, and without
+the `depth32float-stencil8` feature (see [viewer](../viewer.md#the-render-frame)) none of it is.
+
 ### solid effects
 
 `HGRP/Effect/VFXDitherAlpha` writes the G-buffer like an opaque surface, for effect meshes that are

@@ -19,7 +19,7 @@ import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import { GrowableBuffer } from '../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
 import type { RangeAllocation } from '../gfx/range-allocator.ts';
-import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
+import { DEPTH_COMPARE, type MainPassFormat } from '../gfx/render-targets.ts';
 import type { DecodedInstances } from '../package/decode-protocol.ts';
 import type { Vec3 } from '../scene/camera.ts';
 import type { InstanceRange } from '../streaming/selection.ts';
@@ -135,7 +135,7 @@ export class InstanceRenderer {
 				// generated boxes aren't wound consistently; they're closed, so culling would only halve fill cost
 				primitive: { topology: lines ? 'line-list' : 'triangle-list', cullMode: 'none' },
 				depthStencil: {
-					format: DEPTH_FORMAT,
+					format: format.depth,
 					depthWriteEnabled: !lines,
 					depthCompare: lines ? 'greater-equal' : DEPTH_COMPARE,
 				},

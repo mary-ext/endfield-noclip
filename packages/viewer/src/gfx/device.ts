@@ -14,6 +14,8 @@ export interface GfxFeatures {
 	indirectFirstInstance: boolean;
 	/** GPU timestamps on passes */
 	timestampQuery: boolean;
+	/** the `depth32float-stencil8` format, which gives the main pass a stencil buffer */
+	depth32floatStencil8: boolean;
 }
 
 /** a ready device plus what it supports */
@@ -55,6 +57,7 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 		float32Filterable: has('float32-filterable'),
 		indirectFirstInstance: has('indirect-first-instance'),
 		timestampQuery: has('timestamp-query'),
+		depth32floatStencil8: has('depth32float-stencil8'),
 	};
 	const requiredFeatures: GPUFeatureName[] = [];
 	if (features.textureCompressionBc) {
@@ -68,6 +71,9 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 	}
 	if (features.timestampQuery) {
 		requiredFeatures.push('timestamp-query');
+	}
+	if (features.depth32floatStencil8) {
+		requiredFeatures.push('depth32float-stencil8');
 	}
 
 	const limits = adapter.limits;

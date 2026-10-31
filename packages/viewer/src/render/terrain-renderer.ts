@@ -13,7 +13,7 @@ import type { TerrainSplatInfo } from '@endfield-noclip/package-format/terrain';
 import type { BindLayouts } from '../gfx/bind-layouts.ts';
 import { GrowableBuffer } from '../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../gfx/pipeline-cache.ts';
-import { DEPTH_COMPARE, DEPTH_FORMAT, type MainPassFormat } from '../gfx/render-targets.ts';
+import { DEPTH_COMPARE, type MainPassFormat } from '../gfx/render-targets.ts';
 import type {
 	DecodedDetail,
 	DecodedHeights,
@@ -263,7 +263,7 @@ export class TerrainRenderer {
 				? { topology: 'line-list' }
 				: { topology: 'triangle-list', frontFace: 'cw', cullMode: 'back' },
 			depthStencil: {
-				format: DEPTH_FORMAT,
+				format: format.depth,
 				depthWriteEnabled: !lines,
 				depthCompare: lines ? 'greater-equal' : DEPTH_COMPARE,
 			},

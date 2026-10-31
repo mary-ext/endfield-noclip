@@ -362,6 +362,8 @@ export class Viewer {
 	#dirty = true;
 	/** the stream version the last traversal saw */
 	#seenVersion = -1;
+	/** compiled pipelines when the last frame began */
+	#seenPipelines = 0;
 	#frameMs = 16.7;
 	#cpuMs = 0;
 	/** CPU time per frame phase in this frame so far, ms */
@@ -393,7 +395,12 @@ export class Viewer {
 	private constructor(gfx: GfxDevice, canvas: HTMLCanvasElement) {
 		this.#gfx = gfx;
 		const device = gfx.device;
-		this.#targets = new RenderTargets(device, canvas, gfx.presentationFormat);
+		this.#targets = new RenderTargets(
+			device,
+			canvas,
+			gfx.presentationFormat,
+			gfx.features.depth32floatStencil8,
+		);
 		this.#layouts = createBindLayouts(device);
 		this.#pipelines = new PipelineCache(device);
 		// the main pass's frame plus one per shadow layer
@@ -1356,7 +1363,10 @@ export class Viewer {
 			post.autoExposure && post.debugView === 'lit' ? this.#environment.autoExposure : null,
 			dt,
 		);
-		let render = this.#dirty || moved || resized || options.continuous || adapting;
+		// pipeline variants compile on first use (stencil effects), and draw once ready
+		const compiled = this.#pipelines.size !== this.#seenPipelines;
+		this.#seenPipelines = this.#pipelines.size;
+		let render = this.#dirty || moved || resized || options.continuous || adapting || compiled;
 		this.#dirty = false;
 		// with the view, the options and the resident content unchanged and nothing loading, the traversal
 		// would repeat the last frame's

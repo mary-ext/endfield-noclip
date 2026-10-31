@@ -163,6 +163,89 @@ test('dither-alpha effects shade as opaque two-sided surfaces from the tinted ma
 	assert.equal(dissolving.drawn, false);
 });
 
+test('portal effects: an opaque mask writes only the stencil, its effects test it, other stencil operations stay hidden', () => {
+	const shaders: ShaderEntry[] = [
+		{
+			name: 'HGRP/Effect/VFXBaseV2',
+			family: 'vfxBase',
+			floats: {
+				_StencilComp: 8,
+				_StencilOp: 0,
+				_StencilRef: 0,
+				_StencilReadMask: 255,
+				_StencilWriteMask: 255,
+				_ZTest: 4,
+			},
+			colors: {},
+			vectors: {},
+			textures: { _MainTex: 'white' },
+			normalMaps: [],
+		},
+	];
+	const material = (id: number, overrides: Partial<ReadyMaterial>): ReadyMaterial => ({
+		id,
+		status: 'ready',
+		shader: 0,
+		keywords: [],
+		renderQueue: 3000,
+		blend: 'premultiplied',
+		blendFactors: [1, 10],
+		alphaClipThreshold: null,
+		cull: 'none',
+		zWrite: false,
+		baseTextureMapCount: null,
+		slots: {},
+		floats: {},
+		colors: {},
+		vectors: {},
+		...overrides,
+	});
+	const [mask, chasm, plain, inverting] = materialLooks({
+		shaders,
+		entries: [
+			material(0, {
+				renderQueue: 2000,
+				blend: 'opaque',
+				blendFactors: null,
+				cull: 'back',
+				zWrite: true,
+				floats: { _StencilOp: 2, _StencilRef: 7, _StencilWriteMask: 7 },
+			}),
+			material(1, {
+				floats: { _StencilComp: 3, _StencilRef: 7, _StencilReadMask: 7, _StencilWriteMask: 7, _ZTest: 8 },
+			}),
+			material(2, {}),
+			material(3, { floats: { _StencilOp: 5 } }),
+		],
+	});
+	assert.equal(mask.drawn, true);
+	assert.equal(mask.transparent, false);
+	assert.equal(mask.castsShadows, false);
+	assert.equal(mask.cull, 'back');
+	assert.deepEqual(mask.stencil, {
+		compare: 'always',
+		replace: true,
+		reference: 7,
+		readMask: 255,
+		writeMask: 7,
+		depthCompare: 'greater-equal',
+		maskOnly: true,
+	});
+	assert.equal(chasm.transparent, true);
+	assert.deepEqual(chasm.stencil, {
+		compare: 'equal',
+		replace: false,
+		reference: 7,
+		readMask: 7,
+		writeMask: 7,
+		depthCompare: 'always',
+		maskOnly: false,
+	});
+	assert.equal(plain.drawn, true);
+	assert.equal(plain.stencil, null);
+	assert.equal(inverting.drawn, false);
+});
+
 test('glass is transparent, casts no shadow and takes its opacity from the tint alpha and the picked map alpha', () => {
 	const shaders: ShaderEntry[] = [
 		{

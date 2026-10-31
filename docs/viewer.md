@@ -292,7 +292,9 @@ everything after it run at the output (canvas) size.
 details:
 
 - **depth.** reversed-Z `depth32float`, cleared to 0 and tested with `greater`, with an infinite far
-  plane and a 0.25 m near plane
+  plane and a 0.25 m near plane. where the GPU has the `depth32float-stencil8` feature, depth
+  carries a stencil, cleared to 0, which only effect [portals](game-data/lighting.md#portals) use;
+  post passes sample the depth aspect alone
   ([`gfx/render-targets.ts`](../packages/viewer/src/gfx/render-targets.ts),
   [`scene/camera.ts`](../packages/viewer/src/scene/camera.ts)). everything renders camera-relative:
   instance block origins are rebased to the eye on the CPU in f64 each frame, so f32 precision holds
@@ -301,15 +303,16 @@ details:
   lit surfaces hand the screen-space reflections: the sky reflection the radiance holds
   (`rgba16float`) and the normal, roughness and hit weight packed in `rg32uint`, which fills
   WebGPU's default 32 bytes per sample; depth is stored for post. draw order: the opaque meshes'
-  depth, terrain, meshes (opaque, then alpha-tested), instance boxes, box outlines (boxes larger
-  than `outlineMetres`), terrain wireframe. alpha-blended meshes draw afterwards in the
-  `transparent` pass, which tests the main pass's depth without writing it; the composite resolves
-  them ([glass](game-data/lighting.md#glass)). the pass's third target, the glow, sums additively
-  blended light, which the weighted sum and revealage can't hold. the composite adds it after the
-  fog, unfogged: the game's additive effects fog themselves at their own distance if at all, and
-  fogging them at the surface behind would hide those in front of the sky. effects hidden for
-  blending additively can draw into it. its alpha holds the weight of the layers that go unfogged,
-  which the composite keeps out of the fog ([blending](game-data/lighting.md#blending-and-gaps)).
+  depth, terrain, meshes (opaque, then alpha-tested, then stencil-only portal masks), instance
+  boxes, box outlines (boxes larger than `outlineMetres`), terrain wireframe. alpha-blended meshes
+  draw afterwards in the `transparent` pass, which tests the main pass's depth without writing it
+  (the stencil stays writable); the composite resolves them ([glass](game-data/lighting.md#glass)).
+  the pass's third target, the glow, sums additively blended light, which the weighted sum and
+  revealage can't hold. the composite adds it after the fog, unfogged: the game's additive effects
+  fog themselves at their own distance if at all, and fogging them at the surface behind would hide
+  those in front of the sky. effects hidden for blending additively can draw into it. its alpha
+  holds the weight of the layers that go unfogged, which the composite keeps out of the fog
+  ([blending](game-data/lighting.md#blending-and-gaps)).
 - **antialiasing** is temporal with upsampling, as in the game, which has no MSAA. the main pass's
   projection is offset by a Halton (2, 3) subpixel jitter each frame (8 positions per cycle, more
   when upsampling), and the post passes that reconstruct view rays undo it. `taa` reconstructs each

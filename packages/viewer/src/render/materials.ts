@@ -169,6 +169,30 @@ export interface MaterialLook {
 	flags: number;
 	/** {@link LOOK_FLOATS} draw parameters */
 	params: Float32Array;
+	/** the stencil test and write of effects that mask each other, or `null` for the rest */
+	stencil: LookStencil | null;
+}
+
+/**
+ * a draw's stencil state and the depth test that goes with it, from its material's `_Stencil*` and `_ZTest`
+ * properties. the game's VFXBaseV2 portals use it: a mesh writes a reference value where it shows, and
+ * effects drawn later test for it, often without a depth test, so a chasm can show through a crack in the
+ * ground
+ */
+export interface LookStencil {
+	compare: GPUCompareFunction;
+	/** whether passing fragments write the reference (Unity's Replace); the rest keep the stencil */
+	replace: boolean;
+	reference: number;
+	readMask: number;
+	writeMask: number;
+	/** the depth test, mapped to reversed-Z */
+	depthCompare: GPUCompareFunction;
+	/**
+	 * a stencil-only look: it writes the stencil where its surface passes the depth test, but neither colour
+	 * nor depth, and draws in the main pass after the opaque surfaces
+	 */
+	maskOnly: boolean;
 }
 
 /** float offsets of the rows of {@link MaterialLook.params} */
@@ -257,7 +281,95 @@ const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => {
 		uvScales: SLOTS.map(() => 1),
 		flags: 0,
 		params,
+		stencil: null,
 	};
+};
+
+/** Unity's `CompareFunction` values, `Disabled` (0) to `Always` (8), as WebGPU names them */
+const COMPARE_FUNCTIONS: readonly GPUCompareFunction[] = [
+	'always',
+	'never',
+	'less',
+	'equal',
+	'less-equal',
+	'greater',
+	'not-equal',
+	'greater-equal',
+	'always',
+];
+
+/** a depth comparison under the viewer's reversed-Z */
+const reversedDepthCompare = (compare: GPUCompareFunction): GPUCompareFunction => {
+	switch (compare) {
+		case 'less': {
+			return 'greater';
+		}
+		case 'less-equal': {
+			return 'greater-equal';
+		}
+		case 'greater': {
+			return 'less';
+		}
+		case 'greater-equal': {
+			return 'less-equal';
+		}
+		default: {
+			return compare;
+		}
+	}
+};
+
+/** Unity's `StencilOp` values the viewer draws */
+const StencilOp = {
+	Keep: 0,
+	Replace: 2,
+} as const;
+
+/**
+ * @returns the stencil state of a VFXBaseV2 material, whose one pass takes its stencil and depth test from
+ *   these properties; `null` when it leaves the stencil alone, `'unsupported'` for stencil operations other
+ *   than keep and replace
+ */
+const vfxBaseStencilOf = (entry: ReadyMaterial, shader: ShaderEntry): LookStencil | 'unsupported' | null => {
+	const compare = COMPARE_FUNCTIONS[floatOf(entry, shader, '_StencilComp', 8)] ?? 'always';
+	const op = floatOf(entry, shader, '_StencilOp', StencilOp.Keep);
+	if (compare === 'always' && op === StencilOp.Keep) {
+		return null;
+	}
+	if (op !== StencilOp.Keep && op !== StencilOp.Replace) {
+		return 'unsupported';
+	}
+	return {
+		compare,
+		replace: op === StencilOp.Replace,
+		reference: floatOf(entry, shader, '_StencilRef', 0) & 0xff,
+		readMask: floatOf(entry, shader, '_StencilReadMask', 255) & 0xff,
+		writeMask: floatOf(entry, shader, '_StencilWriteMask', 255) & 0xff,
+		depthCompare: reversedDepthCompare(
+			COMPARE_FUNCTIONS[floatOf(entry, shader, '_ZTest', 4)] ?? 'less-equal',
+		),
+		maskOnly: false,
+	};
+};
+
+/**
+ * @returns the look of an opaque VFXBaseV2 material that writes the stencil (a portal's mask), else `null`.
+ *   the game also shades and writes depth there, but the portal's effects cover the mask wherever it shows,
+ *   so the viewer writes only the stencil and leaves the surface behind as the main pass drew it
+ */
+const portalMaskLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook | null => {
+	if (shader.name !== 'HGRP/Effect/VFXBaseV2' || entry.blend !== 'opaque') {
+		return null;
+	}
+	const stencil = vfxBaseStencilOf(entry, shader);
+	if (stencil === null || stencil === 'unsupported' || !stencil.replace) {
+		return null;
+	}
+	const look = emptyLook({ drawn: true });
+	look.cull = entry.cull;
+	look.castsShadows = false;
+	look.stencil = { ...stencil, maskOnly: true };
+	return look;
 };
 
 /** a material's value of a float property: its override, else the shader's default */
@@ -287,7 +399,7 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 			continue;
 		}
 		const shader = materials.shaders[entry.shader];
-		const effect = effectLookOf(entry, shader);
+		const effect = effectLookOf(entry, shader) ?? portalMaskLook(entry, shader);
 		if (effect !== null) {
 			looks[entry.id] = effect;
 			continue;
@@ -332,8 +444,14 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 const effectLookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook | null => {
 	let effect: EffectLook | null = null;
 	let flags = LookFlags.Effect;
+	let stencil: LookStencil | null = null;
 	switch (shader.name) {
 		case 'HGRP/Effect/VFXBaseV2': {
+			const state = vfxBaseStencilOf(entry, shader);
+			if (state === 'unsupported') {
+				return null;
+			}
+			stencil = state;
 			effect = vfxBaseLook(entry, shader);
 			break;
 		}
@@ -369,6 +487,7 @@ const effectLookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook |
 		uvScales: effect.uvScales,
 		flags,
 		params: effect.params,
+		stencil,
 	};
 };
 
