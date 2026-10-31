@@ -96,7 +96,11 @@ export const placeholderView = (
 export class TextureStore {
 	#device: GPUDevice;
 	#table: TextureTable;
-	#pieces = new Map<number, PieceRef>();
+	/**
+	 * the pieces each blob holds: the packer stores identical pieces once, so one blob can serve several
+	 * textures
+	 */
+	#pieces = new Map<number, PieceRef[]>();
 	#states = new Map<number, TextureState>();
 	#samplers = new Map<string, GPUSampler>();
 	/** textures that lost pieces since the last {@link commit} */
@@ -126,7 +130,13 @@ export class TextureStore {
 				continue;
 			}
 			entry.pieces.forEach((piece, i) => {
-				this.#pieces.set(piece.blob, { texture: entry.id, index: i });
+				const refs = this.#pieces.get(piece.blob);
+				const ref = { texture: entry.id, index: i };
+				if (refs === undefined) {
+					this.#pieces.set(piece.blob, [ref]);
+				} else {
+					refs.push(ref);
+				}
 			});
 		}
 	}
@@ -182,8 +192,7 @@ export class TextureStore {
 	 */
 	upload(blob: number, decoded: DecodedTexture): ResidentTexture {
 		const data = new Uint8Array(decoded.data);
-		const ref = this.#pieces.get(blob);
-		if (ref !== undefined) {
+		for (const ref of this.#pieces.get(blob) ?? []) {
 			const state = this.#state(ref.texture);
 			this.#shrink(state);
 			state.waiting.set(ref.index, data);
@@ -204,15 +213,16 @@ export class TextureStore {
 	 * @param blob the piece's blob
 	 */
 	release(blob: number): void {
-		const ref = this.#pieces.get(blob);
-		const state = ref === undefined ? undefined : this.#states.get(ref.texture);
-		if (ref === undefined || state === undefined) {
-			return;
+		for (const ref of this.#pieces.get(blob) ?? []) {
+			const state = this.#states.get(ref.texture);
+			if (state === undefined) {
+				continue;
+			}
+			state.waiting.delete(ref.index);
+			// finer integrated pieces lose their levels too
+			state.integrated = Math.min(state.integrated, ref.index);
+			this.#released.add(state);
 		}
-		state.waiting.delete(ref.index);
-		// finer integrated pieces lose their levels too
-		state.integrated = Math.min(state.integrated, ref.index);
-		this.#released.add(state);
 	}
 
 	/**
