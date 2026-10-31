@@ -45,6 +45,7 @@ describe('AssetPlacement', () => {
 			minSquared: -1,
 			maxSquared: 1,
 			sourceFlags: 0,
+			particles: null,
 		});
 		const chains = [
 			{ lodCount: 1, flags: 0, draws: [draw(0, 0)] },
@@ -75,6 +76,7 @@ describe('AssetPlacement', () => {
 			minSquared: -1,
 			maxSquared: 1,
 			sourceFlags: 0,
+			particles: null,
 		};
 		const placement = new AssetPlacement(3);
 		placement.note(0, { level: 3, x: 1, z: 1 });

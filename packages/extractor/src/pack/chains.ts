@@ -10,7 +10,7 @@ const bits = (value: number): number => {
 
 /**
  * LOD-chain templates, deduplicated by their ordered draws (geometry, material, submesh, LOD, role,
- * thresholds, source flags) and LOD count
+ * thresholds, source flags, particle system) and LOD count
  */
 export class ChainTable {
 	readonly chains: Chain[] = [];
@@ -24,7 +24,7 @@ export class ChainTable {
 	intern(lodCount: number, draws: readonly ChainDraw[]): number {
 		let key = `${lodCount}`;
 		for (const draw of draws) {
-			key += `|${draw.geometry},${draw.material},${draw.submesh},${draw.lod},${draw.role},${bits(draw.minSquared)},${bits(draw.maxSquared)},${draw.sourceFlags}`;
+			key += `|${draw.geometry},${draw.material},${draw.submesh},${draw.lod},${draw.role},${bits(draw.minSquared)},${bits(draw.maxSquared)},${draw.sourceFlags},${draw.particles}`;
 		}
 		let id = this.#ids.get(key);
 		if (id === undefined) {

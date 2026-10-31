@@ -15,9 +15,11 @@ import {
 	stringField,
 	type Aabb,
 } from '@endfield-noclip/formats/unity/values';
+import type { ParticleSystemInfo } from '@endfield-noclip/package-format/particles';
 
 import { objectKey, type AssetResolver, type ObjectRef } from './assets.ts';
-import { frozenParticleMatrix, type LocalTransform } from './particle-mesh.ts';
+import { frozenParticleMatrix, type LocalTransform, SCALING_SHAPE } from './particle-mesh.ts';
+import { particleReach, readParticleSystem } from './particle-system.ts';
 
 /** one enabled mesh renderer in a prefab's highest-detail authored LOD */
 export interface PrefabRenderer {
@@ -30,6 +32,11 @@ export interface PrefabRenderer {
 	shadowOnly: boolean;
 	/** bone transforms including bind poses, when geometry must be baked into prefab space */
 	pose: Float32Array[] | null;
+	/**
+	 * the particle system that draws the mesh once per particle, `null` for an ordinary renderer. the matrix is
+	 * then the system's frame and the bounds everywhere its particles reach
+	 */
+	particles: ParticleSystemInfo | null;
 }
 
 const xyz = (value: TypeTreeObject): [number, number, number] => [
@@ -57,6 +64,7 @@ export const readPrefabRenderers = async (
 		matrix: Float32Array;
 		name: string;
 		mesh: ObjectRef;
+		particles: ParticleSystemInfo | null;
 	}[] = [];
 	const excluded = new Set<string>();
 	const firstLod = new Set<string>();
@@ -141,7 +149,7 @@ export const readPrefabRenderers = async (
 			) {
 				const mesh = await resolver.resolve(component.ref, pptrField(component.data, 'm_Mesh'));
 				if (mesh !== null) {
-					candidates.push({ ...component, matrix, name: stringField(data, 'm_Name'), mesh });
+					candidates.push({ ...component, matrix, name: stringField(data, 'm_Name'), mesh, particles: null });
 				}
 			}
 		}
@@ -154,7 +162,13 @@ export const readPrefabRenderers = async (
 						component.ref.info.classId === UnityClass.MeshRenderer &&
 						booleanField(component.data, 'm_Enabled')
 					) {
-						candidates.push({ ...component, matrix, name: stringField(data, 'm_Name'), mesh });
+						candidates.push({
+							...component,
+							matrix,
+							name: stringField(data, 'm_Name'),
+							mesh,
+							particles: null,
+						});
 					}
 				}
 			}
@@ -167,15 +181,37 @@ export const readPrefabRenderers = async (
 		const system = components.find((component) => component.ref.info.classId === UnityClass.ParticleSystem);
 		if (particles !== undefined && system !== undefined) {
 			const particle = frozenParticleMatrix(system.data, particles.data, local);
-			const mesh =
-				particle === null ? null : await resolver.resolve(particles.ref, pptrField(particles.data, 'm_Mesh'));
-			if (particle !== null && mesh !== null) {
-				candidates.push({
-					...particles,
-					matrix: multiplyMatrices(parent, particle),
-					name: stringField(data, 'm_Name'),
-					mesh,
-				});
+			if (particle !== null) {
+				const mesh = await resolver.resolve(particles.ref, pptrField(particles.data, 'm_Mesh'));
+				if (mesh !== null) {
+					candidates.push({
+						...particles,
+						matrix: multiplyMatrices(parent, particle),
+						name: stringField(data, 'm_Name'),
+						mesh,
+						particles: null,
+					});
+				}
+			} else {
+				const read = readParticleSystem(system.data, particles.data);
+				if ('info' in read) {
+					// the shape scaling mode scales the shape alone, leaving the particles' sizes
+					const scale = numberField(system.data, 'scalingMode') === SCALING_SHAPE ? [1, 1, 1] : local.scale;
+					const emitter = multiplyMatrices(parent, trsMatrix(local.position, local.rotation, scale));
+					// one emitter per mesh, each drawing the particles that picked it
+					for (const [i, pointer] of read.meshes.entries()) {
+						const mesh = await resolver.resolve(particles.ref, pointer);
+						if (mesh !== null) {
+							candidates.push({
+								...particles,
+								matrix: emitter,
+								name: stringField(data, 'm_Name'),
+								mesh,
+								particles: { ...read.info, mesh: i },
+							});
+						}
+					}
+				}
 			}
 		}
 		for (const pointer of arrayField(t, 'm_Children')) {
@@ -209,6 +245,12 @@ export const readPrefabRenderers = async (
 		}
 		let matrix = candidate.matrix;
 		let bounds = aabbField(mesh, 'm_LocalAABB');
+		if (candidate.particles !== null) {
+			bounds = particleReach(
+				candidate.particles,
+				Math.hypot(...bounds.center) + Math.hypot(...bounds.extents),
+			);
+		}
 		let pose: Float32Array[] | null = null;
 		if (candidate.ref.info.classId === UnityClass.SkinnedMeshRenderer) {
 			if (arrayField(candidate.data, 'm_BlendShapeWeights').some((weight) => weight !== 0)) {
@@ -257,6 +299,7 @@ export const readPrefabRenderers = async (
 			submeshes: arrayField(mesh, 'm_SubMeshes').length,
 			// Unity's ShadowCastingMode: 3 ShadowsOnly, 4 ShadowsOnlyTwoSided
 			shadowOnly: numberField(candidate.data, 'm_CastShadows') >= 3,
+			particles: candidate.particles,
 		});
 	}
 	return result;

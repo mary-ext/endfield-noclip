@@ -190,6 +190,25 @@ root:
   reproduced; curves, camera-facing alignments and several particles are skipped. the drift and spin
   over its lifetime and the particle's start colour are dropped. Wuling City's threads swirling over
   the pillar array (`p_fxmap_lv002_fangyuzhenlie_*`) are such particles.
+- any other mesh-mode particle system that plays on awake is packed whole when a viewer can play it
+  from the package alone
+  ([particle-system.ts](../../packages/extractor/src/game/particle-system.ts)): the renderer becomes
+  an emitter whose draw names a particles-table entry
+  ([package format](../package-format.md#particles)), its matrix the emitter's transform (with its
+  local scale unless `scalingMode` is Shape) and its bounds a box around everywhere a particle can
+  reach. the entry keeps the duration, looping, start delay, particle cap and simulation speed; the
+  start lifetime, speed, size and rotation, gravity modifier and emission rate as `MinMaxCurve`s;
+  the bursts; the shape (sphere, hemisphere, cone, cone volume, box or circle, with its radius,
+  thickness, angle, length, arc, placement and random-direction and -position amounts); the velocity
+  module (linear, orbital about an offset, radial, speed modifier); size and rotation over lifetime;
+  the render alignment (Facing is kept as View) and pivot. each particle draws one of up to four
+  meshes (`m_Mesh` … `m_Mesh3`), evenly or by `m_MeshWeighting*` when `m_MeshDistribution` is 1, so
+  a renderer with several becomes one emitter per mesh, its entry naming which. systems are skipped
+  when they use a module whose effect the viewer doesn't evaluate (force, noise, collision,
+  sub-emitters, lights, trails, texture sheets, colour, the by-speed modules, custom data, velocity
+  limits), velocity or rotation curves, a rate curve, a tinted start colour or velocity alignment.
+  the floating rocks over Origin Lodespring's crater (`Rock02` in `P_fxmap_common_brokentree_01/02`,
+  four rock meshes each) are such systems.
 - a skinned renderer's pose is each bone's prefab-space matrix times its bind pose; bounds are the
   union of the mesh bounds under every bone so weighted vertices stay inside. non-zero blend shape
   weights throw, since baking ignores them.

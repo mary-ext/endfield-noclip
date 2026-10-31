@@ -35,6 +35,7 @@ const draw = (overrides: Partial<ChainDraw>): ChainDraw => ({
 	minSquared: -1,
 	maxSquared: 3.4028234663852886e38,
 	sourceFlags: 0,
+	particles: null,
 	...overrides,
 });
 
@@ -54,7 +55,9 @@ describe('ChainTable', () => {
 		assert.notEqual(table.intern(2, a.toReversed()), first);
 		assert.notEqual(table.intern(3, a), first);
 		assert.notEqual(table.intern(2, [a[0], { ...a[1], minSquared: Math.fround(0.1) + 1e-8 }]), first);
-		assert.equal(table.chains.length, 4);
+		// so do the particle systems a draw emits
+		assert.notEqual(table.intern(2, [a[0], { ...a[1], particles: 0 }]), first);
+		assert.equal(table.chains.length, 5);
 	});
 
 	it('flags shadow proxies, cards and HLOD', () => {

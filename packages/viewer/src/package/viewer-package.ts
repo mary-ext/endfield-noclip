@@ -19,6 +19,7 @@ import {
 	type PackageManifest,
 } from '@endfield-noclip/package-format/manifest';
 import type { MaterialTable } from '@endfield-noclip/package-format/materials';
+import type { ParticlesTable } from '@endfield-noclip/package-format/particles';
 import type { TextureTable } from '@endfield-noclip/package-format/textures';
 import { decodeTree, type Tree } from '@endfield-noclip/package-format/tree';
 import type { WaterTable } from '@endfield-noclip/package-format/water';
@@ -55,6 +56,8 @@ export interface ViewerPackage {
 	water: WaterTable;
 	/** the scene's local lights */
 	lights: LightsTable;
+	/** the particle systems chain draws emit */
+	particles: ParticlesTable;
 	/** the baked irradiance volume's cells (empty without one) */
 	irradiance: IrradianceTable;
 	/**
@@ -133,6 +136,8 @@ export const openViewerPackage = async (
 	const water = (await json(CORE_PATHS.water)) as WaterTable;
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
 	const lights = (await json(CORE_PATHS.lights)) as LightsTable;
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
+	const particles = (await json(CORE_PATHS.particles)) as ParticlesTable;
 	const irradiance = decodeIrradianceTable(await member(CORE_PATHS.irradiance));
 
 	return {
@@ -146,6 +151,7 @@ export const openViewerPackage = async (
 		textures,
 		water,
 		lights,
+		particles,
 		irradiance,
 		readCoreBlob(index) {
 			const blob = blobs[index];

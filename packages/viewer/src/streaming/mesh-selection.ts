@@ -476,7 +476,8 @@ export class MeshSelector {
 			slots = [];
 			for (const draw of this.#chains[chain].draws) {
 				const look = draw.material < this.#looks.length ? this.#looks[draw.material] : undefined;
-				if (draw.role === DrawRole.ShadowOnly || look?.drawn !== true) {
+				// particle systems aren't played yet
+				if (draw.role === DrawRole.ShadowOnly || draw.particles !== null || look?.drawn !== true) {
 					continue;
 				}
 				slots.push({

@@ -32,7 +32,7 @@ const Alignment = {
 const SHAPE_BOX = 5;
 
 /** `ParticleSystem.scalingMode` that leaves particle sizes unscaled */
-const SCALING_SHAPE = 2;
+export const SCALING_SHAPE = 2;
 
 /**
  * a MinMaxCurve's value: a constant, or the midpoint of a random range between two constants, since the

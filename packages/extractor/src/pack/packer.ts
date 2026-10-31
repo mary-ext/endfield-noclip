@@ -125,6 +125,7 @@ import { type InstanceInput, InstanceBlockBuilder } from './instances.ts';
 import { type IrradianceReport, packIrradiance } from './irradiance.ts';
 import { LightCollector } from './lights.ts';
 import { type CacheReport, PackCache } from './pack-cache.ts';
+import { ParticleTable } from './particles.ts';
 import { PhaseTimer } from './phase-timer.ts';
 import { packTerrain as packTerrainStep } from './terrain.ts';
 import { TileTreeBuilder } from './tile-tree.ts';
@@ -291,6 +292,7 @@ export const packScene = async (
 			cache,
 			builder: new TileTreeBuilder(scene.grid),
 			chains: new ChainTable(),
+			particles: new ParticleTable(),
 			geometries: new AssetIds(),
 			materials: new AssetIds(),
 			uses: new AssetPlacement(scene.grid.shardLevel),
@@ -531,6 +533,7 @@ interface PackState {
 	cache: PackCache | null;
 	builder: TileTreeBuilder;
 	chains: ChainTable;
+	particles: ParticleTable;
 	geometries: AssetIds;
 	materials: AssetIds;
 	uses: AssetPlacement;
@@ -738,6 +741,7 @@ const collectEntities = async (
 			minSquared: draw.lodMinSquared,
 			maxSquared: draw.lodMaxSquared,
 			sourceFlags: draw.flags,
+			particles: null,
 		};
 	};
 
@@ -1008,6 +1012,7 @@ const collectEntities = async (
 						minSquared: -1,
 						maxSquared: 3.4028234663852886e38,
 						sourceFlags: renderer.shadowOnly ? DrawFlags.ShadowOnly : 0,
+						particles: renderer.particles === null ? null : pack.particles.intern(renderer.particles),
 					},
 				];
 			});
@@ -1367,6 +1372,7 @@ const writePackage = async (
 		zstdTable(json({ entries: assetTables.textures } satisfies TextureTable)),
 		zstdTable(json(states.water)),
 		zstdTable(json(states.lights)),
+		zstdTable(json(pack.particles.table())),
 	]);
 
 	const stems = new Map([
@@ -1375,11 +1381,11 @@ const writePackage = async (
 	]);
 	const archiveNames = [...stems.keys()];
 	const blobsBin = encodeBlobTable(store.records(archiveNames));
-	const [written, [geometries, materials, textures, water, lights]] = await Promise.all([
+	const [written, [geometries, materials, textures, water, lights, particles]] = await Promise.all([
 		store.writeArchives(dir, previous),
 		tablesReady,
 	]);
-	const tables = { geometries, materials, textures, water, lights };
+	const tables = { geometries, materials, textures, water, lights, particles };
 
 	const generation = createHash('sha256');
 	for (const part of [
@@ -1391,6 +1397,7 @@ const writePackage = async (
 		tables.textures,
 		tables.water,
 		tables.lights,
+		tables.particles,
 		irradianceBin,
 	]) {
 		generation.update(part);
@@ -1444,6 +1451,7 @@ const writePackage = async (
 		{ path: CORE_PATHS.textures, data: tables.textures },
 		{ path: CORE_PATHS.water, data: tables.water },
 		{ path: CORE_PATHS.lights, data: tables.lights },
+		{ path: CORE_PATHS.particles, data: tables.particles },
 		{ path: CORE_PATHS.irradiance, data: irradianceBin },
 	]);
 
@@ -1458,6 +1466,7 @@ const writePackage = async (
 			[CORE_PATHS.textures]: tables.textures.length,
 			[CORE_PATHS.water]: tables.water.length,
 			[CORE_PATHS.lights]: tables.lights.length,
+			[CORE_PATHS.particles]: tables.particles.length,
 			[CORE_PATHS.irradiance]: irradianceBin.length,
 		},
 		archives: [core, ...written.values()].map(({ name, size, headerLength, members, reused }) => ({

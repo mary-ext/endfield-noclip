@@ -86,9 +86,11 @@ packs or renders correctly.
   the mist (FogSimple, VFXFakeVolumeFog) draw, without the first two's additive, vertex-offset mask,
   polar-UV, lighting and particle variants, the effects' own fog, the game's global scene-effect
   colour adjustment (the Jingyu blight reads less saturated than in game) or the mist boxes' 3D
-  noise; other effect shaders are suppressed rather than drawn opaque. particle systems aren't
-  packed, except mesh particles frozen in place ([prefabs](game-data/assets.md#prefabs)), which lose
-  their start colour and take the midpoint of random start values. Marker Stone's low mist banks
+  noise; other effect shaders are suppressed rather than drawn opaque. billboard particle systems
+  (sparkles, smoke) aren't packed; mesh particles frozen in place lose their start colour and take
+  the midpoint of random start values, and other mesh particle systems are packed only without
+  colour, force, noise, sub-emitter and other modules a viewer can't evaluate in closed form
+  ([prefabs](game-data/assets.md#prefabs)), and aren't played yet. Marker Stone's low mist banks
   over the valley are still missing; their source is unknown. rect decals (`HGRP/DecalLit`,
   `HGRP/TerrainDecalLit`, InitChunkData components 27 and 28) aren't packed
 - temporal smoothing of effects

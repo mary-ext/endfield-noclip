@@ -58,6 +58,12 @@ export interface ChainDraw {
 	maxSquared: number;
 	/** the game's `RendererInfo.renderFlags`, kept for bits not yet understood */
 	sourceFlags: number;
+	/**
+	 * index into the particles table when the draw is a particle system's mesh: the instance is the emitter,
+	 * its transform the system's frame and its bounds everywhere the particles reach. `null` for an ordinary
+	 * draw
+	 */
+	particles: number | null;
 }
 
 /** a LOD-chain template shared by every instance with the same ordered draws */
@@ -94,7 +100,9 @@ export interface InstanceBlock {
 }
 
 const CHAIN_SIZE = 8;
-const DRAW_SIZE = 24;
+const DRAW_SIZE = 28;
+/** {@link ChainDraw.particles} of a draw without particles, as encoded */
+const NO_PARTICLES = 0xff_ff_ff_ff;
 const INSTANCE_HEADER_SIZE = 32;
 /** bytes per instance row across all sections */
 const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4;
@@ -102,7 +110,7 @@ const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4;
 /** 'EFCH' */
 const CHAINS_HEADER: HeaderShape = {
 	magic: 0x48_43_46_45,
-	version: 1,
+	version: 2,
 	size: TABLE_HEADER_SIZE,
 	label: 'chain table',
 };
@@ -118,8 +126,9 @@ const isDrawRole = enumGuard(DrawRole);
 
 /**
  * tables/chains.bin: 16-byte header (`'EFCH'`, u16 version, u16 0, u32 chainCount, u32 drawCount), 8-byte
- * chains (u32 firstDraw, u16 drawCount, u8 lodCount, u8 flags), then 24-byte draws (u32 geometry, u32
- * material, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u32 sourceFlags).
+ * chains (u32 firstDraw, u16 drawCount, u8 lodCount, u8 flags), then 28-byte draws (u32 geometry, u32
+ * material, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u32 sourceFlags, u32 particles,
+ * `0xffffffff` for none).
  *
  * @param chains chain templates in id order
  * @returns the encoded table
@@ -153,12 +162,15 @@ export const encodeChains = (chains: readonly Chain[]): Uint8Array => {
 			view.setFloat32(drawAt + 12, draw.minSquared, true);
 			view.setFloat32(drawAt + 16, draw.maxSquared, true);
 			view.setUint32(drawAt + 20, draw.sourceFlags, true);
+			view.setUint32(drawAt + 24, draw.particles ?? NO_PARTICLES, true);
 			drawAt += DRAW_SIZE;
 		}
 		firstDraw += chain.draws.length;
 	}
 	return out;
 };
+
+const particlesOf = (value: number): number | null => (value === NO_PARTICLES ? null : value);
 
 /**
  * @param data tables/chains.bin
@@ -193,6 +205,7 @@ export const decodeChains = (data: Uint8Array): Chain[] => {
 				minSquared: view.getFloat32(drawAt + 12, true),
 				maxSquared: view.getFloat32(drawAt + 16, true),
 				sourceFlags: view.getUint32(drawAt + 20, true),
+				particles: particlesOf(view.getUint32(drawAt + 24, true)),
 			});
 		}
 		chains.push({ lodCount: view.getUint8(at + 6), flags: view.getUint8(at + 7), draws });
