@@ -17,6 +17,7 @@ import {
 } from '@endfield-noclip/formats/unity/values';
 
 import { objectKey, type AssetResolver, type ObjectRef } from './assets.ts';
+import { frozenParticleMatrix, type LocalTransform } from './particle-mesh.ts';
 
 /** one enabled mesh renderer in a prefab's highest-detail authored LOD */
 export interface PrefabRenderer {
@@ -81,6 +82,8 @@ export const readPrefabRenderers = async (
 					UnityClass.MeshFilter,
 					UnityClass.MeshRenderer,
 					UnityClass.SkinnedMeshRenderer,
+					UnityClass.ParticleSystem,
+					UnityClass.ParticleSystemRenderer,
 					205,
 				]
 			: [UnityClass.Transform];
@@ -100,16 +103,17 @@ export const readPrefabRenderers = async (
 		}
 		const t = transform.data;
 		const rotation = objectField(t, 'm_LocalRotation');
+		// the root's own placement comes from the caller
+		const local: LocalTransform = isRoot
+			? { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }
+			: {
+					position: xyz(objectField(t, 'm_LocalPosition')),
+					rotation: [...xyz(rotation), numberField(rotation, 'w')],
+					scale: xyz(objectField(t, 'm_LocalScale')),
+				};
 		const matrix = isRoot
 			? parent
-			: multiplyMatrices(
-					parent,
-					trsMatrix(
-						xyz(objectField(t, 'm_LocalPosition')),
-						[...xyz(rotation), numberField(rotation, 'w')],
-						xyz(objectField(t, 'm_LocalScale')),
-					),
-				);
+			: multiplyMatrices(parent, trsMatrix(local.position, local.rotation, local.scale));
 		transforms.set(objectKey(transform.ref), matrix);
 		for (const component of components) {
 			if (component.ref.info.classId !== 205 || !booleanField(component.data, 'm_Enabled')) {
@@ -153,6 +157,25 @@ export const readPrefabRenderers = async (
 						candidates.push({ ...component, matrix, name: stringField(data, 'm_Name'), mesh });
 					}
 				}
+			}
+		}
+		const particles = components.find(
+			(component) =>
+				component.ref.info.classId === UnityClass.ParticleSystemRenderer &&
+				booleanField(component.data, 'm_Enabled'),
+		);
+		const system = components.find((component) => component.ref.info.classId === UnityClass.ParticleSystem);
+		if (particles !== undefined && system !== undefined) {
+			const particle = frozenParticleMatrix(system.data, particles.data, local);
+			const mesh =
+				particle === null ? null : await resolver.resolve(particles.ref, pptrField(particles.data, 'm_Mesh'));
+			if (particle !== null && mesh !== null) {
+				candidates.push({
+					...particles,
+					matrix: multiplyMatrices(parent, particle),
+					name: stringField(data, 'm_Name'),
+					mesh,
+				});
 			}
 		}
 		for (const pointer of arrayField(t, 'm_Children')) {

@@ -120,6 +120,8 @@ export const UnityClass = {
 	AssetBundle: 142,
 	Texture2DArray: 187,
 	CubemapArray: 188,
+	ParticleSystem: 198,
+	ParticleSystemRenderer: 199,
 } as const;
 
 /**
