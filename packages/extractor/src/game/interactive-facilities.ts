@@ -11,12 +11,14 @@ import {
 	UnsupportedLevelData,
 } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
+import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { isObject, numberField, objectField, stringField } from '@endfield-noclip/formats/unity/values';
-import type { ProgressionInfo } from '@endfield-noclip/package-format/states';
+import type { ConditionalSetInfo, ProgressionInfo } from '@endfield-noclip/package-format/states';
 
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';
 
+import { readDoodadShell, type DoodadShell } from './doodad-shell.ts';
 import type { StructureModel } from './dynamic-structures.ts';
 
 // these facility templates share the validated model-upgrade component, so their visual forms become a
@@ -47,9 +49,10 @@ const TABLE = 'Data/Json/Interactive/InteractiveTable.json';
 /**
  * resolves the models of interactives placed by referenced LevelData: shop, depot and recycling-station
  * visual forms, and every other interactive's model (its template variant's, else the template's), always
- * shown
+ * shown. a model that is a doodad-group shell also places its form models, one per group level, under a
+ * per-level `doodadGroups:<level id>` control
  *
- * @param context install readers
+ * @param context install readers and the bundle resolver
  * @param scene owning map
  * @param level restricts decoding to one level, or null for the map
  * @param partition numeric level tags
@@ -57,7 +60,7 @@ const TABLE = 'Data/Json/Interactive/InteractiveTable.json';
  * @throws {FormatError} for broken authored references or malformed supported records
  */
 export const loadInteractiveFacilities = async (
-	context: Pick<Context, 'vfs' | 'world'>,
+	context: Pick<Context, 'vfs' | 'world' | 'resolver'>,
 	scene: string,
 	level: string | null,
 	partition: LevelPartition | undefined,
@@ -196,21 +199,22 @@ export const loadInteractiveFacilities = async (
 		authored.set(key, { name: null, initial: 0, forms: [formOf(modelId, base?.scale ?? 1)] });
 	}
 
-	// the manifest maps hashes to paths only, and each path decompresses on read: stop once all are found
-	const wanted = new Set(
-		[...authored.values()].flatMap((template) => template.forms.map((form) => form.prefab)),
-	);
 	const hashes = new Map<string, bigint>();
 	const manifest = await world.manifest();
-	for (const asset of manifest.assets()) {
-		if (hashes.size === wanted.size) {
-			break;
+	// the manifest maps hashes to paths only, and each path decompresses on read: stop once all are found
+	const findHashes = (paths: Iterable<string>): void => {
+		const missing = new Set([...paths].filter((path) => !hashes.has(path)));
+		for (const asset of manifest.assets()) {
+			if (missing.size === 0) {
+				break;
+			}
+			const path = manifest.assetPath(asset);
+			if (missing.delete(path)) {
+				hashes.set(path, asset.pathHash);
+			}
 		}
-		const path = manifest.assetPath(asset);
-		if (wanted.has(path)) {
-			hashes.set(path, asset.pathHash);
-		}
-	}
+	};
+	findHashes(authored.values().flatMap((template) => template.forms.map((form) => form.prefab)));
 	const hashOf = (prefab: string): bigint => {
 		const hash = hashes.get(prefab);
 		if (hash === undefined) {
@@ -219,26 +223,63 @@ export const loadInteractiveFacilities = async (
 		return hash;
 	};
 
+	// doodad-group centres draw an empty shell; their visible model is one form per group level
+	const doodads = new Map<string, { groupLevel: number; form: { prefab: string; scale: number } }[]>();
+	{
+		const resolver = await context.resolver();
+		const shells = new Map<string, DoodadShell | null>();
+		for (const [key, template] of authored) {
+			if (template.name !== null) {
+				continue;
+			}
+			const [{ prefab, scale }] = template.forms;
+			let shell = shells.get(prefab);
+			if (shell === undefined) {
+				try {
+					// oxlint-disable-next-line no-await-in-loop -- one root per distinct prefab
+					const root = await resolver.findUnique(
+						{ hash: hashOf(prefab), path: prefab },
+						UnityClass.GameObject,
+					);
+					// oxlint-disable-next-line no-await-in-loop -- as above
+					shell = await readDoodadShell(resolver, root);
+				} catch (error) {
+					if (!(error instanceof FormatError)) {
+						throw error;
+					}
+					unsupported.push({ path: prefab, reason: error.message });
+					shell = null;
+				}
+				shells.set(prefab, shell);
+			}
+			if (shell === null) {
+				continue;
+			}
+			const levels = [];
+			for (const [groupLevel, modelId] of shell.forms.entries()) {
+				if (modelId === null) {
+					continue;
+				}
+				if (!(modelId in modelData)) {
+					unsupported.push({ path: prefab, reason: `doodad form ${modelId} is not in the model table` });
+					continue;
+				}
+				levels.push({ groupLevel, form: formOf(modelId, scale) });
+			}
+			doodads.set(key, levels);
+		}
+		findHashes(doodads.values().flatMap((levels) => levels.map(({ form }) => form.prefab)));
+	}
+
 	const models: StructureModel[] = [];
 	const progressions: ProgressionInfo[] = [];
+	const doodadControls = new Map<string, ProgressionInfo>();
 	for (const { path, levelId, levelTag, row } of placed) {
 		const template = authored.get(row.template);
 		if (template === undefined) {
 			continue;
 		}
-		const id = `facility:${row.id}`;
-		if (template.name !== null) {
-			progressions.push({
-				id,
-				kind: 'facility',
-				key: row.template,
-				name: `${template.name} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
-				levelId,
-				levels: template.forms.map((_, i) => i),
-				defaultLevel: template.initial,
-			});
-		}
-		for (const [form, model] of template.forms.entries()) {
+		const place = (model: { prefab: string; scale: number }, visibility: ConditionalSetInfo): void => {
 			// zero is the authored "no scale override" sentinel on LevelInteractiveData.
 			const scale = row.modelScale > 0 ? row.modelScale : model.scale;
 			models.push({
@@ -250,11 +291,52 @@ export const loadInteractiveFacilities = async (
 				},
 				levelTag,
 				source: `${path}#${row.id}`,
-				visibility:
-					template.name === null
-						? { alternatives: [[]] }
-						: { alternatives: [[{ control: id, mask: (1 << form) >>> 0 }]] },
+				visibility,
 			});
+		};
+		if (template.name === null) {
+			place(template.forms[0], { alternatives: [[]] });
+			const doodad = doodads.get(row.template);
+			if (doodad === undefined || doodad.length === 0) {
+				continue;
+			}
+			const id = `doodadGroups:${levelId}`;
+			let control = doodadControls.get(id);
+			if (control === undefined) {
+				control = {
+					id,
+					kind: 'doodadGroups',
+					key: levelId,
+					name: 'Resource nodes',
+					levelId,
+					levels: [],
+					defaultLevel: 0,
+				};
+				doodadControls.set(id, control);
+				progressions.push(control);
+			}
+			for (const { groupLevel, form } of doodad) {
+				if (!control.levels.includes(groupLevel)) {
+					control.levels = [...control.levels, groupLevel].toSorted((a, b) => a - b);
+				}
+				// shell slot activity varies (one or all four), so default to the fully grown form
+				control.defaultLevel = Math.max(control.defaultLevel, groupLevel);
+				place(form, { alternatives: [[{ control: id, mask: (1 << groupLevel) >>> 0 }]] });
+			}
+			continue;
+		}
+		const id = `facility:${row.id}`;
+		progressions.push({
+			id,
+			kind: 'facility',
+			key: row.template,
+			name: `${template.name} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
+			levelId,
+			levels: template.forms.map((_, i) => i),
+			defaultLevel: template.initial,
+		});
+		for (const [form, model] of template.forms.entries()) {
+			place(model, { alternatives: [[{ control: id, mask: (1 << form) >>> 0 }]] });
 		}
 	}
 	return { models, progressions, unsupported };

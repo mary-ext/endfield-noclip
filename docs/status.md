@@ -113,6 +113,8 @@ packs or renders correctly.
   doors stay as authored and every state's effects show at once (range rings, lock marks).
   interactives whose model id is missing from the model table, and LevelData with populated blackbox
   settings, are reported in `out/<map>/debug/unsupported-interactives.json` and omitted
+- resource nodes (doodad groups) share one level control per level; the game's per-group level and
+  its source in LevelData aren't read ([scene states](game-data/scene-states.md#doodad-groups))
 - interactive facilities are gathered from levels whose map is the packed scene, so a scene streamed
   by levels of other maps (`base01_lv001`, streamed by `base01_lv003` and `indie_dg014`) probably
   loses their facilities; select levels by `defaultState.exportedSceneConfigPath` instead

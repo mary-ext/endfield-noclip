@@ -252,7 +252,8 @@ harvestable plants, shops. their models come from four sources:
 4. `Data/Json/GameplayConfig/ModelTable.json` maps each model id to a prefab path and `scaleFactor`.
 
 a placement draws its variant's model, else the template's, always visible. templates without a
-model (triggers, logic) draw nothing.
+model (triggers, logic) draw nothing. a model that is a doodad-group shell draws nothing itself and
+places one form per group level instead ([scene-states.md](scene-states.md#doodad-groups)).
 
 the three facility templates (`int_system_domain_shop`, `int_system_domain_depot`,
 `int_doodad_core_recycle`) instead walk their components up to the model-upgrade component

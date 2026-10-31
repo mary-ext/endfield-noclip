@@ -36,7 +36,8 @@ export interface VisibilityGroup {
 export interface ProgressionInfo {
 	/** `${kind}:${key}`, e.g. `settlement:stm_hongs_1` */
 	id: string;
-	kind: 'settlement' | 'poi' | 'factoryRegion' | 'facility';
+	/** `doodadGroups`: one per level, the group level (1 to 4) of its resource nodes (ore, plants) */
+	kind: 'settlement' | 'poi' | 'factoryRegion' | 'facility' | 'doodadGroups';
 	/** display label when resolved */
 	name?: string;
 	key: string;

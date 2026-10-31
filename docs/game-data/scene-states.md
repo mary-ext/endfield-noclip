@@ -17,6 +17,7 @@ the viewer sets from the camera.
 | variable gate              | `GlobalVarControlComp` / `MapVarControlComp` with `controlLoad` set                                     | toggle `<globalVar\|mapVar>:…:<compare>:<value>` | variable assumed to hold the highest value the scene compares it against |
 | progression                | resource-group `logicState` bitmask under a settlement / POI / factory-region controller                | progression `<kind>:<key>`                       | lowest authored level                                                    |
 | facility visual form       | interactive template model-upgrade list                                                                 | progression `facility:<entity id>`               | the template's base model                                                |
+| doodad group level         | doodad-shell postmodel's form list                                                                      | progression `doodadGroups:<level id>`            | the highest level (4)                                                    |
 | script group               | script-control component's default-load flag                                                            | toggle `script:<grid>:<ordinal>`                 | the stored default                                                       |
 | controller-less logic gate | resource-group `logicState` on an entity with no controller                                             | toggle `logic:…`                                 | off                                                                      |
 
@@ -200,6 +201,24 @@ the game keeps for them (open doors, unlocked region walls), and rows with anoth
 left out. templates without a data file of their own (the weapon-wall racks, some doors) and
 templates that name no model are reported or skipped.
 
+## doodad groups
+
+implemented in [`doodad-shell.ts`](../../packages/extractor/src/game/doodad-shell.ts) and
+[`interactive-facilities.ts`](../../packages/extractor/src/game/interactive-facilities.ts).
+
+resource nodes (ore outcrops, rabbit-hole plant mounds, special stones) are the centres of doodad
+groups, placed as interactives (`int_doodad_core_*` variants). their model is an empty shell: a
+script on the prefab root names one ModelTable id per group level 1 to 4, and lists one slot
+GameObject per level (slot 0 is empty) that the loaded form attaches under. every shell in the
+install has identity slots (a shell without them is reported and keeps only its own renderers).
+which slots the prefab leaves active varies (level 4 alone, or all four), so it says nothing about
+the shown level. form postmodels carry the same script with every form empty, so they aren't shells.
+
+the game sets each group's level at runtime from progression that isn't recovered, so every level
+with doodad groups gets one `doodadGroups:<level id>` progression ("Resource nodes") over the group
+levels its shells name, defaulting to the highest. each form is placed at the interactive's
+transform and shown under `1 << level`.
+
 ## script groups
 
 an entity with a script-control component stores a default-load flag (0 or 1): 0 means a script must
@@ -223,7 +242,7 @@ types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo
 - a `ConditionalSetInfo` is `alternatives: SceneRequirement[][]`, a disjunction of conjunctions. a
   requirement `{ control, mask }` passes when bit `value` of `mask` is set. a toggle requirement
   uses mask 2 (value 1); a progression requirement uses the group's `logicState`; a facility form
-  uses `1 << form`.
+  uses `1 << form`, a doodad form `1 << level`.
 - `conditionVisible` is true when every requirement of some alternative passes. a missing or
   out-of-range value fails, so a control absent from the manifest hides its content instead of
   showing it.
