@@ -63,6 +63,11 @@ export class PipelineCache {
 		return this.#pipelines.get(key);
 	}
 
+	/** @returns how many pipelines are still compiling */
+	get compiling(): number {
+		return this.#pending.size;
+	}
+
 	/** @returns compiled pipeline count */
 	get size(): number {
 		return this.#pipelines.size;

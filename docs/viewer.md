@@ -360,6 +360,9 @@ details:
 - **stats** publish every 250 ms and notify subscribers only when the JSON differs, so the React
   panels don't re-render on a still view.
 - **one traversal, many passes.** selection runs once per frame; shadow layers reuse its buckets.
+  frames that reuse the last selection (settling the antialiasing, drifting fog) keep the shadow
+  layers from the frame that drew them, unless a layer's fit moved or pipelines were still
+  compiling.
 - **few draws.** terrain is one draw; each mesh bucket is one instanced `drawIndexed` over its slice
   of the visible list; alpha-blended draws are sorted by geometry then material so runs share
   bindings, and depth-writing ones nearest first within each pipeline, which early depth testing

@@ -381,6 +381,10 @@ export class Viewer {
 	#viewProj = new Float32Array(16);
 	/** frames still to render so the temporal antialiasing settles after the view stopped changing */
 	#settleFrames = 0;
+	/** whether the shadow layers need drawing: the casters changed, or they weren't drawn last frame */
+	#shadowsStale = true;
+	/** each shadow layer's render matrix when it was last drawn */
+	#shadowFits = new Float32Array(16 * SHADOW_LAYERS);
 	/** seconds the flow noise has drifted; it only advances while playing */
 	#flowTime = 0;
 
@@ -1475,6 +1479,7 @@ export class Viewer {
 			this.#instances.prepareList(options.boxes ? meshSelection.boxes : [], meshSelection.buckets);
 			this.#meshes.prepare(meshSelection.buckets, scene.textures);
 		}
+		this.#shadowsStale = true;
 		this.#span('prepare');
 	}
 
@@ -1508,7 +1513,21 @@ export class Viewer {
 		const encoder = this.#profiler.instrument(device.createCommandEncoder({ label: 'frame' }));
 		this.#irradiance.encode(encoder);
 		let draws = 0;
-		cascadeOffsets.forEach((offset, i) => {
+		// the layers hold what they drew last until the casters or a layer's fit change; frames that only settle
+		// the antialiasing or drift the fog redraw nothing there
+		if (shadows) {
+			const fits = this.#shadowFits;
+			this.#shadows.layers.forEach((layer, i) => {
+				if (layer.render.some((value, k) => value !== fits[i * 16 + k])) {
+					fits.set(layer.render, i * 16);
+					this.#shadowsStale = true;
+				}
+			});
+		}
+		const drawShadows = this.#shadowsStale;
+		// pipelines still compiling would leave casters out
+		this.#shadowsStale = !shadows || this.#pipelines.compiling > 0;
+		(drawShadows ? cascadeOffsets : []).forEach((offset, i) => {
 			const pass = encoder.beginRenderPass({
 				label: `shadow layer ${i}`,
 				colorAttachments: [],
