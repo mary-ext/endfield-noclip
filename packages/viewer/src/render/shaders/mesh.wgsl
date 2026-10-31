@@ -1,8 +1,8 @@
-// instanced meshes with the HGRP surface essentials: base colour, tangent-space normal map, roughness from
-// the normal map's B channel or an MRO map, emission, and Lit's tri-channel mask, detail map, parallax
-// glow and layer blends, plus the erosion shader, opaque, alpha-tested or alpha-blended. quantized positions, octahedral normals and tangents and UV sets 0 and 1 from the geometry blob;
-// instances from this frame's visible list; draw parameters by the list entry's draw id (see materials.ts for
-// their layout).
+// instanced meshes with the HGRP surface shaders (materials.ts, docs/game-data/materials.md): Lit and its
+// layers, foliage, glass, matte paintings, erosion and VFXDitherAlpha, opaque, alpha-tested or
+// alpha-blended. quantized positions, octahedral normals and tangents, UV sets 0 and 1 and vertex colours from
+// the geometry blob; instances from this frame's visible list; draw parameters by the list entry's draw id
+// (`LookRow` in materials.ts lays them out).
 
 struct Row {
 	t0: vec4f,
@@ -617,7 +617,8 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		s.occlusion = mix(1.0, mask.b, draw.surface2.x);
 	}
 	if (has_detail) {
-		// PBR mode: the detail's alpha (roughness) and B; colour mode: B as roughness only
+		// PBR mode: roughness toward the detail's B, occlusion times its alpha; colour mode: roughness toward its
+		// alpha only
 		s.roughness = mix(s.roughness, mix(detail.a, detail.b, draw.detail.x), detail_pbr);
 		s.occlusion *= mix(1.0, mix(1.0, detail.a, draw.detail.x), detail_pbr);
 	}
@@ -645,8 +646,8 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		// alpha; with an MRO map 2 is the base alpha too and 3 the MRO map's alpha. a map still streaming reads 0
 		emission = saturate((map_channel(flags, draw.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
 	}
-	// emission is in the pre-exposed units of the light already. emitters that ignore the post exposure divide
-	// it out, so they keep their brightness however the exposure adapts
+	// emission is in the light's pre-exposed units already; emitters that ignore the post exposure divide it out
+	// (docs/game-data/materials.md#emission)
 	let tint = mix(s.albedo, vec3f(1.0), draw.emissive2.x);
 	s.emission = draw.emissive.rgb * emission * tint * mix(1.0, frame.ambient.y, draw.emissive2.z);
 
@@ -734,10 +735,10 @@ fn map_channel(flags: u32, channel: f32, base_a: f32, packed: vec4f, mask: vec4f
 	return mix(base_a, select(0.0, mask.a, mro), saturate(channel - 2.0));
 }
 
-// `_PARALLAX_MAP` (materials.ts): march the view ray down through the noise map as a height field, refine the
-// hit between the last two steps, and colour it from the pattern's G; then the Fresnel power and the pulse,
-// plus the brightening near the player.
-// the result is HDR emission before the mask
+// `_PARALLAX_MAP` (`parallaxParams` in materials.ts, docs/game-data/materials.md#lit-layers): march the view
+// ray down through the noise map as a height field, refine the hit between the last two steps, and colour it
+// from the pattern's G; then the Fresnel power and the pulse, plus the brightening near the player. the result
+// is HDR emission before the mask
 fn parallax_glow(
 	draw: Draw,
 	in: VertexOut,
@@ -803,7 +804,7 @@ fn parallax_glow(
 // `HGRP/Erosion` (`erosionLook` in materials.ts, parameters by `ErosionRow`): base and metal colours mixed by the
 // metal map, plus a parallax-offset noise layer and a flow band along the object's height. `packed` is the base
 // normal map, `mask` the metal map and `detail` the detail normal map; textures still streaming read as the
-// game's defaults (white, or flat normals)
+// game's defaults (white, flat normals, the ramp's grey-blue)
 fn erosion_surface(
 	draw: Draw,
 	in: VertexOut,

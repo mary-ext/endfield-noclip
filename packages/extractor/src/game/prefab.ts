@@ -92,6 +92,7 @@ export const readPrefabRenderers = async (
 					UnityClass.SkinnedMeshRenderer,
 					UnityClass.ParticleSystem,
 					UnityClass.ParticleSystemRenderer,
+					// LODGroup
 					205,
 				]
 			: [UnityClass.Transform];

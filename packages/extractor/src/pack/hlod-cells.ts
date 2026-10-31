@@ -1,7 +1,8 @@
 /**
  * the cells of HLOD clusters whose names lost them. cluster names (`HLOD<tier>_<i>_<j>_Cluster_…`) give the
  * cell on the tier's grid, but clamp negative coordinates to 0, and a cluster's bounds centre is a poor
- * stand-in since one large member can overhang its cell by hundreds of metres.
+ * stand-in since one large member can overhang its cell by hundreds of metres (see
+ * `docs/game-data/world.md#lod-and-hlod`).
  *
  * @module
  */

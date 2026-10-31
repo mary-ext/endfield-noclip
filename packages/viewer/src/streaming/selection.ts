@@ -1,14 +1,8 @@
 /**
  * the per-frame quadtree traversal. it decides what to draw (terrain patches, instance row ranges) from what
- * is resident, and tells the stream manager what it wants next, prioritised by screen-space error.
- *
- * - instances: REPLACE refinement. a node draws its HLOD while `SSE(geometricError) ≤ maxSse`, otherwise its
- *   children; a leaf refines into its detail blocks. until everything a refinement needs is resident the node
- *   keeps drawing its own HLOD, so there are no holes while streaming. disabled HLOD tiers are refined past.
- * - terrain: CDLOD. each level has a distance range derived from its sample spacing and the pixel-error target;
- *   a node subdivides while the next finer range reaches it, quadrants whose child page isn't resident are
- *   drawn from the parent page, and vertices morph to the coarser grid towards the end of their range. each
- *   patch is shaded from the finest resident surface page at or above its node.
+ * is resident, and tells the stream manager what it wants next, prioritised by screen-space error. the rules
+ * are in `docs/viewer.md#instance-selection` (REPLACE refinement over HLOD) and
+ * `docs/viewer.md#terrain-selection` (CDLOD).
  *
  * @module
  */
@@ -292,7 +286,7 @@ export class Selector {
 		const priority = this.#priority(node, sse, inView);
 		const hasHlod = this.#hasHlod(node, options);
 		const leaf = isLeaf(node);
-		// a leaf refines even without detail of its own (see docs/viewer.md, instance selection)
+		// a leaf refines even without detail of its own (`docs/viewer.md#instance-selection`)
 		const canRefine = !leaf || options.detail;
 		const refine = canRefine && (sse > options.maxSse || !hasHlod);
 

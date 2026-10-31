@@ -1,9 +1,10 @@
 // the sky, atmosphere fog and height fog as the composite and water passes apply them. needs
 // post-common.wgsl and atmosphere.wgsl.
 
-// the fog as HGRP's deferred lighting and sky apply it: the atmosphere fog, then the two-layer height fog, in
-// the game's own units, with the volumetric fog (volumetric-fog.wgsl) in front when it's on. the froxels then
-// cover the ray out to the fog's distance in view depth, and the height fog only what lies beyond.
+// the fog as the game's deferred lighting and sky apply it (docs/game-data/sky-and-fog.md#fog): the
+// atmosphere fog, then the two-layer height fog, in the game's own units, with the volumetric fog
+// (volumetric-fog.wgsl) in front when it's on. the froxels then cover the ray out to the fog's distance in
+// view depth, and the height fog only what lies beyond.
 
 // the volumetric fog integrated up to each slice: scattered light (rgb) and transmittance (a)
 @group(1) @binding(5) var froxel_texture: texture_3d<f32>;
@@ -122,8 +123,8 @@ fn fs_sky_mean() -> @location(0) vec4f {
 	return vec4f(sum / 16.0 * 2.0, 1.0);
 }
 
-// the atmosphere's absolute brightness isn't known (the game scales it by factors not read yet), so it's
-// matched to the ambient probe the game bakes from its sky: the same luminance looking up
+// the atmosphere's absolute brightness isn't known (the game scales it by factors that aren't recovered), so
+// it's matched to the ambient probe the game bakes from its sky: the same luminance looking up
 fn sky_scale() -> f32 {
 	let mean = textureLoad(sky_mean_texture, vec2i(0), 0).rgb;
 	return luminance(post.sky_up.rgb) / max(luminance(mean), 1e-6);

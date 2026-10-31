@@ -24,10 +24,7 @@ export interface BindLayouts {
 	instances: GPUBindGroupLayout;
 	/** group 2 of the mesh families: per-draw parameters (dequantization, material look), per-entry draw ids */
 	draw: GPUBindGroupLayout;
-	/**
-	 * group 3 of the mesh families: the material's base colour, normal, mask and emissive textures, the base
-	 * colour's sampler and one for the rest
-	 */
+	/** group 3 of the mesh families: the material's texture slots and its base, detail and parallax samplers */
 	materials: GPUBindGroupLayout;
 
 	terrainPipeline: GPUPipelineLayout;

@@ -85,7 +85,7 @@ export interface ViewerOptions {
 	/** enabled HLOD tiers 0–2 */
 	hlodTiers: [boolean, boolean, boolean];
 	wireframe: boolean;
-	/** draw instance stand-in boxes (the only instance representation until geometry streams) */
+	/** draw stand-in boxes for instances with no resident mesh LOD, or every instance without geometry */
 	boxes: boolean;
 	/** instance refinement threshold, px */
 	maxSse: number;
@@ -1513,7 +1513,7 @@ export class Viewer {
 				textureBias: options.textureBias,
 				casters: view.casters,
 				shadowLayers: shadows ? this.#shadows.volumes : null,
-				// the clock the effects' shaders scroll by
+				// particles move by the clock the effects' shaders scroll by
 				particles: {
 					time: performance.now() / 1000,
 					right: this.camera.right(),

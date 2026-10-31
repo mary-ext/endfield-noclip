@@ -22,7 +22,7 @@ test('growing a full range adds a new free range after the live allocations', ()
 	allocator.grow(6);
 	assert.deepEqual(allocator.allocate(2), { start: 4, count: 2 });
 	allocator.free(first);
-	// the freed range coalesces with nothing past the live range at the end
+	// the freed range at the start is the first fit again
 	assert.deepEqual(allocator.allocate(4), { start: 0, count: 4 });
 });
 

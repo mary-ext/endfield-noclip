@@ -45,6 +45,7 @@ export const tileAt = (
  * @param key tile address
  * @param level a coarser or equal level
  * @returns the ancestor at `level`
+ * @throws {RangeError} if `level` is finer than the tile's
  */
 export const tileAncestor = (key: TileKey, level: number): TileKey => {
 	const shift = key.level - level;

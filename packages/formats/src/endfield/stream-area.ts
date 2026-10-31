@@ -4,7 +4,7 @@ import { FlatBuffer } from '../binary/flatbuffer.ts';
 // `Data/DynamicStreaming/PC/Scene/<scene>/FBStreamArea.bytes` (DynamicStreaming group): the stream-area table.
 // its area ids are the `<areaId>` suffix of `InitChunkData_<x>_<z>_<sceneStateId>_<areaId>.bytes`, and the
 // `VisibleAreaGroup` values of DynamicStreaming entities. layout from Variante/endfield_research_kit (MIT,
-// `scripts/game_data/contracts/dynamic_stream_area_native.json`), checked against the current map02 file:
+// `scripts/game_data/contracts/dynamic_stream_area_native.json`), checked against map02's file:
 //
 //   root (FBStreamAreaTotalData)
 //     0 [i32] TotalAreas         1 [i32] RootVisible        2 [i32] AreaVisibleGroups
@@ -14,8 +14,8 @@ import { FlatBuffer } from '../binary/flatbuffer.ts';
 //   Bounds  = Coord min, Coord max, f32 minHeight, f32 maxHeight;  Coord = f32 x, f32 y (world x, z)
 // slots 7–9 (`HlodUnloadBounds`, `HlodUnloadTriggers`, `HlodUnloadPoints`) are not decoded.
 //
-// the client seeds the active area set from RootVisible; while the streaming centre is inside an area's trigger
-// it shows that area's visible slice instead. area 0 is the default (always-present) scenery.
+// while the streaming centre is inside one or more triggers the client shows the union of those areas' visible
+// slices, otherwise RootVisible (docs/game-data/world.md#stream-areas). area 0 is the default scenery.
 
 // #region types
 

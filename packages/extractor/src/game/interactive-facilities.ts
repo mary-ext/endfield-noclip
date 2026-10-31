@@ -98,10 +98,10 @@ const facilityModels = (
 const TABLE = 'Data/Json/Interactive/InteractiveTable.json';
 
 /**
- * resolves the models of interactives placed by referenced LevelData: shop, depot and recycling-station
- * visual forms, and every other interactive's model (its template variant's, else the template's), always
- * shown. a model that is a doodad-group shell also places its form models, one per group level, under a
- * per-level `doodadGroups:<level id>` control
+ * resolves the models of interactives placed by referenced LevelData: the visual forms of the facility
+ * templates in {@link TEMPLATES}, each under a `facility:<id>` control, and every other interactive's model
+ * (its template variant's, else the template's), always shown. a model that is a doodad-group shell also
+ * places its form models, one per group level, under a per-level `doodadGroups:<level id>` control
  *
  * @param context install readers and the bundle resolver
  * @param scene owning map

@@ -22,7 +22,7 @@ struct Frame {
 	sun_color: vec4f,
 	// the ambient probe in Unity's shader form: SHAr, SHAg, SHAb, SHBr, SHBg, SHBb, SHC
 	sh: array<vec4f, 7>,
-	// x = indirect specular factor, y = 1 / post exposure (scales emission that ignores it), z = 1 with a reflection cubemap, w = its finest mip count - 1
+	// x = indirect specular factor, y = 1 / post exposure (scales emission that ignores it), z = 1 with a reflection cubemap, w = its last mip level (mip count − 1)
 	ambient: vec4f,
 	// world position of each irradiance clipmap level's centre (0.5 m, 2 m, 8 m probes), w = 1 once filled
 	irradiance: array<vec4f, 3>,
@@ -164,6 +164,7 @@ fn far_shadow(rel: vec3f, normal: vec3f) -> f32 {
 
 // the sun's visibility at a camera-relative position. as in the game: sharp cascades out to a reach, dithered
 // between neighbours over the outer tenth of each one's sphere, fading into the coarse far layer before the reach
+// (docs/game-data/lighting.md#shadows)
 fn sun_shadow(rel: vec3f, normal: vec3f, px: vec2f) -> f32 {
 	if (frame.shadow_fade.w < 0.5) {
 		return 1.0;
@@ -203,6 +204,7 @@ fn sun_shadow(rel: vec3f, normal: vec3f, px: vec2f) -> f32 {
 
 // the sun's visibility under the cloud shadow at a camera-relative position: a tiling texture projected along
 // the sun onto the centre's height plane, switching to a coarser sampling of it far from the centre
+// (docs/game-data/lighting.md#cloud-shadows)
 fn cloud_shadow(rel: vec3f) -> f32 {
 	if (frame.cloud_shadow[0].w < 0.5) {
 		return 1.0;
@@ -307,11 +309,8 @@ fn default_surface(albedo: vec3f, normal: vec3f) -> Surface {
 	return s;
 }
 
-// the game's rain wetness on a surface at a camera-relative position (docs/game-data/environment.md, "wetness"):
-// it covers surfaces out to a range around the camera, fading to the far wetness beyond, less on vertical
-// faces, and darkens porous surfaces or smooths sleek ones. flat ground near the camera holds standing water,
-// a near mirror. the game keeps sheltered surfaces drier through a rain occlusion map the viewer doesn't
-// render, so everything counts as open to the sky
+// the game's rain wetness on a surface at a camera-relative position (docs/game-data/environment.md#wetness).
+// the rain occlusion map isn't rendered, so everything counts as open to the sky
 fn rain_wet_surface(s_in: Surface, rel: vec3f) -> Surface {
 	let p0 = frame.wetness[0];
 	if (p0.x <= 0.0) {
@@ -403,7 +402,8 @@ fn irradiance_outside(d: vec3f, h: vec2f, fade: f32) -> f32 {
 }
 
 // diffuse ambient: the irradiance volume's L1 probes blended over the clipmap levels, with the ambient probe
-// where they don't reach or are invalid (HGRP DeferredLighting's indirect pass, without its jitter)
+// where they don't reach or are invalid, as the game's deferred indirect lighting does without its jitter
+// (docs/game-data/lighting.md#ambient)
 fn ambient_irradiance(world: vec3f, n: vec3f) -> vec3f {
 	let base = ambient_probe(n);
 	if (frame.irradiance[2].w < 0.5) {
@@ -459,7 +459,7 @@ fn ambient_irradiance(world: vec3f, n: vec3f) -> vec3f {
 const LUMINANCE = vec3f(0.2126729, 0.7151522, 0.0721750);
 
 // the game's scale on a sky reflection, from the surface's diffuse irradiance against the sky probe's L1 along the
-// normal (docs/game-data/lighting.md, "ambient")
+// normal (docs/game-data/lighting.md#ambient)
 fn reflection_normalisation(irradiance: vec3f, n: vec3f) -> f32 {
 	let d = dot(irradiance, LUMINANCE);
 	let sky = LUMINANCE.x * frame.sh[0] + LUMINANCE.y * frame.sh[1] + LUMINANCE.z * frame.sh[2];
@@ -567,6 +567,7 @@ fn local_light_at(i: u32, rel: vec3f) -> LocalLight {
 // Lambert without the 1/π and without (1 − F), so in the units of the light's colour the result is
 // `colour · (diffuse + π · specular)`. a soft source radius widens the lobe; a tube takes the point of the
 // segment nearest the reflection for its specular. the game's multiple-scattering term is left out
+// (docs/game-data/lighting.md#local-lights)
 fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_color: vec3f, f0: vec3f, roughness: f32) -> vec3f {
 	let words = light_bin_words(px, rel);
 	if (words.x == 0xffffffffu) {

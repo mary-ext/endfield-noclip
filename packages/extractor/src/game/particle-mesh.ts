@@ -67,8 +67,8 @@ const curveValue = (curve: TypeTreeObject): number | null => {
  * @param renderer its `ParticleSystemRenderer`
  * @param emitter the emitter's local transform
  * @returns the particle mesh's matrix in the emitter's parent space, or `null` when the system doesn't keep a
- *   single mesh particle in a fixed orientation and look (camera-facing alignment, random shapes, several
- *   particles, curves, a texture sheet)
+ *   single mesh particle from awake in a fixed orientation and look (camera-facing alignment, velocity
+ *   alignment without a box shape, several particles, curves, a texture sheet)
  */
 export const frozenParticleMatrix = (
 	system: TypeTreeObject,

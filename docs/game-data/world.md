@@ -38,7 +38,7 @@ change fails loudly. fields the project uses:
 | field                                             | meaning                                                                                                                                 |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`, `idNum`                                     | string id and the numeric id MapConfig's grid stores                                                                                    |
-| `mapId`                                           | the level's map (stored as `mapIdStr`), e.g. `map02`; not always its streaming scene, see below                                         |
+| `mapId`                                           | the level's map (stored as `mapIdStr`), e.g. `map02`; not always its streaming scene, see above                                         |
 | `defaultState.exportedSceneConfigPath`            | streaming scene asset, e.g. `map02/map02_streaming.asset`                                                                               |
 | `defaultState.sourceSceneName`                    | the level's art sub-scene, e.g. `map02_lv001_art`                                                                                       |
 | `levelGrids`                                      | the 128 m cells the level owns                                                                                                          |
@@ -218,9 +218,9 @@ at once puts those rocks in front of the inn's view.
 
 the packer gates non-default-area content by its areas (see
 [scene-states.md](scene-states.md#how-the-package-encodes-conditions)) and ships the table; the
-viewer runs the trigger test at the camera. of the scenes packed so far (map01, map02, base01_lv001,
+viewer runs the trigger test at the camera. of the scenes packed (map01, map02, base01_lv001,
 base01_lv002), only map02 has area content. DynamicStreaming entities carry `VisibleAreaGroup`
-values too, which aren't read yet, so dynamic content ignores areas.
+values too, which aren't read, so dynamic content ignores areas.
 
 code: [stream-area.ts](../../packages/formats/src/endfield/stream-area.ts) (parsing),
 [stream-areas.ts](../../packages/package-format/src/stream-areas.ts) (the packaged table and the
@@ -285,7 +285,8 @@ MonoBehaviour at
 - `heightScale`: metres spanned by the 15-bit height range
 - `terrainSize`: root edge length, a power-of-two multiple of 64 m
 - `nodeData`: a complete breadth-first quadtree (`index = (4^l − 1)/3 + z·2^l + x`) with per-node
-  min/max height and a `maxHeightError`, which the packer uses as the terrain node's error
+  min/max height and a `maxHeightError`. the packer stores `maxHeightError` with each height page,
+  but nothing reads it: a node's error is a placeholder ([below](#how-the-packer-files-instances))
 - `layerData`: the close-up material layers by ordinal; see below
 - `sectorSplatInfo`: one u64 per 64 m sector, a bitmask of the layer ordinals the sector uses
   (checked against the index map on map02); the packer doesn't need it
@@ -317,8 +318,9 @@ near the camera the game draws a blend of tiling material layers instead of the 
   `diffuse · diffuseScale`, plus `(tint − mean) · a⁴` from the leaf's `T` page, `mean` being the
   blended mean albedos. the blended tangent normal is oriented on the baked normal, with tangent
   `cross(n, +Z)`
-- **projection**: world position times the layer's repeats per metre, on the x, y or z plane picked
-  by the baked normal's `|n|⁸` weights (the game picks one plane per pixel at random)
+- **projection**: world position times the layer's repeats per metre, on the x, y and z planes. the
+  viewer blends the three by the baked normal's `|n|⁸` weights; the game picks one plane per pixel
+  at random
 
 ### puddles
 
@@ -333,9 +335,9 @@ same `w` as above), far away a flat 0.5. with `w = sat((S.a − ground) / 0.46)`
 layers with parallax enabled use a parallax-weighted height instead of `Σ w · h` in the game; the
 viewer doesn't pack those settings, so it always uses the plain weighted height. the viewer only has
 leaf `S` pages, so puddles stop where splat pages stop loading. the reflections in the puddles come
-from the viewer's screen-space reflections ([lighting](lighting.md#ambient)).
+from the viewer's screen-space reflections ([lighting](lighting.md#screen-space-reflections)).
 
-not reproduced: the cliff projection driven by the `C` page, parallax from the cone maps, and rain
+not drawn: the cliff projection driven by the `C` page, parallax from the cone maps, and rain
 ripples on puddles.
 
 `terrain scenes|tiles|export-heights` inspects and exports the data.
@@ -362,8 +364,14 @@ level in very few triangles.
   coordinates clamped to 0 (west and south of the terrain origin every cluster is named on cell 0).
   one large member can stretch a cluster's bounds hundreds of metres past its cell. their draw range
   is unbounded, so HLOD visibility is decided by the HLOD/streaming system, not by LODGroup. they
-  occur only in always-loaded (scene state 0) files. HLOD0 cells are 64 m, doubling per tier; the
-  pack report counts how many cluster names agree with the tile computed from their position.
+  occur only in always-loaded (scene state 0) files, and only the `pc` HLOD platform variant ships.
+  Jingyu's tiers hold 469 meshes / 451k triangles (HLOD0), 177 / 226k (HLOD1) and 69 / 45k (HLOD2).
+  the number after a cluster's hash (`_250`, `_600`) is its height rounded to 50 m, not a switch
+  distance. HLOD0 cells are 64 m, doubling per tier: 93.9 % of map02 cluster centres (91.0 % of
+  Jingyu's) lie in the 64 m-based cell their name gives, the rest overhang. the pack report counts
+  how many cluster names agree with the tile computed from their position. a cluster named on cell 0
+  is filed under the cell, among those its bounds span at or below 0, whose detail instances it
+  contains most often ([hlod-cells.ts](../../packages/extractor/src/pack/hlod-cells.ts)).
 
 ### how the packer files instances
 

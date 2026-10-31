@@ -1,5 +1,5 @@
-// fills one level of the irradiance clipmap from the resident cells: the game's IrradianceVolumeUpdateV3CS
-// (FullUpdateClipmap0..2), with a window of resident cells in place of its top-level hash. one invocation per
+// fills one level of the irradiance clipmap from the resident cells as the game's GPU update pass does
+// (docs/game-data/irradiance.md), with a window of resident cells in place of its top-level hash. one invocation per
 // texel; texel t holds the probe whose index along each axis is congruent to t modulo the clipmap's size, so
 // the clipmap is toroidal and the lighting samples it with a repeating sampler. a texel without a probe takes
 // the next coarser level's value, so levels are filled coarse to fine.

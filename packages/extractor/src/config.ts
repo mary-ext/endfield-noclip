@@ -13,6 +13,7 @@ export interface LocalConfig {
 	keys: KeyConfig;
 }
 
+/** key material as stored in the local config, hex-encoded */
 export interface KeyConfig {
 	/** 32-byte ChaCha20 key for `.blc` catalogs and encrypted logical files, hex */
 	vfsKey: string;

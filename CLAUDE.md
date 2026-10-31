@@ -1,7 +1,7 @@
 Endfield's game levels in the browser: an offline extractor turns a local game install into a
 package, and a WebGPU viewer streams that package one level at a time.
 
-Last verified: 2026-10-29
+Last verified: 2026-10-31
 
 ## layout
 
@@ -105,7 +105,7 @@ Last verified: 2026-10-29
   commit messages must not reference paths inside it or depend on its contents. when a finding there
   settles, write it into the matching `docs/` page, following that page's rules on what stays out
 - to see a change in the viewer, drive it with `agent-browser` as described in
-  [docs/viewer.md](docs/viewer.md)
+  [docs/driving-the-viewer.md](docs/driving-the-viewer.md)
 - before building a decoder, dumper, or other reverse-engineering tool, search GitHub
   (`gh search code '<identifier>'`, `gh search repos`) for existing Endfield tooling and build only
   the missing part. MIT code can be adapted; GPL, AGPL, and non-commercial tools are reference only

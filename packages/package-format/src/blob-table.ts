@@ -52,6 +52,7 @@ const isBlobKind = enumGuard(BlobKind);
  * @param blobs records in index order
  * @returns the encoded table
  * @throws {RangeError} if an offset or length exceeds 32 bits
+ * @throws {PackageFormatError} if a hash isn't 32 lowercase hex digits
  */
 export const encodeBlobTable = (blobs: readonly BlobRecord[]): Uint8Array => {
 	const out = new Uint8Array(TABLE_HEADER_SIZE + blobs.length * BLOB_SIZE);

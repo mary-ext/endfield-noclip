@@ -158,8 +158,11 @@ export interface WaterSurfaceEntry {
 	bounds: Bounds;
 	/** index into {@link WaterTable.configs} */
 	config: number;
-	/** bit mask of the game's `HGWaterRenderType` (1 `Proxy`, 2 `LOD`); 1 or 2 in the current client */
+	/** bit mask of the game's `HGWaterRenderType` (1 `Proxy`, 2 `LOD`) */
 	renderTypeMask: number;
-	/** the game's per-surface `param1`; `w` is always 1, `x`/`y`/`z` meaning unknown */
+	/**
+	 * the game's per-surface `param1`: (wetness offset (m), height layer 0–3, 1 to sort by distance, 1 to wet
+	 * the ground around it); see `docs/game-data/water.md#placements-initchunkdata-component-30`
+	 */
 	param1: Vec4;
 }

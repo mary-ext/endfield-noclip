@@ -1,5 +1,6 @@
 /**
- * the canvas swapchain and the targets the main pass renders into, kept at the canvas's device-pixel size.
+ * the canvas swapchain, kept at the canvas's device-pixel size, and the targets the main and transparent
+ * passes render into.
  *
  * the main pass renders HDR radiance and its ambient part, one sample per pixel at the render size (the
  * canvas size times the render scale); depth is kept for the post passes (ambient occlusion, fog, sky).
@@ -17,7 +18,7 @@ export const DEPTH_FORMAT: GPUTextureFormat = 'depth32float';
 
 /**
  * {@link DEPTH_FORMAT} plus a stencil buffer, cleared to 0 and written only by the effects that mask each
- * other (`LookStencil` in materials.ts); needs the `depth32float-stencil8` feature
+ * other (`LookStencil` in render/materials.ts); needs the `depth32float-stencil8` feature
  */
 export const DEPTH_STENCIL_FORMAT: GPUTextureFormat = 'depth32float-stencil8';
 

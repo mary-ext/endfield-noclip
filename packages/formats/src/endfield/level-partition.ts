@@ -3,19 +3,10 @@ import { FormatError } from '../binary/binary-reader.ts';
 import type { LevelConfig } from './level-config.ts';
 import { CELL_SIZE, cellOwnerIdNum, type MapConfig } from './map-config.ts';
 
-// exact level membership for an open-world map. three sources agree by construction and are cross-checked:
-//
-// - MapConfig.levelIds: which level owns each 128 m cell (the streaming footprint)
-// - LevelConfig.levelGrids: the same cells, listed per level
-// - entity id top 5 bits (`id >>> 27`): the level that authored the entity
-//
-// in a multi-level map the tag is the 1-based ordinal of the level among the map's grid-owning levels sorted
-// by id. in map02 that equals lvNNN (lv001–lv010 all exist); in map01 lv004 doesn't exist, so lv005–lv007
-// carry tags 4–6; tag 0 is a small map-wide shared set and 31 holds generated colliders. single-level scenes
-// (dungeons, Dijiang) tag all content 0, so there the one level owns tag 0. both rules are verified against
-// pivot placement (`voteLevelTags`). content ownership follows the tag, not position: a level's scenery may
-// sit in a neighbour's cell or in a cell no level owns (backdrop/skyline), and border cells hold several
-// levels' entities without duplicating them.
+// level membership for a map from MapConfig.levelIds, LevelConfig.levelGrids and the entity id's level tag
+// (`id >>> 27`). in a multi-level map the tag is the 1-based ordinal of the level among the map's grid-owning
+// levels sorted by id; a single-level map's one level owns tag 0. content ownership follows the tag, not
+// position (docs/game-data/world.md#the-level-partition).
 
 // #region types
 

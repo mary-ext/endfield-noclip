@@ -2,11 +2,9 @@
  * Unity `Mesh` (class 43) decoder for Unity 2021.3 as shipped by Endfield: vertex channels/streams, the index
  * buffer and submeshes, out of a TypeTree-decoded object plus its `m_StreamData` payload.
  *
- * channel/stream layout and the vertex format enum follow AssetStudio/AnimeStudio's `Mesh.cs` (MIT). Endfield
- * packs normals into one 32-bit word per vertex: the normal channel's dimension byte reads `0x31`, i.e. the
- * low nibble (the real dimension) is 1 and the high nibble flags the packing. the word holds a 10:10
- * octahedral normal in bits 0–19 (signed, ÷511), and bits 20–31 carry further data (see
- * {@link unpackHgNormal}).
+ * channel/stream layout and the vertex format enum follow AssetStudio/AnimeStudio's `Mesh.cs` (MIT). most
+ * Endfield meshes pack the normal into one 32-bit word, flagged by the dimension byte's high nibble
+ * ({@link unpackHgNormal}, `docs/game-data/assets.md#mesh`).
  */
 
 import { FormatError } from '../binary/binary-reader.ts';
@@ -464,7 +462,7 @@ const takeComponents = (data: Float32Array, stride: number, keep: number): Float
 
 // #region packed normals
 
-/** the integer range of the 10-bit signed octahedral components (`0.00195694715 = 1/511` in the game's shader) */
+/** the integer range of the 10-bit signed octahedral components; the game divides by 511, not 512 */
 export const OCT10_RANGE = 511;
 
 /**
@@ -509,11 +507,10 @@ const octScratch: [number, number] = [0, 0];
 
 /**
  * decodes Hypergryph's packed vertex normal. bits 0–9 and 10–19 are signed 10-bit octahedral coordinates
- * (÷{@link OCT10_RANGE}); the normal is the standard octahedral unfold of them, normalized. bits 20–31 aren't
- * part of the normal (the game's vertex shader reads bits 20–29 as a third signed field, plus flags in bits
- * 30 and 31).
+ * (÷{@link OCT10_RANGE}); the normal is the standard octahedral unfold of them, normalized. bits 20–31 hold
+ * tangent-frame data that isn't decoded.
  *
- * the decode mirrors the shader-derived routine in AnimeStudio's `MeshHelper.DecompressEndfieldNormal` (MIT).
+ * the decode mirrors AnimeStudio's `MeshHelper.DecompressEndfieldNormal` (MIT).
  *
  * @param word the 32-bit packed value
  * @param out receives the unit normal

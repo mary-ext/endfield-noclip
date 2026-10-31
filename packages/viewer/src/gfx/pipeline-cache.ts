@@ -1,11 +1,11 @@
 /**
- * shader-module and pipeline caching. pipelines are created asynchronously up front (`prepare`) so streaming
- * never compiles anything mid-flight.
+ * shader-module and pipeline caching. pipelines compile asynchronously (`prepare`), so a draw whose pipeline
+ * isn't ready is skipped rather than stalling the frame.
  *
  * @module
  */
 
-/** caches shader modules by source and render pipelines by a caller-chosen key */
+/** caches shader modules by label and render pipelines by a caller-chosen key */
 export class PipelineCache {
 	#device: GPUDevice;
 	#modules = new Map<string, GPUShaderModule>();

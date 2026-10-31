@@ -4,9 +4,26 @@ endfield-noclip is four workspace packages under `packages/`. the extractor read
 install with the decoders in `formats` and writes a viewer package to disk in the layout
 `package-format` defines; the viewer streams that package in the browser and renders it with WebGPU.
 this page covers what each package owns, how they depend on each other, and the decisions that shape
-the whole pipeline. the extractor's commands and internals are in [extraction.md](extraction.md),
-the package layout in [package-format.md](package-format.md), the renderer in
-[viewer.md](viewer.md).
+the whole pipeline.
+
+| page                                                         | covers                                                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| [extraction.md](extraction.md)                               | the extractor's commands, keys, container layers and `pack`                |
+| [package-format.md](package-format.md)                       | the package layout, tables and binary encodings                            |
+| [viewer.md](viewer.md)                                       | loading, streaming, the render frame and GPU resources                     |
+| [driving-the-viewer.md](driving-the-viewer.md)               | opening, posing, inspecting and profiling the viewer from an agent         |
+| [status.md](status.md)                                       | the index of known gaps                                                    |
+| [game-data/world.md](game-data/world.md)                     | scenes, maps, levels, chunk files, stream areas, terrain, LOD and HLOD     |
+| [game-data/assets.md](game-data/assets.md)                   | Unity objects, asset resolution, decoders, prefabs, dynamic structures     |
+| [game-data/scene-states.md](game-data/scene-states.md)       | scene states, load gates, progressions and how the package encodes them    |
+| [game-data/environment.md](game-data/environment.md)         | environment phases and volumes, blending, weather                          |
+| [game-data/lighting.md](game-data/lighting.md)               | sun, shadows, ambient, reflections, local lights; index of rendering pages |
+| [game-data/materials.md](game-data/materials.md)             | HGRP surface shaders                                                       |
+| [game-data/effects.md](game-data/effects.md)                 | `HGRP/Effect/*` scenery effects                                            |
+| [game-data/sky-and-fog.md](game-data/sky-and-fog.md)         | atmosphere, clouds, celestial layers, fogs                                 |
+| [game-data/post-processing.md](game-data/post-processing.md) | exposure, light shafts, lens flare, bloom, GTAO, grading                   |
+| [game-data/irradiance.md](game-data/irradiance.md)           | the baked irradiance volume                                                |
+| [game-data/water.md](game-data/water.md)                     | open-world water                                                           |
 
 ## data flow
 
@@ -81,6 +98,14 @@ always-resident `core.czar` plus shard and asset archives (layout in
 output and CLI tooling; the package keeps its own blob index in the core, so the viewer range-reads
 any blob without parsing an archive header. blobs are content-addressed, so a mesh or texture used
 by several levels or tiles is stored once.
+
+**a renderer of our own on WebGPU.** three.js's WebGL renderer has no compute, so culling and LOD
+would stay on the CPU, and its per-object scene graph cost a prototype 15 ms of CPU at 4.2k draws.
+three.js's WebGPU renderer keeps per-object render lists and bind groups and compiles node materials
+per material, so GPU-driven rendering would fight the abstraction. Babylon.js would put HGRP shaders
+through ShaderMaterial in a heavy runtime and still leave GPU culling and LOD to us.
+multi-draw-indirect isn't available in Chrome on macOS, so the draw loop stays replaceable by one
+MDI call without depending on it. WebGL2 is out of scope.
 
 **the repo holds code, never keys or game content.** the game's ToS bans reverse engineering, and
 Hypergryph has had a VFS decryptor removed from GitHub by DMCA. keys are derived from the user's

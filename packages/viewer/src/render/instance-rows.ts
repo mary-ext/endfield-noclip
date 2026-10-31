@@ -94,7 +94,7 @@ export interface InstanceRows {
 
 /**
  * row: f32×12 transform rows (relative to the block origin), f32×3 bounds centre (relative), u32 block slot,
- * f32×3 half extents, u32 info (the row's {@link RowKind}, for the debug boxes).
+ * f32×3 half extents, u32 info (the row's {@link RowKind}; see {@link rowInfo} for the rest of the word).
  *
  * the block slot is left 0; {@link assignBlockSlot} sets it once the block gets a slot.
  *

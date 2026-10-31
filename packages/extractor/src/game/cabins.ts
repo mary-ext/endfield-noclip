@@ -10,14 +10,10 @@ import { VfsGroup } from '../hg/vfs.ts';
 
 import type { StructureModel } from './dynamic-structures.ts';
 
-// Dijiang's cabins: rooms the player builds into fixed slots of the spaceship. a slot is an `ExtraSceneSlot`
-// entity with a box, an origin and a direction; a cabin is a separately stored scene,
-// `Data/DynamicStreaming/PC/Extra/<scene>/fb_main_*` (model rows only), named per cabin type by
-// `Data/Json/SpaceshipCabinData.json`. a built cabin's rows are placed at the slot origin, turned by its
-// direction in quarter turns of yaw: with that convention each cabin's entrance (the start of its walkway,
-// at local +x) meets the slot's door. each slot holds one cabin type; the large slot fits the larger cabin
-// and the small ones the smaller, which matches the room tables (one medium slot for growth chambers, small
-// ones for manufacturing cabins). the cabin level (1–3) changes no stored geometry, so it isn't offered.
+// Dijiang's cabins: rooms the player builds into fixed slots of the spaceship
+// (docs/game-data/scene-states.md#dijiang-cabins). a built cabin's rows are placed at the slot origin, turned
+// by its direction in quarter turns of yaw; with that convention each cabin's entrance meets the slot's door.
+// a slot gets the largest cabin type whose row pivots fit its box, else the smallest.
 
 const CABIN_DATA = 'Data/Json/SpaceshipCabinData.json';
 
@@ -35,7 +31,7 @@ interface Cabin {
  * @param slots the scene's cabin slots (see `DynamicStructures.slots`)
  * @param partition the scene's levels, for each slot's owner
  * @returns one control per slot, empty by default, and the cabin rows each built slot shows
- * @throws {FormatError} if the cabin data names no scene, or a slot is outside every cabin's reach
+ * @throws {FormatError} if the cabin data is missing or names no scene for a cabin type
  */
 export const loadCabins = async (
 	context: Pick<Context, 'vfs'>,

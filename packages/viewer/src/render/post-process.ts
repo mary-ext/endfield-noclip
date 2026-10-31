@@ -1,8 +1,10 @@
 /**
- * the passes after the main pass: sky LUTs, ground-truth AO, compositing (AO, sky, atmosphere fog, height
- * fog), water, temporal antialiasing, bloom and tonemapping into the swapchain. everything up to the temporal
- * resolve runs at the render size, everything after it at the output size. every pass is a fullscreen
- * triangle; pipelines use `auto` layouts, so each bind group holds exactly the bindings its pass reads.
+ * the passes after the main pass: sky LUTs, ground-truth AO, screen-space reflections, celestial layers,
+ * compositing (AO, sky, atmosphere fog, height fog), water, light shafts, lens flare, temporal antialiasing,
+ * auto exposure, bloom and tonemapping into the swapchain. everything up to the temporal resolve runs at the
+ * render size, everything after it at the output size. the passes this module owns are fullscreen triangles
+ * with `auto` layouts, so each bind group holds exactly the bindings its pass reads. see
+ * `docs/game-data/post-processing.md`.
  *
  * @module
  */
@@ -157,7 +159,10 @@ interface Sized {
 	sceneView: GPUTextureView;
 	/** views of the temporal histories, the antialiased scene at the output size */
 	historyViews: [GPUTextureView, GPUTextureView];
-	/** the bloom levels at the output size, each half the previous one's size */
+	/**
+	 * the bloom levels: the first at half the output size (capped at 1080 px tall), each further one half the
+	 * previous one's size
+	 */
 	down: GPUTexture[];
 	/** each level's horizontal blur (none for the first) */
 	blurred: GPUTexture[];
@@ -456,7 +461,7 @@ export class PostProcess {
 		const pixels = sized.width * sized.height;
 		const outputPixels = sized.outputWidth * sized.outputHeight;
 		// at the render size the reduced AO depth and AO, the blurred AO and the scene; at the output size the
-		// temporal history and the bloom chain (two quarter-size mips)
+		// bloom chain, whose down and up levels each sum to about a third of the output
 		return (
 			pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8) +
 			outputPixels * 8 * (2 / 3) +

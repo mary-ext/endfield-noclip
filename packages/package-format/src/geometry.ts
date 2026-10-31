@@ -38,8 +38,9 @@ export const VertexAttribute = {
 	Color: 3,
 	/**
 	 * UV sets 0–7: `unorm16x2` dequantized like positions when that keeps the error below 2^-13 (a span of at
-	 * most 16), else `float32x2`; `snorm8x4` where the source stores 4 signed bytes (the game's UV2/UV3 on
-	 * foliage). UVs are the game's, unflipped: texture row 0 is `v = 0`, matching how texel data is stored
+	 * most 16), else `float32x2`; `snorm8x4` or `unorm8x4` where the source stores 8-bit normalized values (the
+	 * game's UV2/UV3 on foliage), and `float32x4` for sets of more than two components. UVs are the game's,
+	 * unflipped: texture row 0 is `v = 0`, matching how texel data is stored
 	 */
 	TexCoord0: 4,
 	TexCoord7: 11,

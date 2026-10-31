@@ -141,7 +141,7 @@ test('dither-alpha effects shade as opaque two-sided surfaces from the tinted ma
 		shaders,
 		entries: [
 			material(0, {}),
-			// a second texture's colour can't be drawn yet
+			// a second texture's colour isn't drawn
 			material(1, { floats: { _UseMainTex2AsAlpha: 0 } }),
 			material(2, { keywords: ['_USE_DISSOLVE'] }),
 		],

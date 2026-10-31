@@ -464,7 +464,7 @@ export const readLevelInteractives = (
 	};
 	field = 'functionArea';
 	nullable(4, () => {
-		// two shipped layouts differ by the factory-hide fields; neither is a byte-pattern search.
+		// two layouts ship, told apart by the member count: 15 adds the factory-hide fields to 13's
 		list(() => {
 			const members = r.u8();
 			if (members === 255) {

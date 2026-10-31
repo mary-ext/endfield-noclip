@@ -284,7 +284,7 @@ export interface Ktx2Texture {
 	levels: Uint8Array[];
 	/** extra key/value metadata, written after `KTXwriter` and `KTXorientation` in key order */
 	metadata?: Record<string, string>;
-	/** `KTXorientation`; Unity data starts at the bottom row, i.e. `ru` (the default) */
+	/** `KTXorientation`; defaults to `ru` (`r` for one-row textures), since Unity data starts at the bottom row */
 	orientation?: string;
 }
 

@@ -6,7 +6,7 @@
  * camera moves. matrices are camera-relative like everything else.
  *
  * casters are what the main pass draws this frame, plus instances outside the view whose shadows can reach it
- * ({@link offscreenCasters}).
+ * ({@link offscreenCasters}). the filtering is in docs/game-data/lighting.md#shadows.
  *
  * @module
  */
@@ -48,7 +48,7 @@ export const offscreenCasters = (planes: readonly Plane[], towardsSun: Vec3): Ca
 	distance: OFFSCREEN_CASTER_REACH,
 });
 
-/** depth state of the shadow pass's pipelines: standard depth, biased along the slope against acne */
+/** depth state of the shadow pass's pipelines: standard depth, casters biased along their slope against acne */
 export const SHADOW_DEPTH_STATE: GPUDepthStencilState = {
 	format: SHADOW_FORMAT,
 	depthWriteEnabled: true,

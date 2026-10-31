@@ -1,7 +1,7 @@
 /**
  * the rain wetness at the camera: the blended profile's `HGRainConfig` wetness fields as `frame.wgsl`'s
  * `rain_wet_surface` reads them (`Frame.wetness`). the game darkens and smooths every surface its deferred
- * lighting shades by these, whether or not rain falls.
+ * lighting shades by these, whether or not rain falls (docs/game-data/environment.md#wetness).
  *
  * @module
  */
@@ -18,7 +18,7 @@ const OCCLUSION_RANGE = 100;
 export const WETNESS_FLOATS = 12;
 
 /**
- * @param rain the profile's rain section, or `undefined` for packages without one
+ * @param rain the profile's rain section, or `undefined` when the profile has none
  * @returns `Frame.wetness`: (wetness, base porosity, porosity factor, occlusion range), (far distance factor,
  *   far wetness, sheltered wetness, vertical wetness), (standing water threshold, 0, 0, 0); all zero, and so
  *   dry, when wetness is off

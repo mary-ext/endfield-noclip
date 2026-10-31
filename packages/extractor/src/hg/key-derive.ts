@@ -366,9 +366,9 @@ const decryptWithBlock0 = (
 // #region chainXor
 
 /**
- * recovers the 64-bit chainXor. it's computed at runtime in this build, so we first try any 64-bit immediate
- * present in the binary (robust if a future/other build keeps it as a plain `movabs` or data constant), then
- * fall back to a supplied value. either way it's validated by a full bundle decode.
+ * recovers the 64-bit chainXor. it's computed at runtime in this build, so we first try every `movabs`
+ * immediate in the binary (in case another build keeps it as a plain constant), then fall back to a supplied
+ * value. either way it's validated by a full bundle decode.
  *
  * @throws {Error} if neither a scanned nor a supplied value validates
  */

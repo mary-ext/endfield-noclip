@@ -278,6 +278,7 @@ fn detail_surface(in: VertexOut, base: Surface, f: Footprint, control: vec4f) ->
 }
 
 // standing water where the puddle level rises above the ground: darker, mirror-smooth and flat
+// (docs/game-data/world.md#puddles)
 fn wet_surface(s: Surface, depth: f32) -> Surface {
 	let w = clamp(depth / PUDDLE_FULL, 0.0, 1.0);
 	var out = s;

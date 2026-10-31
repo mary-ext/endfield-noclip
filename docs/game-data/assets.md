@@ -1,28 +1,29 @@
 # assets: meshes, textures, materials and prefabs
 
-how the extractor finds and decodes the Unity assets that world data points at: the TypeTree reader
-and the mesh, texture, material, transform and skin decoders, how a StringPathHash key or PPtr
-becomes exactly one object across bundles, how prefabs and the dynamic ECS scene become placed
-renderers, and how interactive facilities expose their visual forms. bundle decryption and the VFS
-are in [../extraction.md](../extraction.md); which structures a progression, quest or scene state
-shows is in [scene-states.md](scene-states.md); where entity data comes from is in
-[world.md](world.md).
+how the extractor finds and decodes the Unity assets that world data points at: the TypeTree reader,
+how a StringPathHash key or PPtr becomes exactly one object across bundles, the mesh, texture,
+material and transform decoders, how prefabs and the dynamic ECS scene become placed renderers, and
+where interactives' models come from. bundle decryption and the VFS are in
+[../extraction.md](../extraction.md); where entity data comes from is in [world.md](world.md); which
+structures a progression, quest or scene state shows is in [scene-states.md](scene-states.md); how
+materials shade is in [materials.md](materials.md).
 
 ## Unity objects
 
 Endfield ships Unity 2021.3 SerializedFiles (format version 22) with TypeTrees embedded. the reader
 is TypeTree-driven, so no per-class layout code is needed and Hypergryph's added fields decode like
 any other. values map to JS as: integers up to 32 bits and floats → `number`, 64-bit integers
-(including `m_PathID`) → `bigint`, byte arrays → `Uint8Array` views without copying, other numeric
-arrays → typed arrays, classes → objects in serialized field order. `readTypeTreeField` materializes
-a single field, which the shader reader uses to read only `m_ParsedForm`.
+(including `m_PathID`) → `bigint`, `bool` → `boolean`, byte arrays (`UInt8`, `TypelessData`,
+`SInt8`) → `Uint8Array` / `Int8Array` views without copying, other numeric arrays → aligned
+typed-array copies, `bool` arrays → plain arrays, classes → objects in serialized field order.
+`readTypeTreeField` materializes a single field, which the shader reader uses to read only
+`m_ParsedForm`.
 
 class decoders read fields through the narrowing accessors in `values.ts` (`numberField`,
-`pptrField`, `aabbField`, …), which throw a `FormatError` naming the field when the shape differs. a
-class decoder reads like the class definition and fails with a useful message on a layout change
-instead of producing garbage. `toPlainObject` converts configuration objects (the environment's
-`HG*Config` sections) to plain JSON, with Unity math structs as arrays and `UInt8` bools as
-booleans.
+`pptrField`, `aabbField`, …), which throw a `FormatError` naming the field when the shape differs,
+so a layout change fails with a useful message instead of producing garbage. `toPlainObject`
+converts configuration objects (the environment's `HG*Config` sections) to plain JSON, with Unity
+math structs as arrays and `UInt8` bools as booleans.
 
 a `PPtr` is `(m_FileID, m_PathID)`: file 0 is the same SerializedFile, `n ≥ 1` is
 `externals[n − 1]`, path id 0 is null.
@@ -48,9 +49,9 @@ world data names assets two ways:
 | `Data/ExtendData/Main/StringPathHash.bin`, `Data/ExtendData/Initial/InitStringPathHash.bin` | hash → path; lookups try main, then initial                                                                                        |
 | `Data/Bundles/Windows/manifest.hgmmap`                                                      | hash → `AssetInfo` (bundle index, size, compressed path); bundle → name, direct dependencies and the transitive dependency closure |
 
-the path hash (the game's `ManifestDataBinary.HashCodeEx`, over the lowercased path) isn't ported,
-so path → hash (`WorldIndex.hashesOf`) scans the StringPathHash tables, about a second per lookup.
-`world resolve <path|hash>` prints both directions plus the holding bundle and its dependencies.
+the game's path hash function isn't ported, so path → hash (`WorldIndex.hashesOf`) scans the
+StringPathHash tables, about a second per lookup. `world resolve <path|hash>` prints both directions
+plus the holding bundle and its dependencies.
 
 code: [string-path-hash.ts](../../packages/formats/src/hg/string-path-hash.ts),
 [bundle-manifest.ts](../../packages/formats/src/hg/bundle-manifest.ts),
@@ -71,7 +72,8 @@ into an `ObjectRef` (bundle index, SerializedFile, object info):
 3. **PPtr → object.** an external's CAB name (`archive:/CAB-<hex>/CAB-<hex>`) isn't derivable from
    bundle names, but it's always inside the referencing bundle's dependency closure, so the resolver
    opens that closure's directories in batches until the CAB turns up, and remembers every CAB it
-   sees. `m_StreamData` (`.resS`) is located the same way.
+   sees. `m_StreamData` (`.resS`) is located the same way. PPtrs into Unity's built-in resources
+   (`library/…`, `resources/…`) fail, since those ship in the player rather than in a bundle.
 
 `findUnique` requires exactly one match. an `AssetRef` reached through a prefab carries an
 `ObjectLocator` (bundle, CAB, path id) and bypasses path lookup entirely. `objectKey`
@@ -81,8 +83,8 @@ into an `ObjectRef` (bundle index, SerializedFile, object info):
 
 every lookup is exact: a hash resolves through its manifest bundle and container entry, a PPtr
 through its file and path id, and anything else is a failure. the resolver never falls back to a
-bundle-wide class match, a same-named object elsewhere, or the first of several ambiguous matches.
-the reasons:
+bundle-wide class match, a same-named object elsewhere, or the first of several ambiguous matches,
+because:
 
 - names don't identify objects. sub-asset names repeat across FBX containers, LOD meshes and
   collision meshes (`*_COL*`) sit beside render meshes with near-identical names, and prefab
@@ -111,8 +113,9 @@ when present.
 - **packed normals.** most meshes pack the normal into one 32-bit word; the channel's dimension byte
   reads `0x31` (low nibble = real dimension 1, high nibble = packing flag 3). bits 0–19 are two
   signed 10-bit octahedral coordinates (÷511), decoded by `unpackHgNormal`. bits 20–31 hold a third
-  signed field and two flag bits that the game's vertex shader uses for the tangent frame; they
-  aren't decoded, and the raw words are kept as `packedNormals`.
+  signed 10-bit field (bits 20–29), a bit that is always set (30) and the bitangent sign (31), which
+  the game's vertex shader uses for the tangent frame; they aren't decoded, and the raw words are
+  kept as `packedNormals`.
 - **tangents.** meshes with plain f32 normals carry f32×4 tangents (w = bitangent sign), which are
   used as is. for packed-normal meshes the packer generates MikkTSpace tangents from the UV set a
   normal-mapped material draws the mesh with
@@ -150,15 +153,14 @@ red.
 [material.ts](../../packages/formats/src/unity/material.ts) copies a `Material`'s serialized state
 (shader PPtr, keywords, custom queue, tags, texture slots with scale/offset and HGRP's per-slot
 `m_UVSetIndex`, floats, colours). the packer replaces `m_UVSetIndex` with the Lit shader's UV-set
-floats where it declares them ([lit layers](lighting.md#lit-layers)). `summarizeShader` reads a
+floats where it declares them ([lit layers](materials.md#lit-layers)). `summarizeShader` reads a
 shader's name, first-subshader tags and declared properties from `m_ParsedForm`.
 `classifyHgrpMaterial` derives the shader family (from the shader name), blend kind, queue,
 alpha-test threshold, cull mode and the Lit normal/MRO layout; Unity's queue boundaries (≥2450 alpha
 test, ≥3000 transparent) are refined by HGRP's own surface, blend, alpha-test and cull properties. a
 texture slot whose PPtr can't be followed is recorded with its error and left empty; the material
-still converts.
-
-the viewer maps families to shading in `packages/viewer/src/render/materials.ts`.
+still converts. the viewer maps families to shading in
+[render/materials.ts](../../packages/viewer/src/render/materials.ts).
 
 ### transform
 
@@ -169,60 +171,73 @@ Unity Euler angles (degrees) apply Z, then X, then Y; dynamic model rows store r
 
 `readPrefabRenderers` ([prefab.ts](../../packages/extractor/src/game/prefab.ts)) walks a prefab's
 GameObject hierarchy through exact PPtrs and returns its drawable renderers relative to the prefab
-root:
+root; the caller supplies the root's placement.
 
 - a GameObject draws only if it and all its ancestors are active. inactive subtrees are still walked
   for their Transforms, because an active skinned mesh can use bones under an inactive GameObject.
 - enabled `MeshRenderer`s (with a `MeshFilter`'s mesh) and enabled `SkinnedMeshRenderer`s are
-  candidates.
+  candidates, as are mesh particle systems ([below](#particle-systems)).
 - for an enabled `LODGroup` (class 205), only renderers of LOD 0 are kept. other LODs' renderers are
   excluded by object identity, never by name.
-- material slots keep their order (a null slot draws nothing for that submesh); `m_CastShadows` 3 or
-  4 (Unity's `ShadowsOnly`, `ShadowsOnlyTwoSided`) marks a shadow-only renderer.
-- a particle system that holds one mesh particle for good is read as a mesh
-  ([particle-mesh.ts](../../packages/extractor/src/game/particle-mesh.ts)): a mesh-mode
-  `ParticleSystemRenderer` (`m_RenderMode` 4) whose `ParticleSystem` plays on awake, allows one
-  particle and keeps it past its lifetime (`ringBufferMode` not 0), without a texture sheet. the
-  particle takes the renderer's `m_Mesh` and materials at the shape's centre, oriented by world,
-  local or (for a box shape, which emits along the emitter's forward axis) velocity alignment, then
-  its start rotation (Euler, Z then X then Y) and start size, scaled by the emitter's local scale
-  unless `scalingMode` is Shape. random ranges between two constants take their midpoint, since the
-  game's draws can't be reproduced; curves, camera-facing alignments and several particles are
-  skipped. the drift and spin over its lifetime and the particle's start colour are dropped. Wuling
-  City's threads swirling over the pillar array (`p_fxmap_lv002_fangyuzhenlie_*`) are such
-  particles.
-- any other mesh-mode particle system that plays on awake is packed whole when a viewer can play it
-  from the package alone
-  ([particle-system.ts](../../packages/extractor/src/game/particle-system.ts)): the renderer becomes
-  an emitter whose draw names a particles-table entry
-  ([package format](../package-format.md#particles)), its matrix the emitter's transform (with its
-  local scale unless `scalingMode` is Shape) and its bounds a box around everywhere a particle can
-  reach. the entry keeps the duration, looping, start delay, particle cap and simulation speed; the
-  start lifetime, speed, size and rotation, gravity modifier and emission rate as `MinMaxCurve`s;
-  the bursts; the shape (sphere, hemisphere, cone, cone volume, box or circle, with its radius,
-  thickness, angle, length, arc, placement and random-direction and -position amounts); the velocity
-  module (linear, orbital about an offset, radial, speed modifier); size and rotation over lifetime;
-  the render alignment (Facing is kept as View) and pivot; the ring buffer (`ringBufferMode` 1 holds
-  a particle at its end until a newer one replaces it, 2 replays `ringBufferLoopRange`); and the
-  texture sheet (`UVModule` in grid mode, up to 64×64 tiles, the whole sheet or one row, fixed,
-  random or by mesh, timed over the lifetime by `frameOverTime` and `cycles` or by `fps`, offset by
-  `startFrame`, both read as fractions of the frames, on the UV sets of `uvChannelMask`). each
-  particle draws one of up to four meshes (`m_Mesh` … `m_Mesh3`), evenly or by `m_MeshWeighting*`
-  when `m_MeshDistribution` is 1, so a renderer with several becomes one emitter per mesh, its entry
-  naming which. systems are skipped when they use a module whose effect the viewer doesn't evaluate
-  (force, noise, collision, sub-emitters, lights, trails, colour, the by-speed modules, custom data,
-  velocity limits), sprite sheets or sheets timed by speed, velocity or rotation curves, a rate
-  curve, a tinted start colour or velocity alignment. the floating rocks over Origin Lodespring's
-  crater (`Rock02` in `P_fxmap_common_brokentree_01/02`, four rock meshes each) and the campfire
-  flames (`fire01`/`fire02` in `P_fxmap_common_damagefire_small_2501`, one ring-buffered particle
-  stepping through an 8×8 flipbook every loop) are such systems; [viewer](../viewer.md#particles)
-  describes how they play.
+- material slots keep their order: a null slot draws nothing for that submesh, and slots past the
+  last submesh draw the last submesh again. `m_CastShadows` 3 or 4 (Unity's `ShadowsOnly`,
+  `ShadowsOnlyTwoSided`) marks a shadow-only renderer.
 - a skinned renderer's pose is each bone's prefab-space matrix times its bind pose; bounds are the
   union of the mesh bounds under every bone so weighted vertices stay inside. non-zero blend shape
   weights throw, since baking ignores them.
 
+the packer resolves a prefab from its StringPathHash key, which must name exactly one manifest path.
 a prefab that fails with a `FormatError` is skipped and listed in the pack's unsupported-prefab
 report; other errors fail the pack.
+
+### particle systems
+
+a mesh-mode `ParticleSystemRenderer` (`m_RenderMode` 4) whose `ParticleSystem` plays on awake is
+packed one of two ways; other particle systems (billboards, systems that don't play on awake) draw
+nothing.
+
+**a frozen particle**, read as a plain mesh
+([particle-mesh.ts](../../packages/extractor/src/game/particle-mesh.ts)): the system allows one
+particle and keeps it past its lifetime (`ringBufferMode` not 0), without a texture sheet. the
+particle takes the renderer's `m_Mesh` and materials at the shape's centre, oriented by world, local
+or (for a box shape, which emits along the emitter's forward axis) velocity alignment, then its
+start rotation (Euler, Z then X then Y) and start size, scaled by the emitter's local scale unless
+`scalingMode` is Shape. random ranges between two constants take their midpoint, since the game's
+draws can't be reproduced; curves and camera-facing alignments disqualify a system. the drift and
+spin over its lifetime and the start colour are dropped. Wuling City's threads swirling over the
+pillar array (`p_fxmap_lv002_fangyuzhenlie_*`) are such particles.
+
+**a played system**, when a viewer can play it from the package alone
+([particle-system.ts](../../packages/extractor/src/game/particle-system.ts)): the renderer becomes
+an emitter whose draw names a particles-table entry
+([package format](../package-format.md#particles)), its matrix the emitter's transform (with its
+local scale unless `scalingMode` is Shape) and its bounds a box around everywhere a particle can
+reach. the entry keeps:
+
+- the duration, looping, start delay, particle cap and simulation speed
+- the start lifetime, speed, size and rotation, gravity modifier and emission rate as
+  `MinMaxCurve`s, the bursts, and the start colour
+- the shape (sphere, hemisphere, cone, cone volume, box or circle, with its radius, thickness,
+  angle, length, arc, placement and random-direction and -position amounts)
+- the velocity module (linear, orbital about an offset, radial, speed modifier), and size and
+  rotation over lifetime
+- the render alignment (Facing is kept as View) and pivot
+- the ring buffer: `ringBufferMode` 1 holds a particle at its end until a newer one replaces it, 2
+  replays `ringBufferLoopRange`
+- the texture sheet: `UVModule` in grid mode, up to 64×64 tiles, the whole sheet or one row (fixed,
+  random or by mesh), timed over the lifetime by `frameOverTime` and `cycles` or by `fps`, offset by
+  `startFrame`, both read as fractions of the frames, on the UV sets of `uvChannelMask`
+
+each particle draws one of up to four meshes (`m_Mesh` … `m_Mesh3`), evenly or by `m_MeshWeighting*`
+when `m_MeshDistribution` is 1, so a renderer with several becomes one emitter per mesh, its entry
+naming which. a system is skipped when it enables a module whose effect the viewer doesn't evaluate
+(forces, noise, collision, triggers, sub-emitters, lights, trails, colour, the by-speed modules,
+custom data, velocity limits), or uses sprite sheets, sheets timed by speed, velocity or rotation
+curves, a rate curve, a start colour that varies between particles, or velocity alignment. the
+floating rocks over Origin Lodespring's crater (`Rock02` in `P_fxmap_common_brokentree_01/02`, four
+rock meshes each) and the campfire flames (`fire01`/`fire02` in
+`P_fxmap_common_damagefire_small_2501`, one ring-buffered particle stepping through an 8×8 flipbook
+every loop) are such systems; [viewer](../viewer.md#particles) describes how they play.
 
 ## dynamic structures
 
@@ -257,16 +272,16 @@ code: [dynamic-scene.ts](../../packages/formats/src/endfield/dynamic-scene.ts),
 ### payloads
 
 - **model rows** (type 5, 96 bytes): prefab StringPathHash key, position, Unity Euler rotation and
-  scale. the packer resolves the prefab through the manifest (exactly one path is required), reads
-  its renderers, and places each one under the row's TRS.
-- **ECS rows** (type 7): `(sceneIndex, chunk, index)` naming component group `index` of the paired
-  `fb_init_<ss>_<chunk>` / `fb_streaming_<ss>_<chunk>` files. `fb_init` holds the component groups
-  and `fb_streaming` the matching entity ids; `parseDynamicChunk` reads them with the same group
-  decoder as InitChunkData.
+  scale. the packer resolves the prefab, reads its renderers, and places each one under the row's
+  TRS.
 - **effect rows** (type 6, grid vector 8, 144 bytes): Unity position at +12, Euler rotation at +24,
   scale at +36 and the prefab's StringPathHash key at +48, followed by bounds and the position again
   at +116, which the reader checks to confirm the stride. they're placed like model rows. on map02
   all 8596 name prefabs, among them Wuling City's pillar-array threads.
+- **ECS rows** (type 7): `(sceneIndex, chunk, index)` naming component group `index` of the paired
+  `fb_init_<ss>_<chunk>` / `fb_streaming_<ss>_<chunk>` files. `fb_init` holds the component groups
+  and `fb_streaming` the matching entity ids; `parseDynamicChunk` reads them with the same group
+  decoder as InitChunkData.
 
 `loadDynamicStructures`
 ([dynamic-structures.ts](../../packages/extractor/src/game/dynamic-structures.ts)) deduplicates
@@ -284,7 +299,7 @@ harvestable plants, shops. their models come from four sources:
 1. LevelData files (from LevelConfig `levelDataPathHashes`) place them. `readLevelInteractives`
    decodes the sequential prefix through the interactive list: interactive id, `createState`,
    position, rotation, scale, `modelScale` (0 = no override). only `createState` 0 (created with the
-   level) is drawn.
+   level) is drawn, once per id.
 2. `Data/Json/Interactive/InteractiveTable.json` maps each interactive id to a template and each
    template to its data file (`readInteractiveTable`). many ids share one template: the Wuling
    switch variants all instantiate `int_switch_wuling`.
@@ -295,15 +310,20 @@ harvestable plants, shops. their models come from four sources:
 4. `Data/Json/GameplayConfig/ModelTable.json` maps each model id to a prefab path and `scaleFactor`.
 
 a placement draws its variant's model, else the template's, always visible. templates without a
-model (triggers, logic) draw nothing. a model that is a doodad-group shell draws nothing itself and
-places one form per group level instead ([scene-states.md](scene-states.md#doodad-groups)).
+model (triggers, logic) draw nothing; templates without a data file of their own are reported. a
+model that is a doodad-group shell draws nothing itself and places one form per group level instead
+([scene-states.md](scene-states.md#doodad-groups)).
 
-the three facility templates (`int_system_domain_shop`, `int_system_domain_depot`,
-`int_doodad_core_recycle`) instead walk their components up to the model-upgrade component
-(`InteractiveModelLevelUpComponentData`, `readInteractiveModel`), which lists model ids in
-visual-form order and must contain the base model id. their placements are emitted one model per
-visual form, each visible under its form's bit of a per-facility progression control
+four facility templates (`int_system_domain_shop`, `int_system_domain_depot`,
+`int_doodad_core_recycle`, `int_system_kite_station`) are decoded whole instead, through the
+MemoryPack schema, for their model-upgrade component (`InteractiveModelLevelUpComponentData`), which
+lists model ids in visual-form order and must contain the base model id. their placements are
+emitted one model per visual form, each visible under its form's bit of a per-facility control
 ([scene-states.md](scene-states.md#facility-visual-forms)).
+
+code: [interactive-model.ts](../../packages/formats/src/endfield/interactive-model.ts),
+[level-interactives.ts](../../packages/formats/src/endfield/level-interactives.ts),
+[interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts)
 
 ### reading the variant table
 
@@ -321,24 +341,19 @@ for managed `T` and a raw struct (enabled, padding, value) for unmanaged `T`.
 LevelData is a sequential format: an unread field's length is unknown, so scanning past it would
 misframe every later row. the reader fails closed with `UnsupportedLevelData` on any populated field
 or condition it doesn't implement, and the whole file is omitted and listed in the pack's
-unsupported-interactives report. never decode a partial file. polymorphic fields are MemoryPack
+unsupported-interactives report; a partial file is never used. polymorphic fields are MemoryPack
 unions whose tag indexes the subclasses in name order, with each subclass's members also in name
 order. gameplay tags are unmanaged four-byte values. every map01 and map02 file decodes; the
 blackbox (factory puzzle) scenes' populated blackbox settings are unsupported.
-
-code: [interactive-model.ts](../../packages/formats/src/endfield/interactive-model.ts),
-[level-interactives.ts](../../packages/formats/src/endfield/level-interactives.ts),
-[interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts)
-
-the AIC buildable-grid data (`factorygrids/fbgrids_*.bytes`, a FlatBuffer of per-1 m column height
-spans and buildable/water flags on the 128 m cells) is a separate system with no decoder here; the
-viewer doesn't use it.
 
 ## open
 
 - decoding the packed tangent frame in normal bits 20–31 (its layout is identified; tangents are
   regenerated), and the meaning of the uv dimension byte's high nibble 2
 - animated poses and non-zero blend shapes
+- billboard particle systems, and mesh particle systems using modules the viewer doesn't evaluate
 - LevelData members after the interactive list, and populated blackbox settings
-- the per-controller meaning of progression bit 0 ("unbuilt" versus level 1)
-- the path hash function, which would replace the StringPathHash table scans in path → hash lookups
+- the path hash function, which would replace the StringPathHash table scans in path → hash lookups;
+  it diverges from XXH3 at 128 UTF-8 bytes (see AnimeStudio's `EndfieldVfsHash`)
+- the AIC buildable-grid data (`factorygrids/fbgrids_*.bytes`, a FlatBuffer of per-1 m column height
+  spans and buildable/water flags on the 128 m cells) has no decoder; the viewer doesn't use it

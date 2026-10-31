@@ -1,4 +1,4 @@
-// instance stand-ins: each row's world AABB as a box, coloured by HLOD tier / detail, or by owning level.
+// instance stand-ins: each row's world AABB as a box, coloured by its kind (HLOD tier, detail or global).
 // rows mirror `instance-rows.ts`.
 
 struct Row {
@@ -9,7 +9,7 @@ struct Row {
 	center: vec3f,
 	block: u32,
 	extent: vec3f,
-	// tag | kind << 8 | scene state << 16
+	// `rowInfo` in instance-rows.ts: the row's kind in bits 0–3
 	info: u32,
 }
 
@@ -29,7 +29,8 @@ struct VertexOut {
 	@location(2) @interpolate(flat) color: vec3f,
 }
 
-// 6 faces × 2 triangles: face axis, sign and the two in-face corner signs per vertex
+// the in-face corner signs of a face's two triangles; vs_fill takes the face's axis and sign from the vertex
+// index
 const FACE_CORNERS = array<vec2f, 6>(
 	vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
 	vec2f(-1.0, -1.0), vec2f(1.0, 1.0), vec2f(-1.0, 1.0),

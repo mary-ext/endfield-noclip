@@ -1,9 +1,10 @@
 /**
- * the package's local point and spot lights, as the game feeds them to its shading: each frame the lights of
- * the shown level within their fade distance and the view are sorted by camera distance and capped at 256,
- * then binned the game's way, into screen tiles of 32 px and view-depth slices of 1 m from the near plane,
- * each a 256-bit mask; a pixel's lights are its tile's mask and its slice's. `frame.wgsl` reads both buffers
- * (`local_lighting`, `local_light_at`).
+ * the package's local point and spot lights, as the game feeds them to its shading: each frame the shown
+ * lights within their culling distance and the view are sorted by camera distance and capped at 256, then
+ * binned the game's way, into screen tiles of 32 px and view-depth slices of 1 m from the near plane, each a
+ * 256-bit mask; a pixel's lights are those in both its tile's mask and its slice's
+ * (docs/game-data/lighting.md#local-lights). `frame.wgsl` reads both buffers (`local_lighting`,
+ * `local_light_at`).
  *
  * @module
  */
@@ -240,10 +241,14 @@ const boundingSphere = ({ entry, rel }: Candidate): [center: Vec3, radius: numbe
 };
 
 /**
- * one light's 8 vec4s, the layout `local_light_at` in frame.wgsl reads: 0 camera-relative position, 1 / range
- * 1 colour (faded), kind (0 spot, 1 point) 2 direction, cos(outer / 2) 3 1 / (cos(inner / 2) − cos(outer /
- * 2)), tube length, falloff exponent, soft source radius 4 specular intensity, volumetric intensity, box
- * falloff threshold, 1 with a culling box 5–7 the box's rows3x4
+ * one light's 8 vec4s, the layout `local_light_at` in frame.wgsl reads:
+ *
+ * - 0: camera-relative position, 1 / range
+ * - 1: colour (faded), kind (0 spot, 1 point)
+ * - 2: direction, cos(outer / 2)
+ * - 3: 1 / (cos(inner / 2) − cos(outer / 2)), tube length, falloff exponent, soft source radius
+ * - 4: specular intensity, volumetric intensity, box falloff threshold, 1 with a culling box
+ * - 5–7: the box's rows3x4
  */
 const packLight = (out: Float32Array, index: number, { entry, rel, fade }: Candidate): void => {
 	const at = index * LIGHT_VEC4S * 4;

@@ -18,7 +18,7 @@ import { groupBounds, groupColumn, groupNames, type InitChunk } from './init-chu
 import { levelTagOf } from './level-partition.ts';
 import { assetProperty, type StreamingChunk } from './streaming-chunk-data.ts';
 
-// open-world water. three sources join here:
+// open-world water (docs/game-data/water.md#game-data). three sources join here:
 // - InitChunkData component 30 (104 bytes) places each water surface: `u32 render type mask, i32 runtime mesh
 //   id, f32×16 object-to-world, f32×4 param0, f32×4 param1`, beside bounds, name and an unread 24-byte
 //   column 7. every surface sits in a Global chunk.
@@ -54,17 +54,20 @@ export interface WaterSurface {
 	/** `id >>> 27`, the owning level's namespace */
 	levelTag: number;
 	name: string;
-	/** non-zero bit mask of the game's `HGWaterRenderType` (1 `Proxy`, 2 `LOD`); 1 or 2 in the current client */
+	/** non-zero bit mask of the game's `HGWaterRenderType` (1 `Proxy`, 2 `LOD`); 1 or 2 in the data */
 	renderTypeMask: number;
-	/** 0 throughout the current client */
+	/** always 0: the game fills it in at load */
 	runtimeMeshId: number;
 	/** 4×4 column-major object-to-world matrix */
 	matrix: Float32Array;
 	/** world bounds */
 	bounds: Aabb;
-	/** zero throughout the current client */
+	/** (material index, 0, 0, 0); the game fills the index in at load, so it's 0 here */
 	param0: [number, number, number, number];
-	/** `w` is always 1; `x`, `y` and `z` vary per surface. meaning unconfirmed */
+	/**
+	 * (wetness offset (m), height layer 0–3, 1 to sort by distance, 1 to wet the ground around it); see
+	 * `docs/game-data/water.md#placements-initchunkdata-component-30`
+	 */
 	param1: [number, number, number, number];
 	/** StringPathHash key of the surface mesh */
 	meshHash: bigint;

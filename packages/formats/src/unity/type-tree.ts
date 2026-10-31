@@ -1,7 +1,6 @@
 /**
  * generic TypeTree-driven object reader: turns a serialized Unity object into plain JS values, using the
- * TypeTree embedded in its SerializedFile. no per-class code is needed, so Hypergryph's added fields come for
- * free.
+ * TypeTree embedded in its SerializedFile, so Hypergryph's added fields decode like any other.
  *
  * value mapping:
  *
@@ -9,8 +8,10 @@
  *   `boolean`; `string` → `string`
  * - `vector`/`staticvector`/`map`/`set` (a class wrapping a single `Array`) → the array itself; map entries are
  *   `{ first, second }` objects
- * - arrays of `UInt8` and `TypelessData` → `Uint8Array` views into the object bytes (no copy)
- * - arrays of other fixed-size numeric primitives → typed arrays (copied, so they're aligned)
+ * - arrays of `UInt8`, `char` and `TypelessData` → `Uint8Array` views into the object bytes (no copy), and of
+ *   `SInt8` → `Int8Array` views
+ * - arrays of other fixed-size numeric primitives → typed arrays (copied, so they're aligned); `bool` arrays →
+ *   plain arrays of `boolean`
  * - other classes → objects keyed by field name, in serialized order
  */
 
@@ -706,6 +707,7 @@ const compiledTypes = new WeakMap<SerializedType, CompiledTypeTree>();
 /**
  * @param type a type entry; its compiled tree is cached
  * @returns the compiled TypeTree
+ * @throws {FormatError} if the type has no TypeTree or it doesn't compile
  */
 export const compiledTypeOf = (type: SerializedType): CompiledTypeTree => {
 	let compiled = compiledTypes.get(type);
@@ -772,6 +774,7 @@ export const readOptionsOf = (file: SerializedFile): ReadTypeTreeOptions => {
  * @param fileBytes the whole SerializedFile, or at least through the object's end
  * @param info object table entry
  * @returns a view of the object's bytes
+ * @throws {FormatError} if the object ends past `fileBytes`
  */
 export const objectBytes = (fileBytes: Uint8Array, info: ObjectInfo): Uint8Array => {
 	if (info.byteStart + info.byteSize > fileBytes.length) {
@@ -798,6 +801,7 @@ export const readObject = (file: SerializedFile, info: ObjectInfo, bytes: Uint8A
  * @param info object table entry
  * @param bytes exactly the object's bytes
  * @returns the name, or `undefined` if the type has no top-level `m_Name`
+ * @throws {FormatError} if the data doesn't match the object's TypeTree
  */
 export const peekObjectName = (
 	file: SerializedFile,

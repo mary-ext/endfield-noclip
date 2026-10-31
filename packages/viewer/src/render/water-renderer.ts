@@ -1,8 +1,8 @@
 /**
- * the open-world water: the shown level's surfaces (plus shared ones) drawn after compositing, over a copy of
- * the scene, with their configs and the scene's global wave normals, flow map and caustics. it lights them
- * with the main pass's frame group (sun shadow, irradiance volume, sky reflection). surfaces are resident in
- * the game, so every surface of the level is wanted; those outside the view aren't drawn.
+ * the open-world water (docs/game-data/water.md#viewer): the shown surfaces drawn after compositing, over a
+ * copy of the scene, with their configs and the scene's global wave normals, flow map and caustics. it lights
+ * them with the main pass's frame group (sun shadow, irradiance volume, sky reflection). surfaces are
+ * resident in the game, so every shown surface is wanted; those outside the view aren't drawn.
  *
  * @module
  */

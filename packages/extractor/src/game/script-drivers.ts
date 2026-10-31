@@ -12,13 +12,10 @@ import { VfsGroup } from '../hg/vfs.ts';
 
 import { questRef } from './story.ts';
 
-// what sets each script-controlled entity group in game. level scripts (`Data/Json/LevelScriptData/<level>/
-// <script id>.json`, MemoryPack) show and hide such a group with a `ShowSceneDecoration*` action naming the
-// entity's id and a visibility. an action runs when a path from one of the script's event headers reaches it;
-// the header names the event (the script becoming active, the player entering a trigger volume, an interactive's
-// event, a quest state change, a custom event another script raises). following headers back, across custom
-// events and script starts, ends at a root cause, which becomes a driver of the entity's control. the script
-// graph semantics are in scene-states.md.
+// what sets each script-controlled entity group in game: every path from a level script's event header to a
+// `ShowSceneDecoration*` action naming the group, followed back across custom events and script starts to a
+// root cause, which becomes a driver of the group's control. the script graph is described in
+// docs/game-data/scene-states.md#what-sets-a-script-group.
 
 // #region decoded scripts
 

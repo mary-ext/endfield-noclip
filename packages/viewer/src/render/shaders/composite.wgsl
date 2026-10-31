@@ -1,6 +1,7 @@
-// composites the main pass into the HDR scene: screen-space reflections, ambient occlusion on the ambient part, the sky where nothing
-// was drawn with the nebula and planets beyond it, the transparent layers, the atmosphere fog and the two-layer height fog, then the
-// transparent pass's glow. needs post-common.wgsl, atmosphere.wgsl and sky.wgsl.
+// composites the main pass into the HDR scene: screen-space reflections, ambient occlusion on the ambient
+// part, the sky where nothing was drawn with the nebula and planets beyond it, the transparent layers, the
+// atmosphere fog and the two-layer height fog, then the transparent pass's glow. see
+// docs/game-data/sky-and-fog.md. needs post-common.wgsl, atmosphere.wgsl and sky.wgsl.
 
 @group(2) @binding(0) var radiance_texture: texture_2d<f32>;
 @group(2) @binding(1) var ambient_texture: texture_2d<f32>;

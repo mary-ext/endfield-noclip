@@ -2,7 +2,8 @@
  * the game's screen-space reflections (`ssr.wgsl`): each lit pixel marches its mirror ray into last frame's
  * composited scene, the hits are filtered over frames, built into a depth-aware pyramid and resolved at the
  * mip the reflected cone covers. the result is what the reflections change in the radiance, which the
- * composite adds. it all runs at the render size, before compositing.
+ * composite adds. it all runs at the render size, before compositing. see
+ * `docs/game-data/lighting.md#screen-space-reflections`.
  *
  * @module
  */

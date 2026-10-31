@@ -1,11 +1,8 @@
 /**
  * the game's auto exposure as arithmetic: a luminance histogram of the lit scene picks a post exposure that
  * brings the scene's average towards middle grey, within the profile's EV limits, and the exposure eases
- * towards it. the profiles mostly allow brightening only, so it lifts dark interiors and leaves daylight
- * alone. the histogram itself is taken on the GPU (`auto-exposure.ts`).
- *
- * the average ignores the darkest and brightest samples (`autoExposurePixelLuminanceRange`) and clamps each
- * bin's EV to `autoExposureEv100HistogramRange`; the exposure is `2^compensation · 0.18 / 2^average`.
+ * towards it. the histogram itself is taken on the GPU (`auto-exposure.ts`). see
+ * `docs/game-data/post-processing.md#auto-exposure`.
  *
  * @module
  */

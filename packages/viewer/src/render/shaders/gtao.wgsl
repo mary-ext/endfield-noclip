@@ -1,6 +1,6 @@
-// ground-truth ambient occlusion (Jimenez et al. 2016) as XeGTAO computes it, from the depth buffer alone, at half
-// resolution: three slices per pixel, rotated by a 4×4 interleaved pattern that the upsampling blur averages away.
-// needs post-common.wgsl.
+// ground-truth ambient occlusion (Jimenez et al. 2016) as XeGTAO computes it, from the depth buffer alone,
+// at half resolution: three slices per pixel, rotated by a 4×4 interleaved pattern that the upsampling blur
+// averages away. see docs/game-data/post-processing.md#ambient-occlusion. needs post-common.wgsl.
 //
 // three passes: fs_ao_depth reduces the depth buffer to half-resolution view depth, fs_gtao marches it, and
 // fs_blur filters and upsamples the result to full resolution, weighted by depth so edges stay sharp. the

@@ -4,11 +4,8 @@ import type { TypeTreeNode } from '../unity/serialized-file.ts';
 import type { TypeTreeObject } from '../unity/type-tree.ts';
 import { isObject, stringField } from '../unity/values.ts';
 
-// `HGEnvironmentPhase` MonoBehaviours (`EnvParse/Env_*.asset`): one complete environment (sun, sky, fog,
-// clouds, grading, …) as a list of `HG*Config` sections. an environment volume applies its phase; volumes are
-// blended by priority. each section carries `m_active`: whether the phase sets that section at all (the
-// client's `ActivateAllEnvConfig` exists for phases that should). a section that isn't active leaves whatever
-// lower-priority volumes set.
+// `HGEnvironmentPhase` MonoBehaviours (`EnvParse/Env_*.asset`): one complete environment as a list of
+// `HG*Config` sections, each with an `m_active` flag. see `docs/game-data/environment.md#environment-phases`.
 
 /** the sections read, by their field name in the phase */
 export const ENVIRONMENT_SECTIONS = [

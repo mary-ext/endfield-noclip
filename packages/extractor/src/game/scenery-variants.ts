@@ -12,16 +12,9 @@ import { mapPool } from '../pool.ts';
 
 import type { ChunkFile, WorldIndex } from './world-index.ts';
 
-// scenery variants of an open-world map come from three independent mechanisms:
-//
-// - stream areas: static InitChunkData files whose `<areaId>` (last) suffix is non-zero belong to that stream
-//   area. which areas are shown depends on where the camera is (FBStreamArea triggers), not on progress. they
-//   only add entities to area 0; none of their ids or placements repeat an area-0 entity.
-// - progression controllers: DynamicStreaming entities whose resource groups carry LogicState bitmasks. the
-//   entity's logic state is its level (outpost/settlement level, POI facility level, factory region level), so a
-//   group with bit n set is shown at level n. all variants are stored side by side; nothing is a file swap.
-// - scene states: MapConfig states switched by quest/mission/variable conditions (see `scene-conditions.ts`).
-//   static files carry them as the `<sceneStateId>` suffix, dynamic entities as state-index lists.
+// the catalogue behind `variants <scene>`: a scene's stream areas (docs/game-data/world.md#stream-areas) and
+// progression controllers (docs/game-data/scene-states.md#progressions). stream areas only add entities to
+// area 0; none of their ids or placements repeat an area-0 entity.
 
 // #region types
 
@@ -338,7 +331,8 @@ export const progressionControl = (
 	initial: number,
 	assumption: string,
 ): SceneControl => {
-	// shop and depot form numbers are list positions, not upgrade levels (see scene-states.md)
+	// facility form numbers are list positions, not upgrade levels
+	// (docs/game-data/scene-states.md#facility-visual-forms)
 	const unit = kind === 'facility' ? 'Visual form' : kind === 'doodadGroups' ? 'Group level' : 'Level';
 	return {
 		kind,

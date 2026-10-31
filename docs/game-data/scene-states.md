@@ -2,11 +2,14 @@
 
 this page covers everything that decides whether a piece of authored content is visible: MapConfig
 scene states and their quest, mission and variable conditions; the load gates on DynamicStreaming
-entities; progression levels (outposts, POI facilities, factory regions); facility visual forms;
-script-loaded groups; and how the package encodes all of these as one control/condition system that
-the viewer exposes as preview controls. spatial stream areas (interiors, caves, off-map places) are
-a separate axis, covered in [world.md](world.md#stream-areas); the package encodes them as controls
-the viewer sets from the camera.
+entities; progression levels (outposts, POI facilities, factory regions); facility visual forms,
+Dijiang's cabins and resource-node groups; script-loaded groups; quest labels; and how the package
+encodes all of these as one control/condition system that the viewer exposes as preview controls.
+spatial stream areas (interiors, caves, off-map places) are a separate axis, covered in
+[world.md](world.md#stream-areas); the package encodes them as controls the viewer sets from the
+camera. the dynamic ECS scene's format and the interactives' models are in
+[assets.md](assets.md#dynamic-structures); the container layout of controls and sets is in
+[package-format.md](../package-format.md#conditions).
 
 the controls hold the game's own state, not one switch per condition: one control per quest, mission
 and variable that some condition reads, and scene states derived from those. conditions on the same
@@ -23,8 +26,9 @@ hold.
 | mission gate               | `MissionControlComp` on a dynamic entity                                                                | requirements on quest and mission controls          | —                                                                 |
 | variable gate              | `GlobalVarControlComp` / `MapVarControlComp` with `controlLoad` set                                     | a requirement on the variable's control             | —                                                                 |
 | progression                | resource-group `logicState` bitmask under a settlement / POI / factory-region controller                | `<kind>:<key>`                                      | lowest authored level                                             |
-| facility visual form       | interactive template model-upgrade list                                                                 | `facility:<entity id>`                              | the template's base model                                         |
-| doodad group level         | doodad-shell postmodel's form list                                                                      | `doodadGroups:<level id>`                           | the highest level (4)                                             |
+| facility visual form       | interactive template model-upgrade list                                                                 | `facility:<interactive id>`                         | the template's base model                                         |
+| doodad group level         | doodad-shell postmodel's form list                                                                      | `doodadGroups:<level id>`                           | the highest level its shells name                                 |
+| Dijiang cabin slot         | `ExtraSceneSlot` entity; cabin scenes named by `SpaceshipCabinData.json`                                | `cabin:<entity id>`, empty / built                  | empty                                                             |
 | tree harvest state         | resource-group `logicState` on tree entities                                                            | `harvest:<level tag>`, standing / felled            | standing                                                          |
 | script group               | script-control component's default-load flag                                                            | `script:<entity id>`                                | the stored default                                                |
 | controller-less logic gate | resource-group `logicState` on an entity with no controller                                             | `logic:<entity id>:<mask>`                          | off                                                               |
@@ -79,7 +83,7 @@ be:
   use the visible-state lists, never that field, for gating.
 - **irradiance volume**: besides the base bake, the irradiance index stores bakes for these states
   and combinations of them, which the game selects by its active scene-state mask; only the base
-  bake is packed (see [lighting.md](lighting.md)).
+  bake is packed (see [irradiance.md](irradiance.md)).
 
 ### what they gate
 
@@ -134,8 +138,12 @@ at and between the values they compare it against, and above the highest. a load
 its variable is unset, so a variable some gate reads also has an "unset" value; a MapConfig test
 reads an unset variable as 0 (an assumption). the default is the highest compared value, on the
 reading that the story moves variables forward (erosion cleansed, machines repaired, the last stage
-of a staged change). MapConfig names its variables (`mapVarName`, `globalVarName`) while gates use
-numeric game-variable ids, so the two never share a control.
+of a staged change). the guess fails at Origin Lodespring (map01_lv006): the crater's light column
+takes one effect prefab per value of a global variable (0, 2, 3, 4), and an in-game shot matches 2,
+not the default 4. the red-ringed spires there are gated on another variable equalling 9999, a value
+that reads as a sentinel; the game doesn't show them, so a sentinel comparison shouldn't set the
+default. MapConfig names its variables (`mapVarName`, `globalVarName`) while gates use numeric
+game-variable ids, so the two never share a control.
 
 ## dynamic load gates
 
@@ -184,8 +192,9 @@ point. each progression is selected independently, because the player's progress
 no single completion percentage describes it.
 
 a resource group with a non-zero mask on an entity with no controller: if bit 0 is set it shows in
-the default state and needs no control; otherwise it gets a `logic:<grid>:<ordinal>:<mask>` toggle,
-off, because nothing recovered drives that entity's logic state.
+the default state and needs no control; otherwise it gets a `logic:<entity id>:<mask>` toggle, off,
+because nothing recovered drives that entity's logic state. the entity id is its global id, or
+`<grid>:<ordinal>` for an entity without an `IdComp`.
 
 trees (entity type 19, no controller) use bits 0/1 for standing/felled under the same mechanism;
 that is harvest state, not progression. the player fells each tree at runtime, so one `harvest`
@@ -210,14 +219,13 @@ index of the template's base model (a recycling station starts at form 1).
 
 form numbers are positions in that list, not gameplay upgrade levels: how shop channel levels, depot
 levels or terminal levels (`KiteStationLevelTable`) map onto the list isn't recovered, so the viewer
-labels them "Visual form", not "Level". LevelData files with an unsupported layout are skipped whole
-and reported, never partially scanned.
+labels them "Visual form", not "Level".
 
-every other template draws only the base model its leading model component names, always shown:
-Dijiang's guest terminal desk, screens and doors, for instance. that ignores whatever runtime state
-the game keeps for them (open doors, unlocked region walls), and rows with another `createState` are
-left out. templates without a data file of their own (the weapon-wall racks, some doors) and
-templates that name no model are reported or skipped.
+every other interactive draws one model, always shown (its variant's, else its template's; see
+[assets.md](assets.md#interactives)): Dijiang's guest terminal desk, screens and doors, for
+instance. that ignores whatever runtime state the game keeps for them (open doors, unlocked region
+walls), and rows with another `createState` are left out. templates without a data file of their own
+(the weapon-wall racks, some doors) are reported, and templates that name no model draw nothing.
 
 ## Dijiang cabins
 
@@ -262,8 +270,10 @@ transform and shown under `1 << level`.
 an entity with a script-control component stores a default-load flag (0 or 1): 0 means a script must
 explicitly enable it. each such entity gets a `script:<entity id>` control defaulting to that flag
 ([`dynamic-structures.ts`](../../packages/extractor/src/game/dynamic-structures.ts)). the id is the
-entity's global id (its IdComp `uniqueId`), which level scripts use to show and hide it. event
-content such as a limited-time race course lands here, typically off.
+entity's global id (its IdComp `uniqueId`), which level scripts use to show and hide it. its leading
+digits are the idNum of the level that authored the entity (`228…` for Wuling City, `404…` for a
+racing dungeon), not necessarily the level it stands in. event content such as a limited-time race
+course lands here, typically off.
 
 toggle names for script and logic controls are the one or two most frequent renderer names under
 them. they are labels for finding the control, not evidence of what activates it.
@@ -353,7 +363,8 @@ types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo
   without a camera.
 - the packer canonicalises and deduplicates sets (`Collector.condition`), so equivalent expressions
   share one index. quests, missions and variables come first in `controls`, then progressions,
-  facilities, stream areas, script, logic and harvest controls, then scene states.
+  facilities, doodad groups and cabins, stream areas, script, logic and harvest controls, then scene
+  states.
 - only controls some visibility group requires, directly or through a derived scene state, are
   listed. each control's `levelTags` are those of the groups it gates, and a derived state passes
   its tags on to the quests and variables it reads.
@@ -461,7 +472,12 @@ screen error threshold.
   traced
 - variable names and offline values: the client game-variable id table isn't read, and the server
   values are unavailable
-- `ActivityControlComp` gates (many map02 owners; those inspected have no conditions)
+- `ActivityControlComp` gates: on map01 and map02 every entity's component holds no conditions
+  (compare type 255), and no level script reads activity state, so limited-time events reach the
+  world only through missions and the scripts of event dungeons
+- script groups with no client driver: groups whose id equals a level script's own id, ghost-wall
+  module decorations (`GhostWallModuleData.outerEffectDecoId`), and ids that scripts reference only
+  as animator or attach targets; what shows them isn't traced
 - variable-driven entity levels and animator states (`controlLoad` 0), e.g. the bridge between The
   Hub and Valley Pass
 - irradiance scene-state bakes selected by the active states

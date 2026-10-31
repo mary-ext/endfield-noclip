@@ -1,13 +1,11 @@
 /**
- * per-instance selection for packages with geometry: frustum and small-feature culling, then LOD selection
- * with the game's LODGroup thresholds, bucketing visible instances by (geometry, submesh, material, mirrored)
- * for instanced draws; mirrored instances flip their winding, so they cull the opposite face. instances whose
- * chosen LOD isn't resident yet request its geometry and draw the nearest resident LOD meanwhile, or their
- * box if none is. instances outside the view whose shadows can reach it go to cast-only buckets, which only
- * the shadow passes draw.
+ * per-instance selection for packages with geometry: culling, LOD selection with the game's LODGroup
+ * thresholds, and bucketing by (geometry, submesh, material, mirrored) for instanced draws, as
+ * `docs/viewer.md#per-instance-lod` describes. instances outside the view whose shadows can reach it go to
+ * cast-only buckets, which only the shadow passes draw.
  *
- * this is the CPU version of the planned GPU cull pass: the output (an instance list plus per-bucket ranges)
- * is what a compute shader would write next to indirect draw arguments.
+ * the output (an instance list plus per-bucket ranges) has the shape a GPU cull pass would write next to
+ * indirect draw arguments.
  *
  * @module
  */
@@ -41,7 +39,10 @@ export interface MeshBucket {
 	 * none), so each layer draws a prefix of the bucket; reset every frame
 	 */
 	rows: number[][];
-	/** largest projected size of an instance this frame, px */
+	/**
+	 * the highest priority of an instance this frame: its projected height, px, scaled by the caster priority
+	 * in cast-only buckets. textures stream by it
+	 */
 	pixels: number;
 	/** distance from the camera to the nearest instance's bounding sphere this frame, m */
 	nearest: number;
@@ -71,7 +72,7 @@ export interface MeshView {
 	viewportHeight: number;
 	/** cull instances smaller than this, px */
 	minPixels: number;
-	/** mip levels coarser than needed to stream material textures at (0 for full detail; each halves them) */
+	/** mip levels coarser than needed to stream material textures at (0 for full detail; each halves their size) */
 	textureBias: number;
 	/** instances outside the view but in this volume are selected as shadow casters; `null` for none */
 	casters: CasterVolume | null;

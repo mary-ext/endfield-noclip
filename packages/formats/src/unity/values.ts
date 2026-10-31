@@ -39,7 +39,7 @@ export const objectField = (parent: TypeTreeObject, name: string): TypeTreeObjec
 /**
  * @param parent class instance
  * @param name field name
- * @returns the field as a number (64-bit integers are converted)
+ * @returns the field as a number (64-bit integers are converted, booleans become 0 or 1)
  * @throws {FormatError} if it's missing or not numeric
  */
 export const numberField = (parent: TypeTreeObject, name: string): number => {

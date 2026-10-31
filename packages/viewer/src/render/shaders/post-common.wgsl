@@ -39,7 +39,7 @@ struct Post {
 	fog_layer1: vec4f,
 	// fog inscattered radiance (pre-exposed), w = least transmittance (1 − max opacity)
 	fog_color: vec4f,
-	// start distance, start transition, cutoff distance, cutoff transition (m, per m)
+	// start distance (m), start transition (per m), cutoff distance (m), cutoff transition (per m)
 	fog_range: vec4f,
 	// directional inscattered radiance (pre-exposed), w = exponent
 	fog_directional: vec4f,
@@ -107,7 +107,7 @@ struct Post {
 	bloom_shape: vec4f,
 	// xy = the main pass's subpixel jitter (NDC) for temporal antialiasing, zw unused
 	jitter: vec4f,
-	// volumetric fog slice of view depth z: log2(z · x + y) · z = the texture's w; w = the depth it covers (m), 0 when off
+	// volumetric fog: the texture's w at view depth d is log2(d · x + y) · z; w = the depth it covers (m), 0 when off
 	froxel_slices: vec4f,
 	// x = view depth (m) nearer than which there is no volumetric fog, yzw unused
 	froxel_range: vec4f,
@@ -147,7 +147,7 @@ fn view_ray(uv: vec2f) -> vec3f {
 	return view_ray_ndc(vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) - post.jitter.xy);
 }
 
-// reversed-Z, infinite far plane: depth = near / view distance
+// reversed-Z, infinite far plane: depth = near / view depth
 fn view_depth(depth: f32) -> f32 {
 	return post.forward.w / max(depth, 1e-9);
 }

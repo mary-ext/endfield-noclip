@@ -1,7 +1,7 @@
 /**
  * the sun's lens flare pass: draws the quads `lens-flare-layout.ts` lays out onto the composited scene after
  * the light shafts and before temporal antialiasing. `lens-flare.wgsl` fades them by how much of a disc
- * around the sun shows sky in the depth buffer.
+ * around the sun shows sky in the depth buffer. see `docs/game-data/post-processing.md#lens-flare`.
  *
  * @module
  */
@@ -23,7 +23,7 @@ const FRAME_BYTES = 16;
 const QUAD_BYTES = 4 * 16;
 /** the most quads a frame draws */
 const MAX_QUADS = 256;
-/** `GetCelestialProjectedOcclusionRadius`: the occlusion radius is a multiple of this angle's tangent */
+/** SRP core's celestial occlusion radius: a multiple of this angle's tangent at the sun's distance */
 const CELESTIAL_OCCLUSION = Math.tan(0.0576);
 
 /** per element blend mode: additive, screen, premultiplied, lerp */

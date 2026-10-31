@@ -56,10 +56,7 @@ export interface ChunkFile {
 	scene: string;
 	/** cell coordinate; `null` for the Global chunk */
 	cell: { x: number; z: number } | null;
-	/**
-	 * scene state id: 0 is always loaded, `n` only while MapConfig scene state `n − 1` is active
-	 * (`BaseGameScene.FlushStreamingSceneState`)
-	 */
+	/** scene state id: 0 is always loaded, `n` only while MapConfig scene state `n − 1` is active */
 	sceneState: number;
 	/** stream area id; 0 is the default area */
 	area: number;

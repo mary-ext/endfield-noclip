@@ -18,8 +18,9 @@ export interface ShaderEntry {
 	/** Float, Range and Int properties */
 	floats: Record<string, number>;
 	/**
-	 * Color properties, as authored (gamma-encoded): like Unity in a linear-space project, convert them to
-	 * linear before shading
+	 * Color properties, as authored: LDR colours are gamma-encoded and, as in Unity's linear-space projects,
+	 * converted to linear before shading; `[HDR]` colours are authored linear and used as stored (see
+	 * `docs/game-data/materials.md#emission`)
 	 */
 	colors: Record<string, [r: number, g: number, b: number, a: number]>;
 	/** Vector properties, used as they are */

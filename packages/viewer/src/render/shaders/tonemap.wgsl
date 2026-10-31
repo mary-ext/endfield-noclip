@@ -1,10 +1,11 @@
 // the last pass: exposure, bloom, vignette, colour grading, tonemapping and display encoding into the
 // swapchain. needs post-common.wgsl.
 //
-// the grading and curve are the game's (HGRP's LutBuilder2D, TONEMAPPING_ACES_MODIFIED): URP's grading in
+// the grading and curve are the game's (its LUT builder under TONEMAPPING_ACES_MODIFIED): URP's grading in
 // ACEScg with a luminance contrast, then a rational fit of ACES. the game bakes them into a 32³ LogC LUT; here
 // they run per pixel, with the colour curves left out (the package doesn't carry them; neutral curves cancel).
-// matrices multiply row vectors (`v * m` dots v with each column).
+// see docs/game-data/post-processing.md#colour-grading-and-tonemapping. matrices multiply row vectors
+// (`v * m` dots v with each column).
 
 @group(1) @binding(0) var scene_texture: texture_2d<f32>;
 @group(1) @binding(1) var bloom_texture: texture_2d<f32>;
@@ -140,8 +141,8 @@ fn fs_tonemap(in: FullscreenOut) -> @location(0) vec4f {
 	let px = vec2i(in.position.xy);
 	var color = textureLoad(scene_texture, px, 0).rgb;
 	color *= post.grade.x;
-	// the game's composite: towards the bloom by its intensity, optionally taking the thresholded part out of
-	// the scene; in add mode, bloom past 0.3 is compressed
+	// the game's composite: adds the bloom scaled by its intensity; blend modes other than add take the
+	// scene's above-threshold part out by the same factor, add mode compresses bloom past 0.3 instead
 	if (post.flags.w != 0u) {
 		let subtract = post.bloom_shape.x;
 		let brightness = max(color.r, max(color.g, color.b));

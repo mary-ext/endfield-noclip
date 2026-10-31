@@ -145,8 +145,9 @@ const isContentKind = enumGuard(ContentKind);
  * refFirst, u32 refCount. ref: u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, f32
  * param.
  *
- * @param tree nodes and refs; node ref slices must lie inside `refs`
+ * @param tree nodes and refs
  * @returns the encoded file
+ * @throws {RangeError} if a node's ref slice runs past `refs`
  */
 export const encodeTree = (tree: Tree): Uint8Array => {
 	const out = new Uint8Array(TABLE_HEADER_SIZE + tree.nodes.length * NODE_SIZE + tree.refs.length * REF_SIZE);

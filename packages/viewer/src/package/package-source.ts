@@ -13,14 +13,14 @@ export interface PackageSource {
 	label: string;
 	/**
 	 * @param path package-relative path, e.g. `core.czar`
-	 * @param signal aborts the read
+	 * @param signal aborts the read; local sources ignore it
 	 * @returns the whole file
 	 */
 	readFile(path: string, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;
 	/**
 	 * @param path package-relative path
 	 * @param range the bytes to read, and the file's size as the manifest records it
-	 * @param signal aborts the read
+	 * @param signal aborts the read; local sources ignore it
 	 * @returns exactly `range.length` bytes
 	 * @throws {PackageChangedError} if the file's size differs from `range.fileSize`
 	 * @throws {Error} if the file is shorter than the range

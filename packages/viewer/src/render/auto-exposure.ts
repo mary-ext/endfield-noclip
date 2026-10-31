@@ -1,8 +1,9 @@
 /**
  * the GPU side of the game's auto exposure (the arithmetic is in `exposure.ts`): a histogram of 16 bins of
- * log2 luminance over the profile's metering range, taken from every 16th pixel of the scene before bloom and
- * tonemapping and optionally weighted towards the screen's centre, then read back asynchronously, a frame or
- * two late, as in the game.
+ * log2 luminance over the profile's metering range, taken from every 16th pixel of the antialiased scene
+ * before bloom and tonemapping and optionally weighted towards the screen's centre, then read back
+ * asynchronously, a frame or two late, as in the game. see
+ * `docs/game-data/post-processing.md#auto-exposure`.
  *
  * @module
  */

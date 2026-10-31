@@ -1,9 +1,9 @@
 import { FormatError } from '../binary/binary-reader.ts';
 import { ByteView } from '../binary/byte-view.ts';
 
-// SparkBuffer config tables (`Data/TableCfg/*.bytes`, Table group). layout recovered from the current client's
-// MapIdTable, LevelDescTable and I18nTextTable_*; only the value types those use are supported, and anything
-// else fails loudly rather than guessing.
+// SparkBuffer config tables (`Data/TableCfg/*.bytes`, Table group). layout recovered from MapIdTable,
+// LevelDescTable and I18nTextTable_*; only the value types those use are supported, and anything else fails
+// loudly rather than guessing.
 //
 //   u32 typesOffset, u32 rootOffset, u32 dataOffset
 //   types: u32 count, count × { u8 kind (8 = bean), pad4, u32 hash, cstring name, pad4, u32 fieldCount,

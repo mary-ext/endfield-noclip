@@ -1,17 +1,11 @@
 /**
- * the environment at the camera: the game's environment volumes blended the way `HGEnvironmentManager` does
- * each frame (`_InterpolateVolumesImpl`), over the shown level's base profile.
+ * the environment at the camera: the game's environment volumes blended over the shown level's base profile
+ * each frame, as the game's environment manager does. the blend modes, their factors and the per-section
+ * lerps are in docs/game-data/environment.md#blending-at-the-camera.
  *
- * volumes apply in ascending priority (then shape: global, box, prism) where they contain the camera. blend
- * mode 0 replaces the phase's sections, 1 lerps them by `clamp(distance to the edge / blendDistance)`, and 2
- * fades them in over `fadeInDuration` seconds while the camera is inside and out over `fadeOutDuration` after
- * it leaves ({@link EnvironmentFades}), snapping when the camera jumps more than 5 m in a frame. mode 3 (a
- * scripted factor) is skipped.
- *
- * a phase only touches the sections it marks active. per section the game lerps every field
- * (`HG*Config.Lerp`); here numbers and colours lerp, other values switch at the halfway point, the cloud
- * panorama crossfades through its fade alpha when the texture changes, as `HGCloudConfig.Lerp` does, and the
- * lens flare fades through nothing, as `HGLensFlareConfig.Lerp` does
+ * volumes apply in ascending priority (then shape: global, box, prism) where they contain the camera, and
+ * only to the sections their phase marks active. scripted volumes (mode 3) apply only when ticked, at full
+ * strength.
  *
  * @module
  */
@@ -59,7 +53,7 @@ export interface BlendOptions {
 	loaded?: readonly boolean[];
 }
 
-/** shape order among equal priorities, as `HGEnvironmentVolumeBase.CompareTo` falls back to the volume type */
+/** shape order among equal priorities: the game falls back to the volume type (prism is `PolyArea`, 3) */
 const SHAPE_ORDER: Record<EnvironmentVolumeShape['kind'], number> = { global: 0, box: 1, prism: 3 };
 
 /** volumes with their manifest index, sorted as the game applies them, per manifest */
@@ -133,10 +127,7 @@ const JUMP_DISTANCE = 5;
 /** how much faster time fades run after a jump (the game's) */
 const JUMP_SPEED = 10000;
 
-/**
- * the time-faded volumes' fade factors for one camera (`HGEnvironmentVolumeBase.dataPerCameras`), carried
- * from frame to frame
- */
+/** the time-faded volumes' fade factors for one camera, carried from frame to frame */
 export class EnvironmentFades {
 	readonly #factors = new Map<number, number>();
 	#lastEye: Vec3 | null = null;
@@ -502,7 +493,7 @@ const lerpValue = (key: string, a: unknown, b: unknown, t: number): unknown => {
 	return t < 0.5 && a !== undefined ? structuredClone(a) : structuredClone(b);
 };
 
-/** `HGCloudConfig.Lerp`: a changed panorama fades out to the halfway point and the new one fades in */
+/** the game's cloud lerp: a changed panorama fades out to the halfway point and the new one fades in */
 const lerpCloud = (
 	a: Record<string, unknown>,
 	b: Record<string, unknown>,
@@ -525,7 +516,7 @@ const lerpCloud = (
 	return out;
 };
 
-/** wetness fields `HGRainConfig.Lerp` takes from the side with wetness on, when only one has it */
+/** wetness fields the game's rain lerp takes from the side with wetness on, when only one has it */
 const WETNESS_FIELDS = [
 	'wetnessBasePorosity',
 	'wetnessPorosityFactor',
@@ -536,10 +527,7 @@ const WETNESS_FIELDS = [
 	'rippleRoughnessMaskThreshold',
 ];
 
-/**
- * `HGRainConfig.Lerp`'s wetness: with wetness on one side only, it fades in from dry with that side's
- * settings
- */
+/** the rain lerp's wetness: with wetness on one side only, it fades in from dry with that side's settings */
 const lerpRain = (
 	a: Record<string, unknown>,
 	b: Record<string, unknown>,
@@ -561,11 +549,7 @@ const lerpRain = (
 
 const number = (value: unknown): number => (typeof value === 'number' ? value : 0);
 
-/**
- * the height-fog sections' `Lerp` for their flow noise. when both sides have it with the same speed and
- * tiling, it blends; otherwise a noise that changes speed or tiling fades out to the halfway point and the
- * other fades in, and a noise on one side only fades in from nothing with that side's settings
- */
+/** the height-fog sections' lerp for their flow noise (docs/game-data/sky-and-fog.md#flow-noise) */
 const lerpFlowNoise = (
 	a: Record<string, unknown>,
 	b: Record<string, unknown>,
@@ -625,9 +609,8 @@ const faded = (from: Record<string, unknown>, weight: number): Record<string, un
 });
 
 /**
- * `HGLensFlareConfig.Lerp`: a flare on one side only fades in from nothing with that side's settings; with a
- * flare on both sides, the first fades out to the halfway point and the second fades in. nothing blends
- * between two flares
+ * the game's lens flare lerp: a flare on one side only fades in from nothing with that side's settings; with
+ * a flare on both sides, the first fades out to the halfway point and the second fades in
  */
 const lerpLensFlare = (
 	a: Record<string, unknown> | undefined,

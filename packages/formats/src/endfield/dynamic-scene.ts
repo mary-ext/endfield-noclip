@@ -1,12 +1,12 @@
 import { FormatError } from '../binary/binary-reader.ts';
 import { FlatBuffer } from '../binary/flatbuffer.ts';
 
-// DynamicStreaming main grids: `Data/DynamicStreaming/PC/Scene/<scene>/fb_main_<L>_<i>_<j>.bytes`. this reads only
-// what state selection needs: each entity's id, controller components and resource groups with their
+// DynamicStreaming main grids: `Data/DynamicStreaming/PC/Scene/<scene>/fb_main_<L>_<i>_<j>.bytes`. this reads
+// only what state selection needs: each entity's id, controller components and resource groups with their
 // LogicState masks. field indices and record layouts follow Variante/endfield_research_kit (MIT,
 // `scripts/game_data/contracts/dynamic_{main_vector,root_comp,resource_comp,scalar_components}_native.json`);
-// the ResourceComp stride (132, not the contract's 124) and the DataIndex type → vector pairing were measured on
-// the current client.
+// the ResourceComp stride (132, not the contract's 124) and the DataIndex type → vector pairing were measured
+// on the client.
 //
 //   root: 3 [SingleGrid table]   4 [string] (root string table: settlement ids, POI ids, level ids …)
 //   grid: 0 u32 uniqueId (L<<16 | i<<8 | j)   5 [DataIndex 16 B]   12 [ResourceGroupWithStateDesc 88 B]
@@ -33,12 +33,7 @@ import { FlatBuffer } from '../binary/flatbuffer.ts';
 //   52 [MapVarControlComp 48 B] = i32 mapKey @0 (an id like globalKey), u8 controlLoad @4, i32 compareType @8,
 //     i64 compareValue @16, i32 extra1–4 @24, i32 mapId @40
 //
-// gate semantics (DynamicSceneMissionControlSystem._UpdateConditionValue / _GetCurrentConditionCompValue,
-// DynamicSceneVarControlSystemBase.EvaluateCompare): a mission condition holds when the quest/mission state
-// equals `state` (isSame 1) or differs from it (otherwise); compareType 0 needs all conditions, any other value
-// one; the entity loads while the result equals toBeTrue == 1. a variable gate with controlLoad loads while the
-// variable compares true (`CompareOperator` order) and not while it's unset; without controlLoad the variable
-// only drives the entity's level and animator state.
+// how the gates load an entity: docs/game-data/scene-states.md#dynamic-load-gates
 
 // #region types
 

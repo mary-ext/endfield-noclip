@@ -287,8 +287,8 @@ const find = async (
 };
 
 /**
- * @returns the asset file's matches: a summary line of its objects of `className`, or else its container
- *   paths matching `filter`
+ * @returns the asset file's matches: with `className` alone, a summary line of its objects of that class;
+ *   otherwise its container paths matching `filter`, if it holds an object of `className` when one is given
  */
 const scanAsset = async (
 	asset: BundleAssetFile,

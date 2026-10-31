@@ -5,7 +5,8 @@ stores for it, and how the viewer blends it at the camera. the game has no per-l
 setting: environment volumes placed in the world apply environment phases, blended by priority
 wherever the camera is. a level's "base" environment is something the extractor derives. weather
 sits in the same system: it is a section of a phase, not a separate timer. how the renderer turns a
-blended profile into pixels is in [lighting.md](lighting.md).
+blended profile into pixels is in [lighting.md](lighting.md), [sky-and-fog.md](sky-and-fog.md) and
+[post-processing.md](post-processing.md).
 
 ## environment phases
 
@@ -22,21 +23,21 @@ the extractor reads these sections
 | phase field           | package key     | used by the viewer                                            |
 | --------------------- | --------------- | ------------------------------------------------------------- |
 | `lightConfig`         | `light`         | sun, exposure, ambient scale, effect directions               |
-| `skyConfig`           | `sky`           | ambient SH, reflection cubemap, sky distance                  |
+| `skyConfig`           | `sky`           | ambient SH, reflection cubemap, sky distance, sun disc        |
 | `atmosphereConfig`    | `atmosphere`    | sky LUTs, fog absorption                                      |
 | `fogConfig`           | `fog`           | atmosphere (distance) fog                                     |
 | `heightFogConfig`     | `heightFog`     | height fog                                                    |
 | `volumetricFogConfig` | `volumetricFog` | volumetric fog, and its own height-fog set used while it's on |
-| `cloudConfig`         | `cloud`         | cloud panorama                                                |
+| `cloudConfig`         | `cloud`         | cloud panorama, cloud shadows                                 |
 | `windConfig`          | `wind`          | packed, not used                                              |
 | `lightShaftConfig`    | `lightShaft`    | sun shafts                                                    |
 | `colorGradingConfig`  | `colorGrading`  | grading                                                       |
-| `autoExposureConfig`  | `autoExposure`  | packed, not used                                              |
+| `autoExposureConfig`  | `autoExposure`  | [auto exposure](post-processing.md#auto-exposure)             |
 | `shadowConfig`        | `shadow`        | sun shadow softness, strength, penumbra ramp, sun-off         |
 | `celestialConfig`     | `celestial`     | planets in the sky                                            |
 | `starConfig`          | `star`          | star field and nebula                                         |
 | `rainConfig`          | `rain`          | rain wetness ([wetness](#wetness)); falling rain isn't drawn  |
-| `lensFlareConfig`     | `lensFlare`     | the sun's [lens flare](lighting.md#lens-flare)                |
+| `lensFlareConfig`     | `lensFlare`     | the sun's [lens flare](post-processing.md#lens-flare)         |
 
 other sections the phase has (`snowConfig`, `volumetricCloudConfig`, …) are not extracted. to add
 one, extend `ENVIRONMENT_SECTIONS` and `mapSections`, the `SECTION_KEYS` map in
@@ -50,10 +51,10 @@ colour curves, `m_*` editor fields and object references other than textures, ma
 flare data are dropped; texture references become texture-table ids. material references (the
 celestial bodies' draw materials) become the material flattened: shader name, keywords, floats,
 colours as stored, texture-table ids and texture scale/offset per slot. the lens flare's
-`LensFlareDataSRP` reference becomes the flare's elements ([lens flare](lighting.md#lens-flare)),
-each image a texture-table id. the textures that resolve in practice are the sky reflection cubemap
-(BC6H), the cloud panorama, its flow map, the cloud-shadow texture and the flares' images.
-editor-only previews (`*ForEdit`) are skipped.
+`LensFlareDataSRP` reference becomes the flare's elements
+([lens flare](post-processing.md#lens-flare)), each image a texture-table id. the textures that
+resolve in practice are the sky reflection cubemap (BC6H), the cloud panorama, its flow map, the
+cloud-shadow texture and the flares' images. editor-only previews (`*ForEdit`) are skipped.
 
 ## environment volumes
 
@@ -88,8 +89,8 @@ shapes:
   cave volume under a hill doesn't apply on the hilltop.
 
 each scene has one global volume (tag 0). each level typically has one broad polygon or box volume
-over most of its ground, often named `*global*`, under dozens of smaller, higher-priority ones for
-caves, interiors and set pieces.
+over most of its ground (usually priority 200, often named `*global*`), under dozens of smaller,
+higher-priority ones for caves, interiors and set pieces.
 
 Unity post-processing `Volume`s (component `Volume`: `isGlobal`, priority, blend distance, weight, a
 `VolumeProfile`) share the same rows; local ones carry a `BoxCollider`. every level has its own
@@ -99,9 +100,9 @@ global post volume; local post volumes are read but unused.
 
 the extractor reads volumes from the default stream area's chunk files of every scene state. a
 volume present in state 0's files always loads; otherwise it loads with any of the MapConfig scene
-states whose files hold it. the packer interns that set as the volume's `condition` (an index into
-the manifest's conditional sets), and the viewer skips a volume whose condition the selected scene
-values don't satisfy. see [scene-states.md](scene-states.md).
+states whose files hold it. the packer files the volume under a visibility group (its owning level
+and that loading condition), and the viewer skips a volume whose group's condition the selected
+scene values don't satisfy. see [scene-states.md](scene-states.md).
 
 ## the level's base environment
 
@@ -163,7 +164,7 @@ game's environment manager, which blends `HGEnvironmentPhase`s into an interpola
 - a factor ≥ 1 copies the section. below that, numbers and colours lerp, mode/type fields and
   references switch at ½, and the cloud panorama crossfades through `cloudFadeAlpha` (the old
   texture fades out to ½, the new one in after), as the game's cloud lerp does. the height fog's
-  flow noise has its own rule ([flow noise](lighting.md#flow-noise)), as does the lens flare: a
+  flow noise has its own rule ([flow noise](sky-and-fog.md#flow-noise)), as does the lens flare: a
   flare on one side fades in by the factor with that side's settings, and two flares cross through
   nothing at ½ without blending. the game's per-section lerps have more special cases (the
   precipitation transitions, for one); the generic lerp is an approximation.
@@ -197,9 +198,8 @@ wrong:
 ## weather
 
 precipitation is part of the environment phase. rain and snow are sections of their own
-(`rainConfig`, `snowConfig`), blended with the rest; the game reports "raining" and the current rain
-or snow intensity from the phase in effect at the camera. there is no evidence of an independent
-weather schedule; a server or random weather controller has not been found.
+(`rainConfig`, `snowConfig`), blended with the rest. there is no evidence of an independent weather
+schedule; a server or random weather controller has not been found.
 
 field rules, from the authored data:
 
@@ -213,7 +213,7 @@ field rules, from the authored data:
   heavy-rain phase over the lake islet and dry, disabled-rain overrides at the outposts. a phase
   name is no evidence of what its sections hold.
 
-weather appears in three ways:
+weather appears in two ways:
 
 - **spatial overrides**: ordinary chunk volumes whose phases enable or disable precipitation, such
   as the Marker Stone lake-islet rain or Snowy Forest's snow with drier cave overrides.
@@ -221,9 +221,6 @@ weather appears in three ways:
   transform, priority, blend mode, fades) that `EnvironmentEnable` script actions load and unload.
   these never appear in chunk data, so the packer doesn't see them. Marker Stone's outposts have
   such quest-driven rain volumes at higher priority than the dry outpost phase.
-- **shelter**: characters' rain and snow exposure is "sky-exposed and the active phase
-  precipitates". that is a gameplay sensor; the renderer's own occlusion for falling precipitation
-  is a separate mechanism.
 
 the viewer renders no precipitation, and the packer doesn't extract the snow section. the absence of
 rain in the viewer says nothing about whether the game's active phase is dry there.

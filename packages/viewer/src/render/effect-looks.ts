@@ -1,18 +1,13 @@
 /**
- * how the viewer draws the game's scene effect meshes, `HGRP/Effect/VFXBaseV2` and `HGRP/Effect/VFXDecal`:
- * unlit, premultiplied layers built from a stack of scrolling textures, drawn in the transparent pass by
- * `effect.wgsl`. the decal projects its textures down its box onto whatever the main pass drew inside it. the
- * mist, `HGRP/FogSimple` cards and `HGRP/Effect/VFXFakeVolumeFog` boxes, has looks of its own
- * ({@link MistRow}), and so do the lit waterfall sheets of `HGRP/Effect/VFXWater` ({@link WaterSheetRow}).
+ * the draw parameters of the scene effects `effect.wgsl` draws in the transparent pass:
+ * `HGRP/Effect/VFXBaseV2` surfaces and `HGRP/Effect/VFXDecal` boxes ({@link EffectRow}),
+ * `HGRP/Effect/VFXWater` waterfall sheets ({@link WaterSheetRow}), and the mist, `HGRP/FogSimple` cards and
+ * `HGRP/Effect/VFXFakeVolumeFog` boxes ({@link MistRow}). what each draws is in `docs/game-data/effects.md`.
  *
- * both shaders combine textures by role. a texture can distort the UVs of the textures sampled after it
- * (disturb), scale that distortion (weight), multiply the colour and alpha (mask), add a tinted layer (blend)
- * or eat the alpha away below a threshold (dissolve). VFXBaseV2 gives each `_SampleTexN` its role by its
- * `_SampleTexNUseWeightK` properties; VFXDecal has one fixed texture per role.
- *
- * VFXBaseV2's vertex offset moves vertices in `effect.wgsl`'s vertex stage. materials using features this
- * doesn't draw (offset masks, polar or screen UVs, lighting, flipbooks and the like) stay hidden, as do
- * additive ones, which the transparent pass's blending can't express.
+ * VFXBaseV2 and VFXDecal combine textures by role ({@link EffectRole}): VFXBaseV2 gives each `_SampleTexN`
+ * its role by its `_SampleTexNUseWeightK` properties, VFXDecal has one fixed texture per role. materials
+ * using keywords outside each shader's drawn set stay hidden, as do additive VFXBaseV2 and VFXDecal
+ * materials.
  *
  * @module
  */
@@ -88,7 +83,7 @@ export const EffectRow = {
 	offsetMode: 120,
 	/**
 	 * 1 when the layer goes unfogged (its material lacks `_USE_FOG`, and the game draws effects after the fog),
-	 * 0, 0, 0
+	 * the {@link EffectKind}, 0, 0
 	 */
 	unfogged: 124,
 } as const;
@@ -164,7 +159,7 @@ const DECAL_SLOTS = [
 	},
 ] as const;
 
-/** keywords each shader can have and still be drawn */
+/** keywords VFXBaseV2 and VFXDecal can have and still be drawn */
 const BASE_KEYWORDS = new Set([
 	'_SAMPLE_TEX0',
 	'_SAMPLE_TEX1',
@@ -194,14 +189,14 @@ export interface EffectLook {
 	params: Float32Array;
 }
 
-/** the parameter readers both shaders share */
+/** a material's float and colour (or vector) properties: its own value, else the shader's default */
 const readers = (entry: ReadyMaterial, shader: ShaderEntry) => ({
 	float: (name: string, fallback: number): number => entry.floats[name] ?? shader.floats[name] ?? fallback,
 	color: (name: string): [number, number, number, number] | undefined =>
 		entry.colors[name] ?? shader.colors[name] ?? entry.vectors[name] ?? shader.vectors[name],
 });
 
-/** fills the slot rows shared by both shaders */
+/** fills a slot's texture, UV transform, scroll and rotation, and role bits */
 const setSlot = (
 	look: EffectLook,
 	i: number,
@@ -231,7 +226,10 @@ const emptyEffect = (slots: number): EffectLook => {
 	};
 };
 
-/** the rows of the near camera fade, the dissolve and the blend layer, which both shaders read alike */
+/**
+ * the rows of the blend layer, the distortion, the dissolve, the near camera fade and `_IgnorePostExposure`,
+ * which every texture-stack look reads alike (VFXWater overwrites some of them)
+ */
 const setShared = (look: EffectLook, entry: ReadyMaterial, shader: ShaderEntry, intensity: number): void => {
 	const { float, color } = readers(entry, shader);
 	const params = look.params;
@@ -584,9 +582,7 @@ const WATER_KEYWORDS = new Set([
 ]);
 
 /**
- * `HGRP/Effect/VFXWater`, the sheets of falling water: a tinted, masked main texture or an animated flipbook
- * blended frame to frame along its motion vectors, distorted by a scrolling texture, eaten by a dissolve, and
- * lit by the irradiance volume and the sun, with a subsurface glow when lit from behind.
+ * `HGRP/Effect/VFXWater`, the sheets of falling water (`docs/game-data/effects.md#waterfalls`).
  *
  * @param entry a material of `HGRP/Effect/VFXWater`
  * @param shader its shader
@@ -817,7 +813,10 @@ export const MistRow = {
 /** the slot index of a card's noise texture; its main texture is slot 0 */
 export const MIST_NOISE_SLOT = 1;
 
-/** card keywords that are drawn; lighting from a normal map and the fog keyword's own fogging are approximated */
+/**
+ * card keywords that are drawn. `_USE_LIGHTING` lights by the mesh normal rather than the game's normal map,
+ * and `_USE_FOG`'s own fog isn't drawn (premultiplied cards take the composite's fog, additive ones none)
+ */
 const FOG_SIMPLE_KEYWORDS = new Set(['_USE_FOG', '_USE_SOFTBLEND', '_USE_LIGHTING']);
 
 /** a fade between two view depths that also works with equal ends (then a step at the start) */
@@ -825,9 +824,7 @@ const fadeRange = (start: number, end: number): [number, number] =>
 	Math.abs(end - start) < 1e-4 ? [start, start + 1e-4] : [start, end];
 
 /**
- * `HGRP/FogSimple`, the game's mist cards: a texture's red channel, broken up by a noise texture and a
- * second, scrolling sample of it (wind), in a flat or sun-lit colour, faded by view depth, towards the card's
- * top, and where it nears what lies behind it.
+ * `HGRP/FogSimple`, the mist cards (`docs/game-data/effects.md#mist`).
  *
  * @param entry a material of `HGRP/FogSimple`
  * @param shader its shader
@@ -898,9 +895,8 @@ export const fogSimpleLook = (entry: ReadyMaterial, shader: ShaderEntry): Effect
 };
 
 /**
- * `HGRP/Effect/VFXFakeVolumeFog`, fog boxes: the fog's thickness along the view ray through the unit cube, up
- * to the surface behind or the camera inside, turned into opacity and faded towards the box's edges and top
- * and with distance. always additive; the 3D noise isn't drawn.
+ * `HGRP/Effect/VFXFakeVolumeFog`, the mist boxes (`docs/game-data/effects.md#mist`), drawn only when
+ * additive.
  *
  * @param entry a material of `HGRP/Effect/VFXFakeVolumeFog`
  * @param shader its shader

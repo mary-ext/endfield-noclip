@@ -54,8 +54,8 @@ export interface PackageManifest {
 	format: typeof PACKAGE_FORMAT;
 	version: number;
 	/**
-	 * hash over the core's binary and table members. two packages with equal generations are identical; a
-	 * viewer keys its caches of decoded tables by it and never mixes generations
+	 * hash over the core's binary and table members (not this manifest): equal generations mean equal tables
+	 * and blob placement, so a reader can key caches of decoded tables by it
 	 */
 	generation: string;
 	scene: SceneInfo;
@@ -75,10 +75,7 @@ export interface PackageManifest {
 	environmentPhases: EnvironmentPhaseInfo[];
 	/** the scene's environment volumes, for blending at the camera */
 	environmentVolumes: EnvironmentVolumeInfo[];
-	/**
-	 * the 3D noise the height fog's flow noise samples (one channel), or `null` if the install lacks it. absent
-	 * in packages written before it was extracted
-	 */
+	/** the 3D noise the height fog's flow noise samples (one channel), or `null` if the install lacks it */
 	heightFogFlowNoise?: TextureRef;
 	states: StatesInfo;
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
@@ -172,11 +169,15 @@ export interface ArchiveInfo {
 	 * ancestors, plus common
 	 */
 	tile: TileKey | null;
-	/** total byte length; `null` for the core, whose size depends on this manifest */
+	/**
+	 * total byte length, which a reader can compare to notice an archive replaced by a re-pack. `null` for the
+	 * core, whose size depends on this manifest
+	 */
 	size: number | null;
 	/**
 	 * byte position of the archive's data section, which {@link BlobRecord.offset} is relative to. `null` for
-	 * the core: read it from the core's own prelude, which the viewer parses when opening it
+	 * the core, whose header depends on the tables that hold the offsets: read the core whole and take its
+	 * blobs through czar
 	 */
 	dataOffset: number | null;
 }

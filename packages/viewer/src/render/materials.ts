@@ -2,16 +2,8 @@
  * how the viewer's mesh shader draws each package material: whether at all, which textures fill its slots
  * ({@link SLOTS}), and the draw parameters `mesh.wgsl` reads.
  *
- * the HGRP Lit family has two texture layouts (`_BaseTextureMapCount`): with an MRO map (R metallic, G
- * roughness, B occlusion) the normal map is `RAG`; without one (`_TWO_BASEMAP`, most materials) the normal
- * map's B channel holds roughness and A occlusion, and metallic is the base colour's alpha
- * (`_BaseTextureMapCount` 1) or `_Metallic` (2). foliage normal maps hold roughness in B the same way.
- *
- * Lit's optional layers, by keyword: `_TRI_CHANNEL_MASK` blends the surface toward three authored colours by
- * the channels of `_MaskMap`, `_DETAIL_MAP` adds a tiling normal (and optionally colour and roughness) map
- * that fades with view depth, `_PARALLAX_MAP` glows with a pattern ray-marched below the surface, and
- * `_LAYERBLEND_TOP` or `_LAYERBLEND_MASK` covers upward-facing or masked surfaces with a second material
- * (moss, sand), which `_LAYERBLEND_MOSS` shades as fuzzy.
+ * the shading each look selects is in `docs/game-data/materials.md`; the Lit family's two texture layouts,
+ * which decide the normal-map flags here, are in `docs/game-data/materials.md#texture-layouts`.
  *
  * @module
  */
@@ -56,11 +48,11 @@ const FOLIAGE_FAMILIES = new Set(['leaf', 'grass', 'cardMesh']);
 const DEFAULT_ALBEDO: [r: number, g: number, b: number] = [0.5, 0.5, 0.5];
 
 /**
- * the texture slots the mesh shader samples, in binding order. the third holds `_MROMap` in the MRO layout
- * and the tri-channel `_MaskMap` otherwise ({@link LookFlags.TriChannelMask}): the frame group leaves seven
- * sampled textures of WebGPU's default sixteen, and a material using both is rare. the parallax slots hold
- * the layer's `_Layer1BaseMap` and `_Layer1BumpMap` in looks with {@link LookFlags.LayerBlend} (no map02
- * material has both keywords), and the emissive slot its `_LayerBlendMaskMap`
+ * the texture slots the mesh shader samples, in binding order. the frame group leaves seven sampled textures
+ * of WebGPU's default sixteen, so slots are shared where materials rarely use both: the third holds `_MROMap`
+ * in the MRO layout and the tri-channel `_MaskMap` otherwise ({@link LookFlags.TriChannelMask}), and looks
+ * with {@link LookFlags.LayerBlend} put the layer's `_Layer1BaseMap` and `_Layer1BumpMap` in the parallax
+ * slots (no map02 material has both keywords) and its `_LayerBlendMaskMap` in the emissive slot
  */
 export const SLOTS = [
 	'_BaseColorMap',
@@ -149,7 +141,7 @@ export const LOOK_FLOATS = 128;
 
 /** one material as the mesh shader draws it */
 export interface MaterialLook {
-	/** `false` for materials not drawn at all (fog volumes, additive blending) */
+	/** `false` for materials not drawn at all (effect shaders without a look, additive non-effects) */
 	drawn: boolean;
 	/**
 	 * alpha-tested against the alpha of the base colour, or of the normal map with
@@ -180,9 +172,7 @@ export interface MaterialLook {
 
 /**
  * a draw's stencil state and the depth test that goes with it, from its material's `_Stencil*` and `_ZTest`
- * properties. the game's VFXBaseV2 portals use it: a mesh writes a reference value where it shows, and
- * effects drawn later test for it, often without a depth test, so a chasm can show through a crack in the
- * ground
+ * properties, for VFXBaseV2 portals (`docs/game-data/effects.md#portals`)
  */
 export interface LookStencil {
 	compare: GPUCompareFunction;
@@ -234,13 +224,13 @@ export const LookRow = {
 	detail2: 80,
 	/** `_DetailOverlayColor`: linear colour, how much it covers */
 	detailOverlay: 84,
-	/** parallax depth (`_ParallaxStrength`), march steps, Fresnel power, minimum brightness */
+	/** parallax depth (`_ParallaxStrength`), march steps, Fresnel power, pulse amplitude */
 	parallax: 88,
-	/** pulse speed, pulse phase per metre of the object's position, ignore post exposure, intensity */
+	/** pulse phase per second, pulse phase per metre of the object's position, ignore post exposure, pulse mean */
 	parallax2: 92,
-	/** `_ParallaxColor` (HDR, as stored), mask channel */
+	/** `_ParallaxColor` (HDR, as stored) times `_ParallaxIntensity`, mask channel */
 	parallaxColor: 96,
-	/** `_ParallaxColorDark` */
+	/** `_ParallaxColorDark` times `_ParallaxIntensity` */
 	parallaxDark: 100,
 	/** the glow's brightening near the player: outer and inner radius, strength (0 without `_ParallaxCharPos`) */
 	parallaxBright: 104,
@@ -358,9 +348,8 @@ const vfxBaseStencilOf = (entry: ReadyMaterial, shader: ShaderEntry): LookStenci
 };
 
 /**
- * @returns the look of an opaque VFXBaseV2 material that writes the stencil (a portal's mask), else `null`.
- *   the game also shades and writes depth there, but the portal's effects cover the mask wherever it shows,
- *   so the viewer writes only the stencil and leaves the surface behind as the main pass drew it
+ * @returns the stencil-only look of an opaque VFXBaseV2 material that writes the stencil (a portal's mask),
+ *   else `null`
  */
 const portalMaskLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook | null => {
 	if (shader.name !== 'HGRP/Effect/VFXBaseV2' || entry.blend !== 'opaque') {
@@ -507,7 +496,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	const foliage = FOLIAGE_FAMILIES.has(family);
 	const params = look.params;
 
-	// the slots: HLOD normal maps aren't tangent-space maps we understand yet, and the optional maps are only
+	// the slots: HLOD normal maps aren't tangent-space maps the shader can read, and the optional maps are only
 	// sampled where the material's layout and keywords use them. the geometry carries UV sets 0 and 1
 	const keywords = entry.keywords;
 	const lit = family === 'lit';
@@ -544,7 +533,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	} else if (entry.baseTextureMapCount !== null || foliage) {
 		look.flags |= LookFlags.NormalRoughness;
 	}
-	// the two-basemap layout's occlusion and metallic sources (module comment)
+	// the two-basemap layout's occlusion and metallic sources (docs/game-data/materials.md#texture-layouts)
 	if (family === 'lit' && entry.baseTextureMapCount !== null && !mro) {
 		look.flags |= LookFlags.NormalOcclusion;
 		if (entry.baseTextureMapCount < 1.5) {
@@ -604,10 +593,8 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		leafParams(look, entry, shader);
 	}
 
-	// emission: `_EmissiveColor` (HDR, authored linear) times the emissive map's R channel
-	// (`_EMISSIVE_MAP`), or times a channel of the base, normal or MRO map that `_EmissiveMaskChannel` picks
-	// (`_EMISSIVE_MASK`, where 0 turns emission off; mesh.wgsl reads the channel). the animated variants are
-	// drawn still, and `_EMISSIVE_NOMAP` only comes with the sweep animation, so it stays dark
+	// emission (docs/game-data/materials.md#emission): `_EMISSIVE_MAP`, or `_EMISSIVE_MASK` with a channel
+	// mesh.wgsl reads (0 turns it off). `_EMISSIVE_NOMAP` stays dark
 	{
 		const emissive = colorOf(entry, shader, '_EmissiveColor');
 		const channel = floatOf(entry, shader, '_EmissiveMaskChannel', 0);
@@ -619,7 +606,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 			emits = true;
 		}
 		if (emits && emissive !== undefined) {
-			// an HDR colour: Unity's HDR picker authors it in linear space, so it goes to the shader as stored
+			// HDR, authored linear: as stored
 			params.set([emissive[0], emissive[1], emissive[2]], LookRow.emissive);
 			params.set(
 				[
@@ -632,8 +619,7 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 		}
 	}
 
-	// tri-channel mask: each channel, remapped by its contrast and offset and scaled by its colour's alpha,
-	// blends albedo, roughness and metallic toward its own values, B first and R last
+	// tri-channel mask (docs/game-data/materials.md#lit-layers)
 	if (triChannel && look.textures[2] >= 0) {
 		look.flags |= LookFlags.TriChannelMask;
 		// the switch-texture variants take G and B from textures of their own, which have no slot: only R blends
@@ -684,11 +670,8 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 };
 
 /**
- * `HGRP/Foliage/Leaf`'s GBuffer inputs to the game's two-sided foliage lighting: a sun shadow from the vertex
- * AO (vertex colour R) and a fake directional shadow on leaves facing away from the sun, the sun's N·L from
- * the vertex normal, transmission and subsurface faded in by the vertex AO, and the canopy ramp, which tints
- * the albedo toward a colour down the canopy (vertex colour A). the reflectance is quantized to 3 bits, as
- * the GBuffer stores it
+ * `HGRP/Foliage/Leaf`'s inputs to the two-sided foliage lighting (`docs/game-data/materials.md#foliage`). the
+ * reflectance is quantized to 3 bits, as the GBuffer stores it
  */
 const leafParams = (look: MaterialLook, entry: ReadyMaterial, shader: ShaderEntry): void => {
 	const params = look.params;
@@ -772,12 +755,8 @@ const maskSlotOf = (entry: ReadyMaterial, triChannel: boolean): string | null =>
 };
 
 /**
- * `_PARALLAX_MAP`: a few steps march the view ray through `_ParallaxNoiseMap` as a height field below the
- * surface; where it hits, `_ParallaxMap`'s G picks between the dark and bright colours. the glow is masked by
- * a channel of the material's own maps (squared), a Fresnel power, and a pulse over time whose phase follows
- * the object's position. both maps ignore their `_ST` and tile by their own scale.
- *
- * with `_ParallaxCharPos`, the glow brightens near the player. a global highlight isn't drawn
+ * `_PARALLAX_MAP`'s glow (`docs/game-data/materials.md#lit-layers`). both maps ignore their `_ST` and tile by
+ * their own scale
  */
 const parallaxParams = (look: MaterialLook, entry: ReadyMaterial, shader: ShaderEntry): void => {
 	const params = look.params;
@@ -933,22 +912,10 @@ export const LayerBlendRow = {
 } as const;
 
 /**
- * `_LAYERBLEND_TOP` and `_LAYERBLEND_MASK`: a second material covers the base where the surface faces up, or
- * by a mask. top coverage is `saturate((up − _TopBlendThreshold) / _TopBlendSmoothness)`, with `up` the world
- * Y of the geometric normal, blended toward the bumped one by `_TopBlendWithBumpMap`; mask coverage is
- * `_LayerBlendMaskMap`'s R (UV set 0, or 1 when `_LayerBlendMaskUVType` is 0, ignoring its `_ST`) or a map
- * channel by `_LayerBlendMaskType`. with `_LayerBlendHeight`, coverage then sharpens by comparing the base's
- * height with the layer's (`_Layer1BaseMap`'s alpha). the layer's colour (desaturated, tinted, brightened)
- * replaces or adds to the albedo; roughness (`_Layer1BumpMap`'s B), occlusion (its A), metallic and the
- * normal (reoriented onto the base's by `_Layer1BaseNormalIntensity`) blend toward the layer's. both maps
- * sample one coordinate, tiled by `_Layer1Tilling` and offset by `_Layer1Offset`, ignoring their `_ST`.
- *
- * `_LAYERBLEND_MOSS` shades the layer as fuzzy: darker where it faces the viewer, brighter towards its
- * silhouette, shadowed along the coverage edge, whose normal also tips down.
- *
- * the viewer doesn't load UV set 2 and samples set 0 instead: no map02 mesh drawn with a UV-set-2 layer has
- * the set, and the game reads a missing set as set 0. `_BaseHeightMap` has no slot and reads as the shader's
- * grey default
+ * `_LAYERBLEND_TOP` and `_LAYERBLEND_MASK`, with `_LAYERBLEND_MOSS`'s fuzzy shading
+ * (`docs/game-data/materials.md#lit-layers`). both maps sample one coordinate, tiled by `_Layer1Tilling` and
+ * offset by `_Layer1Offset`, ignoring their `_ST`; the mask map samples untiled. UV set 2 isn't loaded and
+ * reads as set 0, and `_BaseHeightMap` has no slot and reads as the shader's grey default (0.5)
  */
 const layerBlendParams = (
 	look: MaterialLook,
@@ -1075,16 +1042,9 @@ const EROSION_SLOTS: (readonly [name: string, tiling: string | null] | null)[] =
 ];
 
 /**
- * `HGRP/Erosion`: the blight-covered rock. a base colour and an HDR metal colour are mixed by `_MetalMixMap`
- * (R: 0 where metal; G: occlusion and flow noise; B: where the flow band shows; A: roughness). a noise
- * pattern, offset by a one-step parallax and tinted, is added to the colour and faintly to emission. a flow
- * band reads `_FlowRampMap` along the object's height and blends from `_FlowBottomColor` below
- * `_FlowColorOffset` to `_FlowTopColor` above it. the base and detail normal maps are summed. every texture
- * samples UV set 0 and ignores its `_ST`, tiling by its own property instead. HDR colours are used as stored,
- * like `_EmissiveColor`.
- *
- * the blend with whatever lies behind (`_ObjectBlend*`, which needs the scene's depth) and
- * `_FakeTranslucency` aren't drawn
+ * `HGRP/Erosion`, the blight-covered rock (`docs/game-data/materials.md#erosion`). every texture samples UV
+ * set 0 and ignores its `_ST`, tiling by its own property ({@link EROSION_SLOTS}); HDR colours are used as
+ * stored
  */
 const erosionLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	const look = emptyLook({ drawn: true });
@@ -1156,15 +1116,8 @@ const erosionLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook =>
 const DITHER_ALPHA_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2']);
 
 /**
- * `HGRP/Effect/VFXDitherAlpha`: an effect shader that writes the G-buffer like an opaque surface, used for
- * solid effect meshes such as the rocks floating over Origin Lodespring's crater. the colour is `_TintColor ·
- * _TintColorIntensity` times `_MainTex` (or the tint alone with `_UseMainTexAsAlpha`), times `_MainTex2Color`
- * when `_USE_MAIN2` takes only its alpha from `_MainTex2` (`_UseMainTex2AsAlpha`) and multiplies
- * (`_MainTex2BlendMode` 0). it is the albedo with `_UseLighting` (saturated, as the G-buffer stores it), else
- * the emitted radiance. `_NORMAL_MAP` adds a tangent-space normal map (`_NormalScale`, read like Unity's
- * `UnpackNormal`), roughness and metallic are `_Roughness` and `_Metallic`. the shader has no shadow caster
- * pass. its depth pass discards by the alpha against a screen-space dither; no drawn material fades, so the
- * dither isn't drawn
+ * `HGRP/Effect/VFXDitherAlpha`, an effect shader that writes the G-buffer like an opaque surface
+ * (`docs/game-data/effects.md#solid-effects`). it has no shadow caster pass
  *
  * @returns the look, or `null` with keywords or texture combinations the viewer doesn't draw
  */
@@ -1221,11 +1174,8 @@ const ditherAlphaLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLoo
 };
 
 /**
- * `HGRP/MattePainting`: painted backdrops on distant cards, unlit. the colour is `_MainTex` times `_TintColor
- * · _TintColorIntensity`, brightened by `_ExpIntensity` above `_ExpThreshold`; alpha is the texture's times
- * `_TintColor.a · _TintColorAlpha`, clamped to 1 and tested against `_AlphaClipThreshold`. the shader has no
- * shadow caster pass. `_UseMainTexAsAlpha` (alpha from the texture's R, colour from the tint alone) isn't
- * read: no packed material sets it
+ * `HGRP/MattePainting`, unlit painted backdrops (`docs/game-data/materials.md#matte-paintings`). the shader
+ * has no shadow caster pass
  */
 const mattePaintingLook = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	const look = emptyLook({ drawn: true });

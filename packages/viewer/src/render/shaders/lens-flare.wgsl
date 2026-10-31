@@ -1,6 +1,7 @@
 // the sun's lens flare (SRP core's data-driven lens flare, as the game ports it): one quad per element copy,
-// laid out by lens-flare.ts in SRP core's screen frame (x right, y down, −1 to 1), faded by how much of a disc
-// around the sun shows sky, and blended onto the composited scene.
+// laid out by lens-flare-layout.ts in SRP core's screen frame (x right, y down, −1 to 1), faded by how much of
+// a disc around the sun shows sky, and blended onto the composited scene. see
+// docs/game-data/post-processing.md#lens-flare.
 
 struct FlareFrame {
 	// occlusion disc radius (viewport units), sample count, 1 with the occlusion test, height / width

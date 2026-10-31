@@ -3,33 +3,22 @@
 a package is what `pnpm -s extract pack <scene>` writes and the viewer streams: one streaming scene
 (one world, one coordinate frame) as czar archives holding content-addressed blobs and a few tables.
 this page covers the layout on disk, every table and binary encoding, the versioning rule, and the
-design reasons behind them. the types are the contract:
-[package-format](../packages/package-format/src/) has one module per concern (`manifest`, `tree`,
-`instances`, `geometry`, `textures`, `materials`, `terrain`, `environment`, `water`, `lights`,
-`irradiance`, `states`, `blobs`, `blob-table`), each holding that concern's types and binary codec.
-the packer and the viewer share them, and their JSDoc wins where this page is less precise.
-`package-format` stays free of node APIs and of other workspace packages so both sides can import
-it.
+design reasons behind them. how the packer gets there is in [extraction.md](extraction.md#pack), how
+the viewer opens and streams a package in [viewer.md](viewer.md#loading-a-package), and what the
+game data inside means in the [game-data](game-data/) pages.
+
+the types are the contract: [package-format](../packages/package-format/src/) has one module per
+concern, each holding that concern's types and binary codec (`manifest`, `tiles`, `tree`,
+`instances` for chains and instance blocks, `geometry`, `textures`, `materials`, `terrain`,
+`environment`, `water`, `lights`, `particles`, `irradiance`, `states`, `conditions`, `stream-areas`,
+`story`, `blobs`, `blob-table`, plus shared helpers). the packer and the viewer share them, and
+their JSDoc wins where this page is less precise. `package-format` stays free of node APIs and of
+other workspace packages so both sides can import it.
 
 | side   | code                                                                                                                                               |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | packer | [pack/packer.ts](../packages/extractor/src/pack/packer.ts) and its siblings in [pack/](../packages/extractor/src/pack/)                            |
 | viewer | [package/](../packages/viewer/src/package/): `viewer-package.ts` opens the core, `package-source.ts` reads files, `decode-worker.ts` decodes blobs |
-
-## versioning
-
-`PACKAGE_VERSION` (21) is written to `manifest.version` and covers the manifest, the JSON tables and
-how the parts fit together. each binary encoding (tree, chains, blob table, irradiance table,
-instance blocks, height, surface and splat pages, geometry blobs) carries its own version in its
-header, next to its codec. readers accept exactly the versions they know and reject any other, and
-nothing migrates old packages: a package from another version is re-extracted. bump the package
-version on any incompatible change to the manifest or a table, and an encoding's version when its
-layout changes. the JSON tables carry no version of their own and are trusted once the manifest's
-version matches.
-
-the pack cache fingerprints the converter's code, which imports only the `geometry`, `textures` and
-`blobs` modules of `package-format`. versioning encodings separately keeps it that way: a change to
-the manifest, the tree or instance blocks leaves cached mesh and texture conversions valid.
 
 ## layout
 
@@ -62,7 +51,7 @@ the manifest, the tree or instance blocks leaves cached mesh and texture convers
     blobs/<hash>.tex                  mip levels of one texture
   irradiance/<x>_<z>-<id>.czar        irradiance cells over one 512 m square
     blobs/<hash>.iv
-  debug/                              never loaded by the viewer (and skipped by the OPFS import)
+  debug/                              provenance; never loaded by the viewer
 ```
 
 `CORE_PATHS` names the core's fixed members. every other archive is named by its content,
@@ -79,22 +68,23 @@ stable: adding or changing an asset changes one part, and the split itself only 
 doubles.
 
 **reuse**: content names make a re-pack cheap. the packer clones each archive whose name (and size)
-the package it replaces already has, instead of streaming it from the cache again; on APFS and Btrfs
-that's a copy-on-write clone, elsewhere a kernel copy. a warm map02 re-pack writes the core and
+the package it replaces already has, instead of streaming it from the blob store again; on APFS and
+Btrfs that's a copy-on-write clone, elsewhere a plain copy. a warm map02 re-pack writes the core and
 nothing else (20 s → 5 s for the write phase). it also means a reader caching archives by name can't
 pair a stale archive with a newer core.
 
-the packer replaces a previous package in its output directory but refuses a directory holding
-anything else, so a mistyped `-o` can't wipe unrelated files. it writes the new package into a
-hidden sibling (`.<out>.staging`) and renames it into place once complete, so the previous package
-stays readable during a pack and survives a failed one, and a reader never sees a mix of the two.
+**replacing**: the packer replaces a previous package in its output directory but refuses a
+directory holding anything else, so a mistyped `-o` can't wipe unrelated files. it writes the new
+package into a hidden sibling (`.<out>.staging`, whose `.spool` holds scratch blobs when there's no
+pack cache) and renames it into place once complete, so the previous package stays readable during a
+pack and survives a failed one, and a reader never sees a mix of the two.
 
 ## containers and blobs
 
 **czar** ([`@mary-ext/czar`](https://www.npmjs.com/package/@mary-ext/czar)) is the container: a
 magic, a JSON header listing members (path, offset, size, CRC-32), then member data in path order on
 16-byte boundaries. **our blob table is the index**: `tables/blobs.bin` records each blob's archive,
-offset (relative to the archive's data section) and length, so the viewer issues one range read per
+offset (relative to the archive's data section) and length, so a reader issues one range read per
 blob and never fetches a shard's JSON header. czar contributes CRCs, deterministic output,
 `list`/`verify`/`extract` tooling and Blob/OPFS readers; a hand-rolled pack format would only add
 control over member order, which content-hash names defeat anyway. 16-byte alignment lets decoders
@@ -105,19 +95,19 @@ view uncompressed members as typed arrays.
   member path is `blobs/<hash>.<ext>` (`BLOB_EXTENSIONS`).
 - **codec** (`BlobCodec`): `0` none, `1` one zstd frame. the packer keeps the zstd frame only when
   it saves at least 1/32 of the bytes, since a frame costs a decode pass and small BC7 mip tails
-  barely compress. levels: 19 for instance, height page, splat page and geometry blobs; 9 for
-  textures, terrain surface pages, layer textures and irradiance cells (19 saves about 2 % more at
-  roughly 10× the time). the viewer decodes zstd with zstddec's wasm build, because browsers'
-  `DecompressionStream` can't be relied on for zstd.
-- **offsets** are u32, so every archive stays below 4 GiB; groups over 1 GiB split into parts (see
-  [layout](#layout)).
+  barely compress. levels: `--zstd-level` (default 19) for instance blocks, height and splat pages
+  and geometry; `--texture-zstd-level` (default 9) for textures, surface pages and layer textures,
+  where 19 saves about 2 % more at roughly 10× the time; irradiance cells and the JSON tables are
+  fixed at 9.
+- **offsets** are u32, so every archive stays below 4 GiB; groups over 1 GiB split into
+  [parts](#layout).
 - **the core's offsets**: `ArchiveInfo.dataOffset` is `null` for the core, because the core's header
-  holds the sizes and CRCs of the tables that contain the offsets. the viewer reads the core whole
-  and gets core blobs through czar. blob paths (`blobs/…`) sort before every fixed member, so blob
+  holds the sizes and CRCs of the tables that contain the offsets. a reader reads the core whole and
+  gets core blobs through czar. blob paths (`blobs/…`) sort before every fixed member, so blob
   offsets inside the core don't depend on table sizes; `BlobStore.writeCore` refuses a fixed member
   that would sort first.
-- **generation**: `manifest.generation` hashes the core's binary and table members. equal
-  generations mean identical packages; a viewer keys decoded-table caches by it.
+- **generation**: `manifest.generation` hashes the core's binary and table members (not the
+  manifest). equal generations mean equal tables, so a reader can key decoded-table caches by it.
 
 blob indices are assigned at commit, in a deterministic order (`BlobStore.prepare` compresses and
 hashes concurrently, `commit` indexes in input order), so repacking the same install yields the same
@@ -158,9 +148,10 @@ stands for.
 its screen-space error, `geometricError · viewportHeight / (2 · distance · tan(fovY / 2))`, is
 within the threshold; otherwise it refines to its children, and a refined leaf draws its detail
 blocks. this is how the game swaps HLODs, seams included. per-instance LOD inside detail uses the
-chain thresholds. `manifest.global` content (the game's Global chunk scenery) is drawn whenever its
-group shows and never replaced. `geometricError` is a placeholder, `edge / 16` (64 m leaf → 4 m),
-until the game's HLOD switch distances are known.
+chain thresholds. conditional blocks have no HLOD stand-in, so they draw by their tile's screen size
+regardless of refinement ([viewer.md](viewer.md#instance-selection)). `manifest.global` content (the
+game's Global chunk scenery) is drawn whenever its group shows and never replaced. `geometricError`
+is a placeholder, `edge / 16` (64 m leaf → 4 m), until the game's HLOD switch distances are known.
 
 **content refs** (`ContentRef`, `ContentKind`):
 
@@ -186,16 +177,16 @@ map02, a third of the core):
 
 | field                                                     | contents                                                                                                                                                                  |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `format`, `version`                                       | `'endfield-noclip.package'`, `PACKAGE_VERSION`                                                                                                                            |
-| `generation`                                              | see above                                                                                                                                                                 |
+| `format`, `version`                                       | `'endfield-noclip.package'`, `PACKAGE_VERSION` (see [versioning](#versioning))                                                                                            |
+| `generation`                                              | see [containers and blobs](#containers-and-blobs)                                                                                                                         |
 | `scene`                                                   | streaming scene id and display name                                                                                                                                       |
 | `coordinates`                                             | `COORDINATE_CONVENTIONS`                                                                                                                                                  |
 | `tree`                                                    | `TreeInfo` plus node and ref counts                                                                                                                                       |
-| `terrain`                                                 | position, `heightScale`, `terrainSize`, page size, hole bit, levels with pages, surface page size and border, close-up `detail`; `null` without terrain                   |
+| `terrain`                                                 | position, `heightScale`, `terrainSize`, page size, hole bit, levels with pages, surface page size and border, close-up `splat`; `null` without terrain                    |
 | `levels`                                                  | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment |
-| `environments`, `environmentPhases`, `environmentVolumes` | see [environment.md](game-data/environment.md)                                                                                                                            |
-| `heightFogFlowNoise`                                      | texture id of the height fog's 3D flow noise, or `null`; absent in older packages ([flow noise](game-data/lighting.md#flow-noise))                                        |
-| `states`                                                  | scene controls, conditional sets, visibility groups and stream areas; see [conditions](#conditions)                                                                       |
+| `environments`, `environmentPhases`, `environmentVolumes` | see [environment.md](game-data/environment.md#package-contents)                                                                                                           |
+| `heightFogFlowNoise`                                      | texture id of the height fog's 3D flow noise, or `null` ([flow noise](game-data/sky-and-fog.md#flow-noise))                                                               |
+| `states`                                                  | scene controls, conditional sets, visibility groups, stream areas and missions; see [conditions](#conditions)                                                             |
 | `archives`                                                | `ArchiveInfo`: name, role, tile, size, `dataOffset`                                                                                                                       |
 | `global`                                                  | content refs drawn regardless of refinement                                                                                                                               |
 | `subset`                                                  | what `--level` / `--bounds` kept, or `null`                                                                                                                               |
@@ -227,6 +218,9 @@ a negative `minSquared` never culls by size. roles: `Lit`, `ShadowOnly` (shadow 
 (foliage imposter `_cardmesh` geometry), `Hlod`. `sourceFlags` keeps the game's renderer flag word
 for bits not yet understood. `particles` indexes the [particles table](#particles) when the draw is
 a particle system's mesh, else it's `0xffffffff`.
+
+**irradiance cells** are keyed in the game's layout, and each cell is one `.iv` blob as the game's
+GPU reads it; [irradiance.md](game-data/irradiance.md#packing) covers both.
 
 ### instance block (`.inst`, `EFIN`)
 
@@ -275,8 +269,8 @@ offsets, mean colour, scales and remaps, named rather than the game's packed vec
 textures: one `TerrainLayer` blob per texture and role, raw BC7 levels from `textureSize` down,
 largest first, levels under 4² padded to one block. the packer drops the game's top level (1024²),
 since 512² already gives 57–230 texels per metre; map02's 38 pairs are 22 MB in
-`assets/terrain-layers.czar`. `detail` is `null` when the scene's layer table, index map or textures
-are missing or disagree (the pack log says which).
+`assets/terrain-layers-<id>.czar`. `splat` is `null` when the scene's layer table, index map or
+textures are missing or disagree (the pack log says which).
 
 ### geometry blob (`.mesh`, `EFGM`)
 
@@ -304,6 +298,8 @@ each stream is its own vertex buffer. attributes use Unity's channel numbering (
 tangents are computed in the game's left-handed frame, so `bitangent = cross(n, t) · sign` holds
 there; under the viewer's mirroring root multiply by the sign of the object-to-world determinant, as
 Unity does. vertices whose corners disagree on the tangent frame (mirrored UV seams) are split.
+against `mikktspace` 1.1.1 on 200 meshes (864k corners), meshoptimizer's tangents agree to a mean
+dot product of 0.99978, 99.975 % within 2.5°, with matching bitangent signs in 99.998 %.
 
 **submeshes own their vertices**: each submesh's triangles are compacted to their own vertex range
 and optimized there (vertex cache, then fetch order), indices stay local, and a submesh is one
@@ -318,16 +314,16 @@ a WebGPU upload of the bytes as they are samples correctly with the game's UVs.
 
 each is one zstd frame (level 9) around JSON. entry `i` has id `i`. an entry is either ready or an
 `UnconvertedEntry` (`pending` when packed with `--no-assets`, `failed` with the reason in
-`debug/assets.json`); draws referencing an unconverted entry are skipped. `--no-assets` exists for
-fast iteration on the instance side.
+`debug/assets.json`); draws referencing an unconverted entry are skipped.
 
-| table        | contents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `geometries` | `ReadyGeometry`: blob, local bounds, vertex/index/submesh counts, attribute bitmask, `tangentUv`                                                                                                                                                                                                                                                                                                                                                                                            |
-| `materials`  | `shaders`: each shader's declared properties and defaults (floats, colours as authored: gamma-encoded, or linear for HDR colours, vectors, texture built-in defaults, `[Normal]` slots) and its `ShaderFamily`. `entries`: `ReadyMaterial` with shader index, keywords, render queue, blend, cull, `zWrite`, alpha clip threshold, `baseTextureMapCount`, bound `slots` (texture id, UV set, `_ST` scale/offset) and only the floats/colours/vectors that differ from the shader's defaults |
-| `textures`   | `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler as `GPUSamplerDescriptor` fields plus Unity's `mipBias`, `pieces` coarse to fine                                                                                                                                                                                                                                                                                                                        |
-| `water`      | see [water.md](game-data/water.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `lights`     | `LightEntry`: kind (spot, point), entity id, visibility group, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                                       |
+| table        | contents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `geometries` | `ReadyGeometry`: blob, local bounds, vertex/index/submesh counts, attribute bitmask, `tangentUv`                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `materials`  | `shaders`: each shader's declared properties and defaults (floats, colours as authored: gamma-encoded, or linear for HDR colours, vectors, texture built-in defaults, `[Normal]` slots) and its `ShaderFamily`. `entries`: `ReadyMaterial` with shader index, keywords, render queue, blend and blend factors, cull, `zWrite`, alpha clip threshold, `baseTextureMapCount`, bound `slots` (texture id, UV set, `_ST` scale/offset) and only the floats/colours/vectors that differ from the shader's defaults |
+| `textures`   | `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler as `GPUSamplerDescriptor` fields plus Unity's `mipBias`, `pieces` coarse to fine                                                                                                                                                                                                                                                                                                                                          |
+| `water`      | see [water.md](game-data/water.md#package-tableswaterjsonzst)                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `lights`     | `LightEntry`: kind (spot, point), entity id, visibility group, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lighting.md](game-data/lighting.md#local-lights)                                                                                                                                                         |
+| `particles`  | see [particles](#particles)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 materials store overrides only because lit materials declare ~190 floats each; undeclared (stale)
 properties Unity keeps from earlier shaders are dropped
@@ -359,8 +355,8 @@ pieces ([textures.ts](../packages/extractor/src/pack/textures.ts)):
 
 inside a piece, levels run largest first, each holding every layer, face and depth slice in
 `writeTexture` order; `textureLevelLayout` gives sizes, `bytesPerRow` and `rowsPerImage`. every
-piece is a whole czar member, so czar reads verify it. texture objects with identical shape, format,
-sampler and texels share one entry.
+piece is a whole czar member, so `czar verify` checks it. texture objects with identical shape,
+format, sampler and texels share one entry.
 
 ## asset placement
 
@@ -378,6 +374,12 @@ majority placement would give smaller per-tile archives but lose the ancestor gu
 
 ## conditions
 
+`manifest.states` (`StatesInfo`, [states.ts](../packages/package-format/src/states.ts)) decides
+which placed content shows. what the controls mean, how the packer derives their conditions and how
+their defaults are chosen is in [scene-states.md](game-data/scene-states.md); this section covers
+the encoding and its evaluation, in [conditions.ts](../packages/package-format/src/conditions.ts)
+(`resolveSceneValues`, `conditionVisible`, `conditionResults`, `groupsShown`).
+
 ### visibility groups
 
 every piece of placed content (instance blocks through their refs, lights, water surfaces,
@@ -393,57 +395,91 @@ they hold the camera, whichever level owns them, so only their condition gates t
 
 a `ConditionalSetInfo` is a list of alternatives, each a list of `{ control, mask }` requirements;
 the content is visible when any alternative has every requirement met, and a requirement is met when
-bit `value` of `mask` is set for the control's value. controls are `StatesInfo.controls` ids, among
-them `area:<id>` stream-area controls (value 0/1), which a viewer sets from the camera unless the
-user picks a value. unknown controls fail closed. equivalent expressions are interned to one set by
-the packer.
+bit `value` of `mask` is set for the control's value. unknown controls fail closed. the packer
+interns equivalent expressions into one set.
 
 ### controls
 
 a `SceneControl` holds one piece of game state: its `kind`, `id`, `name`, the selectable `values`
 (each below 32, with a label), a `default`, the `assumption` the default rests on, and the
 `levelTags` of the content it gates (directly or through a derived control), which a viewer uses to
-list a control only for the levels it matters to. a control with `derived` set is computed: unless
-the user picks a value it is 1 while `conditionalSets[derived]` holds, and its `rule` gives that
-condition in words. derived controls require only controls listed before them, so
-`resolveSceneValues` turns the user's picks into every control's value in one pass, and its stored
-`default` is that value under no picks. only controls some group requires are listed. quest and
-mission controls of a known mission carry a `story` place (mission id, main-flow step), and
-`StatesInfo.missions` names those missions (`MissionInfo`: name, quest log category, chapter,
-episode, where it takes place), so a viewer can group them; the names are the install's English
-text, extracted at pack time. script controls carry `drivers`, what sets them in game according to
-the level scripts (`ControlDriver`: quests, a switch, a trigger area, the script's area, another
-level, the server), each with the visibility it sets and a position where it has one.
+list a control only for the levels it matters to. only controls some group requires are listed.
+
+- **derived**: a control with `derived` set is computed: unless the user picks a value it is 1 while
+  `conditionalSets[derived]` holds, and its `rule` gives that condition in words. derived controls
+  require only controls listed before them, so `resolveSceneValues` turns the user's picks into
+  every control's value in one pass, and a derived control's stored `default` is its value under no
+  picks.
+- **story**: quest and mission controls of a known mission carry a `story` place (mission id,
+  main-flow step), and `StatesInfo.missions` names those missions (`MissionInfo`: name, quest log
+  category, chapter, episode, where it takes place), so a viewer can group them; the names are the
+  install's English text, extracted at pack time.
+  [story.ts](../packages/package-format/src/story.ts) turns a point in an ordered mission list into
+  consistent picks for all of them.
+- **drivers**: script controls carry `drivers`, what sets them in game according to the level
+  scripts (`ControlDriver`: quests, a switch, a trigger area, the script's area, another level, the
+  server), each with the visibility it sets and a position where it has one.
 
 ### stream areas
 
 `StatesInfo.streamAreas` (`StreamAreasInfo`, `null` when no packed content lies in a non-default
 area) holds the areas content requires, the root list, each zone's list, and the zones' triggers (XZ
-box, height range, XZ ring). `zonesAt` is the game's trigger test, `areasShownIn` turns zones into
-areas, and `streamAreaValues` gives every required area its control value
-([stream-areas.ts](../packages/package-format/src/stream-areas.ts)). which content a stream area
-gates is in [world.md](game-data/world.md#how-the-packer-files-instances).
-[conditions.ts](../packages/package-format/src/conditions.ts) holds `resolveSceneValues`,
-`conditionVisible`, `conditionResults` and `groupsShown`; what the controls mean and how their
-defaults are chosen is in [scene-states.md](game-data/scene-states.md).
+box, height range, XZ ring). content of an area requires its `area:<id>` control (value 0/1), which
+a viewer sets from the camera unless the user picks a value: `zonesAt` is the game's trigger test,
+`areasShownIn` turns zones into areas, and `streamAreaValues` gives every required area its control
+value ([stream-areas.ts](../packages/package-format/src/stream-areas.ts)). which content a stream
+area gates is in [world.md](game-data/world.md#how-the-packer-files-instances).
 
-## viewer side
+## versioning
 
-`openViewerPackage` reads `core.czar` whole, checks `format` and `version`, decodes the binary
-tables and inflates the JSON ones. a `PackageSource` reads files over HTTP range requests (a server
-ignoring `Range` still works, slower), a directory handle (File System Access or OPFS) or a
-`webkitdirectory` file list. `blobRange` turns a blob index into `[dataOffset + offset, +length)` of
-its archive for coalesced range reads; the decode worker undoes the codec and decodes height pages,
-instance blocks and geometry off the main thread. range reads skip czar's CRC; the blob's SHA-256
-name is the integrity check when one is needed.
+`PACKAGE_VERSION` (25) is written to `manifest.version` and covers the manifest, the JSON tables and
+how the parts fit together. each binary encoding (tree, chains, blob table, irradiance table,
+instance blocks, height, surface and splat pages, geometry blobs) carries its own version in its
+header, next to its codec. readers accept exactly the versions they know and reject any other, and
+nothing migrates old packages: a package from another version is re-extracted. bump the package
+version on any incompatible change to the manifest or a table, and an encoding's version when its
+layout changes. the JSON tables carry no version of their own and are trusted once the manifest's
+version matches.
+
+the [pack cache](extraction.md#pack-cache) fingerprints the converter's code, which imports only the
+`geometry`, `textures` and `blobs` modules of `package-format` (and the helpers they share).
+versioning encodings separately keeps it that way: a change to the manifest, the tree or instance
+blocks leaves cached mesh and texture conversions valid.
+
+## reading a package
+
+a reader reads `core.czar` whole, checks `format` and `version` before anything else, decodes the
+binary tables and inflates the JSON ones. a non-core blob is the byte range
+`[dataOffset + offset, + length)` of its archive (`blobRange` in the viewer), so reads can be
+coalesced; the archive's `size` from the manifest lets a reader notice an archive replaced by a
+re-pack. range reads skip czar's CRC; the blob's SHA-256 name is the integrity check when one is
+needed. the viewer's sources, decode workers and zstd decoder are in
+[viewer.md](viewer.md#loading-a-package).
 
 ## debug
 
-`debug/` holds provenance the viewer never reads: `assets.json` (per id: StringPathHash key, path,
-located object, failure reason; textures per source object), `chunk-files.json`, `instances.jsonl`
-(per instance block: blob hash and per row `[entity id, name, chunk-file index]`),
-`environments.json`, `water.json`, `unsupported-interactives.json` and `unsupported-prefabs.json`.
-per-asset provenance lives here rather than in the manifest, which only identifies the build.
+`debug/` is described in [extraction.md](extraction.md#report-and-debug-outputs). per-asset
+provenance lives there rather than in the manifest, which only identifies the build.
+
+## alternatives ruled out
+
+- **3D Tiles / glTF tiles**: each glb re-embeds shared meshes, so tiles can't share them without
+  external buffers, and HGRP materials don't map onto glTF loaders. the package keeps the concepts:
+  implicit quadtree, screen-space-error refinement, REPLACE.
+- **Draco**: slightly smaller positions than meshopt, but several times slower to decode, a ~300 KB
+  wasm decoder, reordered vertices (breaking cache/fetch optimization and index-aligned side data)
+  and nothing for instance tables. for scale, Jingyu's 645 LOD0 meshes are 83.2 MB as f32, 41.6 MB
+  quantized, 19.1 MB after meshopt and 11.1 MB after zstd 19 (brotli 10.7, gzip 12.0).
+- **cluster hierarchies (Nanite-style)**: the scenes are instancing-dominated (map02: ~470k
+  instances of ~21k meshes, ~5k unique at LOD0) and ship discrete LODs and HLODs; WebGPU lacks mesh
+  shaders and 64-bit atomics.
+- **hash-digit asset shards**: no spatial locality; assets follow the
+  [lowest common ancestor](#asset-placement) instead.
+- **czar's own member index** in place of [`tables/blobs.bin`](#containers-and-blobs): `ArchiveFile`
+  exposes no member offsets or sub-range reads, CRCs cover whole members only, members can't be
+  compressed individually, and opening an archive reads its whole JSON header.
+- **texture arrays or virtual texturing at pack time**: one entry per texture; the viewer builds
+  arrays at runtime where it wants them.
 
 ## open
 

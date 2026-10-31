@@ -3,12 +3,11 @@ import type { ConditionalSetInfo, SceneControl } from '@endfield-noclip/package-
 import { describeCondition, mapConfigCondition, type GameCondition, type GameState } from './game-state.ts';
 import type { WorldIndex } from './world-index.ts';
 
-// MapConfig scene states and the conditions that switch them. `BaseGameScene.FlushStreamingSceneState` enables
-// streaming scene state 0 unconditionally, then, per `sceneStateConditions` entry, state `index + 1` by the
-// condition's result; states without a condition change only when the game sets them by name (dungeons and
-// scripts reusing the map). the same index is what dynamic entities' visible-state lists hold. a state with a
-// condition is a control derived from the quests and variables it reads (see game-state.ts for their
-// defaults); a state without one is off.
+// MapConfig scene states and the conditions that switch them; see
+// docs/game-data/scene-states.md#mapconfig-scene-states. controls are keyed by the MapConfig index, which
+// dynamic visible-state lists hold directly and chunk file names hold plus one. a state with a condition is a
+// control derived from the quests and variables it reads (defaults in game-state.ts); a state without one is
+// off, since only the game sets it, by name.
 
 /** a MapConfig scene state */
 export interface SceneStateDefinition {

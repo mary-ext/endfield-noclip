@@ -26,9 +26,10 @@ import { MeshoptTangents } from 'meshoptimizer/tangents';
 
 import { aabbBounds } from './bounds.ts';
 
-// converts a decoded Unity mesh into a geometry blob (layout in package-format's VertexAttribute and
-// package-codec's encodeGeometryBlob): tangents generated where normal maps need them, each submesh given its
-// own vertex-cache/fetch-optimized vertex range, attributes quantized, streams and indices meshopt-encoded.
+// converts a decoded Unity mesh into a geometry blob (layout and per-attribute encodings in
+// `docs/package-format.md#geometry-blob-mesh-efgm`): tangents generated where normal maps need them, each
+// submesh given its own vertex-cache/fetch-optimized vertex range, attributes quantized, streams and indices
+// meshopt-encoded.
 
 /** resolves once the meshopt wasm modules are instantiated; await before {@link convertMesh} */
 export const geometryReady: Promise<unknown> = Promise.all([MeshoptEncoder.ready, MeshoptTangents.ready]);

@@ -1,8 +1,8 @@
 // what the game draws on the sky beyond the atmosphere: the sun disc, the nebula, planets painted on the sky dome
 // (HGRP/SkydomeStar) and the ray-traced planet (HGRP/Planet/PlanetBillboard). each is a function of the view
 // direction alone; the game shades them all in its one sky-dome draw. this pass renders them at the sky pixels
-// into a target the composite reads, which keeps the composite under the sampled-texture limit. needs
-// post-common.wgsl.
+// into a target the composite reads, which keeps the composite under the sampled-texture limit
+// (docs/game-data/sky-and-fog.md#beyond-the-atmosphere). needs post-common.wgsl.
 
 // a planet painted on the sky dome: a sphere at unit distance whose angular size comes from its radius
 struct SkyPlanet {
@@ -78,7 +78,7 @@ struct Celestial {
 	nebula: vec4f,
 	// x = how far the sky planets hide the nebula, yzw unused
 	nebula_mask: vec4f,
-	// the game's _SkyBoxStarParam0..6, as its C# packs them from HGStarConfig
+	// the game's _SkyBoxStarParam0..6, packed from the star config (`starLook` in celestial.ts)
 	stars: array<vec4f, 7>,
 	ray: RayPlanet,
 	sky: array<SkyPlanet, 2>,

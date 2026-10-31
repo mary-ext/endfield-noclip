@@ -557,7 +557,8 @@ export const readTerrainBc3Page = (texture: TerrainTexture): Uint8Array => {
 
 /**
  * reads a baked `S` page: splat control, the blend weights of the 4 layers its 8 m cell's index names. rgb
- * weight layers 0–2, layer 3 gets `1 − r − g − b`; a feeds the game's wetness. rows along +Z.
+ * weight layers 0–2, layer 3 gets `1 − r − g − b`; a is the puddle level (`docs/game-data/world.md#puddles`).
+ * rows along +Z.
  *
  * @param texture a decoded `_S` file
  * @returns the page's 132² RGBA8 texels; a view into the texture

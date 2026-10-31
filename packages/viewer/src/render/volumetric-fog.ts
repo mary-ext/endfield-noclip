@@ -1,6 +1,7 @@
 /**
  * the game's froxel volumetric fog: a compute pass lights and integrates a grid over the view each frame, and
- * the composite and water passes add it in front of the height fog (see shaders/sky.wgsl).
+ * the composite and water passes add it in front of the height fog (shaders/sky.wgsl,
+ * docs/game-data/sky-and-fog.md#fog).
  *
  * @module
  */
@@ -87,7 +88,7 @@ export class VolumetricFog {
 	#history: [GPUTexture, GPUTexture];
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(UNIFORM_BYTES / 4);
-	/** groups 1 of the frame that writes `#history[i]` */
+	/** group 1 for a frame that writes `#history[i]` and reads the other */
 	#groups: [GPUBindGroup, GPUBindGroup];
 	#index = 0;
 	/** the view the last written history was laid over; `null` when there's no history to reproject */
@@ -215,8 +216,8 @@ export class VolumetricFog {
 	/**
 	 * what the post passes need to sample the grid.
 	 *
-	 * @returns the slice mapping (`log2(z · x + y) · z` gives the texture's w) and the view depth the froxels
-	 *   cover, plus the depth nearer than which there's no fog; `null` while the fog is off
+	 * @returns the slice mapping (`log2(depth · x + y) · z` gives the texture's w) with the view depth the
+	 *   froxels cover in w, plus the depth nearer than which there's no fog; `null` while the fog is off
 	 */
 	get sampling(): { slices: [number, number, number, number]; start: number } | null {
 		const look = this.#look;

@@ -2,8 +2,8 @@ import { FormatError } from '../binary/binary-reader.ts';
 import { decodeInvertedLz4Block } from '../binary/lz4.ts';
 
 /**
- * unwraps Hypergryph's compressed-file envelope, used by Streaming-group files and terrain: `u32 decodedSize
- * (little-endian) ‖ inverted LZ4 block`
+ * unwraps Hypergryph's compressed-file envelope, used by Streaming, DynamicStreaming and terrain files: `u32
+ * decodedSize (little-endian) ‖ inverted LZ4 block`
  *
  * @param packed the logical file as stored
  * @returns the decoded bytes

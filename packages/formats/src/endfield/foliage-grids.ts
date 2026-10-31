@@ -6,8 +6,9 @@ import { levelTagOf } from './level-partition.ts';
 import { readChunkRows, readPropertyTable, type MonoValue } from './mono-objects.ts';
 
 // scattered foliage: the grass and tree grids among a chunk's proxy objects (tag-3 rows, the game's
-// `ProxyEntityType`). each grid is a 64 m cell's worth of ECS entities the client creates itself, serialized
-// as whole archetypes into the row's keyed property table (`mono-objects.ts` layout):
+// `ProxyEntityType`; docs/game-data/world.md#foliage-grids). each grid is a 64 m cell's worth of ECS entities
+// the client creates itself, serialized as whole archetypes into the row's keyed property table
+// (`mono-objects.ts` layout):
 //
 //   row         0 name (`GrassGrid_<x>_<z>#<level tag>_<hex id>`, `TreeGrid_…`)   2 u8 proxy type   3 table
 //   Init        0xff000000 archetype count

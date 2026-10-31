@@ -6,7 +6,7 @@
 
 /** optional features, detected on the adapter and requested when present */
 export interface GfxFeatures {
-	/** BC1–BC7 texture formats (needed for the game's BC7/BC5 textures once they stream) */
+	/** BC1–BC7 texture formats, which the package's textures are stored in */
 	textureCompressionBc: boolean;
 	/** linear filtering of r32float/rg32float/rgba32float textures */
 	float32Filterable: boolean;

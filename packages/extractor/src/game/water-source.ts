@@ -42,8 +42,8 @@ export interface SceneWater {
 const READ_CONCURRENCY = 16;
 
 /**
- * reads the water surfaces and global config bindings of a scene. surfaces live in Global chunks in the
- * current client, but every chunk file is scanned unless `filter` narrows it.
+ * reads the water surfaces and global config bindings of a scene. the installed client keeps surfaces in
+ * Global chunks, but every chunk file is scanned unless `filter` narrows it.
  *
  * @param world world index
  * @param scene streaming scene, e.g. `map02`

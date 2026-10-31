@@ -132,6 +132,7 @@ const isDrawRole = enumGuard(DrawRole);
  *
  * @param chains chain templates in id order
  * @returns the encoded table
+ * @throws {RangeError} if a chain has more than 65,535 draws
  */
 export const encodeChains = (chains: readonly Chain[]): Uint8Array => {
 	const drawCount = chains.reduce((sum, chain) => sum + chain.draws.length, 0);

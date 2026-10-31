@@ -53,7 +53,7 @@ for the bundle cipher). it matches the gitignored `*.local.json` pattern and is 
 lengths on load and tells the user to run `init` when it's missing.
 
 `pack` also reads the install's IL2CPP metadata
-(`Endfield_Data/il2cpp_data/Metadata/ global-metadata.dat`) and `GameAssembly.dll` beside
+(`Endfield_Data/il2cpp_data/Metadata/global-metadata.dat`) and `GameAssembly.dll` beside
 `Endfield_Data`, for the schema of MemoryPack game data such as level scripts (see
 [scene-states.md](game-data/scene-states.md#level-scripts)). the schema is derived on each run, in
 under a second, and never written out.
@@ -90,8 +90,9 @@ either layer (Persistent first). every logical file carries the MD5 of its decry
 `readVerified` checks. the well-known group hashes are in `VfsGroup` (`hg/vfs.ts`): Bundle and
 InitialBundle hold asset bundles, BundleManifest the bundle manifest, ExtendData the StringPathHash
 tables, Streaming and DynamicStreaming the world chunk data, Terrain the terrain tiles, JsonData
-pooled LevelConfig/LevelData, and Table the SparkBuffer config tables. Streaming and terrain files
-are wrapped in a size-prefixed inverted-LZ4 envelope (`formats/src/hg/payload.ts`).
+pooled LevelConfig/LevelData, and Table the SparkBuffer config tables. Streaming, DynamicStreaming
+and terrain files are wrapped in a size-prefixed inverted-LZ4 envelope
+(`formats/src/hg/payload.ts`); a few terrain files are stored raw.
 
 **bundles.** `UnityBundle` is a random-access reader: it parses the header and directory, then
 decodes only the blocks overlapping a requested range, so pulling one CAB out of a large bundle
@@ -112,11 +113,12 @@ build on it.
 
 ## pack
 
-`pack <scene>` (`pack/packer.ts`, `packScene`) writes one streaming scene to `out/<scene>` or
-`out/<scene>-<level>` at the repo root by default, or to `-o <dir>`. the output directory must be
-empty, absent, or hold a previous package; replacing a package removes only the package's own
-entries, and any other file there aborts the pack. the full option list is in the command's usage
-text.
+`pack <scene>` ([pack/packer.ts](../packages/extractor/src/pack/packer.ts), `packScene`) writes one
+streaming scene to `out/<scene>` or `out/<scene>-<level>` at the repo root by default, or to
+`-o <dir>`. the output directory must be absent, empty, or hold a previous package (plus, at most, a
+`.DS_Store`); anything else there aborts the pack. the package is built in a hidden sibling and
+renamed into place when complete, so a failed pack leaves the previous package as it was (see
+[package-format.md](package-format.md#layout)). the full option list is in the command's usage text.
 
 `--level` keeps the content one level owns plus the terrain under its cells; `--bounds` keeps
 content whose centre lies in a world x/z rectangle. both record the subset in the manifest.
@@ -125,21 +127,26 @@ for fast iteration on everything else.
 
 ### phases
 
-the phases run in this order and are timed individually in the report:
+the phases run in this order, and the report times each one:
 
-| phase                  | work                                                                                                                                                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| setup                  | prepare the output directory, index the scene: level partition, terrain surface and tile grid, the subset, scene states, chunk files                                                                                           |
-| entities               | read the scene's static chunk files with read-ahead, then dynamic structures, interactive facilities and the prefabs they place; intern draw chains and sort instances into detail, HLOD and resident groups by level and tile |
-| terrain                | encode and store terrain height, surface and splat pages and layer textures (or recall them from the cache)                                                                                                                    |
-| environments and water | plan per-level environment profiles and volumes and the water surfaces and sectors, concurrently; then gate entities, volumes and water by scene state                                                                         |
-| irradiance             | store the base-bake irradiance volume cells (or recall them from the cache)                                                                                                                                                    |
-| instances              | encode and store instance blocks, attaching detail and HLOD blocks to the tile tree                                                                                                                                            |
-| assets                 | convert materials, then meshes, then textures (below)                                                                                                                                                                          |
-| states                 | build the manifest's levels and scene controls                                                                                                                                                                                 |
-| write                  | build the tree and tables and write the archives, cloning those the replaced package already has (archives are content-named, see [package-format.md](package-format.md#layout))                                               |
-| debug                  | write `debug/`                                                                                                                                                                                                                 |
-| cache sweep            | record this package in the cache and delete what no package uses                                                                                                                                                               |
+| phase                  | work                                                                                                                                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| setup                  | check and stage the output directory, open the cache, index the scene: level partition, terrain surface and tile grid, the subset, scene states, chunk files                                                                                  |
+| entities               | read the scene's chunk files with read-ahead, then dynamic structures and the level scripts driving them, interactive facilities, cabins and the prefabs they place; intern draw chains and file every instance by level, visibility and tile |
+| terrain                | encode and store terrain height, surface and splat pages and layer textures, or recall them from the cache                                                                                                                                    |
+| environments and water | plan per-level environment profiles, environment volumes, and water surfaces and sectors, concurrently; then give volumes, water surfaces and lights their visibility groups and add the scene-state controls                                 |
+| irradiance             | store the base bake's irradiance cells, or recall them from the cache                                                                                                                                                                         |
+| instances              | encode and store instance blocks, attaching detail and HLOD blocks to the tile tree                                                                                                                                                           |
+| materials              | decode materials and build the shader and material tables (below); with `--no-assets`, one `assets` phase that only lists pending entries replaces this phase and the next two                                                                |
+| geometry               | convert meshes                                                                                                                                                                                                                                |
+| textures               | convert textures                                                                                                                                                                                                                              |
+| states                 | build the manifest's levels and scene controls                                                                                                                                                                                                |
+| write                  | build the tree and tables and write the archives, cloning those the replaced package already has                                                                                                                                              |
+| debug                  | write `debug/`; the staged package is then renamed into place                                                                                                                                                                                 |
+| cache sweep            | with a cache: record the package and delete what no package uses                                                                                                                                                                              |
+
+how the entity pass files instances (detail, HLOD, global and conditional blocks, and which files
+gate them) is in [world.md](game-data/world.md#how-the-packer-files-instances).
 
 ids for chains, geometries and materials are handed out in first-reference order and every parallel
 step commits its results in id order, so the same install and options produce byte-identical
@@ -148,48 +155,51 @@ fixed order for the same reason.
 
 ### asset conversion and workers
 
-`pack/assets.ts` converts materials first, on the main thread with bounded concurrency, because
-materials decide which meshes need generated tangents and which textures are used. meshes and
-textures then convert on worker threads (`pack/convert-pool.ts`, `pack/convert-worker.ts`):
-conversion is CPU-bound (LZ4, meshopt, zstd, hashing), so each worker opens the install itself,
-writes its blobs straight into the blob directory, and returns only small results.
+[pack/assets.ts](../packages/extractor/src/pack/assets.ts) converts materials first, on the main
+thread with bounded concurrency, because materials decide which meshes need generated tangents and
+which textures are used. meshes and textures then convert on worker threads
+([pack/convert-pool.ts](../packages/extractor/src/pack/convert-pool.ts),
+[pack/convert-worker.ts](../packages/extractor/src/pack/convert-worker.ts)): conversion is CPU-bound
+(LZ4, meshopt, zstd, hashing), so each worker opens the install itself, writes its blobs straight
+into the blob directory, and returns only small results. workers start as jobs need them, so a pack
+whose conversions all come from the cache starts none.
 
 `--jobs` defaults to one worker per core but one, capped at 8, since each worker holds its own
-catalogs, manifest and block caches (a few hundred MB). geometry blobs use `--zstd-level` (default
-19, also used for other blobs); texture blobs use `--texture-zstd-level` (default 9), which is the
-main lever on cold pack time and barely changes size or decode speed. a blob keeps its zstd frame
-only when compression pays.
+catalogs, manifest and block caches (a few hundred MB). `--zstd-level` (default 19) applies to
+geometry, instance blocks and terrain height and splat pages; `--texture-zstd-level` (default 9)
+applies to textures, terrain surface pages and layer textures, and is the main lever on cold pack
+time while barely changing size or decode speed. irradiance cells and the core's JSON tables always
+use level 9. a blob keeps its zstd frame only when compression pays.
 
 ### pack cache
 
 unless `--no-cache` is given, packs share a cache (default `out/.cache`, `--cache <dir>` to move
-it), implemented in `pack/pack-cache.ts`:
+it), implemented in [pack/pack-cache.ts](../packages/extractor/src/pack/pack-cache.ts):
 
 - `blobs/` is the pack's blob store: every blob is written there once and archives are streamed from
-  it. without a cache the same store lives in the staging package's `.spool` (see
-  [package-format.md](package-format.md#layout)) and is deleted after the pack.
-- `memo/` holds conversion results keyed by the job (asset, tangent UV, zstd level) and a
-  fingerprint of the converter: every workspace module `convert-worker.ts` transitively imports, the
-  extractor's `package.json` and node's zstd version. each memo records the bundles the conversion
-  read and their catalog MD5s; a memo is used only while those MD5s match and its blobs exist. so an
-  install update or a change to converter code reconverts exactly what it affects, without reading
-  bundle bytes to find out. code outside the worker's import graph doesn't invalidate conversions,
-  which is why anything that changes conversion output belongs in that graph.
+  it. without a cache the same store lives in the staging package's `.spool` and is deleted after
+  the pack.
+- `memo/` holds conversion results keyed by the job (the mesh or texture, the tangent UV set, the
+  zstd level) and a fingerprint of the converter: every workspace module `convert-worker.ts`
+  transitively imports, the extractor's `package.json` and node's zstd version. each memo records
+  the bundles the conversion read and their catalog MD5s; a memo is used only while those MD5s match
+  and its blobs exist. so an install update or a change to converter code reconverts exactly what it
+  affects, without reading bundle bytes to find out. code outside the worker's import graph doesn't
+  invalidate conversions, which is why anything that changes conversion output belongs in that
+  graph.
 - `memo/` also holds whole steps whose output depends only on VFS files: terrain
   ([pack/terrain.ts](../packages/extractor/src/pack/terrain.ts)) and irradiance
   ([pack/irradiance.ts](../packages/extractor/src/pack/irradiance.ts)). a step's key covers its own
-  module's import graph, its options, the subset it keeps and the catalog data MD5 of every file it
-  reads; the memo lists its blobs in commit order plus what else the step returns, so a hit commits
-  the cached blobs without reading the terrain or the irradiance payloads (map02: 12 s → 0.3 s and 7
-  s → 0.1 s).
+  module's import graph, its options, the tiles or cells the subset keeps and the catalog data MD5
+  of every file it reads; the memo lists its blobs in commit order plus what else the step returns,
+  so a hit commits the cached blobs without reading the terrain or the irradiance payloads (map02:
+  12 s → 0.3 s and 7 s → 0.1 s).
 - `roots/` has one file per package directory listing its blobs and memos. after each pack, roots
   whose directory no longer holds a `core.czar` are dropped and anything no root references is
   deleted, so the cache holds the union of the live packages' content. deleting a package directory
   by hand releases its share at the next pack, and deleting the whole cache is always safe.
 - `lock` holds the packing process's pid; one pack uses a cache at a time, and a lock left by a dead
   process is taken over.
-
-failed conversions aren't memoized, so they're retried on every pack.
 
 ### report and debug outputs
 
@@ -198,26 +208,27 @@ conversion failures by reason, per-level environments, water, cache hits, peak R
 the full `PackReport` instead. each package also gets a `debug/` directory, which the viewer
 ignores:
 
-| file                            | contents                                                                                                    |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `assets.json`                   | per geometry, material and texture id: path hash, path, located object, and failure reason if any           |
-| `instances.jsonl`               | one line per stored instance block: its blob hash and, per row, entity id, entity name and chunk-file index |
-| `chunk-files.json`              | the chunk files read, indexed by `instances.jsonl`                                                          |
-| `environments.json`             | per level, the chosen base environment and where each section came from                                     |
-| `water.json`                    | water surfaces and sectors packed versus present, and assets that failed to load                            |
-| `unsupported-interactives.json` | interactive LevelData files skipped as a whole, and templates or models that couldn't be resolved           |
-| `unsupported-prefabs.json`      | prefabs that couldn't be instantiated, with reasons                                                         |
+| file                            | contents                                                                                                                                                                                                    |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assets.json`                   | per geometry and material id: path hash, path, located object and failure reason if any; per texture object: its texture-table id, name and failure reason                                                  |
+| `instances.jsonl`               | one line per stored instance block: its blob hash and, per row, entity id, entity name and chunk-file index (−1 for dynamic structures and the prefab renderers they place, which get synthetic entity ids) |
+| `chunk-files.json`              | the chunk files read, indexed by `instances.jsonl`                                                                                                                                                          |
+| `environments.json`             | per level, the chosen base environment and where each section came from                                                                                                                                     |
+| `water.json`                    | water surfaces and sectors packed versus present, and assets that failed to load                                                                                                                            |
+| `unsupported-interactives.json` | interactive LevelData files skipped as a whole, and templates or models that couldn't be resolved                                                                                                           |
+| `unsupported-prefabs.json`      | prefabs that couldn't be instantiated, with reasons                                                                                                                                                         |
 
 start from these when something is missing in the viewer: `instances.jsonl` maps a drawn block back
 to entities and chunk files, and `assets.json` says why an asset didn't convert.
 
 ## open
 
-- path → hash lookups reverse-scan StringPathHash because the game's path hash isn't ported; it
-  diverges from XXH3 at 128 UTF-8 bytes (see AnimeStudio's `EndfieldVfsHash`).
-- material conversion isn't cached, and failed conversions aren't remembered, so a warm pack can
-  still start workers.
+- path → hash lookups reverse-scan StringPathHash: the
+  [path hash function](game-data/assets.md#open) isn't ported.
+- material conversion isn't cached, and failed mesh and texture conversions aren't memoized, so
+  they're retried on every pack and a warm pack can still start workers.
 - LevelData files with populated blackbox settings (factory puzzle scenes) are listed in
   `unsupported-interactives.json` rather than partially read.
-- texture formats without a mapping in `texture.ts` aren't convertible; they appear as failures in
-  the report and `assets.json`.
+- texture formats without a WebGPU equivalent (`formats/src/unity/texture.ts`,
+  `formats/src/binary/ktx2.ts`) aren't convertible; they appear as failures in the report and
+  `assets.json`.

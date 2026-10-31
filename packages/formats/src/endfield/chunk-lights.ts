@@ -26,7 +26,7 @@ import { readChunkRows, readPropertyTable } from './mono-objects.ts';
 //
 // layouts found by census over map01 and map02 (a value per offset against the authored properties of Unity's
 // Light: the defaults 30° and 21.80208° for the angles, 6570 K for the temperature, and so on), and the order of
-// the fork's Light properties.
+// the properties of HG's Light.
 
 // #region types
 

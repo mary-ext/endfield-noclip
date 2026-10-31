@@ -81,6 +81,8 @@ export const bakeSkinPose = (mesh: DecodedMesh, pose: readonly Float32Array[]): 
 		if (Math.abs(determinant) < 1e-12) {
 			throw new FormatError(`mesh ${mesh.name} has a singular skin pose`);
 		}
+		// normals take the inverse transpose (cofactor ÷ determinant); tangents take the matrix itself, and a
+		// mirroring pose flips the bitangent sign
 		if (normals && mesh.normals) {
 			const n = mesh.normals.subarray(v * 3, v * 3 + 3);
 			const out = [0, 1, 2].map(
@@ -116,6 +118,7 @@ export const bakeSkinPose = (mesh: DecodedMesh, pose: readonly Float32Array[]): 
 		...mesh,
 		positions,
 		normals,
+		// the source words describe the unposed normals
 		packedNormals: null,
 		tangents,
 		bounds,

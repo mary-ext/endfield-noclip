@@ -48,7 +48,7 @@ packs or renders correctly.
   automatic gating
 - volumetric fog: local fog volumes and the volumetric light's flow noise (`enableVLFlowNoise`)
   aren't drawn, and the grid size and history weight are Unreal's defaults rather than the game's
-  quality preset. the height fog's [flow noise](game-data/lighting.md#flow-noise) is unchecked on
+  quality preset. the height fog's [flow noise](game-data/sky-and-fog.md#flow-noise) is unchecked on
   water and glass, and its volume blend is read from the height-fog section's and assumed for the
   volumetric one
 - local lights ([lighting](game-data/lighting.md#local-lights)): no shadows, shadow-only lights,
@@ -72,18 +72,18 @@ packs or renders correctly.
 - screen-space reflections ([lighting](game-data/lighting.md#screen-space-reflections)): the rain
   wetness variant's ripple normals aren't drawn, the GPU cost is unprofiled, and off-screen
   reflections fall back to the sky cubemap
-- glass ([glass](game-data/lighting.md#glass)): refraction and Fresnel opacity aren't drawn, glass
+- glass ([glass](game-data/materials.md#glass)): refraction and Fresnel opacity aren't drawn, glass
   in front of water is lost, glass against the sky isn't fogged, and nothing checks whether the game
   lets glass cast shadows
-- foliage ([foliage](game-data/lighting.md#foliage)): wind, the grass and card-mesh shaders' own
+- foliage ([foliage](game-data/materials.md#foliage)): wind, the grass and card-mesh shaders' own
   GBuffer inputs, trunk ramps and vertex AO, sphere-shadow proxies; decals, layered materials. grass
   and tree grids ([world](game-data/world.md#foliage-grids)) draw every instance at the cluster's
   LOD, without the game's sparsity thinning or per-instance parameters
-- Lit layers ([lit layers](game-data/lighting.md#lit-layers)): tri-channel switch textures, the
+- Lit layers ([lit layers](game-data/materials.md#lit-layers)): tri-channel switch textures, the
   parallax glow's global highlight and its world-space, PBR and deform variants, the top layer's
   `_BaseHeightMap` and UV set 2, the noise and parallax mask blends, mask layers on emissive-mapped
   materials, and `_TERRAIN_BLEND`'s fade into the terrain
-- erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
+- erosion rock ([erosion](game-data/materials.md#erosion)): the soft blend into what lies behind,
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
 - water ([water](game-data/water.md#open)): sector flow tiles (packed but unread), the LOD surfaces'
   displaced wave grid, rain ripples and wetness; `HGRP/WaterDecal` foam at the foot of waterfalls
@@ -91,37 +91,38 @@ packs or renders correctly.
   `HGWaterDecalRenderer` values aren't packed); the mist and splash at falls (billboard particles,
   below); other fluid types are unverified
 - waterfalls missing or ungated: some falls are mesh particle systems that store a particle cap of 0
-  and never spawn in the viewer (Jingyu's pool falls near unity −763, 209, −1190), and a falls at Si's
-  Painting (effect row near 589, 483, 1550) shows without the conditional cliff it pours over, with no
-  gate the extractor reads
-- scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal,
-  the mist (FogSimple, VFXFakeVolumeFog), VFXWater's waterfall sheets and VFXDitherAlpha's plain
-  variant draw, without the first two's additive, vertex-offset mask, polar-UV, lighting and
-  particle variants, the effects' own fog, the game's global scene-effect colour adjustment (the
-  Jingyu blight reads less saturated than in game), the mist boxes' 3D noise or VFXDitherAlpha's
-  dither fade; other effect shaders are suppressed rather than drawn opaque. stencil
-  [portals](game-data/lighting.md#portals) draw without their masks' own colour and depth, and only
+  and never spawn in the viewer (Jingyu's pool falls near unity −763, 209, −1190), and a falls at
+  Si's Painting (effect row near 589, 483, 1550) shows without the conditional cliff it pours over,
+  with no gate the extractor reads
+- scene effects ([scene effects](game-data/effects.md)): only VFXBaseV2, VFXDecal, the mist
+  (FogSimple, VFXFakeVolumeFog), VFXWater's waterfall sheets and VFXDitherAlpha's plain variant
+  draw, without the first two's additive, vertex-offset mask, polar-UV, lighting and particle
+  variants, the effects' own fog, the game's global scene-effect colour adjustment (the Jingyu
+  blight reads less saturated than in game), the mist boxes' 3D noise or VFXDitherAlpha's dither
+  fade; other effect shaders are suppressed rather than drawn opaque. stencil
+  [portals](game-data/effects.md#portals) draw without their masks' own colour and depth, and only
   where the GPU has `depth32float-stencil8`
 - particles ([prefabs](game-data/assets.md#prefabs), [viewer](viewer.md#particles)): billboard
   systems (sparkles, smoke, the crater column's glitter) aren't packed. mesh particles frozen in
   place lose their start colour and take the midpoint of random start values. other mesh systems
-  play only without colour, force, noise, sub-emitter and other modules without a closed form, from
-  the viewer's own random values, and move only while frames render; per-particle colour and custom
-  data never reach the effect shaders. texture sheets play in grid mode only (no sprite lists or
-  speed timing), and all copies of one flipbook step in phase. Marker Stone's low mist banks over
-  the valley are still missing; their source is unknown. rect decals (`HGRP/DecalLit`,
-  `HGRP/TerrainDecalLit`, InitChunkData components 27 and 28) aren't packed
+  play only without colour-over-lifetime, force, noise, sub-emitter and other modules without a
+  closed form, from the viewer's own random values, and move only while frames render; a system's
+  constant start colour tints its meshes, but random start colours and custom data never reach the
+  shaders. texture sheets play in grid mode only (no sprite lists or speed timing), and all copies
+  of one flipbook step in phase. Marker Stone's low mist banks over the valley are still missing;
+  their source is unknown. rect decals (`HGRP/DecalLit`, `HGRP/TerrainDecalLit`, InitChunkData
+  components 27 and 28) aren't packed
 - temporal smoothing of effects
-- light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term and the
-  cloud mask aren't drawn; unchecked against an in-game shot facing the sun. the
-  [sun disc](game-data/lighting.md#sun-disc) is unchecked against one too
-- lens flare ([lens flare](game-data/lighting.md#lens-flare)): polygon elements, inverse SDFs and
-  key weights aren't drawn, and the flare component's own settings (when the environment's flare is
-  off) aren't known. at Origin Lodespring's overview the viewer's flare is fainter than the game's:
-  the crystal mountain behind the sun occludes it in the viewer's depth buffer (the game may not
-  write it there), and Unity's random-number mapping is assumed
+- light shafts ([light shafts](game-data/post-processing.md#light-shafts)): the occlusion term and
+  the cloud mask aren't drawn; unchecked against an in-game shot facing the sun. the
+  [sun disc](game-data/sky-and-fog.md#sun-disc) is unchecked against one too
+- lens flare ([lens flare](game-data/post-processing.md#lens-flare)): polygon elements, inverse SDFs
+  and key weights aren't drawn, and the flare component's own settings (when the environment's flare
+  is off) aren't known. at Origin Lodespring's overview the viewer's flare is fainter than the
+  game's: the crystal mountain behind the sun occludes it in the viewer's depth buffer (the game may
+  not write it there), and Unity's random-number mapping is assumed
 - the sky's celestial layers are unchecked against in-game shots
-  ([beyond the atmosphere](game-data/lighting.md#beyond-the-atmosphere))
+  ([beyond the atmosphere](game-data/sky-and-fog.md#beyond-the-atmosphere))
 - HLOD/detail, LOD and mip swaps pop without cross-fade; ground-blend and decal meshes z-fight
   without the game's depth offsets
 

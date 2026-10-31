@@ -31,11 +31,9 @@ import { mapPool } from '../pool.ts';
 import type { AssetResolver, ObjectRef } from './assets.ts';
 import type { WorldIndex } from './world-index.ts';
 
-// which environment a level is lit by. the game has no per-level setting: environment volumes (tag-1 chunk
-// objects, see formats' `environment-volume.ts`) are blended by priority wherever the camera is. each scene has
-// one global volume (priority 100), and each level a large volume over its ground (priority 200 or so) with
-// smaller ones for caves, interiors and set pieces above it. a level's base environment is therefore the volume
-// that wins over most of the level's cells; `world env <level>` shows the vote.
+// which environment a level is lit by. the game has no per-level setting, only environment volumes blended by
+// priority at the camera, so a level's base environment is the volume that wins over most of the level's
+// cells (docs/game-data/environment.md#the-levels-base-environment); `world env <level>` shows the vote.
 
 // #region scene volumes
 

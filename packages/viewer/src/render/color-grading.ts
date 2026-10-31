@@ -1,8 +1,8 @@
 /**
- * the game's colour grading (`HGColorGradingConfig`) in shader units, as
- * `UberPostPassUtils.PrepareColorGradingParametersFromEnvVolume` packs it for the LUT builder. a section
- * that's off reads as its neutral default, as the config's getters return. colour curves and the external LUT
- * aren't packed, so they stay neutral.
+ * the game's colour grading (`HGColorGradingConfig`) in shader units, packed as the game's CPU packs it for
+ * its LUT builder. a section that's off reads as its neutral default, as the config's getters return. colour
+ * curves and the external LUT aren't packed, so they stay neutral. see
+ * `docs/game-data/post-processing.md#colour-grading-and-tonemapping`.
  *
  * @module
  */

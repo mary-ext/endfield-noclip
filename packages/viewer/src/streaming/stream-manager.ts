@@ -1,8 +1,9 @@
 /**
  * blob residency: the traversal says which blobs it wants each frame and how much; this fetches them (one
  * range read per blob, adjacent blobs of an archive coalesced into one request), decodes them on the worker
- * pool, uploads within a per-frame budget, and evicts the least recently used blobs when GPU memory exceeds
- * the budget. pinned blobs (the always-resident coarse layer) are never dropped.
+ * pool, uploads within a per-frame budget, and evicts the least recently used blobs when resident content
+ * exceeds the memory budget. pinned blobs (the always-resident coarse layer) are never dropped. the limits
+ * and why they're set so are in `docs/viewer.md#residency-and-budgets`.
  *
  * @module
  */
@@ -151,7 +152,7 @@ export interface ContentItem {
 	/** highest priority requested in {@link wantedFrame} */
 	priority: number;
 	wantedFrame: number;
-	/** last frame something drew it */
+	/** last frame it was used: wanted or marked used while resident, or uploaded */
 	usedFrame: number;
 	decoded: Decoded | null;
 	/** set exactly while the item is `ready` */
@@ -203,7 +204,7 @@ export interface StreamStats {
 export interface StreamOptions {
 	/** GPU byte budget for streamed content (pinned content counts towards it but is never evicted) */
 	budgetBytes: number;
-	/** concurrent HTTP requests */
+	/** shard range reads in flight at most */
 	maxRequests: number;
 	/** bytes uploaded per frame at most */
 	uploadBytesPerFrame: number;
@@ -211,10 +212,11 @@ export interface StreamOptions {
 
 // #endregion
 
-/** coalesce blobs whose ranges are at most this far apart */
+/** coalesce blobs whose ranges are at most this far apart, bytes */
 const COALESCE_GAP = 64 * 1024;
-/** largest coalesced request */
+/** largest coalesced request, bytes */
 const COALESCE_SPAN = 2 * 1024 * 1024;
+/** most blobs in one coalesced request */
 const COALESCE_COUNT = 96;
 
 interface QueuedRange {

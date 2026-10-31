@@ -1,7 +1,6 @@
 /**
  * just enough PE/COFF parsing to scan a Windows binary's data sections for embedded constants: section table,
- * rva↔offset mapping, and a byte-permutation finder. environment-agnostic (no node imports), so it can run in
- * the extractor or, later, a browser worker.
+ * rva↔offset mapping, and a byte-permutation finder.
  */
 
 import { FormatError } from './binary-reader.ts';

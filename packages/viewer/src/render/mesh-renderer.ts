@@ -135,7 +135,7 @@ type DrawRange =
  */
 type VertexStreams = 'all' | 'position' | 'uv';
 
-/** one run over a pass's opaque, alpha-tested or alpha-blended draws, with a pipeline per face culling */
+/** one run over one of a pass's draw ranges, with a pipeline per face culling and UV format */
 interface DrawPhase {
 	key: string;
 	range: DrawRange;
@@ -357,10 +357,7 @@ export class MeshRenderer {
 	#decalStart = 0;
 	#mistStart = 0;
 	#mistVolumeStart = 0;
-	/**
-	 * prepared draws, opaque, then alpha-tested, then alpha-blended; entries past {@link #drawCount} are reused
-	 * next frame
-	 */
+	/** prepared draws in {@link DrawRange} order; entries past {@link #drawCount} are reused next frame */
 	#draws: PreparedDraw[] = [];
 	#drawCount = 0;
 	/** indices of the first alpha-tested draw, the first stencil mask and the first alpha-blended draw */
@@ -780,8 +777,6 @@ export class MeshRenderer {
 			if (bucket.count === 0 || bucket.geometry.resident?.kind !== 'geometry') {
 				continue;
 			}
-			// without the texture holding its alpha there's nothing to test yet. unlit looks are their texture, so
-			// they wait for it rather than draw as solid cards
 			const look = bucket.look;
 			if (bucket.castOnly && (!look.castsShadows || look.transparent)) {
 				continue;
@@ -795,6 +790,7 @@ export class MeshRenderer {
 				continue;
 			}
 			const state = this.#materialState(bucket.material, look, textures);
+			// unlit looks are their texture, so they wait for it rather than draw as solid cards
 			if ((look.flags & LookFlags.Unlit) !== 0 && state.slots[0] === null) {
 				continue;
 			}
@@ -810,6 +806,7 @@ export class MeshRenderer {
 				}
 				continue;
 			}
+			// without the texture holding its alpha there's nothing to test yet, so it draws opaque
 			if (look.transparent) {
 				transparent.push(bucket);
 			} else if (look.cutout && state.alphaReady) {

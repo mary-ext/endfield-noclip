@@ -84,8 +84,8 @@ export class ShaderTable {
 const NORMAL_SLOT = /normal|bump/i;
 
 /**
- * `HGRP/Lit` picks each map's UV set with a float of its own and ignores the slot's `m_UVSetIndex`, which
- * stays 0 on hundreds of materials whose maps sample UV set 1
+ * the floats `HGRP/Lit` picks each map's UV set with, in place of the slot's `m_UVSetIndex` (see
+ * `docs/game-data/materials.md#lit-layers`)
  */
 const LIT_UV_SET_PROPERTIES: Record<string, string> = {
 	_BaseColorMap: '_BaseUVSet',
@@ -107,7 +107,9 @@ export interface ConvertedMaterial {
  * @param record the material's serialized state
  * @param classification its render-state classification
  * @param shader its interned shader
- * @param textureOf texture-table id of a bound slot, or `undefined` if the slot's texture couldn't be located
+ * @param textureOf the id to record for a bound slot's texture, or `undefined` if it couldn't be located; the
+ *   caller may remap ids afterwards (`convertAssets` hands out per-object ids and remaps them to
+ *   texture-table ids once textures are deduplicated)
  * @returns the table row, keeping only values that differ from the shader's defaults
  */
 export const convertMaterial = (

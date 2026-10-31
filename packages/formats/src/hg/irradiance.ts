@@ -13,7 +13,7 @@ import { decodeInvertedLz4Block } from '../binary/lz4.ts';
 export const IRRADIANCE_INDEX_MAGIC = 0x03000004;
 
 // the scene magics share one layout and differ in the volume's extent, which sets the key of world 0
-// (docs/game-data/lighting.md, "index.bytes")
+// (docs/game-data/irradiance.md#indexbytes)
 const SCENE_KEY_ORIGINS = new Map([
 	[0x03000003, 64],
 	[IRRADIANCE_INDEX_MAGIC, 128],
@@ -110,7 +110,6 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 		return new TextDecoder('utf-16le', { fatal: true }).decode(r.bytesView(length));
 	};
 	const sceneStates = Array.from({ length: countOf(4) }, utf16);
-	// counted (hash, counted scene-state index list) entries precede the filenames.
 	const stateGroups = Array.from({ length: countOf(8) }, () => {
 		const hash = r.u32();
 		const members = Array.from({ length: countOf(4) }, () => r.u32());
@@ -151,7 +150,7 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 	const ends = Array.from({ length: files.length }, () => 0);
 	for (let i = 0; i < count; i++) {
 		const w = Array.from({ length: RECORD_WORDS }, () => r.u32());
-		// word 7 packs the payload index in its low u16; its upper bits have a separate meaning.
+		// word 7's high bits are unknown
 		const file = w[7] & 0xffff;
 		if (w[4] !== w[5] + w[6] || w[3] === 0 || w[3] > w[4] || file >= files.length || w[2] !== ends[file]) {
 			throw new FormatError(`irradiance index: record ${i} doesn't hold together`);
@@ -162,7 +161,7 @@ export const parseIrradianceIndex = (data: Uint8Array): IrradianceIndex => {
 	if (ends.some((end) => end === 0)) {
 		throw new FormatError('irradiance index: payload without records');
 	}
-	// the final table has five words per entry; their renderer meaning is not yet established.
+	// a trailing table of five-word rows, meaning unknown
 	r.skip(countOf(20) * 20);
 	if (r.remaining !== 0) {
 		throw new FormatError('irradiance index: trailing bytes');
@@ -182,9 +181,10 @@ export const decodeIrradianceCell = (stored: Uint8Array, record: IrradianceRecor
 /**
  * a decompressed cell, as the GPU reads it (all u32, little-endian): a perfect spatial hash over 4³-probe
  * blocks, `u32 T, u32 O`, `O³` offset words (byte triples), `T³` entries of `(key, probe offset, mask lo,
- * mask hi)`, then 16-byte probes. a block key is `bx | by << 8 | bz << 16` with blocks of `4 · 2^level` probe
- * units (0.5 m); an entry's probes are at `probe offset + popcount(mask below the probe's bit) · 16`
- * (relative to the cell). a probe is L0 rgb as R11G11B10F, then three rgba8 words: the L1 direction of red,
- * green and blue (`· 4 − 2`, relative to that channel's L0) with a validity weight in alpha
+ * mask hi)`, then 16-byte probes. a block key is `bx | by << 8 | bz << 16`, a block being 4³ probes at the
+ * level's spacing (`0.5 · 4^level` m); an entry's probes are at `probe offset + popcount(mask below the
+ * probe's bit) · 16` (relative to the cell). a probe is L0 rgb as R11G11B10F, then three rgba8 words: the L1
+ * direction of red, green and blue (`· 4 − 2`, relative to that channel's L0) with a validity weight in
+ * alpha
  */
 export type IrradianceCell = Uint8Array;

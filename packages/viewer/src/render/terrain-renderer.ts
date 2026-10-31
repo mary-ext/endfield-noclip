@@ -401,7 +401,7 @@ export class TerrainRenderer {
 	/**
 	 * uploads one layer texture into its array layer
 	 *
-	 * @param blob the layer blob, one of those {@link setDetail} named
+	 * @param blob the layer blob, one of those {@link setSplat} named
 	 * @param decoded its levels
 	 * @returns the residency
 	 * @throws {Error} if the blob isn't one of the package's layer textures or has the wrong size

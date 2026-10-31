@@ -150,9 +150,9 @@ export interface PackOptions {
 	level: string | null;
 	/** world rectangle to restrict content to (min inclusive, max exclusive), or `null` */
 	bounds: Rect | null;
-	/** zstd level of instance, terrain and geometry blobs */
+	/** zstd level of geometry, instance, terrain height and splat blobs */
 	zstdLevel: number;
-	/** zstd level of texture blobs */
+	/** zstd level of textures, terrain surface pages and layer textures */
 	textureZstdLevel: number;
 	/** convert geometry, materials and textures; without, their table entries stay `pending` */
 	convertAssets: boolean;

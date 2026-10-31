@@ -10,7 +10,7 @@
  *   straight into the rows, culling small boxes in the vertex shader.
  * - a visible list (packages with geometry): {@link MeshSelector} picks instances on the CPU and writes their
  *   row indices into a per-frame list; meshes and the boxes of instances whose geometry is still streaming
- *   both index rows through it. a GPU cull pass would write the same list plus indirect arguments.
+ *   both index rows through it.
  *
  * @module
  */
@@ -339,7 +339,7 @@ export class InstanceRenderer {
 		return at;
 	}
 
-	/** @returns triangles submitted last frame as boxes (before GPU culling) */
+	/** @returns triangles submitted last frame as boxes (before the vertex shader's culling) */
 	get triangles(): number {
 		return this.instanceCount * 12;
 	}

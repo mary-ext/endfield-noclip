@@ -8,7 +8,8 @@ import type { KeyConfig } from '../config.ts';
  * scrapes key material from local checkouts of third-party tools that already embed it, so this project never
  * has to carry the keys itself.
  *
- * recognized sources (any directory containing them, searched recursively one level deep):
+ * recognized sources, looked for in each given directory and its `map-extractor` and `animestudio`
+ * subdirectories:
  *
  * - An1X3R/Endfield-map-extractor: `src/extractor_core/vfs.py` (VFS key)
  * - Escartem/AnimeStudio: `AnimeStudio/Crypto/CryptoHelper.cs` + `VFSUtils.cs` (bundle cipher)

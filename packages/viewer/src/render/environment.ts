@@ -3,9 +3,8 @@
  * settings, derived from the game's environment profile (its `HGEnvironmentPhase` sections, which keep the
  * game's field names) or from defaults when a package has none.
  *
- * the game lights in physical units with a fixed exposure: `preExposure = 1 / (1.2 · 2^EV100)` and the sun's
- * pre-exposed illuminance is `directLux · preExposure`. the ambient probe is stored pre-exposed. so shading
- * happens in pre-exposed units and the tonemapper sees values around 0–2.
+ * shading happens in pre-exposed units: `preExposure = 1 / (1.2 · 2^EV100)`, the sun's illuminance is
+ * `directLux · preExposure`, and the ambient probe is stored pre-exposed (docs/game-data/lighting.md).
  *
  * @module
  */
@@ -798,9 +797,9 @@ const cloudLook = (cloud: CloudInput | null): Environment['cloud'] => {
 	if (cloud === null || !cloud.enable || cloud.cloudTexture === null) {
 		return null;
 	}
-	// HGSkyRenderer.SetupCloudParam: the raw tint (no sRGB decode) times the fade and the absolute brightness,
-	// which reaches alpha only when asked to. `cloudBrightness` only counts with `lightAffectCloud`, which no
-	// shipped base profile sets
+	// as the game packs it: the raw tint (no sRGB decode) times the fade and the absolute brightness, which
+	// reaches alpha only when asked to. `cloudBrightness` only counts with `lightAffectCloud`, which no shipped
+	// base profile sets
 	const [r, g, b, a] = cloud.cloudTint;
 	const scale = cloud.cloudFadeAlpha * cloud.cloudAbsoluteBrightness;
 	const alphaScale =
@@ -817,7 +816,10 @@ const cloudLook = (cloud: CloudInput | null): Environment['cloud'] => {
 	};
 };
 
-/** HGSkyRenderer.SetupShaderVariablesGlobalCloudShadow, without the far-texture set */
+/**
+ * the cloud shadow as the game packs it, without the far-texture set
+ * (docs/game-data/lighting.md#cloud-shadows)
+ */
 const cloudShadowLook = (cloud: CloudInput | null, light: LightInput): Environment['cloudShadow'] => {
 	if (cloud === null || !cloud.enable || !cloud.enableCloudShadow) {
 		return null;
@@ -826,9 +828,8 @@ const cloudShadowLook = (cloud: CloudInput | null, light: LightInput): Environme
 	if (config.cloudShadowTexture === null) {
 		return null;
 	}
-	// the light's direction of travel over the cosine of its pitch in degrees / 360 taken as radians, as the game
-	// computes it. that keeps the factor within 1% of 1 for any pitch; a true 1/sin(pitch) would blow up at the
-	// 0° pitch some phases ship, striping the texture along the terrain's contours
+	// the light's direction of travel over |cos(pitch in degrees / 360)| taken in radians, as the game computes
+	// it, so the factor stays within 1% of 1
 	const pitch = light.cloudShadowPitchYawMode === 1 ? light.cloudShadowPitchYaw[0] : light.directPitchYaw[0];
 	const factor = Math.min(Math.max(Math.abs(Math.cos(pitch / 360)), 0.001), 1);
 	const [x, y, z] = rotate(light.rotationCloudShadow, [0, 0, 1]);
@@ -848,7 +849,7 @@ const cloudShadowLook = (cloud: CloudInput | null, light: LightInput): Environme
 	};
 };
 
-/** HGAtmosphereRenderer.SetupShaderVariablesGlobalHeightFog */
+/** the height fog as the game packs it */
 const heightFogLook = (fog: HeightFogInput, light: LightInput): HeightFog => ({
 	enabled: fog.enable,
 	layers: [
@@ -892,7 +893,7 @@ const heightFogLook = (fog: HeightFogInput, light: LightInput): HeightFog => ({
 			: null,
 });
 
-/** HGVolumetricFogRenderer's constants, minus the flow noise, local fog volumes and local lights */
+/** the volumetric fog as the game packs it, minus the flow noise, local fog volumes and local lights */
 const volumetricFogLook = (
 	fog: VolumetricFogInput,
 	light: LightInput,
@@ -915,7 +916,7 @@ const volumetricFogLook = (
 	};
 };
 
-/** LightShaftPassConstructor.LightShaftPass: the shafts radiate from the light shaft rotation's light */
+/** the shafts radiate from the light shaft rotation's light, as in the game */
 const lightShaftLook = (config: LightShaftInput, light: LightInput): LightShaftLook | null => {
 	if (!config.enable) {
 		return null;
@@ -931,7 +932,7 @@ const lightShaftLook = (config: LightShaftInput, light: LightInput): LightShaftL
 	};
 };
 
-/** HGAtmosphereRenderer.SetupShaderVariablesGlobalAtmosphereFog */
+/** the atmosphere fog as the game packs it */
 const atmosphereFogLook = (source: EnvironmentInput, sunIntensity: number): AtmosphereFog | null => {
 	const { fog, atmosphere, light } = source;
 	if (!fog.enable) {

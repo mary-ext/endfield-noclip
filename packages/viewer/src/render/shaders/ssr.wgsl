@@ -2,7 +2,7 @@
 // `fs_march` follows each lit pixel's mirror ray through the depth buffer into last frame's composited scene,
 // `fs_temporal` filters the hit colour and fade over frames, `fs_downsample` builds a depth-aware pyramid of both,
 // and `fs_resolve` blurs by the reflected cone's footprint and writes the change to the radiance (composite adds
-// it before occlusion and fog). see docs/game-data/lighting.md. needs post-common.wgsl.
+// it before occlusion and fog). see docs/game-data/lighting.md#screen-space-reflections. needs post-common.wgsl.
 
 struct Ssr {
 	// last frame's camera-relative view-projection, unjittered

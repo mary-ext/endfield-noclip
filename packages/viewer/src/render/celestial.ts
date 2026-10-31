@@ -1,8 +1,9 @@
 /**
- * the sky beyond the atmosphere: the sun disc of the game's `HGSkyConfig`, the nebula of its `HGStarConfig`
- * and the planets of its `HGCelestialConfig`, drawn by the composite where it draws the sky
- * (shaders/celestial.wgsl). the look comes from the environment profile; the uniforms are written each frame,
- * since the ray-traced planet is placed relative to the camera.
+ * the sky beyond the atmosphere: the sun disc of the profile's `sky` section, the stars and nebula of its
+ * `star` section and the planets of its `celestial` section, drawn at the sky pixels by the celestial pass
+ * (shaders/celestial.wgsl) for the composite to put over the atmosphere's sky
+ * (docs/game-data/sky-and-fog.md#beyond-the-atmosphere). the uniforms are written each frame, since the
+ * ray-traced planet is placed relative to the camera.
  *
  * @module
  */
@@ -154,7 +155,7 @@ export const NO_CELESTIAL: CelestialLook = {
 	sky: [null, null],
 };
 
-/** the profile sections the sky's celestial layers come from; each may be absent in older packages */
+/** the profile sections the sky's celestial layers come from; a missing one draws nothing of its layers */
 export interface CelestialInput {
 	celestial?: CelestialConfig;
 	star?: StarConfig;
@@ -192,7 +193,7 @@ const nebulaLook = (star: StarConfig | undefined): NebulaLook | null => {
 	};
 };
 
-/** `HGSkyRenderer.SetupStarParam`: the config's fields as they are, colours raw */
+/** the star config's fields as the game packs them: as they are, colours raw */
 const starLook = (star: StarConfig | undefined): StarLook | null => {
 	if (star === undefined || !star.enableStars) {
 		return null;
@@ -227,8 +228,8 @@ const propertiesOf = (material: EnvironmentMaterial) => ({
 });
 
 /**
- * `PlanetBillBoardConstants`, which the game fills from the material: floats and vectors as stored, colours
- * linearised
+ * the ray-traced planet's constants, which the game fills from the material: floats and vectors as stored,
+ * colours linearised
  */
 const rayPlanetLook = (material: EnvironmentMaterial): RayPlanetLook | null => {
 	const { float: f, color, texture, transform } = propertiesOf(material);
@@ -336,8 +337,8 @@ const materialColor = (c: Readonly<Color> | undefined, fallback: Color): Vec3 =>
 };
 
 /**
- * a planet painted on the sky dome, as `HGSkyRenderer.SetupPlanet` packs it: a sphere seen at the distance
- * `moon.orbitRadius − moon.radius` (the moon is the body the map stands on), along its pitch and yaw
+ * a planet painted on the sky dome, as the game packs it: a sphere seen at the distance `moon.orbitRadius −
+ * moon.radius` (the moon is the body the map stands on), along its pitch and yaw
  */
 const skyPlanetLook = (
 	planet: CelestialAtmosphereObjectConfig,
@@ -412,8 +413,8 @@ const skyPlanetLook = (
 const SKY_PLANET_DISTANCE = 2000;
 
 /**
- * `HGSkyRenderer.SetupSunDiscParam`: the colour goes in raw, and the light's intensity over π and the sky's
- * lux factor scale it
+ * the sun disc as the game packs it: the raw colour, scaled by the light's intensity over π and the sky's lux
+ * factor
  */
 const sunDiscLook = (sky: CelestialInput['sky'], light: CelestialInput['light']): SunDiscLook | null => {
 	if (sky === undefined || light === undefined || !sky.enableSunDisc) {
@@ -504,7 +505,7 @@ export const celestialTextures = (look: CelestialLook): Record<CelestialTextureS
 	starDensity: look.stars?.densityTexture ?? null,
 });
 
-/** owns the celestial pass's uniforms, samplers and bound textures (its group 1) */
+/** owns the celestial pass's group 1: its uniforms, samplers and bound textures */
 export class CelestialLayer {
 	#device: GPUDevice;
 	#uniforms: GPUBuffer;
@@ -565,7 +566,7 @@ export class CelestialLayer {
 	}
 
 	/**
-	 * @param layout the composite pipeline's group 3 layout
+	 * @param layout the celestial pipeline's group 1 layout
 	 * @returns the group to bind there
 	 */
 	group(layout: GPUBindGroupLayout): GPUBindGroup {

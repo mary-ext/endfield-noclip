@@ -3,9 +3,10 @@ import { ByteView } from '../binary/byte-view.ts';
 
 import { hashSlot, type HashSlot, slotAt } from './hash-slots.ts';
 
-// `Data/ExtendData/Main/StringPathHash.bin` (ExtendData group) and `Data/ExtendData/Initial/InitStringPathHash.bin`
-// (InitialExtendData group): a stored hash table from 64-bit path hashes to asset/`Data/` paths. world data
-// (InitChunkData draws, LevelConfig levelDataPaths) references assets by these hashes. layout per
+// `Data/ExtendData/Main/StringPathHash.bin` (ExtendData group) and
+// `Data/ExtendData/Initial/InitStringPathHash.bin` (InitialExtendData group): a stored hash table from 64-bit
+// path hashes to asset/`Data/` paths. world data (InitChunkData draws, LevelConfig levelDataPaths) references
+// assets by these hashes. layout per
 // Variante/endfield_research_kit (MIT, `scripts/game_data/extend_data_binary.py`):
 //
 //   u32 stringsOffset (= 8 + 24·count) ‖ u32 count

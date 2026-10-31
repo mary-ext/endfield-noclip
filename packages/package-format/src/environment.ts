@@ -29,9 +29,7 @@ export interface EnvironmentProfile {
 	shadow: ShadowConfig;
 	celestial: CelestialConfig;
 	star: StarConfig;
-	/** absent in packages written before it was extracted */
 	rain?: RainConfig;
-	/** absent in packages written before it was extracted */
 	lensFlare?: LensFlareConfig;
 	/** the level's global post-processing volume, or `null` if it has none */
 	post: PostProfile | null;

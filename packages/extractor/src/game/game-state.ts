@@ -8,15 +8,9 @@ import type {
 } from '@endfield-noclip/package-format/states';
 
 // the game state that MapConfig conditions and dynamic load gates read, as one control per quest, mission and
-// variable. a condition becomes a disjunction of conjunctions of required control values, so conditions that
-// read the same quest stay consistent with each other: no selection makes `quest = completed` and
-// `quest ≠ completed` both hold.
-//
-// defaults are those of a player who finished the story: every quest and mission is completed. variables are
-// server state and the client ships no values for them; a variable is assumed to hold the highest value the
-// scene compares it against, on the reading that the story moves these variables forward (erosion cleansed,
-// machines repaired, the last stage of a staged change). MapConfig names its variables while load gates use
-// numeric game-variable ids, so the two never share a control.
+// variable, so conditions that read the same quest stay consistent with each other. a condition becomes a
+// disjunction of conjunctions of required control values. defaults are those of a player who finished the
+// story: see docs/game-data/scene-states.md#defaults and docs/game-data/scene-states.md#variables.
 
 // #region conditions
 
