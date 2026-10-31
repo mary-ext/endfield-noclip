@@ -213,6 +213,16 @@ const sortKeyOf = (bucket: MeshBucket): number => {
 
 const byBindings = (a: MeshBucket, b: MeshBucket): number => sortKeyOf(a) - sortKeyOf(b);
 
+/** the part of {@link sortKeyOf} above the geometry: the shadow role and the pipeline */
+const PIPELINE_KEY = 2 ** 45;
+
+/**
+ * draw order for depth-writing draws: as {@link byBindings} up to the pipeline, then nearest first, so early
+ * depth testing skips more of the shading behind
+ */
+const byPipelineThenNearest = (a: MeshBucket, b: MeshBucket): number =>
+	Math.floor(sortKeyOf(a) / PIPELINE_KEY) - Math.floor(sortKeyOf(b) / PIPELINE_KEY) || a.nearest - b.nearest;
+
 /** owns geometry buffers, material bind groups and the mesh pipelines */
 export class MeshRenderer {
 	/** mesh instances last frame */
@@ -649,8 +659,8 @@ export class MeshRenderer {
 				opaque.push(bucket);
 			}
 		}
-		opaque.sort(byBindings);
-		cutout.sort(byBindings);
+		opaque.sort(byPipelineThenNearest);
+		cutout.sort(byPipelineThenNearest);
 		transparent.sort(byBindings);
 		effects.sort(byBindings);
 		decals.sort(byBindings);

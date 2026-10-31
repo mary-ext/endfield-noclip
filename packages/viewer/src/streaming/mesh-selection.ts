@@ -42,6 +42,8 @@ export interface MeshBucket {
 	rows: number[][];
 	/** largest projected size of an instance this frame, px */
 	pixels: number;
+	/** distance from the camera to the nearest instance's bounding sphere this frame, m */
+	nearest: number;
 	/** offset and count of the rows in this frame's visible list, set by `InstanceRenderer.prepareList` */
 	first: number;
 	count: number;
@@ -349,11 +351,15 @@ export class MeshSelector {
 								rows.length = 0;
 							}
 							bucket.pixels = 0;
+							bucket.nearest = Infinity;
 							buckets.push(bucket);
 						}
 						bucket.rows[group].push(row);
 						if (priority > bucket.pixels) {
 							bucket.pixels = priority;
+						}
+						if (distance - radius < bucket.nearest) {
+							bucket.nearest = distance - radius;
 						}
 					}
 				}
@@ -509,6 +515,7 @@ export class MeshSelector {
 				castOnly,
 				rows: Array.from({ length: SHADOW_LAYERS + 1 }, () => []),
 				pixels: 0,
+				nearest: Infinity,
 				first: 0,
 				count: 0,
 				layerCounts: Array.from({ length: SHADOW_LAYERS }, () => 0),
