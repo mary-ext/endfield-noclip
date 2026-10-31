@@ -543,8 +543,11 @@ const rotate = ([x, y, z, w]: Readonly<Quat>, [vx, vy, vz]: Vec3): Vec3 => {
 	return [vx + w * tx + (y * tz - z * ty), vy + w * ty + (z * tx - x * tz), vz + w * tz + (x * ty - y * tx)];
 };
 
-/** @returns the unit vector towards a light whose rotation turns +Z into its direction of travel */
-const towardsRotatedLight = (q: Readonly<Quat>): Vec3 => {
+/**
+ * @param q one of the light config's `rotation*` quaternions
+ * @returns the unit vector towards a light whose rotation turns +Z into its direction of travel
+ */
+export const towardsRotatedLight = (q: Readonly<Quat>): Vec3 => {
 	const [x, y, z] = rotate(q, [0, 0, 1]);
 	return [-x, -y, -z];
 };

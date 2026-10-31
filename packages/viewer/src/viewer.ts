@@ -855,7 +855,7 @@ export class Viewer {
 		}
 		this.#blendKey = key;
 		this.#environment = deriveEnvironment(profile);
-		this.#celestial = celestialLook(profile?.celestial, profile?.star);
+		this.#celestial = celestialLook(profile);
 		this.#wetness = wetnessParams(profile?.rain);
 		this.#post.celestial.setLook(this.#celestial);
 		this.#post.setEnvironment(this.#environment);

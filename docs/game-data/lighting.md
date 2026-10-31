@@ -566,6 +566,23 @@ in raw, like the game's C# passes it; decoding it from sRGB makes some skies nea
 
 the sky is fogged as if at `sky.skyDistance`.
 
+### sun disc
+
+with `sky.enableSunDisc`, a disc is added onto the atmosphere's sky around the light config's
+`rotationSunDisc` sun, before the planets and clouds, so clouds cover it (drawn in
+[`shaders/celestial.wgsl`](../../packages/viewer/src/render/shaders/celestial.wgsl)). with d the
+view direction and s the direction towards that sun:
+
+- `c = saturate(s · d)^20`, and the lobe is
+  `0.0100164 (1 + c²) / max((1.9801 − 1.98 c)^(8 · sunDiscRadius^0.65), 1e-4)`, a forward-scattering
+  phase function about 0.99 sharp
+- `sunDiscRampIntensity` keeps the lobe's soft skirt: the disc takes
+  `mix(smoothstep(0.5, 1, lobe) · lobe, lobe, ramp)`
+- times the raw `sunDiscColor`, the light's `directIntensityDividePi` and the sky's
+  `proceduralSkyLuxFactor`, clamped to 0–3
+
+those factors are pre-exposed, so the disc reaches the [light shafts](#light-shafts)' threshold.
+
 ### beyond the atmosphere
 
 the game shades everything past the atmosphere inside its one sky-dome draw, switched by keywords
@@ -735,8 +752,8 @@ composited scene before temporal antialiasing, so the auto exposure meters them:
 - the last blur is added to the scene's colour.
 
 the occlusion-term variant (`enableOcclusion`) and the cloud mask (`enableLightShaftCloudMask`)
-aren't drawn. without the sun disc, which the viewer doesn't draw, only bright fog and sky near the
-sun pass the threshold.
+aren't drawn. where the sky has no [sun disc](#sun-disc), only bright fog and sky near the sun pass
+the threshold.
 
 ### bloom
 
@@ -887,8 +904,8 @@ are sampled toroidally in `ambient_irradiance`.
 - the volumetric fog's grid size, depth distribution and history weight come from quality presets
   that aren't recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient
   probe without the native diffuse-ambient scale.
-- not rendered: lens flare, the moon's sky-wide ring (`HG_RING`), the sun disc, aurora, local
-  reflection probes, local light shadows and light beams, precipitation (rain wetness does render:
+- not rendered: lens flare, the moon's sky-wide ring (`HG_RING`), aurora, local reflection probes,
+  local light shadows and light beams, precipitation (rain wetness does render:
   [environment](environment.md#wetness)).
 - celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' ring thinning
   the stars, their blend modes (the viewer always adds them), and the brightness of the ray-traced

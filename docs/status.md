@@ -92,9 +92,9 @@ packs or renders correctly.
   over the valley are still missing; their source is unknown. rect decals (`HGRP/DecalLit`,
   `HGRP/TerrainDecalLit`, InitChunkData components 27 and 28) aren't packed
 - temporal smoothing of effects
-- light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term, the cloud
-  mask and the sun disc that feeds them aren't drawn; unchecked against an in-game shot facing the
-  sun
+- light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term and the
+  cloud mask aren't drawn; unchecked against an in-game shot facing the sun. the
+  [sun disc](game-data/lighting.md#sun-disc) is unchecked against one too
 - the sky's celestial layers are unchecked against in-game shots
   ([beyond the atmosphere](game-data/lighting.md#beyond-the-atmosphere))
 - HLOD/detail, LOD and mip swaps pop without cross-fade; ground-blend and decal meshes z-fight

@@ -1,4 +1,4 @@
-// what the game draws on the sky beyond the atmosphere: the nebula, planets painted on the sky dome
+// what the game draws on the sky beyond the atmosphere: the sun disc, the nebula, planets painted on the sky dome
 // (HGRP/SkydomeStar) and the ray-traced planet (HGRP/Planet/PlanetBillboard). each is a function of the view
 // direction alone; the game shades them all in its one sky-dome draw. this pass renders them at the sky pixels
 // into a target the composite reads, which keeps the composite under the sampled-texture limit. needs
@@ -72,7 +72,7 @@ struct RayPlanet {
 struct Celestial {
 	// x = nebula, y = ray-traced planet, zw = sky planets 0 and 1; each 1 when drawn
 	flags: vec4u,
-	// x = 1 with the star field, yzw unused
+	// x = 1 with the star field, y = 1 with the sun disc, zw unused
 	star_flags: vec4u,
 	// nebula tint (× 2, as the game adds it), w = rotation (rad)
 	nebula: vec4f,
@@ -82,6 +82,10 @@ struct Celestial {
 	stars: array<vec4f, 7>,
 	ray: RayPlanet,
 	sky: array<SkyPlanet, 2>,
+	// unit vector towards the sun, w = how far the lobe's soft skirt shows
+	sun_direction: vec4f,
+	// the disc's colour, pre-exposed (rgb), w = the lobe's exponent
+	sun_disc: vec4f,
 }
 
 @group(1) @binding(0) var<uniform> celestial: Celestial;
@@ -112,6 +116,18 @@ fn celestial_lod(texture: texture_2d<f32>, radians: f32) -> f32 {
 fn pixel_angle() -> f32 {
 	return 1.0 / post.right.w;
 }
+
+// #region sun disc
+
+// the sun disc: a sharp forward-scattering lobe around the sun, its soft skirt kept by the ramp, clamped to 3
+fn sun_disc(direction: vec3f) -> vec3f {
+	let c = pow(clamp(dot(celestial.sun_direction.xyz, direction), 0.0, 1.0), 20.0);
+	let lobe = 0.0100164 * (1.0 + c * c) / max(pow(1.9801 - 1.98 * c, celestial.sun_disc.w), 1e-4);
+	let shaped = mix(smoothstep(0.5, 1.0, lobe) * lobe, lobe, celestial.sun_direction.w);
+	return clamp(celestial.sun_disc.rgb * shaped, vec3f(0.0), vec3f(3.0));
+}
+
+// #endregion
 
 // #region nebula
 
@@ -510,7 +526,7 @@ fn ray_planet(direction: vec3f) -> RayPlanetHit {
 // the main pass's depth: the layers are drawn only where it's clear (sky)
 @group(2) @binding(0) var celestial_depth: texture_depth_2d;
 
-// the layers along `direction` in the game's order: the sky planets added to the sky, the cloud panorama over
+// the layers along `direction` in the game's order: the sun disc and sky planets added to the sky, the cloud panorama over
 // them (or behind them, without `drawCloudAfterPlanet`), the nebula and stars added, then the ray-traced planet
 // over everything. over a sky radiance `s` they give `s · (1 − a) + rgb`
 fn celestial_layers(direction: vec3f) -> vec4f {
@@ -549,6 +565,10 @@ fn celestial_layers(direction: vec3f) -> vec4f {
 		color = color * (1.0 - ray.cover) + ray.radiance;
 		sky *= 1.0 - ray.cover;
 	}
+	// the game adds the sun disc onto the sky before the rest, so it shows where the sky does
+	if (celestial.star_flags.y != 0u) {
+		color += sun_disc(direction) * sky;
+	}
 	return vec4f(color, 1.0 - sky);
 }
 
@@ -563,7 +583,8 @@ fn fs_celestial(in: FullscreenOut) -> @location(0) vec4f {
 	if (post.cloud.w > 0.5 && post.cloud_shape.w > 0.5) {
 		return vec4f(cloud_texel(direction).rgb, 1.0);
 	}
-	if (post.flags.x == 0u || (all(celestial.flags == vec4u(0u)) && post.cloud.w < 0.5)) {
+	if (post.flags.x == 0u ||
+		(all(celestial.flags == vec4u(0u)) && celestial.star_flags.y == 0u && post.cloud.w < 0.5)) {
 		return vec4f(0.0);
 	}
 	return celestial_layers(direction);

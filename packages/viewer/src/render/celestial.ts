@@ -1,8 +1,8 @@
 /**
- * the sky beyond the atmosphere: the nebula of the game's `HGStarConfig` and the planets of its
- * `HGCelestialConfig`, drawn by the composite where it draws the sky (shaders/celestial.wgsl). the look comes
- * from the environment profile; the uniforms are written each frame, since the ray-traced planet is placed
- * relative to the camera.
+ * the sky beyond the atmosphere: the sun disc of the game's `HGSkyConfig`, the nebula of its `HGStarConfig`
+ * and the planets of its `HGCelestialConfig`, drawn by the composite where it draws the sky
+ * (shaders/celestial.wgsl). the look comes from the environment profile; the uniforms are written each frame,
+ * since the ray-traced planet is placed relative to the camera.
  *
  * @module
  */
@@ -11,6 +11,8 @@ import type {
 	CelestialAtmosphereObjectConfig,
 	CelestialConfig,
 	EnvironmentMaterial,
+	LightConfig,
+	SkyConfig,
 	StarConfig,
 } from '@endfield-noclip/package-format/environment';
 import type { Color, Vec4 } from '@endfield-noclip/package-format/values';
@@ -18,7 +20,7 @@ import type { Color, Vec4 } from '@endfield-noclip/package-format/values';
 import type { Vec3 } from '../scene/camera.ts';
 
 import { linearRgb } from './color.ts';
-import { towardsLight } from './environment.ts';
+import { towardsLight, towardsRotatedLight } from './environment.ts';
 import { placeholderView, type TextureBinding } from './texture-store.ts';
 
 // #region look
@@ -122,8 +124,21 @@ export interface SkyPlanetLook {
 	} | null;
 }
 
+/** the sun disc added onto the sky (`_SunDiscParam0..2`) */
+export interface SunDiscLook {
+	/** unit vector towards the sun */
+	direction: Vec3;
+	/** the raw disc colour times the light's intensity over π and the sky's lux factor (pre-exposed) */
+	color: Vec3;
+	/** the lobe's exponent, `8 · radius^0.65` */
+	sharpness: number;
+	/** how far the lobe's soft skirt shows, 0 to 1 */
+	ramp: number;
+}
+
 /** everything beyond the atmosphere; parts not drawn are `null` */
 export interface CelestialLook {
+	sun: SunDiscLook | null;
 	nebula: NebulaLook | null;
 	stars: StarLook | null;
 	ray: RayPlanetLook | null;
@@ -131,7 +146,24 @@ export interface CelestialLook {
 }
 
 /** nothing beyond the atmosphere */
-export const NO_CELESTIAL: CelestialLook = { nebula: null, stars: null, ray: null, sky: [null, null] };
+export const NO_CELESTIAL: CelestialLook = {
+	sun: null,
+	nebula: null,
+	stars: null,
+	ray: null,
+	sky: [null, null],
+};
+
+/** the profile sections the sky's celestial layers come from; each may be absent in older packages */
+export interface CelestialInput {
+	celestial?: CelestialConfig;
+	star?: StarConfig;
+	sky?: Pick<
+		SkyConfig,
+		'enableSunDisc' | 'sunDiscRadius' | 'sunDiscRampIntensity' | 'sunDiscColor' | 'proceduralSkyLuxFactor'
+	>;
+	light?: Pick<LightConfig, 'rotationSunDisc' | 'directIntensityDividePi'>;
+}
 
 const DEG = Math.PI / 180;
 
@@ -380,19 +412,38 @@ const skyPlanetLook = (
 const SKY_PLANET_DISTANCE = 2000;
 
 /**
- * @param celestial the profile's celestial section, absent in packages from before it was packed
- * @param star its star section, likewise
+ * `HGSkyRenderer.SetupSunDiscParam`: the colour goes in raw, and the light's intensity over π and the sky's
+ * lux factor scale it
+ */
+const sunDiscLook = (sky: CelestialInput['sky'], light: CelestialInput['light']): SunDiscLook | null => {
+	if (sky === undefined || light === undefined || !sky.enableSunDisc) {
+		return null;
+	}
+	const scale = light.directIntensityDividePi * sky.proceduralSkyLuxFactor;
+	if (scale <= 0) {
+		return null;
+	}
+	return {
+		direction: towardsRotatedLight(light.rotationSunDisc),
+		color: rgb(sky.sunDiscColor, scale),
+		sharpness: 8 * Math.max(sky.sunDiscRadius, 0) ** 0.65,
+		ramp: sky.sunDiscRampIntensity,
+	};
+};
+
+/**
+ * @param input the blended profile's sections, or `null` for the defaults (nothing beyond the atmosphere)
  * @returns what to draw beyond the atmosphere
  */
-export const celestialLook = (
-	celestial: CelestialConfig | undefined,
-	star: StarConfig | undefined,
-): CelestialLook => {
+export const celestialLook = (input: CelestialInput | null): CelestialLook => {
+	const { celestial, star, sky, light } = input ?? {};
+	const sun = sunDiscLook(sky, light);
 	if (celestial === undefined) {
-		return { ...NO_CELESTIAL, nebula: nebulaLook(star), stars: starLook(star) };
+		return { ...NO_CELESTIAL, sun, nebula: nebulaLook(star), stars: starLook(star) };
 	}
 	const advanced = celestial.advancedPlanetConfig;
 	return {
+		sun,
 		nebula: nebulaLook(star),
 		stars: starLook(star),
 		ray:
@@ -411,11 +462,12 @@ export const celestialLook = (
 // #region layer
 
 /** byte size of `Celestial` in celestial.wgsl */
-const UNIFORM_BYTES = (11 + 19 + 2 * 13) * 16;
+const UNIFORM_BYTES = (11 + 19 + 2 * 13 + 2) * 16;
 const STAR_OFFSET = 4 * 4;
 const RAY_OFFSET = 11 * 4;
 const SKY_OFFSET = (11 + 19) * 4;
 const SKY_STRIDE = 13 * 4;
+const SUN_OFFSET = (11 + 19 + 2 * 13) * 4;
 
 /** the textures the layer binds, in binding order from 3 */
 const TEXTURE_SLOTS = [
@@ -555,6 +607,13 @@ export class CelestialLayer {
 		const set = (index: number, values: readonly number[]): void => {
 			f.set(values, index * 4);
 		};
+
+		const disc = look.sun;
+		if (disc !== null) {
+			u[5] = 1;
+			f.set([...disc.direction, disc.ramp], SUN_OFFSET);
+			f.set([...disc.color, disc.sharpness], SUN_OFFSET + 4);
+		}
 
 		const nebula = look.nebula;
 		if (nebula !== null && has('nebula')) {
