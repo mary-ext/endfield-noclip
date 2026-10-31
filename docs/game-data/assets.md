@@ -225,7 +225,10 @@ code: [dynamic-scene.ts](../../packages/formats/src/endfield/dynamic-scene.ts),
   `fb_init_<ss>_<chunk>` / `fb_streaming_<ss>_<chunk>` files. `fb_init` holds the component groups
   and `fb_streaming` the matching entity ids; `parseDynamicChunk` reads them with the same group
   decoder as InitChunkData.
-- **effect rows** (type 6) are counted and skipped.
+- **effect rows** (type 6, grid vector 8, 144 bytes): Unity position at +12, Euler rotation at +24,
+  scale at +36 and the prefab's StringPathHash key at +48, followed by bounds and the position again
+  at +116, which the reader checks to confirm the stride. they're placed like model rows. on map02
+  all 8596 name prefabs, among them Wuling City's pillar-array threads.
 
 `loadDynamicStructures`
 ([dynamic-structures.ts](../../packages/extractor/src/game/dynamic-structures.ts)) deduplicates

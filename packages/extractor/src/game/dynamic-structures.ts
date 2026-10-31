@@ -112,8 +112,7 @@ export const loadDynamicStructures = async (
 		const controller = entity.controllers[0];
 		for (const [i, group] of entity.resourceGroups.entries()) {
 			const ref = group.resources;
-			if (ref.count === 0 || ref.type === 6) {
-				result.counts.effects += ref.type === 6 ? ref.count : 0;
+			if (ref.count === 0) {
 				continue;
 			}
 			const tag = partition?.levels.find((level) => level.idNum === group.levelNum)?.tag ?? 0;
@@ -161,9 +160,16 @@ export const loadDynamicStructures = async (
 				throw new FormatError(`missing dynamic grid ${ref.grid}`);
 			}
 			switch (ref.type) {
-				case 5: {
-					for (const [index, model] of dynamicResourceSlice(grid.models, ref).entries()) {
-						const key = `${ref.grid}/${ref.index + index}`;
+				// effect rows place prefabs like model rows, from their own vector
+				case 5:
+				case 6: {
+					const effect = ref.type === 6;
+					const rows = dynamicResourceSlice(effect ? grid.effects : grid.models, ref);
+					if (effect) {
+						result.counts.effects += rows.length;
+					}
+					for (const [index, model] of rows.entries()) {
+						const key = `${effect ? 'effect:' : ''}${ref.grid}/${ref.index + index}`;
 						const current = models.get(key);
 						if (current) {
 							current.visibility.alternatives.push(...alternatives);

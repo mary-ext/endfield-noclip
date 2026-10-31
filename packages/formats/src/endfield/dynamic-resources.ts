@@ -31,8 +31,16 @@ export interface DynamicResourceEntity {
 export interface DynamicResourceGrid {
 	id: number;
 	models: DynamicModel[];
+	/** effect prefab placements, stored apart from models */
+	effects: DynamicModel[];
 	ecs: DynamicEcs[];
 }
+
+/**
+ * bytes per effect row: placement and path hash as in a model row but shifted, then bounds and a second
+ * position
+ */
+const EFFECT_STRIDE = 144;
 
 /**
  * reads scene gates and geometry payloads from a DynamicStreaming main file
@@ -78,6 +86,7 @@ export const readDynamicResources = (
 		};
 		const vec3 = (at: number): [number, number, number] => [fb.f32(at), fb.f32(at + 4), fb.f32(at + 8)];
 		const models = fb.vector(table, 7);
+		const effects = fb.vector(table, 8);
 		const ecs = fb.vector(table, 9);
 		grids.push({
 			id,
@@ -89,6 +98,15 @@ export const readDynamicResources = (
 					rotation: vec3(at + 28),
 					scale: vec3(at + 40),
 				};
+			}),
+			effects: Array.from({ length: effects.length }, (_, n) => {
+				const at = effects.start + n * EFFECT_STRIDE;
+				const position = vec3(at + 12);
+				// each row repeats its position at +116, which confirms the stride
+				if (vec3(at + 116).some((value, axis) => value !== position[axis])) {
+					throw new FormatError(`unexpected dynamic effect row layout in grid ${id}`);
+				}
+				return { pathHash: fb.u64(at + 48), position, rotation: vec3(at + 24), scale: vec3(at + 36) };
 			}),
 			ecs: Array.from({ length: ecs.length }, (_, n) => {
 				const at = ecs.start + n * 36;

@@ -71,7 +71,13 @@ const ref = (type: number, index: number, num = 0) => [0, type, GRID, index, num
  * - entity 1: IdComp 7 and PoiControlComp (`INN_TABLE`)
  */
 const build = (
-	options: { resType?: number; scriptDefault?: number; gates?: { compare: number } } = {},
+	options: {
+		resType?: number;
+		scriptDefault?: number;
+		gates?: { compare: number };
+		/** the effect row's second copy of its position, which should repeat the first */
+		effectCopy?: number;
+	} = {},
 ): Uint8Array => {
 	const w = new Writer();
 	const root = w.reserve(4);
@@ -85,7 +91,7 @@ const build = (
 	w.view.setUint32(strings, 2, true);
 	w.link(rootFields.get(4)!, strings);
 
-	const slots = [0, 3, 5, 7, 9, 12, 16, 17, 27, 28, 29, 31, 32, 33, 52, 55];
+	const slots = [0, 3, 5, 7, 8, 9, 12, 16, 17, 27, 28, 29, 31, 32, 33, 52, 55];
 	const grid = w.table(56, slots);
 	w.link(gridVector + 4, grid.get(0)! - 4);
 	w.view.setUint32(grid.get(0)!, GRID, true);
@@ -122,6 +128,12 @@ const build = (
 	w.view.setFloat32(models + 4 + 16, 12.5, true);
 	w.view.setBigUint64(models + 4 + 64, 0x123456789n, true);
 	w.link(grid.get(7)!, models);
+	const effects = w.structs(144, [[]]);
+	w.view.setFloat32(effects + 4 + 16, -7, true);
+	w.view.setFloat32(effects + 4 + 120, options.effectCopy ?? -7, true);
+	w.view.setFloat32(effects + 4 + 36, 2, true);
+	w.view.setBigUint64(effects + 4 + 48, 0xabcdefn, true);
+	w.link(grid.get(8)!, effects);
 	w.link(grid.get(9)!, w.structs(36, [[123, 7, 0, 0, 0, 0, 0, 0, 2]]));
 	const group = (model: number, logic: number) => [
 		...ref(DynamicData.Model, model, 1),
@@ -226,6 +238,10 @@ test('dynamic resources preserve both visibility gates and exact model/ECS refer
 	assert.equal(grid.models[0].pathHash, 0x123456789n);
 	assert.deepEqual(grid.models[0].position, [12.5, 0, 0]);
 	assert.deepEqual(grid.ecs, [{ chunk: 123, index: 7, sceneIndex: 2 }]);
+	assert.deepEqual(grid.effects, [
+		{ pathHash: 0xabcdefn, position: [0, -7, 0], rotation: [0, 0, 0], scale: [2, 0, 0] },
+	]);
+	assert.throws(() => readDynamicResources(build({ effectCopy: 3 })), /effect row layout/);
 	assert.equal(
 		dynamicResourceSlice(grid.models, result.entities[0].entity.resourceGroups[0].resources)[0],
 		grid.models[0],
