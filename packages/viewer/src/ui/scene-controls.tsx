@@ -1,4 +1,4 @@
-import type { SceneControl, SceneControlKind } from '@endfield-noclip/package-format/states';
+import type { MissionInfo, SceneControl, SceneControlKind } from '@endfield-noclip/package-format/states';
 
 import { useId, useState } from 'react';
 
@@ -66,12 +66,21 @@ const SWITCH_KINDS: ReadonlySet<SceneControlKind> = new Set(['sceneState', 'scri
  * a scene control: a checkbox for an on/off switch only the user sets, otherwise a select. derived controls
  * and stream areas offer to follow the game or the camera
  */
-const ControlRow = ({ viewer, control }: { viewer: Viewer; control: SceneControl }) => {
+const ControlRow = ({
+	viewer,
+	control,
+	describe,
+}: {
+	viewer: Viewer;
+	control: SceneControl;
+	/** rewrites a rule's quest and mission ids as their names */
+	describe: (rule: string) => string;
+}) => {
 	const value = viewer.sceneValues[control.id] ?? control.default;
 	const picked = control.id in viewer.scenePicks;
 	const label = (entry: number): string =>
 		control.values.find((candidate) => candidate.value === entry)?.label ?? String(entry);
-	const detail = [control.rule, control.assumption].filter(Boolean).join(' · ');
+	const detail = [control.rule && describe(control.rule), control.assumption].filter(Boolean).join(' · ');
 	const follows = control.kind === 'area' ? 'Follow camera' : control.derived === null ? null : 'Follow game';
 	if (follows === null && SWITCH_KINDS.has(control.kind)) {
 		return (
@@ -113,6 +122,84 @@ const ControlRow = ({ viewer, control }: { viewer: Viewer; control: SceneControl
 	);
 };
 
+/** quest log tabs in the game's order */
+const CATEGORIES: { category: MissionInfo['category']; title: string }[] = [
+	{ category: 'main', title: 'Main story' },
+	{ category: 'side', title: 'Side and character' },
+	{ category: 'discovery', title: 'Discovery' },
+	{ category: 'activity', title: 'Events' },
+	{ category: 'other', title: 'Other' },
+];
+
+/** @returns a mission's controls: the mission first, then quests by step, steps before unnumbered ones */
+const ordered = (entries: readonly SceneControl[]): SceneControl[] =>
+	entries.toSorted(
+		(a, b) =>
+			Number(a.kind !== 'mission') - Number(b.kind !== 'mission') ||
+			(a.story?.step ?? Number.MAX_SAFE_INTEGER) - (b.story?.step ?? Number.MAX_SAFE_INTEGER) ||
+			a.id.localeCompare(b.id),
+	);
+
+/** quest and mission controls grouped by quest log tab and mission, quests in step order */
+const StoryControls = ({
+	viewer,
+	controls,
+	missions,
+	describe,
+}: {
+	viewer: Viewer;
+	controls: readonly SceneControl[];
+	missions: ReadonlyMap<string, MissionInfo>;
+	describe: (rule: string) => string;
+}) => {
+	const grouped = new Map<string | null, SceneControl[]>();
+	for (const control of controls) {
+		const mission = control.story?.mission ?? null;
+		grouped.set(mission, [...(grouped.get(mission) ?? []), control]);
+	}
+	const rows = (entries: readonly SceneControl[]) =>
+		ordered(entries).map((entry) => (
+			<ControlRow key={entry.id} viewer={viewer} control={entry} describe={describe} />
+		));
+	const unplaced = grouped.get(null) ?? [];
+	return (
+		<>
+			{CATEGORIES.map(({ category, title }) => {
+				const listed = [...missions.values()].filter(
+					(mission) => mission.category === category && grouped.has(mission.id),
+				);
+				if (listed.length === 0) {
+					return null;
+				}
+				return (
+					<section key={category} className="story-category">
+						<h3>{title}</h3>
+						{listed.map((mission) => (
+							<details key={mission.id} className="story-mission">
+								<summary>
+									{mission.name ?? mission.id}
+									<small className="muted">
+										{[mission.chapter, mission.episode, mission.name && mission.id]
+											.filter(Boolean)
+											.join(' · ')}
+									</small>
+								</summary>
+								{rows(grouped.get(mission.id) ?? [])}
+							</details>
+						))}
+					</section>
+				);
+			})}
+			{unplaced.length > 0 && (
+				<section className="story-category">
+					<h3>Not in this client</h3>
+					{rows(unplaced)}
+				</section>
+			)}
+		</>
+	);
+};
+
 /**
  * @param viewer the loaded scene and its preview selections
  * @returns controls for authored progression and manual visibility previews
@@ -127,11 +214,26 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 	}
 	const level = manifest.levels.find((entry) => entry.id === viewer.level);
 	const matches = (name: string): boolean => name.toLowerCase().includes(query.toLowerCase());
+	const missions = new Map(manifest.states.missions.map((mission) => [mission.id, mission]));
+	const byId = new Map(manifest.states.controls.map((entry) => [entry.id, entry]));
+	/** @returns a quest or mission control's name with its mission's, else the control's name */
+	const storyName = (control: SceneControl): string => {
+		const mission = control.story && missions.get(control.story.mission);
+		if (!mission?.name || control.kind === 'mission') {
+			return control.name;
+		}
+		return `${mission.name}: ${control.name}`;
+	};
+	const describe = (rule: string): string =>
+		rule.replaceAll(/\b(quest|mission) (\S+)/g, (whole, kind: string, id: string) => {
+			const control = byId.get(`${kind}:${id}`);
+			return control?.story ? `“${storyName(control)}”` : whole;
+		});
 	// a control is listed for the levels whose content it gates
 	const controls = manifest.states.controls.filter(
 		(entry) =>
 			(level === undefined || entry.levelTags.includes(0) || entry.levelTags.includes(level.tag)) &&
-			matches(`${entry.name} ${entry.id} ${entry.rule ?? ''}`),
+			matches(`${storyName(entry)} ${entry.id} ${entry.rule ? describe(entry.rule) : ''}`),
 	);
 	// volumes apply wherever they hold the camera, so a neighbour's volume reaching into this level is listed too
 	const volumes = manifest.environmentVolumes
@@ -180,9 +282,13 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 							{title} ({listed.length})
 						</summary>
 						<p className="muted small">{note}</p>
-						{listed.map((entry) => (
-							<ControlRow key={entry.id} viewer={viewer} control={entry} />
-						))}
+						{kinds.includes('quest') ? (
+							<StoryControls viewer={viewer} controls={listed} missions={missions} describe={describe} />
+						) : (
+							listed.map((entry) => (
+								<ControlRow key={entry.id} viewer={viewer} control={entry} describe={describe} />
+							))
+						)}
 					</details>
 				);
 			})}

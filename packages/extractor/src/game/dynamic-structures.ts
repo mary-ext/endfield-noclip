@@ -111,6 +111,7 @@ export const loadDynamicStructures = async (
 						: enabled
 							? 'authored to load until a script hides it'
 							: 'loads only when a level script shows it',
+				story: null,
 				levelTags: [],
 				values: SWITCH_VALUES,
 				default: Number(enabled),
@@ -156,6 +157,7 @@ export const loadDynamicStructures = async (
 							name: 'Harvestable trees',
 							rule: null,
 							assumption: 'standing, as before the player fells them',
+							story: null,
 							levelTags: [],
 							values: [
 								{ value: 0, label: 'standing' },

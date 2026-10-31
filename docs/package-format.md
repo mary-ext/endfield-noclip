@@ -407,7 +407,11 @@ list a control only for the levels it matters to. a control with `derived` set i
 the user picks a value it is 1 while `conditionalSets[derived]` holds, and its `rule` gives that
 condition in words. derived controls require only controls listed before them, so
 `resolveSceneValues` turns the user's picks into every control's value in one pass, and its stored
-`default` is that value under no picks. only controls some group requires are listed.
+`default` is that value under no picks. only controls some group requires are listed. quest and
+mission controls of a known mission carry a `story` place (mission id, main-flow step), and
+`StatesInfo.missions` names those missions (`MissionInfo`: name, quest log category, chapter,
+episode), so a viewer can group them; the names are the install's English text, extracted at pack
+time.
 
 ### stream areas
 

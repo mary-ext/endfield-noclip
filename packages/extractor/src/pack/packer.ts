@@ -98,6 +98,7 @@ import {
 	unnamedSceneStateControl,
 } from '../game/scene-conditions.ts';
 import { loadProgressions, progressionControl, progressionId } from '../game/scenery-variants.ts';
+import { labelStory } from '../game/story.ts';
 import { indexTerrain, loadTerrainSurfacesData, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, ChunkSource, WorldIndex } from '../game/world-index.ts';
 import { orderedPool } from '../pool.ts';
@@ -1311,6 +1312,7 @@ const sceneStates = async (
 			name: `Stream area ${area}`,
 			rule: null,
 			assumption: 'follows the camera, like the game',
+			story: null,
 			levelTags: [],
 			values: [
 				{ value: 0, label: 'hidden' },
@@ -1331,8 +1333,10 @@ const sceneStates = async (
 		conditionalSets: collected.conditions,
 		groups: collected.groups,
 		streamAreas: await streamAreasInfo(world, scene.options.scene, collected.areas),
+		missions: [],
 	};
-	return { levels, ...states, controls: finishControls(states) };
+	const controls = finishControls(states);
+	return { levels, ...states, controls, missions: await labelStory(world, controls) };
 };
 
 /**
@@ -1518,6 +1522,7 @@ const writePackage = async (
 			conditionalSets: states.conditionalSets,
 			groups: states.groups,
 			streamAreas: states.streamAreas,
+			missions: states.missions,
 		},
 		archives,
 		global: states.global,

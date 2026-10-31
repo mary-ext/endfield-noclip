@@ -24,6 +24,29 @@ export interface StatesInfo {
 	groups: VisibilityGroup[];
 	/** the scene's stream areas, or `null` when no packed content belongs to a non-default area */
 	streamAreas: StreamAreasInfo | null;
+	/** the missions quest and mission controls belong to, for labels and grouping */
+	missions: MissionInfo[];
+}
+
+/** a mission, labelled from the game's text */
+export interface MissionInfo {
+	id: string;
+	/** display name, or `null` for internal missions without one */
+	name: string | null;
+	/** the quest log tab it's listed under in game; internal and weekly missions are `other` */
+	category: 'main' | 'side' | 'discovery' | 'activity' | 'other';
+	/** e.g. "Chapter I · The Veiled Skies"; `null` outside the chapters */
+	chapter: string | null;
+	/** the main story episode, inferred from the mission id (`e<n>…`); `null` for other missions */
+	episode: string | null;
+}
+
+/** where a quest or mission control sits in the story */
+export interface StoryPlace {
+	/** a {@link StatesInfo.missions} id */
+	mission: string;
+	/** 1-based position in the mission's main flow, or `null` for side branches, hidden steps and missions */
+	step: number | null;
 }
 
 /** an owner and a load condition shared by placed content */
@@ -77,6 +100,8 @@ export interface SceneControl {
 	rule: string | null;
 	/** what the default assumes, e.g. "story finished" */
 	assumption: string;
+	/** for a quest or mission control of a known mission, where it sits in the story; `null` otherwise */
+	story: StoryPlace | null;
 	/** level tags whose content (or derived controls) this control gates; 0 means content every level shows */
 	levelTags: number[];
 	/** the selectable values, ascending; each below 32 */

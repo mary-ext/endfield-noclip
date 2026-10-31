@@ -76,6 +76,7 @@ export const sceneStateControls = (
 			condition === null
 				? 'no condition: only set by name (dungeons, scripts), so off'
 				: 'follows the quests and variables it reads',
+		story: null,
 		levelTags: [],
 		values: SWITCH_VALUES,
 		default: Number(condition !== null && game.evaluate(condition)),
@@ -92,6 +93,7 @@ export const unnamedSceneStateControl = (index: number): SceneControl => ({
 	name: `scene state ${index}`,
 	rule: null,
 	assumption: 'not in the MapConfig, so off',
+	story: null,
 	levelTags: [],
 	values: SWITCH_VALUES,
 	default: 0,

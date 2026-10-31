@@ -285,6 +285,38 @@ types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo
   listed. each control's `levelTags` are those of the groups it gates, and a derived state passes
   its tags on to the quests and variables it reads.
 
+## quest and mission labels
+
+implemented by [`mission-runtime.ts`](../../packages/formats/src/endfield/mission-runtime.ts)
+(parsing) and [`story.ts`](../../packages/extractor/src/game/story.ts) (labels).
+
+missions are defined in `Data/Json/MissionRuntimeAsset/<missionId>.json` (plain JSON; a `_meta` file
+beside each holds accept mode and reward). a quest id is its mission id, `_q#` and a step name
+(`e1m8_q#3`, `e1m1_q#Deco_showLandslide`); a `d` in an id is a decimal point added later (`e1m9d5`
+is mission 9.5). text keys resolve through `TextTable` (key → text id) and `I18nTextTable_EN` (id →
+string, with `<@…>…</>` rich-text tags, stripped for labels).
+
+- **mission**: `missionName.key` names it; `missionType` (0 Main, 1 Char, 2 Factory, 4 Hide, 5 Misc,
+  7 World, 8 WeekRaid, 9 FakeMain, 10 Side, 11 Activity, 12 TBCMain) gives the quest log tab, as the
+  client's mission type table groups them (main, side, discovery, events; the rest as other).
+  internal flag missions (`hidden*`, `dm*`) have no name.
+- **chapter**: `missionChapterBitmask` bit 1 is chapter one, 2 chapter two (texts `chapter<n>_num`,
+  `chapter<n>_name`); 4 is indie, without text. prologue missions (`e0m…`) carry chapter one's bit,
+  so only their id marks them as `chapter0`.
+- **episode**: nothing links a mission to an episode; main story ids `e<n>m…` match the episode
+  texts `ep<n>_name`, so the label is inferred from the id.
+- **quest**: `questDic[<quest id>]`. its label is its first objective's text, else the mission
+  description it shows while running (`descriptionOverride`). `mainPathQuests` lists the main flow
+  in order and gives the step number; side branches have none. hidden quests (`showMode` 1000, no
+  objectives) exist only to drive scenery and are labelled "hidden step" with their id's suffix.
+- quests whose mission the client lacks keep their raw id; some ids that conditions name are absent
+  from the client (stale or unreleased), and event day locks (`a1m3_q#Day2Lock`) are stages the
+  server times.
+
+missions never change the world themselves: their actions are presentation (radio, guides, chapter
+panels) and most objectives are evaluated by the server. the world reads quest state through scene
+state conditions, mission gates and level scripts.
+
 ## viewer controls
 
 [`scene-controls.tsx`](../../packages/viewer/src/ui/scene-controls.tsx) shows the "Scene conditions"
@@ -293,8 +325,10 @@ for every set and passes the results to the instance selector, the water rendere
 environment blend.
 
 - **scene states**: a select per state, "Follow game (on/off)" for derived states, else on/off
-- **quests and missions**, **variables**: a select of states or ranges, the default marked
-  "(initial)"
+- **quests and missions**: grouped by quest log tab and mission (with chapter and episode), quests
+  in step order; a select of states, the default marked "(initial)". rules elsewhere show quests by
+  mission and quest name instead of id
+- **variables**: a select of ranges, the default marked "(initial)"
 - **progression**: one select per progression, "Level n", "Visual form n" or "Group level n"
 - **stream areas**: a select per area, "Follow camera (shown/hidden)", shown or hidden
 - **harvest**: standing or felled

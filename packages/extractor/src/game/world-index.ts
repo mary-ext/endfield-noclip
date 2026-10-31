@@ -20,6 +20,7 @@ import {
 	type PartitionLevel,
 } from '@endfield-noclip/formats/endfield/level-partition';
 import { parseMapConfig, type MapConfig } from '@endfield-noclip/formats/endfield/map-config';
+import { parseMissionRuntime, type MissionRuntime } from '@endfield-noclip/formats/endfield/mission-runtime';
 import { parseStreamAreas, type StreamAreaTable } from '@endfield-noclip/formats/endfield/stream-area';
 import type { BundleManifest } from '@endfield-noclip/formats/hg/bundle-manifest';
 import { unpackHgPayload } from '@endfield-noclip/formats/hg/payload';
@@ -89,6 +90,9 @@ export class WorldIndex {
 	#levelConfigs: Promise<Map<string, LevelConfig>> | undefined;
 	#stringPool: Promise<StringPool> | undefined;
 	#names: Promise<Map<string, string>> | undefined;
+	#english: Promise<Map<bigint, string>> | undefined;
+	#text: Promise<(key: string) => string | undefined> | undefined;
+	readonly #missions = new Map<string, Promise<MissionRuntime | undefined>>();
 	#chunkFiles: Promise<ChunkFile[]> | undefined;
 	readonly #mapConfigs = new Map<string, Promise<MapConfig | undefined>>();
 	readonly #partitions = new Map<string, Promise<LevelPartition | undefined>>();
@@ -219,14 +223,7 @@ export class WorldIndex {
 	 */
 	names(): Promise<Map<string, string>> {
 		this.#names ??= (async () => {
-			const text = new Map<bigint, string>();
-			for (const [key, value] of parseSparkTable(
-				await this.#read(VfsGroup.Table, 'Data/TableCfg/I18nTextTable_EN.bytes'),
-			).entries) {
-				if (typeof key === 'bigint' && typeof value === 'string') {
-					text.set(key, value);
-				}
-			}
+			const text = await this.#englishText();
 			const tables = await Promise.all(
 				['MapIdTable', 'LevelDescTable'].map((table) =>
 					this.#read(VfsGroup.Table, `Data/TableCfg/${table}.bytes`),
@@ -244,6 +241,63 @@ export class WorldIndex {
 			return names;
 		})();
 		return this.#names;
+	}
+
+	/** @returns I18nTextTable_EN: text id → English string */
+	#englishText(): Promise<Map<bigint, string>> {
+		this.#english ??= (async () => {
+			const text = new Map<bigint, string>();
+			for (const [key, value] of parseSparkTable(
+				await this.#read(VfsGroup.Table, 'Data/TableCfg/I18nTextTable_EN.bytes'),
+			).entries) {
+				if (typeof key === 'bigint' && typeof value === 'string') {
+					text.set(key, value);
+				}
+			}
+			return text;
+		})();
+		return this.#english;
+	}
+
+	/**
+	 * English text by text key (TextTable key → text id → I18nTextTable_EN), e.g. `e1m8_name`
+	 *
+	 * @returns a lookup giving the raw string, rich-text markup included, or `undefined` for an unknown key
+	 */
+	text(): Promise<(key: string) => string | undefined> {
+		this.#text ??= (async () => {
+			const english = await this.#englishText();
+			const ids = new Map<string, bigint>();
+			for (const [key, value] of parseSparkTable(
+				await this.#read(VfsGroup.Table, 'Data/TableCfg/TextTable.bytes'),
+			).entries) {
+				if (
+					typeof key === 'string' &&
+					value !== null &&
+					typeof value === 'object' &&
+					typeof value.id === 'bigint'
+				) {
+					ids.set(key, value.id);
+				}
+			}
+			return (key: string) => {
+				const id = ids.get(key);
+				return id === undefined ? undefined : english.get(id);
+			};
+		})();
+		return this.#text;
+	}
+
+	/**
+	 * @param id a mission id, e.g. `e1m8`
+	 * @returns its definition, or `undefined` if the client has none
+	 * @throws {FormatError} if the file is malformed
+	 */
+	mission(id: string): Promise<MissionRuntime | undefined> {
+		return getOrInsert(this.#missions, id, async () => {
+			const file = await this.vfs.find(VfsGroup.JsonData, `Data/Json/MissionRuntimeAsset/${id}.json`);
+			return file && parseMissionRuntime(new TextDecoder().decode(await this.vfs.readVerified(file)));
+		});
 	}
 
 	/** @returns every InitChunkData file of every streaming scene */

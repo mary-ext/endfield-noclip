@@ -346,6 +346,7 @@ export const progressionControl = (
 		name,
 		rule: null,
 		assumption,
+		story: null,
 		levelTags: [],
 		values: levels.map((value) => ({ value, label: `${unit} ${value}` })),
 		default: initial,
