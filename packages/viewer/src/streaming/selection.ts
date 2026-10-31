@@ -75,12 +75,22 @@ export interface Selection {
 	visited: number;
 }
 
+/** where instances outside the view can still cast shadows into it */
+export interface CasterVolume {
+	/** the view's planes swept towards the sun (`sweepPlanes` in camera.ts) */
+	planes: Plane[];
+	/** how far from the camera, m */
+	distance: number;
+}
+
 /** camera state for one traversal */
 export interface SelectionView {
 	camera: Camera;
 	planes: Plane[];
 	/** viewport pixel factor, see {@link Camera.pixelFactor} */
 	pixelFactor: number;
+	/** instance content in this volume is selected too, at off-screen priority; `null` for none */
+	casters: CasterVolume | null;
 }
 
 // #endregion
@@ -182,10 +192,11 @@ export class Selector {
 	#conditional(node: TileNode, view: SelectionView, options: SelectionOptions): void {
 		this.selection.visited++;
 		const eye = view.camera.position;
-		if (!boxInFrustum(view.planes, node.bounds.min, node.bounds.max, eye)) {
+		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, eye), 1);
+		const inView = this.#inView(node, view, distance);
+		if (inView === null) {
 			return;
 		}
-		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, eye), 1);
 		const sse = (node.size * view.pixelFactor) / distance;
 		if (sse <= options.maxSse) {
 			return;
@@ -194,7 +205,7 @@ export class Selector {
 			if (!this.#shows(ref)) {
 				continue;
 			}
-			const item = this.#stream.want(ref.blob, this.#priority(node, view.pixelFactor / distance, true));
+			const item = this.#stream.want(ref.blob, this.#priority(node, view.pixelFactor / distance, inView));
 			if (item !== null) {
 				this.selection.instances.push({ item, first: ref.first, count: ref.count });
 			}
@@ -204,6 +215,23 @@ export class Selector {
 				this.#conditional(child, view, options);
 			}
 		}
+	}
+
+	/**
+	 * @param distance from the camera to the node's bounds
+	 * @returns `true` for a node in view, `false` for one only in the caster volume, `null` for neither
+	 */
+	#inView(node: TileNode, view: SelectionView, distance: number): boolean | null {
+		const { min, max } = node.bounds;
+		const eye = view.camera.position;
+		if (boxInFrustum(view.planes, min, max, eye)) {
+			return true;
+		}
+		const casters = view.casters;
+		if (casters !== null && distance <= casters.distance && boxInFrustum(casters.planes, min, max, eye)) {
+			return false;
+		}
+		return null;
 	}
 
 	#shows(ref: ContentRef): boolean {
@@ -242,15 +270,26 @@ export class Selector {
 
 	/** @returns whether the node's area is fully covered by what was emitted (or needs nothing) */
 	#instances(node: TileNode, view: SelectionView, options: SelectionOptions): boolean {
-		const out = this.selection.instances;
 		this.selection.visited++;
-		const eye = view.camera.position;
-		if (!boxInFrustum(view.planes, node.bounds.min, node.bounds.max, eye)) {
+		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, view.camera.position), 1);
+		const inView = this.#inView(node, view, distance);
+		if (inView === null) {
 			return true;
 		}
-		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, eye), 1);
+		// content outside the view only casts shadows into it, so its streaming never holds back what's in view
+		return this.#refineInstances(node, view, options, { distance, inView }) || !inView;
+	}
+
+	/** {@link #instances} for a node in view or in the caster volume */
+	#refineInstances(
+		node: TileNode,
+		view: SelectionView,
+		options: SelectionOptions,
+		{ distance, inView }: { distance: number; inView: boolean },
+	): boolean {
+		const out = this.selection.instances;
 		const sse = (node.geometricError * view.pixelFactor) / distance;
-		const priority = this.#priority(node, sse, true);
+		const priority = this.#priority(node, sse, inView);
 		const hasHlod = this.#hasHlod(node, options);
 		const leaf = isLeaf(node);
 		// a leaf refines even without detail of its own (see docs/viewer.md, instance selection)

@@ -148,10 +148,12 @@ const uvFormatOf = (bucket: MeshBucket): UvFormat => {
 };
 
 /**
- * draw order within the opaque, alpha-tested and alpha-blended draws: shadow casters first, so shadow passes
- * draw a prefix; then face culling and UV format (one pipeline each), geometry, material and submesh
+ * draw order within the opaque, alpha-tested and alpha-blended draws: cast-only draws, then the other shadow
+ * casters, so shadow passes draw a prefix and the main pass skips one; then face culling and UV format (one
+ * pipeline each), geometry, material and submesh
  */
 const byBindings = (a: MeshBucket, b: MeshBucket): number =>
+	Number(b.castOnly) - Number(a.castOnly) ||
 	Number(b.look.castsShadows) - Number(a.look.castsShadows) ||
 	FACE_CULLS.indexOf(faceCullOf(a)) - FACE_CULLS.indexOf(faceCullOf(b)) ||
 	UV_FORMATS.indexOf(uvFormatOf(a)) - UV_FORMATS.indexOf(uvFormatOf(b)) ||
@@ -214,6 +216,9 @@ export class MeshRenderer {
 	/** ends of the shadow-casting opaque and alpha-tested draws */
 	#opaqueCastersEnd = 0;
 	#cutoutCastersEnd = 0;
+	/** ends of the cast-only opaque and alpha-tested draws, where the main pass starts */
+	#opaqueCastOnlyEnd = 0;
+	#cutoutCastOnlyEnd = 0;
 
 	/**
 	 * @param device the device
@@ -548,6 +553,9 @@ export class MeshRenderer {
 			// without the texture holding its alpha there's nothing to test yet. unlit looks are their texture, so
 			// they wait for it rather than draw as solid cards
 			const look = bucket.look;
+			if (bucket.castOnly && (!look.castsShadows || look.transparent)) {
+				continue;
+			}
 			if ((look.flags & LookFlags.Unlit) !== 0 && textures.binding(look.textures[0]) === null) {
 				continue;
 			}
@@ -616,6 +624,8 @@ export class MeshRenderer {
 		let d = 0;
 		this.#opaqueCastersEnd = 0;
 		this.#cutoutCastersEnd = 0;
+		this.#opaqueCastOnlyEnd = 0;
+		this.#cutoutCastOnlyEnd = 0;
 		this.#cutoutStart = 0;
 		this.#transparentStart = 0;
 		this.#effectStart = 0;
@@ -711,6 +721,14 @@ export class MeshRenderer {
 					this.#cutoutCastersEnd = d;
 				}
 			}
+			if (bucket.castOnly) {
+				if (b < cutoutFrom) {
+					this.#opaqueCastOnlyEnd = d;
+				} else {
+					this.#cutoutCastOnlyEnd = d;
+				}
+				continue;
+			}
 
 			this.instanceCount += bucket.count;
 			this.triangles += (bucket.count * range.indexCount) / 3;
@@ -739,6 +757,7 @@ export class MeshRenderer {
 			this.#mistVolumeStart = d;
 		}
 		this.#cutoutCastersEnd = Math.max(this.#cutoutCastersEnd, this.#cutoutStart);
+		this.#cutoutCastOnlyEnd = Math.max(this.#cutoutCastOnlyEnd, this.#cutoutStart);
 		if (d > 0) {
 			const queue = this.#device.queue;
 			queue.writeBuffer(this.#params, 0, params, 0, d * DRAW_FLOATS);
@@ -803,12 +822,12 @@ export class MeshRenderer {
 			let to: number;
 			switch (phase.range) {
 				case 'opaque': {
-					from = 0;
+					from = phase.shadow ? 0 : this.#opaqueCastOnlyEnd;
 					to = phase.shadow ? this.#opaqueCastersEnd : this.#cutoutStart;
 					break;
 				}
 				case 'cutout': {
-					from = this.#cutoutStart;
+					from = phase.shadow ? this.#cutoutStart : this.#cutoutCastOnlyEnd;
 					to = phase.shadow ? this.#cutoutCastersEnd : this.#transparentStart;
 					break;
 				}

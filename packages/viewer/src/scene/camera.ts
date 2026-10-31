@@ -126,6 +126,25 @@ export const boxInFrustum = (
 };
 
 /**
+ * sweeps a frustum along a direction: a sphere passes the swept planes when moving it up to `distance` along
+ * `direction` brings it inside every original plane. each plane is tested on its own, so like the plain
+ * frustum test this keeps a few spheres it needn't. used for shadow casters, whose shadows travel along the
+ * sunlight into the view.
+ *
+ * @param planes camera-relative planes
+ * @param direction unit direction of the sweep
+ * @param distance how far to sweep, m
+ * @returns new planes, moved outwards on the side the sweep comes from
+ */
+export const sweepPlanes = (planes: readonly Plane[], direction: Vec3, distance: number): Plane[] =>
+	planes.map(([nx, ny, nz, d]) => [
+		nx,
+		ny,
+		nz,
+		d + distance * Math.max(0, nx * direction[0] + ny * direction[1] + nz * direction[2]),
+	]);
+
+/**
  * @param min box minimum
  * @param max box maximum
  * @param p a point

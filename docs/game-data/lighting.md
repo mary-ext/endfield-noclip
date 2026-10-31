@@ -82,8 +82,10 @@ keeps as a cached, tiled shadow map out to 800 m (its ASM, `HGASMManager`, which
 `asm*` shadow fields configure). the viewer draws all four as 2048² `depth32float` layers fitted to
 bounding spheres of frustum slices and snapped to world texels so edges don't crawl
 ([`render/shadow-map.ts`](../../packages/viewer/src/render/shadow-map.ts)). turning the camera
-doesn't change a sphere's fit. casters are what the main pass draws that frame, so geometry outside
-the view doesn't cast.
+doesn't change a sphere's fit. casters are what the main pass draws that frame, plus instances
+outside the view within 250 m whose shadows can reach it: the view frustum's planes are swept 250 m
+towards the sun, and instances inside the swept planes draw into the shadow layers only. off-screen
+casters smaller than 16 px (as if on screen) are skipped, and terrain outside the view doesn't cast.
 
 - a point uses the first cascade sphere containing it, dithered with the next one over the outer
   tenth of the sphere's radius.

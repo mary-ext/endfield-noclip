@@ -88,7 +88,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		terrainPixels: 3,
 		hlodTiers: [true, true, true],
 	};
-	const view = { camera: new Camera(), planes: [], pixelFactor: 100 };
+	const view = { camera: new Camera(), planes: [], pixelFactor: 100, casters: null };
 	// level 1 shown, condition 0 holds
 	selector.setGroupsShown([true, false, false, true]);
 	selector.run(view, options, null);
@@ -163,7 +163,7 @@ it('drops the HLOD of a nearby leaf with no detail instead of overlaying the sce
 	};
 	const near = new Camera();
 	near.position = [32, 32, -10];
-	const view = { camera: near, planes: [], pixelFactor: 1000 };
+	const view = { camera: near, planes: [], pixelFactor: 1000, casters: null };
 	// 4 m of error 10 m away spans 400 px: the leaf refines into its (empty) detail
 	assert.equal(selector.run(view, options, null).instances.length, 0);
 	// with detail off the cluster is all there is to show

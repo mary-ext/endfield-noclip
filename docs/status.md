@@ -54,8 +54,8 @@ packs or renders correctly.
   - normal-map roughness is read only when the mesh has tangents; normals are transformed by the
     model matrix rather than its inverse transpose, and every material lights the side facing the
     camera
-  - shadow casters are only what's on screen and shadow-only proxies are skipped, so the sun leaks
-    through roofs behind the camera
+  - shadow-only proxies are skipped, and off-screen casters reach only 250 m, so the sun can leak
+    through roofs they stand in for or past that reach
   - local reflection probes, GTAO in specular occlusion, contact shadows
 - the packed tangent frame isn't decoded; tangents are regenerated
 - terrain close up: smooth triplanar replaces the game's random plane choice, and the cliff

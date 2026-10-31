@@ -5,12 +5,14 @@
  * change as the camera turns) and snapped to whole texels in world space, so shadow edges don't crawl as the
  * camera moves. matrices are camera-relative like everything else.
  *
- * casters are what the main pass draws this frame, so geometry outside the view doesn't cast yet.
+ * casters are what the main pass draws this frame, plus instances outside the view whose shadows can reach it
+ * ({@link offscreenCasters}).
  *
  * @module
  */
 
-import type { Camera, Vec3 } from '../scene/camera.ts';
+import { type Camera, type Plane, type Vec3, sweepPlanes } from '../scene/camera.ts';
+import type { CasterVolume } from '../streaming/selection.ts';
 
 /** shadow map edge, texels */
 export const SHADOW_SIZE = 2048;
@@ -30,6 +32,21 @@ const SHARP_FADE_START = 0.8 * SHARP_REACH;
 const PENUMBRA_SPLITS = [12, 30, 40];
 /** how far towards the sun casters are kept beyond the layer's sphere, m */
 const CASTER_REACH = 1500;
+/**
+ * how far from the camera instances outside the view still cast into it, and how long their shadows are
+ * assumed to be, m. a 100 m tower's shadow is this long with the sun 22° up
+ */
+const OFFSCREEN_CASTER_REACH = 250;
+
+/**
+ * @param planes the view's camera-relative frustum planes
+ * @param towardsSun unit vector towards the sun
+ * @returns the volume instances outside the view can cast shadows into it from
+ */
+export const offscreenCasters = (planes: readonly Plane[], towardsSun: Vec3): CasterVolume => ({
+	planes: sweepPlanes(planes, [-towardsSun[0], -towardsSun[1], -towardsSun[2]], OFFSCREEN_CASTER_REACH),
+	distance: OFFSCREEN_CASTER_REACH,
+});
 
 /** depth state of the shadow pass's pipelines: standard depth, biased along the slope against acne */
 export const SHADOW_DEPTH_STATE: GPUDepthStencilState = {

@@ -3,7 +3,8 @@
  * with the game's LODGroup thresholds, bucketing visible instances by (geometry, submesh, material, mirrored)
  * for instanced draws; mirrored instances flip their winding, so they cull the opposite face. instances whose
  * chosen LOD isn't resident yet request its geometry and draw the nearest resident LOD meanwhile, or their
- * box if none is.
+ * box if none is. instances outside the view whose shadows can reach it go to cast-only buckets, which only
+ * the shadow passes draw.
  *
  * this is the CPU version of the planned GPU cull pass: the output (an instance list plus per-bucket ranges)
  * is what a compute shader would write next to indirect draw arguments.
@@ -16,11 +17,11 @@ import { type Chain, DrawRole } from '@endfield-noclip/package-format/instances'
 import type { ReadyTexture } from '@endfield-noclip/package-format/textures';
 
 import { CULL_FLOATS, ROW_WORDS } from '../render/instance-rows.ts';
-import type { MaterialLook } from '../render/materials.ts';
+import { type MaterialLook, alphaTextureOf } from '../render/materials.ts';
 import type { TextureBinding, TextureStore } from '../render/texture-store.ts';
 import type { Plane, Vec3 } from '../scene/camera.ts';
 
-import type { InstanceRange } from './selection.ts';
+import type { CasterVolume, InstanceRange } from './selection.ts';
 import type { ContentItem, StreamManager } from './stream-manager.ts';
 
 /** instances sharing one geometry submesh, material and handedness */
@@ -31,6 +32,8 @@ export interface MeshBucket {
 	look: MaterialLook;
 	/** whether the instances' transforms mirror them (negative determinant) */
 	mirrored: boolean;
+	/** whether the instances are outside the view and only draw into the shadow map */
+	castOnly: boolean;
 	/** global row indices; reset every frame */
 	rows: number[];
 	/** largest projected size of an instance this frame, px */
@@ -59,6 +62,8 @@ export interface MeshView {
 	minPixels: number;
 	/** mip levels coarser than needed to stream material textures at (0 for full detail; each halves them) */
 	textureBias: number;
+	/** instances outside the view but in this volume are selected as shadow casters; `null` for none */
+	casters: CasterVolume | null;
 }
 
 /** what the selector reads */
@@ -81,12 +86,20 @@ interface ChainSlot {
 	geometry: number;
 	submesh: number;
 	material: number;
-	/** the slot's buckets for unmirrored and mirrored instances, once they had rows */
-	buckets: [MeshBucket | null, MeshBucket | null];
+	castsShadows: boolean;
+	/** the slot's buckets, once they had rows, by {@link bucketIndex} */
+	buckets: (MeshBucket | null)[];
 }
+
+/** @returns the index of a slot's bucket for mirrored (1) or unmirrored (0), cast-only or drawn instances */
+const bucketIndex = (mirrored: 0 | 1, castOnly: boolean): number => mirrored + (castOnly ? 2 : 0);
 
 /** buckets without rows for this many frames are dropped */
 const BUCKET_LIFETIME = 600;
+/** priority multiplier for shadow casters outside the view */
+const CASTER_PRIORITY = 0.1;
+/** shadow casters outside the view smaller than this are culled, px (as if on screen) */
+const CASTER_MIN_PIXELS = 16;
 
 /**
  * @param runs (chain, first, count) triples in row order
@@ -105,6 +118,23 @@ const firstRunAt = (runs: Uint32Array, row: number): number => {
 		}
 	}
 	return lo * 3;
+};
+
+/** @returns whether a camera-relative sphere is at least partly inside the first `floats / 4` planes */
+const sphereInPlanes = (
+	planes: Float64Array,
+	floats: number,
+	x: number,
+	y: number,
+	z: number,
+	radius: number,
+): boolean => {
+	for (let p = 0; p < floats; p += 4) {
+		if (planes[p] * x + planes[p + 1] * y + planes[p + 2] * z + planes[p + 3] < -radius) {
+			return false;
+		}
+	}
+	return true;
 };
 
 /** selects LODs and buckets instances */
@@ -126,6 +156,7 @@ export class MeshSelector {
 	/** per geometry: the highest priority it was wanted with that frame */
 	#wanted: Float64Array;
 	#planes = new Float64Array(4 * 5);
+	#casterPlanes = new Float64Array(4 * 5);
 	#pending: ChainSlot[] = [];
 
 	/** @param init tables and residency */
@@ -153,11 +184,21 @@ export class MeshSelector {
 		const boxes = selection.boxes;
 		buckets.length = 0;
 		boxes.length = 0;
-		const { eye, pixelFactor, viewportHeight, minPixels } = view;
+		const { eye, pixelFactor, viewportHeight, minPixels, casters } = view;
 		const planes = this.#planes;
 		const planeFloats = Math.min(view.planes.length * 4, planes.length);
 		for (let p = 0; p < planeFloats; p++) {
 			planes[p] = view.planes[p >> 2][p & 3];
+		}
+		const casterPlanes = this.#casterPlanes;
+		let casterFloats = 0;
+		let casterDistance = 0;
+		if (casters !== null) {
+			casterFloats = Math.min(casters.planes.length * 4, casterPlanes.length);
+			for (let p = 0; p < casterFloats; p++) {
+				casterPlanes[p] = casters.planes[p >> 2][p & 3];
+			}
+			casterDistance = casters.distance;
 		}
 		const pending = this.#pending;
 
@@ -194,20 +235,22 @@ export class MeshSelector {
 					if ((radius * pixelFactor) / distance < minPixels) {
 						continue;
 					}
-					let inside = true;
-					for (let p = 0; p < planeFloats; p += 4) {
-						if (planes[p] * x + planes[p + 1] * y + planes[p + 2] * z + planes[p + 3] < -radius) {
-							inside = false;
-							break;
+					let castOnly = false;
+					if (!sphereInPlanes(planes, planeFloats, x, y, z, radius)) {
+						if (
+							casterFloats === 0 ||
+							(radius * pixelFactor) / distance < CASTER_MIN_PIXELS ||
+							distance - radius > casterDistance ||
+							!sphereInPlanes(casterPlanes, casterFloats, x, y, z, radius)
+						) {
+							continue;
 						}
-					}
-					if (!inside) {
-						continue;
+						castOnly = true;
 					}
 					// Unity's LODGroup metric: the object's size relative to the screen height
 					const relative = (2 * cull[i * CULL_FLOATS + 1] * pixelFactor) / (distance * viewportHeight);
 					const squared = relative * relative;
-					const priority = relative * viewportHeight;
+					const priority = relative * viewportHeight * (castOnly ? CASTER_PRIORITY : 1);
 
 					let pendingCount = 0;
 					let ready = true;
@@ -218,6 +261,9 @@ export class MeshSelector {
 							continue;
 						}
 						lod = slot.lod;
+						if (castOnly && !slot.castsShadows) {
+							continue;
+						}
 						if (this.#geometryReady(slot.geometry, priority, frame)) {
 							pending[pendingCount++] = slot;
 						} else {
@@ -230,9 +276,11 @@ export class MeshSelector {
 					}
 					const row = instances.alloc.start + i;
 					if (!ready) {
-						pendingCount = this.#residentLod(slots, lod);
+						pendingCount = this.#residentLod(slots, lod, castOnly);
 						if (pendingCount === 0) {
-							boxes.push(row);
+							if (!castOnly) {
+								boxes.push(row);
+							}
 							continue;
 						}
 					}
@@ -246,7 +294,8 @@ export class MeshSelector {
 							: 0;
 					for (let p = 0; p < pendingCount; p++) {
 						const slot = pending[p];
-						const bucket = slot.buckets[mirrored] ?? this.#bucketOf(slot, mirrored);
+						const bucket =
+							slot.buckets[bucketIndex(mirrored, castOnly)] ?? this.#bucketOf(slot, mirrored, castOnly);
 						if (bucket.frame !== frame) {
 							bucket.frame = frame;
 							bucket.rows.length = 0;
@@ -265,6 +314,18 @@ export class MeshSelector {
 		const texturePixels = 2 ** -view.textureBias;
 		for (const bucket of buckets) {
 			const look = bucket.look;
+			if (bucket.castOnly) {
+				// a shadow needs only the texture holding the alpha it's cut out by
+				const alpha = look.cutout ? alphaTextureOf(look) : -1;
+				if (alpha >= 0) {
+					this.#streamTexture(
+						alpha,
+						bucket.pixels * texturePixels,
+						look.uvScales[look.textures.indexOf(alpha)],
+					);
+				}
+				continue;
+			}
 			for (let i = 0; i < look.textures.length; i++) {
 				if (look.textures[i] >= 0) {
 					this.#streamTexture(look.textures[i], bucket.pixels * texturePixels, look.uvScales[i]);
@@ -302,9 +363,10 @@ export class MeshSelector {
 	 * the LOD drawn before the switch, so the instance keeps its shape instead of dropping to its box.
 	 * stand-ins are kept in use but not requested, so they don't add to the streaming queue.
 	 *
+	 * @param castOnly whether only the shadow-casting slots are wanted
 	 * @returns how many of the stand-in's slots were written to `#pending` (0 when no LOD is resident)
 	 */
-	#residentLod(slots: readonly ChainSlot[], wanted: number): number {
+	#residentLod(slots: readonly ChainSlot[], wanted: number, castOnly: boolean): number {
 		let maxLod = 0;
 		for (const slot of slots) {
 			maxLod = Math.max(maxLod, slot.lod);
@@ -319,7 +381,7 @@ export class MeshSelector {
 				let count = 0;
 				let resident = true;
 				for (const slot of slots) {
-					if (slot.lod !== lod) {
+					if (slot.lod !== lod || (castOnly && !slot.castsShadows)) {
 						continue;
 					}
 					if (!this.#geometryResident(slot.geometry)) {
@@ -358,8 +420,8 @@ export class MeshSelector {
 		if (slots === undefined) {
 			slots = [];
 			for (const draw of this.#chains[chain].draws) {
-				const drawn = draw.material < this.#looks.length && this.#looks[draw.material].drawn;
-				if (draw.role === DrawRole.ShadowOnly || !drawn) {
+				const look = draw.material < this.#looks.length ? this.#looks[draw.material] : undefined;
+				if (draw.role === DrawRole.ShadowOnly || look?.drawn !== true) {
 					continue;
 				}
 				slots.push({
@@ -369,7 +431,8 @@ export class MeshSelector {
 					geometry: draw.geometry,
 					submesh: draw.submesh,
 					material: draw.material,
-					buckets: [null, null],
+					castsShadows: look.castsShadows,
+					buckets: [null, null, null, null],
 				});
 			}
 			this.#slots[chain] = slots;
@@ -377,9 +440,10 @@ export class MeshSelector {
 		return slots;
 	}
 
-	#bucketOf(slot: ChainSlot, mirrored: 0 | 1): MeshBucket {
+	#bucketOf(slot: ChainSlot, mirrored: 0 | 1, castOnly: boolean): MeshBucket {
 		const { geometry, submesh, material } = slot;
-		const key = ((geometry * 256 + submesh) * 65_536 + material) * 2 + mirrored;
+		const index = bucketIndex(mirrored, castOnly);
+		const key = ((geometry * 256 + submesh) * 65_536 + material) * 4 + index;
 		let bucket = this.#buckets.get(key);
 		if (bucket === undefined) {
 			const entry = this.#geometries[geometry];
@@ -393,6 +457,7 @@ export class MeshSelector {
 				material,
 				look: this.#looks[material],
 				mirrored: mirrored === 1,
+				castOnly,
 				rows: [],
 				pixels: 0,
 				first: 0,
@@ -401,7 +466,7 @@ export class MeshSelector {
 			};
 			this.#buckets.set(key, bucket);
 		}
-		slot.buckets[mirrored] = bucket;
+		slot.buckets[index] = bucket;
 		return bucket;
 	}
 
@@ -417,8 +482,7 @@ export class MeshSelector {
 		if (pruned) {
 			for (const slots of this.#slots) {
 				for (const slot of slots ?? []) {
-					slot.buckets[0] = null;
-					slot.buckets[1] = null;
+					slot.buckets.fill(null);
 				}
 			}
 		}

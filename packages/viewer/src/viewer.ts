@@ -49,7 +49,7 @@ import { LocalLights } from './render/local-lights.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
 import { type PostSettings, PostProcess, type Tonemapper, postExposure } from './render/post-process.ts';
-import { SHADOW_FORMAT, SHADOW_LAYERS, ShadowMap } from './render/shadow-map.ts';
+import { SHADOW_FORMAT, SHADOW_LAYERS, ShadowMap, offscreenCasters } from './render/shadow-map.ts';
 import { SETTLE_FRAMES } from './render/temporal-aa.ts';
 import { PAGE_SIDE, SURFACE_BORDER, SURFACE_SIDE, TerrainRenderer } from './render/terrain-renderer.ts';
 import { type TextureBinding, TextureStore, placeholderView } from './render/texture-store.ts';
@@ -1375,10 +1375,13 @@ export class Viewer {
 		this.#seenVersion = stream.version;
 		// screen-space sizes are measured in output pixels, so the render scale trades shading only, not detail
 		const aspect = this.#targets.outputWidth / this.#targets.outputHeight;
+		const planes = this.camera.frustumPlanes(aspect);
+		const shadows = options.shadows && options.debugView === 'lit';
 		const view = {
 			camera: this.camera,
-			planes: this.camera.frustumPlanes(aspect),
+			planes,
 			pixelFactor: this.camera.pixelFactor(this.#targets.outputHeight),
+			casters: shadows ? offscreenCasters(planes, this.#environment.sunDirection) : null,
 		};
 		const selection = scene.selector.run(
 			view,
@@ -1401,6 +1404,7 @@ export class Viewer {
 				viewportHeight: this.#targets.outputHeight,
 				minPixels: options.minBoxPixels,
 				textureBias: options.textureBias,
+				casters: view.casters,
 			});
 		}
 		this.#span('mesh select');

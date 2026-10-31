@@ -279,7 +279,12 @@ details:
   [lighting.md](game-data/lighting.md#shadows)
   ([`render/shadow-map.ts`](../packages/viewer/src/render/shadow-map.ts)). each layer's pass reuses
   this frame's main-pass selection and gets its own copy of the frame uniforms with its
-  view-projection.
+  view-projection. the selection also walks the view frustum swept towards the sun (see
+  [lighting.md](game-data/lighting.md#shadows)): instances there but outside the view land in
+  cast-only buckets, drawn first in each phase so the shadow passes draw a prefix and the main pass
+  skips it. they stream at a tenth of their on-screen priority, only their alpha texture is
+  requested, they never draw as boxes, and their tiles never hold back the HLOD refinement of tiles
+  in view.
 - **post** ([`render/post-process.ts`](../packages/viewer/src/render/post-process.ts)) is fullscreen
   triangles with `auto` layouts. the `ssr` passes march every lit pixel's reflection into last
   frame's composited scene, filter it over frames and blur it by roughness
@@ -480,9 +485,10 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
 
 - per-instance culling and LOD selection run on the CPU and dominate CPU time at dense views; a
   compute cull pass writing the visible list plus indirect arguments is the planned replacement.
-- shadows redraw every on-screen caster into all four layers on every rendered frame. per-layer
-  culling and caching a cascade while its snapped fit doesn't move are unbuilt, and off-screen
-  casters don't cast.
+- shadows redraw every caster into all four layers on every rendered frame. per-layer culling and
+  caching a cascade while its snapped fit doesn't move are unbuilt. off-screen casters added about
+  14k rows and roughly 2–3 ms of CPU time at a street-level Wuling City view (unprofiled beyond
+  that).
 - the temporal antialiasing has no sharpening, and nothing handles moving surfaces beyond the
   neighbourhood clip: water waves and the GTAO noise pattern rely on it. with temporal smoothing in
   place, the terrain's close-up layers could sample one projection plane per pixel at random, as the
