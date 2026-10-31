@@ -56,6 +56,7 @@ const FX_DECAL = 27u;
 const FX_OFFSET_DIR = 28u;
 const FX_OFFSET = 29u;
 const FX_OFFSET_MODE = 30u;
+const FX_UNFOGGED = 31u;
 // the slot of the vertex offset's texture (`OFFSET_SLOT` in effect-looks.ts)
 const FX_OFFSET_SLOT = 6u;
 
@@ -316,14 +317,17 @@ fn fx_scene_depth(px: vec2i) -> f32 {
 	return select(1e9, frame.local_lights.w / d, d > 0.0);
 }
 
-fn fx_accumulate(premultiplied: vec3f, alpha: f32, distance: f32) -> EffectAccumulated {
+// a premultiplied layer into the weighted sum and revealage. an unfogged layer also adds its weight to the
+// glow's alpha, which nothing else writes, so the composite knows which share of the weighted sum to keep out
+// of the fog
+fn fx_accumulate(premultiplied: vec3f, alpha: f32, distance: f32, unfogged: f32) -> EffectAccumulated {
 	// mesh.wgsl's weighting
 	let x = distance / 20.0;
 	let weight = max(0.01, 1.0 / (1.0 + x * x));
 	var out: EffectAccumulated;
 	out.sum = vec4f(premultiplied * weight, alpha * weight);
 	out.revealage = vec4f(alpha);
-	out.glow = vec4f(0.0);
+	out.glow = vec4f(0.0, 0.0, 0.0, alpha * weight * unfogged);
 	return out;
 }
 
@@ -357,7 +361,7 @@ fn fs_effect(in: EffectOut) -> EffectAccumulated {
 	let alpha = saturate(
 		saturate(combined.a) * mix(1.0, fresnel, fresnel_row.w) * soft_fade * fx_near_fade(id, depth),
 	);
-	return fx_accumulate(color * alpha, alpha, length(in.rel));
+	return fx_accumulate(color * alpha, alpha, length(in.rel), fx_row(id, FX_UNFOGGED).x);
 }
 
 // unpacks the normal of `pack_reflection_surface` (frame.wgsl), or returns zero where nothing lit was drawn
@@ -390,7 +394,7 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 	let dx = dpdx(uv);
 	let dy = dpdy(uv);
 	if (any(abs(object_p) >= vec3f(0.5)) || scene_depth >= 1e9) {
-		return fx_accumulate(vec3f(0.0), 0.0, 1.0);
+		return fx_accumulate(vec3f(0.0), 0.0, 1.0, 0.0);
 	}
 	let combined = fx_combine(id, uv, uv, dx, dy, fx_row(id, FX_TINT));
 	let soft = fx_row(id, FX_SOFT);
@@ -410,7 +414,7 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 	}
 	let alpha = saturate(combined.a * fx_near_fade(id, scene_depth) * height * edge_x * edge_z) * angle;
 	// the game's decal premultiplies its colour by the alpha twice
-	return fx_accumulate(color * alpha * alpha, alpha, length(rel));
+	return fx_accumulate(color * alpha * alpha, alpha, length(rel), fx_row(id, FX_UNFOGGED).x);
 }
 
 // #region mist
@@ -437,7 +441,7 @@ fn mist_accumulate(id: u32, premultiplied: vec3f, alpha: f32, distance: f32) -> 
 		out.glow = vec4f(premultiplied, 0.0);
 		return out;
 	}
-	return fx_accumulate(premultiplied, alpha, distance);
+	return fx_accumulate(premultiplied, alpha, distance, 0.0);
 }
 
 // a fade between two view depths: in from x to y (or out, when y < x)

@@ -12,7 +12,8 @@
 @group(2) @binding(7) var transparent_texture: texture_2d<f32>;
 @group(2) @binding(8) var revealage_texture: texture_2d<f32>;
 // the transparent pass's additive light, added after the fog: the game's additive effects fog themselves, if
-// at all, at their own distance, which the composite doesn't know
+// at all, at their own distance, which the composite doesn't know. alpha holds the weight of the unfogged
+// layers in the weighted sum
 @group(2) @binding(10) var glow_texture: texture_2d<f32>;
 // the sky planets, cloud panorama, nebula and stars over the sky: s · (1 − a) + rgb (celestial.wgsl)
 @group(2) @binding(9) var celestial_texture: texture_2d<f32>;
@@ -34,6 +35,27 @@ fn over_transparent(color: vec3f, px: vec2i) -> vec3f {
 	}
 	let sum = textureLoad(transparent_texture, px, 0);
 	return mix(sum.rgb / max(sum.a, 1e-5), color, revealage);
+}
+
+// the transparent layers over an opaque surface's `color`, split by the fog: `fogged` is what the fog covers
+// next, and `unfogged` the part of the layers' mean that belongs to layers drawn after the fog (effects
+// without their own fog), which also hide `cover` of the fog's inscatter
+struct Layered {
+	fogged: vec3f,
+	unfogged: vec3f,
+	cover: f32,
+}
+
+fn layered(color: vec3f, px: vec2i) -> Layered {
+	let revealage = textureLoad(revealage_texture, px, 0).r;
+	if (revealage >= 1.0) {
+		return Layered(color, vec3f(0.0), 0.0);
+	}
+	let sum = textureLoad(transparent_texture, px, 0);
+	let mean = sum.rgb / max(sum.a, 1e-5);
+	let share = saturate(textureLoad(glow_texture, px, 0).a / max(sum.a, 1e-5));
+	let coverage = 1.0 - revealage;
+	return Layered(color * revealage + mean * coverage * (1.0 - share), mean * coverage * share, coverage * share);
 }
 
 // the height fog's flow noise (one channel, in red) and its repeating sampler
@@ -85,12 +107,13 @@ fn fs_composite(in: FullscreenOut) -> @location(0) vec4f {
 		color = max(color + ambient.rgb * (multi_bounce(ao, radiance.a) - ambient.a), vec3f(0.0));
 	}
 	// transparent layers are fogged as if they lay at the opaque surface behind them, which is near for most
-	// glass
-	color = over_transparent(color, px);
+	// glass; effects without fog of their own lie over the fogged scene instead
+	let layers = layered(color, px);
 	let eye_depth = view_depth(depth);
 	let distance = length(ray * eye_depth);
 	let fog = fog_over(direction, distance, froxels_at(in.uv, eye_depth));
-	let fogged = drift_fog(color, color * fog.transmittance + fog.inscatter, fog.transmittance,
+	let fogged = drift_fog(layers.fogged,
+		layers.fogged * fog.transmittance + fog.inscatter * (1.0 - layers.cover), fog.transmittance,
 		post.eye.xyz + ray * eye_depth, distance);
-	return vec4f(fogged + glow(px), 1.0);
+	return vec4f(fogged + layers.unfogged + glow(px), 1.0);
 }

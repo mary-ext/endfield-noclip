@@ -264,7 +264,8 @@ details:
   blended light, which the weighted sum and revealage can't hold. the composite adds it after the
   fog, unfogged: the game's additive effects fog themselves at their own distance if at all, and
   fogging them at the surface behind would hide those in front of the sky. effects hidden for
-  blending additively can draw into it.
+  blending additively can draw into it. its alpha holds the weight of the layers that go unfogged,
+  which the composite keeps out of the fog ([blending](game-data/lighting.md#blending-and-gaps)).
 - **antialiasing** is temporal with upsampling, as in the game, which has no MSAA. the main pass's
   projection is offset by a Halton (2, 3) subpixel jitter each frame (8 positions per cycle, more
   when upsampling), and the post passes that reconstruct view rays undo it. `taa` reconstructs each

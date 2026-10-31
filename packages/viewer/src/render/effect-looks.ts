@@ -86,6 +86,11 @@ export const EffectRow = {
 	offset: 116,
 	/** VFXBaseV2 vertex offset: 1 when on, 1 when the offset texture reads UV set 1, 0, 0 */
 	offsetMode: 120,
+	/**
+	 * 1 when the layer goes unfogged (its material lacks `_USE_FOG`, and the game draws effects after the fog),
+	 * 0, 0, 0
+	 */
+	unfogged: 124,
 } as const;
 
 /** slots of a VFXBaseV2 look: the main texture, then `_SampleTex0`… */
@@ -385,6 +390,7 @@ export const vfxBaseLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLo
 		params[EffectRow.soft + 1] = float('_SoftBias', 0);
 	}
 	params[EffectRow.soft + 3] = float('_DisableVertColor', 0) !== 0 ? 0 : 1;
+	params[EffectRow.unfogged] = entry.keywords.includes('_USE_FOG') ? 0 : 1;
 	params[EffectRow.misc + 1] = float('_ExpThreshold', 1);
 	params[EffectRow.misc + 2] = float('_ExpIntensity', 0);
 	params[EffectRow.misc + 3] = float('_UseDisturb', 0) !== 0 ? 1 : 0;
@@ -464,6 +470,7 @@ export const vfxDecalLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectL
 	params[EffectRow.dissolveColor + 3] = entry.keywords.includes('_USE_MASK') ? 1 : 0;
 	params[EffectRow.weight] = float('_Bi_Disturb', 0);
 	params[EffectRow.misc + 3] = entry.keywords.includes('_USE_DISTURB') ? 1 : 0;
+	params[EffectRow.unfogged] = entry.keywords.includes('_USE_FOG') ? 0 : 1;
 	params.set(
 		[
 			float('_EdgeFadeX', 0),

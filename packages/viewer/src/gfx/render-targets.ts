@@ -41,7 +41,7 @@ export const MAIN_TARGETS: GPUColorTargetState[] = [
  * 2013): the weighted sum of premultiplied colours with the weights' sum in alpha, and the revealage, the
  * product of `1 − alpha` over the layers. the composite resolves them over the opaque scene. a third target,
  * the glow, sums additively blended light, which the other two can't hold; the composite adds it after the
- * fog
+ * fog. the glow's alpha sums the weights of the layers that stay out of the fog
  */
 export const TRANSPARENT_TARGETS: GPUColorTargetState[] = [
 	{

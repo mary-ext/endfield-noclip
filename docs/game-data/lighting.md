@@ -471,10 +471,11 @@ dissolve), with the `_ST` of that role's own texture property (`_DisturbTex1`, `
 `_WeightTex`, `_MaskTex`, `_BlendTex`, `_DissolveTex`). the colour starts from
 `_TintColor · _TintColorIntensity` times the vertex colour, alpha from
 `_TintColor.a · _TintColorAlpha`; it's brightened by `_ExpIntensity` above `_ExpThreshold`. a
-material without a main texture samples the shader's default, white, as the game does (the base
-ring of Origin Lodespring's crater column is one). alpha fades by a Fresnel term (`saturate(N·V + _FresnelBias)^_FresnelPower`, flipped by `_FresnelFlip`,
-applied by `_FresnelAffectOpacity`) and, with `_USE_SOFTBLEND`, where the surface comes within
-`_SoftDistance` metres of what lies behind it.
+material without a main texture samples the shader's default, white, as the game does (the base ring
+of Origin Lodespring's crater column is one). alpha fades by a Fresnel term
+(`saturate(N·V + _FresnelBias)^_FresnelPower`, flipped by `_FresnelFlip`, applied by
+`_FresnelAffectOpacity`) and, with `_USE_SOFTBLEND`, where the surface comes within `_SoftDistance`
+metres of what lies behind it.
 
 `_USE_VERTOFFSET` moves each vertex along `_OffsetDir` (`_OffsetSwitchDir` 0: object space, 1: world
 space, 2: the vertex normal) by `_OffsetIntensity · (r · (1 + _Bi_Offset) − _Bi_Offset)`, where r is
@@ -533,16 +534,22 @@ haze over the valley's middle distance that the fog alone left clear.
 
 ### blending and gaps
 
-effects join the transparent pass's weighted blend ([glass](#glass)) and are fogged the same way;
-additive ones could draw into its glow but are still hidden. they cast no shadows and wait until all
-their textures are resident.
+effects join the transparent pass's weighted blend ([glass](#glass)). the game draws them after its
+fog, so only those with `_USE_FOG` are fogged, at their own distance; the composite fogs them like
+glass, as if at the surface behind. the rest add their weight to the glow target's alpha too, which
+nothing else writes, and the composite keeps that share of the layers' mean colour out of the fog,
+laid over the fogged scene and hiding as much of the fog's inscatter as it covers. Origin
+Lodespring's red light stripes along the crystal ridge (`M_fx_prop_connectline_*`) are such effects.
+additive ones could draw into the glow but are still hidden. effects cast no shadows and wait until
+all their textures are resident.
 
 not drawn: additive VFXBaseV2 and VFXDecal effects, the vertex offset's mask (`_USE_VERTOFFSETMASK`)
 and particle-data terms, brightening that is a scan line or centred on a fixed point, polar or
 screen-space UVs, lighting, breathing, edge colour, vertex animation textures or water blending, the
 flipbook and particle inputs, VFXDecal's parallax, 3D texture, weight and particle variants, the
-effects' own fog (`_USE_FOG`; the composite fogs them instead), the scene effect colour grade, and
-every other effect shader (`VFXAdvance`, `VFXDitherAlpha`, `VFXRefract`, `VFXWater`, …).
+effects' own fog (`_USE_FOG`; the composite fogs them at the surface behind instead), the scene
+effect colour grade, and every other effect shader (`VFXAdvance`, `VFXDitherAlpha`, `VFXRefract`,
+`VFXWater`, …).
 
 ## sky
 

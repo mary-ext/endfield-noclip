@@ -145,6 +145,22 @@ test('effects with features the viewer lacks, or additive blending, stay hidden'
 	);
 });
 
+test('effects without _USE_FOG are marked to stay out of the fog', () => {
+	const looks = materialLooks({
+		shaders: [shader('HGRP/Effect/VFXBaseV2'), shader('HGRP/Effect/VFXDecal')],
+		entries: [
+			material({ id: 0, shader: 0, slots: { _MainTex: slot(1) } }),
+			material({ id: 1, shader: 0, keywords: ['_USE_FOG'], slots: { _MainTex: slot(1) } }),
+			material({ id: 2, shader: 1, slots: { _MainTex: slot(1) } }),
+			material({ id: 3, shader: 1, keywords: ['_USE_FOG'], slots: { _MainTex: slot(1) } }),
+		],
+	});
+	assert.deepEqual(
+		looks.map((look) => look.params[EffectRow.unfogged]),
+		[1, 0, 1, 0],
+	);
+});
+
 test('a VFXBaseV2 without a main texture draws with its shader default only when that is white', () => {
 	const looks = materialLooks({
 		shaders: [
