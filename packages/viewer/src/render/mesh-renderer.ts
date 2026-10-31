@@ -84,6 +84,12 @@ const faceCullOf = (bucket: MeshBucket): FaceCull => {
 /** the draws a phase runs over: prepared in this order */
 type DrawRange = 'opaque' | 'cutout' | 'transparent' | 'effect' | 'effectDecal' | 'mist' | 'mistVolume';
 
+/**
+ * the vertex streams a phase's pipelines read, in buffer slot order: every stream, positions alone (opaque
+ * shadow casters), or positions and the UV sets (alpha-tested ones)
+ */
+type VertexStreams = 'all' | 'position' | 'uv';
+
 /** one run over a pass's opaque, alpha-tested or alpha-blended draws, with a pipeline per face culling */
 interface DrawPhase {
 	key: string;
@@ -92,20 +98,21 @@ interface DrawPhase {
 	textured: boolean;
 	/** over only the draws whose materials cast shadows */
 	shadow: boolean;
+	streams: VertexStreams;
 }
 
 const MAIN_PHASES: readonly DrawPhase[] = [
-	{ key: 'mesh/opaque', range: 'opaque', textured: true, shadow: false },
-	{ key: 'mesh/cutout-depth', range: 'cutout', textured: true, shadow: false },
-	{ key: 'mesh/cutout-shade', range: 'cutout', textured: true, shadow: false },
+	{ key: 'mesh/opaque', range: 'opaque', textured: true, shadow: false, streams: 'all' },
+	{ key: 'mesh/cutout-depth', range: 'cutout', textured: true, shadow: false, streams: 'uv' },
+	{ key: 'mesh/cutout-shade', range: 'cutout', textured: true, shadow: false, streams: 'all' },
 ];
 
 const TRANSPARENT_PHASES: readonly DrawPhase[] = [
-	{ key: 'mesh/transparent', range: 'transparent', textured: true, shadow: false },
-	{ key: 'mesh/effect', range: 'effect', textured: true, shadow: false },
-	{ key: 'mesh/effect-decal', range: 'effectDecal', textured: true, shadow: false },
-	{ key: 'mesh/mist', range: 'mist', textured: true, shadow: false },
-	{ key: 'mesh/mist-volume', range: 'mistVolume', textured: true, shadow: false },
+	{ key: 'mesh/transparent', range: 'transparent', textured: true, shadow: false, streams: 'all' },
+	{ key: 'mesh/effect', range: 'effect', textured: true, shadow: false, streams: 'all' },
+	{ key: 'mesh/effect-decal', range: 'effectDecal', textured: true, shadow: false, streams: 'all' },
+	{ key: 'mesh/mist', range: 'mist', textured: true, shadow: false, streams: 'all' },
+	{ key: 'mesh/mist-volume', range: 'mistVolume', textured: true, shadow: false, streams: 'all' },
 ];
 
 /** the main pass's outputs that scene effects read, as `SceneTextures` holds them */
@@ -116,9 +123,45 @@ export interface EffectInputs {
 }
 
 const SHADOW_PHASES: readonly DrawPhase[] = [
-	{ key: 'mesh/shadow/opaque', range: 'opaque', textured: false, shadow: true },
-	{ key: 'mesh/shadow/cutout', range: 'cutout', textured: true, shadow: true },
+	{ key: 'mesh/shadow/opaque', range: 'opaque', textured: false, shadow: true, streams: 'position' },
+	{ key: 'mesh/shadow/cutout', range: 'cutout', textured: true, shadow: true, streams: 'uv' },
 ];
+
+/** the vertex buffers bound in a pass, so binding the same buffer at the same offset again is skipped */
+class VertexBindings {
+	#buffers: (GPUBuffer | null)[] = [];
+	#offsets: number[] = [];
+
+	/** forgets what's bound (at the start of each encode, since other families bind in between) */
+	reset(): void {
+		this.#buffers.fill(null);
+	}
+
+	set(pass: GPURenderPassEncoder, slot: number, buffer: GPUBuffer, offset: number, size?: number): void {
+		if (this.#buffers[slot] === buffer && this.#offsets[slot] === offset && size === undefined) {
+			return;
+		}
+		pass.setVertexBuffer(slot, buffer, offset, size);
+		// a sized binding isn't remembered: the next geometry's positions always rebind
+		this.#buffers[slot] = size === undefined ? buffer : null;
+		this.#offsets[slot] = offset;
+	}
+
+	/** binds a stream of `vertices` at `offset`, or `zeros` where the geometry lacks it (`null`) */
+	stream(
+		pass: GPURenderPassEncoder,
+		slot: number,
+		vertices: GPUBuffer,
+		offset: number | null,
+		zeros: GPUBuffer,
+	): void {
+		if (offset === null) {
+			this.set(pass, slot, zeros, 0);
+		} else {
+			this.set(pass, slot, vertices, offset);
+		}
+	}
+}
 
 interface PreparedDraw {
 	geometry: ResidentGeometry;
@@ -148,18 +191,25 @@ const uvFormatOf = (bucket: MeshBucket): UvFormat => {
 };
 
 /**
- * draw order within the opaque, alpha-tested and alpha-blended draws: cast-only draws, then the other shadow
- * casters, so shadow passes draw a prefix and the main pass skips one; then face culling and UV format (one
- * pipeline each), geometry, material and submesh
+ * @returns the bucket's place in the draw order within the opaque, alpha-tested and alpha-blended draws:
+ *   cast-only draws, then the other shadow casters, so shadow passes draw a prefix and the main pass skips
+ *   one; then face culling and UV format (one pipeline each), geometry, material and submesh. all of it is
+ *   fixed for a bucket, so it's computed once and packed into one number (50 bits) to keep the sort cheap
  */
-const byBindings = (a: MeshBucket, b: MeshBucket): number =>
-	Number(b.castOnly) - Number(a.castOnly) ||
-	Number(b.look.castsShadows) - Number(a.look.castsShadows) ||
-	FACE_CULLS.indexOf(faceCullOf(a)) - FACE_CULLS.indexOf(faceCullOf(b)) ||
-	UV_FORMATS.indexOf(uvFormatOf(a)) - UV_FORMATS.indexOf(uvFormatOf(b)) ||
-	a.geometry.blob - b.geometry.blob ||
-	a.material - b.material ||
-	a.submesh - b.submesh;
+const sortKeyOf = (bucket: MeshBucket): number => {
+	if (bucket.sortKey < 0) {
+		let key = bucket.castOnly ? 0 : 1;
+		key = key * 2 + (bucket.look.castsShadows ? 0 : 1);
+		key = key * 4 + FACE_CULLS.indexOf(faceCullOf(bucket));
+		key = key * 2 + UV_FORMATS.indexOf(uvFormatOf(bucket));
+		key = key * 2 ** 21 + Math.min(bucket.geometry.blob, 2 ** 21 - 1);
+		key = key * 2 ** 16 + Math.min(bucket.material, 2 ** 16 - 1);
+		bucket.sortKey = key * 2 ** 8 + Math.min(bucket.submesh, 2 ** 8 - 1);
+	}
+	return bucket.sortKey;
+};
+
+const byBindings = (a: MeshBucket, b: MeshBucket): number => sortKeyOf(a) - sortKeyOf(b);
 
 /** owns geometry buffers, material bind groups and the mesh pipelines */
 export class MeshRenderer {
@@ -180,6 +230,7 @@ export class MeshRenderer {
 	#drawIds: GPUBuffer;
 	#drawIdData = new Uint32Array(LIST_CAPACITY);
 	#drawGroup: GPUBindGroup;
+	#vertexBindings = new VertexBindings();
 	/** zeros bound as the streams meshes lack */
 	#zeros: GPUBuffer;
 	#zerosSize = 0;
@@ -275,30 +326,47 @@ export class MeshRenderer {
 			mipmapFilter: 'linear',
 		});
 		const module = pipelines.module('mesh', FRAME_WGSL + meshWgsl);
-		const vertex = (uvFormat: UvFormat): GPUVertexState => {
+		const vertex = (uvFormat: UvFormat, streams: VertexStreams = 'all'): GPUVertexState => {
 			const uvStride = uvFormat === 'unorm16x2' ? 4 : 8;
-			return {
-				module,
-				entryPoint: 'vs_main',
-				buffers: [
-					{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }] },
-					{ arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'snorm16x2' }] },
-					{ arrayStride: uvStride, attributes: [{ shaderLocation: 2, offset: 0, format: uvFormat }] },
-					{ arrayStride: uvStride, attributes: [{ shaderLocation: 4, offset: 0, format: uvFormat }] },
-					{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
-					{ arrayStride: 4, attributes: [{ shaderLocation: 5, offset: 0, format: 'unorm8x4' }] },
-				],
+			const position: GPUVertexBufferLayout = {
+				arrayStride: 8,
+				attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }],
 			};
+			const uvs: GPUVertexBufferLayout[] = [
+				{ arrayStride: uvStride, attributes: [{ shaderLocation: 2, offset: 0, format: uvFormat }] },
+				{ arrayStride: uvStride, attributes: [{ shaderLocation: 4, offset: 0, format: uvFormat }] },
+			];
+			switch (streams) {
+				case 'position': {
+					return { module, entryPoint: 'vs_depth', buffers: [position] };
+				}
+				case 'uv': {
+					return { module, entryPoint: 'vs_cutout_depth', buffers: [position, ...uvs] };
+				}
+				case 'all': {
+					return {
+						module,
+						entryPoint: 'vs_main',
+						buffers: [
+							position,
+							{ arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'snorm16x2' }] },
+							...uvs,
+							{ arrayStride: 4, attributes: [{ shaderLocation: 3, offset: 0, format: 'snorm8x4' }] },
+							{ arrayStride: 4, attributes: [{ shaderLocation: 5, offset: 0, format: 'unorm8x4' }] },
+						],
+					};
+				}
+			}
 		};
 		const prepare = (
-			key: string,
+			{ key, streams }: DrawPhase,
 			stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil'>,
 		): void => {
 			for (const cullMode of FACE_CULLS) {
 				for (const uvFormat of UV_FORMATS) {
 					void pipelines.prepare(pipelineKey(key, cullMode, uvFormat), () => ({
 						layout: layouts.meshPipeline,
-						vertex: vertex(uvFormat),
+						vertex: vertex(uvFormat, streams),
 						primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
 						...stages,
 					}));
@@ -312,8 +380,8 @@ export class MeshRenderer {
 		};
 		const shade: GPUFragmentState = { module, entryPoint: 'fs_opaque', targets: format.targets };
 		const [opaque, cutoutDepth, cutoutShade] = MAIN_PHASES;
-		prepare(opaque.key, { fragment: shade, depthStencil: depthWrite });
-		prepare(cutoutDepth.key, {
+		prepare(opaque, { fragment: shade, depthStencil: depthWrite });
+		prepare(cutoutDepth, {
 			fragment: {
 				module,
 				entryPoint: 'fs_cutout_depth',
@@ -321,17 +389,17 @@ export class MeshRenderer {
 			},
 			depthStencil: depthWrite,
 		});
-		prepare(cutoutShade.key, {
+		prepare(cutoutShade, {
 			fragment: shade,
 			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: 'equal' },
 		});
-		prepare(TRANSPARENT_PHASES[0].key, {
+		prepare(TRANSPARENT_PHASES[0], {
 			fragment: { module, entryPoint: 'fs_transparent', targets: TRANSPARENT_TARGETS },
 			depthStencil: { format: DEPTH_FORMAT, depthWriteEnabled: false, depthCompare: DEPTH_COMPARE },
 		});
 		const [shadowOpaque, shadowCutout] = SHADOW_PHASES;
-		prepare(shadowOpaque.key, { depthStencil: SHADOW_DEPTH_STATE });
-		prepare(shadowCutout.key, {
+		prepare(shadowOpaque, { depthStencil: SHADOW_DEPTH_STATE });
+		prepare(shadowCutout, {
 			fragment: { module, entryPoint: 'fs_cutout_depth', targets: [] },
 			depthStencil: SHADOW_DEPTH_STATE,
 		});
@@ -816,6 +884,8 @@ export class MeshRenderer {
 		}
 		pass.setBindGroup(1, this.#instances.bindGroup);
 		pass.setBindGroup(2, this.#drawGroup);
+		const bindings = this.#vertexBindings;
+		bindings.reset();
 		let draws = 0;
 		for (const phase of phases) {
 			let from: number;
@@ -884,29 +954,44 @@ export class MeshRenderer {
 					pass.setBindGroup(3, material);
 				}
 				if (draw.geometry !== geometry) {
-					const next: ResidentGeometry = draw.geometry;
-					geometry = next;
-					pass.setVertexBuffer(0, next.vertices, 0, next.positionBytes);
-					const optional = [
-						next.normalOffset,
-						next.uv0Offset,
-						next.uv1Offset,
-						next.tangentOffset,
-						next.colorOffset,
-					];
-					optional.forEach((offset, slot) => {
-						if (offset === null) {
-							pass.setVertexBuffer(slot + 1, this.#zeros);
-						} else {
-							pass.setVertexBuffer(slot + 1, next.vertices, offset);
-						}
-					});
-					pass.setIndexBuffer(next.indices, next.indexFormat);
+					geometry = draw.geometry;
+					this.#bindStreams(pass, bindings, geometry, phase.streams);
+					pass.setIndexBuffer(geometry.indices, geometry.indexFormat);
 				}
 				pass.drawIndexed(draw.indexCount, draw.count, draw.firstIndex, draw.baseVertex, draw.first);
 			}
 			draws += to - from;
 		}
 		return draws;
+	}
+
+	/** binds a geometry's vertex streams in the slots a phase's pipelines read, zeros where it lacks one */
+	#bindStreams(
+		pass: GPURenderPassEncoder,
+		bindings: VertexBindings,
+		geometry: ResidentGeometry,
+		streams: VertexStreams,
+	): void {
+		bindings.set(pass, 0, geometry.vertices, 0, geometry.positionBytes);
+		const vertices = geometry.vertices;
+		const zeros = this.#zeros;
+		switch (streams) {
+			case 'position': {
+				break;
+			}
+			case 'uv': {
+				bindings.stream(pass, 1, vertices, geometry.uv0Offset, zeros);
+				bindings.stream(pass, 2, vertices, geometry.uv1Offset, zeros);
+				break;
+			}
+			case 'all': {
+				bindings.stream(pass, 1, vertices, geometry.normalOffset, zeros);
+				bindings.stream(pass, 2, vertices, geometry.uv0Offset, zeros);
+				bindings.stream(pass, 3, vertices, geometry.uv1Offset, zeros);
+				bindings.stream(pass, 4, vertices, geometry.tangentOffset, zeros);
+				bindings.stream(pass, 5, vertices, geometry.colorOffset, zeros);
+				break;
+			}
+		}
 	}
 }

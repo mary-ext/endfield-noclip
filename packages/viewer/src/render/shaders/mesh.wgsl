@@ -172,7 +172,8 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	let draw = draws[draw_id];
 	let p = draw.offset.xyz + v.position.xyz * draw.scale.xyz;
 	let origin = vec3f(row.t0.w, row.t1.w, row.t2.w) + blocks[row.block].xyz;
-	let rel = vec3f(dot(row.t0.xyz, p), dot(row.t1.xyz, p), dot(row.t2.xyz, p)) + origin;
+	// as vs_cutout_depth computes it, so alpha-tested depth matches exactly where they're shaded
+	let rel = instance_rel(v.position.xyz, ii, draw);
 	let m = mat3x3f(
 		vec3f(row.t0.x, row.t1.x, row.t2.x),
 		vec3f(row.t0.y, row.t1.y, row.t2.y),
@@ -203,6 +204,55 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	out.object_y = p.y;
 	out.color = select(vec4f(1.0), v.color, (flags & HAS_COLORS) != 0u);
 	out.origin = origin;
+	return out;
+}
+
+// the depth-only stages read only the streams they need, so they bind fewer vertex buffers per geometry:
+// positions for opaque shadow casters, plus the UV sets for alpha-tested depth
+struct DepthIn {
+	@location(0) position: vec4f,
+}
+
+struct CutoutDepthIn {
+	@location(0) position: vec4f,
+	@location(2) uv0: vec2f,
+	@location(4) uv1: vec2f,
+}
+
+// the camera-relative position of a vertex of list entry `ii`
+fn instance_rel(position: vec3f, ii: u32, draw: Draw) -> vec3f {
+	let row = rows[list[ii]];
+	let p = draw.offset.xyz + position * draw.scale.xyz;
+	let origin = vec3f(row.t0.w, row.t1.w, row.t2.w) + blocks[row.block].xyz;
+	return vec3f(dot(row.t0.xyz, p), dot(row.t1.xyz, p), dot(row.t2.xyz, p)) + origin;
+}
+
+@vertex
+fn vs_depth(v: DepthIn, @builtin(instance_index) ii: u32) -> @builtin(position) vec4f {
+	let draw = draws[draw_ids[ii]];
+	return frame.view_proj * vec4f(instance_rel(v.position.xyz, ii, draw), 1.0);
+}
+
+// what fs_cutout_depth reads, at VertexOut's locations so vs_main can feed it too
+struct CutoutDepthVaryings {
+	@location(3) uv: vec4f,
+	@location(4) @interpolate(flat) draw: u32,
+}
+
+struct CutoutDepthOut {
+	@builtin(position) @invariant position: vec4f,
+	@location(3) uv: vec4f,
+	@location(4) @interpolate(flat) draw: u32,
+}
+
+@vertex
+fn vs_cutout_depth(v: CutoutDepthIn, @builtin(instance_index) ii: u32) -> CutoutDepthOut {
+	let draw_id = draw_ids[ii];
+	let draw = draws[draw_id];
+	var out: CutoutDepthOut;
+	out.position = frame.view_proj * vec4f(instance_rel(v.position.xyz, ii, draw), 1.0);
+	out.uv = vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw);
+	out.draw = draw_id;
 	return out;
 }
 
@@ -875,7 +925,7 @@ fn erosion_surface(
 // stage there). only drawn for materials with an alpha-test threshold whose alpha texture is bound (`cutout`
 // in materials.ts and MeshRenderer.prepare)
 @fragment
-fn fs_cutout_depth(in: VertexOut) {
+fn fs_cutout_depth(in: CutoutDepthVaryings) {
 	let draw = draws[in.draw];
 	let flags = bitcast<u32>(draw.offset.w);
 	let bias = frame.params.y;

@@ -43,6 +43,8 @@ export interface MeshBucket {
 	count: number;
 	/** last frame the bucket had rows */
 	frame: number;
+	/** the bucket's draw order, computed by `MeshRenderer` on first use; -1 until then */
+	sortKey: number;
 }
 
 /** this frame's mesh selection, reused across frames */
@@ -147,7 +149,7 @@ export class MeshSelector {
 	#textures: TextureStore;
 	#buckets = new Map<number, MeshBucket>();
 	/** drawn draws per chain, built on first use */
-	#slots: (ChainSlot[] | undefined)[] = [];
+	#slots: (ChainSlot[] | null)[];
 	#frame = 0;
 	/** per geometry: the frame {@link #geometryReady} last looked it up */
 	#checkedFrame: Int32Array;
@@ -166,6 +168,8 @@ export class MeshSelector {
 		this.#looks = init.looks;
 		this.#stream = init.stream;
 		this.#textures = init.textures;
+		// filled up front: an array written at scattered indices turns into a slow dictionary
+		this.#slots = Array.from({ length: init.chains.length }, () => null);
 		const count = init.geometries.length;
 		this.#checkedFrame = new Int32Array(count).fill(-1);
 		this.#ready = new Uint8Array(count);
@@ -417,7 +421,7 @@ export class MeshSelector {
 
 	#chainSlots(chain: number): ChainSlot[] {
 		let slots = this.#slots[chain];
-		if (slots === undefined) {
+		if (slots === null) {
 			slots = [];
 			for (const draw of this.#chains[chain].draws) {
 				const look = draw.material < this.#looks.length ? this.#looks[draw.material] : undefined;
@@ -463,6 +467,7 @@ export class MeshSelector {
 				first: 0,
 				count: 0,
 				frame: -1,
+				sortKey: -1,
 			};
 			this.#buckets.set(key, bucket);
 		}
