@@ -348,10 +348,10 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let uv0_dy = dpdy(in.uv.xy) * gradient_scale;
 	let parallax_dx = dpdx(parallax_uv) * gradient_scale;
 	let parallax_dy = dpdy(parallax_uv) * gradient_scale;
-	// the top layer's coordinates: UV set 0, world XZ, or UV set 2, which reads as zeros (`topLayerParams` in
-	// materials.ts)
+	// the top layer's coordinates: UV set 0, world XZ, or UV set 2, which the viewer reads as set 0
+	// (`topLayerParams` in materials.ts)
 	let layer_type = draw.parallax.w;
-	let layer_source = select(select(in.uv.xy, (in.rel + frame.eye.xyz).xz, layer_type > 0.5), vec2f(0.0), layer_type > 1.5);
+	let layer_source = select(in.uv.xy, (in.rel + frame.eye.xyz).xz, layer_type > 0.5 && layer_type < 1.5);
 	let layer_t = draw.slot_uv[LAYER_SLOT];
 	let layer_uv = layer_source * layer_t.xy + layer_t.zw;
 	let layer_dx = dpdx(layer_uv) * gradient_scale;

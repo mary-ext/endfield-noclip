@@ -460,7 +460,8 @@ export class MeshRenderer {
 			positionBytes: decoded.positions.byteLength,
 			normalOffset: offsets[1],
 			uv0Offset: offsets[2],
-			uv1Offset: offsets[3],
+			// the game reads a UV set a mesh lacks as set 0
+			uv1Offset: offsets[3] ?? offsets[2],
 			uvFormat: decoded.uvFormat,
 			uvTransforms: decoded.uvTransforms,
 			tangentOffset: offsets[4],

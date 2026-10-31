@@ -737,9 +737,9 @@ export const TopLayerRow = {
  * layer's. both maps sample one coordinate, tiled by `_Layer1Tilling` and offset by `_Layer1Offset`, ignoring
  * their `_ST`.
  *
- * the viewer doesn't load UV set 2. no map02 mesh drawn with a UV-set-2 layer has one, and the game reads a
- * missing set as zeros, so these layers sample one texel. `_BaseHeightMap` has no slot and reads as the
- * shader's grey default
+ * the viewer doesn't load UV set 2 and samples set 0 instead: no map02 mesh drawn with a UV-set-2 layer has
+ * the set, and the game reads a missing set as set 0. `_BaseHeightMap` has no slot and reads as the shader's
+ * grey default
  */
 const topLayerParams = (look: MaterialLook, entry: ReadyMaterial, shader: ShaderEntry): void => {
 	const params = look.params;

@@ -169,7 +169,8 @@ const decodeUvs = (blob: GeometryBlob): DecodedUvs => {
 	return {
 		uvs: [uv0?.data ?? null, uv1?.data ?? null],
 		uvFormat: uv0?.format ?? uv1?.format ?? 'float32x2',
-		uvTransforms: [uv0?.transform ?? IDENTITY_UV, uv1?.transform ?? IDENTITY_UV],
+		// a mesh without UV set 1 draws it from set 0 (`ResidentGeometry.uv1Offset`), with set 0's dequantization
+		uvTransforms: [uv0?.transform ?? IDENTITY_UV, uv1?.transform ?? uv0?.transform ?? IDENTITY_UV],
 	};
 };
 

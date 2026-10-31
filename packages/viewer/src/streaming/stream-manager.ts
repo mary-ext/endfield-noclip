@@ -96,6 +96,7 @@ export interface ResidentGeometry {
 	positionBytes: number;
 	normalOffset: number | null;
 	uv0Offset: number | null;
+	/** UV set 1, or set 0 for meshes without it: the game reads a missing UV set as set 0 */
 	uv1Offset: number | null;
 	/** the UV streams' vertex format */
 	uvFormat: 'unorm16x2' | 'float32x2';

@@ -333,10 +333,11 @@ originium crystals' base colour and detail map tile ×5 over UV set 1. not drawn
   base's by `_Layer1BaseNormalIntensity`. it applies after the detail map and the tri-channel mask.
   both maps sample one coordinate picked by `_LayerBlendUVType` (UV set 0, world XZ, or UV set 2),
   times `_Layer1Tilling` plus `_Layer1Offset`, ignoring their `_ST`. no mesh map02 draws with a
-  UV-set-2 layer has that set, and a missing set reads as zeros, so those layers are one flat texel:
-  two all-moss rock materials, whose base colour map is unset and so white, are a solid moss green.
-  the layer takes the parallax slots, so `_BaseHeightMap` has none and reads as the shader's grey
-  default.
+  UV-set-2 layer has that set, and the game reads a missing UV set as set 0 (an in-game shot of a
+  Jingyu moss rock shows the moss tiling over UV set 0), so the viewer samples UV set 0 for them and
+  binds set 0 in place of a missing set 1. two all-moss rock materials have no base colour map, so
+  their base is white and the layer is all they show. the layer takes the parallax slots, so
+  `_BaseHeightMap` has none and reads as the shader's grey default.
 
 not drawn: a global highlight term around a point on the ground, a separate parallax mask texture
 (`_UseParallaxMask`; such materials don't glow), and the `_PARALLAX_MAP_WORLDSPACE`, `_PBR` and
