@@ -13,13 +13,15 @@ import {
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { isObject, numberField, objectField, stringField } from '@endfield-noclip/formats/unity/values';
-import type { ConditionalSetInfo, ProgressionInfo } from '@endfield-noclip/package-format/states';
+import type { ConditionalSetInfo, SceneControl } from '@endfield-noclip/package-format/states';
 
+import { getOrInsert } from '../collections.ts';
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';
 
 import { readDoodadShell, type DoodadShell } from './doodad-shell.ts';
 import type { StructureModel } from './dynamic-structures.ts';
+import { progressionControl } from './scenery-variants.ts';
 
 // these facility templates share the validated model-upgrade component, so their visual forms become a
 // progression control. every other template draws its base model only.
@@ -66,7 +68,7 @@ export const loadInteractiveFacilities = async (
 	partition: LevelPartition | undefined,
 ): Promise<{
 	models: StructureModel[];
-	progressions: ProgressionInfo[];
+	progressions: SceneControl[];
 	unsupported: { path: string; reason: string }[];
 }> => {
 	const { vfs, world } = context;
@@ -272,8 +274,8 @@ export const loadInteractiveFacilities = async (
 	}
 
 	const models: StructureModel[] = [];
-	const progressions: ProgressionInfo[] = [];
-	const doodadControls = new Map<string, ProgressionInfo>();
+	const progressions: SceneControl[] = [];
+	const doodadLevels = new Map<string, Set<number>>();
 	for (const { path, levelId, levelTag, row } of placed) {
 		const template = authored.get(row.template);
 		if (template === undefined) {
@@ -301,43 +303,41 @@ export const loadInteractiveFacilities = async (
 				continue;
 			}
 			const id = `doodadGroups:${levelId}`;
-			let control = doodadControls.get(id);
-			if (control === undefined) {
-				control = {
-					id,
-					kind: 'doodadGroups',
-					key: levelId,
-					name: 'Resource nodes',
-					levelId,
-					levels: [],
-					defaultLevel: 0,
-				};
-				doodadControls.set(id, control);
-				progressions.push(control);
-			}
+			const levels = getOrInsert(doodadLevels, id, () => new Set<number>());
 			for (const { groupLevel, form } of doodad) {
-				if (!control.levels.includes(groupLevel)) {
-					control.levels = [...control.levels, groupLevel].toSorted((a, b) => a - b);
-				}
-				// shell slot activity varies (one or all four), so default to the fully grown form
-				control.defaultLevel = Math.max(control.defaultLevel, groupLevel);
+				levels.add(groupLevel);
 				place(form, { alternatives: [[{ control: id, mask: (1 << groupLevel) >>> 0 }]] });
 			}
 			continue;
 		}
 		const id = `facility:${row.id}`;
-		progressions.push({
-			id,
-			kind: 'facility',
-			key: row.template,
-			name: `${template.name} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
-			levelId,
-			levels: template.forms.map((_, i) => i),
-			defaultLevel: template.initial,
-		});
+		progressions.push(
+			progressionControl(
+				'facility',
+				id,
+				`${template.name} (${Math.round(row.position[0])}, ${Math.round(row.position[2])})`,
+				template.forms.map((_, i) => i),
+				template.initial,
+				"the template's base model",
+			),
+		);
 		for (const [form, model] of template.forms.entries()) {
 			place(model, { alternatives: [[{ control: id, mask: (1 << form) >>> 0 }]] });
 		}
+	}
+	for (const [id, set] of doodadLevels) {
+		const levels = [...set].toSorted((a, b) => a - b);
+		// shell slot activity varies (one or all four), so default to the fully grown form
+		progressions.push(
+			progressionControl(
+				'doodadGroups',
+				id,
+				'Resource nodes',
+				levels,
+				levels.at(-1)!,
+				'the fully grown form',
+			),
+		);
 	}
 	return { models, progressions, unsupported };
 };

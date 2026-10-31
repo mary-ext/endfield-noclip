@@ -15,8 +15,10 @@ packs or renders correctly.
   ([world](game-data/world.md), [viewer](viewer.md))
 - initial and alternative dynamic structures, active prefab hierarchies and skinned meshes in their
   authored pose ([assets](game-data/assets.md))
-- scene states, progressions, facility visual forms, script/event groups and dynamic load gates as
-  manual preview controls with stored defaults ([scene states](game-data/scene-states.md))
+- quest, mission and variable state as preview controls, with scene states derived from them and
+  dynamic load gates reading them; progressions, facility visual forms, tree harvest state and
+  script/event groups as controls with stored defaults, each listed for the levels it gates
+  ([scene states](game-data/scene-states.md))
 - static stream areas switched by the camera through the game's trigger zones
   ([world](game-data/world.md#stream-areas))
 - terrain heights, baked surface pages and the close-up layer blend

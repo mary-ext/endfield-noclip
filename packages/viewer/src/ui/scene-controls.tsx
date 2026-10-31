@@ -1,3 +1,5 @@
+import type { SceneControl, SceneControlKind } from '@endfield-noclip/package-format/states';
+
 import { useId, useState } from 'react';
 
 import { volumeCondition, volumeLevelTag, volumeReaches } from '../render/environment-blend.ts';
@@ -5,27 +7,100 @@ import type { Viewer } from '../viewer.ts';
 
 import { useViewerState } from './use-viewer.ts';
 
-/** toggle kinds whose controls show the game's condition */
-const CONDITION_SECTIONS = [
+/** panel sections in order, each listing the controls of its kinds */
+const SECTIONS: { kinds: SceneControlKind[]; title: string; note: string; open: boolean }[] = [
 	{
-		kind: 'sceneState',
+		kinds: ['sceneState'],
 		title: 'Scene states',
-		note: 'The game switches these by quest progress. Defaults assume the story is finished; states without a condition are only set by dungeons and scripts.',
+		note: 'Each state follows the quests and variables its condition reads unless you pick a value. States without a condition are only set by dungeons and scripts.',
 		open: true,
 	},
 	{
-		kind: 'mission',
-		title: 'Quest-gated scenery',
-		note: 'Loaded by quest and mission progress. Defaults assume the story is finished.',
+		kinds: ['quest', 'mission'],
+		title: 'Quests and missions',
+		note: 'The quest states scene states and quest-gated scenery read. Defaults assume the story is finished.',
 		open: false,
 	},
 	{
-		kind: 'variable',
-		title: 'Variable-gated scenery',
-		note: 'Loaded by server variables the viewer can’t read. Each variable is assumed to hold the highest value the scene compares it against.',
+		kinds: ['mapVar', 'globalVar'],
+		title: 'Variables',
+		note: 'Server variables the viewer can’t read, by the ranges the scene tells apart. Each is assumed to hold the highest value the scene compares it against.',
 		open: false,
 	},
-] as const;
+	{
+		kinds: ['settlement', 'poi', 'factoryRegion', 'facility', 'doodadGroups'],
+		title: 'Progression',
+		note: 'Outpost, facility and region levels, and visual forms; the initial appearance by default.',
+		open: true,
+	},
+	{
+		kinds: ['harvest'],
+		title: 'Harvest',
+		note: 'Trees the player fells; each tree’s state is the player’s, so one choice previews them all.',
+		open: false,
+	},
+	{
+		kinds: ['script'],
+		title: 'Script / event scenery',
+		note: 'Shown and hidden by level scripts and the server; the authored load default by default.',
+		open: false,
+	},
+	{
+		kinds: ['logic'],
+		title: 'Logic-gate previews',
+		note: 'Logic-state gates with no recovered controller.',
+		open: false,
+	},
+];
+
+/** a scene control: a checkbox for an on/off control only the user sets, otherwise a select */
+const ControlRow = ({ viewer, control }: { viewer: Viewer; control: SceneControl }) => {
+	const value = viewer.sceneValues[control.id] ?? control.default;
+	const picked = control.id in viewer.scenePicks;
+	const label = (entry: number): string =>
+		control.values.find((candidate) => candidate.value === entry)?.label ?? String(entry);
+	const detail = [control.rule, control.assumption].filter(Boolean).join(' · ');
+	if (control.derived === null && control.values.length === 2 && control.values[1].value === 1) {
+		return (
+			<label className="toggle scene-toggle">
+				<input
+					type="checkbox"
+					checked={value === 1}
+					onChange={(event) => viewer.setSceneValue(control.id, Number(event.currentTarget.checked))}
+				/>
+				<span>
+					{control.name}
+					<small className="muted">{detail}</small>
+				</span>
+			</label>
+		);
+	}
+	return (
+		<label className="scene-choice">
+			<span>
+				{control.name}
+				<small className="muted">{detail}</small>
+			</span>
+			<select
+				value={control.derived !== null && !picked ? '' : String(value)}
+				onChange={(event) => {
+					const text = event.currentTarget.value;
+					viewer.setSceneValue(control.id, text === '' ? null : Number(text));
+				}}
+			>
+				{control.derived !== null && (
+					<option value="">{picked ? 'Follow game' : `Follow game (${label(value)})`}</option>
+				)}
+				{control.values.map((entry) => (
+					<option key={entry.value} value={entry.value}>
+						{entry.label}
+						{control.derived === null && entry.value === control.default ? ' (initial)' : ''}
+					</option>
+				))}
+			</select>
+		</label>
+	);
+};
 
 /**
  * @param viewer the loaded scene and its preview selections
@@ -41,13 +116,11 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 	}
 	const level = manifest.levels.find((entry) => entry.id === viewer.level);
 	const matches = (name: string): boolean => name.toLowerCase().includes(query.toLowerCase());
-	const progressions = manifest.states.progressions.filter(
-		(entry) => (entry.levelId === null || entry.levelId === viewer.level) && matches(entry.name ?? entry.key),
-	);
-	const toggles = manifest.states.toggles.filter(
+	// a control is listed for the levels whose content it gates
+	const controls = manifest.states.controls.filter(
 		(entry) =>
-			(entry.levelTags.includes(0) || entry.levelTags.includes(level?.tag ?? 0)) &&
-			matches(`${entry.name} ${entry.id}`),
+			(level === undefined || entry.levelTags.includes(0) || entry.levelTags.includes(level.tag)) &&
+			matches(`${entry.name} ${entry.id} ${entry.rule ?? ''}`),
 	);
 	// volumes apply wherever they hold the camera, so a neighbour's volume reaching into this level is listed too
 	const volumes = manifest.environmentVolumes
@@ -63,13 +136,13 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 				matches(volume.name),
 		);
 	const levelNames = new Map(manifest.levels.map((entry) => [entry.tag, entry.name ?? entry.id]));
-	const toggleNames = new Map(manifest.states.toggles.map((entry) => [entry.id, entry.name]));
+	const controlNames = new Map(manifest.states.controls.map((entry) => [entry.id, entry.name]));
 	/** @returns the scene states a volume loads with, by name */
 	const loadingStates = (condition: number): string =>
 		[
 			...new Set(
 				manifest.states.conditionalSets[condition].alternatives.flatMap((requirements) =>
-					requirements.map(({ control }) => toggleNames.get(control) ?? control),
+					requirements.map(({ control }) => controlNames.get(control) ?? control),
 				),
 			),
 		].join(' or ');
@@ -88,78 +161,20 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 					onChange={(event) => setQuery(event.currentTarget.value)}
 				/>
 			</label>
-			<details open>
-				<summary>Progression ({progressions.length})</summary>
-				{progressions.map((entry) => (
-					<label className="scene-choice" key={entry.id}>
-						<span>
-							{entry.name ?? entry.key}
-							<small className="muted">{entry.kind}</small>
-						</span>
-						<select
-							value={viewer.sceneValues[entry.id] ?? entry.defaultLevel}
-							onChange={(event) => viewer.setSceneValue(entry.id, Number(event.currentTarget.value))}
-						>
-							{entry.levels.map((value) => (
-								<option key={value} value={value}>
-									{entry.kind === 'facility' ? 'Visual form' : 'Level'} {value}
-									{value === entry.defaultLevel ? ' (initial)' : ''}
-								</option>
-							))}
-						</select>
-					</label>
-				))}
-				{progressions.length === 0 && <p className="muted">No matching progression controls.</p>}
-			</details>
-			{CONDITION_SECTIONS.map(({ kind, title, note, open }) => (
-				<details key={kind} open={open}>
-					<summary>
-						{title} ({toggles.filter((entry) => entry.kind === kind).length})
-					</summary>
-					<p className="muted small">{note}</p>
-					{toggles
-						.filter((entry) => entry.kind === kind)
-						.map((entry) => (
-							<label className="toggle scene-toggle" key={entry.id}>
-								<input
-									type="checkbox"
-									checked={viewer.sceneValues[entry.id] === 1}
-									onChange={(event) => viewer.setSceneValue(entry.id, Number(event.currentTarget.checked))}
-								/>
-								<span>
-									{entry.name}
-									<small className="muted">{entry.condition}</small>
-								</span>
-							</label>
+			{SECTIONS.map(({ kinds, title, note, open }) => {
+				const listed = controls.filter((entry) => kinds.includes(entry.kind));
+				return (
+					<details key={title} open={open}>
+						<summary>
+							{title} ({listed.length})
+						</summary>
+						<p className="muted small">{note}</p>
+						{listed.map((entry) => (
+							<ControlRow key={entry.id} viewer={viewer} control={entry} />
 						))}
-				</details>
-			))}
-			{(['script', 'logic'] as const).map((kind) => (
-				<details key={kind}>
-					<summary>
-						{kind === 'script' ? 'Script / event scenery' : 'Logic-gate previews'} (
-						{toggles.filter((entry) => entry.kind === kind).length})
-					</summary>
-					<p className="muted small">Manual previews; runtime conditions are unavailable.</p>
-					{toggles
-						.filter((entry) => entry.kind === kind)
-						.map((entry) => (
-							<label className="toggle scene-toggle" key={entry.id}>
-								<input
-									type="checkbox"
-									checked={viewer.sceneValues[entry.id] === 1}
-									onChange={(event) => viewer.setSceneValue(entry.id, Number(event.currentTarget.checked))}
-								/>
-								<span>
-									{entry.name}
-									<small className="muted">
-										{entry.id} · initially {entry.defaultEnabled ? 'on' : 'off'}
-									</small>
-								</span>
-							</label>
-						))}
-				</details>
-			))}
+					</details>
+				);
+			})}
 			<details>
 				<summary>Lighting / environment volumes ({volumes.length})</summary>
 				<p className="muted small">

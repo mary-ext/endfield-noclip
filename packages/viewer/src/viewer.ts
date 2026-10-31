@@ -8,8 +8,8 @@
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
 import {
 	conditionResults,
-	defaultSceneValues,
 	groupsShown,
+	resolveSceneValues,
 } from '@endfield-noclip/package-format/conditions';
 import type { EnvironmentProfile } from '@endfield-noclip/package-format/environment';
 import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
@@ -622,7 +622,7 @@ export class Viewer {
 				instances: level.instances,
 			})),
 		};
-		this.#sceneValues = defaultSceneValues(manifest.states);
+		this.#scenePicks = {};
 		const showable = manifest.levels.filter((level) => level.instances > 0);
 		this.#level = showable.find((level) => level.id === initialLevel) ?? showable[0] ?? null;
 		this.#post.autoExposure.reset();
@@ -663,6 +663,7 @@ export class Viewer {
 		this.#setReflection(this.#noReflection, 1);
 		this.#setShadowRamp(null);
 		this.scene = null;
+		this.#scenePicks = {};
 		this.#sceneValues = {};
 		this.options.environmentEnabled = {};
 		this.options.environmentPin = null;
@@ -1141,36 +1142,39 @@ export class Viewer {
 
 	// #region options and stats
 
+	/** values the user picked, by control id */
+	#scenePicks: Record<string, number> = {};
+	/** every control's value, from the picks and the package's defaults and derived controls */
 	#sceneValues: Record<string, number> = {};
 
-	/** @returns selected scene control values, including authored defaults */
+	/** @returns every scene control's current value */
 	get sceneValues(): Readonly<Record<string, number>> {
 		return this.#sceneValues;
 	}
 
+	/** @returns the values the user picked, by control id; other controls follow their default or formula */
+	get scenePicks(): Readonly<Record<string, number>> {
+		return this.#scenePicks;
+	}
+
 	/**
-	 * @param id exported progression or manual gate identifier
-	 * @param value an authored progression level, or 0/1 for a manual gate
+	 * @param id a scene control's id
+	 * @param value one of its values, or `null` to drop the pick so it follows its default or formula again
 	 */
-	setSceneValue(id: string, value: number): void {
-		const states = this.scene?.pkg.manifest.states;
-		if (!states) {
+	setSceneValue(id: string, value: number | null): void {
+		const control = this.scene?.pkg.manifest.states.controls.find((entry) => entry.id === id);
+		if (control === undefined || (value !== null && !control.values.some((entry) => entry.value === value))) {
 			return;
 		}
-		const progression = states.progressions.find((entry) => entry.id === id);
-		const toggle = states.toggles.find((entry) => entry.id === id);
-		if (!(progression?.levels.includes(value) || (toggle && (value === 0 || value === 1)))) {
-			return;
-		}
-		this.#sceneValues = { ...this.#sceneValues, [id]: value };
+		const { [id]: _, ...rest } = this.#scenePicks;
+		this.#scenePicks = value === null ? rest : { ...rest, [id]: value };
 		this.#updateVisibility();
 		this.#emitState();
 	}
 
-	/** restores progression, script and environment preview defaults for the current package */
+	/** restores scene control and environment preview defaults for the current package */
 	resetSceneValues(): void {
-		const states = this.scene?.pkg.manifest.states;
-		this.#sceneValues = states ? defaultSceneValues(states) : {};
+		this.#scenePicks = {};
 		this.options.environmentEnabled = {};
 		this.options.environmentPin = null;
 		this.#fades.reset();
@@ -1244,6 +1248,7 @@ export class Viewer {
 		this.#visibleAreas = this.#streamAreasAtCamera();
 		this.#areasEye = [...this.camera.position];
 		const areas = states?.streamAreas ?? null;
+		this.#sceneValues = states === undefined ? {} : resolveSceneValues(states, this.#scenePicks);
 		const values =
 			areas === null
 				? this.#sceneValues

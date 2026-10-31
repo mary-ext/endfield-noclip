@@ -195,7 +195,7 @@ map02, a third of the core):
 | `levels`                                                  | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment |
 | `environments`, `environmentPhases`, `environmentVolumes` | see [environment.md](game-data/environment.md)                                                                                                                            |
 | `heightFogFlowNoise`                                      | texture id of the height fog's 3D flow noise, or `null`; absent in older packages ([flow noise](game-data/lighting.md#flow-noise))                                        |
-| `states`                                                  | progressions, toggles, conditional sets, visibility groups and stream areas; see [conditions](#conditions)                                                                |
+| `states`                                                  | scene controls, conditional sets, visibility groups and stream areas; see [conditions](#conditions)                                                                       |
 | `archives`                                                | `ArchiveInfo`: name, role, tile, size, `dataOffset`                                                                                                                       |
 | `global`                                                  | content refs drawn regardless of refinement                                                                                                                               |
 | `subset`                                                  | what `--level` / `--bounds` kept, or `null`                                                                                                                               |
@@ -393,10 +393,20 @@ they hold the camera, whichever level owns them, so only their condition gates t
 
 a `ConditionalSetInfo` is a list of alternatives, each a list of `{ control, mask }` requirements;
 the content is visible when any alternative has every requirement met, and a requirement is met when
-bit `value` of `mask` is set for the control's selected value. controls are `ProgressionInfo` ids
-(value = progression level), `SceneToggleInfo` ids (value 0/1) and `area:<id>` stream-area controls
-(value 0/1, set by the viewer, never by the user). unknown controls fail closed. equivalent
-expressions are interned to one set by the packer.
+bit `value` of `mask` is set for the control's value. controls are `StatesInfo.controls` ids and
+`area:<id>` stream-area controls (value 0/1, set by the viewer from the camera). unknown controls
+fail closed. equivalent expressions are interned to one set by the packer.
+
+### controls
+
+a `SceneControl` holds one piece of game state: its `kind`, `id`, `name`, the selectable `values`
+(each below 32, with a label), a `default`, the `assumption` the default rests on, and the
+`levelTags` of the content it gates (directly or through a derived control), which a viewer uses to
+list a control only for the levels it matters to. a control with `derived` set is computed: unless
+the user picks a value it is 1 while `conditionalSets[derived]` holds, and its `rule` gives that
+condition in words. derived controls require only controls listed before them, so
+`resolveSceneValues` turns the user's picks into every control's value in one pass, and its stored
+`default` is that value under no picks. only controls some group requires are listed.
 
 ### stream areas
 
@@ -406,8 +416,8 @@ box, height range, XZ ring). `zonesAt` is the game's trigger test, `areasShownIn
 areas, and `streamAreaValues` gives every required area its control value
 ([stream-areas.ts](../packages/package-format/src/stream-areas.ts)). which content a stream area
 gates is in [world.md](game-data/world.md#how-the-packer-files-instances).
-[conditions.ts](../packages/package-format/src/conditions.ts) holds `conditionVisible`,
-`conditionResults`, `groupsShown` and `defaultSceneValues`; what the controls mean and how their
+[conditions.ts](../packages/package-format/src/conditions.ts) holds `resolveSceneValues`,
+`conditionVisible`, `conditionResults` and `groupsShown`; what the controls mean and how their
 defaults are chosen is in [scene-states.md](game-data/scene-states.md).
 
 ## viewer side

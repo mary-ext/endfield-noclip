@@ -6,6 +6,7 @@ import {
 } from '@endfield-noclip/formats/endfield/dynamic-scene';
 import { levelOfTag, type LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import type { StreamAreaTable } from '@endfield-noclip/formats/endfield/stream-area';
+import type { SceneControl, SceneControlKind } from '@endfield-noclip/package-format/states';
 
 import { mapPool } from '../pool.ts';
 
@@ -319,6 +320,38 @@ export const labelProgression = (
 	entities: summary.entities,
 	groupsPerLevel: summary.groupsPerLevel,
 });
+
+/**
+ * @param kind the progression's control kind
+ * @param id its control id
+ * @param name its display name
+ * @param levels the selectable levels, ascending
+ * @param initial the default level
+ * @param assumption what the default rests on
+ * @returns its control
+ */
+export const progressionControl = (
+	kind: Extract<SceneControlKind, 'settlement' | 'poi' | 'factoryRegion' | 'facility' | 'doodadGroups'>,
+	id: string,
+	name: string,
+	levels: readonly number[],
+	initial: number,
+	assumption: string,
+): SceneControl => {
+	// shop and depot form numbers are list positions, not upgrade levels (see scene-states.md)
+	const unit = kind === 'facility' ? 'Visual form' : kind === 'doodadGroups' ? 'Group level' : 'Level';
+	return {
+		kind,
+		id,
+		name,
+		rule: null,
+		assumption,
+		levelTags: [],
+		values: levels.map((value) => ({ value, label: `${unit} ${value}` })),
+		default: initial,
+		derived: null,
+	};
+};
 
 /** @returns the bit indices set in a LogicState mask, ascending */
 export const maskLevels = (mask: number): number[] => {

@@ -1,18 +1,20 @@
 import type { StreamAreasInfo } from './stream-areas.ts';
 
 /**
- * scenery variants. the game's stream areas (`<areaId>` chunk suffixes: interiors, caves, off-map places)
- * load by where the camera is, through `area:<id>` requirements (see {@link StreamAreasInfo}). scene states
- * (MapConfig states, the `<sceneStateId>` chunk suffix and dynamic state lists) are toggles whose defaults
- * evaluate the game's conditions for a player who finished the story. progressions (outpost/settlement
- * levels, POI facility levels, factory regions) are selected per progression, with mutually exclusive levels,
- * and manual gates for unrecovered script/logic conditions
+ * what decides whether placed content shows. controls hold the game's own state (a quest's state, a variable,
+ * a progression level, a script group's flag), so every combination the controls allow is one the game's
+ * state model can produce. scene states are derived from those controls by their MapConfig condition. content
+ * names a visibility group, whose condition requires control values. stream areas (`<areaId>` chunk suffixes:
+ * interiors, caves, off-map places) load by where the camera is, through `area:<id>` requirements that aren't
+ * listed as controls (see {@link StreamAreasInfo})
  */
 export interface StatesInfo {
-	progressions: ProgressionInfo[];
-	/** independent controls for scene states, scripts and logic gates */
-	toggles: SceneToggleInfo[];
-	/** visibility expressions; {@link VisibilityGroup.condition} indexes this list */
+	/**
+	 * every control some visibility group or derived control requires, inputs before the controls derived from
+	 * them
+	 */
+	controls: SceneControl[];
+	/** visibility expressions; {@link VisibilityGroup.condition} and {@link SceneControl.derived} index this list */
 	conditionalSets: ConditionalSetInfo[];
 	/**
 	 * who owns placed content and when it loads, deduplicated. every instance block, light, water surface and
@@ -32,41 +34,64 @@ export interface VisibilityGroup {
 	condition: number | null;
 }
 
-/** a selectable progression */
-export interface ProgressionInfo {
-	/** `${kind}:${key}`, e.g. `settlement:stm_hongs_1` */
-	id: string;
-	/** `doodadGroups`: one per level, the group level (1 to 4) of its resource nodes (ore, plants) */
-	kind: 'settlement' | 'poi' | 'factoryRegion' | 'facility' | 'doodadGroups';
-	/** display label when resolved */
-	name?: string;
-	key: string;
-	levelId: string | null;
-	/** levels at least one variant is shown at, ascending */
-	levels: number[];
-	/** the authored initial visual form, or lowest progression level, shown unless the user picks another */
-	defaultLevel: number;
-}
+/**
+ * what a control holds:
+ *
+ * - `quest` / `mission`: a quest's or mission's state (`QuestState` / `MissionState` values)
+ * - `mapVar` / `globalVar`: a map or global variable. values are ranges between the values the scene compares
+ *   it against, plus "unset" where a load gate treats an unset variable differently from any value
+ * - `sceneState`: a MapConfig scene state, on or off; derived from its condition when it has one, else only set
+ *   by name (dungeons, scripts)
+ * - `script`: whether a script-controlled entity group is shown; level scripts and the server set it
+ * - `logic`: a logic-state gate with no recovered controller
+ * - `harvest`: one level's harvestable trees, standing (0) or felled (1); each tree's state is the player's, at
+ *   runtime
+ * - `settlement` / `poi` / `factoryRegion`: a progression level; `facility`: an interactive's visual form;
+ *   `doodadGroups`: one level's resource node group level (1 to 4)
+ */
+export type SceneControlKind =
+	| 'quest'
+	| 'mission'
+	| 'mapVar'
+	| 'globalVar'
+	| 'sceneState'
+	| 'script'
+	| 'logic'
+	| 'harvest'
+	| 'settlement'
+	| 'poi'
+	| 'factoryRegion'
+	| 'facility'
+	| 'doodadGroups';
 
-/** an on/off scene control; no runtime script or server condition is simulated */
-export interface SceneToggleInfo {
-	/** `sceneState:<MapConfig index>` for scene states; other ids are install-specific */
+/** one selectable piece of game state */
+export interface SceneControl {
+	kind: SceneControlKind;
+	/** `<kind>:<key>`, e.g. `quest:e1m8_q#3`, `sceneState:0`, `script:<entity id>`; keys are the game's ids */
 	id: string;
 	name: string;
-	/**
-	 * `sceneState`: a MapConfig scene state. `mission` / `variable`: a dynamic entity load gate on quest and
-	 * mission states / on a map or global variable; on means the gate passes. `script`: a script-loaded entity
-	 * group. `logic`: a logic-state gate (the game's `LogicState`) whose condition is not recovered
-	 */
-	kind: 'sceneState' | 'mission' | 'variable' | 'script' | 'logic';
-	/** level tags whose controls list it; 0 lists it everywhere */
+	/** for derived controls, the game's condition in words; `null` otherwise */
+	rule: string | null;
+	/** what the default assumes, e.g. "story finished" */
+	assumption: string;
+	/** level tags whose content (or derived controls) this control gates; 0 means content every level shows */
 	levelTags: number[];
-	defaultEnabled: boolean;
+	/** the selectable values, ascending; each below 32 */
+	values: SceneControlValue[];
+	/** the value shown unless the user picks one; for a derived control, its value under the other defaults */
+	default: number;
 	/**
-	 * for scene states and gates, the game's condition in words and the assumption the default rests on; `null`
-	 * for other kinds
+	 * index into {@link StatesInfo.conditionalSets}: unless the user picks a value, the control is 1 while that
+	 * set holds and 0 otherwise. `null` for controls only the user sets. derived controls require only controls
+	 * listed before them
 	 */
-	condition: string | null;
+	derived: number | null;
+}
+
+/** a value of a {@link SceneControl} */
+export interface SceneControlValue {
+	value: number;
+	label: string;
 }
 
 /** one required value of a scene control */

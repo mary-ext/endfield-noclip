@@ -8,24 +8,33 @@ the viewer exposes as preview controls. spatial stream areas (interiors, caves, 
 a separate axis, covered in [world.md](world.md#stream-areas); the package encodes them as controls
 the viewer sets from the camera.
 
+the controls hold the game's own state, not one switch per condition: one control per quest, mission
+and variable that some condition reads, and scene states derived from those. conditions on the same
+quest therefore stay consistent: no selection makes `quest = completed` and `quest ≠ completed` both
+hold.
+
 ## the selectors at a glance
 
-| selector                   | stored in                                                                                               | package control                                  | default                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
-| MapConfig scene state      | `Data/Json/MapConfig/<map>.json`; referenced by static chunk file names and dynamic visible-state lists | toggle `sceneState:<index>`                      | condition evaluated for a finished story; condition-less states off      |
-| mission gate               | `MissionControlComp` on a dynamic entity                                                                | toggle `mission:<condition text>`                | evaluated for a finished story                                           |
-| variable gate              | `GlobalVarControlComp` / `MapVarControlComp` with `controlLoad` set                                     | toggle `<globalVar\|mapVar>:…:<compare>:<value>` | variable assumed to hold the highest value the scene compares it against |
-| progression                | resource-group `logicState` bitmask under a settlement / POI / factory-region controller                | progression `<kind>:<key>`                       | lowest authored level                                                    |
-| facility visual form       | interactive template model-upgrade list                                                                 | progression `facility:<entity id>`               | the template's base model                                                |
-| doodad group level         | doodad-shell postmodel's form list                                                                      | progression `doodadGroups:<level id>`            | the highest level (4)                                                    |
-| script group               | script-control component's default-load flag                                                            | toggle `script:<grid>:<ordinal>`                 | the stored default                                                       |
-| controller-less logic gate | resource-group `logicState` on an entity with no controller                                             | toggle `logic:…`                                 | off                                                                      |
+| selector                   | stored in                                                                                               | package control                                     | default                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
+| quest / mission state      | read by MapConfig conditions and mission gates                                                          | `quest:<id>` / `mission:<id>` (state values)        | completed (a finished story)                                      |
+| map / global variable      | read by MapConfig conditions and variable gates                                                         | `mapVar:<map>:<name>` / `globalVar:<name>` (ranges) | the highest value the scene compares it against                   |
+| MapConfig scene state      | `Data/Json/MapConfig/<map>.json`; referenced by static chunk file names and dynamic visible-state lists | `sceneState:<index>`, derived from its condition    | its condition under the defaults above; condition-less states off |
+| mission gate               | `MissionControlComp` on a dynamic entity                                                                | requirements on quest and mission controls          | —                                                                 |
+| variable gate              | `GlobalVarControlComp` / `MapVarControlComp` with `controlLoad` set                                     | a requirement on the variable's control             | —                                                                 |
+| progression                | resource-group `logicState` bitmask under a settlement / POI / factory-region controller                | `<kind>:<key>`                                      | lowest authored level                                             |
+| facility visual form       | interactive template model-upgrade list                                                                 | `facility:<entity id>`                              | the template's base model                                         |
+| doodad group level         | doodad-shell postmodel's form list                                                                      | `doodadGroups:<level id>`                           | the highest level (4)                                             |
+| tree harvest state         | resource-group `logicState` on tree entities                                                            | `harvest:<level tag>`, standing / felled            | standing                                                          |
+| script group               | script-control component's default-load flag                                                            | `script:<entity id>`                                | the stored default                                                |
+| controller-less logic gate | resource-group `logicState` on an entity with no controller                                             | `logic:<entity id>:<mask>`                          | off                                                               |
 
 ## MapConfig scene states
 
-implemented by [`map-config.ts`](../../packages/formats/src/endfield/map-config.ts) (parsing) and
-[`scene-conditions.ts`](../../packages/extractor/src/game/scene-conditions.ts) (evaluation and
-controls).
+implemented by [`map-config.ts`](../../packages/formats/src/endfield/map-config.ts) (parsing),
+[`scene-conditions.ts`](../../packages/extractor/src/game/scene-conditions.ts) (controls) and
+[`game-state.ts`](../../packages/extractor/src/game/game-state.ts) (the quests and variables
+conditions read, and turning conditions into required control values).
 
 the MapConfig JSON has `sceneStates` (state name → index) and `sceneStateConditions`, an ordered
 list of `{ stateName, condition }`. a condition is a serialized `ConditionRuntimeBase` identified by
@@ -91,18 +100,19 @@ be:
 
 ### defaults
 
-defaults are those of a player who finished the story:
+a state with a condition is derived: it follows the quest and variable controls its condition reads,
+unless the user picks a value. its control's `rule` spells out the condition. the defaults of those
+inputs are those of a player who finished the story:
 
-- every quest and mission compares as completed (3)
-- every map and global variable compares as 0, because variables are server state and the client
-  ships no defaults for them (map02's `mapVarClientDefaultValues` is empty)
+- every quest and mission is completed (3)
+- every variable holds the highest value the scene compares it against (see
+  [variables](#variables)); variables are server state and the client ships no defaults for them
+  (map02's `mapVarClientDefaultValues` is empty)
 - condition-less states are off, because nothing offline sets them
 - a state index that a visibility list requires but the MapConfig doesn't name gets an off control
   (`unnamedSceneStateControl`)
 
-each control's `condition` text spells out the condition and the assumption behind its default, e.g.
-`quest e1m8_q#3 = completed; default: story finished`. example (map01 in one client build, for
-illustration):
+example (map01 in one client build, for illustration):
 
 | index | state                          | condition                    | default |
 | ----- | ------------------------------ | ---------------------------- | ------- |
@@ -113,23 +123,33 @@ illustration):
 | 6     | `dung01_rdg008_006_liino`      | none                         | off     |
 | 7     | `dung01_rdg008_006_liino_hide` | mission `e0m2` = completed   | on      |
 
-the variables-are-0 assumption leaves some states without a meaningful offline value (map02's field
-and flower states, and its lv009 day/night pair, where day is map variable `State` = 0 and night has
-no condition). those need an explicit viewer choice.
+variable-driven states have no offline value; the highest-compared default is a guess. map02's field
+and flower states read two variables, so they switch together through those, while its lv009
+day/night pair doesn't: day is map variable `State` = 0, and night has no condition.
+
+### variables
+
+a variable's control takes one value per range of values the scene's conditions tell apart: below,
+at and between the values they compare it against, and above the highest. a load gate fails while
+its variable is unset, so a variable some gate reads also has an "unset" value; a MapConfig test
+reads an unset variable as 0 (an assumption). the default is the highest compared value, on the
+reading that the story moves variables forward (erosion cleansed, machines repaired, the last stage
+of a staged change). MapConfig names its variables (`mapVarName`, `globalVarName`) while gates use
+numeric game-variable ids, so the two never share a control.
 
 ## dynamic load gates
 
 decoded by [`dynamic-scene.ts`](../../packages/formats/src/endfield/dynamic-scene.ts) into
-`DynamicEntity.gates`; turned into toggles by
-[`dynamic-gates.ts`](../../packages/extractor/src/game/dynamic-gates.ts). every gate on an entity
-must pass.
+`DynamicEntity.gates`; turned into requirements on quest, mission and variable controls by
+[`game-state.ts`](../../packages/extractor/src/game/game-state.ts). every gate on an entity must
+pass.
 
 - **mission gate** (`MissionControlComp`): a list of
   `MissionCondition { id, isQuest, state, isSame }`. a condition holds when the quest/mission state
   equals `state` (`isSame` 1) or differs from it (otherwise). `compareType` 0 needs all conditions,
   any other value one. the entity loads while the combined result equals `toBeTrue == 1`. we express
-  it as a `SceneCondition` (`all`/`any`, `reverse = !loadWhen`) and evaluate it with the same
-  finished-story rule.
+  it as a combined condition (`all`/`any`, `reverse = !loadWhen`) over the quest and mission
+  controls.
 - **variable gate** (`GlobalVarControlComp`, `MapVarControlComp`): with `controlLoad` 1 the entity
   loads while `variable <compareType> compareValue` holds, and not while the variable is unset. with
   `controlLoad` 0 the variable doesn't gate loading; it drives the entity's level and animator state
@@ -137,14 +157,8 @@ must pass.
   not reproduced.
 
 variable keys are numeric client game-variable ids, not root strings. the table naming them isn't
-read, so controls show `#<key>`. a variable gate defaults to the highest value any gate in the scene
-compares that variable against, on the reading that the story moves these variables forward (erosion
-cleansed, machines repaired, the last stage of a staged change). MapConfig conditions keep the plain
-0 assumption, so the two can disagree about the same story moment; each control's text states which
-assumption its default uses.
-
-equal gates share one toggle. mission gates use the described condition as their id, so identical
-conditions on different entities collapse into one control.
+read, so controls show `#<key>`. a gate's variable is a [variable control](#variables) like a
+MapConfig one.
 
 `ActivityControlComp` (activity/event conditions) is not read; entities controlled only by it are
 not gated.
@@ -173,8 +187,9 @@ a resource group with a non-zero mask on an entity with no controller: if bit 0 
 the default state and needs no control; otherwise it gets a `logic:<grid>:<ordinal>:<mask>` toggle,
 off, because nothing recovered drives that entity's logic state.
 
-trees use bits 0/1 for standing/felled under the same mechanism; that is harvest state, not
-progression.
+trees (entity type 19, no controller) use bits 0/1 for standing/felled under the same mechanism;
+that is harvest state, not progression. the player fells each tree at runtime, so one `harvest`
+control per level previews them all, standing by default.
 
 ## facility visual forms
 
@@ -222,68 +237,76 @@ transform and shown under `1 << level`.
 ## script groups
 
 an entity with a script-control component stores a default-load flag (0 or 1): 0 means a script must
-explicitly enable it. each such entity gets a `script:<grid>:<ordinal>` toggle defaulting to that
-flag ([`dynamic-structures.ts`](../../packages/extractor/src/game/dynamic-structures.ts)). event
-content such as a limited-time race course lands here, typically off. the ids are grid/ordinal
-positions and change between builds, so they identify a control within one package only.
+explicitly enable it. each such entity gets a `script:<entity id>` control defaulting to that flag
+([`dynamic-structures.ts`](../../packages/extractor/src/game/dynamic-structures.ts)). the id is the
+entity's global id (its IdComp `uniqueId`), which level scripts use to show and hide it. event
+content such as a limited-time race course lands here, typically off.
 
 toggle names for script and logic controls are the one or two most frequent renderer names under
 them. they are labels for finding the control, not evidence of what activates it.
 
 ## how the package encodes conditions
 
-types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo`,
-`SceneToggleInfo`, `ProgressionInfo`, `ConditionalSetInfo`); evaluation in
+types in [`states.ts`](../../packages/package-format/src/states.ts) (`StatesInfo`, `SceneControl`,
+`ConditionalSetInfo`); evaluation in
 [`conditions.ts`](../../packages/package-format/src/conditions.ts). the container layout is in
-[package-format.md](../package-format.md).
+[package-format.md](../package-format.md#controls).
 
-- every control has an integer value: progressions hold their level or form index, toggles 0 or 1.
-  `defaultSceneValues` builds the initial values from `defaultLevel` and `defaultEnabled`.
+- every control has an integer value below 32: a quest's state, a variable's range, a progression's
+  level or form index, 0 or 1 for on/off controls. `resolveSceneValues` turns the user's picks into
+  every control's value: picks, then defaults, then derived controls from their formulas.
 - a `ConditionalSetInfo` is `alternatives: SceneRequirement[][]`, a disjunction of conjunctions. a
-  requirement `{ control, mask }` passes when bit `value` of `mask` is set. a toggle requirement
-  uses mask 2 (value 1); a progression requirement uses the group's `logicState`; a facility form
-  uses `1 << form`, a doodad form `1 << level`.
+  requirement `{ control, mask }` passes when bit `value` of `mask` is set. an on/off requirement
+  uses mask 2 (value 1); a quest or variable requirement the values its test accepts; a progression
+  requirement the group's `logicState`; a facility form `1 << form`, a doodad form `1 << level`.
+- a combined condition becomes alternatives by distributing conjunctions over disjunctions, with
+  `reverse` pushed down to the tests (each test's mask complemented within its control's values);
+  requirements on one control in a conjunction merge, and impossible conjunctions drop.
 - `conditionVisible` is true when every requirement of some alternative passes. a missing or
   out-of-range value fails, so a control absent from the manifest hides its content instead of
   showing it.
-- one dynamic resource group yields one alternative: its progression or logic requirement, script
-  requirement and gate requirements, crossed with one state from each visible-state list. a model or
-  ECS group referenced by several resource groups collects all their alternatives, so any complete
-  alternative shows it.
+- one dynamic resource group yields the conjunction of its progression, logic or harvest
+  requirement, its script requirement, its gates' requirements, and one state from each
+  visible-state list. a model or ECS group referenced by several resource groups collects all their
+  alternatives, so any complete alternative shows it.
 - static renderers, lights and water surfaces of scene-state or stream-area files get one
   alternative per file holding them: the file's `sceneState:<index>` requirement, its `area:<id>`
   requirement, or both. environment volumes come from default-area files only, so they have state
   requirements alone. groups store a `condition` index into `conditionalSets`, `null` when always
   loaded.
-- `area:<id>` controls aren't listed in `toggles` and get no default: the viewer sets them to 1 for
+- `area:<id>` controls aren't listed in `controls` and get no default: the viewer sets them to 1 for
   the areas shown at the camera and 0 otherwise (see
   [package-format.md](../package-format.md#stream-areas)).
 - the packer canonicalises and deduplicates sets (`Collector.condition`), so equivalent expressions
-  share one index. MapConfig controls come first in `toggles`, then unnamed states, then gates,
-  scripts and logic toggles.
+  share one index. quests, missions and variables come first in `controls`, then progressions,
+  facilities, script, logic and harvest controls, then scene states.
+- only controls some visibility group requires, directly or through a derived scene state, are
+  listed. each control's `levelTags` are those of the groups it gates, and a derived state passes
+  its tags on to the quests and variables it reads.
 
 ## viewer controls
 
 [`scene-controls.tsx`](../../packages/viewer/src/ui/scene-controls.tsx) shows the "Scene conditions"
-panel; the viewer recomputes `conditionVisible` for every set when a value changes and passes the
-results to the instance selector, the water renderer and the environment blend.
+panel; the viewer resolves every control's value when a pick changes, recomputes `conditionVisible`
+for every set and passes the results to the instance selector, the water renderer and the
+environment blend.
 
-- **progression**: one select per progression of the shown level (or with no level), "Level n" or
-  "Visual form n", the default marked "(initial)"
-- **scene states**, **quest-gated scenery**, **variable-gated scenery**: checkboxes with the game's
-  condition and default assumption
-- **script / event scenery** and **logic-gate previews**: checkboxes with the control id and initial
-  state
+- **scene states**: a select per state, "Follow game (on/off)" for derived states, else on/off
+- **quests and missions**, **variables**: a select of states or ranges, the default marked
+  "(initial)"
+- **progression**: one select per progression, "Level n", "Visual form n" or "Group level n"
+- **harvest**, **script / event scenery**, **logic-gate previews**: checkboxes
 - **lighting / environment volumes**: volumes owned by the shown level or reaching into it. a volume
   follows its scene-state condition unless ticked or unticked here, which overrides it.
   scripted-blend volumes (blend mode 3) are off unless ticked. packed volumes carry
   `activation: 'unknown'` because their script enablement isn't recovered (see
   [environment.md](environment.md))
 
-toggles are listed where their `levelTags` include 0 or the shown level's tag. "Reset" restores the
-package defaults. stream areas have no controls here; the settings panel's "stream areas at camera"
-toggle switches between following the camera and showing every area. conditional detail ignores HLOD
-refinement and stops streaming once its tile is below the screen error threshold.
+every row shows the control's rule and the assumption behind its default. controls are listed where
+their `levelTags` include 0 or the shown level's tag. "Reset" drops every pick. stream areas have no
+controls here; the settings panel's "stream areas at camera" toggle switches between following the
+camera and showing every area. conditional detail ignores HLOD refinement and stops streaming once
+its tile is below the screen error threshold.
 
 ## rules
 
@@ -295,6 +318,9 @@ refinement and stops streaming once its tile is below the screen error threshold
 - **never infer activation from names** such as night, battle, rainy or liino. names describe
   content, not when it loads; a guessed rule hides or shows the wrong things with no signal that
   it's a guess. gate only on stored conditions and say in the control text what the default assumes.
+- **controls are game state, not conditions.** a control holds something the game holds (a quest's
+  state, a variable, a level); conditions are requirements on those. one switch per condition would
+  let the viewer show combinations no player state produces, such as both sides of a quest check.
 - **keep compound requirements combined.** an entity can need a progression level, a script flag, a
   quest gate and two state lists at once; flattening that into independent controls would show
   variants in combinations the data never authors. shared resources union alternatives, never merge

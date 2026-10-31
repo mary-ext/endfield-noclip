@@ -26,7 +26,8 @@ import {
 	resolveLevelEnvironment,
 	resolveLevelPost,
 } from '../game/environment.ts';
-import { defaultSceneStates, loadSceneStateControls } from '../game/scene-conditions.ts';
+import { describeCondition, GameState } from '../game/game-state.ts';
+import { defaultSceneStates, loadSceneStates, sceneStateControl } from '../game/scene-conditions.ts';
 import type { IndexedEntity, WorldIndex } from '../game/world-index.ts';
 
 export const summary =
@@ -281,25 +282,29 @@ const showEnvironment = async (context: Context, target: string): Promise<void> 
 		scene = found.partition;
 		levels = [found.level];
 	}
-	const [volumes, pathOf, names, resolver, controls] = await Promise.all([
+	const [volumes, pathOf, names, resolver, states] = await Promise.all([
 		loadSceneVolumes(world, scene.mapId),
 		world.pathLookup(),
 		world.names(),
 		context.resolver(),
-		loadSceneStateControls(world, scene.mapId),
+		loadSceneStates(world, scene.mapId),
 	]);
-	const enabled = defaultSceneStates(controls);
+	const game = new GameState();
+	game.note(states.flatMap(({ condition }) => (condition === null ? [] : [condition])));
+	const enabled = defaultSceneStates(states, game);
 	console.log(
 		`scene states (default: ${
-			controls
-				.filter((c) => c.defaultEnabled)
-				.map((c) => c.name)
+			states
+				.filter(({ index }) => enabled.has(index))
+				.map(({ name }) => name)
 				.join(', ') || 'none'
 		})`,
 	);
-	for (const control of controls) {
+	for (const { index, name, condition } of states) {
 		console.log(
-			`  ${control.defaultEnabled ? 'on ' : 'off'} ${control.id.padEnd(14)} ${control.name}: ${control.condition}`,
+			`  ${enabled.has(index) ? 'on ' : 'off'} ${sceneStateControl(index).padEnd(14)} ${name}: ${
+				condition === null ? 'no condition: only set by name' : describeCondition(condition)
+			}`,
 		);
 	}
 	const assetName = (hash: bigint | null): string =>

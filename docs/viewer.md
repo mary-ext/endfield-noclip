@@ -518,7 +518,8 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
 - `viewer.scene.pkg.manifest` holds levels, environment profiles, `environmentVolumes` and
   `environmentPhases`. `await import('/src/render/environment.ts')` gives `deriveEnvironment` for
   checking derived values against a profile.
-- scene states: `viewer.sceneValues`, `viewer.conditionResults`, `viewer.setSceneValue(id, value)`.
+- scene states: `viewer.sceneValues` (every control), `viewer.scenePicks`,
+  `viewer.conditionResults`, `viewer.setSceneValue(id, value)` (`null` drops the pick).
 - stream areas: `viewer.visibleStreamAreas` (the areas shown at the camera, `null` when every area
   shows) and `viewer.options.streamAreas`. the viewer re-runs the trigger test whenever the camera
   moves and re-evaluates conditions when the set changes. above or below every trigger the game

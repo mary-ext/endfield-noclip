@@ -25,6 +25,7 @@ import {
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import { encodeBlobTable } from '@endfield-noclip/package-format/blob-table';
 import { BLOB_KIND_NAMES, BlobKind } from '@endfield-noclip/package-format/blobs';
+import { resolveSceneValues } from '@endfield-noclip/package-format/conditions';
 import type {
 	EnvironmentPhaseInfo,
 	EnvironmentProfile,
@@ -55,8 +56,8 @@ import {
 import type { MaterialTable } from '@endfield-noclip/package-format/materials';
 import type {
 	ConditionalSetInfo,
-	SceneToggleInfo,
-	ProgressionInfo,
+	SceneControl,
+	StatesInfo,
 	VisibilityGroup,
 } from '@endfield-noclip/package-format/states';
 import type { StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
@@ -85,15 +86,18 @@ import { getOrInsert } from '../collections.ts';
 import type { Context } from '../context.ts';
 import { ignoreMissing } from '../errors.ts';
 import { loadDynamicStructures } from '../game/dynamic-structures.ts';
+import { GameState } from '../game/game-state.ts';
 import { loadInteractiveFacilities } from '../game/interactive-facilities.ts';
 import { readPrefabRenderers, type PrefabRenderer } from '../game/prefab.ts';
 import {
 	defaultSceneStates,
-	loadSceneStateControls,
+	loadSceneStates,
 	sceneStateControl,
+	sceneStateControls,
+	type SceneStateDefinition,
 	unnamedSceneStateControl,
 } from '../game/scene-conditions.ts';
-import { loadProgressions, progressionId } from '../game/scenery-variants.ts';
+import { loadProgressions, progressionControl, progressionId } from '../game/scenery-variants.ts';
 import { indexTerrain, loadTerrainSurfacesData, type TerrainSceneIndex } from '../game/terrain-source.ts';
 import type { ChunkFile, ChunkSource, WorldIndex } from '../game/world-index.ts';
 import { orderedPool } from '../pool.ts';
@@ -312,7 +316,7 @@ export const packScene = async (
 				context,
 				options.scene,
 				scene.partition?.levels ?? [],
-				defaultSceneStates(scene.sceneStates),
+				defaultSceneStates(scene.sceneStates, scene.game),
 			),
 			planWater(context, options.scene, {
 				includes: (tag, x, z) => scene.subset.includesEntity(tag, x, z),
@@ -328,7 +332,7 @@ export const packScene = async (
 			}),
 		]);
 		timer.end('environments and water');
-		const lights = gateByScene(entities.collected, scene.sceneStates, environments, water, entities.lights);
+		const lights = gateByScene(entities.collected, scene, environments, water, entities.lights);
 		entities.counts.lights = lights.lights.length;
 		for (const [reason, count] of Object.entries(entities.lights.skipped)) {
 			entities.counts[`lightsSkipped ${reason}`] = count;
@@ -520,8 +524,10 @@ interface SceneIndex {
 	subset: Subset;
 	/** the scene's chunk files in processing order; debug rows index into it */
 	files: ChunkFile[];
-	/** one control per MapConfig scene state, with its story-completed default */
-	sceneStates: SceneToggleInfo[];
+	/** the MapConfig's scene states, their conditions noted in {@link game} */
+	sceneStates: SceneStateDefinition[];
+	/** the quests, missions and variables the scene's conditions read */
+	game: GameState;
 	pathOf: (hash: bigint) => string | undefined;
 	source: PackageManifest['source'];
 }
@@ -556,8 +562,10 @@ const indexScene = async (
 			indexTerrain(context.vfs),
 			loadTerrainSurfacesData(context, options.scene),
 			world.chunkFiles(),
-			loadSceneStateControls(world, options.scene),
+			loadSceneStates(world, options.scene),
 		]);
+	const game = new GameState();
+	game.note(sceneStates.flatMap(({ condition }) => (condition === null ? [] : [condition])));
 	const terrainScene = terrainIndex.get(options.scene);
 	if (terrainScene !== undefined && surface === undefined) {
 		throw new Error(`${options.scene} has terrain tiles but no HGTerrainSurfacesData`);
@@ -594,6 +602,7 @@ const indexScene = async (
 					(a.name < b.name ? -1 : 1),
 			),
 		sceneStates,
+		game,
 		pathOf,
 		source: { buildGuid: bundleManifest.guid, contentHash: bundleManifest.contentHash },
 	};
@@ -885,12 +894,12 @@ const collectEntities = async (
 		});
 		addHlod(cluster, key);
 	}
-	const dynamic = await loadDynamicStructures(context, scene.options.scene, scene.partition);
+	const dynamic = await loadDynamicStructures(context, scene.options.scene, scene.partition, scene.game);
 	for (const [key, count] of Object.entries(dynamic.counts)) {
 		counts[`dynamic_${key}`] = count;
 	}
 	counts.dynamicRenderers = 0;
-	collected.toggles = dynamic.toggles;
+	collected.controls = dynamic.controls;
 	for (const index of dynamic.sceneStates) {
 		collected.sceneStates.add(index);
 	}
@@ -1045,11 +1054,11 @@ const collectEntities = async (
 
 /**
  * gives environment volumes, water surfaces and lights their visibility groups (their level, and the scene
- * states of the files holding them), and puts the scene state controls (one per MapConfig state, plus any
- * state an expression requires that the MapConfig doesn't name) ahead of the other toggles
+ * states of the files holding them), and adds the scene state controls: one per MapConfig state, derived from
+ * its condition, plus any state an expression requires that the MapConfig doesn't name
  *
- * @param collected the entity pass's collector; its conditions, groups and toggles are extended
- * @param controls the MapConfig scene state controls
+ * @param collected the entity pass's collector; its conditions, groups and controls are extended
+ * @param scene the scene's MapConfig states and game state
  * @param environments planned environments; volume groups are filled in
  * @param water planned water; surface groups are filled in
  * @param lights the entity pass's lights
@@ -1057,7 +1066,7 @@ const collectEntities = async (
  */
 const gateByScene = (
 	collected: Collector,
-	controls: readonly SceneToggleInfo[],
+	scene: Pick<SceneIndex, 'sceneStates' | 'game'>,
 	environments: EnvironmentPlan,
 	water: WaterPlan,
 	lights: LightCollector,
@@ -1071,12 +1080,15 @@ const gateByScene = (
 		surface.group = collected.groupOfSources(levelTag, sources);
 	}
 	const lightsTable = lights.finish((levelTag, sources) => collected.groupOfSources(levelTag, sources));
+	const controls = sceneStateControls(scene.sceneStates, scene.game, (formula) =>
+		collected.condition(formula),
+	);
 	const named = new Set(controls.map((control) => control.id));
 	const unnamed = [...collected.sceneStates]
 		.filter((index) => !named.has(sceneStateControl(index)))
 		.toSorted((a, b) => a - b)
 		.map(unnamedSceneStateControl);
-	collected.toggles = [...controls, ...unnamed, ...collected.toggles];
+	collected.controls = [...collected.controls, ...controls, ...unnamed];
 	return lightsTable;
 };
 
@@ -1266,13 +1278,8 @@ const packInstances = async (
 };
 
 /** the manifest's levels and scenery states */
-interface SceneStateInfo {
+interface SceneStateInfo extends StatesInfo {
 	levels: LevelInfo[];
-	progressions: ProgressionInfo[];
-	conditionalSets: ConditionalSetInfo[];
-	groups: VisibilityGroup[];
-	toggles: SceneToggleInfo[];
-	streamAreas: StreamAreasInfo | null;
 }
 
 const sceneStates = async (
@@ -1283,27 +1290,85 @@ const sceneStates = async (
 	environments: readonly (number | null)[],
 ): Promise<SceneStateInfo> => {
 	const { partition } = scene;
-	const progressions = (await loadProgressions(world, scene.options.scene)).map(
-		(progression): ProgressionInfo => ({
-			id: progressionId(progression.kind, progression.key),
-			kind: progression.kind,
-			key: progression.key,
-			levelId: progression.levelId,
-			levels: progression.levels,
-			defaultLevel: progression.defaultLevel,
-		}),
+	const progressions = (await loadProgressions(world, scene.options.scene)).map((progression) =>
+		progressionControl(
+			progression.kind,
+			progressionId(progression.kind, progression.key),
+			progression.key,
+			progression.levels,
+			progression.defaultLevel,
+			'the lowest authored level',
+		),
 	);
 	const levels = (partition?.levels ?? []).map((level, i) =>
 		levelInfo(level, scene, collected, environments[i] ?? null),
 	);
-	return {
-		levels,
-		progressions: [...progressions, ...collected.facilities],
+	const states: StatesInfo = {
+		// quests, missions and variables first: scene states derive from them
+		controls: [...scene.game.controls(), ...progressions, ...collected.facilities, ...collected.controls],
 		conditionalSets: collected.conditions,
 		groups: collected.groups,
-		toggles: collected.toggles,
 		streamAreas: await streamAreasInfo(world, scene.options.scene, collected.areas),
 	};
+	return { levels, ...states, controls: finishControls(states) };
+};
+
+/**
+ * fills in each required control's level tags (those of what it gates) and, for derived controls, the default
+ * its formula gives under the other defaults; the controls are modified in place
+ *
+ * @param states every control the scene defined, inputs before the controls derived from them
+ * @returns the controls some visibility group requires, directly or through a derived control
+ * @throws {Error} if two controls share an id or a requirement names no control
+ */
+const finishControls = (states: StatesInfo): SceneControl[] => {
+	const byId = new Map<string, SceneControl>();
+	for (const control of states.controls) {
+		if (byId.has(control.id)) {
+			throw new Error(`duplicate scene control ${control.id}`);
+		}
+		byId.set(control.id, control);
+	}
+	const tags = new Map<string, Set<number>>();
+	const note = (set: number, levelTags: Iterable<number>): void => {
+		for (const requirements of states.conditionalSets[set].alternatives) {
+			for (const { control } of requirements) {
+				if (control.startsWith('area:')) {
+					continue;
+				}
+				if (!byId.has(control)) {
+					throw new Error(`a visibility expression requires unknown control ${control}`);
+				}
+				const current = getOrInsert(tags, control, () => new Set<number>());
+				for (const tag of levelTags) {
+					current.add(tag);
+				}
+			}
+		}
+	};
+	for (const { levelTag, condition } of states.groups) {
+		if (condition !== null) {
+			note(condition, [levelTag]);
+		}
+	}
+	// derived controls come after their inputs, so walking backwards reaches a chain's inputs last
+	for (const control of states.controls.toReversed()) {
+		const gated = tags.get(control.id);
+		if (control.derived !== null && gated !== undefined) {
+			note(control.derived, gated);
+		}
+	}
+	const used = states.controls.filter((control) => tags.has(control.id));
+	for (const control of used) {
+		control.levelTags = [...tags.get(control.id)!].toSorted((a, b) => a - b);
+	}
+	const values = resolveSceneValues({ ...states, controls: used }, {});
+	for (const control of used) {
+		if (control.derived !== null) {
+			control.default = values[control.id];
+		}
+	}
+	return used;
 };
 
 /**
@@ -1430,10 +1495,9 @@ const writePackage = async (
 		environmentVolumes: states.environmentVolumes,
 		heightFogFlowNoise: states.heightFogFlowNoise,
 		states: {
-			progressions: states.progressions,
+			controls: states.controls,
 			conditionalSets: states.conditionalSets,
 			groups: states.groups,
-			toggles: states.toggles,
 			streamAreas: states.streamAreas,
 		},
 		archives,
@@ -1729,8 +1793,10 @@ class Collector {
 	}
 
 	readonly conditions: ConditionalSetInfo[] = [];
-	toggles: SceneToggleInfo[] = [];
-	facilities: ProgressionInfo[] = [];
+	/** script, logic and scene state controls */
+	controls: SceneControl[] = [];
+	/** facility form and resource node controls */
+	facilities: SceneControl[] = [];
 	/** MapConfig scene state indices some visibility expression requires */
 	readonly sceneStates = new Set<number>();
 	/** stream areas some visibility expression requires */
