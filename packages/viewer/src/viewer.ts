@@ -1531,6 +1531,7 @@ export class Viewer {
 				stream,
 				geometries: scene.pkg.geometries.entries,
 				textures: scene.textures,
+				sun: this.#environment.sunRaw,
 			});
 		} else {
 			this.#water.clear();

@@ -1,8 +1,8 @@
 /**
  * the open-world water: the shown level's surfaces (plus shared ones) drawn after compositing, over a copy of
- * the scene, with their configs and the scene's global wave normals and flow map. it lights them with the
- * main pass's frame group (sun shadow, irradiance volume, sky reflection). surfaces are resident in the game,
- * so every surface of the level is wanted; those outside the view aren't drawn.
+ * the scene, with their configs and the scene's global wave normals, flow map and caustics. it lights them
+ * with the main pass's frame group (sun shadow, irradiance volume, sky reflection). surfaces are resident in
+ * the game, so every surface of the level is wanted; those outside the view aren't drawn.
  *
  * @module
  */
@@ -26,7 +26,9 @@ import { type TextureBinding, type TextureStore, placeholderView } from './textu
 /** floats of `Surface` in water.wgsl */
 const SURFACE_FLOATS = 20;
 /** floats of `Config` in water.wgsl */
-const CONFIG_FLOATS = 36;
+const CONFIG_FLOATS = 56;
+/** floats of the `water` uniform in water.wgsl */
+const PARAM_FLOATS = 12;
 const MAX_SURFACES = 4096;
 /** priority of the surfaces' geometry at 1 m, and of their textures */
 const PRIORITY = 1e5;
@@ -80,8 +82,7 @@ const packConfig = (c: WaterConfig, out: Float32Array, at: number): void => {
 		c.waterRayleighAbsorptionMeter,
 		c.waterRayleighAbsorptionMeter2,
 		[c.safeFullAbsorpDistance, c.envLightIntensity, c.distanceEdgeBlendFactor, c.rayleighMieLerpFactor],
-		// reflectance at normal incidence, from `specular` the way Unreal-style materials scale it
-		[c.roughness, 0.08 * c.specular, c.waterIOR, c.envLightSpecularIntensity],
+		[c.roughness, c.specular, c.waterIOR, c.envLightSpecularIntensity],
 		[c.flowSpeed, c.normalTilling, c.normalScale, c.flowFullCycle],
 		[
 			c.largeWaveFlowSpeed * (c.largeWaveInvDir > 0.5 ? -1 : 1),
@@ -89,8 +90,20 @@ const packConfig = (c: WaterConfig, out: Float32Array, at: number): void => {
 			c.largeWaveNormalScale,
 			c.flowFullCycleLarge,
 		],
-		[...c.flowDirectionVector2, c.useFlowMap, 0],
-		[c.smallWaveNormalType, c.largeWaveNormalType, c.punctualLightSpecularIntensity, 0],
+		[...c.flowDirectionVector2, c.useFlowMap, c.FlowmapOption],
+		[c.smallWaveNormalType, c.largeWaveNormalType, c.dirSpecNormalScaler, c.sceneColorEnvInfluence],
+		// the game's normal-map mip offset is labelled `envSpecularDesaturation`
+		[c.distanceFade, c.distanceNormalMinStrength, (0.5 - c.envSpecularDesaturation) * 10, c.foamRoughness],
+		// colours go in as authored, as the game copies them
+		[c.foamColorG[0], c.foamColorG[1], c.foamColorG[2], c.foamOpacity],
+		[
+			c.foamShapeOffset,
+			1 / Math.max(c.foamFadeDistance, 1e-4),
+			c.waterBaseColorSubsurfaceScaler,
+			c.emissiveStrength,
+		],
+		[c.causticTilling, c.causticOpacity, c.causticDistort, c.causticSpeed],
+		[c.causticStartDepth, c.causticEndDepth, 0, 0],
 	];
 	rows.forEach((row, i) => out.set(row, at + i * 4));
 };
@@ -105,7 +118,7 @@ export class WaterRenderer {
 	#surfaceWords = new Uint32Array(this.#surfaceData.buffer);
 	#configs: GPUBuffer | null = null;
 	#params: GPUBuffer;
-	#paramData = new Float32Array(8);
+	#paramData = new Float32Array(PARAM_FLOATS);
 	#repeat: GPUSampler;
 	#noNormals: GPUTextureView;
 	#noFlow: GPUTextureView;
@@ -113,6 +126,7 @@ export class WaterRenderer {
 	#draws: Draw[] = [];
 	#normals: TextureBinding | null = null;
 	#flow: TextureBinding | null = null;
+	#caustics: TextureBinding | null = null;
 	/** group 2 */
 	#group: GPUBindGroup | null = null;
 	/** what {@link #group} was built from */
@@ -143,6 +157,7 @@ export class WaterRenderer {
 				texture(5, 'float'),
 				{ binding: 6, visibility: fragment, sampler: { type: 'filtering' } },
 				{ binding: 7, visibility: fragment, buffer: { type: 'uniform' } },
+				texture(8, 'float'),
 			],
 		});
 		this.#pipeline = device.createRenderPipeline({
@@ -154,7 +169,11 @@ export class WaterRenderer {
 			vertex: {
 				module,
 				entryPoint: 'vs_water',
-				buffers: [{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }] }],
+				buffers: [
+					{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'unorm16x4' }] },
+					// octahedral normals; meshes without them bind their positions here, which the shader ignores
+					{ arrayStride: 4, attributes: [{ shaderLocation: 1, offset: 0, format: 'snorm16x2' }] },
+				],
 			},
 			fragment: { module, entryPoint: 'fs_water', targets: [{ format: HDR_FORMAT }] },
 			// seen from below too
@@ -226,8 +245,10 @@ export class WaterRenderer {
 		stream: StreamManager;
 		geometries: readonly GeometryEntry[];
 		textures: TextureStore;
+		/** the sun as the water column takes it: `Environment.sunRaw` */
+		sun: Vec3;
 	}): void {
-		const { eye, planes, stream, geometries, textures } = input;
+		const { eye, planes, stream, geometries, textures, sun } = input;
 		const table = this.#table;
 		this.clear();
 		if (table === null) {
@@ -263,7 +284,7 @@ export class WaterRenderer {
 			data.set(resident.positionOffset, at + 12);
 			words[at + 15] = surface.config;
 			data.set(resident.positionScale, at + 16);
-			data[at + 19] = 0;
+			data[at + 19] = resident.normalOffset === null ? 0 : 1;
 			this.#draws.push({ geometry: resident, slot });
 			slot++;
 		}
@@ -277,12 +298,15 @@ export class WaterRenderer {
 			streamWholeTexture({ stream, textures, id, kind, priority: PRIORITY })?.binding ?? null;
 		this.#normals = streamBinding(global?.normalMaps ?? null, '2d-array');
 		this.#flow = streamBinding(global?.flowMap ?? null, '2d');
+		this.#caustics = streamBinding(global?.causticMap ?? null, '2d');
 		const params = this.#paramData;
 		params[0] = this.#normals === null ? 0 : 1;
 		params[1] = this.#flow === null ? 0 : 1;
 		params[2] = global?.mapSize ?? 1;
+		params[3] = this.#caustics === null ? 0 : 1;
 		params[4] = global?.center[0] ?? 0;
 		params[5] = global?.center[1] ?? 0;
+		params.set(sun, 8);
 		this.#device.queue.writeBuffer(this.#params, 0, params);
 	}
 
@@ -290,7 +314,7 @@ export class WaterRenderer {
 		if (this.#configs === null) {
 			return null;
 		}
-		const key = [context.version, context.background, this.#normals, this.#flow];
+		const key = [context.version, context.background, this.#normals, this.#flow, this.#caustics];
 		if (this.#group !== null && key.every((part, i) => part === this.#groupKey[i])) {
 			return this.#group;
 		}
@@ -306,6 +330,8 @@ export class WaterRenderer {
 				{ binding: 5, resource: this.#flow?.view ?? this.#noFlow },
 				{ binding: 6, resource: this.#repeat },
 				{ binding: 7, resource: { buffer: this.#params } },
+				// the flow map's placeholder stands in; the shader skips caustics without the map
+				{ binding: 8, resource: this.#caustics?.view ?? this.#noFlow },
 			],
 		});
 		this.#groupKey = key;
@@ -340,6 +366,7 @@ export class WaterRenderer {
 		pass.setBindGroup(3, context.postUniforms);
 		for (const { geometry, slot } of this.#draws) {
 			pass.setVertexBuffer(0, geometry.vertices, 0, geometry.positionBytes);
+			pass.setVertexBuffer(1, geometry.vertices, geometry.normalOffset ?? 0);
 			pass.setIndexBuffer(geometry.indices, geometry.indexFormat);
 			for (const submesh of geometry.submeshes) {
 				pass.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, submesh.baseVertex, slot);

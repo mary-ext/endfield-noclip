@@ -85,7 +85,8 @@ packs or renders correctly.
   materials, and `_TERRAIN_BLEND`'s fade into the terrain
 - erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
-- water foam, caustics and flow tiles (packed but unread); other fluid types are unverified
+- water ([water](game-data/water.md#open)): sector flow tiles (packed but unread), the LOD surfaces'
+  displaced wave grid, rain ripples and wetness; other fluid types are unverified
 - scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal,
   the mist (FogSimple, VFXFakeVolumeFog) and VFXDitherAlpha's plain variant draw, without the first
   two's additive, vertex-offset mask, polar-UV, lighting and particle variants, the effects' own

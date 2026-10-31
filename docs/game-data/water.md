@@ -25,19 +25,29 @@ the component layout follows An1X3R/Endfield-map-extractor (MIT, `extractor_core
 ### placements: InitChunkData component 30
 
 every water surface is an entity of a **Global** chunk (no cell chunk holds one in any scene of the
-current client). the groups holding them have the bounds columns 0–5, an unread 24-byte column 7,
-the name column 21 and component 30, whose rows are 104 bytes:
+current client). the groups holding them have the bounds columns 0–5, a 24-byte column 7 (unread;
+see below), the name column 21 and component 30, whose rows are 104 bytes:
 
-| offset | type   | field            | notes                                                                                            |
-| ------ | ------ | ---------------- | ------------------------------------------------------------------------------------------------ |
-| 0      | u32    | render type mask | bits of the game's `HGWaterRenderType`: 1 proxy, 2 LOD. 1 is mostly paddy pools and small planes |
-| 4      | i32    | runtime mesh id  | always 0                                                                                         |
-| 8      | f32×16 | object-to-world  | column-major, translation at floats 12–14, same convention as the renderer component             |
-| 72     | f32×4  | param0           | always 0                                                                                         |
-| 88     | f32×4  | param1           | `w` always 1; `x`, `y`, `z` vary, meaning unknown                                                |
+| offset | type   | field            | notes                                                                                        |
+| ------ | ------ | ---------------- | -------------------------------------------------------------------------------------------- |
+| 0      | u32    | render type mask | bits of the game's `HGWaterRenderType`: 1 proxy, 2 LOD (below)                               |
+| 4      | i32    | runtime mesh id  | always 0: filled in at load                                                                  |
+| 8      | f32×16 | object-to-world  | column-major, translation at floats 12–14, same convention as the renderer component         |
+| 72     | f32×4  | param0           | (material index, 0, 0, 0); the index is filled in at load from the bound config, so 0 here   |
+| 88     | f32×4  | param1           | (wetness offset (m), height layer 0–3, 1 to sort by distance, 1 to wet the ground around it) |
 
 `readWaterSurfaces` rejects a row with a zero mask, a non-finite value or a missing binding, because
 each of those has never occurred and would mean the layout moved.
+
+every surface draws its own mesh; a **LOD** surface is also drawn top-down into the height layer
+`param1.y` names and redrawn as a camera-centred grid displaced by the waves. map02's 872 LOD
+surfaces are its open water; the 431 proxy-only ones are mostly paddy-field pools. the wetness
+offset raises the surface when the game darkens the ground it touches. the 24-byte column 7 is the
+generic render-object info every renderable entity carries: layer mask, flags, scene mask, an art
+tag and a squared sorting distance.
+
+surfaces have no materials of their own: the render pipeline draws them all with its own
+`HGRP/WaterProxy` and `HGRP/WaterRendering` shaders, indexing the configs by material index.
 
 the level tag is `id >>> 27` as for every entity; tag 0 is shared content shown with every level.
 
@@ -188,45 +198,74 @@ counts per level, chunk file, mask, mesh and config, and single config assets
 - **selection**, per frame: surfaces whose `level` is the shown level or 0, whose condition passes
   the current scene values, and whose geometry entry is ready. each wants its geometry blob at a
   priority falling with horizontal distance from the camera; resident ones inside the frustum are
-  drawn, up to 4096.
+  drawn, up to 4096. the game writes water's normal, roughness and foam into its own G-buffer before
+  the screen-space reflections run, then lights it in one full-screen pass after the opaque scene.
+  the viewer computes the same values per fragment in one pass.
+
 - **pass**: drawn in the post chain after compositing, over a copy of the HDR scene, and only in the
   `lit` debug view. both faces are drawn so water reads from below. transforms are made eye-relative
-  on the CPU; the vertex stage reads only the dequantized `unorm16x4` positions. the pass binds the
-  main pass's frame group, so water is lit like the rest of the scene: the sun through its shadow
-  maps, the irradiance volume, and the level's sky reflection.
-- **textures**: the wave-normal array and the global flow map are streamed whole. caustic, rain and
-  sector tiles are packed but unused.
-- **waves**: two layers from the normal array (`smallWaveNormalType`, `largeWaveNormalType`) flow
-  along the flow map (`useFlowMap`) or `flowDirectionVector2`, cross-fading two phases per layer;
-  `largeWaveInvDir` reverses the large layer. the waves offset the refracted lookup by `waterIOR`.
-- **water column**, between the surface and the scene depth below (at most 50 m): it absorbs and
-  scatters with the per-metre coefficients, `waterRayleighAbsorptionMeter2` blending toward
-  `waterRayleighAbsorptionMeter` as the thickness approaches `safeFullAbsorpDistance`. light
+  on the CPU; the vertex stage reads the dequantized `unorm16x4` positions and, where the mesh has
+  them, its octahedral normals (else up). the pass binds the main pass's frame group, so water is
+  lit like the rest of the scene: the sun through its shadow maps, the irradiance volume, and the
+  level's sky reflection.
+- **textures**: the wave-normal array, the global flow map and the caustic map are streamed whole.
+  rain and sector tiles are packed but unused.
+- **flow**: the global map at `uv = (world.xz − center) / mapSize + 0.5` holds the direction in rg
+  (`· 2 − 1`, green negated so it points along −z), foam in b and the wave amplitude in a. without
+  `useFlowMap` the direction is `flowDirectionVector2`, encoded the same way. the amplitude scales
+  the waves unless `FlowmapOption` is 1.
+- **waves**: two layers from the normal array (rg the normal, a the small layer's foam shape), each
+  at its tiling, speed and cycle; `largeWaveInvDir` reverses the large layer. with a flow map each
+  cross-fades two phases that jump by a cycle-dependent offset; without one it scrolls continuously.
+  the array is sampled with mip bias `(0.5 − envSpecularDesaturation) · 10`. a fade
+  `1 − saturate(distance · saturate(1 − N·V) / distanceFade)` scales the small waves (also by N·V)
+  and the large ones down to `distanceNormalMinStrength`, so far water flattens into a mirror; the
+  layers combine by reoriented normal mapping around the mesh normal.
+- **roughness and foam**: roughness falls from the config's towards 0.01 as the fade rises (a mirror
+  near the camera) and moves to `foamRoughness` under foam. foam is the flow's b times the small
+  layer's shape over `foamShapeOffset`, times `foamOpacity`, fading out over `foamFadeDistance`; its
+  colour is `foamColorG` as authored. it takes the sun's diffuse light, a see-through glow when lit
+  from behind (`waterBaseColorSubsurfaceScaler`), the irradiance volume, and `emissiveStrength`.
+- **refraction**: the surface point is pushed sideways against the waves (their xz scaled by
+  `waterIOR`) by at most 0.5 m, less near the screen's edges and the camera, and the water looks at
+  the scene under the pushed point, unless that lies in front of the water. within 20 m the
+  thickness and the column's view direction follow the refracted ground.
+- **water column**, between the surface and the ground below (at most 50 m): it absorbs and scatters
+  with the per-metre coefficients, `waterRayleighAbsorptionMeter2` (shallow) blending toward
+  `waterRayleighAbsorptionMeter` (deep) as the thickness approaches `safeFullAbsorpDistance`. light
   scattered towards the eye is integrated over the column, with each source's extinction lengthened
-  by its slant through the water. sources are the irradiance volume at the surface (scaled by
-  `envLightIntensity`) and the shadowed sun through a phase mix that `rayleighMieLerpFactor` moves
-  from a Henyey–Greenstein lobe (g 0.854) to Rayleigh, with less sun let in at grazing incidence.
-  the sun's shadow is looked up 2 m off the surface point along the waves' horizontal tilt, which
-  dapples it. the transmitted scene isn't dimmed by the reflectance.
-- **reflection**: the reflected ray is marched through the depth buffer with the march of the
-  game's [screen-space reflections](lighting.md#screen-space-reflections)
+  by its slant: `1 + 1.394 |V.y|` for the ambient and, as the game writes it, `1 + 20 |V.y|` for a
+  risen sun. sources are the irradiance volume (scaled by `envLightIntensity`) and the shadowed sun
+  through a phase mix that `rayleighMieLerpFactor` moves from a Henyey–Greenstein lobe (g 0.854) to
+  Rayleigh, with less sun let in at grazing incidence; the scene behind adds to both by
+  `sceneColorEnvInfluence`. the column takes the sun the way the atmosphere fog does, raw colour
+  times intensity. the sun's shadow is looked up 2 m off the surface along the waves' horizontal
+  tilt, which dapples it.
+- **caustics**: the caustic map, planar in world xz on the ground under the water, twice (the second
+  mirrored in z) and distorted by the waves, brighten the scene behind by the fog's sun ·
+  `causticOpacity` between `causticStartDepth` and `causticEndDepth` of thickness, fading out by 50
+  m of view depth.
+- **sun highlight**: GGX off a normal whose vertical part is scaled by `dirSpecNormalScaler`, which
+  widens the glitter path, times the sun's specular intensity. the game also aims it at the nearest
+  point of the sun's disc and adds multiple scattering; the viewer leaves both out.
+- **reflection**: the reflected ray is marched through the depth buffer with the march of the game's
+  [screen-space reflections](lighting.md#screen-space-reflections)
   ([`ssr-trace.wgsl`](../../packages/viewer/src/render/shaders/ssr-trace.wgsl)): stretched to the
   screen's edge, so it has no reach limit in metres, with its edge and head-on fades. the game
   reflects water through that same SSR pass, with water written into its inputs; the viewer marches
-  separately because water draws after the composite. the sky reflection fills in
-  (normalised the same way as on surfaces, scaled by `envLightSpecularIntensity`) where it finds
-  nothing. the environment BRDF weighs it, with f0 = 0.08 · `specular`. where the march hits, the
-  colour also leans towards the reflection by that weight times the column's opacity, so deep water
-  mirrors its surroundings. the sun's GGX highlight is shadowed and scaled by
-  `punctualLightSpecularIntensity`.
+  separately because water draws after the composite. the sky reflection fills in (normalised the
+  same way as on surfaces, scaled by `envLightSpecularIntensity`) where it finds nothing. the
+  environment BRDF weighs it, with f0 = 0.08 · `specular` and f90 = saturate(4 · `specular`).
+- **fog and composition**: the surface's own light (highlight, foam, reflection, column) is fogged
+  at the surface's distance; the scene behind, already fogged, shows through by the column's
+  transmittance, and the fog's in-scatter covers the rest. where the march hits, the colour then
+  leans towards the reflection by its weight times the column's opacity and the fog's transmittance,
+  so deep water mirrors its surroundings.
 - **shore**: `distanceEdgeBlendFactor` fades shallow water into what's under it; at a distance the
-  thickness counts less at grazing angles. foam and caustics aren't drawn.
+  thickness counts less at grazing angles.
 
-the lighting follows the game's water lighting pass. the flow-map orientation
-(`uv = (world.xz − center) / mapSize + 0.5`), the flow and normal channel meanings, which absorption
-is near and which far, and which config fields feed the ambient scale and the phase mix come from
-community tooling or field names, not the game's shaders. treat them as the first suspects when the
-water looks wrong.
+the viewer reads `FlowmapOption` 1 surfaces' amplitude-as-coverage as plain amplitude; no map02
+config sets it.
 
 ### WaterProxy and WaterDecal
 
@@ -236,11 +275,10 @@ content. the mesh renderer skips `waterDecal` and has no dedicated path for `wat
 
 ## open
 
-- how the proxy and LOD render types of `renderTypeMask` differ in drawing (the viewer draws both
-  the same way), and `param1.xyz`, likely per-surface flow or foam options; needs the game's water
-  rendering code.
-- the unread 24-byte column 7 beside component 30.
-- flow and normal channel meanings and the flow-map UV orientation (see above).
-- what WaterProxy meshes render (possibly water inside prefabs writing the same inputs as surfaces)
-  and what WaterDecal projects.
-- caustics, foam, rain and sector tiles aren't used by the viewer yet.
+- the LOD render type's displaced wave grid (`waveVertexDisplacementScaler`, mostly 0 on map02)
+  isn't drawn; both types draw their mesh.
+- sector tiles: near the camera the game reads the flow (and most authored foam) from the 128 m
+  sector tiles, blending to the global map at the edge of a 3 × 3 window; the viewer reads only the
+  global map.
+- what WaterProxy meshes render and what WaterDecal projects.
+- rain ripples, wetness and character ripples aren't drawn.

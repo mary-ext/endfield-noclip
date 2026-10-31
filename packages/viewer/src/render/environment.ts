@@ -379,6 +379,11 @@ export interface Environment {
 	sunDirection: Vec3;
 	/** pre-exposed illuminance, linear rgb */
 	sunIlluminance: Vec3;
+	/**
+	 * the pre-exposed illuminance with the colour raw rather than linear, as the game's atmosphere fog and
+	 * water column take the sun
+	 */
+	sunRaw: Vec3;
 	sunSpecular: number;
 	/** the sun shadow's look */
 	shadow: {
@@ -976,6 +981,7 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 		name: profile === null ? null : source.name,
 		sunDirection,
 		sunIlluminance,
+		sunRaw: scaled(light.directColor, intensity),
 		sunSpecular: light.directSpecularIntensity,
 		shadow: {
 			strength: source.shadow.csmIntensity,

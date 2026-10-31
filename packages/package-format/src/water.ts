@@ -67,9 +67,9 @@ export interface WaterConfig {
 	// optics
 	/** Rayleigh scattering per metre, rgb (`w` unused) */
 	waterRayleighScatteringMeter: Vec4;
-	/** absorption per metre, rgb; `w` unconfirmed */
+	/** absorption per metre in deep water, rgb (`w` unused) */
 	waterRayleighAbsorptionMeter: Vec4;
-	/** a second absorption, rgb; how it combines with the first is unconfirmed */
+	/** absorption per metre in shallow water, rgb, blending to the deep one by {@link safeFullAbsorpDistance} */
 	waterRayleighAbsorptionMeter2: Vec4;
 	absorptionTint: Color;
 	absorptionTint2: Color;
@@ -89,13 +89,23 @@ export interface WaterConfig {
 	waterIOR: number;
 	envLightSpecularIntensity: number;
 	punctualLightSpecularIntensity: number;
+	/** metres over which the waves fade with distance (sooner at grazing angles) */
 	distanceFade: number;
+	/** the large waves' strength once faded */
+	distanceNormalMinStrength: number;
+	/** the wave normals' mip offset despite its name: bias `(0.5 − value) · 10` */
+	envSpecularDesaturation: number;
+	/** vertical scale of the normal the sun's highlight takes */
+	dirSpecNormalScaler: number;
 	flowBaseColor: Color;
+	/** the foam's colour */
 	foamColorG: Color;
 	foamOpacity: number;
 	foamRoughness: number;
 	foamShapeOffset: number;
 	foamFadeDistance: number;
+	waterBaseColorSubsurfaceScaler: number;
+	emissiveStrength: number;
 	// caustics
 	causticTilling: number;
 	causticOpacity: number;
@@ -106,6 +116,8 @@ export interface WaterConfig {
 	// flow and waves
 	/** 1 to follow the flow maps, 0 to flow along {@link flowDirectionVector2} */
 	useFlowMap: number;
+	/** 1: the flow map's alpha masks the surface instead of scaling the waves */
+	FlowmapOption: number;
 	flowDirectionVector2: Vec2;
 	flowSpeed: number;
 	flowFullCycle: number;
