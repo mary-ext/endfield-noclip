@@ -501,8 +501,9 @@ the dev build exposes the `Viewer` as `window.viewer`. because it renders only w
   neighbourhood clip: water waves and the GTAO noise pattern rely on it. with temporal smoothing in
   place, the terrain's close-up layers could sample one projection plane per pixel at random, as the
   game does, instead of blending all three.
-- composite writes a separate `hdr scene` target, though the main pass's radiance target is free by
-  then.
+- composite writes a separate `hdr scene` target: the main pass's radiance target can't hold it,
+  because the next frame's screen-space reflections read it after the main pass rewrites radiance.
+  the celestial pass already reuses the sky reflection target, which the reflections are done with.
 - the AO blur's loads per pixel could be cut by packing depth with AO or using `textureGather`.
 - terrain's GPU cost at high resolution is unexamined.
 - the profiler times every pass whenever `timestamp-query` exists; gate it on the stats panel if it

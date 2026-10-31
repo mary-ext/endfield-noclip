@@ -151,8 +151,6 @@ interface Sized {
 	ao: GPUTexture;
 	/** full resolution */
 	aoBlurred: GPUTexture;
-	/** the nebula and planets at the sky pixels, and how far they cover the sky */
-	celestial: GPUTexture;
 	/** the composited scene at the render size, which the temporal resolve reads */
 	scene: GPUTexture;
 	sceneView: GPUTextureView;
@@ -453,10 +451,10 @@ export class PostProcess {
 		}
 		const pixels = sized.width * sized.height;
 		const outputPixels = sized.outputWidth * sized.outputHeight;
-		// at the render size the reduced AO depth and AO, the blurred AO, the celestial layers and the scene; at the
-		// output size the temporal history and the bloom chain (two quarter-size mips)
+		// at the render size the reduced AO depth and AO, the blurred AO and the scene; at the output size the
+		// temporal history and the bloom chain (two quarter-size mips)
 		return (
-			pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8 + 8) +
+			pixels * ((4 + 1) / AO_SCALE ** 2 + 1 + 8) +
 			outputPixels * 8 * (2 / 3) +
 			this.taa.bytes +
 			this.reflections.bytes +
@@ -476,8 +474,12 @@ export class PostProcess {
 		});
 	}
 
-	/** the composite pass's group 2: the main and transparent passes' outputs, the blurred AO and reflections */
-	#sceneGroup(scene: SceneTextures, aoBlurred: GPUTexture, celestial: GPUTexture): GPUBindGroup {
+	/**
+	 * the composite pass's group 2: the main and transparent passes' outputs, the blurred AO, the reflections
+	 * and the celestial layers (the nebula and planets at the sky pixels, and how far they cover the sky),
+	 * which the celestial pass draws into the main pass's sky reflection target
+	 */
+	#sceneGroup(scene: SceneTextures, aoBlurred: GPUTexture): GPUBindGroup {
 		return this.#device.createBindGroup({
 			layout: this.#pipelines.composite.getBindGroupLayout(2),
 			entries: [
@@ -488,7 +490,7 @@ export class PostProcess {
 				{ binding: 6, resource: this.reflections.output.createView() },
 				{ binding: 7, resource: scene.transparent },
 				{ binding: 8, resource: scene.revealage },
-				{ binding: 9, resource: celestial.createView() },
+				{ binding: 9, resource: scene.reflection },
 				{ binding: 10, resource: scene.glow },
 			],
 		});
@@ -569,7 +571,6 @@ export class PostProcess {
 			sized.aoDepth,
 			sized.ao,
 			sized.aoBlurred,
-			sized.celestial,
 			sized.scene,
 			...sized.down,
 			...sized.blurred,
@@ -611,7 +612,6 @@ export class PostProcess {
 		const aoDepth = texture('ao depth', aoWidth, aoHeight, AO_DEPTH_FORMAT);
 		const ao = texture('ao', aoWidth, aoHeight, AO_FORMAT);
 		const aoBlurred = texture('ao blurred', width, height, AO_FORMAT);
-		const celestialTexture = texture('celestial', width, height, HDR_FORMAT);
 		const sceneTexture = texture('hdr scene', width, height, HDR_FORMAT);
 		const sceneView = sceneTexture.createView();
 		this.taa.resize({ scene: sceneView, depth: scene.depth, width, height, outputWidth, outputHeight });
@@ -727,7 +727,6 @@ export class PostProcess {
 			aoDepth,
 			ao,
 			aoBlurred,
-			celestial: celestialTexture,
 			scene: sceneTexture,
 			sceneView,
 			historyViews: [histories[0].createView(), histories[1].createView()],
@@ -781,13 +780,14 @@ export class PostProcess {
 						this.celestial.group(p.celestial.getBindGroupLayout(1)),
 						this.#celestialGroup(scene),
 					],
-					target: celestialTexture.createView(),
+					// the sky reflection target is free once the reflections have resolved, which run first
+					target: scene.reflection,
 				},
 				composite: {
 					pipeline: p.composite,
 					groups: [
 						...this.#skyGroups(p.composite),
-						this.#sceneGroup(scene, aoBlurred, celestialTexture),
+						this.#sceneGroup(scene, aoBlurred),
 						this.#flowNoiseGroup(),
 					],
 					target: sceneView,

@@ -78,7 +78,10 @@ export interface SceneTextures {
 	/** the texture behind {@link radiance}; unused once composited, so post passes may copy into it */
 	radianceTexture: GPUTexture;
 	ambient: GPUTextureView;
-	/** rgb: the sky reflection in {@link radiance} */
+	/**
+	 * rgb: the sky reflection in {@link radiance}. the screen-space reflections are its last reader; the
+	 * celestial pass then draws into it
+	 */
 	reflection: GPUTextureView;
 	/** the surface's normal, roughness and screen-space reflection weight, packed; 0 where nothing lit was drawn */
 	reflectionSurface: GPUTextureView;
