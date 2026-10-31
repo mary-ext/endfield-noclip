@@ -73,7 +73,9 @@ packs or renders correctly.
   and tree grids ([world](game-data/world.md#foliage-grids)) draw every instance at the cluster's
   LOD, without the game's sparsity thinning or per-instance parameters
 - Lit layers ([lit layers](game-data/lighting.md#lit-layers)): tri-channel switch textures, the
-  parallax glow's global highlight and its world-space, PBR and deform variants
+  parallax glow's global highlight and its world-space, PBR and deform variants, the top layer's
+  `_BaseHeightMap` and UV set 2, the mask, moss and noise layer blends, and `_TERRAIN_BLEND`'s fade
+  into the terrain
 - erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
 - water foam, caustics and flow tiles (packed but unread); other fluid types are unverified

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { ReadyMaterial, ShaderEntry } from '@endfield-noclip/package-format/materials';
 
-import { ErosionRow, LookFlags, LookRow, materialLooks, UV1_SHIFT } from './materials.ts';
+import { ErosionRow, LookFlags, LookRow, materialLooks, TopLayerRow, UV1_SHIFT } from './materials.ts';
 
 test('effect geometry cannot become opaque walls through the fallback, while ordinary unknown shaders remain visible', () => {
 	const shaders: ShaderEntry[] = [
@@ -282,4 +282,62 @@ test('originium crystals: UV set 1 base colour, tri-channel tint, detail and par
 	});
 	assert.equal(switched.params[LookRow.maskAlbedo + 4 + 3], 0);
 	assert.equal(switched.params[LookRow.maskAlbedo + 8 + 3], 0);
+});
+
+test('moss rock: the top layer takes the parallax slots and rows, its own tiling and the default grey height', () => {
+	const shaders: ShaderEntry[] = [
+		{
+			name: 'HGRP/Lit',
+			family: 'lit',
+			floats: { _LayerBlendHeight: 1, _TopBlendSmoothness: 0.5 },
+			colors: {},
+			vectors: { _Layer1Offset: [0, 0, 0, 0] },
+			textures: {},
+			normalMaps: [],
+		},
+	];
+	const slot = (texture: number) => ({
+		texture,
+		uv: 0,
+		scale: [1, 1] as [number, number],
+		offset: [0, 0] as [number, number],
+	});
+	const [look] = materialLooks({
+		shaders,
+		entries: [
+			{
+				id: 0,
+				status: 'ready',
+				shader: 0,
+				keywords: ['_LAYERBLEND_TOP', '_TERRAIN_BLEND', '_TWO_BASEMAP'],
+				renderQueue: 2000,
+				blend: 'opaque',
+				blendFactors: null,
+				alphaClipThreshold: null,
+				cull: 'back',
+				zWrite: true,
+				baseTextureMapCount: 2,
+				slots: { _NormalMap: slot(1), _Layer1BaseMap: slot(2), _Layer1BumpMap: slot(3) },
+				floats: {
+					_Layer1Tilling: 2,
+					_LayerBlendUVType: 2,
+					_TopBlendThreshold: -1,
+					_LayerBlendHeightTransition: 0.056,
+					_Layer1Saturation: -0.25,
+					_Layer1ColorBrighterScale: 2,
+				},
+				colors: { _Layer1TintColor: [1, 0.5, 0, 1] },
+				vectors: { _Layer1Offset: [0.25, 0.5, 0, 0] },
+			},
+		],
+	});
+	assert.deepEqual(look.textures, [-1, 1, -1, -1, -1, 2, 3]);
+	assert.notEqual(look.flags & LookFlags.TopLayer, 0);
+	const row = (at: number) => Array.from(look.params.subarray(at, at + 4));
+	assert.deepEqual(row(LookRow.uv + 5 * 4), [2, 2, 0.25, 0.5]);
+	assert.deepEqual(row(LookRow.uv + 6 * 4), [2, 2, 0.25, 0.5]);
+	assert.deepEqual(row(TopLayerRow.coverage), [0, -1, 0.5, 2]);
+	assert.deepEqual(row(TopLayerRow.height), [1, Math.fround(0.056), 0.5, 0]);
+	// the tint linearized, times the brighter scale; saturation 1 − 0.25
+	assert.deepEqual(row(TopLayerRow.color), [2, 0.42808229, 0, 0.75].map(Math.fround));
 });

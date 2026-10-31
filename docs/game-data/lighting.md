@@ -282,7 +282,7 @@ the Lit, LitTransparent and foliage shaders start from the base colour map times
 `_BaseColorTintCover`. the tint matters: Dijiang's black floors and walls are a light grey map
 tinted by about 0.3. `HGRP/LitHLOD` ignores the tint.
 
-three optional Lit layers come from the game's shader for these keywords
+four optional Lit layers come from the game's shader for these keywords
 ([`render/materials.ts`](../../packages/viewer/src/render/materials.ts), `shaders/mesh.wgsl`). each
 map samples UV set 0 or 1 as a float of its own says: `_BaseUVSet` for the base colour,
 `_BasePbrMapUVSet` for the normal and MRO maps, `_DetailUVSet`, `_MaskUVSet` and `_EmissiveUVSet`.
@@ -320,6 +320,23 @@ originium crystals' base colour and detail map tile ×5 over UV set 1. not drawn
   pulse; the viewer puts the player at the camera. on map01 seven crystal materials use it, mostly
   with strength 20 within 3–25 m; one stores a glow colour of only 0.75, so it glows almost only
   near the player.
+- **`_LAYERBLEND_TOP`** (moss and sand on rock tops; ~220 map02 materials, 33 on map01): a second
+  material covers the surface by `saturate((up − _TopBlendThreshold) / _TopBlendSmoothness)`, where
+  `up` is the world Y of the geometric normal, blended toward the normal-mapped one by
+  `_TopBlendWithBumpMap`. with `_LayerBlendHeight`, the base's height and `_Layer1BaseMap`'s alpha,
+  each weighted by its coverage, compete within `_LayerBlendHeightTransition`. the layer's colour is
+  desaturated by `_Layer1Saturation`, tinted by `_Layer1TintColor`, brightened by
+  `_Layer1ColorBrighterScale`, and replaces the albedo (`_Layer1BaseColorBlendMode` 0) or adds to it
+  (1). roughness blends toward `_Layer1BumpMap`'s B, occlusion toward its A (by `_Layer1AOStrength`,
+  or 1 with `_LayerAOType`), metallic toward `_Layer1Metallic` or the layer's alpha
+  (`_LayerMetallicType`), and the layer's normal (× `_Layer1BumpScale`) is reoriented onto the
+  base's by `_Layer1BaseNormalIntensity`. it applies after the detail map and the tri-channel mask.
+  both maps sample one coordinate picked by `_LayerBlendUVType` (UV set 0, world XZ, or UV set 2),
+  times `_Layer1Tilling` plus `_Layer1Offset`, ignoring their `_ST`. no mesh map02 draws with a
+  UV-set-2 layer has that set, and a missing set reads as zeros, so those layers are one flat texel:
+  two all-moss rock materials, whose base colour map is unset and so white, are a solid moss green.
+  the layer takes the parallax slots, so `_BaseHeightMap` has none and reads as the shader's grey
+  default.
 
 not drawn: a global highlight term around a point on the ground, a separate parallax mask texture
 (`_UseParallaxMask`; such materials don't glow), and the `_PARALLAX_MAP_WORLDSPACE`, `_PBR` and

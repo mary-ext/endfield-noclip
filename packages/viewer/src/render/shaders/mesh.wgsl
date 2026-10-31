@@ -1,6 +1,6 @@
 // instanced meshes with the HGRP surface essentials: base colour, tangent-space normal map, roughness from
-// the normal map's B channel or an MRO map, emission, and Lit's tri-channel mask, detail map and parallax
-// glow, plus the erosion shader, opaque, alpha-tested or alpha-blended. quantized positions, octahedral normals and tangents and UV sets 0 and 1 from the geometry blob;
+// the normal map's B channel or an MRO map, emission, and Lit's tri-channel mask, detail map, parallax
+// glow and top layer, plus the erosion shader, opaque, alpha-tested or alpha-blended. quantized positions, octahedral normals and tangents and UV sets 0 and 1 from the geometry blob;
 // instances from this frame's visible list; draw parameters by the list entry's draw id (see materials.ts for
 // their layout).
 
@@ -93,6 +93,8 @@ const PARALLAX_NOISE_MAP = 131072u;
 const EROSION = 33554432u;
 // `HGRP/Foliage/Leaf` (`leafParams` in materials.ts)
 const FOLIAGE_LEAF = 134217728u;
+// `_LAYERBLEND_TOP` (`topLayerParams` in materials.ts): the parallax slots and rows hold the top layer
+const TOP_LAYER = 2147483648u;
 // slot i samples UV set 1 when bit UV1_SHIFT + i is set
 const UV1_SHIFT = 18u;
 // set per draw from the geometry's streams (`GeometryFlags` in mesh-renderer.ts)
@@ -107,6 +109,8 @@ const EMISSIVE_SLOT = 3u;
 const DETAIL_SLOT = 4u;
 const PARALLAX_SLOT = 5u;
 const NOISE_SLOT = 6u;
+// the top layer's `_Layer1BaseMap`; `_Layer1BumpMap` is in the noise slot, with the same coordinates
+const LAYER_SLOT = 5u;
 
 @group(1) @binding(0) var<storage, read> rows: array<Row>;
 @group(1) @binding(1) var<storage, read> blocks: array<vec4f>;
@@ -226,6 +230,58 @@ fn normal_z(xy: vec2f) -> f32 {
 	return max(1.0 / 2048.0, sqrt(saturate(1.0 - dot(xy, xy))));
 }
 
+// reoriented normal mapping of a tangent-space normal, its x and y already negated, onto a base normal
+fn reorient_normal(base: vec3f, flipped: vec3f) -> vec3f {
+	let b = base + vec3f(0.0, 0.0, 1.0);
+	return b * dot(b, flipped) / max(1e-5, b.z) - flipped;
+}
+
+// #region top layer
+// `_LAYERBLEND_TOP` (`topLayerParams` in materials.ts, parameters by `TopLayerRow`, which reuses the parallax rows:
+// coverage in `parallax`, height in `parallax2`, colour in `parallax_color`, blend in `parallax_dark`, normal in
+// `parallax_bright`)
+
+// how much the layer covers, from the upward component of the normal and the layer's height (`layer_a`)
+fn top_layer_coverage(draw: Draw, up: f32, layer_a: f32) -> f32 {
+	let coverage = draw.parallax;
+	let height = draw.parallax2;
+	let top = saturate((up - coverage.y) / coverage.z);
+	if (height.x == 0.0) {
+		return top;
+	}
+	// each side's height, weighted by its coverage; the higher one wins within the transition
+	let weights = vec2f(1.0 - top, top);
+	let heights = weights * vec2f(height.z, layer_a);
+	let w = (max(vec2f(0.0), heights + height.y - max(heights.x, heights.y)) + 1e-6) * weights;
+	return w.y / max(1.175494e-38, w.x + w.y);
+}
+
+// the layer's tangent-space normal, reoriented onto the base's by the base normal intensity
+fn top_layer_normal(draw: Draw, base: vec3f, bump: vec4f) -> vec3f {
+	let normal = draw.parallax_bright;
+	let xy = bump.rg * 2.0 - 1.0;
+	let layer = vec3f(xy * normal.x, max(1e-16, sqrt(1.0 - saturate(dot(xy, xy)))));
+	let reoriented = reorient_normal(base, layer * vec3f(-1.0, -1.0, 1.0));
+	return mix(layer, reoriented, normal.y);
+}
+
+// the layer's colour, metallic, roughness (the bump map's B) and occlusion (its A) blended in by `top`
+fn top_layer_surface(surface: Surface, draw: Draw, top: f32, layer: vec4f, bump: vec4f) -> Surface {
+	var s = surface;
+	let color = draw.parallax_color;
+	let blend = draw.parallax_dark;
+	let normal = draw.parallax_bright;
+	let luma = dot(layer.rgb, vec3f(0.2126729, 0.7151522, 0.0721750));
+	let tinted = mix(vec3f(luma), layer.rgb, color.w) * color.rgb;
+	// replace (mode 0) or add (mode 1, scaled by the additive intensity)
+	s.albedo = s.albedo * (1.0 - top * (1.0 - blend.x)) + tinted * top * mix(1.0, blend.y, blend.x);
+	s.metallic = mix(s.metallic, select(blend.w, layer.a, blend.z != 0.0), top);
+	s.roughness = mix(s.roughness, bump.b, top);
+	s.occlusion = mix(s.occlusion, select(mix(1.0, bump.a, normal.z), 1.0, normal.w != 0.0), top);
+	return s;
+}
+// #endregion
+
 // a shader that may discard loses early depth and, on tile-based GPUs, hidden-surface removal, so only the
 // depth passes of alpha-tested materials discard (fs_cutout_depth). their shading runs fs_opaque where the
 // depth matches.
@@ -292,6 +348,14 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let uv0_dy = dpdy(in.uv.xy) * gradient_scale;
 	let parallax_dx = dpdx(parallax_uv) * gradient_scale;
 	let parallax_dy = dpdy(parallax_uv) * gradient_scale;
+	// the top layer's coordinates: UV set 0, world XZ, or UV set 2, which reads as zeros (`topLayerParams` in
+	// materials.ts)
+	let layer_type = draw.parallax.w;
+	let layer_source = select(select(in.uv.xy, (in.rel + frame.eye.xyz).xz, layer_type > 0.5), vec2f(0.0), layer_type > 1.5);
+	let layer_t = draw.slot_uv[LAYER_SLOT];
+	let layer_uv = layer_source * layer_t.xy + layer_t.zw;
+	let layer_dx = dpdx(layer_uv) * gradient_scale;
+	let layer_dy = dpdy(layer_uv) * gradient_scale;
 
 	if ((flags & UNLIT) != 0u) {
 		// matte paintings (`mattePaintingLook` in materials.ts): the tinted texture brightened above a threshold,
@@ -352,20 +416,34 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		n = -n;
 	}
 
+	// the top layer, once both its maps are bound; the parallax glow can't share the slots
+	let layer_maps = PARALLAX_MAP | PARALLAX_NOISE_MAP;
+	let top_layer = (flags & TOP_LAYER) != 0u && (flags & layer_maps) == layer_maps;
+	var layer = vec4f(0.0);
+	var layer_bump = vec4f(0.0);
+	if (top_layer) {
+		layer = textureSampleGrad(parallax_map, parallax_sampler, layer_uv, layer_dx, layer_dy);
+		layer_bump = textureSampleGrad(parallax_noise_map, parallax_sampler, layer_uv, layer_dx, layer_dy);
+	}
+	// how much the layer covers
+	var top = 0.0;
+
 	var roughness = draw.surface.y;
-	if (has_normal && in.tangent.w != 0.0) {
-		var rg = packed.rg;
-		if ((flags & NORMAL_RAG) != 0u) {
-			rg.x = packed.r * packed.a;
-		}
-		let xy = unpack_normal_xy(rg);
-		var tn = vec3f(xy * draw.surface.w, normal_z(xy));
-		if (has_detail) {
-			// reoriented normal mapping of the detail onto the base normal
-			let dxy = unpack_normal_xy(detail.rg);
-			let d = vec3f(dxy * (detail_weight * draw.detail.z), normal_z(dxy)) * vec3f(-1.0, -1.0, 1.0);
-			let b1 = tn + vec3f(0.0, 0.0, 1.0);
-			tn = b1 * dot(b1, d) / max(1e-5, b1.z) - d;
+	if ((has_normal || top_layer) && in.tangent.w != 0.0) {
+		var tn = vec3f(0.0, 0.0, 1.0);
+		if (has_normal) {
+			var rg = packed.rg;
+			if ((flags & NORMAL_RAG) != 0u) {
+				rg.x = packed.r * packed.a;
+			}
+			let xy = unpack_normal_xy(rg);
+			tn = vec3f(xy * draw.surface.w, normal_z(xy));
+			if (has_detail) {
+				// reoriented normal mapping of the detail onto the base normal
+				let dxy = unpack_normal_xy(detail.rg);
+				let d = vec3f(dxy * (detail_weight * draw.detail.z), normal_z(dxy)) * vec3f(-1.0, -1.0, 1.0);
+				tn = reorient_normal(tn, d);
+			}
 		}
 		var t = normalize(in.tangent.xyz - n * dot(in.tangent.xyz, n));
 		var b = cross(in.normal, in.tangent.xyz) * in.tangent.w;
@@ -373,10 +451,17 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 			b = -b;
 		}
 		b = normalize(b - n * dot(b, n));
+		if (top_layer) {
+			let bumped = normalize(t * tn.x + b * tn.y + n * tn.z);
+			top = top_layer_coverage(draw, mix(n.y, bumped.y, draw.parallax.x), layer.a);
+			tn = mix(tn, top_layer_normal(draw, tn, layer_bump), top);
+		}
 		n = normalize(t * tn.x + b * tn.y + n * tn.z);
-		if ((flags & NORMAL_ROUGHNESS) != 0u) {
+		if (has_normal && (flags & NORMAL_ROUGHNESS) != 0u) {
 			roughness = mix(draw.surface.x, draw.surface.y, packed.b);
 		}
+	} else if (top_layer) {
+		top = top_layer_coverage(draw, n.y, layer.a);
 	}
 
 	var s = default_surface(albedo, n);
@@ -412,6 +497,9 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		s = blend_mask_channel(s, w.y, draw.mask_albedo[1].rgb, roughnesses.y, metallics.y);
 		s = blend_mask_channel(s, w.x, draw.mask_albedo[0].rgb, roughnesses.x, metallics.x);
 	}
+	if (top_layer) {
+		s = top_layer_surface(s, draw, top, layer, layer_bump);
+	}
 
 	var emission = 0.0;
 	if ((flags & EMISSIVE_MAP) != 0u) {
@@ -428,7 +516,7 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	s.emission = draw.emissive.rgb * emission * tint * mix(1.0, frame.ambient.y, draw.emissive2.z);
 
 	let parallax_maps = PARALLAX_MAP | PARALLAX_NOISE_MAP;
-	if ((flags & parallax_maps) == parallax_maps && in.tangent.w != 0.0) {
+	if ((flags & (parallax_maps | TOP_LAYER)) == parallax_maps && in.tangent.w != 0.0) {
 		// the glow's mask uses the same channel numbering as the emission mask, one lower
 		let glow_mask = map_channel(flags, draw.parallax_color.w + 1.0, base_a, packed, mask);
 		if (glow_mask > 0.01) {

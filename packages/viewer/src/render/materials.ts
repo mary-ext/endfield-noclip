@@ -9,7 +9,8 @@
  *
  * Lit's optional layers, by keyword: `_TRI_CHANNEL_MASK` blends the surface toward three authored colours by
  * the channels of `_MaskMap`, `_DETAIL_MAP` adds a tiling normal (and optionally colour and roughness) map
- * that fades with view depth, and `_PARALLAX_MAP` glows with a pattern ray-marched below the surface.
+ * that fades with view depth, `_PARALLAX_MAP` glows with a pattern ray-marched below the surface, and
+ * `_LAYERBLEND_TOP` covers upward-facing surfaces with a second material (moss, sand).
  *
  * @module
  */
@@ -51,7 +52,9 @@ const DEFAULT_ALBEDO: [r: number, g: number, b: number] = [0.5, 0.5, 0.5];
 /**
  * the texture slots the mesh shader samples, in binding order. the third holds `_MROMap` in the MRO layout
  * and the tri-channel `_MaskMap` otherwise ({@link LookFlags.TriChannelMask}): the frame group leaves seven
- * sampled textures of WebGPU's default sixteen, and a material using both is rare
+ * sampled textures of WebGPU's default sixteen, and a material using both is rare. the parallax slots hold
+ * the top layer's `_Layer1BaseMap` and `_Layer1BumpMap` in looks with {@link LookFlags.TopLayer}: no map02
+ * material has both keywords
  */
 export const SLOTS = [
 	'_BaseColorMap',
@@ -113,6 +116,11 @@ export const LookFlags = {
 	 * VFXFakeVolumeFog box, drawn by its back faces like a decal's
 	 */
 	EffectMist: 1 << 30,
+	/**
+	 * `_LAYERBLEND_TOP`: the parallax slots and rows hold the top layer ({@link topLayerParams}). the sign bit,
+	 * so the value is negative; `words` in mesh-renderer.ts store it unsigned
+	 */
+	TopLayer: 1 << 31,
 } as const;
 
 /** the slot flags of {@link LookFlags} by slot, which are cleared while a slot's texture isn't resident */
@@ -256,6 +264,9 @@ const floatOf = (entry: ReadyMaterial, shader: ShaderEntry, name: string, fallba
 const colorOf = (entry: ReadyMaterial, shader: ShaderEntry, name: string): Color | undefined =>
 	entry.colors[name] ?? shader.colors[name];
 
+const vectorOf = (entry: ReadyMaterial, shader: ShaderEntry, name: string): number[] | undefined =>
+	entry.vectors[name] ?? shader.vectors[name];
+
 /**
  * @param materials the package's material table
  * @returns a look per material id
@@ -370,14 +381,15 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	// a separate parallax mask texture (`_UseParallaxMask`) has no slot; such materials stay dark
 	const parallax =
 		lit && keywords.includes('_PARALLAX_MAP') && floatOf(entry, shader, '_UseParallaxMask', 0) === 0;
+	const topLayer = lit && !parallax && keywords.includes('_LAYERBLEND_TOP');
 	const names: (string | null)[] = [
 		'_BaseColorMap',
 		family === 'hlod' ? null : '_NormalMap',
 		maskSlotOf(entry, triChannel),
 		emissiveMap ? '_EmissiveMap' : null,
 		lit && keywords.includes('_DETAIL_MAP') ? '_DetailMap' : null,
-		parallax ? '_ParallaxMap' : null,
-		parallax ? '_ParallaxNoiseMap' : null,
+		parallax ? '_ParallaxMap' : topLayer ? '_Layer1BaseMap' : null,
+		parallax ? '_ParallaxNoiseMap' : topLayer ? '_Layer1BumpMap' : null,
 	];
 	names.forEach((name, i) => {
 		const slot = name === null ? undefined : entry.slots[name];
@@ -522,7 +534,11 @@ const lookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook => {
 	}
 
 	if (look.textures[5] >= 0 && look.textures[6] >= 0) {
-		parallaxParams(look, entry, shader);
+		if (topLayer) {
+			topLayerParams(look, entry, shader);
+		} else {
+			parallaxParams(look, entry, shader);
+		}
 	} else {
 		look.textures[5] = look.textures[6] = -1;
 		look.flags &= ~(LookFlags.ParallaxMap | LookFlags.ParallaxNoiseMap);
@@ -688,6 +704,90 @@ const parallaxParams = (look: MaterialLook, entry: ReadyMaterial, shader: Shader
 				: 0,
 		],
 		LookRow.parallaxBright,
+	);
+};
+
+/** float offsets of a top layer's parameters ({@link topLayerParams}), which reuse the parallax rows */
+export const TopLayerRow = {
+	/**
+	 * how much the bumped normal decides coverage (`_TopBlendWithBumpMap`), `_TopBlendThreshold`,
+	 * `_TopBlendSmoothness`, the layer's coordinates (`_LayerBlendUVType`: 0 UV set 0, 1 world XZ, 2 UV set 2)
+	 */
+	coverage: LookRow.parallax,
+	/** 1 for the height blend (`_LayerBlendHeight`), `_LayerBlendHeightTransition`, the base's height */
+	height: LookRow.parallax2,
+	/** linear `_Layer1TintColor` times `_Layer1ColorBrighterScale`, how much colour the layer keeps */
+	color: LookRow.parallaxColor,
+	/**
+	 * `_Layer1BaseColorBlendMode` (0 replace, 1 add), its additive intensity, `_LayerMetallicType`,
+	 * `_Layer1Metallic`
+	 */
+	blend: LookRow.parallaxDark,
+	/** `_Layer1BumpScale`, `_Layer1BaseNormalIntensity`, `_Layer1AOStrength`, `_LayerAOType` */
+	normal: LookRow.parallaxBright,
+} as const;
+
+/**
+ * `_LAYERBLEND_TOP`: where the surface faces up, a second material covers the base. coverage is `saturate((up
+ * − _TopBlendThreshold) / _TopBlendSmoothness)`, with `up` the world Y of the geometric normal, blended
+ * toward the bumped one by `_TopBlendWithBumpMap`. with `_LayerBlendHeight`, coverage then sharpens by
+ * comparing the base's height with the layer's (`_Layer1BaseMap`'s alpha). the layer's colour (desaturated,
+ * tinted, brightened) replaces or adds to the albedo; roughness (`_Layer1BumpMap`'s B), occlusion (its A),
+ * metallic and the normal (reoriented onto the base's by `_Layer1BaseNormalIntensity`) blend toward the
+ * layer's. both maps sample one coordinate, tiled by `_Layer1Tilling` and offset by `_Layer1Offset`, ignoring
+ * their `_ST`.
+ *
+ * the viewer doesn't load UV set 2. no map02 mesh drawn with a UV-set-2 layer has one, and the game reads a
+ * missing set as zeros, so these layers sample one texel. `_BaseHeightMap` has no slot and reads as the
+ * shader's grey default
+ */
+const topLayerParams = (look: MaterialLook, entry: ReadyMaterial, shader: ShaderEntry): void => {
+	const params = look.params;
+	const float = (name: string, fallback: number): number => floatOf(entry, shader, name, fallback);
+	look.flags |= LookFlags.TopLayer;
+	const tiling = float('_Layer1Tilling', 1);
+	const offset = vectorOf(entry, shader, '_Layer1Offset') ?? [0, 0, 0, 0];
+	for (const slot of [5, 6]) {
+		params.set([tiling, tiling, offset[0], offset[1]], LookRow.uv + slot * 4);
+		look.uvScales[slot] = Math.max(Math.abs(tiling), 1e-3);
+		look.flags &= ~(1 << (UV1_SHIFT + slot));
+	}
+	params.set(
+		[
+			float('_TopBlendWithBumpMap', 0),
+			float('_TopBlendThreshold', 0.5),
+			Math.max(float('_TopBlendSmoothness', 0.5), 1.175_494e-38),
+			float('_LayerBlendUVType', 0),
+		],
+		TopLayerRow.coverage,
+	);
+	params.set(
+		[float('_LayerBlendHeight', 0) !== 0 ? 1 : 0, float('_LayerBlendHeightTransition', 1), 0.5],
+		TopLayerRow.height,
+	);
+	const tint = linearRgb(colorOf(entry, shader, '_Layer1TintColor') ?? [1, 1, 1, 1]);
+	const brighter = float('_Layer1ColorBrighterScale', 1);
+	params.set(
+		[...tint.map((c) => c * brighter), Math.min(Math.max(float('_Layer1Saturation', 0) + 1, 0), 1)],
+		TopLayerRow.color,
+	);
+	params.set(
+		[
+			float('_Layer1BaseColorBlendMode', 0),
+			float('_Layer1BaseColorAdditiveIntensity', 1),
+			float('_LayerMetallicType', 0),
+			float('_Layer1Metallic', 0),
+		],
+		TopLayerRow.blend,
+	);
+	params.set(
+		[
+			float('_Layer1BumpScale', 1),
+			float('_Layer1BaseNormalIntensity', 0),
+			float('_Layer1AOStrength', 1),
+			float('_LayerAOType', 0),
+		],
+		TopLayerRow.normal,
 	);
 };
 
