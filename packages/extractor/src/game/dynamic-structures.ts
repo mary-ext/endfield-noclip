@@ -6,6 +6,7 @@ import {
 	type DynamicResourceEntity,
 	type DynamicResourceGrid,
 } from '@endfield-noclip/formats/endfield/dynamic-resources';
+import type { ExtraSceneSlot } from '@endfield-noclip/formats/endfield/dynamic-scene';
 import {
 	parseDynamicChunk,
 	readChunkEntities,
@@ -40,6 +41,8 @@ export interface DynamicStructures {
 	controls: SceneControl[];
 	/** MapConfig scene state indices the visibility expressions require, as `sceneStateControl` controls */
 	sceneStates: Set<number>;
+	/** slots for separately stored scenes (Dijiang cabins), one per distinct slot, with the first owner's id */
+	slots: { id: string; slot: ExtraSceneSlot }[];
 	models: StructureModel[];
 	/** selections and exclusions, for the pack report */
 	counts: Record<string, number>;
@@ -91,6 +94,7 @@ export const loadDynamicStructures = async (
 		models: [],
 		controls: [],
 		sceneStates: new Set(),
+		slots: [],
 		counts: { owners: owners.length, ecsGroups: 0, models: 0, effects: 0 },
 	};
 	const controls = new Map<string, SceneControl>();
@@ -126,6 +130,14 @@ export const loadDynamicStructures = async (
 		ordinals.set(entity.grid, ordinal + 1);
 		// level scripts address script-controlled entities by their global id, which holds across builds
 		const owned = entity.uid === null ? `${entity.grid}:${ordinal}` : String(entity.uid);
+		// a slot is stored on two entities with identical components
+		const { extraScene } = entity;
+		if (
+			extraScene !== null &&
+			!result.slots.some(({ slot }) => slot.position.every((v, i) => v === extraScene.position[i]))
+		) {
+			result.slots.push({ id: owned, slot: extraScene });
+		}
 		const controller = entity.controllers[0];
 		const gates = entity.gates.reduce<Alternatives>(
 			(partial, gate) => allOf(partial, game.requirements(gateCondition(gate))),

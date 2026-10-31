@@ -219,6 +219,26 @@ the game keeps for them (open doors, unlocked region walls), and rows with anoth
 left out. templates without a data file of their own (the weapon-wall racks, some doors) and
 templates that name no model are reported or skipped.
 
+## Dijiang cabins
+
+implemented in [`cabins.ts`](../../packages/extractor/src/game/cabins.ts).
+
+Dijiang (`base01_lv001`) has four cabin slots, `ExtraSceneSlot` entities (type 29) whose
+`ExtraSceneComp` holds a box (corners stored swapped per axis), an origin and a direction; each slot
+is stored on two entities with identical components. a cabin is a separately stored scene,
+`Data/DynamicStreaming/PC/Extra/<scene>/fb_main_*` with model rows only, named per cabin type by
+`Data/Json/SpaceshipCabinData.json` (`cabinSpawnInfos.<type>.dynamicSceneUniqueId`; manufacturing
+cabins and growth chambers). a built cabin's rows go to the slot origin, turned by the direction in
+quarter turns of yaw; with that convention each cabin's entrance (the start of its NPC walkway, at
+local +x) meets the slot's door, and the medium slot's box holds the growth chamber exactly.
+
+each slot holds one cabin type (the room tables allow one type per room); the packer gives a slot
+the largest cabin whose row pivots fit its box, else the smallest, which puts the growth chamber in
+the medium slot and manufacturing cabins in the small ones. one of the small slots has no door and
+no room-table row; it's offered like the others. each slot is a `cabin:<id>` control, empty by
+default. cabin levels (1–3) change no stored geometry (only the planting boxes' and machine's
+runtime state), so they aren't offered.
+
 ## doodad groups
 
 implemented in [`doodad-shell.ts`](../../packages/extractor/src/game/doodad-shell.ts) and
@@ -295,8 +315,8 @@ extract time from the install's IL2CPP metadata (`il2cpp_data/Metadata/global-me
 version 29) and `GameAssembly.dll` ([`il2cpp/`](../../packages/formats/src/il2cpp)): the generated
 `<Type>ForMemoryPack` wrappers' setter properties give each object's members in order, and their
 `MemoryPackUnion` attributes the union tags. the formatting rules beyond the wrappers are described
-in the decoder. 5503 of the client's 5505 level scripts decode to their exact length; two hold an
-NPC dictionary with an unknown header.
+in the decoder. every level script and interactive template of the client decodes to its exact
+length.
 
 ## how the package encodes conditions
 
@@ -392,6 +412,7 @@ environment blend.
   "Quests". rules elsewhere show quests by mission and quest name instead of id
 - **variables**: a select of ranges, the default marked "(initial)"
 - **progression**: one select per progression, "Level n", "Visual form n" or "Group level n"
+- **Dijiang cabins**: a checkbox per slot, built or empty
 - **stream areas**: a select per area, "Follow camera (shown/hidden)", shown or hidden
 - **harvest**: standing or felled
 - **script / event scenery**, **logic-gate previews**: checkboxes; a script group lists its drivers

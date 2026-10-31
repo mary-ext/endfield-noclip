@@ -31,6 +31,7 @@ const outpost: DynamicEntity = {
 	controllers: [{ kind: 'settlement', settlementId: 'stm_hongs_1', isMain: true }],
 	gates: [],
 	resourceGroups: [group(0, 0b00011), group(1, 0b00100), group(2, 0b11100), group(3, 0)],
+	extraScene: null,
 };
 
 const tree: DynamicEntity = {
@@ -41,6 +42,7 @@ const tree: DynamicEntity = {
 	controllers: [],
 	gates: [],
 	resourceGroups: [group(0, 0b01), group(1, 0b10)],
+	extraScene: null,
 };
 
 test('summarizes progressions with their levels and defaults to the lowest authored level', () => {

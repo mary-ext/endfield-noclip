@@ -24,6 +24,7 @@ import { FlatBuffer } from '../binary/flatbuffer.ts';
 //   IdComp: u64 uniqueId @0, u64 overrideId @8 (0 on every entity seen; IL2CPP `FBDynamicSceneIdComp`)
 //   FactoryRegionControlComp: i32 region (root string, a level id) @0, i32 @4
 //   PoiControlComp: i32 poi (root string) @0, i32 domainType @4
+//   46 [ExtraSceneComp 40 B] = Vector3 minPos @0, maxPos @12, currentPos @24, u32 direction @36
 //   16 [MissionCondition 16 B] = i32 id (root string), i32 isQuest, i32 state, i32 isSame
 //   27 [MissionControlComp 32 B] = Conditions DataGroup @0 (MissionCondition rows), i32 compareType @24,
 //     i32 toBeTrue @28
@@ -54,6 +55,7 @@ export const DynamicData = {
 	SettlementControlComp: 27,
 	FactoryRegionControlComp: 28,
 	ResourceComp: 30,
+	ExtraSceneComp: 44,
 	MapVarControlComp: 51,
 	PoiControlComp: 55,
 } as const;
@@ -132,6 +134,19 @@ export interface DynamicEntity {
 	/** load conditions; all must hold. variable components that don't control loading aren't listed */
 	gates: DynamicGate[];
 	resourceGroups: DynamicResourceGroup[];
+	/** an `ExtraSceneSlot`'s slot, where a separately stored scene (a Dijiang cabin) is placed; `null` otherwise */
+	extraScene: ExtraSceneSlot | null;
+}
+
+/** a slot for a separately stored scene, in world space */
+export interface ExtraSceneSlot {
+	/** the slot's box */
+	min: [number, number, number];
+	max: [number, number, number];
+	/** where the placed scene's origin goes */
+	position: [number, number, number];
+	/** the placed scene's turn about the vertical axis, in quarter turns */
+	direction: number;
 }
 
 // #endregion
@@ -150,6 +165,7 @@ const Slot = {
 	FactoryRegionControlComp: 30,
 	ResourceComp: 32,
 	RootComp: 33,
+	ExtraSceneComp: 46,
 	MapVarControlComp: 52,
 	PoiControlComp: 55,
 } as const;
@@ -167,6 +183,7 @@ const Width = {
 	RootComp: 84,
 	MapVarControlComp: 48,
 	PoiControlComp: 8,
+	ExtraSceneComp: 40,
 } as const;
 
 /**
@@ -266,6 +283,7 @@ export const readDynamicEntities = (bytes: Uint8Array): DynamicEntity[] => {
 				controllers: [],
 				gates: [],
 				resourceGroups: [],
+				extraScene: null,
 			};
 			for (let c = 0; c < comps.count; c++) {
 				const di = row(vectors.dataIndex, comps.index + c, Width.DataIndex, 'DataIndex');
@@ -348,6 +366,27 @@ export const readDynamicEntities = (bytes: Uint8Array): DynamicEntity[] => {
 					case DynamicData.IdComp: {
 						const id = row(vectors.ids, index, Width.IdComp, 'IdComp');
 						entity.uid = fb.u64(id);
+						break;
+					}
+					case DynamicData.ExtraSceneComp: {
+						const s = rowIn(
+							fb.u32(di + 8),
+							Slot.ExtraSceneComp,
+							index,
+							Width.ExtraSceneComp,
+							'ExtraSceneComp',
+						);
+						const vec3 = (offset: number): [number, number, number] => [
+							fb.f32(s + offset),
+							fb.f32(s + offset + 4),
+							fb.f32(s + offset + 8),
+						];
+						entity.extraScene = {
+							min: vec3(0),
+							max: vec3(12),
+							position: vec3(24),
+							direction: fb.u32(s + 36),
+						};
 						break;
 					}
 					case DynamicData.SettlementControlComp: {

@@ -80,6 +80,7 @@ export interface VisibilityGroup {
  * - `logic`: a logic-state gate with no recovered controller
  * - `harvest`: one level's harvestable trees, standing (0) or felled (1); each tree's state is the player's, at
  *   runtime
+ * - `cabin`: a Dijiang cabin slot, empty (0) or built (1); building is the player's choice
  * - `area`: a stream area, shown (1) or hidden (0). unless the user picks a value, a viewer sets it from the
  *   camera (see {@link StreamAreasInfo}); its `default` is only what holds without a camera
  * - `settlement` / `poi` / `factoryRegion`: a progression level; `facility`: an interactive's visual form;
@@ -94,6 +95,7 @@ export type SceneControlKind =
 	| 'script'
 	| 'logic'
 	| 'harvest'
+	| 'cabin'
 	| 'area'
 	| 'settlement'
 	| 'poi'

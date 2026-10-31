@@ -77,6 +77,8 @@ const build = (
 		gates?: { compare: number };
 		/** the effect row's second copy of its position, which should repeat the first */
 		effectCopy?: number;
+		/** adds a third entity, an extra-scene slot */
+		slot?: boolean;
 	} = {},
 ): Uint8Array => {
 	const w = new Writer();
@@ -91,7 +93,7 @@ const build = (
 	w.view.setUint32(strings, 2, true);
 	w.link(rootFields.get(4)!, strings);
 
-	const slots = [0, 3, 5, 7, 8, 9, 12, 16, 17, 27, 28, 29, 31, 32, 33, 52, 55];
+	const slots = [0, 3, 5, 7, 8, 9, 12, 16, 17, 27, 28, 29, 31, 32, 33, 46, 52, 55];
 	const grid = w.table(56, slots);
 	w.link(gridVector + 4, grid.get(0)! - 4);
 	w.view.setUint32(grid.get(0)!, GRID, true);
@@ -106,8 +108,12 @@ const build = (
 		ref(DynamicData.MissionControlComp, 0),
 		ref(DynamicData.GlobalVarControlComp, 0),
 		ref(DynamicData.MapVarControlComp, 0),
+		ref(DynamicData.ExtraSceneComp, 0),
 	].map((words) => words.slice(0, 4));
 	w.link(grid.get(5)!, w.structs(16, dataIndex));
+	// min and max corners (stored swapped), origin, direction
+	const float = (value: number): number => new Int32Array(new Float32Array([value]).buffer)[0];
+	w.link(grid.get(46)!, w.structs(40, [[...[3, 7, 4, -3, 2, -4, 0, 4.5, 0.5].map(float), 1]]));
 	// any of (quest `stm_hongs_3` = completed, mission `INN_TABLE` ≠ processing), loaded while false; global
 	// variable 79 ≠ 3 gating the load; a map variable that only drives the level
 	w.link(grid.get(27)!, w.structs(32, [[...ref(DynamicData.MissionCondition, 0, 2), 1, 0]]));
@@ -161,6 +167,7 @@ const build = (
 		w.structs(84, [
 			[16, 0, ...ref(1, 0, 3), 0, ...visibility(0)],
 			[39, 0, ...ref(1, 3, options.gates ? 6 : 3), 0, ...visibility(1)],
+			...(options.slot ? [[29, 0, ...ref(1, 9, 1), 0, ...visibility(0)]] : []),
 		]),
 	);
 	w.link(grid.get(55)!, w.structs(8, [[1, 161]]));
@@ -269,4 +276,16 @@ test('script-controlled scenery retains its authored load default', () => {
 	);
 	assert.equal(readDynamicResources(build({ scriptDefault: 1 })).entities[1].scriptDefaultLoad, true);
 	assert.throws(() => readDynamicResources(build({ scriptDefault: 2 })), /script default load/);
+});
+
+test('reads an extra-scene slot: box, origin and quarter turns', () => {
+	const entities = readDynamicEntities(build({ slot: true }));
+	assert.equal(entities.length, 3);
+	assert.deepEqual(entities[2].extraScene, {
+		min: [3, 7, 4],
+		max: [-3, 2, -4],
+		position: [0, 4.5, 0.5],
+		direction: 1,
+	});
+	assert.equal(entities[0].extraScene, null);
 });

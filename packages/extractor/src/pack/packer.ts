@@ -85,6 +85,7 @@ import type { WaterTable } from '@endfield-noclip/package-format/water';
 import { getOrInsert } from '../collections.ts';
 import type { Context } from '../context.ts';
 import { ignoreMissing } from '../errors.ts';
+import { loadCabins } from '../game/cabins.ts';
 import { loadDynamicStructures } from '../game/dynamic-structures.ts';
 import { GameState } from '../game/game-state.ts';
 import { loadInteractiveFacilities } from '../game/interactive-facilities.ts';
@@ -970,13 +971,15 @@ const collectEntities = async (
 		scene.partition,
 	);
 	counts.interactiveFacilities = facilities.progressions.length;
-	collected.facilities = facilities.progressions;
+	const cabins = await loadCabins(context, dynamic.slots, scene.partition);
+	counts.cabinSlots = cabins.controls.length;
+	collected.facilities = [...facilities.progressions, ...cabins.controls];
 	counts.unsupportedInteractiveFiles = facilities.unsupported.length;
 	const resolver = await context.resolver();
 	const prefabs = new Map<bigint, Promise<PrefabRenderer[]>>();
 	const unsupportedPrefabs: { path: string; reason: string }[] = [];
 	let modelId = 0;
-	for (const placement of [...dynamic.models, ...facilities.models]) {
+	for (const placement of [...dynamic.models, ...facilities.models, ...cabins.models]) {
 		const { model, levelTag } = placement;
 		// ownership filters can reject a prefab before any of its bundles are read.
 		if (

@@ -45,6 +45,12 @@ const SECTIONS: { kinds: SceneControlKind[]; title: string; note: string; open: 
 		open: true,
 	},
 	{
+		kinds: ['cabin'],
+		title: 'Dijiang cabins',
+		note: 'Cabins the player builds into Dijiang’s slots; empty by default.',
+		open: true,
+	},
+	{
 		kinds: ['area'],
 		title: 'Stream areas',
 		note: 'Interiors, caves and other places the game loads by where the camera is. Each follows the camera unless you pick a value.',
@@ -128,7 +134,7 @@ const Drivers = ({ viewer, drivers }: { viewer: Viewer; drivers: readonly Contro
 };
 
 /** kinds whose controls are plain on/off switches */
-const SWITCH_KINDS: ReadonlySet<SceneControlKind> = new Set(['sceneState', 'script', 'logic']);
+const SWITCH_KINDS: ReadonlySet<SceneControlKind> = new Set(['sceneState', 'script', 'logic', 'cabin']);
 
 /**
  * a scene control: a checkbox for an on/off switch only the user sets, otherwise a select. derived controls
