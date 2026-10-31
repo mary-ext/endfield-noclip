@@ -25,7 +25,7 @@ import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
-import { alphaTextureOf, LOOK_FLOATS, LookFlags, SLOTS, SLOT_FLAGS } from './materials.ts';
+import { LOOK_FLOATS, LookFlags, type MaterialLook, SLOTS, SLOT_FLAGS } from './materials.ts';
 import effectWgsl from './shaders/effect.wgsl?raw';
 import meshWgsl from './shaders/mesh.wgsl?raw';
 import { SHADOW_DEPTH_STATE } from './shadow-map.ts';
@@ -137,8 +137,9 @@ const SHADOW_PHASES: readonly DrawPhase[] = [
 
 /** the vertex buffers bound in a pass, so binding the same buffer at the same offset again is skipped */
 class VertexBindings {
-	#buffers: (GPUBuffer | null)[] = [];
-	#offsets: number[] = [];
+	// one per vertex buffer slot of the widest layout
+	#buffers: (GPUBuffer | null)[] = [null, null, null, null, null, null];
+	#offsets: number[] = [0, 0, 0, 0, 0, 0];
 
 	/** forgets what's bound (at the start of each encode, since other families bind in between) */
 	reset(): void {
@@ -186,6 +187,22 @@ interface PreparedDraw {
 	uvFormat: UvFormat;
 	/** for scene effects: the material id and slot bindings their group is built from at encode */
 	effect: { material: number; slots: (TextureBinding | null)[] } | null;
+}
+
+/** what a material's draws take from its textures' current bindings */
+interface MaterialState {
+	/** the texture store's version this was derived at */
+	version: number;
+	/** each slot's binding, `null` where it has no texture or it hasn't streamed in */
+	slots: (TextureBinding | null)[];
+	/** the look's flags without the flags of slots that aren't bound */
+	flags: number;
+	/** the material group; `null` for effects, whose group also binds the main pass's outputs */
+	group: GPUBindGroup | null;
+	/** whether the texture holding the alpha is bound, so alpha testing can run */
+	alphaReady: boolean;
+	/** whether every texture is bound, which effects wait for */
+	complete: boolean;
 }
 
 interface MaterialBinding {
@@ -258,7 +275,8 @@ export class MeshRenderer {
 	#defaultSampler: GPUSampler;
 	/** material bind groups by material id */
 	#bindings = new Map<number, MaterialBinding>();
-	#slotBindings: (TextureBinding | null)[] = SLOTS.map(() => null);
+	/** by material id */
+	#materialStates = new Map<number, MaterialState>();
 	#versions: number[] = SLOTS.map(() => -1);
 	#opaqueOrder: MeshBucket[] = [];
 	#cutoutOrder: MeshBucket[] = [];
@@ -589,6 +607,7 @@ export class MeshRenderer {
 	/** forgets material bind groups (when a package is unloaded) */
 	releaseMaterials(): void {
 		this.#bindings.clear();
+		this.#materialStates.clear();
 		this.#effectBindings.clear();
 	}
 
@@ -615,6 +634,36 @@ export class MeshRenderer {
 		});
 		this.#bindings.set(material, { versions: [...versions], group });
 		return group;
+	}
+
+	/** a material's state, derived again only after the texture store changed */
+	#materialState(material: number, look: MaterialLook, textures: TextureStore): MaterialState {
+		const cached = this.#materialStates.get(material);
+		if (cached !== undefined && cached.version === textures.version) {
+			return cached;
+		}
+		const slots: (TextureBinding | null)[] = [];
+		let flags = look.flags;
+		let complete = true;
+		for (let i = 0; i < SLOTS.length; i++) {
+			const texture = look.textures[i];
+			const binding = texture < 0 ? null : textures.binding(texture);
+			slots.push(binding);
+			if (binding === null) {
+				flags &= ~SLOT_FLAGS[i];
+				complete &&= texture < 0;
+			}
+		}
+		const state: MaterialState = {
+			version: textures.version,
+			slots,
+			flags,
+			group: (look.flags & LookFlags.Effect) !== 0 ? null : this.#materialGroup(material, slots),
+			alphaReady: slots[(look.flags & LookFlags.AlphaNormal) !== 0 ? 1 : 0] !== null,
+			complete,
+		};
+		this.#materialStates.set(material, state);
+		return state;
 	}
 
 	/** draws nothing this frame */
@@ -657,12 +706,13 @@ export class MeshRenderer {
 			if (bucket.castOnly && (!look.castsShadows || look.transparent)) {
 				continue;
 			}
-			if ((look.flags & LookFlags.Unlit) !== 0 && textures.binding(look.textures[0]) === null) {
+			const state = this.#materialState(bucket.material, look, textures);
+			if ((look.flags & LookFlags.Unlit) !== 0 && state.slots[0] === null) {
 				continue;
 			}
 			// effects are made of their textures, so they wait for all of them
 			if ((look.flags & LookFlags.Effect) !== 0) {
-				if (look.textures.every((texture) => texture < 0 || textures.binding(texture) !== null)) {
+				if (state.complete) {
 					const decal = (look.flags & LookFlags.EffectDecal) !== 0;
 					if ((look.flags & LookFlags.EffectMist) !== 0) {
 						(decal ? mistVolumes : mists).push(bucket);
@@ -674,7 +724,7 @@ export class MeshRenderer {
 			}
 			if (look.transparent) {
 				transparent.push(bucket);
-			} else if (look.cutout && textures.binding(alphaTextureOf(look)) !== null) {
+			} else if (look.cutout && state.alphaReady) {
 				cutout.push(bucket);
 			} else {
 				opaque.push(bucket);
@@ -719,7 +769,6 @@ export class MeshRenderer {
 		const params = this.#paramData;
 		const words = this.#paramWords;
 		const ids = this.#drawIdData;
-		const slots = this.#slotBindings;
 		let listStart = LIST_CAPACITY;
 		let listEnd = 0;
 		let d = 0;
@@ -759,25 +808,31 @@ export class MeshRenderer {
 				continue;
 			}
 			const look = bucket.look;
-			let flags = look.flags;
-			for (let i = 0; i < SLOTS.length; i++) {
-				const texture = look.textures[i];
-				slots[i] = texture < 0 ? null : textures.binding(texture);
-				if (slots[i] === null) {
-					flags &= ~SLOT_FLAGS[i];
-				}
-			}
+			const state = this.#materialState(bucket.material, look, textures);
 			const at = d * DRAW_FLOATS;
-			params.set(resident.positionOffset, at);
+			// element by element: `set` from a small plain array costs more than the copy
+			const [ox, oy, oz] = resident.positionOffset;
+			const [sx, sy, sz] = resident.positionScale;
+			params[at] = ox;
+			params[at + 1] = oy;
+			params[at + 2] = oz;
 			words[at + 3] =
-				flags |
+				state.flags |
 				(resident.normalOffset === null ? 0 : GeometryFlags.HasNormals) |
 				(resident.tangentOffset === null ? 0 : GeometryFlags.HasTangents) |
 				(resident.colorOffset === null ? 0 : GeometryFlags.HasColors);
-			params.set(resident.positionScale, at + 4);
+			params[at + 4] = sx;
+			params[at + 5] = sy;
+			params[at + 6] = sz;
 			params[at + 7] = 0;
-			params.set(resident.uvTransforms[0], at + 8);
-			params.set(resident.uvTransforms[1], at + 12);
+			for (let set = 0; set < 2; set++) {
+				const transform = resident.uvTransforms[set];
+				const to = at + 8 + set * 4;
+				params[to] = transform[0];
+				params[to + 1] = transform[1];
+				params[to + 2] = transform[2];
+				params[to + 3] = transform[3];
+			}
 			params.set(look.params, at + 16);
 			ids.fill(d, bucket.first, bucket.first + bucket.count);
 			listStart = Math.min(listStart, bucket.first);
@@ -785,8 +840,8 @@ export class MeshRenderer {
 
 			// an effect's group also binds the main pass's outputs, so it's built when the transparent pass encodes
 			const isEffect = b >= effectFrom;
-			const material = isEffect ? null : this.#materialGroup(bucket.material, slots);
-			const effect = isEffect ? { material: bucket.material, slots: [...slots] } : null;
+			const material = isEffect ? null : state.group;
+			const effect = isEffect ? { material: bucket.material, slots: state.slots } : null;
 			const cull = faceCullOf(bucket);
 			const draw = this.#draws[d];
 			if (draw === undefined) {
@@ -835,7 +890,7 @@ export class MeshRenderer {
 
 			this.instanceCount += bucket.count;
 			this.triangles += (bucket.count * range.indexCount) / 3;
-			if (slots[0] !== null) {
+			if (state.slots[0] !== null) {
 				this.texturedDraws++;
 			}
 		}

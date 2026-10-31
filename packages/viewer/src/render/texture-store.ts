@@ -115,6 +115,8 @@ export class TextureStore {
 	#supported: boolean;
 	/** GPU bytes of integrated levels */
 	bytes = 0;
+	/** bumped whenever any texture's binding changes, so users can keep what they derived from bindings */
+	version = 0;
 
 	/**
 	 * @param device the device
@@ -329,6 +331,7 @@ export class TextureStore {
 		state.gpu = next;
 		state.top = next === null ? state.entry.mipCount : top;
 		state.version++;
+		this.version++;
 		state.binding =
 			next === null
 				? null
