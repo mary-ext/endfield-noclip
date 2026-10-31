@@ -50,7 +50,12 @@ export interface MissionInfo {
 export interface StoryPlace {
 	/** a {@link StatesInfo.missions} id */
 	mission: string;
-	/** 1-based position in the mission's main flow, or `null` for side branches, hidden steps and missions */
+	/**
+	 * position in the mission's flow: 1-based in its main flow (hidden steps included); a quest off it sits
+	 * half a step after its predecessor, since it starts once that completes. `null` for missions and
+	 * unplaceable quests. a story point "at step p" has quests before p completed, at p in progress and after p
+	 * not started
+	 */
 	step: number | null;
 }
 

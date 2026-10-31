@@ -309,8 +309,10 @@ string, with `<@…>…</>` rich-text tags, stripped for labels).
   texts `ep<n>_name`, so the label is inferred from the id.
 - **quest**: `questDic[<quest id>]`. its label is its first objective's text, else the mission
   description it shows while running (`descriptionOverride`). `mainPathQuests` lists the main flow
-  in order and gives the step number; side branches have none. hidden quests (`showMode` 1000, no
-  objectives) exist only to drive scenery and are labelled "hidden step" with their id's suffix.
+  in order, hidden steps included, and gives the step number; a quest off it (`flowIndex` 1, a side
+  branch) starts once its predecessors (`prevQuestIdList`) complete, so it sits half a step after
+  them. hidden quests (`showMode` 1000, no objectives) exist only to drive scenery and are labelled
+  "hidden step" with their id's suffix.
 - quests whose mission the client lacks keep their raw id; some ids that conditions name are absent
   from the client (stale or unreleased), and event day locks (`a1m3_q#Day2Lock`) are stages the
   server times.
@@ -327,9 +329,14 @@ for every set and passes the results to the instance selector, the water rendere
 environment blend.
 
 - **scene states**: a select per state, "Follow game (on/off)" for derived states, else on/off
-- **quests and missions**: grouped by quest log tab and mission (with chapter and episode), quests
-  in step order; a select of states, the default marked "(initial)". rules elsewhere show quests by
-  mission and quest name instead of id
+- **quests and missions**: quests run in order, so progress is picked as a story point rather than
+  per quest ([`story.ts`](../../packages/package-format/src/story.ts)). "Main story progress" lists
+  the main story's missions in id order (episode, mission, decimal) with a point at each mission's
+  start and at each step a listed quest sits at; picking one completes every quest and mission
+  before it, sets that step and its mission in progress and leaves the rest not started. each
+  mission below, grouped by quest log tab (with chapter, episode and where it takes place), has the
+  same "Progress" select over its own steps, and its quests' individual state selects under
+  "Quests". rules elsewhere show quests by mission and quest name instead of id
 - **variables**: a select of ranges, the default marked "(initial)"
 - **progression**: one select per progression, "Level n", "Visual form n" or "Group level n"
 - **stream areas**: a select per area, "Follow camera (shown/hidden)", shown or hidden

@@ -64,13 +64,33 @@ export const labelStory = async (
 			continue;
 		}
 		const quest = mission.quests.find((entry) => entry.id === id);
-		const step = mission.mainPath.indexOf(id);
-		control.story = { mission: missionId, step: step === -1 ? null : step + 1 };
+		control.story = { mission: missionId, step: flowStep(mission, id) };
 		const label = quest && (plain(quest.objectiveKey) ?? plain(quest.descriptionKey));
 		// hidden steps exist only to drive scenery; their id suffix is the best name they have
 		control.name = label ?? `hidden step ${id.slice(missionId.length + 3)}`;
 	}
 	return [...missions.values()].toSorted((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }));
+};
+
+/**
+ * @returns the quest's 1-based position in the mission's main flow; a quest off it, half a step after its
+ *   predecessor's position (it starts once that completes); `null` when no predecessor chain reaches the
+ *   flow
+ */
+const flowStep = (mission: MissionRuntime, id: string, seen = new Set<string>()): number | null => {
+	const index = mission.mainPath.indexOf(id);
+	if (index !== -1) {
+		return index + 1;
+	}
+	if (seen.has(id)) {
+		return null;
+	}
+	seen.add(id);
+	const quest = mission.quests.find((entry) => entry.id === id);
+	const steps = (quest?.previous ?? [])
+		.map((previous) => flowStep(mission, previous, seen))
+		.filter((step) => step !== null);
+	return steps.length === 0 ? null : Math.floor(Math.max(...steps)) + 0.5;
 };
 
 const missionInfo = (mission: MissionRuntime, plain: (key: string | null) => string | null): MissionInfo => {

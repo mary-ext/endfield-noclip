@@ -11,6 +11,7 @@ const quest = (fields: Record<string, unknown>) => ({
 	objectiveList: [{ description: { key: 'objective_x1m1_1_001' } }],
 	overrideMissionDesc: false,
 	descriptionOverride: {},
+	prevQuestIdList: [],
 	...fields,
 });
 
@@ -24,8 +25,12 @@ test('reads a mission name, its main flow and per-quest text keys', () => {
 			levelId: 'map01_lv002',
 			questDic: {
 				'x1m1_q#1': quest({}),
-				'x1m1_q#2': quest({ overrideMissionDesc: true, descriptionOverride: { key: 'x1m1_desc_002' } }),
-				'x1m1_q#Deco': quest({ showMode: 1000, objectiveList: [] }),
+				'x1m1_q#2': quest({
+					overrideMissionDesc: true,
+					descriptionOverride: { key: 'x1m1_desc_002' },
+					prevQuestIdList: ['x1m1_q#1'],
+				}),
+				'x1m1_q#Deco': quest({ showMode: 1000, objectiveList: [], prevQuestIdList: ['x1m1_q#1'] }),
 			},
 			mainPathQuests: ['x1m1_q#1', 'x1m1_q#2'],
 		})}`,
@@ -38,14 +43,21 @@ test('reads a mission name, its main flow and per-quest text keys', () => {
 		levelId: 'map01_lv002',
 		mainPath: ['x1m1_q#1', 'x1m1_q#2'],
 		quests: [
-			{ id: 'x1m1_q#1', objectiveKey: 'objective_x1m1_1_001', descriptionKey: null, hidden: false },
+			{
+				id: 'x1m1_q#1',
+				objectiveKey: 'objective_x1m1_1_001',
+				descriptionKey: null,
+				hidden: false,
+				previous: [],
+			},
 			{
 				id: 'x1m1_q#2',
 				objectiveKey: 'objective_x1m1_1_001',
 				descriptionKey: 'x1m1_desc_002',
 				hidden: false,
+				previous: ['x1m1_q#1'],
 			},
-			{ id: 'x1m1_q#Deco', objectiveKey: null, descriptionKey: null, hidden: true },
+			{ id: 'x1m1_q#Deco', objectiveKey: null, descriptionKey: null, hidden: true, previous: ['x1m1_q#1'] },
 		],
 	});
 });

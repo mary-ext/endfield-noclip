@@ -1,4 +1,10 @@
 import type { MissionInfo, SceneControl, SceneControlKind } from '@endfield-noclip/package-format/states';
+import {
+	storyOrder,
+	storyPointPicks,
+	storyPoints,
+	type StoryPoint,
+} from '@endfield-noclip/package-format/story';
 
 import { useId, useState } from 'react';
 
@@ -140,16 +146,89 @@ const ordered = (entries: readonly SceneControl[]): SceneControl[] =>
 			a.id.localeCompare(b.id),
 	);
 
-/** quest and mission controls grouped by quest log tab and mission, quests in step order */
+/**
+ * a select over story points: each sets every quest and mission control of the given missions consistently
+ *
+ * @param props.listed the controls listed for the shown level, which decide the points offered
+ * @param props.all every control of the package, which the picks cover
+ */
+const StoryProgress = ({
+	viewer,
+	label,
+	order,
+	listed,
+	all,
+	missions,
+	finished,
+}: {
+	viewer: Viewer;
+	label: string;
+	/** mission ids in story order */
+	order: readonly string[];
+	listed: readonly SceneControl[];
+	all: readonly SceneControl[];
+	missions: ReadonlyMap<string, MissionInfo>;
+	/** the label of the finished point */
+	finished: string;
+}) => {
+	const points: { key: string; point: StoryPoint; text: string }[] = [
+		{ key: 'none', point: { mission: -1, step: 0 }, text: 'not started' },
+		...storyPoints(listed, order).map(({ point, mission, quest }) => {
+			const name = (order.length > 1 && missions.get(mission)?.name) || null;
+			const step = quest === null ? 'started' : quest.name;
+			return {
+				key: point === null ? 'done' : `${point.mission}:${point.step}`,
+				point,
+				text: point === null ? finished : name === null ? step : `${name}: ${step}`,
+			};
+		}),
+	];
+	// the point whose picks the current values match, if any
+	const current = points.findIndex(({ point }) =>
+		Object.entries(storyPointPicks(all, order, point)).every(
+			([id, value]) =>
+				(viewer.sceneValues[id] ?? 3) === (value ?? all.find((entry) => entry.id === id)?.default ?? 3),
+		),
+	);
+	return (
+		<label className="scene-choice">
+			<span>
+				{label}
+				<small className="muted">sets the quests below to that point; story finished by default</small>
+			</span>
+			<select
+				value={current}
+				onChange={(event) => {
+					const point = points[Number(event.currentTarget.value)]?.point;
+					if (point !== undefined) {
+						viewer.setSceneValues(storyPointPicks(all, order, point));
+					}
+				}}
+			>
+				{current === -1 && <option value={-1}>(mixed)</option>}
+				{points.map(({ key, text }, index) => (
+					<option key={key} value={index}>
+						{text}
+					</option>
+				))}
+			</select>
+		</label>
+	);
+};
+
+/** quest and mission controls grouped by quest log tab and mission, with progress selects over their steps */
 const StoryControls = ({
 	viewer,
 	controls,
+	all,
 	missions,
 	describe,
 	levelName,
 }: {
 	viewer: Viewer;
 	controls: readonly SceneControl[];
+	/** every control of the package */
+	all: readonly SceneControl[];
 	missions: ReadonlyMap<string, MissionInfo>;
 	describe: (rule: string) => string;
 	/** a level id's display name */
@@ -165,8 +244,28 @@ const StoryControls = ({
 			<ControlRow key={entry.id} viewer={viewer} control={entry} describe={describe} />
 		));
 	const unplaced = grouped.get(null) ?? [];
+	// the main story's episodes and missions run in one line
+	const mainLine = [...missions.values()]
+		.filter((mission) => mission.category === 'main' && storyOrder(mission.id) !== null)
+		.map((mission) => mission.id)
+		.toSorted((a, b) => {
+			const [ae, am] = storyOrder(a)!;
+			const [be, bm] = storyOrder(b)!;
+			return ae - be || am - bm;
+		});
 	return (
 		<>
+			{mainLine.some((id) => grouped.has(id)) && (
+				<StoryProgress
+					viewer={viewer}
+					label="Main story progress"
+					order={mainLine}
+					listed={controls}
+					all={all}
+					missions={missions}
+					finished="main story finished"
+				/>
+			)}
 			{CATEGORIES.map(({ category, title }) => {
 				const listed = [...missions.values()].filter(
 					(mission) => mission.category === category && grouped.has(mission.id),
@@ -192,7 +291,19 @@ const StoryControls = ({
 											.join(' · ')}
 									</small>
 								</summary>
-								{rows(grouped.get(mission.id) ?? [])}
+								<StoryProgress
+									viewer={viewer}
+									label="Progress"
+									order={[mission.id]}
+									listed={controls}
+									all={all}
+									missions={missions}
+									finished="completed"
+								/>
+								<details>
+									<summary>Quests ({grouped.get(mission.id)?.length ?? 0})</summary>
+									{rows(grouped.get(mission.id) ?? [])}
+								</details>
 							</details>
 						))}
 					</section>
@@ -294,6 +405,7 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 							<StoryControls
 								viewer={viewer}
 								controls={listed}
+								all={manifest.states.controls}
 								missions={missions}
 								describe={describe}
 								levelName={(id) => manifest.levels.find((entry) => entry.id === id)?.name ?? id}

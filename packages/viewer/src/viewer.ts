@@ -1162,12 +1162,36 @@ export class Viewer {
 	 * @param value one of its values, or `null` to drop the pick so it follows its default or formula again
 	 */
 	setSceneValue(id: string, value: number | null): void {
-		const control = this.scene?.pkg.manifest.states.controls.find((entry) => entry.id === id);
-		if (control === undefined || (value !== null && !control.values.some((entry) => entry.value === value))) {
+		this.setSceneValues({ [id]: value });
+	}
+
+	/**
+	 * sets several controls at once, re-evaluating visibility once
+	 *
+	 * @param values by control id, one of its values or `null` to drop the pick; unknown controls and values
+	 *   are ignored
+	 */
+	setSceneValues(values: Readonly<Record<string, number | null>>): void {
+		const controls = this.scene?.pkg.manifest.states.controls;
+		if (controls === undefined) {
 			return;
 		}
-		const { [id]: _, ...rest } = this.#scenePicks;
-		this.#scenePicks = value === null ? rest : { ...rest, [id]: value };
+		const picks = { ...this.#scenePicks };
+		for (const [id, value] of Object.entries(values)) {
+			const control = controls.find((entry) => entry.id === id);
+			if (
+				control === undefined ||
+				(value !== null && !control.values.some((entry) => entry.value === value))
+			) {
+				continue;
+			}
+			if (value === null) {
+				delete picks[id];
+			} else {
+				picks[id] = value;
+			}
+		}
+		this.#scenePicks = picks;
 		this.#updateVisibility();
 		this.#emitState();
 	}

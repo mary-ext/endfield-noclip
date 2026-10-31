@@ -19,7 +19,7 @@ export interface MissionRuntime {
 	chapters: number;
 	/** the level its quest log points to */
 	levelId: string | null;
-	/** quest ids of the main flow, in order */
+	/** quest ids of the main flow in order, hidden steps included */
 	mainPath: string[];
 	quests: MissionQuest[];
 }
@@ -33,6 +33,8 @@ export interface MissionQuest {
 	descriptionKey: string | null;
 	/** `QuestShowMode` 1000: never shown in the quest log */
 	hidden: boolean;
+	/** quests that must complete before it starts */
+	previous: string[];
 }
 
 /**
@@ -63,12 +65,17 @@ export const parseMissionRuntime = (text: string): MissionRuntime => {
 		if (!isObject(quest) || !Array.isArray(quest.objectiveList) || typeof quest.showMode !== 'number') {
 			throw new FormatError(`quest ${questId} lacks objectiveList or showMode`);
 		}
+		const { prevQuestIdList: previous } = quest;
+		if (!Array.isArray(previous) || !previous.every((entry) => typeof entry === 'string')) {
+			throw new FormatError(`quest ${questId} has a malformed prevQuestIdList`);
+		}
 		const [first] = quest.objectiveList;
 		return {
 			id: questId,
 			objectiveKey: isObject(first) ? textKey(first.description) : null,
 			descriptionKey: quest.overrideMissionDesc === true ? textKey(quest.descriptionOverride) : null,
 			hidden: quest.showMode === 1000,
+			previous,
 		};
 	});
 	return {

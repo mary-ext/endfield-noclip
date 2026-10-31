@@ -24,9 +24,22 @@ const MISSION: MissionRuntime = {
 	levelId: 'map01_lv002',
 	mainPath: ['x1m8_q#2', 'x1m8_q#3'],
 	quests: [
-		{ id: 'x1m8_q#2', objectiveKey: null, descriptionKey: 'x1m8_desc_002', hidden: false },
-		{ id: 'x1m8_q#3', objectiveKey: 'objective_x1m8_3_001', descriptionKey: null, hidden: false },
-		{ id: 'x1m8_q#Deco_fleet', objectiveKey: null, descriptionKey: null, hidden: true },
+		{ id: 'x1m8_q#2', objectiveKey: null, descriptionKey: 'x1m8_desc_002', hidden: false, previous: [] },
+		{
+			id: 'x1m8_q#3',
+			objectiveKey: 'objective_x1m8_3_001',
+			descriptionKey: null,
+			hidden: false,
+			previous: ['x1m8_q#2'],
+		},
+		// a branch off the main flow, after step 1
+		{
+			id: 'x1m8_q#Deco_fleet',
+			objectiveKey: null,
+			descriptionKey: null,
+			hidden: true,
+			previous: ['x1m8_q#2'],
+		},
 	],
 };
 
@@ -73,7 +86,7 @@ test('quests take their objective text, step and mission; unknown missions keep 
 		[
 			['Climb to the top floor', 2],
 			['The gate is open.', 1],
-			['hidden step Deco_fleet', null],
+			['hidden step Deco_fleet', 1.5],
 			['Tower Test', null],
 			['x9m1_q#1', null],
 			['x9m1', null],
