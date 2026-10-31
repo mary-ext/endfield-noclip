@@ -475,6 +475,18 @@ fades by a Fresnel term (`saturate(N·V + _FresnelBias)^_FresnelPower`, flipped 
 applied by `_FresnelAffectOpacity`) and, with `_USE_SOFTBLEND`, where the surface comes within
 `_SoftDistance` metres of what lies behind it.
 
+`_USE_VERTOFFSET` moves each vertex along `_OffsetDir` (`_OffsetSwitchDir` 0: object space, 1: world
+space, 2: the vertex normal) by `_OffsetIntensity · (r · (1 + _Bi_Offset) − _Bi_Offset)`, where r is
+`_OffsetTex`'s red channel at UV set 0 (set 1 with `_OffsetUVSet`), after its `_ST`, scrolled by
+`_OffsetSpeed` per second. `_UseVertexColorAlphaAsVertOffsetWeight` weights it by the vertex alpha,
+and every vertex is also pulled towards the camera by up to `_VertCameraOffset` metres (plus 1 mm).
+the whole offset is scaled by `1 − _InParticle`, so a mesh material left at the default
+`_InParticle` of 1 doesn't move. the vertex stage samples the texture from the look's seventh slot.
+`_USE_BRIGHT` with `_BrightType` 0 and no `_BrightCenter` (w 0) adds `_BrightColor` and a UV wobble
+within `_OuterRadius` of the player; the viewer has no player, so it draws such materials without
+it. the teal streams winding between Wuling City's floating pillars (`M_fx_map02_zhenlie_*`,
+map02_lv002) use both.
+
 **VFXDecal** draws a unit box (`s_fx_particle_decal_cube`). the viewer draws its back faces without
 a depth test, so it still shows with the camera inside: each covered pixel reconstructs the main
 pass's surface from the depth buffer and, if that point lies inside the box, projects the textures
@@ -524,12 +536,12 @@ effects join the transparent pass's weighted blend ([glass](#glass)) and are fog
 additive ones could draw into its glow but are still hidden. they cast no shadows and wait until all
 their textures are resident.
 
-not drawn: additive VFXBaseV2 and VFXDecal effects, effects with vertex offsets, polar or
-screen-space UVs, lighting, brightening spheres, breathing, edge colour, vertex animation textures
-or water blending, the flipbook and particle inputs, VFXDecal's parallax, 3D texture, weight and
-particle variants, the effects' own fog (`_USE_FOG`; the composite fogs them instead), the scene
-effect colour grade, and every other effect shader (`VFXAdvance`, `VFXDitherAlpha`, `VFXRefract`,
-`VFXWater`, …).
+not drawn: additive VFXBaseV2 and VFXDecal effects, the vertex offset's mask (`_USE_VERTOFFSETMASK`)
+and particle-data terms, brightening that is a scan line or centred on a fixed point, polar or
+screen-space UVs, lighting, breathing, edge colour, vertex animation textures or water blending, the
+flipbook and particle inputs, VFXDecal's parallax, 3D texture, weight and particle variants, the
+effects' own fog (`_USE_FOG`; the composite fogs them instead), the scene effect colour grade, and
+every other effect shader (`VFXAdvance`, `VFXDitherAlpha`, `VFXRefract`, `VFXWater`, …).
 
 ## sky
 

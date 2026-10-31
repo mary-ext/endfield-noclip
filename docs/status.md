@@ -83,7 +83,7 @@ packs or renders correctly.
   fake translucency, and `HGRP/ErosionDynamic` (only on clearable patches, hidden by default)
 - water foam, caustics and flow tiles (packed but unread); other fluid types are unverified
 - scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal and
-  the mist (FogSimple, VFXFakeVolumeFog) draw, without the first two's additive, vertex-offset,
+  the mist (FogSimple, VFXFakeVolumeFog) draw, without the first two's additive, vertex-offset mask,
   polar-UV, lighting and particle variants, the effects' own fog, the game's global scene-effect
   colour adjustment (the Jingyu blight reads less saturated than in game) or the mist boxes' 3D
   noise; other effect shaders are suppressed rather than drawn opaque. Marker Stone's low mist banks

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import type { ReadyMaterial, ShaderEntry, TextureSlot } from '@endfield-noclip/package-format/materials';
 
-import { EffectRole, EffectRow, MistRow, ROLE_NONE } from './effect-looks.ts';
+import { EffectRole, EffectRow, MistRow, OFFSET_SLOT, ROLE_NONE } from './effect-looks.ts';
 import { LookFlags, materialLooks } from './materials.ts';
 
 const shader = (name: string): ShaderEntry => ({
@@ -117,15 +117,81 @@ test('effects with features the viewer lacks, or additive blending, stay hidden'
 	const looks = materialLooks({
 		shaders: [shader('HGRP/Effect/VFXBaseV2')],
 		entries: [
-			material({ id: 0, keywords: ['_USE_VERTOFFSET'], slots: { _MainTex: slot(1) } }),
+			material({
+				id: 0,
+				keywords: ['_USE_VERTOFFSET'],
+				slots: { _MainTex: slot(1) },
+				floats: { _InParticle: 0 },
+			}),
 			material({ id: 1, blend: 'additive', slots: { _MainTex: slot(1) } }),
 			material({ id: 2, slots: {} }),
+			material({
+				id: 3,
+				keywords: ['_USE_BRIGHT'],
+				slots: { _MainTex: slot(1) },
+				floats: { _BrightType: 1 },
+			}),
+			material({
+				id: 4,
+				keywords: ['_USE_BRIGHT'],
+				slots: { _MainTex: slot(1) },
+				vectors: { _BrightCenter: [10, 0, 5, 1] },
+			}),
 		],
 	});
 	assert.deepEqual(
 		looks.map((look) => look.drawn),
-		[false, false, false],
+		[false, false, false, false, false],
 	);
+});
+
+test('a VFXBaseV2 draws when its vertex offset is cancelled by particle mode and its glow follows the player', () => {
+	const [look] = materialLooks({
+		shaders: [shader('HGRP/Effect/VFXBaseV2')],
+		entries: [
+			material({
+				keywords: ['_USE_BRIGHT', '_USE_VERTOFFSET'],
+				slots: { _MainTex: slot(1) },
+				floats: { _InParticle: 1, _OffsetIntensity: 0.5 },
+				colors: { _BrightColor: [0, 2.6, 2.2, 0] },
+			}),
+		],
+	});
+	assert.equal(look.drawn, true);
+	assert.equal(look.flags, LookFlags.Effect);
+	assert.equal(look.params[EffectRow.offsetMode], 0);
+});
+
+test('a VFXBaseV2 vertex offset outside particle mode samples its texture in the offset slot', () => {
+	const [look] = materialLooks({
+		shaders: [shader('HGRP/Effect/VFXBaseV2')],
+		entries: [
+			material({
+				keywords: ['_USE_VERTOFFSET'],
+				slots: { _MainTex: slot(1), _OffsetTex: slot(2, [1, 0.5]) },
+				floats: { _InParticle: 0, _OffsetIntensity: 0.5, _OffsetSwitchDir: 1, _OffsetUVSet: 1 },
+				vectors: { _OffsetDir: [0, 1, 0, 0], _OffsetSpeed: [0, 0.2, 0, 0] },
+			}),
+		],
+	});
+	assert.equal(look.drawn, true);
+	assert.equal(look.textures[OFFSET_SLOT], 2);
+	// the fragment stage skips the slot
+	assert.equal(look.params[EffectRow.slotBits + OFFSET_SLOT], ROLE_NONE);
+	assert.deepEqual(
+		[...look.params.subarray(EffectRow.uv + OFFSET_SLOT * 4, EffectRow.uv + OFFSET_SLOT * 4 + 4)],
+		[1, 0.5, 0, 0],
+	);
+	assert.deepEqual(
+		Array.from(
+			look.params.subarray(EffectRow.anim + OFFSET_SLOT * 4, EffectRow.anim + OFFSET_SLOT * 4 + 2),
+			(v) => Number(v.toFixed(4)),
+		),
+		[0, 0.2],
+	);
+	assert.deepEqual([...look.params.subarray(EffectRow.offsetDir, EffectRow.offsetDir + 4)], [0, 1, 0, 1]);
+	assert.equal(look.params[EffectRow.offset], 0.5);
+	assert.deepEqual([...look.params.subarray(EffectRow.offsetMode, EffectRow.offsetMode + 2)], [1, 1]);
 });
 
 test('mist: additive FogSimple cards and walk-in fog boxes draw; equal fade ends become a step', () => {

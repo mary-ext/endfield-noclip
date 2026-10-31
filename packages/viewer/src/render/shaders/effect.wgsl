@@ -53,6 +53,11 @@ const FX_NEAR = 24u;
 const FX_MISC = 25u;
 const FX_DECAL_FADE = 26u;
 const FX_DECAL = 27u;
+const FX_OFFSET_DIR = 28u;
+const FX_OFFSET = 29u;
+const FX_OFFSET_MODE = 30u;
+// the slot of the vertex offset's texture (`OFFSET_SLOT` in effect-looks.ts)
+const FX_OFFSET_SLOT = 6u;
 
 // texture roles (`EffectRole` in effect-looks.ts)
 const ROLE_DISTURB1 = 0u;
@@ -116,6 +121,29 @@ fn inverse3(m: mat3x3f) -> mat3x3f {
 	return transpose(mat3x3f(a, b, c)) * (1.0 / det);
 }
 
+// VFXBaseV2's vertex offset: along a direction (object or world space, or the normal), by the offset texture's
+// red channel remapped by `_Bi_Offset`, optionally weighted by the vertex alpha, plus a pull towards the camera
+// of up to `_VertCameraOffset` metres. `rel` is the vertex's camera-relative position, the camera at the origin
+fn fx_vertex_offset(id: u32, m: mat3x3f, normal: vec3f, rel: vec3f, uv: vec4f, vertex_alpha: f32) -> vec3f {
+	let dir_row = fx_row(id, FX_OFFSET_DIR);
+	let params = fx_row(id, FX_OFFSET);
+	var dir = m * dir_row.xyz;
+	if (dir_row.w == 1.0) {
+		dir = dir_row.xyz;
+	} else if (dir_row.w == 2.0) {
+		dir = m * normal;
+	}
+	let st = fx_row(id, FX_UV + FX_OFFSET_SLOT);
+	let speed = fx_row(id, FX_ANIM + FX_OFFSET_SLOT).xy;
+	let base = select(uv.xy, uv.zw, fx_row(id, FX_OFFSET_MODE).y != 0.0);
+	let t = textureSampleLevel(fx_tex6, fx_samp6, base * st.xy + st.zw + speed * frame.eye.w, 0.0).r;
+	let weight = (1.0 - params.z) + vertex_alpha * params.z;
+	let camera_distance = length(rel);
+	let towards_camera =
+		-rel / max(camera_distance, 1e-6) * (min(max(0.0, camera_distance - 1.0), params.w) + 0.001);
+	return dir * params.x * (t * (1.0 + params.y) - params.y) * weight + towards_camera;
+}
+
 @vertex
 fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 	let row = effect_rows[effect_list[ii]];
@@ -131,15 +159,21 @@ fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 		vec3f(row.t0.y, row.t1.y, row.t2.y),
 		vec3f(row.t0.z, row.t1.z, row.t2.z),
 	);
-	let rel = m * p + origin;
 	let inverse = transpose(inverse3(m));
 	let flags = bitcast<u32>(offset.w);
+	let uv = vec4f(v.uv0 * uv0.xy + uv0.zw, v.uv1 * uv1.xy + uv1.zw);
+	let color = select(vec4f(1.0), v.color, (flags & FX_HAS_COLORS) != 0u);
+	let normal = oct_decode(v.normal);
+	var rel = m * p + origin;
+	if (fx_row(draw_id, FX_OFFSET_MODE).x != 0.0) {
+		rel += fx_vertex_offset(draw_id, m, normal, rel, uv, color.a);
+	}
 	var out: EffectOut;
 	out.position = frame.view_proj * vec4f(rel, 1.0);
 	out.rel = rel;
-	out.normal = m * oct_decode(v.normal);
-	out.uv = vec4f(v.uv0 * uv0.xy + uv0.zw, v.uv1 * uv1.xy + uv1.zw);
-	out.color = select(vec4f(1.0), v.color, (flags & FX_HAS_COLORS) != 0u);
+	out.normal = m * normal;
+	out.uv = uv;
+	out.color = color;
 	out.draw = draw_id;
 	out.to_object0 = vec4f(inverse[0], -dot(inverse[0], origin));
 	out.to_object1 = vec4f(inverse[1], -dot(inverse[1], origin));

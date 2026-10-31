@@ -23,6 +23,7 @@ import type { DecodedGeometry } from '../package/decode-protocol.ts';
 import type { MeshBucket } from '../streaming/mesh-selection.ts';
 import type { ResidentGeometry } from '../streaming/stream-manager.ts';
 
+import { OFFSET_SLOT } from './effect-looks.ts';
 import { FRAME_WGSL } from './frame-uniforms.ts';
 import { LIST_CAPACITY } from './instance-renderer.ts';
 import { LOOK_FLOATS, LookFlags, type MaterialLook, SLOTS, SLOT_FLAGS } from './materials.ts';
@@ -122,6 +123,10 @@ const TRANSPARENT_PHASES: readonly DrawPhase[] = [
 	{ key: 'mesh/mist', range: 'mist', textured: true, shadow: false, streams: 'all' },
 	{ key: 'mesh/mist-volume', range: 'mistVolume', textured: true, shadow: false, streams: 'all' },
 ];
+
+/** the shader stages that read an effect texture slot */
+const stagesOfSlot = (slot: number): GPUShaderStageFlags =>
+	slot === OFFSET_SLOT ? GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT : GPUShaderStage.FRAGMENT;
 
 /** the main pass's outputs that scene effects read, as `SceneTextures` holds them */
 export interface EffectInputs {
@@ -460,14 +465,15 @@ export class MeshRenderer {
 			this.#effectLayout = device.createBindGroupLayout({
 				label: 'effect materials',
 				entries: [
+					// the vertex stage samples the VFXBaseV2 vertex offset's texture
 					...SLOTS.map((_, binding) => ({
 						binding,
-						visibility: GPUShaderStage.FRAGMENT,
+						visibility: stagesOfSlot(binding),
 						texture: { sampleType: 'float' as const },
 					})),
 					...SLOTS.map((_, i) => ({
 						binding: SLOTS.length + i,
-						visibility: GPUShaderStage.FRAGMENT,
+						visibility: stagesOfSlot(i),
 						sampler: { type: 'filtering' as const },
 					})),
 					{ binding: 14, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },

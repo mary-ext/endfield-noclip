@@ -10,8 +10,9 @@
  * or eat the alpha away below a threshold (dissolve). VFXBaseV2 gives each `_SampleTexN` its role by its
  * `_SampleTexNUseWeightK` properties; VFXDecal has one fixed texture per role.
  *
- * materials using features this doesn't draw (vertex offsets, polar or screen UVs, lighting, flipbooks and
- * the like) stay hidden, as do additive ones, which the transparent pass's blending can't express.
+ * VFXBaseV2's vertex offset moves vertices in `effect.wgsl`'s vertex stage. materials using features this
+ * doesn't draw (offset masks, polar or screen UVs, lighting, flipbooks and the like) stay hidden, as do
+ * additive ones, which the transparent pass's blending can't express.
  *
  * @module
  */
@@ -73,10 +74,31 @@ export const EffectRow = {
 	decalFade: 104,
 	/** decals: height fade offset, angle falloff (0: no angle fade), 0, 0 */
 	decal: 108,
+	/**
+	 * VFXBaseV2 vertex offset: `_OffsetDir` xyz, then how it's read: 0 in object space, 1 in world space, 2
+	 * along the vertex normal (`_OffsetSwitchDir`)
+	 */
+	offsetDir: 112,
+	/**
+	 * VFXBaseV2 vertex offset: `_OffsetIntensity`, `_Bi_Offset`, how much the vertex alpha weighs the offset,
+	 * the most it pulls vertices towards the camera (`_VertCameraOffset`, m)
+	 */
+	offset: 116,
+	/** VFXBaseV2 vertex offset: 1 when on, 1 when the offset texture reads UV set 1, 0, 0 */
+	offsetMode: 120,
 } as const;
 
 /** slots of a VFXBaseV2 look: the main texture, then `_SampleTex0`… */
 const BASE_SLOTS = ['_MainTex', '_SampleTex0', '_SampleTex1', '_SampleTex2', '_SampleTex3', '_SampleTex4'];
+
+/**
+ * the VFXBaseV2 slot of `_OffsetTex`, which the vertex stage samples; its UV and scroll rows hold the
+ * texture's `_ST` and `_OffsetSpeed`
+ */
+export const OFFSET_SLOT = 6;
+
+/** the material property of the vertex offset's texture */
+const OFFSET_TEXTURE = '_OffsetTex';
 
 /** the property whose `_ST` a VFXBaseV2 sample texture uses, by role */
 const ROLE_TEXTURES = ['_DisturbTex1', '_DisturbTex2', '_WeightTex', '_MaskTex', '_BlendTex', '_DissolveTex'];
@@ -242,13 +264,36 @@ const setShared = (look: EffectLook, entry: ReadyMaterial, shader: ShaderEntry, 
 	params[EffectRow.soft + 2] = float('_IgnorePostExposure', 1);
 };
 
+/** whether a VFXBaseV2 keyword outside {@link BASE_KEYWORDS} is drawn, or changes nothing in the viewer */
+const baseKeywordDrawn = (keyword: string, entry: ReadyMaterial, shader: ShaderEntry): boolean => {
+	const { float, color } = readers(entry, shader);
+	switch (keyword) {
+		case '_USE_VERTOFFSET': {
+			// the game scales the offset by `1 − _InParticle`, so meshes left in particle mode don't move
+			const slot = entry.slots[OFFSET_TEXTURE];
+			return float('_InParticle', 1) !== 0 || (slot !== undefined && slot.uv <= 1);
+		}
+		case '_USE_BRIGHT': {
+			// the radial glow and distortion around the player (no `_BrightCenter`) reach `_OuterRadius` metres,
+			// and the viewer has no player
+			return float('_BrightType', 0) === 0 && (color('_BrightCenter')?.[3] ?? 0) === 0;
+		}
+		default: {
+			return false;
+		}
+	}
+};
+
 /**
  * @param entry a material of `HGRP/Effect/VFXBaseV2`
  * @param shader its shader
  * @returns its effect look, or `null` when it uses features that aren't drawn
  */
 export const vfxBaseLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLook | null => {
-	if (entry.blend !== 'premultiplied' || entry.keywords.some((keyword) => !BASE_KEYWORDS.has(keyword))) {
+	if (
+		entry.blend !== 'premultiplied' ||
+		entry.keywords.some((keyword) => !BASE_KEYWORDS.has(keyword) && !baseKeywordDrawn(keyword, entry, shader))
+	) {
 		return null;
 	}
 	const { float, color } = readers(entry, shader);
@@ -341,6 +386,28 @@ export const vfxBaseLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLo
 	params[EffectRow.misc + 1] = float('_ExpThreshold', 1);
 	params[EffectRow.misc + 2] = float('_ExpIntensity', 0);
 	params[EffectRow.misc + 3] = float('_UseDisturb', 0) !== 0 ? 1 : 0;
+	const offsetSlot = entry.slots[OFFSET_TEXTURE];
+	if (
+		entry.keywords.includes('_USE_VERTOFFSET') &&
+		float('_InParticle', 1) === 0 &&
+		offsetSlot !== undefined
+	) {
+		const speed = color('_OffsetSpeed') ?? [0, 0, 0, 0];
+		// the vertex stage reads the scroll after the `_ST`, unscaled and unrotated
+		setSlot(look, OFFSET_SLOT, offsetSlot, { speed: [speed[0], speed[1]], cos: 1, sin: 0 }, ROLE_NONE);
+		const dir = color('_OffsetDir') ?? [0, 0, 0, 0];
+		params.set([dir[0], dir[1], dir[2], float('_OffsetSwitchDir', 0)], EffectRow.offsetDir);
+		params.set(
+			[
+				float('_OffsetIntensity', 0),
+				float('_Bi_Offset', 0),
+				float('_UseVertexColorAlphaAsVertOffsetWeight', 0),
+				float('_VertCameraOffset', 0),
+			],
+			EffectRow.offset,
+		);
+		params.set([1, float('_OffsetUVSet', 0) !== 0 ? 1 : 0], EffectRow.offsetMode);
+	}
 	return look;
 };
 
