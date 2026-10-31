@@ -621,16 +621,18 @@ const collectEntities = async (
 		noMatrix: 0,
 		excluded: 0,
 		packed: 0,
+		foliageGrids: 0,
+		foliageInstances: 0,
 	};
 	// an entity repeats in every file that loads it (cells it overlaps, scene states, stream areas); one row
 	// carries it, gated by all of those files
 	const seen = new Set<number>();
-	// rows of scene-state and stream-area files, by entity id, with every file holding them; added once all
-	// files are read
+	// rows of scene-state and stream-area files, by entity or foliage grid id, with every file holding them;
+	// added once all files are read
 	const gatedRows = new Map<
 		number,
 		{
-			row: InstanceInput;
+			rows: InstanceInput[];
 			tag: number;
 			name: string;
 			file: number;
@@ -795,7 +797,7 @@ const collectEntities = async (
 
 				if (file.sceneState !== 0 || file.area !== 0) {
 					gatedRows.set(entity.id, {
-						row,
+						rows: [row],
 						tag: entity.levelTag,
 						name: entity.name,
 						file: fileIndex,
@@ -817,15 +819,57 @@ const collectEntities = async (
 				}
 				collected.noteOwner(entity.levelTag, bounds);
 			}
+			for (const foliage of content.foliage) {
+				if (seen.has(foliage.id)) {
+					gatedRows.get(foliage.id)?.sources.push(file);
+					continue;
+				}
+				seen.add(foliage.id);
+				counts.foliageGrids++;
+				// every instance of a cluster carries the cluster's bounds, so a cluster culls and switches LOD as
+				// one, the way the game draws it
+				const rows: InstanceInput[] = [];
+				for (const cluster of foliage.clusters) {
+					const [x, , z] = cluster.bounds.center;
+					if (!subset.includesEntity(foliage.levelTag, x, z)) {
+						continue;
+					}
+					const chain = pack.chains.intern(
+						cluster.renderer.lodCount,
+						cluster.renderer.draws.map((draw) => chainDraw(draw, false)),
+					);
+					for (const matrix of cluster.instances) {
+						rows.push({ chain, matrix, bounds: cluster.bounds, entityId: foliage.id });
+					}
+					collected.noteOwner(foliage.levelTag, cluster.bounds);
+				}
+				counts.foliageInstances += rows.length;
+				const source = {
+					tag: foliage.levelTag,
+					name: foliage.name,
+					file: fileIndex,
+					global: false,
+					hlod: null,
+				};
+				if (file.sceneState !== 0 || file.area !== 0) {
+					gatedRows.set(foliage.id, { ...source, rows, sources: [file] });
+				} else {
+					for (const row of rows) {
+						addRow({ ...source, row, visibility: null, stateGated: false });
+					}
+				}
+			}
 		},
 	);
 	counts.gatedRenderers = gatedRows.size;
-	for (const { row, tag, name, file, global, hlod, sources } of gatedRows.values()) {
+	for (const { rows, tag, name, file, global, hlod, sources } of gatedRows.values()) {
 		const visibility = collected.sourceVisibility(sources);
 		// HLOD clusters stand in for the rows of their own area, so area-only content keeps HLOD refinement;
 		// scene-state content has no HLODs and streams as conditional detail
 		const stateGated = visibility !== null && sources.some((source) => source.sceneState !== 0);
-		addRow({ row, tag, name, file, global, hlod, visibility, stateGated });
+		for (const row of rows) {
+			addRow({ row, tag, name, file, global, hlod, visibility, stateGated });
+		}
 	}
 	for (const cluster of clampedHlod) {
 		const key = resolveClampedHlodCell({

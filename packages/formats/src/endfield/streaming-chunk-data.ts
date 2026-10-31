@@ -12,7 +12,7 @@ import { readChunkRows, readPropertyTable, type MonoValue } from './mono-objects
 // rows by kind:
 //   1 (5 slots): 3 inline u64 StreamingComponentType mask, 4 [table] one property table per component
 //   2 (6 slots): 3 property table, 4 sixteen zero bytes, 5 empty vector
-//   3 (4 slots): 3 property table (empty in the sampled corpus)
+//   3 (4 slots): 3 property table (grass and tree grids' batch tables, see `foliage-grids.ts`)
 // kind-1 objects are read with their Init row by `readMonoObjects`; this flat view is for keys that don't fit
 // its component addressing (kind-2 entity properties, component bits from 32 up).
 

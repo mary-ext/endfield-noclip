@@ -1,9 +1,15 @@
 import { type ChunkLight, readChunkLights } from '@endfield-noclip/formats/endfield/chunk-lights';
 import { readDynamicEntities, type DynamicEntity } from '@endfield-noclip/formats/endfield/dynamic-scene';
 import {
+	hasFoliageGrids,
+	readFoliageGrids,
+	type FoliageGrid,
+} from '@endfield-noclip/formats/endfield/foliage-grids';
+import {
 	parseInitChunk,
 	readChunkEntities,
 	type ChunkEntity,
+	type InitChunk,
 } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import { parseLevelConfig, type LevelConfig } from '@endfield-noclip/formats/endfield/level-config';
 import {
@@ -301,33 +307,33 @@ export class WorldIndex {
 	 * @returns its entities
 	 */
 	async readChunk(file: ChunkFile, partition: LevelPartition | undefined): Promise<IndexedEntity[]> {
-		return (await this.readChunkContent(file, partition)).entities;
+		return indexEntities(parseInitChunk(await this.readInitPayload(file)), file, partition);
 	}
 
 	/**
-	 * like {@link readChunk}, with the chunk's local lights too
+	 * like {@link readChunk}, with the chunk's local lights and foliage grids too
 	 *
 	 * @param file chunk file
 	 * @param partition the scene's partition, or `undefined` for scenes without levels
-	 * @returns its entities and lights
+	 * @returns its entities, lights and grass and tree grids
+	 * @throws {Error} if the chunk has foliage grids but no StreamingChunkData sibling
 	 */
 	async readChunkContent(
 		file: ChunkFile,
 		partition: LevelPartition | undefined,
-	): Promise<{ entities: IndexedEntity[]; lights: ChunkLight[] }> {
+	): Promise<{ entities: IndexedEntity[]; lights: ChunkLight[]; foliage: FoliageGrid[] }> {
 		const data = await this.readInitPayload(file);
 		const chunk = parseInitChunk(data);
 		const lights = readChunkLights(data, chunk);
-		const entities = readChunkEntities(chunk).map((entity) => {
-			const pivot = pivotOf(entity);
-			const membership: Membership =
-				partition === undefined
-					? { bucket: 'unassigned', level: null, placement: 'unplaced', cellOwner: null }
-					: classifyEntity(partition, entity.id, pivot);
-			// the decoded rows are fresh objects owned here, so extend them in place
-			return Object.assign(entity, { source: file, membership, pivot });
-		});
-		return { entities, lights };
+		let foliage: FoliageGrid[] = [];
+		if (hasFoliageGrids(data)) {
+			const streaming = await this.readStreamingPayload(file);
+			if (streaming === null) {
+				throw new Error(`${file.name} has foliage grids but no StreamingChunkData`);
+			}
+			foliage = readFoliageGrids(data, streaming);
+		}
+		return { entities: indexEntities(chunk, file, partition), lights, foliage };
 	}
 
 	/**
@@ -427,6 +433,22 @@ export class WorldIndex {
 		return this.vfs.readVerified(file);
 	}
 }
+
+/** decodes a chunk's entities, classified against the map's partition when it has one */
+const indexEntities = (
+	chunk: InitChunk,
+	file: ChunkFile,
+	partition: LevelPartition | undefined,
+): IndexedEntity[] =>
+	readChunkEntities(chunk).map((entity) => {
+		const pivot = pivotOf(entity);
+		const membership: Membership =
+			partition === undefined
+				? { bucket: 'unassigned', level: null, placement: 'unplaced', cellOwner: null }
+				: classifyEntity(partition, entity.id, pivot);
+		// the decoded rows are fresh objects owned here, so extend them in place
+		return Object.assign(entity, { source: file, membership, pivot });
+	});
 
 /**
  * @param entity decoded entity

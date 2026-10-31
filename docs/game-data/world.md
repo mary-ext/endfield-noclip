@@ -147,8 +147,8 @@ range). the decoder throws on any stride or count disagreement instead of skippi
 change can't silently drop draws.
 
 object row kinds by census: 1 = GameObjects the client rebuilds as MonoBehaviours (environment and
-post volumes, probes, water, terrain root), 2 = component-group entities, 3 = audio, grass grids and
-surface data. kind 1 is read by
+post volumes, probes, water, terrain root), 2 = component-group entities, 3 = proxies: audio, grass
+and tree grids ([below](#foliage-grids)) and surface data. kind 1 is read by
 [mono-objects.ts](../../packages/formats/src/endfield/mono-objects.ts) and consumed by
 [environment.md](environment.md) and [water.md](water.md).
 
@@ -166,6 +166,40 @@ component.
 
 code: [init-chunk-data.ts](../../packages/formats/src/endfield/init-chunk-data.ts),
 [streaming-chunk-data.ts](../../packages/formats/src/endfield/streaming-chunk-data.ts)
+
+### foliage grids
+
+most small vegetation isn't placed as entities. it sits in kind-3 proxy objects named
+`GrassGrid_<x>_<z>#<level tag>_<id>` and `TreeGrid_…`, one per 64 m cell and file, whose row slot 2
+holds the game's `ProxyEntityType` (7 grass, 9 tree). each is a batch of ECS archetypes the client
+instantiates itself, serialized into the row's keyed property table:
+
+| key                    | file      | content                                                                                     |
+| ---------------------- | --------- | ------------------------------------------------------------------------------------------- |
+| `0xff000000`           | Init      | archetype count                                                                             |
+| `0xff01xxxx`           | Init      | archetype bounds                                                                            |
+| `0xff02xxxx`           | Init      | entity count                                                                                |
+| `0xff03xxxx`           | Init      | column descriptors, 8 bytes each: `u16 component id, u16 stride, u32 0`                     |
+| `0xff04xxxx`           | Init      | the column-major blob, as a component group's                                               |
+| `0xff050000`           | Streaming | batch table length                                                                          |
+| `0xff06xxxx`–`0xff09…` | Streaming | per batch entry: u32 key (value code 3), material, mesh (StringPathHash assets) and submesh |
+
+archetypes reuse the bounds (0–5) and draw-info (8–14) columns, but a draw names a batch entry
+instead of holding asset keys: grass draws (`GrassRendererInfo`) carry the entry's key at byte 4, a
+sparsity at 8 and the renderer flags at 12; tree draws carry the entry's index at 12 and the flags
+at 16. there's no LOD-range column, so a draw's LOD is the rank of its upper threshold. instances
+are a column-major object-to-world matrix and two vec4 parameters (96 bytes): a grass entity is a
+cluster of nearby instances (column `37 + k`: a count and room for `4 · 2^k`), a tree entity one
+instance (column 80). column 6 (20 bytes) starts with a point and a squared size and column 7 (24
+bytes) is unread.
+
+map02 holds about 981k grass and bush instances in 81k clusters and 17k trees, map01 376k grass
+instances and no tree grids. grids repeat in every file they overlap, under one id. the packer files
+each instance as an ordinary row with its cluster's bounds, so a cluster culls and changes LOD as a
+whole; the game's actual LOD measure for clusters (`rendererHalfSize`), the sparsity (the game thins
+grass by a quality setting) and the instance parameters aren't read.
+
+code: [foliage-grids.ts](../../packages/formats/src/endfield/foliage-grids.ts)
 
 ## stream areas
 

@@ -42,6 +42,8 @@ export const ChunkObjectKind = {
 	Mono: 1,
 	/** component-group entities */
 	Entity: 2,
+	/** proxy entities; the grass and tree grids are read by `foliage-grids.ts` */
+	Proxy: 3,
 } as const;
 
 /** one component column inside a group's blob */

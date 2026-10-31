@@ -32,6 +32,7 @@ export const MonoComponentType = {
 export type MonoValue =
 	| { type: 'bool'; value: boolean }
 	| { type: 'int'; value: number }
+	| { type: 'uint'; value: number }
 	| { type: 'float'; value: number }
 	| { type: 'uint64'; value: bigint }
 	| { type: 'vector3'; value: [x: number, y: number, z: number] }
@@ -75,6 +76,7 @@ export interface ChunkRow {
 export const ValueCode = {
 	Bool: 1,
 	Int: 2,
+	Uint: 3,
 	Float: 4,
 	Uint64: 6,
 	Vector3: 9,
@@ -244,6 +246,9 @@ const readValue = (fb: FlatBuffer, code: number, at: number): MonoValue => {
 		}
 		case ValueCode.Int: {
 			return { type: 'int', value: fb.i32(at) };
+		}
+		case ValueCode.Uint: {
+			return { type: 'uint', value: fb.u32(at) };
 		}
 		case ValueCode.Float: {
 			return { type: 'float', value: fb.f32(at) };

@@ -69,8 +69,9 @@ packs or renders correctly.
   in front of water is lost, glass against the sky isn't fogged, and nothing checks whether the game
   lets glass cast shadows
 - foliage ([foliage](game-data/lighting.md#foliage)): wind, the grass and card-mesh shaders' own
-  GBuffer inputs, trunk ramps and vertex AO, sphere-shadow proxies; grass instancing, decals,
-  layered materials
+  GBuffer inputs, trunk ramps and vertex AO, sphere-shadow proxies; decals, layered materials. grass
+  and tree grids ([world](game-data/world.md#foliage-grids)) draw every instance at the cluster's
+  LOD, without the game's sparsity thinning or per-instance parameters
 - Lit layers ([lit layers](game-data/lighting.md#lit-layers)): tri-channel switch textures, the
   parallax glow's global highlight and its world-space, PBR and deform variants
 - erosion rock ([erosion](game-data/lighting.md#erosion)): the soft blend into what lies behind,
