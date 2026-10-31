@@ -16,9 +16,11 @@ packs or renders correctly.
 - initial and alternative dynamic structures, active prefab hierarchies and skinned meshes in their
   authored pose ([assets](game-data/assets.md))
 - quest, mission and variable state as preview controls, with scene states derived from them and
-  dynamic load gates reading them; progressions, facility visual forms, tree harvest state and
-  script/event groups as controls with stored defaults, each listed for the levels it gates
-  ([scene states](game-data/scene-states.md))
+  dynamic load gates reading them; story progress picked per mission or across the main story;
+  progressions, facility visual forms (shops, depots, recycling stations, monitoring terminals),
+  Dijiang cabins, tree harvest state, stream areas and script/event groups as controls, each listed
+  for the levels it gates; script groups list what sets them in game (quests, switches, areas,
+  dungeons), from the level scripts ([scene states](game-data/scene-states.md))
 - static stream areas switched by the camera through the game's trigger zones
   ([world](game-data/world.md#stream-areas))
 - terrain heights, baked surface pages and the close-up layer blend
@@ -137,10 +139,15 @@ packs or renders correctly.
 - interactive facilities are gathered from levels whose map is the packed scene, so a scene streamed
   by levels of other maps (`base01_lv001`, streamed by `base01_lv003` and `indie_dg014`) probably
   loses their facilities; select levels by `defaultState.exportedSceneConfigPath` instead
-- irradiance scene-state bakes are not selected by the active scene states; map and global variables
-  are assumed 0
-- variable ids are unnamed; variables that drive entity level or animator state need a view-state
-  controller and animation playback
+- irradiance scene-state bakes are not selected by the active scene states
+- variable ids are unnamed; variables that drive entity level or animator state (doors, bridges,
+  puzzles: `ModelViewStateControllerData` state machines) aren't controls yet
+- scene states that scripts set by name (`SetOverrideSceneState`), LevelData rows created later
+  (`createState` ≠ 0), script-driven water levels and map02's sprayable sludge aren't represented;
+  the shop, depot and terminal level → visual form mapping, and the resource-node level's link to
+  regional development, aren't recovered
+- script-group drivers are found from client scripts only: stages, properties and events the server
+  sets show as "server", and groups no client script names have none
 - story-state expressions and script relationships beyond what client data proves; event and server
   conditions may never be recoverable
 - control labels still show internal identifiers or representative mesh names in many places
