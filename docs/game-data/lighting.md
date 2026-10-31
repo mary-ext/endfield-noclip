@@ -536,6 +536,46 @@ screen-space dither, which fades a mesh out; nothing drawn fades, so the dither 
 rocks' material multiplies a gold mask by a tint twelve times over, so the saturated albedo is black
 rock with gold veins.
 
+### waterfalls
+
+the sheets of falling water are `HGRP/Effect/VFXWater` meshes (about 1800 placements on map02, in
+`P_fxmap_*waterfall*` prefabs), drawn by `fs_effect` in the same file
+([`effect-looks.ts`](../../packages/viewer/src/render/effect-looks.ts), `vfxWaterLook`). one per
+pixel:
+
+- **colour and opacity.** `_TintColor · _TintColorIntensity` (alpha `· _TintColorAlpha`) times the
+  vertex colour (unless `_DisableVertColor`), `_MainTex` and `_MaskTex` (`_USE_MASK`), each taking
+  only its red as alpha under `_UseMainTexAsAlpha` / `_UseMaskTexAsAlpha`. UVs scroll, rotate about
+  0.5 and take their `_ST` as in VFXBaseV2. `_WaterRandomUV` stretches and offsets the main UVs by
+  the fractional sum of the object's position.
+- **distortion.** `_USE_DISTURB`: `_DisturbTex1`'s red, remapped by `_Bi_Disturb`, times
+  `_DisturbU/VIntensity1` (or its normal's xy with `_DisturbTex1Normal`), shifts the main, mask,
+  normal map and dissolve UVs by their `_…UseDisturb` fractions. `_USE_DISSOLVE` eats the alpha
+  below `_DissolveScheduleOffset`'s threshold, with a glowing edge.
+- **flipbook.** `_USE_SEQUENCE_FRAME`: `_SequenceBaseColorMap` holds `_SequenceFrameSize` frames
+  (columns by rows, from the top) played at `_PlaybackSpeed` per second, offset per object by
+  `_RandomStartByPos`; two frames blend, each pushed along `_SequenceMotionVectorMap` towards the
+  other by `_MotionVectorDistortionStrength`. the frame adds `rgb · _SequenceBaseColorMapTint · a`
+  and the opacity becomes `saturate(alpha · a · s − _SequenceOpacitySdf) · s`
+  (`s = _SequenceOpacityScale`).
+- **fades.** the near camera fade, `_USE_SOFTBLEND` against what lies behind, the vertex alpha
+  (`_UseVertexColorAsOpacity`) and `|N·V|^_FresnelStrength` (`_UseFresnelAsOpacity`).
+- **lighting.** the `_UseLighting` share of the colour is an albedo. it takes the irradiance volume
+  at the normal (the flipbook's `_SequenceNormalMap` or `_NORMAL_MAP`, scaled by `_FrameNormalScale`
+  / `_NormalScale`), plus a subsurface colour
+  (`HSV(_SubsurfaceHue, _SubsurfaceSaturation, _SubsurfaceValue · thickness · albedo red)`) times
+  `_SubsurfaceIndirect`, desaturated by `_IndirectSaturation`. the sun adds diffuse, a GGX highlight
+  (`_Roughness`, f0 `0.08 · _Specular`, `· _DirSpecularStrength`, divided by the opacity so it
+  survives premultiplication) and the subsurface colour through a wrap lobe plus a see-through lobe
+  towards the sun, the light that makes falls glow against a low sun.
+- `_BlendMode` 1 adds the sheet into the glow instead.
+
+the game also divides the lit share by the post exposure under `_IgnorePostExposure`; the viewer
+keeps that for the unlit share only, since it darkens sheets in dark places, such as Jingyu's cave
+falls, far below the game's. the normal map's frame comes from the UVs' screen derivatives rather
+than mesh tangents. not drawn: `VFX_WATER_REFRACT`, `_VAT_SOFTBODY`, punctual lights, matcaps, and
+the `VFX_WATER_SIMPLE_LIGHT` variant's per-draw probe (it's lit the full way).
+
 ### mist
 
 the drifting mist banks are effects too: `HGRP/FogSimple` cards (841 on map02, `SimpleFogCard*`) and
@@ -585,7 +625,8 @@ screen-space UVs, lighting, breathing, edge colour, vertex animation textures or
 flipbook and particle inputs, VFXDecal's parallax, 3D texture, weight and particle variants, the
 effects' own fog (`_USE_FOG`; the composite fogs them at the surface behind instead), the scene
 effect colour grade, VFXDitherAlpha's dither fade and its keyword variants other than the normal map
-and `_MainTex2`'s alpha, and every other effect shader (`VFXAdvance`, `VFXRefract`, `VFXWater`, …).
+and `_MainTex2`'s alpha, and every other effect shader (`VFXAdvance`, `VFXRefract`, `WaterDecal`,
+…).
 
 ## sky
 

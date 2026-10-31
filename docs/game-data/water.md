@@ -207,9 +207,9 @@ counts per level, chunk file, mask, mesh and config, and single config assets
   on the CPU; the vertex stage reads the dequantized `unorm16x4` positions and, for proxy-only
   surfaces whose mesh has them, its octahedral normals. LOD surfaces face straight up: the game
   shades them through its grid, whose normals point up, so their mesh normals never show (some
-  polygon meshes have triangles whose normals point down). the pass binds the main pass's frame group, so water is
-  lit like the rest of the scene: the sun through its shadow maps, the irradiance volume, and the
-  level's sky reflection.
+  polygon meshes have triangles whose normals point down). the pass binds the main pass's frame
+  group, so water is lit like the rest of the scene: the sun through its shadow maps, the irradiance
+  volume, and the level's sky reflection.
 - **textures**: the wave-normal array, the global flow map and the caustic map are streamed whole.
   rain and sector tiles are packed but unused.
 - **flow**: the global map at `uv = (world.xz − center) / mapSize + 0.5` holds the direction in rg
@@ -275,8 +275,8 @@ no static InitChunkData renderer uses an `HGRP/WaterProxy` or `HGRP/WaterDecal` 
 in static scenery is only the surfaces above. both arrive through prefab content. `HGRP/WaterProxy`
 has only the water pipeline's passes (top-down prepass, wetness mask, depth, the water G-buffer),
 none of which a scene renderer draws in the main view, so the mesh renderer skips the ten map02
-river meshes that carry it (`M_river_proxy_22`). WaterDecal boxes put foam on pools and channels
-at the foot of waterfalls; the mesh renderer doesn't draw them yet.
+river meshes that carry it (`M_river_proxy_22`). WaterDecal boxes put foam on pools and channels at
+the foot of waterfalls; the mesh renderer doesn't draw them yet.
 
 ## open
 

@@ -88,12 +88,13 @@ packs or renders correctly.
 - water ([water](game-data/water.md#open)): sector flow tiles (packed but unread), the LOD surfaces'
   displaced wave grid, rain ripples and wetness; other fluid types are unverified
 - scene effects ([scene effects](game-data/lighting.md#scene-effects)): only VFXBaseV2, VFXDecal,
-  the mist (FogSimple, VFXFakeVolumeFog) and VFXDitherAlpha's plain variant draw, without the first
-  two's additive, vertex-offset mask, polar-UV, lighting and particle variants, the effects' own
-  fog, the game's global scene-effect colour adjustment (the Jingyu blight reads less saturated than
-  in game), the mist boxes' 3D noise or VFXDitherAlpha's dither fade; other effect shaders are
-  suppressed rather than drawn opaque. stencil [portals](game-data/lighting.md#portals) draw without
-  their masks' own colour and depth, and only where the GPU has `depth32float-stencil8`
+  the mist (FogSimple, VFXFakeVolumeFog), VFXWater's waterfall sheets and VFXDitherAlpha's plain
+  variant draw, without the first two's additive, vertex-offset mask, polar-UV, lighting and
+  particle variants, the effects' own fog, the game's global scene-effect colour adjustment (the
+  Jingyu blight reads less saturated than in game), the mist boxes' 3D noise or VFXDitherAlpha's
+  dither fade; other effect shaders are suppressed rather than drawn opaque. stencil
+  [portals](game-data/lighting.md#portals) draw without their masks' own colour and depth, and only
+  where the GPU has `depth32float-stencil8`
 - particles ([prefabs](game-data/assets.md#prefabs), [viewer](viewer.md#particles)): billboard
   systems (sparkles, smoke, the crater column's glitter) aren't packed. mesh particles frozen in
   place lose their start colour and take the midpoint of random start values. other mesh systems

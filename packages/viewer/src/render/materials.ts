@@ -31,6 +31,7 @@ import {
 	fogSimpleLook,
 	vfxBaseLook,
 	vfxDecalLook,
+	vfxWaterLook,
 } from './effect-looks.ts';
 
 /**
@@ -462,6 +463,10 @@ const effectLookOf = (entry: ReadyMaterial, shader: ShaderEntry): MaterialLook |
 		case 'HGRP/Effect/VFXDecal': {
 			effect = vfxDecalLook(entry, shader);
 			flags |= LookFlags.EffectDecal;
+			break;
+		}
+		case 'HGRP/Effect/VFXWater': {
+			effect = vfxWaterLook(entry, shader);
 			break;
 		}
 		case 'HGRP/FogSimple': {

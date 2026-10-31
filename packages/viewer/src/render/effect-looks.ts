@@ -3,7 +3,7 @@
  * unlit, premultiplied layers built from a stack of scrolling textures, drawn in the transparent pass by
  * `effect.wgsl`. the decal projects its textures down its box onto whatever the main pass drew inside it. the
  * mist, `HGRP/FogSimple` cards and `HGRP/Effect/VFXFakeVolumeFog` boxes, has looks of its own
- * ({@link MistRow}).
+ * ({@link MistRow}), and so do the lit waterfall sheets of `HGRP/Effect/VFXWater` ({@link WaterSheetRow}).
  *
  * both shaders combine textures by role. a texture can distort the UVs of the textures sampled after it
  * (disturb), scale that distortion (weight), multiply the colour and alpha (mask), add a tinted layer (blend)
@@ -489,6 +489,297 @@ export const vfxDecalLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectL
 	);
 	return look;
 };
+
+// #region water sheets
+
+/** what `effect.wgsl`'s `fs_effect` draws a look as, in {@link EffectRow.unfogged}'s second float */
+export const EffectKind = {
+	/** VFXBaseV2 and VFXDecal's texture stack */
+	Stack: 0,
+	/** a VFXWater sheet ({@link WaterSheetRow}) */
+	WaterSheet: 1,
+} as const;
+
+/**
+ * float offsets of a VFXWater look's parameters, in place of {@link EffectRow}'s rows 17–22 and 26–30. the
+ * tint, UV, scroll, soft blend, near fade and last rows are shared, and the vertex offset stays off (row 30's
+ * x)
+ */
+export const WaterSheetRow = {
+	/** {@link WaterSheetFlags}, `_BlendMode` (1: additive), `_UseLighting`, `_WaterRandomUV` */
+	flags: 68,
+	/** `_Bi_Disturb`, `_DisturbUIntensity1`, `_DisturbVIntensity1`, 0 */
+	disturb: 72,
+	/** how far the distortion moves the main, mask, normal map and dissolve UVs (`_…UseDisturb`) */
+	disturbUse: 76,
+	/** dissolve threshold, edge sharpness, glowing edge width, 0 */
+	dissolve: 80,
+	/** the dissolve edge's colour (linear, times the tint intensity), 0 */
+	dissolveColor: 84,
+	/** flipbook columns, rows, frames per second, `_RandomStartByPos` */
+	sequence: 88,
+	/** flipbook: motion vector strength, opacity scale, opacity threshold, colour threshold */
+	sequenceShape: 104,
+	/** flipbook colour tint (linear), normal scale (the flipbook's or the normal map's) */
+	sequenceTint: 108,
+	/** `_Roughness`, `_Specular`, `_DirSpecularStrength`, `_FresnelStrength` */
+	surface: 112,
+	/** subsurface hue, saturation, value (0 without `_SUBSURFACE`), indirect strength */
+	subsurface: 116,
+	/** 0 (the vertex offset's switch), `_IndirectSaturation`, 0, 0 */
+	misc: 120,
+} as const;
+
+/** {@link WaterSheetRow.flags} bits, matching `effect.wgsl` */
+export const WaterSheetFlags = {
+	Disturb: 1 << 0,
+	/** the disturb texture holds a normal: its (a·r, g) distort instead of its red */
+	DisturbNormal: 1 << 1,
+	Mask: 1 << 2,
+	Dissolve: 1 << 3,
+	Sequence: 1 << 4,
+	SequenceMotion: 1 << 5,
+	/** slot 6 holds the flipbook's normals */
+	SequenceNormal: 1 << 6,
+	/** slot 6 holds `_NormalMap` */
+	NormalMap: 1 << 7,
+	MainAsAlpha: 1 << 8,
+	MaskAsAlpha: 1 << 9,
+	VertexOpacity: 1 << 10,
+	FresnelOpacity: 1 << 11,
+	VertexColor: 1 << 12,
+} as const;
+
+/** the slots of a VFXWater look, in order; slot 6 holds whichever normals the material uses */
+const WATER_SLOTS = [
+	'_MainTex',
+	'_DisturbTex1',
+	'_MaskTex',
+	'_DissolveTex',
+	'_SequenceBaseColorMap',
+	'_SequenceMotionVectorMap',
+] as const;
+
+/**
+ * the prefix of each {@link WATER_SLOTS} texture's UV scroll and rotation properties, `null` for the
+ * flipbook's
+ */
+const WATER_SLOT_ANIM = ['_MainTex', '_Disturb', '_MaskTex', '_Dissolve', null, null] as const;
+
+/**
+ * VFXWater keywords that are drawn. `VFX_WATER_SIMPLE_LIGHT`, the game's cheaper lighting from a per-draw
+ * ambient probe and the far shadow, is lit the full way
+ */
+const WATER_KEYWORDS = new Set([
+	'_SUBSURFACE',
+	'_USE_DISTURB',
+	'_USE_MASK',
+	'_USE_DISSOLVE',
+	'_USE_SOFTBLEND',
+	'_NORMAL_MAP',
+	'_USE_SEQUENCE_FRAME',
+	'_USE_SEQUENCE_FRAME_MV',
+	'_USE_SEQUENCE_FRAME_NORMAL',
+	'VFX_WATER_SIMPLE_LIGHT',
+]);
+
+/**
+ * `HGRP/Effect/VFXWater`, the sheets of falling water: a tinted, masked main texture or an animated flipbook
+ * blended frame to frame along its motion vectors, distorted by a scrolling texture, eaten by a dissolve, and
+ * lit by the irradiance volume and the sun, with a subsurface glow when lit from behind.
+ *
+ * @param entry a material of `HGRP/Effect/VFXWater`
+ * @param shader its shader
+ * @returns its look, or `null` when it uses features that aren't drawn (refraction, vertex animation)
+ */
+export const vfxWaterLook = (entry: ReadyMaterial, shader: ShaderEntry): EffectLook | null => {
+	if (entry.blend !== 'premultiplied' || entry.keywords.some((keyword) => !WATER_KEYWORDS.has(keyword))) {
+		return null;
+	}
+	const has = (keyword: string): boolean => entry.keywords.includes(keyword);
+	const sequence = has('_USE_SEQUENCE_FRAME');
+	if (sequence && entry.slots['_SequenceBaseColorMap'] === undefined) {
+		return null;
+	}
+	const { float, color } = readers(entry, shader);
+	const look = emptyEffect(7);
+	const params = look.params;
+	const intensity = float('_TintColorIntensity', 1);
+	const tint = color('_TintColor') ?? [1, 1, 1, 1];
+	const linear = linearRgb(tint);
+	params.set(
+		[
+			linear[0] * intensity,
+			linear[1] * intensity,
+			linear[2] * intensity,
+			tint[3] * float('_TintColorAlpha', 1),
+		],
+		EffectRow.tint,
+	);
+	// first, since the rows below reuse some of the stack's
+	setShared(look, entry, shader, intensity);
+	let flags = 0;
+	const used = [
+		true,
+		has('_USE_DISTURB'),
+		has('_USE_MASK'),
+		has('_USE_DISSOLVE'),
+		sequence,
+		sequence && has('_USE_SEQUENCE_FRAME_MV'),
+	];
+	WATER_SLOTS.forEach((name, i) => {
+		const slot = entry.slots[name];
+		if (!used[i] || slot === undefined || slot.uv > 0) {
+			return;
+		}
+		const prefix = WATER_SLOT_ANIM[i];
+		let anim = { speed: [0, 0], cos: 1, sin: 0 };
+		if (prefix !== null) {
+			const speed = color(`${prefix}UVSpeed${i === 1 ? '1' : ''}`) ?? [0, 0, 0, 0];
+			const rotation = color(`${prefix}UVRotateMat${i === 1 ? '1' : ''}`) ?? [1, 0, 0, 1];
+			anim = { speed: [speed[0], speed[1]], cos: rotation[0], sin: rotation[1] };
+		}
+		// the flipbook samples its frames' UVs as they are
+		const transform = prefix === null ? { ...slot, scale: [1, 1], offset: [0, 0] } : slot;
+		setSlot(look, i, transform, anim, EffectRole.Main);
+	});
+	if (look.textures[0] < 0 && shader.textures['_MainTex'] !== 'white') {
+		return null;
+	}
+	if (look.textures[1] >= 0) {
+		flags |= WaterSheetFlags.Disturb;
+		if (float('_DisturbTex1Normal', 0) !== 0) {
+			flags |= WaterSheetFlags.DisturbNormal;
+		}
+	}
+	if (look.textures[2] >= 0) {
+		flags |= WaterSheetFlags.Mask;
+	}
+	if (look.textures[3] >= 0) {
+		flags |= WaterSheetFlags.Dissolve;
+	}
+	if (sequence) {
+		flags |= WaterSheetFlags.Sequence;
+		if (look.textures[5] >= 0) {
+			flags |= WaterSheetFlags.SequenceMotion;
+		}
+	}
+	// slot 6: the flipbook's normals, or a normal map
+	let normalScale = 1;
+	{
+		const flipbook = sequence && has('_USE_SEQUENCE_FRAME_NORMAL');
+		const name = flipbook ? '_SequenceNormalMap' : has('_NORMAL_MAP') ? '_NormalMap' : null;
+		const slot = name === null ? undefined : entry.slots[name];
+		if (slot !== undefined && slot.uv === 0) {
+			const speed = color('_NormalMapUVSpeed') ?? [0, 0, 0, 0];
+			const rotation = color('_NormalMapUVRotateMat') ?? [1, 0, 0, 1];
+			setSlot(
+				look,
+				6,
+				flipbook ? { ...slot, scale: [1, 1], offset: [0, 0] } : slot,
+				flipbook
+					? { speed: [0, 0], cos: 1, sin: 0 }
+					: { speed: [speed[0], speed[1]], cos: rotation[0], sin: rotation[1] },
+				EffectRole.Main,
+			);
+			flags |= flipbook ? WaterSheetFlags.SequenceNormal : WaterSheetFlags.NormalMap;
+			normalScale = flipbook ? float('_FrameNormalScale', 1) : float('_NormalScale', 1);
+		}
+	}
+	if (float('_UseMainTexAsAlpha', 1) !== 0) {
+		flags |= WaterSheetFlags.MainAsAlpha;
+	}
+	if (float('_UseMaskTexAsAlpha', 1) !== 0) {
+		flags |= WaterSheetFlags.MaskAsAlpha;
+	}
+	if (float('_UseVertexColorAsOpacity', 0) !== 0) {
+		flags |= WaterSheetFlags.VertexOpacity;
+	}
+	if (float('_UseFresnelAsOpacity', 0) !== 0) {
+		flags |= WaterSheetFlags.FresnelOpacity;
+	}
+	if (float('_DisableVertColor', 0) === 0) {
+		flags |= WaterSheetFlags.VertexColor;
+	}
+	params.set(
+		[flags, float('_BlendMode', 0), float('_UseLighting', 1), float('_WaterRandomUV', 0)],
+		WaterSheetRow.flags,
+	);
+	params.set(
+		[float('_Bi_Disturb', 0), float('_DisturbUIntensity1', 0), float('_DisturbVIntensity1', 0), 0],
+		WaterSheetRow.disturb,
+	);
+	params.set(
+		[
+			float('_MainTexUseDisturb', 0),
+			float('_MaskTexUseDisturb', 0),
+			float('_NormalMapUseDisturb', 0),
+			float('_DissolveTexUseDisturb', 0),
+		],
+		WaterSheetRow.disturbUse,
+	);
+	// the dissolve threshold sweeps from below 0 to past 1 as the schedule goes from 0 to 1
+	params.set(
+		[
+			float('_DissolveScheduleOffset', 0) * 2.02 - 1.01,
+			float('_DissolveEdgeSharp', 1),
+			float('_DissolveEmissiveEdge', 0),
+			0,
+		],
+		WaterSheetRow.dissolve,
+	);
+	const edge = linearRgb(color('_DissolveEmissiveColor') ?? [0, 0, 0, 0]);
+	params.set([edge[0] * intensity, edge[1] * intensity, edge[2] * intensity, 0], WaterSheetRow.dissolveColor);
+	const frames = color('_SequenceFrameSize') ?? [1, 1, 0, 0];
+	params.set(
+		[
+			Math.max(frames[0], 1),
+			Math.max(frames[1], 1),
+			float('_PlaybackSpeed', 0),
+			float('_RandomStartByPos', 0),
+		],
+		WaterSheetRow.sequence,
+	);
+	params.set(
+		[
+			float('_MotionVectorDistortionStrength', 0),
+			float('_SequenceOpacityScale', 1),
+			float('_SequenceOpacitySdf', 0),
+			float('_SequenceBaseColorSdf', 0),
+		],
+		WaterSheetRow.sequenceShape,
+	);
+	const sequenceTint = linearRgb(color('_SequenceBaseColorMapTint') ?? [1, 1, 1, 1]);
+	params.set([...sequenceTint, normalScale], WaterSheetRow.sequenceTint);
+	params.set(
+		[
+			float('_Roughness', 1),
+			float('_Specular', 1),
+			float('_DirSpecularStrength', 1),
+			float('_FresnelStrength', 0),
+		],
+		WaterSheetRow.surface,
+	);
+	params.set(
+		[
+			float('_SubsurfaceHue', 1),
+			float('_SubsurfaceSaturation', 1),
+			has('_SUBSURFACE') ? float('_SubsurfaceValue', 1) : 0,
+			float('_SubsurfaceIndirect', 1),
+		],
+		WaterSheetRow.subsurface,
+	);
+	params.set([0, float('_IndirectSaturation', 1), 0, 0], WaterSheetRow.misc);
+	if (has('_USE_SOFTBLEND')) {
+		params[EffectRow.soft] = Math.max(float('_SoftDistance', 1), 1e-3);
+		params[EffectRow.soft + 1] = float('_SoftBias', 0);
+	}
+	params[EffectRow.soft + 3] = (flags & WaterSheetFlags.VertexColor) !== 0 ? 1 : 0;
+	params.set([0, EffectKind.WaterSheet, 0, 0], EffectRow.unfogged);
+	return look;
+};
+
+// #endregion
 
 // #region mist
 

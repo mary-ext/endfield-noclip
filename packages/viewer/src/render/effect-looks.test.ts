@@ -3,7 +3,16 @@ import { test } from 'node:test';
 
 import type { ReadyMaterial, ShaderEntry, TextureSlot } from '@endfield-noclip/package-format/materials';
 
-import { EffectRole, EffectRow, MistRow, OFFSET_SLOT, ROLE_NONE } from './effect-looks.ts';
+import {
+	EffectKind,
+	EffectRole,
+	EffectRow,
+	MistRow,
+	OFFSET_SLOT,
+	ROLE_NONE,
+	WaterSheetFlags,
+	WaterSheetRow,
+} from './effect-looks.ts';
 import { LookFlags, materialLooks } from './materials.ts';
 
 const shader = (name: string): ShaderEntry => ({
@@ -284,4 +293,66 @@ test('mist: additive FogSimple cards and walk-in fog boxes draw; equal fade ends
 	// walk-in boxes skip the close-up fade
 	assert.equal(box.params[MistRow.volume + 3], 0);
 	assert.equal(looks[2].drawn, false);
+});
+
+test('a VFXWater flipbook sheet lays out its frames, motion vectors and normals and keeps its own rows', () => {
+	const looks = materialLooks({
+		// without a main texture the sheet samples the shader's white default
+		shaders: [{ ...shader('HGRP/Effect/VFXWater'), textures: { _MainTex: 'white' } }],
+		entries: [
+			material({
+				keywords: [
+					'_SUBSURFACE',
+					'_USE_MASK',
+					'_USE_SEQUENCE_FRAME',
+					'_USE_SEQUENCE_FRAME_MV',
+					'_USE_SEQUENCE_FRAME_NORMAL',
+					'_USE_SOFTBLEND',
+				],
+				slots: {
+					_MaskTex: slot(2, [2, 3]),
+					_SequenceBaseColorMap: slot(5, [4, 4]),
+					_SequenceMotionVectorMap: slot(6),
+					_SequenceNormalMap: slot(7),
+				},
+				floats: {
+					_TintColorAlpha: 2,
+					_PlaybackSpeed: 40,
+					_FrameNormalScale: 0.3,
+					_SoftDistance: 3,
+					_Roughness: 0.6,
+				},
+				colors: { _TintColor: [0, 0, 0, 1] },
+				vectors: { _SequenceFrameSize: [8, 4, 0, 0] },
+			}),
+			material({ id: 1, keywords: ['VFX_WATER_REFRACT'] }),
+		],
+	});
+	const [sheet, refract] = looks;
+	assert.equal(sheet.drawn, true);
+	assert.equal(sheet.flags, LookFlags.Effect);
+	// main (white default), mask, flipbook colour and motion, normals in slot 6
+	assert.deepEqual(sheet.textures, [-1, -1, 2, -1, 5, 6, 7]);
+	// the flipbook's frames are sampled as they are, not through its `_ST`
+	assert.deepEqual([...sheet.params.subarray(EffectRow.uv + 16, EffectRow.uv + 20)], [1, 1, 0, 0]);
+	const flags = sheet.params[WaterSheetRow.flags];
+	const expected =
+		WaterSheetFlags.Mask |
+		WaterSheetFlags.Sequence |
+		WaterSheetFlags.SequenceMotion |
+		WaterSheetFlags.SequenceNormal |
+		WaterSheetFlags.MainAsAlpha |
+		WaterSheetFlags.MaskAsAlpha |
+		WaterSheetFlags.VertexColor;
+	assert.equal(flags, expected);
+	assert.deepEqual(
+		[...sheet.params.subarray(WaterSheetRow.sequence, WaterSheetRow.sequence + 3)],
+		[8, 4, 40],
+	);
+	assert.ok(Math.abs(sheet.params[WaterSheetRow.sequenceTint + 3] - 0.3) < 1e-6);
+	assert.equal(sheet.params[EffectRow.unfogged + 1], EffectKind.WaterSheet);
+	// the vertex offset stays off, since its switch shares the last rows
+	assert.equal(sheet.params[EffectRow.offsetMode], 0);
+	assert.equal(sheet.params[EffectRow.soft], 3);
+	assert.equal(refract.drawn, false);
 });
