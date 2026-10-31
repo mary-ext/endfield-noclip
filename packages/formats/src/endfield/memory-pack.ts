@@ -78,7 +78,11 @@ const RAW_STRUCTS = new Set([
 	'ConditionValue',
 	'ValueUnion',
 	'AudioId',
+	'AbilitySystemData.PlungingAttackData',
 ]);
+
+/** generic structs laid out as a bool flag then the value at its alignment: `Nullable<T>`, `Optional<T>` */
+const FLAGGED = new Set(['Nullable', 'Optional']);
 
 /** the MemoryPack wrappers of a client build */
 export class MemoryPackSchema {
@@ -415,7 +419,7 @@ export class MemoryPackReader {
 			return special;
 		}
 		const layout = this.#layout(type);
-		if (layout !== null && (VECTORS.has(base) || base === 'Nullable')) {
+		if (layout !== null && (VECTORS.has(base) || FLAGGED.has(base))) {
 			return this.#rawAdvance(type, layout);
 		}
 		// these structs are raw copies, except as List elements, which are wrapper-serialized
@@ -433,16 +437,24 @@ export class MemoryPackReader {
 					return this.#list(() => this.#value(first, true));
 				}
 				case 'SerializeFieldDictionary': {
+					// a header byte: 255 null, 2 a key list then a value list, 1 one list of key/value pairs
 					const header = this.#u8();
-					if (header === 255) {
-						return null;
+					switch (header) {
+						case 255: {
+							return null;
+						}
+						case 1: {
+							return this.#list(() => [this.#value(first, false), this.#value(second, false)]);
+						}
+						case 2: {
+							const keys = this.#list(() => this.#value(first, false));
+							const values = this.#list(() => this.#value(second, false));
+							return keys.map((key, i) => [key, values[i] ?? null]);
+						}
+						default: {
+							throw new FormatError(`SerializeFieldDictionary header ${header} at ${this.#at - 1}`);
+						}
 					}
-					if (header !== 2) {
-						throw new FormatError(`SerializeFieldDictionary header ${header}`);
-					}
-					const keys = this.#list(() => this.#value(first, false));
-					const values = this.#list(() => this.#value(second, false));
-					return keys.map((key, i) => [key, values[i] ?? null]);
 				}
 				case 'Dictionary': {
 					const key = this.#layout(first);
@@ -569,7 +581,7 @@ export class MemoryPackReader {
 			const size = PRIMITIVE_SIZES.get(type.name);
 			return size === undefined ? null : { size, align: size };
 		}
-		if (type.kind === 'generic' && runtime.definitionName(type.definition) === 'Nullable') {
+		if (type.kind === 'generic' && FLAGGED.has(runtime.definitionName(type.definition))) {
 			const inner = this.#layout(type.args[0]);
 			return (
 				inner && {
@@ -674,9 +686,14 @@ export class MemoryPackReader {
 				}
 			}
 		}
-		if (type.kind === 'generic' && runtime.definitionName(type.definition) === 'Nullable') {
+		if (type.kind === 'generic' && FLAGGED.has(runtime.definitionName(type.definition))) {
 			const inner = this.#layout(type.args[0])!;
-			return view.getUint8(at) === 0 ? null : this.#rawAt(type.args[0], at + inner.align);
+			const present = view.getUint8(at) !== 0;
+			if (runtime.definitionName(type.definition) === 'Nullable') {
+				return present ? this.#rawAt(type.args[0], at + inner.align) : null;
+			}
+			// an Optional keeps its value when disabled
+			return { $type: 'Optional', enabled: present, value: this.#rawAt(type.args[0], at + inner.align) };
 		}
 		if (type.kind !== 'definition') {
 			throw new FormatError(`no raw form for ${runtime.typeName(type)}`);

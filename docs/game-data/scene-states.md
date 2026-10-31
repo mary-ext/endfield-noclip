@@ -194,21 +194,24 @@ control per level previews them all, standing by default.
 ## facility visual forms
 
 implemented in
-[`interactive-facilities.ts`](../../packages/extractor/src/game/interactive-facilities.ts) and
-[`interactive-model.ts`](../../packages/formats/src/endfield/interactive-model.ts).
+[`interactive-facilities.ts`](../../packages/extractor/src/game/interactive-facilities.ts), with the
+templates decoded as MemoryPack (`InteractiveTemplateData`, see [level scripts](#level-scripts)).
 
-stock redistribution facilities (`int_system_domain_shop`), depots (`int_system_domain_depot`) and
-recycling stations (`int_doodad_core_recycle`) are placed by LevelData interactive rows rather than
-DynamicStreaming. their template's model-upgrade component (`InteractiveModelLevelUpComponentData`)
-lists ModelTable ids in authored order; each entry is one visual form with its own prefab. every
-placement (`createState` 0, deduplicated by id) becomes a `facility:<id>` progression whose levels
-are the list indices and whose default is the index of the template's base model (a recycling
-station starts at form 1).
+stock redistribution facilities (`int_system_domain_shop`), depots (`int_system_domain_depot`),
+recycling stations (`int_doodad_core_recycle`) and environment monitoring terminals
+(`int_system_kite_station`, in Wuling City and Marker Stone) are placed by LevelData interactive
+rows rather than DynamicStreaming. their template's model component
+(`InteractiveModelComponentData`) names the base model, and its model-upgrade component
+(`InteractiveModelLevelUpComponentData`, `modelLevelList`) lists ModelTable ids in authored order;
+each entry is one visual form with its own prefab (a terminal's five forms are its upgrades,
+`int_system_kiteStation_<n>_postmodel`). every placement (`createState` 0, deduplicated by id)
+becomes a `facility:<id>` progression whose levels are the list indices and whose default is the
+index of the template's base model (a recycling station starts at form 1).
 
-form numbers are positions in that list, not gameplay upgrade levels: how shop channel levels or
-depot levels map onto the list isn't recovered, so the viewer labels them "Visual form", not
-"Level". LevelData files with an unsupported layout are skipped whole and reported, never partially
-scanned.
+form numbers are positions in that list, not gameplay upgrade levels: how shop channel levels, depot
+levels or terminal levels (`KiteStationLevelTable`) map onto the list isn't recovered, so the viewer
+labels them "Visual form", not "Level". LevelData files with an unsupported layout are skipped whole
+and reported, never partially scanned.
 
 every other template draws only the base model its leading model component names, always shown:
 Dijiang's guest terminal desk, screens and doors, for instance. that ignores whatever runtime state

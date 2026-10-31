@@ -1,7 +1,6 @@
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import {
 	readInteractiveBaseModel,
-	readInteractiveModel,
 	readInteractiveTable,
 	readInteractiveVariantModels,
 } from '@endfield-noclip/formats/endfield/interactive-model';
@@ -11,6 +10,7 @@ import {
 	UnsupportedLevelData,
 } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
+import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { isObject, numberField, objectField, stringField } from '@endfield-noclip/formats/unity/values';
 import type { ConditionalSetInfo, SceneControl } from '@endfield-noclip/package-format/states';
@@ -44,7 +44,56 @@ const TEMPLATES = new Map([
 			data: 'Data/Json/Interactive/InteractiveData/data_int_doodad_core_recycle.json',
 		},
 	],
+	[
+		'int_system_kite_station',
+		{
+			name: 'Environment monitoring terminal',
+			data: 'Data/Json/Interactive/InteractiveData/data_int_system_kite_station.json',
+		},
+	],
 ]);
+
+/** the MemoryPack wrapper of interactive templates */
+const TEMPLATE_ROOT = 'Beyond_Gameplay_InteractiveTemplateDataForMemoryPack';
+
+/**
+ * @param template a decoded interactive template
+ * @param path its file, for errors
+ * @returns its base model (the model component's) and its model-upgrade list, one ModelTable id per visual
+ *   form
+ * @throws {FormatError} if either component is missing or the base model isn't one of the forms
+ */
+const facilityModels = (
+	template: MemoryPackValue,
+	path: string,
+): { id: string; scale: number; levels: string[] } => {
+	const components =
+		template !== null && typeof template === 'object' && !Array.isArray(template)
+			? template.componentList
+			: null;
+	const find = (suffix: string) =>
+		(Array.isArray(components) ? components : []).find(
+			(component): component is { [key: string]: MemoryPackValue } =>
+				component !== null &&
+				typeof component === 'object' &&
+				!Array.isArray(component) &&
+				typeof component.$type === 'string' &&
+				component.$type.endsWith(suffix),
+		);
+	const model = find('_InteractiveModelComponentDataForMemoryPack');
+	const upgrade = find('_InteractiveModelLevelUpComponentDataForMemoryPack');
+	const levels = upgrade?.modelLevelList;
+	if (
+		typeof model?.modelId !== 'string' ||
+		typeof model.modelScale !== 'number' ||
+		!Array.isArray(levels) ||
+		!levels.every((level) => typeof level === 'string') ||
+		!levels.includes(model.modelId)
+	) {
+		throw new FormatError(`${path} lacks a model and a model-upgrade list holding it`);
+	}
+	return { id: model.modelId, scale: model.modelScale, levels };
+};
 
 const TABLE = 'Data/Json/Interactive/InteractiveTable.json';
 
@@ -62,7 +111,7 @@ const TABLE = 'Data/Json/Interactive/InteractiveTable.json';
  * @throws {FormatError} for broken authored references or malformed supported records
  */
 export const loadInteractiveFacilities = async (
-	context: Pick<Context, 'vfs' | 'world' | 'resolver'>,
+	context: Pick<Context, 'vfs' | 'world' | 'resolver' | 'memoryPack'>,
 	scene: string,
 	level: string | null,
 	partition: LevelPartition | undefined,
@@ -72,6 +121,7 @@ export const loadInteractiveFacilities = async (
 	unsupported: { path: string; reason: string }[];
 }> => {
 	const { vfs, world } = context;
+	const reader = await context.memoryPack();
 	const find = (name: string) => vfs.find(VfsGroup.JsonData, name);
 	const read = async (name: string): Promise<Uint8Array> => {
 		const file = await find(name);
@@ -156,7 +206,7 @@ export const loadInteractiveFacilities = async (
 		const facility = TEMPLATES.get(key);
 		if (facility !== undefined) {
 			// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
-			const model = readInteractiveModel(await read(facility.data), string);
+			const model = facilityModels(reader.decode(await read(facility.data), TEMPLATE_ROOT), facility.data);
 			authored.set(key, {
 				name: facility.name,
 				initial: model.levels.indexOf(model.id),
