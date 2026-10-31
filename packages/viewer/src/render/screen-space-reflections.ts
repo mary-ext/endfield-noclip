@@ -113,8 +113,9 @@ export class ScreenSpaceReflections {
 		if (sized === null) {
 			return 0;
 		}
-		// march colour, weight and fade, two colour pyramids and a depth pyramid (a third more for their mips), output
-		return sized.width * sized.height * (8 + 4 + 1 + (8 * 2 + 2) * (4 / 3) + 8);
+		// march colour (and output), weight and fade, two colour pyramids and a depth pyramid (a third more for
+		// their mips)
+		return sized.width * sized.height * (8 + 4 + 1 + (8 * 2 + 2) * (4 / 3));
 	}
 
 	/** drops the history, so the next frame doesn't read the last (a cut) */
@@ -162,7 +163,8 @@ export class ScreenSpaceReflections {
 			texture('ssr pyramid 0', COLOR_FORMAT, mips),
 			texture('ssr pyramid 1', COLOR_FORMAT, mips),
 		];
-		const output = texture('ssr', HDR_FORMAT);
+		// the march's colour is done with once the temporal filter has read it, so the resolve writes over it
+		const output = marchColor;
 
 		const group = (pipeline: GPURenderPipeline, index: number, entries: Record<number, GPUBindingResource>) =>
 			device.createBindGroup({
