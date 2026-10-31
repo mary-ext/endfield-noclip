@@ -36,20 +36,23 @@ the extractor reads these sections
 | `celestialConfig`     | `celestial`     | planets in the sky                                            |
 | `starConfig`          | `star`          | star field and nebula                                         |
 | `rainConfig`          | `rain`          | rain wetness ([wetness](#wetness)); falling rain isn't drawn  |
+| `lensFlareConfig`     | `lensFlare`     | the sun's [lens flare](lighting.md#lens-flare)                |
 
-other sections the phase has (`snowConfig`, `volumetricCloudConfig`, `lensFlareConfig`, …) are not
-extracted. to add one, extend `ENVIRONMENT_SECTIONS` and `mapSections`, the `SECTION_KEYS` map in
+other sections the phase has (`snowConfig`, `volumetricCloudConfig`, …) are not extracted. to add
+one, extend `ENVIRONMENT_SECTIONS` and `mapSections`, the `SECTION_KEYS` map in
 [`pack/environments.ts`](../../packages/extractor/src/pack/environments.ts), and the matching
 interface in
 [`package-format/src/environment.ts`](../../packages/package-format/src/environment.ts).
 
 section values keep the game's field names. colours stay raw (no sRGB decode; HDR colours exceed 1),
 because the game feeds them to its shaders raw. `SphericalHarmonicsL2` is 27 numbers, channel-major.
-colour curves, `m_*` editor fields and object references other than textures and materials are
-dropped; texture references become texture-table ids. material references (the celestial bodies'
-draw materials) become the material flattened: shader name, keywords, floats, colours as stored,
-texture-table ids and texture scale/offset per slot. the textures that resolve in practice are the
-sky reflection cubemap (BC6H), the cloud panorama, its flow map and the cloud-shadow texture.
+colour curves, `m_*` editor fields and object references other than textures, materials and lens
+flare data are dropped; texture references become texture-table ids. material references (the
+celestial bodies' draw materials) become the material flattened: shader name, keywords, floats,
+colours as stored, texture-table ids and texture scale/offset per slot. the lens flare's
+`LensFlareDataSRP` reference becomes the flare's elements ([lens flare](lighting.md#lens-flare)),
+each image a texture-table id. the textures that resolve in practice are the sky reflection cubemap
+(BC6H), the cloud panorama, its flow map, the cloud-shadow texture and the flares' images.
 editor-only previews (`*ForEdit`) are skipped.
 
 ## environment volumes
@@ -160,9 +163,10 @@ game's environment manager, which blends `HGEnvironmentPhase`s into an interpola
 - a factor ≥ 1 copies the section. below that, numbers and colours lerp, mode/type fields and
   references switch at ½, and the cloud panorama crossfades through `cloudFadeAlpha` (the old
   texture fades out to ½, the new one in after), as the game's cloud lerp does. the height fog's
-  flow noise has its own rule ([flow noise](lighting.md#flow-noise)). the game's per-section lerps
-  have more special cases (the precipitation transitions, for one); the generic lerp is an
-  approximation.
+  flow noise has its own rule ([flow noise](lighting.md#flow-noise)), as does the lens flare: a
+  flare on one side fades in by the factor with that side's settings, and two flares cross through
+  nothing at ½ without blending. the game's per-section lerps have more special cases (the
+  precipitation transitions, for one); the generic lerp is an approximation.
 
 the "volumes at camera" toggle turns blending off (the base profile alone). a pinned phase replaces
 the volume blend with that one phase over the base. per-volume checkboxes override the scene-state

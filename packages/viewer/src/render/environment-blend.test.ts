@@ -304,3 +304,34 @@ it('fades the flow noise in from one side, and crossfades noises of different sp
 	assert.equal(crossing.flowNoiseIntensity.toFixed(6), '0.200000');
 	assert.equal(crossing.flowNoiseSpeed, 0.5);
 });
+
+it('fades a lens flare in from nothing, and crosses between two flares through nothing', () => {
+	const flare = (enable: boolean, intensity: number, name: string) => ({
+		enable,
+		intensity,
+		scale: 1,
+		lensFlareData: { name, elements: [] },
+	});
+	const blend = (from: ReturnType<typeof flare>, to: ReturnType<typeof flare>, x: number) => {
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a minimal stand-in
+		const base = { name: 'base', lensFlare: from, post: null } as unknown as EnvironmentProfile;
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above
+		const next = {
+			name: 'next',
+			active: ['lensFlare'],
+			sections: { lensFlare: to },
+		} as unknown as EnvironmentPhaseInfo;
+		const m = manifest([next], [volume({ shape: square, blendDistance: 20 })]);
+		// x m inside a 20 m blend distance
+		return blendEnvironment(m, base, [x, 25, 50], options).profile.lensFlare;
+	};
+	// a quarter in: only the next phase has a flare, at a quarter of its intensity
+	const fading = blend(flare(false, 1, 'a'), flare(true, 0.5, 'b'), 5);
+	assert.equal(fading?.enable, true);
+	assert.equal(fading?.intensity, 0.125);
+	assert.equal(fading?.lensFlareData?.name, 'b');
+	// a quarter in between two flares: the base's, at half its intensity
+	const crossing = blend(flare(true, 1, 'a'), flare(true, 0.5, 'b'), 5);
+	assert.equal(crossing?.intensity, 0.5);
+	assert.equal(crossing?.lensFlareData?.name, 'a');
+});

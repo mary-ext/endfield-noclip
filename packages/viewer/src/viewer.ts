@@ -45,6 +45,7 @@ import { DEBUG_VIEWS, type DebugView, FRAME_UNIFORM_BYTES, FrameOffsets } from '
 import { InstanceRenderer } from './render/instance-renderer.ts';
 import { RowKind, type RowKinds, type TierSpan } from './render/instance-rows.ts';
 import { IrradianceVolume } from './render/irradiance-volume.ts';
+import { lensFlareLook } from './render/lens-flare-layout.ts';
 import { LocalLights } from './render/local-lights.ts';
 import { materialLooks } from './render/materials.ts';
 import { MeshRenderer } from './render/mesh-renderer.ts';
@@ -647,6 +648,7 @@ export class Viewer {
 		this.#post.setCloud(null);
 		this.#post.setFlowNoise(null);
 		this.#post.celestial.setTextures(() => null);
+		this.#post.lensFlares.setTextures(() => null);
 		this.#setReflection(this.#noReflection, 1);
 		this.#setShadowRamp(null);
 		this.scene = null;
@@ -734,6 +736,9 @@ export class Viewer {
 			(slot) =>
 				streamWholeTexture({ stream, textures, id: celestialIds[slot], kind: '2d', priority: 1e6 })
 					?.binding ?? null,
+		);
+		this.#post.lensFlares.setTextures((id) =>
+			streamWholeTexture({ stream, textures, id, kind: '2d', priority: 1e6 }),
 		);
 
 		const reflection = streamWholeTexture({
@@ -858,6 +863,7 @@ export class Viewer {
 		this.#celestial = celestialLook(profile);
 		this.#wetness = wetnessParams(profile?.rain);
 		this.#post.celestial.setLook(this.#celestial);
+		this.#post.lensFlares.setLook(lensFlareLook(profile));
 		this.#post.setEnvironment(this.#environment);
 		this.#fog.setEnvironment(this.#environment, this.camera.near);
 		this.#dirty = true;

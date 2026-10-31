@@ -95,6 +95,11 @@ packs or renders correctly.
 - light shafts ([light shafts](game-data/lighting.md#light-shafts)): the occlusion term and the
   cloud mask aren't drawn; unchecked against an in-game shot facing the sun. the
   [sun disc](game-data/lighting.md#sun-disc) is unchecked against one too
+- lens flare ([lens flare](game-data/lighting.md#lens-flare)): polygon elements, inverse SDFs and
+  key weights aren't drawn, and the flare component's own settings (when the environment's flare is
+  off) aren't known. at Origin Lodespring's overview the viewer's flare is fainter than the game's:
+  the crystal mountain behind the sun occludes it in the viewer's depth buffer (the game may not
+  write it there), and Unity's random-number mapping is assumed
 - the sky's celestial layers are unchecked against in-game shots
   ([beyond the atmosphere](game-data/lighting.md#beyond-the-atmosphere))
 - HLOD/detail, LOD and mip swaps pop without cross-fade; ground-blend and decal meshes z-fight

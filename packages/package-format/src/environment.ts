@@ -31,6 +31,8 @@ export interface EnvironmentProfile {
 	star: StarConfig;
 	/** absent in packages written before it was extracted */
 	rain?: RainConfig;
+	/** absent in packages written before it was extracted */
+	lensFlare?: LensFlareConfig;
 	/** the level's global post-processing volume, or `null` if it has none */
 	post: PostProfile | null;
 }
@@ -504,6 +506,107 @@ export interface RainConfig {
 	farSceneWetnessValue: number;
 	/** above 0, the high-quality wetness lays standing water on flat ground near the camera */
 	rippleRoughnessMaskThreshold: number;
+}
+
+/**
+ * `HGLensFlareConfig`: the lens flare the sun draws while `enable` is set (SRP core's data-driven lens
+ * flare). its direction is {@link LightConfig.rotationLensFlare}'s and its light colour
+ * {@link LightConfig.directColor}
+ */
+export interface LensFlareConfig {
+	enable: boolean;
+	/** the flare's elements, or `null` when the reference is empty or unreadable */
+	lensFlareData: LensFlareData | null;
+	intensity: number;
+	scale: number;
+	useOcclusion: boolean;
+	/** how far around the sun occlusion samples reach, in units of tan⁻¹ 0.0576 (about 3.3°) */
+	occlusionRadius: number;
+	sampleCount: number;
+	occlusionOffset: number;
+	allowOffScreen: boolean;
+}
+
+/** an `AnimationCurve` key */
+export interface CurveKey {
+	time: number;
+	value: number;
+	inSlope: number;
+	outSlope: number;
+	weightedMode: number;
+	inWeight: number;
+	outWeight: number;
+}
+
+/** an `AnimationCurve`; the wrap modes are Unity's internal ones (2, clamp, is the default) */
+export interface AnimationCurve {
+	keys: CurveKey[];
+	preWrapMode: number;
+	postWrapMode: number;
+}
+
+/** a `Gradient`: colour and alpha keys at times 0–1, raw colours */
+export interface Gradient {
+	/** 0 blends between keys, 1 holds each key until the next */
+	mode: number;
+	colorKeys: { time: number; color: Vec3 }[];
+	alphaKeys: { time: number; alpha: number }[];
+}
+
+/** SRP core's `LensFlareDataSRP`: a flare's elements, drawn in order */
+export interface LensFlareData {
+	/** the asset's name, e.g. `LFlare_common_03` */
+	name: string;
+	elements: LensFlareElement[];
+}
+
+/** SRP core's `LensFlareDataElementSRP`, under its field names; colours raw */
+export interface LensFlareElement {
+	visible: boolean;
+	/** along the ray from the light through the screen's centre: 0 at the light, 1 at the centre */
+	position: number;
+	positionOffset: Vec2;
+	/** degrees the ray turns */
+	angularOffset: number;
+	translationScale: Vec2;
+	localIntensity: number;
+	lensFlareTexture: TextureRef;
+	uniformScale: number;
+	sizeXY: Vec2;
+	allowMultipleElement: boolean;
+	count: number;
+	preserveAspectRatio: boolean;
+	/** degrees */
+	rotation: number;
+	tint: Color;
+	/** 0 additive, 1 screen, 2 premultiplied, 3 lerp */
+	blendMode: number;
+	autoRotate: boolean;
+	/** 0 image, 1 circle, 2 polygon */
+	flareType: number;
+	modulateByLightColor: boolean;
+	/** 0 uniform, 1 curve, 2 random */
+	distribution: number;
+	lengthSpread: number;
+	positionCurve: AnimationCurve;
+	scaleCurve: AnimationCurve;
+	seed: number;
+	colorGradient: Gradient;
+	intensityVariation: number;
+	positionVariation: Vec2;
+	scaleVariation: number;
+	rotationVariation: number;
+	enableRadialDistortion: boolean;
+	targetSizeDistortion: Vec2;
+	distortionCurve: AnimationCurve;
+	distortionRelativeToCenter: boolean;
+	fallOff: number;
+	edgeOffset: number;
+	sideCount: number;
+	sdfRoundness: number;
+	inverseSDF: boolean;
+	uniformAngle: number;
+	uniformAngleCurve: AnimationCurve;
 }
 
 /** `HGWindConfig`: foliage and cloth wind */

@@ -14,6 +14,7 @@ import { AutoExposure } from './auto-exposure.ts';
 import { CelestialLayer } from './celestial.ts';
 import { type Environment, evaluateSh } from './environment.ts';
 import type { DebugView } from './frame-uniforms.ts';
+import { LensFlares } from './lens-flare.ts';
 import { LightShafts } from './light-shafts.ts';
 import { ScreenSpaceReflections } from './screen-space-reflections.ts';
 import atmosphereWgsl from './shaders/atmosphere.wgsl?raw';
@@ -191,6 +192,8 @@ export class PostProcess {
 	readonly celestial: CelestialLayer;
 	/** the screen-space reflections; the caller resets their history on cuts */
 	readonly reflections: ScreenSpaceReflections;
+	/** the sun's lens flare; the caller sets its look and textures */
+	readonly lensFlares: LensFlares;
 	#lightShafts: LightShafts;
 	#device: GPUDevice;
 	#uniforms: GPUBuffer;
@@ -311,6 +314,7 @@ export class PostProcess {
 		this.taa = new TemporalAA(device, module('taa', [taaWgsl]));
 		this.reflections = new ScreenSpaceReflections(device, module('ssr', [ssrWgsl]), this.#uniforms);
 		this.#lightShafts = new LightShafts(device);
+		this.lensFlares = new LensFlares(device);
 		const atmosphere = module('atmosphere', [atmosphereWgsl]);
 		const gtao = module('gtao', [gtaoWgsl]);
 		const composite = module('composite', [atmosphereWgsl, skyWgsl, compositeWgsl]);
@@ -618,6 +622,7 @@ export class PostProcess {
 		// the reflections run before compositing, so the scene they read still holds last frame's
 		this.reflections.resize({ scene, previousScene: sceneView, width, height });
 		this.#lightShafts.resize({ scene, composited: sceneView, width, height });
+		this.lensFlares.resize({ scene, composited: sceneView });
 		const histories = this.taa.histories;
 		// the game's chain: sized as if the view were at most 1080 px tall, the first level at half that size,
 		// with as many levels as half-resolution bloom gets (quarter resolution runs one fewer)
@@ -1038,6 +1043,8 @@ export class PostProcess {
 				aspect: width / height,
 				look: this.#environment.lightShaft,
 			});
+			// the game draws the flare after the shafts, which don't see it
+			this.lensFlares.encode(encoder, { camera, width, height });
 		}
 		const resolved = this.taa.encode(encoder, { camera, postGroup: sized.passes.taa });
 		if (settings.autoExposure) {
@@ -1080,5 +1087,6 @@ export class PostProcess {
 		this.taa.destroy();
 		this.reflections.destroy();
 		this.#lightShafts.destroy();
+		this.lensFlares.destroy();
 	}
 }

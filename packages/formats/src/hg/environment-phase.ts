@@ -27,6 +27,7 @@ export const ENVIRONMENT_SECTIONS = [
 	'celestialConfig',
 	'starConfig',
 	'rainConfig',
+	'lensFlareConfig',
 ] as const;
 
 /** a section's field name */
@@ -38,14 +39,19 @@ export interface EnvironmentSection {
 	active: boolean;
 	/**
 	 * the section's fields under their own names (see `unity/plain-object.ts` for the value mapping), without
-	 * `m_*` bookkeeping fields, colour curves, or object references other than textures and materials, which
-	 * are `null`
+	 * `m_*` bookkeeping fields, colour curves, or object references other than textures, materials and lens
+	 * flare data, which are `null`
 	 */
 	value: PlainObject;
 	/** the texture references, by field path within {@link value} */
 	textures: PlainResult['pptrs'];
 	/** the material references (the celestial bodies' draw materials), by field path within {@link value} */
 	materials: PlainResult['pptrs'];
+	/**
+	 * the `LensFlareDataSRP` references (the sun's lens flare), by field path within {@link value}; read them
+	 * with `unity/lens-flare-data.ts`
+	 */
+	flares: PlainResult['pptrs'];
 }
 
 /** a decoded phase */
@@ -56,6 +62,7 @@ export interface EnvironmentPhase {
 
 const TEXTURE_PPTR = /^PPtr<\$?(?:Texture|Texture2D|Texture3D|Cubemap|Texture2DArray|CubemapArray)>$/;
 const MATERIAL_PPTR = /^PPtr<\$?Material>$/;
+const FLARE_PPTR = /^PPtr<\$?LensFlareDataSRP>$/;
 
 /** sub-structs that are big and unused outside the editor */
 const DROPPED_TYPES = new Set(['HGColorCurve']);
@@ -73,7 +80,8 @@ export const readEnvironmentPhase = (
 	const { value, pptrs } = toPlainObject(nodes, object, {
 		// editor-only previews (`customIVCubemapMapForEdit`) aren't shipped textures the client samples
 		keepPPtr: (type, name) =>
-			(TEXTURE_PPTR.test(type) || MATERIAL_PPTR.test(type)) && !name.endsWith('ForEdit'),
+			(TEXTURE_PPTR.test(type) || MATERIAL_PPTR.test(type) || FLARE_PPTR.test(type)) &&
+			!name.endsWith('ForEdit'),
 		// `m_active` is read separately below; `m_backup*`/`m_prev*` are editor state
 		dropField: (name, type) => (name.startsWith('m_') && name !== 'm_Name') || DROPPED_TYPES.has(type),
 	});
@@ -97,6 +105,7 @@ export const readEnvironmentPhase = (
 			value: converted,
 			textures: own.filter(({ type }) => TEXTURE_PPTR.test(type)),
 			materials: own.filter(({ type }) => MATERIAL_PPTR.test(type)),
+			flares: own.filter(({ type }) => FLARE_PPTR.test(type)),
 		};
 	};
 	return { name: stringField(object, 'm_Name'), sections: mapSections(section) };
@@ -124,4 +133,5 @@ export const mapSections = <T>(
 	celestialConfig: fn('celestialConfig'),
 	starConfig: fn('starConfig'),
 	rainConfig: fn('rainConfig'),
+	lensFlareConfig: fn('lensFlareConfig'),
 });

@@ -9,8 +9,9 @@
  * scripted factor) is skipped.
  *
  * a phase only touches the sections it marks active. per section the game lerps every field
- * (`HG*Config.Lerp`); here numbers and colours lerp, other values switch at the halfway point, and the cloud
- * panorama crossfades through its fade alpha when the texture changes, as `HGCloudConfig.Lerp` does
+ * (`HG*Config.Lerp`); here numbers and colours lerp, other values switch at the halfway point, the cloud
+ * panorama crossfades through its fade alpha when the texture changes, as `HGCloudConfig.Lerp` does, and the
+ * lens flare fades through nothing, as `HGLensFlareConfig.Lerp` does
  *
  * @module
  */
@@ -465,6 +466,8 @@ const applyPhase = (profile: EnvironmentProfile, phase: EnvironmentPhaseInfo, t:
 			target[name] = lerpRain(target[name], source[name], t);
 		} else if (name === 'heightFog' || name === 'volumetricFog') {
 			target[name] = lerpFlowNoise(target[name], source[name], t);
+		} else if (name === 'lensFlare') {
+			target[name] = lerpLensFlare(target[name], source[name], t);
 		} else {
 			target[name] = lerpObject(target[name], source[name], t);
 		}
@@ -612,6 +615,37 @@ const lerpFlowNoise = (
 		}
 	}
 	return out;
+};
+
+/** @returns a copy of an enabled lens flare section with its intensity scaled by `weight` */
+const faded = (from: Record<string, unknown>, weight: number): Record<string, unknown> => ({
+	...structuredClone(from),
+	enable: true,
+	intensity: number(from.intensity) * weight,
+});
+
+/**
+ * `HGLensFlareConfig.Lerp`: a flare on one side only fades in from nothing with that side's settings; with a
+ * flare on both sides, the first fades out to the halfway point and the second fades in. nothing blends
+ * between two flares
+ */
+const lerpLensFlare = (
+	a: Record<string, unknown> | undefined,
+	b: Record<string, unknown>,
+	t: number,
+): Record<string, unknown> => {
+	const aOn = a?.enable === true;
+	const bOn = b.enable === true;
+	if (a !== undefined && aOn && bOn) {
+		return t < 0.5 ? faded(a, 1 - 2 * t) : faded(b, 2 * t - 1);
+	}
+	if (a !== undefined && aOn) {
+		return faded(a, 1 - t);
+	}
+	if (bOn) {
+		return faded(b, t);
+	}
+	return structuredClone(a ?? b);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

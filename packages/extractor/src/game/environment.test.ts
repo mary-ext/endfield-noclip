@@ -135,6 +135,7 @@ const phase = (name: string, inactive: EnvironmentSectionName[]): EnvironmentPha
 			value: { from: name },
 			textures: [],
 			materials: [],
+			flares: [],
 		};
 	}
 	return { name, sections };

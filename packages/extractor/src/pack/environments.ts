@@ -9,6 +9,7 @@ import {
 	type EnvironmentSection,
 	type EnvironmentSectionName,
 } from '@endfield-noclip/formats/hg/environment-phase';
+import { type LensFlareDataSRP, readLensFlareData } from '@endfield-noclip/formats/unity/lens-flare-data';
 import type { PlainObject } from '@endfield-noclip/formats/unity/plain-object';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type {
@@ -59,6 +60,7 @@ const SECTION_KEYS = {
 	celestialConfig: 'celestial',
 	starConfig: 'star',
 	rainConfig: 'rain',
+	lensFlareConfig: 'lensFlare',
 } as const satisfies Record<EnvironmentSectionName, keyof EnvironmentProfile>;
 
 /** what a level resolved to, for the pack report and debug index */
@@ -96,7 +98,7 @@ export interface EnvironmentPlan {
 
 /** a texture field to fill in once texture ids are known */
 interface TextureSlot {
-	holder: PlainObject;
+	holder: Record<string, unknown>;
 	key: string;
 	texture: number;
 }
@@ -335,11 +337,31 @@ const resolvePhaseTextures = async (
 	return new Map(entries);
 };
 
-/** a section's references resolved: per texture and per material reference, its object or `null` */
+/** a lens flare asset with each element's texture object, or `null` for none */
+interface LoadedFlare {
+	data: LensFlareDataSRP;
+	textures: (ObjectRef | null)[];
+}
+
+/** a section's references resolved: per texture, material and lens flare reference, its object or `null` */
 interface SectionRefs {
 	textures: (ObjectRef | null)[];
 	materials: (LoadedMaterial | null)[];
+	flares: (LoadedFlare | null)[];
 }
+
+/** @returns the flare asset at `ref`, its element textures resolved against its own file */
+const loadFlare = async (resolver: AssetResolver, ref: ObjectRef): Promise<LoadedFlare> => {
+	const data = readLensFlareData(await ref.file.objectBytes(ref.info), {
+		littleEndian: ref.file.file.header.littleEndian,
+	});
+	const textures = await Promise.all(
+		data.elements.map(async ({ lensFlareTexture }) =>
+			lensFlareTexture === null ? null : resolver.resolve(ref, lensFlareTexture).catch(() => null),
+		),
+	);
+	return { data, textures };
+};
 
 /** @returns the section's references, resolved against the phase file `from` */
 const resolveSection = async (
@@ -347,7 +369,7 @@ const resolveSection = async (
 	from: ObjectRef,
 	section: EnvironmentSection,
 ): Promise<SectionRefs> => {
-	const [textures, materials] = await Promise.all([
+	const [textures, materials, flares] = await Promise.all([
 		Promise.all(section.textures.map(({ pptr }) => resolver.resolve(from, pptr).catch(() => null))),
 		Promise.all(
 			section.materials.map(async ({ pptr }) => {
@@ -359,8 +381,18 @@ const resolveSection = async (
 				}
 			}),
 		),
+		Promise.all(
+			section.flares.map(async ({ pptr }) => {
+				try {
+					const ref = await resolver.resolve(from, pptr);
+					return ref === null ? null : await loadFlare(resolver, ref);
+				} catch {
+					return null;
+				}
+			}),
+		),
 	]);
-	return { textures, materials };
+	return { textures, materials, flares };
 };
 
 const buildPhase = (
@@ -398,7 +430,7 @@ const fillTextureSlots = (
 	textures: ObjectRef[],
 	textureIndex: Map<string, number>,
 ): void => {
-	const slotFor = (holder: PlainObject, key: string, ref: ObjectRef | null): void => {
+	const slotFor = (holder: Record<string, unknown>, key: string, ref: ObjectRef | null): void => {
 		holder[key] = null;
 		if (ref !== null) {
 			slots.push({ holder, key, texture: intern(textures, textureIndex, objectKey(ref), () => ref) });
@@ -435,6 +467,23 @@ const fillTextureSlots = (
 			textures: materialTextures,
 			textureTransforms,
 		};
+	}
+	for (const [i, { path }] of section.flares.entries()) {
+		const holder = objectAt(value, path.slice(0, -1));
+		const key = path.at(-1)!;
+		const flare = refs?.flares[i] ?? null;
+		if (flare === null) {
+			holder[key] = null;
+			continue;
+		}
+		// the package's LensFlareData, each element's texture a slot
+		const elements = flare.data.elements.map((element, e) => {
+			const packed: Record<string, unknown> = { ...structuredClone(element), lensFlareTexture: null };
+			slotFor(packed, 'lensFlareTexture', flare.textures[e] ?? null);
+			return packed;
+		});
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- curve keys are objects in arrays, which plain TypeTree values never hold
+		holder[key] = { name: flare.data.name, elements } as unknown as PlainObject;
 	}
 };
 

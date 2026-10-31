@@ -706,6 +706,7 @@ fog" pauses it; while it plays the viewer renders every frame.
 | composite: AO on the ambient part, sky, fog                                                                                                        | as above                                                                                  |
 | water                                                                                                                                              | see [water.md](water.md)                                                                  |
 | light shafts: thresholded far pixels near the sun, radial blur ([`light-shafts.wgsl`](../../packages/viewer/src/render/shaders/light-shafts.wgsl)) | `lightShaft`: see [below](#light-shafts)                                                  |
+| lens flare: quads around the sun, faded by its occlusion ([`lens-flare.wgsl`](../../packages/viewer/src/render/shaders/lens-flare.wgsl))           | `lensFlare`: see [below](#lens-flare)                                                     |
 | bloom: thresholded mip chain, scattered upsample ([`bloom.wgsl`](../../packages/viewer/src/render/shaders/bloom.wgsl))                             | post `bloom`: see [below](#bloom)                                                         |
 | tonemap ([`tonemap.wgsl`](../../packages/viewer/src/render/shaders/tonemap.wgsl)): exposure, bloom, vignette, grading, curve, sRGB encode          | post `vignette`; `colorGrading`; the auto exposure and the viewer's exposure compensation |
 
@@ -754,6 +755,42 @@ composited scene before temporal antialiasing, so the auto exposure meters them:
 the occlusion-term variant (`enableOcclusion`) and the cloud mask (`enableLightShaftCloudMask`)
 aren't drawn. where the sky has no [sun disc](#sun-disc), only bright fog and sky near the sun pass
 the threshold.
+
+### lens flare
+
+the game's sun flare is SRP core's data-driven lens flare (version 12), drawn after the light shafts
+(which don't see it) and before temporal antialiasing, so bloom and the auto exposure do
+([`render/lens-flare-layout.ts`](../../packages/viewer/src/render/lens-flare-layout.ts),
+[`render/lens-flare.ts`](../../packages/viewer/src/render/lens-flare.ts)). the game draws flares for
+its flare components; the sun's takes its settings from the environment's `lensFlare` section while
+`enable` is set: the flare asset, intensity, scale, occlusion and whether it may show off screen.
+its direction is the light config's `rotationLensFlare`, its light colour the raw `directColor`.
+with `enable` off the component's own settings would apply; those aren't known, so the viewer draws
+no flare. Origin Lodespring's overview (`Env_map01_lv006_art_entry_overview_01`) turns it on while
+the level's own phase turns the [sun disc](#sun-disc) off, so the flare is the sun there.
+
+- **the asset.** `LensFlareDataSRP` ships without a TypeTree; the extractor reads its bytes in SRP
+  core 12's field order, every bool padded to four bytes
+  ([`unity/lens-flare-data.ts`](../../packages/formats/src/unity/lens-flare-data.ts)), and packs its
+  elements under SRP core's field names, curves as keys and gradients as colour and alpha keys.
+- **layout.** each frame the CPU places the sun on screen (y down, −1 to 1, as SRP core lays it out)
+  and lays out every visible element as SRP core does: copies along the ray from the sun through the
+  screen's centre (uniform, by curve, or random from Unity's generator seeded by the element),
+  turned by the angular offset, sized `0.1 · sizeXY · uniformScale · scale` in units of the screen's
+  height and grown towards the target size by the radial distortion, rotated towards the centre with
+  `autoRotate`, tinted by the element, its gradient and the flare's intensity.
+- **shapes.** images sample their texture; circles fade from `edgeOffset` out to the rim with an
+  exponent `e^(4 · (1 − fallOff))`. each element blends additively, as a screen, premultiplied or
+  lerped by its `blendMode`.
+- **occlusion.** for the sun, `sampleCount` points on a disc around it (radius
+  `tan 0.0576 · occlusionRadius` at its distance, projected to viewport units) are tested against
+  the depth buffer; the share that lands on sky scales every quad. points off screen count only when
+  the flare may show off screen. the game compares against the sun's depth at the far plane, which
+  everything drawn is in front of.
+
+polygon elements and inverse SDFs aren't drawn (map01's flares use neither), the per-light curves
+(radial screen attenuation, distance) take SRP core's directional-light defaults, and curve key
+weights are ignored.
 
 ### bloom
 
@@ -904,8 +941,8 @@ are sampled toroidally in `ambient_irradiance`.
 - the volumetric fog's grid size, depth distribution and history weight come from quality presets
   that aren't recovered (the viewer uses Unreal's defaults), and its sky term takes the ambient
   probe without the native diffuse-ambient scale.
-- not rendered: lens flare, the moon's sky-wide ring (`HG_RING`), aurora, local reflection probes,
-  local light shadows and light beams, precipitation (rain wetness does render:
+- not rendered: the moon's sky-wide ring (`HG_RING`), aurora, local reflection probes, local light
+  shadows and light beams, precipitation (rain wetness does render:
   [environment](environment.md#wetness)).
 - celestial bodies ([beyond the atmosphere](#beyond-the-atmosphere)): the sky planets' ring thinning
   the stars, their blend modes (the viewer always adds them), and the brightness of the ray-traced
