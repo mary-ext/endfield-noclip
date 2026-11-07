@@ -415,7 +415,8 @@ fn ambient_irradiance(world: vec3f, n: vec3f) -> vec3f {
 		validity += s.validity;
 	}
 	let f1 = select(1.0, irradiance_outside(p - frame.irradiance[1].xyz, vec2f(116.0, 52.0), 0.125), frame.irradiance[1].w > 0.5);
-	if (f1 < 1.0) {
+	// weighted f0 · (1 − f1), so nothing inside level 0's box
+	if (f1 < 1.0 && f0 > 0.0) {
 		let s = irradiance_level(1,(p * 0.5 + 0.5) / IRRADIANCE_TEXELS, false, f0 * (1.0 - f1));
 		r += s.r;
 		g += s.g;
