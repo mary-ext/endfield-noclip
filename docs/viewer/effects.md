@@ -148,12 +148,13 @@ Large Rift's red sky ring (`wenli_01_red` in `p_fxmap_dung02_dg005_boss_semicirc
 exponent 3) to streaks. unlike the game's, they don't write depth, so they don't hide effects behind
 them. the stack's mask scales the colour as well as the alpha, so a mask draws only as its red
 (`_UseMaskTexAsAlpha`, the default), where its colour is white; other masks, lit variants, other
-dither modes and object-relative screen UVs stay unsupported. their vertex offset fills the same
-rows as VFXBaseV2's, leaving out VFXBaseV2's vertex-alpha weight and camera pull. a vertex offset
-alone doesn't bring a material onto the stack, and those stay unsupported. `_USE_MAIN2` that takes
-its second texture as alpha and multiplies multiplies the tint by `_MainTex2Color`, as the game's
-colour pass does without sampling the texture; other second-texture modes stay unsupported. Wuling
-City's red-tide walls (`M_fxmap_chichao_06_05`) are such, unchecked against an in-game shot.
+dither modes and object-relative screen UVs stay unsupported; `_INK_DISTORT` is drawn as without it,
+as VFXAdvance's ink keywords are. their vertex offset fills the same rows as VFXBaseV2's, leaving
+out VFXBaseV2's vertex-alpha weight and camera pull. a vertex offset alone doesn't bring a material
+onto the stack, and those stay unsupported. `_USE_MAIN2` that takes its second texture as alpha and
+multiplies multiplies the tint by `_MainTex2Color`, as the game's colour pass does without sampling
+the texture; other second-texture modes stay unsupported. Wuling City's red-tide walls
+(`M_fxmap_chichao_06_05`) are such, unchecked against an in-game shot.
 
 ## waterfalls
 

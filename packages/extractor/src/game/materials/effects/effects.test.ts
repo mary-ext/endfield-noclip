@@ -876,6 +876,23 @@ describe('VFXDitherAlpha effect variants', () => {
 	const dither = (floats: Record<string, number>, textures: Record<string, string>) =>
 		shader('HGRP/Effect/VFXDitherAlpha', 'vfxDitherAlpha', { floats, textures });
 
+	it('draw _INK_DISTORT as without it, where the ink simulation hasn’t run', () => {
+		// the ink bridge's glow in Marker Stone Interiors (`M_fxmap_indie_dg007_inkbridge_01_fj_04_d`)
+		const entry = dither({}, { _MainTex: 'white', _DisturbTex1: 'white' });
+		const glow = (keywords: string[]) =>
+			describeMaterial(
+				material({
+					blend: 'alphaTest',
+					blendFactors: null,
+					keywords,
+					slots: { _MainTex: slot(1), _DisturbTex1: slot(2) },
+				}),
+				entry,
+			);
+		assert.equal(glow(['_USE_DISTURB']).kind, 'effectStack');
+		assert.deepEqual(glow(['_INK_DISTORT', '_USE_DISTURB']), glow(['_USE_DISTURB']));
+	});
+
 	it('draw an unlit dissolve, distortion and polar UVs as a fogged texture stack', () => {
 		// the rift's ripple walls (`M_fxmap_dung02_dg005_boss_semicircle_ripple_01_1102_01`)
 		const entry = dither(

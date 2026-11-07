@@ -29,8 +29,12 @@ const DITHER_EFFECT_KEYWORDS = new Set([
 	'_USE_SCREENUV',
 ]);
 
-/** keywords VFXDitherAlpha's effect variants also draw, alongside one of {@link DITHER_EFFECT_KEYWORDS} */
-const DITHER_EFFECT_EXTRA_KEYWORDS = new Set(['_USE_VERTOFFSET', '_USE_MAIN2']);
+/**
+ * keywords VFXDitherAlpha's effect variants also draw, alongside one of {@link DITHER_EFFECT_KEYWORDS}.
+ * `_INK_DISTORT` shifts the UVs by the runtime ink simulation, which leaves them alone where it hasn't run,
+ * as VFXAdvance's does
+ */
+const DITHER_EFFECT_EXTRA_KEYWORDS = new Set(['_USE_VERTOFFSET', '_USE_MAIN2', '_INK_DISTORT']);
 
 /**
  * @returns whether a VFXDitherAlpha material is one of its effect variants (a distortion, dissolve, mask or

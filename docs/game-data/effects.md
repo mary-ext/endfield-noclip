@@ -170,10 +170,11 @@ and `inkarea_*_postmod` walls of `M_fx_map02_lv007_inkbridge_freelance_wall_*`, 
 0, so they show only within 1–8 m of the player, raised 2 m.
 
 `_INK_DISTORT` and `_INK_COLOR_DISTORT` read the runtime ink simulation, a texture the game draws
-around the player (`_InkSimulationWorldToUV`): the first shifts the UVs by its red and green times
-`_InkDisturbOffset`, the second blends `_InkColor` in by its result times `_InkStrength` (at most
-`_InkMaxAlpha`). both fade on steep surfaces and do nothing outside the simulation's square, so a
-scene the player hasn't disturbed draws as without them.
+around the player (`_InkSimulationWorldToUV`): the first (in VFXDitherAlpha's G-buffer pass too,
+where it shifts the main, dissolve and, by `_DisturbTex1UseInkSimulation`, disturb textures) shifts
+the UVs by its red and green times `_InkDisturbOffset`, the second blends `_InkColor` in by its
+result times `_InkStrength` (at most `_InkMaxAlpha`). both fade on steep surfaces and do nothing
+outside the simulation's square, so a scene the player hasn't disturbed draws as without them.
 
 ## CharacterNPR_VFX
 
