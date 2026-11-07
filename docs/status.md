@@ -274,10 +274,12 @@ packs or renders correctly.
     local lights and the post-exposure division on lit effects
   - VFXBaseV2's breathing pulses every placement in step (per-draw time scale and offset untraced);
     Dijiang's clue board and the aisle-guide panels' edge colour are unchecked in game
-  - VFXDitherAlpha's effect variants blend rather than dither and write no depth; lit ones, other
-    dither modes and non-red masks stay unsupported; the plain variant's dither leaves out the
-    vertex alpha and the near-camera fade, and `_USE_MAIN2` draws only as a mask (Wuling City's
-    red-tide walls, unchecked in game). the NoLighting variant goes through the G-buffer path
+  - VFXDitherAlpha's effect variants blend rather than dither and write no depth; lit ones and other
+    dither modes stay unsupported, as do lit surfaces with a normal map and a distortion, mask or
+    scroll, since the dithered G-buffer path draws only still textures (Marker Stone Interiors' ink
+    patterns `p_fxmap_map02_lv004_inkpattern_801` and `…_802`); the plain variant's dither leaves
+    out the vertex alpha and the near-camera fade, and `_USE_MAIN2` draws only as a mask (Wuling
+    City's red-tide walls, unchecked in game). the NoLighting variant goes through the G-buffer path
     without its colour's extra factor of the alpha, so it's fogged and its soft edges are brighter
     than the game's; its effect variants stay unsupported (Si's Painting's ink sheet
     `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very Large Rift's escaping trails
