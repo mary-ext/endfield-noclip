@@ -575,7 +575,7 @@ jobs need them, so a pack whose conversions all come from the cache starts none.
 with identical content are merged into one table entry after conversion (the report counts them).
 
 an asset reached both by path hash (static entities) and by object (prefabs) is interned under each
-key, so it gets two table entries and converts twice (`AssetIds` in pack/convert/assets.ts).
+key, so it gets two table entries and converts twice (`AssetIds` in pack/convert/asset-ids.ts).
 
 `--jobs` defaults to one worker per core but one, capped at 8, since each worker holds its own
 catalogs, manifest and block caches (a few hundred MB). `--zstd-level` (default 19) applies to

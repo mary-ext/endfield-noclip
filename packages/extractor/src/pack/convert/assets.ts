@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import type { MaterialRecord } from '@endfield-noclip/formats/unity/material';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
@@ -26,7 +24,7 @@ import { describeMaterial, materialSway } from '../../game/materials/material-de
 import { type LoadedMaterial, loadMaterial } from '../../game/materials/material-load.ts';
 import { keywordsNotDrawn } from '../../game/materials/material-surfaces.ts';
 import type { MaterialValues as ConvertedMaterial } from '../../game/materials/material-values.ts';
-import type { MaterialValues, RendererMotion } from '../../game/prefabs/prefab.ts';
+import type { MaterialValues } from '../../game/prefabs/prefab.ts';
 import { orderedPool } from '../../pool.ts';
 import { PhaseTimer } from '../phase-timer.ts';
 import type { BlobMeta } from '../store/blob-file.ts';
@@ -44,158 +42,15 @@ import {
 } from './convert-pool.ts';
 import type { SwayReach } from './geometry.ts';
 import { convertMaterial, ShaderTable } from './materials.ts';
-import { type SyntheticMesh, syntheticMeshKey } from './synthetic-mesh.ts';
 
-// the packer references assets by dense ids handed out here, in first-reference order. converting them reads
-// materials first (they decide which meshes need tangents and which textures are used), then meshes, then
-// textures. meshes and textures convert on worker threads; each phase stores results in id order, so the
-// package is deterministic.
+// converting the assets the packer referenced (by the ids `AssetIds` handed out) reads materials first (they
+// decide which meshes need tangents and which textures are used), then meshes, then textures, then describes
+// the materials' surfaces once their textures have their final ids. meshes and textures convert on worker
+// threads; each stage stores results in id order, so the package is deterministic.
 
-// #region ids
+// #region types
 
-/** assigns dense ids to assets by hash, in first-reference order */
-export class AssetIds {
-	readonly assets: AssetRef[] = [];
-	readonly #ids = new Map<bigint, number>();
-	readonly #variants = new Map<string, number>();
-	/** by id, the key of each variant, which shares its object's hash */
-	readonly #variantKeys = new Map<number, string>();
-
-	/**
-	 * @param hash StringPathHash key
-	 * @param resolve looks up the path, called once per new hash
-	 * @returns the asset's id
-	 */
-	intern(hash: bigint, resolve: (hash: bigint) => string | undefined): number {
-		return this.#ids.getOrInsertComputed(
-			hash,
-			() => this.assets.push({ hash, path: resolve(hash) ?? null }) - 1,
-		);
-	}
-
-	/**
-	 * interns an exact prefab dependency without inventing a game asset path
-	 *
-	 * @param ref resolved dependency
-	 * @returns its asset id; negative hashes occupy a namespace separate from unsigned game hashes
-	 */
-	internObject(ref: ObjectRef): number {
-		const key = objectKey(ref);
-		const hash = objectHash(key);
-		const existing = this.#ids.get(hash);
-		if (existing !== undefined) {
-			return existing;
-		}
-		const id = this.assets.length;
-		this.#ids.set(hash, id);
-		this.assets.push({ hash, path: key, locator: locateObject(ref) });
-		return id;
-	}
-
-	/**
-	 * interns a variant of a prefab dependency: the same object under an id of its own, for uses that change
-	 * some of its values before it's converted (see {@link MaterialOverrides})
-	 *
-	 * @param ref resolved dependency
-	 * @param variant tells variants of one object apart
-	 * @returns the variant's id
-	 */
-	internObjectVariant(ref: ObjectRef, variant: string): number {
-		const key = objectKey(ref);
-		return this.#variants.getOrInsertComputed(`${key}/${variant}`, (variantKey) => {
-			const id = this.assets.push({ hash: objectHash(key), path: key, locator: locateObject(ref) }) - 1;
-			this.#variantKeys.set(id, variantKey);
-			return id;
-		});
-	}
-
-	/**
-	 * @param id an asset id
-	 * @returns a key naming the asset by what it is rather than by when it was first met, so orders built from
-	 *   it don't shift when other assets come and go
-	 */
-	keyOf(id: number): string {
-		return this.#variantKeys.get(id) ?? this.assets[id].hash.toString(16);
-	}
-
-	/**
-	 * @param mesh a mesh the packer makes itself
-	 * @returns its asset id
-	 */
-	internSynthetic(mesh: SyntheticMesh): number {
-		const key = syntheticMeshKey(mesh);
-		const hash = -BigInt(`0x${createHash('sha256').update(key).digest('hex')}`);
-		return this.#ids.getOrInsertComputed(
-			hash,
-			() => this.assets.push({ hash, path: key, synthetic: mesh }) - 1,
-		);
-	}
-
-	/**
-	 * @param ref skinned mesh dependency
-	 * @param pose mesh-to-prefab bone matrices, including bind poses
-	 * @returns a geometry id distinct for each authored pose of the mesh
-	 */
-	internPosedObject(ref: ObjectRef, pose: Float32Array[]): number {
-		const key = objectKey(ref);
-		const digest = createHash('sha256').update(key).update('pose');
-		for (const matrix of pose) {
-			digest.update(new Uint8Array(matrix.buffer, matrix.byteOffset, matrix.byteLength));
-		}
-		const hash = -BigInt(`0x${digest.digest('hex')}`);
-		const existing = this.#ids.get(hash);
-		if (existing !== undefined) {
-			return existing;
-		}
-		const id = this.assets.length;
-		this.#ids.set(hash, id);
-		this.assets.push({
-			hash,
-			path: key,
-			locator: locateObject(ref),
-			pose: pose.map((matrix) => matrix.slice()),
-		});
-		return id;
-	}
-
-	/**
-	 * @param ref mesh dependency
-	 * @param motion the looping animation it plays
-	 * @returns a geometry id distinct for each animation of the mesh
-	 */
-	internAnimatedObject(ref: ObjectRef, motion: RendererMotion): number {
-		const key = objectKey(ref);
-		const { kind, skin } = motion;
-		const { matrices } = skin;
-		const digest = createHash('sha256')
-			.update(key)
-			.update(`motion ${kind} ${skin.boneCount} ${skin.frameCount} ${skin.frameRate}`)
-			.update(new Uint8Array(matrices.buffer, matrices.byteOffset, matrices.byteLength));
-		const hash = -BigInt(`0x${digest.digest('hex')}`);
-		return this.#ids.getOrInsertComputed(
-			hash,
-			() =>
-				this.assets.push({
-					hash,
-					path: key,
-					locator: locateObject(ref),
-					motion: { kind, skin: { ...skin, matrices: matrices.slice() } },
-				}) - 1,
-		);
-	}
-}
-
-/**
- * @param key an object's {@link objectKey}
- * @returns its hash; negative hashes occupy a namespace separate from unsigned game hashes
- */
-const objectHash = (key: string): bigint => -BigInt(`0x${createHash('sha256').update(key).digest('hex')}`);
-
-// #endregion
-
-// #region conversion
-
-/** what a material variant ({@link AssetIds.internObjectVariant}) changes */
+/** what a material variant (`AssetIds.internObjectVariant`) changes */
 export interface MaterialOverrides {
 	/** saved values replaced before conversion, as a pose's clips set them */
 	saved: MaterialValues;
@@ -287,14 +142,7 @@ export interface AssetConversion {
 	};
 	stats: {
 		timings: Record<string, number>;
-		geometry: BlobTally & {
-			vertices: number;
-			triangles: number;
-			gpuBytes: number;
-			generatedTangents: number;
-			/** meshes with generated tangents whose normal-mapped materials disagree on the uv set */
-			tangentUvConflicts: number;
-		};
+		geometry: GeometryTally;
 		/** texture blobs by piece: `tail`, or the level's largest dimension */
 		texturePieces: Record<string, BlobTally>;
 		textureFormats: Record<string, number>;
@@ -312,6 +160,20 @@ export interface AssetConversion {
 	};
 }
 
+/** geometry blob sizes and mesh totals */
+interface GeometryTally extends BlobTally {
+	vertices: number;
+	triangles: number;
+	gpuBytes: number;
+	generatedTangents: number;
+	/** meshes with generated tangents whose normal-mapped materials disagree on the uv set */
+	tangentUvConflicts: number;
+}
+
+// #endregion
+
+// #region conversion
+
 /**
  * converts every referenced material, geometry and texture into blobs and table entries
  *
@@ -319,359 +181,47 @@ export interface AssetConversion {
  * @returns the tables, debug rows and statistics
  */
 export const convertAssets = async (input: AssetConversionInput): Promise<AssetConversion> => {
-	const { resolver, store, pool, cache, archives } = input;
-	/** @returns whether every bundle still has the md5 it had when the conversion read it */
-	const sourcesCurrent = async (sources: readonly BundleSource[]): Promise<boolean> => {
-		const md5s = await Promise.all(
-			sources.map(async ({ bundle }) => {
-				const index = resolver.manifest.findBundle(bundle);
-				return index === undefined ? undefined : resolver.bundleMd5(index);
-			}),
-		);
-		return sources.every(({ md5 }, i) => md5s[i] === md5);
-	};
-	/** converts on the pool, or recalls the conversion from the cache */
-	const convert = async <J extends ConvertJob>(job: J): Promise<ConvertResultOf<J>> => {
-		const ofJob = (result: ConvertResult): ConvertResultOf<J> => {
-			if (!resultMatches(job, result)) {
-				throw new Error(`a ${job.kind} job returned a ${result.kind}`);
-			}
-			return result;
-		};
-		if (cache === null) {
-			return ofJob(await pool.run(job));
-		}
-		const key = cache.key(job);
-		const recalled = await cache.recall(key, sourcesCurrent);
-		if (recalled !== undefined) {
-			return ofJob(recalled);
-		}
-		const result = await pool.run(job);
-		await cache.remember(key, result);
-		return ofJob(result);
-	};
-	const failures: Record<string, number> = {};
-	const fail = (kind: string, error: Error): string => {
-		const reason = `${kind}: ${failureReason(error)}`;
-		failures[reason] = (failures[reason] ?? 0) + 1;
-		return error.message;
-	};
+	const jobs = new ConvertJobs(input);
 	const timer = new PhaseTimer(input.log);
-
-	// #region materials
-	const shaders = new ShaderTable();
-	/** by material id, `null` where it failed */
-	const convertedMaterials: (ConvertedMaterial | null)[] = [];
-	const materialDebug: MaterialDebug[] = [];
-	const keywordsNotDrawnCounts: Record<string, number> = {};
-	const normalMapUv: (number | null)[] = [];
-	/** texture objects in first-use order, with a provisional id each */
-	const textureObjects: { key: string; locator: ObjectLocator; place: Place }[] = [];
-	const textureIndex = new Map<string, number>();
-	const useTexture = (ref: ObjectRef, place: Place): number => {
-		const key = objectKey(ref);
-		let index = textureIndex.get(key);
-		if (index === undefined) {
-			index = textureObjects.length;
-			textureIndex.set(key, index);
-			textureObjects.push({ key, locator: locateObject(ref), place });
-		} else {
-			textureObjects[index].place = mergePlaces(textureObjects[index].place, place);
-		}
-		return index;
-	};
-	// variants of one material share its load
-	const loads = new Map<bigint, Promise<{ ref: ObjectRef; loaded: LoadedMaterial }>>();
-	await orderedPool(
-		input.materials,
-		input.materialConcurrency,
-		(asset) =>
-			loads.getOrInsertComputed(asset.hash, async () => {
-				const ref = await resolver.findUnique(asset, UnityClass.Material);
-				return { ref, loaded: await loadMaterial(resolver, ref) };
-			}),
-		(result, _asset, id) => {
-			if (result instanceof Error) {
-				convertedMaterials.push(null);
-				materialDebug.push({
-					object: null,
-					name: null,
-					shader: null,
-					error: fail('material', result),
-					unsupported: null,
-					keywordsNotDrawn: [],
-					slotErrors: {},
-				});
-				normalMapUv.push(null);
-				return;
-			}
-			const { ref, loaded } = result;
-			const place = input.places.materials[id];
-			const shader = shaders.intern(loaded.shader, loaded.classification.family);
-			const overrides = input.materialOverrides.get(id);
-			const slotErrors: Record<string, string> = {};
-			const converted = convertMaterial(
-				withSavedValues(loaded.record, overrides?.saved ?? null),
-				loaded.classification,
-				shader,
-				(slot) => {
-					const resolved = loaded.textures[slot];
-					if (resolved?.error !== undefined) {
-						slotErrors[slot] = resolved.error;
-						fail('texture slot', new Error(resolved.error));
-					}
-					if (resolved?.ref == null) {
-						return undefined;
-					}
-					return useTexture(resolved.ref, place);
-				},
-			);
-			const notDrawn = keywordsNotDrawn(loaded.shader.name, converted.material.keywords);
-			for (const keyword of notDrawn) {
-				const key = `${loaded.shader.name} ${keyword}`;
-				keywordsNotDrawnCounts[key] = (keywordsNotDrawnCounts[key] ?? 0) + 1;
-			}
-			// described once its textures have their final ids
-			convertedMaterials.push(converted.material);
-			materialDebug.push({
-				object: objectKey(ref),
-				name: loaded.record.name,
-				shader: loaded.shader.name,
-				error: null,
-				unsupported: null,
-				keywordsNotDrawn: notDrawn,
-				slotErrors,
-			});
-			normalMapUv.push(converted.normalMapUv);
-		},
-	);
+	const textureUses = new TextureUses();
+	const materials = await loadMaterials(input, jobs, textureUses);
 	const extraIndices = input.extraTextures.map((group) =>
-		group.map(({ ref, place }) => useTexture(ref, place)),
+		group.map(({ ref, place }) => textureUses.use(ref, place)),
 	);
 	timer.end('materials');
-	// #endregion
-
-	// #region geometry
-	// a mesh gets tangents when any draw of it uses a normal-mapped material, for the lowest uv set any of
-	// them reads its normal map on
-	const tangentUvs = Array.from({ length: input.geometries.length }, () => new Set<number>());
-	for (const chain of input.chains) {
-		for (const draw of chain.draws) {
-			const uv = draw.material === null ? null : (normalMapUv[draw.material] ?? null);
-			if (uv !== null) {
-				tangentUvs[draw.geometry].add(uv);
-			}
-		}
-	}
-	const tangentUv = tangentUvs.map((uvs) => (uvs.size === 0 ? null : Math.min(...uvs)));
-	// a mesh any swaying material draws carries sway weights, and bounds that hold the farthest sway
-	const sway: (SwayReach | null)[] = Array.from({ length: input.geometries.length }, () => null);
-	{
-		const reaches = convertedMaterials.map((material) => {
-			const swayed = material === null ? null : materialSway(material, shaders.shaders[material.shader]);
-			return swayed === null ? null : swayReach(swayed);
-		});
-		for (const chain of input.chains) {
-			for (const draw of chain.draws) {
-				const reach = draw.material === null ? null : (reaches[draw.material] ?? null);
-				const held = sway[draw.geometry];
-				if (reach !== null) {
-					sway[draw.geometry] =
-						held === null
-							? reach
-							: {
-									flat: Math.max(held.flat, reach.flat),
-									perHeight: Math.max(held.perHeight, reach.perHeight),
-								};
-				}
-			}
-		}
-	}
-	const geometryEntries: GeometryEntry[] = [];
-	const geometryDebug: AssetConversion['debug']['geometries'] = [];
-	const geometry = {
-		count: 0,
-		stored: 0,
-		raw: 0,
-		vertices: 0,
-		triangles: 0,
-		gpuBytes: 0,
-		generatedTangents: 0,
-		tangentUvConflicts: 0,
-	};
-	await orderedPool(
-		input.geometries,
-		CONVERSIONS_IN_FLIGHT,
-		(asset, id) =>
-			convert({
-				kind: 'geometry',
-				asset,
-				tangentUv: tangentUv[id],
-				sway: sway[id],
-				zstdLevel: input.geometryZstdLevel,
-			}),
-		(result, _asset, id) => {
-			if (result instanceof Error) {
-				geometryEntries.push({ status: 'failed' });
-				geometryDebug.push({ object: null, name: null, error: fail('geometry', result) });
-				return;
-			}
-			const blob = commit(
-				store,
-				result.blob,
-				{
-					kind: BlobKind.Geometry,
-					stem: archives.stem(input.places.geometries[id]),
-					locality: null,
-				},
-				geometry,
-			);
-			geometryEntries.push({ status: 'ready', blob, ...result.entry });
-			const uvs = tangentUvs[id];
-			geometryDebug.push({
-				object: result.object,
-				name: result.name,
-				error: null,
-				...(uvs.size > 1 && result.entry.tangentUv !== null
-					? { tangentUvs: [...uvs].toSorted((a, b) => a - b) }
-					: {}),
-			});
-			geometry.vertices += result.entry.vertexCount;
-			geometry.triangles += result.entry.indexCount / 3;
-			geometry.gpuBytes += result.gpuBytes;
-			if (result.entry.tangentUv !== null) {
-				geometry.generatedTangents++;
-				if (uvs.size > 1) {
-					geometry.tangentUvConflicts++;
-				}
-			}
-		},
-	);
+	const geometries = await convertGeometries(input, jobs, meshNeeds(input, materials));
 	timer.end('geometry');
-	// #endregion
-
-	// #region textures
-	const textureEntries: TextureEntry[] = [];
-	const samplers: TextureSampler[] = [];
-	const samplerIds = new Map<string, number>();
-	const textureDebug: AssetConversion['debug']['textures'] = [];
-	/** provisional (per object) → texture-table id */
-	const textureIds: number[] = [];
-	const byContent = new Map<string, number>();
-	const texturePieces: Record<string, BlobTally> = {};
-	const textureFormats: Record<string, number> = {};
-	let textureDuplicates = 0;
-	const textureApproximations: Record<string, number> = {};
-	await orderedPool(
-		textureObjects,
-		CONVERSIONS_IN_FLIGHT,
-		(object) => convert({ kind: 'texture', locator: object.locator, zstdLevel: input.textureZstdLevel }),
-		(result, object) => {
-			if (result instanceof Error) {
-				textureIds.push(textureEntries.length);
-				textureDebug.push({
-					object: object.key,
-					name: null,
-					error: fail('texture', result),
-					id: textureEntries.length,
-				});
-				textureEntries.push({ status: 'failed' });
-				return;
-			}
-			const { name, pieces } = result;
-			for (const approximation of result.approximations) {
-				textureApproximations[approximation] = (textureApproximations[approximation] ?? 0) + 1;
-			}
-			const approximations =
-				result.approximations.length === 0 ? {} : { approximations: result.approximations };
-			const twin = byContent.get(result.contentKey);
-			if (twin !== undefined) {
-				textureDuplicates++;
-				textureIds.push(twin);
-				textureDebug.push({ object: object.key, name, error: null, id: twin, ...approximations });
-				return;
-			}
-			const id = textureEntries.length;
-			byContent.set(result.contentKey, id);
-			textureIds.push(id);
-			textureFormats[result.entry.format] = (textureFormats[result.entry.format] ?? 0) + 1;
-			const stem = archives.stem(object.place);
-			const sampler = samplerIds.getOrInsertComputed(
-				JSON.stringify(result.entry.sampler),
-				() => samplers.push(result.entry.sampler) - 1,
-			);
-			textureEntries.push({
-				status: 'ready',
-				...result.entry,
-				sampler,
-				pieces: pieces.map((piece, i) => {
-					const { width, height } = textureLevelLayout(result.entry, piece.firstLevel);
-					const group = i === 0 && piece.levelCount > 1 ? 'tail' : String(Math.max(width, height));
-					texturePieces[group] ??= { count: 0, stored: 0, raw: 0 };
-					// a texture's pieces sit together under its tail's hash, coarse to fine
-					const placement: BlobPlacement = {
-						kind: BlobKind.Texture,
-						stem,
-						locality: `${pieces[0].blob.hash}.${i.toString(16).padStart(2, '0')}`,
-					};
-					return {
-						blob: commit(store, piece.blob, placement, texturePieces[group]),
-						firstLevel: piece.firstLevel,
-						levelCount: piece.levelCount,
-					};
-				}),
-			});
-			textureDebug.push({ object: object.key, name, error: null, id, ...approximations });
-		},
-	);
+	const textures = await convertTextures(input, jobs, textureUses.objects);
 	// slots referenced textures by object; point them at the deduplicated entries
-	for (const material of convertedMaterials) {
+	for (const material of materials.converted) {
 		if (material !== null) {
-			remapSlots(material, textureIds);
+			remapSlots(material, textures.ids);
 		}
 	}
 	timer.end('textures');
-	// #endregion
-
-	// #region surfaces
-	const unsupportedMaterials: Record<string, number> = {};
-	const materialEntries: MaterialEntry[] = convertedMaterials.map((material, id) => {
-		if (material === null) {
-			return { status: 'failed' };
-		}
-		const shader = shaders.shaders[material.shader];
-		const surface = describeMaterial(material, shader);
-		if (surface.kind === 'unsupported') {
-			const key = `${shader.name}: ${surface.reason}`;
-			unsupportedMaterials[key] = (unsupportedMaterials[key] ?? 0) + 1;
-			materialDebug[id].unsupported = surface.reason;
-		}
-		return { status: 'ready', cull: material.cull, surface };
-	});
-	// #endregion
-
+	const surfaces = describeSurfaces(materials);
 	return {
-		geometries: geometryEntries,
-		materials: { entries: materialEntries },
-		textures: { samplers, entries: textureEntries },
+		geometries: geometries.entries,
+		materials: { entries: surfaces.entries },
+		textures: { samplers: textures.samplers, entries: textures.entries },
 		extraTextureIds: extraIndices.map((group) =>
 			group.map((index) => {
-				const id = textureIds[index];
-				return textureEntries[id]?.status === 'ready' ? id : null;
+				const id = textures.ids[index];
+				return textures.entries[id]?.status === 'ready' ? id : null;
 			}),
 		),
-		debug: { geometries: geometryDebug, materials: materialDebug, textures: textureDebug },
+		debug: { geometries: geometries.debug, materials: materials.debug, textures: textures.debug },
 		stats: {
 			timings: timer.timings,
-			geometry,
-			texturePieces,
-			textureFormats,
-			textureDuplicates,
-			failures,
-			textureApproximations,
-			shaders: shaders.shaders.length,
-			unsupportedMaterials,
-			keywordsNotDrawn: keywordsNotDrawnCounts,
+			geometry: geometries.tally,
+			texturePieces: textures.pieces,
+			textureFormats: textures.formats,
+			textureDuplicates: textures.duplicates,
+			failures: jobs.failures,
+			textureApproximations: textures.approximations,
+			shaders: materials.shaders.shaders.length,
+			unsupportedMaterials: surfaces.unsupported,
+			keywordsNotDrawn: materials.keywordsNotDrawn,
 		},
 	};
 };
@@ -694,6 +244,420 @@ export const pendingAssets = (
 	textures: { samplers: [], entries: [] },
 	extraTextureIds: extraTextures.map((group) => group.map(() => null)),
 });
+
+/** runs conversion jobs on the pool or recalls them from the cache, and counts failures by reason */
+class ConvertJobs {
+	readonly failures: Record<string, number> = {};
+	readonly #input: Pick<AssetConversionInput, 'resolver' | 'pool' | 'cache'>;
+
+	constructor(input: Pick<AssetConversionInput, 'resolver' | 'pool' | 'cache'>) {
+		this.#input = input;
+	}
+
+	/** @returns the job's result, from the cache when every bundle it read is unchanged */
+	async run<J extends ConvertJob>(job: J): Promise<ConvertResultOf<J>> {
+		const { pool, cache } = this.#input;
+		const ofJob = (result: ConvertResult): ConvertResultOf<J> => {
+			if (!resultMatches(job, result)) {
+				throw new Error(`a ${job.kind} job returned a ${result.kind}`);
+			}
+			return result;
+		};
+		if (cache === null) {
+			return ofJob(await pool.run(job));
+		}
+		const key = cache.key(job);
+		const recalled = await cache.recall(key, (sources) => this.#sourcesCurrent(sources));
+		if (recalled !== undefined) {
+			return ofJob(recalled);
+		}
+		const result = await pool.run(job);
+		await cache.remember(key, result);
+		return ofJob(result);
+	}
+
+	/** counts a failure by kind and reason; @returns the error's message, for the debug index */
+	fail(kind: string, error: Error): string {
+		const reason = `${kind}: ${failureReason(error)}`;
+		this.failures[reason] = (this.failures[reason] ?? 0) + 1;
+		return error.message;
+	}
+
+	/** @returns whether every bundle still has the md5 it had when the conversion read it */
+	async #sourcesCurrent(sources: readonly BundleSource[]): Promise<boolean> {
+		const { resolver } = this.#input;
+		const md5s = await Promise.all(
+			sources.map(async ({ bundle }) => {
+				const index = resolver.manifest.findBundle(bundle);
+				return index === undefined ? undefined : resolver.bundleMd5(index);
+			}),
+		);
+		return sources.every(({ md5 }, i) => md5s[i] === md5);
+	}
+}
+
+/** texture objects in first-use order, each with a provisional id and the places of its uses */
+class TextureUses {
+	readonly objects: { key: string; locator: ObjectLocator; place: Place }[] = [];
+	readonly #index = new Map<string, number>();
+
+	/** @returns the texture's provisional id */
+	use(ref: ObjectRef, place: Place): number {
+		const key = objectKey(ref);
+		let index = this.#index.get(key);
+		if (index === undefined) {
+			index = this.objects.length;
+			this.#index.set(key, index);
+			this.objects.push({ key, locator: locateObject(ref), place });
+		} else {
+			this.objects[index].place = mergePlaces(this.objects[index].place, place);
+		}
+		return index;
+	}
+}
+
+// #endregion
+
+// #region materials
+
+/** the materials loaded and converted, by material id */
+interface LoadedMaterials {
+	shaders: ShaderTable;
+	/** `null` where the material failed */
+	converted: (ConvertedMaterial | null)[];
+	debug: MaterialDebug[];
+	/** materials with a surface keyword the viewer doesn't draw, by `<shader> <keyword>` */
+	keywordsNotDrawn: Record<string, number>;
+	/** the uv set the material reads its normal map on, `null` without one */
+	normalMapUv: (number | null)[];
+}
+
+/** loads and converts every material, noting the textures it binds in first-use order */
+const loadMaterials = async (
+	input: AssetConversionInput,
+	jobs: ConvertJobs,
+	textures: TextureUses,
+): Promise<LoadedMaterials> => {
+	const { resolver } = input;
+	const out: LoadedMaterials = {
+		shaders: new ShaderTable(),
+		converted: [],
+		debug: [],
+		keywordsNotDrawn: {},
+		normalMapUv: [],
+	};
+	// variants of one material share its load
+	const loads = new Map<bigint, Promise<{ ref: ObjectRef; loaded: LoadedMaterial }>>();
+	await orderedPool(
+		input.materials,
+		input.materialConcurrency,
+		(asset) =>
+			loads.getOrInsertComputed(asset.hash, async () => {
+				const ref = await resolver.findUnique(asset, UnityClass.Material);
+				return { ref, loaded: await loadMaterial(resolver, ref) };
+			}),
+		(result, _asset, id) => {
+			if (result instanceof Error) {
+				out.converted.push(null);
+				out.debug.push({
+					object: null,
+					name: null,
+					shader: null,
+					error: jobs.fail('material', result),
+					unsupported: null,
+					keywordsNotDrawn: [],
+					slotErrors: {},
+				});
+				out.normalMapUv.push(null);
+				return;
+			}
+			const { ref, loaded } = result;
+			const place = input.places.materials[id];
+			const shader = out.shaders.intern(loaded.shader, loaded.classification.family);
+			const overrides = input.materialOverrides.get(id);
+			const slotErrors: Record<string, string> = {};
+			const converted = convertMaterial(
+				withSavedValues(loaded.record, overrides?.saved ?? null),
+				loaded.classification,
+				shader,
+				(slot) => {
+					const resolved = loaded.textures[slot];
+					if (resolved?.error !== undefined) {
+						slotErrors[slot] = resolved.error;
+						jobs.fail('texture slot', new Error(resolved.error));
+					}
+					if (resolved?.ref == null) {
+						return undefined;
+					}
+					return textures.use(resolved.ref, place);
+				},
+			);
+			const notDrawn = keywordsNotDrawn(loaded.shader.name, converted.material.keywords);
+			for (const keyword of notDrawn) {
+				const key = `${loaded.shader.name} ${keyword}`;
+				out.keywordsNotDrawn[key] = (out.keywordsNotDrawn[key] ?? 0) + 1;
+			}
+			// described once its textures have their final ids
+			out.converted.push(converted.material);
+			out.debug.push({
+				object: objectKey(ref),
+				name: loaded.record.name,
+				shader: loaded.shader.name,
+				error: null,
+				unsupported: null,
+				keywordsNotDrawn: notDrawn,
+				slotErrors,
+			});
+			out.normalMapUv.push(converted.normalMapUv);
+		},
+	);
+	return out;
+};
+
+/** describes each converted material's surface, recording the ones the viewer can't draw in their debug rows */
+const describeSurfaces = (
+	materials: LoadedMaterials,
+): { entries: MaterialEntry[]; unsupported: Record<string, number> } => {
+	const unsupported: Record<string, number> = {};
+	const entries = materials.converted.map((material, id): MaterialEntry => {
+		if (material === null) {
+			return { status: 'failed' };
+		}
+		const shader = materials.shaders.shaders[material.shader];
+		const surface = describeMaterial(material, shader);
+		if (surface.kind === 'unsupported') {
+			const key = `${shader.name}: ${surface.reason}`;
+			unsupported[key] = (unsupported[key] ?? 0) + 1;
+			materials.debug[id].unsupported = surface.reason;
+		}
+		return { status: 'ready', cull: material.cull, surface };
+	});
+	return { entries, unsupported };
+};
+
+// #endregion
+
+// #region geometry
+
+/** what each mesh needs of its conversion, from the materials drawing it */
+interface MeshNeeds {
+	/** the uv sets its normal-mapped materials read their normal maps on */
+	tangentUvs: Set<number>[];
+	/** the lowest of those, which its tangents follow, `null` without one */
+	tangentUv: (number | null)[];
+	/** the farthest any swaying material moves it, `null` without one */
+	sway: (SwayReach | null)[];
+}
+
+/**
+ * a mesh gets tangents when any draw of it uses a normal-mapped material, for the lowest uv set any of them
+ * reads its normal map on; a mesh any swaying material draws carries sway weights, and bounds that hold the
+ * farthest sway
+ */
+const meshNeeds = (input: AssetConversionInput, materials: LoadedMaterials): MeshNeeds => {
+	const count = input.geometries.length;
+	const tangentUvs = Array.from({ length: count }, () => new Set<number>());
+	const sway: (SwayReach | null)[] = Array.from({ length: count }, () => null);
+	const reaches = materials.converted.map((material) => {
+		const swayed =
+			material === null ? null : materialSway(material, materials.shaders.shaders[material.shader]);
+		return swayed === null ? null : swayReach(swayed);
+	});
+	for (const chain of input.chains) {
+		for (const draw of chain.draws) {
+			const uv = draw.material === null ? null : (materials.normalMapUv[draw.material] ?? null);
+			if (uv !== null) {
+				tangentUvs[draw.geometry].add(uv);
+			}
+		}
+	}
+	for (const chain of input.chains) {
+		for (const draw of chain.draws) {
+			const reach = draw.material === null ? null : (reaches[draw.material] ?? null);
+			const held = sway[draw.geometry];
+			if (reach !== null) {
+				sway[draw.geometry] =
+					held === null
+						? reach
+						: { flat: Math.max(held.flat, reach.flat), perHeight: Math.max(held.perHeight, reach.perHeight) };
+			}
+		}
+	}
+	return {
+		tangentUvs,
+		tangentUv: tangentUvs.map((uvs) => (uvs.size === 0 ? null : Math.min(...uvs))),
+		sway,
+	};
+};
+
+/** converts every mesh and commits its blob */
+const convertGeometries = async (
+	input: AssetConversionInput,
+	jobs: ConvertJobs,
+	needs: MeshNeeds,
+): Promise<{
+	entries: GeometryEntry[];
+	debug: AssetConversion['debug']['geometries'];
+	tally: GeometryTally;
+}> => {
+	const entries: GeometryEntry[] = [];
+	const debug: AssetConversion['debug']['geometries'] = [];
+	const tally: GeometryTally = {
+		count: 0,
+		stored: 0,
+		raw: 0,
+		vertices: 0,
+		triangles: 0,
+		gpuBytes: 0,
+		generatedTangents: 0,
+		tangentUvConflicts: 0,
+	};
+	await orderedPool(
+		input.geometries,
+		CONVERSIONS_IN_FLIGHT,
+		(asset, id) =>
+			jobs.run({
+				kind: 'geometry',
+				asset,
+				tangentUv: needs.tangentUv[id],
+				sway: needs.sway[id],
+				zstdLevel: input.geometryZstdLevel,
+			}),
+		(result, _asset, id) => {
+			if (result instanceof Error) {
+				entries.push({ status: 'failed' });
+				debug.push({ object: null, name: null, error: jobs.fail('geometry', result) });
+				return;
+			}
+			const blob = commit(
+				input.store,
+				result.blob,
+				{ kind: BlobKind.Geometry, stem: input.archives.stem(input.places.geometries[id]), locality: null },
+				tally,
+			);
+			entries.push({ status: 'ready', blob, ...result.entry });
+			const uvs = needs.tangentUvs[id];
+			debug.push({
+				object: result.object,
+				name: result.name,
+				error: null,
+				...(uvs.size > 1 && result.entry.tangentUv !== null
+					? { tangentUvs: [...uvs].toSorted((a, b) => a - b) }
+					: {}),
+			});
+			tally.vertices += result.entry.vertexCount;
+			tally.triangles += result.entry.indexCount / 3;
+			tally.gpuBytes += result.gpuBytes;
+			if (result.entry.tangentUv !== null) {
+				tally.generatedTangents++;
+				if (uvs.size > 1) {
+					tally.tangentUvConflicts++;
+				}
+			}
+		},
+	);
+	return { entries, debug, tally };
+};
+
+// #endregion
+
+// #region textures
+
+/** the converted textures */
+interface ConvertedTextures {
+	entries: TextureEntry[];
+	samplers: TextureSampler[];
+	debug: AssetConversion['debug']['textures'];
+	/** by provisional id (per object), its texture-table id */
+	ids: number[];
+	pieces: Record<string, BlobTally>;
+	formats: Record<string, number>;
+	duplicates: number;
+	approximations: Record<string, number>;
+}
+
+/** converts every texture object, storing equal contents once and their pieces together */
+const convertTextures = async (
+	input: AssetConversionInput,
+	jobs: ConvertJobs,
+	objects: TextureUses['objects'],
+): Promise<ConvertedTextures> => {
+	const out: ConvertedTextures = {
+		entries: [],
+		samplers: [],
+		debug: [],
+		ids: [],
+		pieces: {},
+		formats: {},
+		duplicates: 0,
+		approximations: {},
+	};
+	const samplerIds = new Map<string, number>();
+	const byContent = new Map<string, number>();
+	await orderedPool(
+		objects,
+		CONVERSIONS_IN_FLIGHT,
+		(object) => jobs.run({ kind: 'texture', locator: object.locator, zstdLevel: input.textureZstdLevel }),
+		(result, object) => {
+			if (result instanceof Error) {
+				out.ids.push(out.entries.length);
+				out.debug.push({
+					object: object.key,
+					name: null,
+					error: jobs.fail('texture', result),
+					id: out.entries.length,
+				});
+				out.entries.push({ status: 'failed' });
+				return;
+			}
+			const { name, pieces } = result;
+			for (const approximation of result.approximations) {
+				out.approximations[approximation] = (out.approximations[approximation] ?? 0) + 1;
+			}
+			const approximations =
+				result.approximations.length === 0 ? {} : { approximations: result.approximations };
+			const twin = byContent.get(result.contentKey);
+			if (twin !== undefined) {
+				out.duplicates++;
+				out.ids.push(twin);
+				out.debug.push({ object: object.key, name, error: null, id: twin, ...approximations });
+				return;
+			}
+			const id = out.entries.length;
+			byContent.set(result.contentKey, id);
+			out.ids.push(id);
+			out.formats[result.entry.format] = (out.formats[result.entry.format] ?? 0) + 1;
+			const stem = input.archives.stem(object.place);
+			const sampler = samplerIds.getOrInsertComputed(
+				JSON.stringify(result.entry.sampler),
+				() => out.samplers.push(result.entry.sampler) - 1,
+			);
+			out.entries.push({
+				status: 'ready',
+				...result.entry,
+				sampler,
+				pieces: pieces.map((piece, i) => {
+					const { width, height } = textureLevelLayout(result.entry, piece.firstLevel);
+					const group = i === 0 && piece.levelCount > 1 ? 'tail' : String(Math.max(width, height));
+					out.pieces[group] ??= { count: 0, stored: 0, raw: 0 };
+					// a texture's pieces sit together under its tail's hash, coarse to fine
+					const placement: BlobPlacement = {
+						kind: BlobKind.Texture,
+						stem,
+						locality: `${pieces[0].blob.hash}.${i.toString(16).padStart(2, '0')}`,
+					};
+					return {
+						blob: commit(input.store, piece.blob, placement, out.pieces[group]),
+						firstLevel: piece.firstLevel,
+						levelCount: piece.levelCount,
+					};
+				}),
+			});
+			out.debug.push({ object: object.key, name, error: null, id, ...approximations });
+		},
+	);
+	return out;
+};
 
 // #endregion
 
