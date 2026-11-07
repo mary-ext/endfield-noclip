@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 
 import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
-import { parseBounds, parseInteger, parseZstdLevel } from '../cli-args.ts';
+import { DEFAULT_OUT, parseBounds, parseInteger, parseZstdLevel } from '../cli-args.ts';
 import { withContext } from '../context.ts';
 import { packScene } from '../pack/packer.ts';
 import type { PackReport } from '../pack/report.ts';
@@ -31,9 +31,6 @@ deletes the rest after each pack; a package directory deleted by hand releases i
 
 /** default worker count at most; each worker holds ~400 MB of its own catalogs and caches */
 const MAX_DEFAULT_JOBS = 8;
-
-/** the repository's gitignored output directory */
-const DEFAULT_OUT = new URL('../../../../out/', import.meta.url);
 
 export const run = async (args: string[]): Promise<void> => {
 	const { values, positionals } = parseArgs({

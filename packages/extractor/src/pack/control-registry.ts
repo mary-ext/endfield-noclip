@@ -10,6 +10,7 @@ import type {
 } from '@endfield-noclip/package-format/states';
 import { type Bounds, unionBounds, type Vec3 } from '@endfield-noclip/package-format/values';
 
+import { sourceVisibility } from '../game/state/chunk-sources.ts';
 import { sceneStateControl } from '../game/state/scene-conditions.ts';
 import {
 	CONTROL_CATEGORIES,
@@ -18,8 +19,6 @@ import {
 	type Visibility,
 } from '../game/state/scene-control.ts';
 import type { ChunkSource } from '../game/world/world-index.ts';
-
-import { sourceVisibility } from './chunk-sources.ts';
 
 // one owner for a package's scene controls, conditional sets and visibility groups (docs/package-format.md#conditions).
 // mechanisms register controls in any order; finish() orders derived controls after the controls they read,

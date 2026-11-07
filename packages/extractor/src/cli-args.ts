@@ -4,6 +4,9 @@ import type { ParseArgsOptionsConfig } from 'node:util';
 
 import type { Rect } from '@endfield-noclip/package-format/values';
 
+/** the repository's gitignored output directory, where packages go by default */
+export const DEFAULT_OUT = new URL('../../../out/', import.meta.url);
+
 // argument helpers shared by the commands. they live outside `commands/`, where every file is a command
 
 /**

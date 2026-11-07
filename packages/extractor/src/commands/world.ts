@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path/posix';
 import { parseArgs } from 'node:util';
 
 import type { EnvironmentVolume } from '@endfield-noclip/formats/endfield/environment-volume';
@@ -16,6 +17,7 @@ import { ruleText } from '@endfield-noclip/package-format/conditions';
 import { mapDefined } from '@mary-ext/array-fns';
 
 import {
+	DEFAULT_OUT,
 	hashText,
 	need as needArg,
 	parseHash,
@@ -25,6 +27,7 @@ import {
 	separatePositionals,
 } from '../cli-args.ts';
 import { type Context, withContext } from '../context.ts';
+import { ignoreMissing } from '../errors.ts';
 import {
 	type LoadedPhase,
 	loadEnvironmentPhase,
@@ -41,6 +44,7 @@ import {
 	PLACEMENT_KINDS,
 	type PlacementKind,
 } from '../game/placements.ts';
+import { sourceVisibility } from '../game/state/chunk-sources.ts';
 import { GameState } from '../game/state/game-state.ts';
 import {
 	defaultSceneStates,
@@ -48,10 +52,10 @@ import {
 	loadSceneStates,
 	sceneStateControl,
 } from '../game/state/scene-conditions.ts';
-import { streamAreaControl } from '../game/state/scene-control.ts';
 import { stripMarkup } from '../game/state/story.ts';
 import { loadDungeonUses, readOperatorNames } from '../game/world/dungeons.ts';
 import type { IndexedEntity, WorldIndex } from '../game/world/world-index.ts';
+import { DEBUG_DIR, STAND_INS_FILE, type StandInReport } from '../pack/debug.ts';
 
 export const summary = 'browse scenes and levels; search asset paths and everything placed in a scene';
 
@@ -345,15 +349,7 @@ const findPlacements = async (
 			if (place === undefined || !matches([entity.name, ...drawLabels(entity)])) {
 				continue;
 			}
-			const { source } = entity;
-			const requirements = [];
-			if (source.sceneState !== 0) {
-				requirements.push({ control: sceneStateControl(source.sceneState - 1), mask: 2 });
-			}
-			if (source.area !== 0) {
-				requirements.push({ control: streamAreaControl(source.area), mask: 2 });
-			}
-			const visibility = describeAlternatives([requirements]);
+			const visibility = describeAlternatives(sourceVisibility([entity.source])?.alternatives ?? [[]]);
 			const reasons = standIns.atEntity(entity.name, position);
 			rows.push({
 				kind: 'static',
@@ -362,7 +358,7 @@ const findPlacements = async (
 				...place,
 				level: entity.membership.level?.id ?? entity.membership.bucket,
 				visibility,
-				source: source.name.split('/').pop() ?? source.name,
+				source: basename(entity.source.name),
 				summary: drawSummary(entity, names),
 				standIns: reasons,
 				json: {
@@ -426,7 +422,7 @@ const findPlacements = async (
 			const reasons = standIns.ofPrefab(path);
 			rows.push({
 				kind,
-				name: path.split('/').pop() ?? path,
+				name: basename(path),
 				position: [...position],
 				...place,
 				level: levelOf(model.levelTag),
@@ -514,15 +510,15 @@ interface StandInIndex {
 	atEntity: (name: string, position: readonly number[] | null) => string[];
 }
 
-const DEFAULT_OUT = new URL('../../../../out/', import.meta.url);
-
 const loadStandIns = async (scene: string): Promise<StandInIndex> => {
-	let reports: { path: string; name: string; reason: string; position: number[] | null }[];
-	try {
-		reports = JSON.parse(await readFile(new URL(`${scene}/debug/stand-ins.json`, DEFAULT_OUT), 'utf8'));
-	} catch {
+	const text = await ignoreMissing(
+		readFile(new URL(`${scene}/${DEBUG_DIR}/${STAND_INS_FILE}`, DEFAULT_OUT), 'utf8'),
+		null,
+	);
+	if (text === null) {
 		return { found: false, ofPrefab: () => [], atEntity: () => [] };
 	}
+	const reports: StandInReport[] = JSON.parse(text);
 	const byPrefab = new Map<string, Set<string>>();
 	const byName = new Map<string, { reason: string; position: number[] }[]>();
 	for (const { path, name, reason, position } of reports) {
