@@ -15,7 +15,12 @@ import {
 	pptrField,
 	vector3Field,
 } from '@endfield-noclip/formats/unity/values';
-import type { AnimationCurve, CurveKey, Gradient } from '@endfield-noclip/package-format/curves';
+import {
+	type AnimationCurve,
+	type CurveKey,
+	CurveWrapMode,
+	type Gradient,
+} from '@endfield-noclip/package-format/curves';
 import {
 	CurveMode,
 	GradientMode,
@@ -113,9 +118,22 @@ export type ParticleSystemRead =
 	  }
 	| { reason: string };
 
+const WRAP_MODES = new Set<number>(Object.values(CurveWrapMode));
+const isWrapMode = (mode: number): mode is CurveWrapMode => WRAP_MODES.has(mode);
+
+/** @throws {FormatError} on a value that isn't a {@link CurveWrapMode} */
+const readWrapMode = (value: TypeTreeObject, name: string): CurveWrapMode => {
+	const mode = optionalNumberField(value, name) ?? CurveWrapMode.Clamp;
+	if (!isWrapMode(mode)) {
+		throw new FormatError(`unknown curve wrap mode ${mode}`);
+	}
+	return mode;
+};
+
 /**
  * @param value a serialized `AnimationCurve`
  * @returns its keys and wrap modes
+ * @throws {FormatError} on an unknown wrap mode
  */
 export const readAnimationCurve = (value: TypeTreeObject): AnimationCurve => ({
 	keys: arrayField(value, 'm_Curve').map((key): CurveKey => {
@@ -132,8 +150,8 @@ export const readAnimationCurve = (value: TypeTreeObject): AnimationCurve => ({
 			outWeight: optionalNumberField(key, 'outWeight') ?? 0,
 		};
 	}),
-	preWrapMode: optionalNumberField(value, 'm_PreInfinity') ?? 2,
-	postWrapMode: optionalNumberField(value, 'm_PostInfinity') ?? 2,
+	preWrapMode: readWrapMode(value, 'm_PreInfinity'),
+	postWrapMode: readWrapMode(value, 'm_PostInfinity'),
 });
 
 /**

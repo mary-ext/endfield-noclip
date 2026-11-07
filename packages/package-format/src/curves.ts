@@ -5,23 +5,46 @@
  * @module
  */
 
+/** {@link CurveKey.weightedMode} bits, Unity's `WeightedMode` */
+export const WeightedMode = {
+	/** the key's {@link CurveKey.inWeight} applies */
+	In: 1 << 0,
+	/** the key's {@link CurveKey.outWeight} applies */
+	Out: 1 << 1,
+} as const;
+
 /** an `AnimationCurve` key */
 export interface CurveKey {
 	time: number;
 	value: number;
 	inSlope: number;
 	outSlope: number;
-	/** which of {@link inWeight} and {@link outWeight} apply: bit 0 the in weight, bit 1 the out weight */
+	/** which of {@link inWeight} and {@link outWeight} apply, {@link WeightedMode} bits */
 	weightedMode: number;
 	inWeight: number;
 	outWeight: number;
 }
 
-/** an `AnimationCurve`; the wrap modes are Unity's internal ones (2, clamp, is the default) */
+/**
+ * {@link AnimationCurve.preWrapMode} and {@link AnimationCurve.postWrapMode} values, Unity's internal wrap
+ * modes as `AnimationCurve` serializes them
+ */
+export const CurveWrapMode = {
+	PingPong: 0,
+	Repeat: 1,
+	/** what a curve without a stored mode gets */
+	Clamp: 2,
+	Default: 3,
+} as const;
+
+export type CurveWrapMode = (typeof CurveWrapMode)[keyof typeof CurveWrapMode];
+
+/** an `AnimationCurve` */
 export interface AnimationCurve {
 	keys: CurveKey[];
-	preWrapMode: number;
-	postWrapMode: number;
+	/** how the curve continues before its first key and after its last; {@link evaluateCurve} clamps either way */
+	preWrapMode: CurveWrapMode;
+	postWrapMode: CurveWrapMode;
 }
 
 /** a Unity `Gradient`: colour and alpha keys over 0–1, in time order */
@@ -32,10 +55,6 @@ export interface Gradient {
 	/** each key's value holds until the key's time instead of blending towards it (Unity's `Fixed` mode) */
 	fixed: boolean;
 }
-
-/** `CurveKey.weightedMode` bits: the key's in weight, its out weight */
-const WEIGHTED_IN = 1;
-const WEIGHTED_OUT = 2;
 
 /** the weight Unity gives a key's unweighted side, which makes the Bézier segment its Hermite one */
 const DEFAULT_WEIGHT = 1 / 3;
@@ -69,8 +88,8 @@ export const evaluateCurve = (curve: AnimationCurve, time: number): number => {
 		return a.value;
 	}
 	const dt = b.time - a.time;
-	const outWeighted = (a.weightedMode & WEIGHTED_OUT) !== 0;
-	const inWeighted = (b.weightedMode & WEIGHTED_IN) !== 0;
+	const outWeighted = (a.weightedMode & WeightedMode.Out) !== 0;
+	const inWeighted = (b.weightedMode & WeightedMode.In) !== 0;
 	if (outWeighted || inWeighted) {
 		return weightedSegment(
 			a.value,
