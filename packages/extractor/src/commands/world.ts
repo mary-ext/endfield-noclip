@@ -36,7 +36,6 @@ import {
 	resolveLevelPost,
 	scenePhaseLoader,
 } from '../game/environment.ts';
-import type { InteractiveStandIn } from '../game/interactives/interactive-facilities.ts';
 import {
 	boxDistance,
 	describeAlternatives,
@@ -265,216 +264,57 @@ interface FoundRow {
 	json: object;
 }
 
-const findPlacements = async (
-	context: Context,
-	scene: string,
-	options: {
-		pattern: RegExp | undefined;
-		near: number[] | undefined;
-		radius: number | undefined;
-		kinds: Set<PlacementKind>;
-		/** drops rows whose bounds' longest side is longer, in metres */
-		maxSize: number | undefined;
-		limit: number;
-		json: boolean;
-		sceneState: number | undefined;
-		area: number | undefined;
-	},
-): Promise<void> => {
+/** `world find`'s options */
+interface FindOptions {
+	pattern: RegExp | undefined;
+	near: number[] | undefined;
+	radius: number | undefined;
+	kinds: Set<PlacementKind>;
+	/** drops rows whose bounds' longest side is longer, in metres */
+	maxSize: number | undefined;
+	limit: number;
+	json: boolean;
+	sceneState: number | undefined;
+	area: number | undefined;
+}
+
+const findPlacements = async (context: Context, scene: string, options: FindOptions): Promise<void> => {
 	const { world } = context;
 	if (!(await world.scenes()).includes(scene)) {
 		throw new Error(`unknown streaming scene ${scene}`);
 	}
-	const { near, radius, pattern, kinds, limit } = options;
+	const { kinds, limit } = options;
 	const partition = await world.partition(scene);
-	const names = await assetNames(world);
-	const standIns = await loadStandIns(scene);
-	const levelOf = (tag: number): string | null =>
-		(partition && levelOfTag(partition, tag)?.id) ?? (tag === 0 ? 'shared' : `tag ${tag}`);
-	/** where a row sits relative to `--near`, or `undefined` to drop it */
-	const measure = (
-		bounds: Aabb | null,
-		position: readonly number[] | null,
-	): Pick<FoundRow, 'distance' | 'size'> | undefined => {
-		const size = bounds === null ? null : 2 * Math.max(...bounds.extents);
-		if (options.maxSize !== undefined && size !== null && size > options.maxSize) {
-			return undefined;
-		}
-		if (near === undefined || radius === undefined) {
-			return { distance: null, size };
-		}
-		let distance: number;
-		if (bounds !== null) {
-			distance = boxDistance(near, bounds);
-		} else if (position !== null) {
-			distance = Math.hypot(position[0] - near[0], position[1] - near[1], position[2] - near[2]);
-		} else {
-			return undefined;
-		}
-		return distance <= radius ? { distance, size } : undefined;
+	const lookups: FindLookups = {
+		partition,
+		names: await assetNames(world),
+		standIns: await loadStandIns(scene),
+		levelOf: (tag) => (partition && levelOfTag(partition, tag)?.id) ?? (tag === 0 ? 'shared' : `tag ${tag}`),
 	};
-	const matches = (labels: readonly string[]): boolean =>
-		pattern === undefined || labels.some((label) => pattern.test(label));
-	const drawLabels = (entity: ChunkEntity): string[] =>
-		entity.renderer?.draws.flatMap((draw) => [
-			names.pathOf(draw.meshHash) ?? hashText(draw.meshHash),
-			names.pathOf(draw.materialHash) ?? hashText(draw.materialHash),
-		]) ?? [];
-	const rows: FoundRow[] = [];
-	// without --near, results keep source order and the scan stops at the limit
-	const full = (): boolean => near === undefined && rows.length >= limit;
+	const rows = new FoundRows(options);
 
 	if (kinds.has('static')) {
-		// a 128 m cell of margin keeps entities whose bounds reach into the searched cells
-		const cell =
-			near === undefined ? null : { x: Math.floor(near[0] / CELL_SIZE), z: Math.floor(near[2] / CELL_SIZE) };
-		const reach = radius === undefined ? 0 : Math.ceil(radius / CELL_SIZE) + 1;
-		for await (const entity of world.sceneEntities(
-			scene,
-			(file) =>
-				(options.sceneState === undefined || file.sceneState === options.sceneState) &&
-				(options.area === undefined || file.area === options.area) &&
-				(cell === null ||
-					file.cell === null ||
-					(Math.abs(file.cell.x - cell.x) <= reach && Math.abs(file.cell.z - cell.z) <= reach)),
-		)) {
-			const position =
-				entity.pivot === null ? null : ([entity.pivot.x, entity.pivot.y, entity.pivot.z] as const);
-			const place = measure(entity.bounds, position);
-			if (place === undefined || !matches([entity.name, ...drawLabels(entity)])) {
-				continue;
+		for await (const candidate of staticCandidates(world, scene, options, lookups)) {
+			rows.add(candidate);
+			if (rows.full) {
+				break;
 			}
-			const visibility = describeAlternatives(sourceVisibility([entity.source])?.alternatives ?? [[]]);
-			const reasons = standIns.atEntity(entity.name, position);
-			rows.push({
-				kind: 'static',
-				name: entity.name,
-				position: position === null ? null : [...position],
-				...place,
-				level: entity.membership.level?.id ?? entity.membership.bucket,
-				visibility,
-				source: basename(entity.source.name),
-				summary: drawSummary(entity, names),
-				standIns: reasons,
-				json: {
-					kind: 'static',
-					...entityJson(entity, partition, names),
-					visibility,
-					standIns: reasons,
-					distance: place.distance,
-				},
-			});
-			if (full()) {
+		}
+	}
+	const placedKinds = kinds.has('static') ? kinds.size > 1 : kinds.size > 0;
+	const survey = rows.full || !placedKinds ? null : await surveyPlacements(context, scene).catch(errorText);
+	if (typeof survey === 'string') {
+		console.error(`${[...kinds].filter((kind) => kind !== 'static').join(', ')}: not searched: ${survey}`);
+	} else if (survey !== null) {
+		for (const candidate of surveyCandidates(survey, kinds, lookups)) {
+			rows.add(candidate);
+			if (rows.full) {
 				break;
 			}
 		}
 	}
 
-	const placedKinds = kinds.has('static') ? kinds.size > 1 : kinds.size > 0;
-	const survey = full() || !placedKinds ? null : await surveyPlacements(context, scene).catch(errorText);
-	if (typeof survey === 'string') {
-		console.error(`${[...kinds].filter((kind) => kind !== 'static').join(', ')}: not searched: ${survey}`);
-	} else if (survey !== null) {
-		const dynamic = surveyRows(survey, kinds);
-		for (const { entity, pivot, visibility } of dynamic.entities) {
-			const position = pivot === null ? null : ([pivot.x, pivot.y, pivot.z] as const);
-			const place = measure(entity.bounds, position);
-			if (full() || place === undefined || !matches([entity.name, ...drawLabels(entity)])) {
-				continue;
-			}
-			rows.push({
-				kind: 'dynamic',
-				name: entity.name,
-				position: position === null ? null : [...position],
-				...place,
-				level: levelOf(entity.levelTag),
-				visibility,
-				source: `entity ${entity.id}`,
-				summary: drawSummary(entity, names),
-				standIns: standIns.atEntity(entity.name, position),
-				json: {
-					kind: 'dynamic',
-					id: entity.id,
-					levelTag: entity.levelTag,
-					level: levelOf(entity.levelTag),
-					name: entity.name,
-					pivot,
-					visibility,
-					standIns: standIns.atEntity(entity.name, position),
-					...chunkEntityJson(entity, names),
-					distance: place.distance,
-				},
-			});
-		}
-		for (const { kind, model, visibility } of dynamic.prefabs) {
-			const { pathHash, position, rotation, scale } = model.model;
-			// the manifest's asset path, as the packer names prefabs in its reports
-			const path = names.assetPathOf(pathHash) ?? names.pathOf(pathHash) ?? hashText(pathHash);
-			const place = measure(null, position);
-			if (full() || place === undefined || !matches([path, model.source])) {
-				continue;
-			}
-			const bundle = names.bundleOf(pathHash);
-			const reasons = standIns.ofPrefab(path);
-			rows.push({
-				kind,
-				name: basename(path),
-				position: [...position],
-				...place,
-				level: levelOf(model.levelTag),
-				visibility,
-				source: model.source,
-				summary: `${path}  ${bundle ?? '-'}`,
-				standIns: reasons,
-				json: {
-					kind,
-					path,
-					bundle,
-					level: levelOf(model.levelTag),
-					position,
-					rotation,
-					scale,
-					source: model.source,
-					visibility,
-					alternatives: model.visibility.alternatives,
-					standIns: reasons,
-					distance: place.distance,
-				},
-			});
-		}
-		for (const standIn of dynamic.missing) {
-			const place = measure(null, standIn.position);
-			if (full() || place === undefined || !matches([standIn.template, standIn.source])) {
-				continue;
-			}
-			rows.push({
-				kind: 'facility',
-				name: standIn.template,
-				position: [...standIn.position],
-				...place,
-				level: levelOf(standIn.levelTag),
-				visibility: 'always',
-				source: standIn.source,
-				summary: `no model: ${standIn.reason}`,
-				standIns: [standIn.reason],
-				json: {
-					kind: 'facility',
-					...standIn,
-					level: levelOf(standIn.levelTag),
-					model: null,
-					distance: place.distance,
-				},
-			});
-		}
-	}
-
-	// nearest first; among rows whose bounds hold the point, the smallest first, so HLOD clusters, merged
-	// meshes and wide volumes don't crowd out what sits at the point
-	const shown = (
-		near === undefined
-			? rows
-			: rows.toSorted((a, b) => (a.distance ?? 0) - (b.distance ?? 0) || (a.size ?? 0) - (b.size ?? 0))
-	).slice(0, limit);
+	const shown = rows.shown();
 	if (options.json) {
 		console.log(
 			JSON.stringify(
@@ -493,48 +333,281 @@ const findPlacements = async (
 		return n === 0 ? [] : [`${n} ${kind}`];
 	});
 	console.error(
-		`${shown.length} matches${counts.length === 0 ? '' : ` (${counts.join(', ')})`}${rows.length >= limit ? '; limit reached, raise --limit for more' : ''}${standIns.found ? '' : `; no out/${scene}/debug/stand-ins.json, so stand-ins aren't marked`}`,
+		`${shown.length} matches${counts.length === 0 ? '' : ` (${counts.join(', ')})`}${rows.length >= limit ? '; limit reached, raise --limit for more' : ''}${lookups.standIns.found ? '' : `; no out/${scene}/debug/stand-ins.json, so stand-ins aren't marked`}`,
 	);
 };
 
-/** a scene's placements outside its chunk files, by kind, with their visibility as text */
-interface SurveyRows {
-	entities: { entity: ChunkEntity; pivot: IndexedEntity['pivot']; visibility: string }[];
-	prefabs: {
-		kind: Exclude<PlacementKind, 'static' | 'dynamic'>;
-		model: StructureModel;
-		visibility: string;
-	}[];
-	/** facilities without a model the reader found */
-	missing: InteractiveStandIn[];
+/** a placement a source found, before `--max-size`, `--near` and `--name` filter it */
+interface FoundCandidate {
+	bounds: Aabb | null;
+	position: readonly number[] | null;
+	/** what `--name` matches */
+	labels: readonly string[];
+	/** builds the row, only for candidates kept */
+	row: (distance: number | null) => Omit<FoundRow, 'distance' | 'size'>;
 }
 
-const surveyRows = (survey: ScenePlacementSurvey, kinds: ReadonlySet<PlacementKind>): SurveyRows => {
+/** what the sources name and mark their rows with */
+interface FindLookups {
+	partition: LevelPartition | undefined;
+	names: AssetNames;
+	standIns: StandInIndex;
+	/** a level tag's level id, `shared` for tag 0 */
+	levelOf: (tag: number) => string | null;
+}
+
+/** the rows `world find` keeps, filtered as they're added */
+class FoundRows {
+	readonly #options: Pick<FindOptions, 'pattern' | 'near' | 'radius' | 'maxSize' | 'limit'>;
+	readonly #rows: FoundRow[] = [];
+
+	constructor(options: FindOptions) {
+		this.#options = options;
+	}
+
+	get length(): number {
+		return this.#rows.length;
+	}
+
+	/** whether the scan can stop: without `--near`, results keep source order and stop at the limit */
+	get full(): boolean {
+		return this.#options.near === undefined && this.#rows.length >= this.#options.limit;
+	}
+
+	/** keeps a candidate that passes the filters */
+	add(candidate: FoundCandidate): void {
+		const { pattern } = this.#options;
+		const place = this.#measure(candidate.bounds, candidate.position);
+		if (
+			place === undefined ||
+			(pattern !== undefined && !candidate.labels.some((label) => pattern.test(label)))
+		) {
+			return;
+		}
+		this.#rows.push({ ...candidate.row(place.distance), ...place });
+	}
+
+	/**
+	 * @returns the rows up to the limit: with `--near` nearest first and, among rows whose bounds hold the
+	 *   point, the smallest first, so HLOD clusters, merged meshes and wide volumes don't crowd out what sits
+	 *   there
+	 */
+	shown(): FoundRow[] {
+		const rows =
+			this.#options.near === undefined
+				? this.#rows
+				: this.#rows.toSorted(
+						(a, b) => (a.distance ?? 0) - (b.distance ?? 0) || (a.size ?? 0) - (b.size ?? 0),
+					);
+		return rows.slice(0, this.#options.limit);
+	}
+
+	/** @returns where a row sits relative to `--near`, or `undefined` to drop it */
+	#measure(
+		bounds: Aabb | null,
+		position: readonly number[] | null,
+	): Pick<FoundRow, 'distance' | 'size'> | undefined {
+		const { near, radius, maxSize } = this.#options;
+		const size = bounds === null ? null : 2 * Math.max(...bounds.extents);
+		if (maxSize !== undefined && size !== null && size > maxSize) {
+			return undefined;
+		}
+		if (near === undefined || radius === undefined) {
+			return { distance: null, size };
+		}
+		let distance: number;
+		if (bounds !== null) {
+			distance = boxDistance(near, bounds);
+		} else if (position !== null) {
+			distance = Math.hypot(position[0] - near[0], position[1] - near[1], position[2] - near[2]);
+		} else {
+			return undefined;
+		}
+		return distance <= radius ? { distance, size } : undefined;
+	}
+}
+
+/** @returns an entity's draws' mesh and material paths, for `--name` */
+const drawLabels = (entity: ChunkEntity, { pathOf }: AssetNames): string[] =>
+	entity.renderer?.draws.flatMap((draw) => [
+		pathOf(draw.meshHash) ?? hashText(draw.meshHash),
+		pathOf(draw.materialHash) ?? hashText(draw.materialHash),
+	]) ?? [];
+
+/** the scene's chunk entities, from the files `--scene-state`, `--area` and `--near` select */
+async function* staticCandidates(
+	world: WorldIndex,
+	scene: string,
+	options: Pick<FindOptions, 'near' | 'radius' | 'sceneState' | 'area'>,
+	lookups: FindLookups,
+): AsyncGenerator<FoundCandidate> {
+	const { near, radius } = options;
+	const { names, standIns, partition } = lookups;
+	// a 128 m cell of margin keeps entities whose bounds reach into the searched cells
+	const cell =
+		near === undefined ? null : { x: Math.floor(near[0] / CELL_SIZE), z: Math.floor(near[2] / CELL_SIZE) };
+	const reach = radius === undefined ? 0 : Math.ceil(radius / CELL_SIZE) + 1;
+	for await (const entity of world.sceneEntities(
+		scene,
+		(file) =>
+			(options.sceneState === undefined || file.sceneState === options.sceneState) &&
+			(options.area === undefined || file.area === options.area) &&
+			(cell === null ||
+				file.cell === null ||
+				(Math.abs(file.cell.x - cell.x) <= reach && Math.abs(file.cell.z - cell.z) <= reach)),
+	)) {
+		const position = entity.pivot === null ? null : [entity.pivot.x, entity.pivot.y, entity.pivot.z];
+		yield {
+			bounds: entity.bounds,
+			position,
+			labels: [entity.name, ...drawLabels(entity, names)],
+			row: (distance) => {
+				const visibility = describeAlternatives(sourceVisibility([entity.source])?.alternatives ?? [[]]);
+				const reasons = standIns.atEntity(entity.name, position);
+				return {
+					kind: 'static',
+					name: entity.name,
+					position: position === null ? null : [position[0], position[1], position[2]],
+					level: entity.membership.level?.id ?? entity.membership.bucket,
+					visibility,
+					source: basename(entity.source.name),
+					summary: drawSummary(entity, names),
+					standIns: reasons,
+					json: {
+						kind: 'static',
+						...entityJson(entity, partition, names),
+						visibility,
+						standIns: reasons,
+						distance,
+					},
+				};
+			},
+		};
+	}
+}
+
+const prefab = (kind: PlacementKind, model: StructureModel) => ({ kind, model });
+
+/** the requested kinds of the scene's placements outside its chunk files, as the packer finds them */
+function* surveyCandidates(
+	survey: ScenePlacementSurvey,
+	kinds: ReadonlySet<PlacementKind>,
+	lookups: FindLookups,
+): Generator<FoundCandidate> {
 	const { dynamic, interactives } = survey;
-	const prefab = (kind: SurveyRows['prefabs'][number]['kind'], model: StructureModel) => ({
-		kind,
-		model,
-		visibility: describeAlternatives(model.visibility.alternatives),
-	});
-	return {
-		entities: kinds.has('dynamic')
-			? dynamic.entities.map(({ entity, visibility }) => ({
-					entity,
-					pivot: pivotOf(entity),
-					visibility: describeAlternatives(visibility.alternatives),
-				}))
-			: [],
-		prefabs: [
-			// effect rows are keyed `effect:<grid>/<index>`, model rows `<grid>/<index>`
-			...dynamic.models.map((model) =>
-				prefab(model.source.startsWith('effect:') ? 'effect' : 'model', model),
-			),
-			...interactives.facilityModels.map((model) => prefab('facility', model)),
-			...interactives.cabinModels.map((model) => prefab('cabin', model)),
-		].filter(({ kind }) => kinds.has(kind)),
-		missing: kinds.has('facility') ? interactives.standIns : [],
-	};
-};
+	const { names, standIns, levelOf } = lookups;
+	if (kinds.has('dynamic')) {
+		for (const { entity, visibility: gates } of dynamic.entities) {
+			const pivot = pivotOf(entity);
+			const position = pivot === null ? null : [pivot.x, pivot.y, pivot.z];
+			yield {
+				bounds: entity.bounds,
+				position,
+				labels: [entity.name, ...drawLabels(entity, names)],
+				row: (distance) => {
+					const visibility = describeAlternatives(gates.alternatives);
+					const reasons = standIns.atEntity(entity.name, position);
+					return {
+						kind: 'dynamic',
+						name: entity.name,
+						position: position === null ? null : [position[0], position[1], position[2]],
+						level: levelOf(entity.levelTag),
+						visibility,
+						source: `entity ${entity.id}`,
+						summary: drawSummary(entity, names),
+						standIns: reasons,
+						json: {
+							kind: 'dynamic',
+							id: entity.id,
+							levelTag: entity.levelTag,
+							level: levelOf(entity.levelTag),
+							name: entity.name,
+							pivot,
+							visibility,
+							standIns: reasons,
+							...chunkEntityJson(entity, names),
+							distance,
+						},
+					};
+				},
+			};
+		}
+	}
+	const prefabs = [
+		// effect rows are keyed `effect:<grid>/<index>`, model rows `<grid>/<index>`
+		...dynamic.models.map((model) => prefab(model.source.startsWith('effect:') ? 'effect' : 'model', model)),
+		...interactives.facilityModels.map((model) => prefab('facility', model)),
+		...interactives.cabinModels.map((model) => prefab('cabin', model)),
+	];
+	for (const { kind, model } of prefabs) {
+		if (!kinds.has(kind)) {
+			continue;
+		}
+		const { pathHash, position, rotation, scale } = model.model;
+		// the manifest's asset path, as the packer names prefabs in its reports
+		const path = names.assetPathOf(pathHash) ?? names.pathOf(pathHash) ?? hashText(pathHash);
+		yield {
+			bounds: null,
+			position,
+			labels: [path, model.source],
+			row: (distance) => {
+				const visibility = describeAlternatives(model.visibility.alternatives);
+				const bundle = names.bundleOf(pathHash);
+				const reasons = standIns.ofPrefab(path);
+				return {
+					kind,
+					name: basename(path),
+					position: [...position],
+					level: levelOf(model.levelTag),
+					visibility,
+					source: model.source,
+					summary: `${path}  ${bundle ?? '-'}`,
+					standIns: reasons,
+					json: {
+						kind,
+						path,
+						bundle,
+						level: levelOf(model.levelTag),
+						position,
+						rotation,
+						scale,
+						source: model.source,
+						visibility,
+						alternatives: model.visibility.alternatives,
+						standIns: reasons,
+						distance,
+					},
+				};
+			},
+		};
+	}
+	if (kinds.has('facility')) {
+		for (const standIn of interactives.standIns) {
+			yield {
+				bounds: null,
+				position: standIn.position,
+				labels: [standIn.template, standIn.source],
+				row: (distance) => ({
+					kind: 'facility',
+					name: standIn.template,
+					position: [...standIn.position],
+					level: levelOf(standIn.levelTag),
+					visibility: 'always',
+					source: standIn.source,
+					summary: `no model: ${standIn.reason}`,
+					standIns: [standIn.reason],
+					json: {
+						kind: 'facility',
+						...standIn,
+						level: levelOf(standIn.levelTag),
+						model: null,
+						distance,
+					},
+				}),
+			};
+		}
+	}
+}
 
 /** stand-ins the scene's package reports, for marking found rows */
 interface StandInIndex {
