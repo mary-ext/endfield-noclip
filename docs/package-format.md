@@ -241,9 +241,12 @@ is in [packing environments](extraction/environments.md)):
   ([flow noise](game-data/sky-and-fog.md#flow-noise)).
 - `volumes`: every global, box and prism volume: name without its `#…` suffix, visibility `group`
   (owning level tag and loading condition), its `environmentVolume` `control`, shape in world
-  coordinates, blend mode (0–3; a volume with any other mode is dropped and listed in
-  `debug/environments.json`), priority, blend distance, fade durations, and phase index (or `null`
-  when the phase can't be read; such a volume has no control and never applies).
+  coordinates (a box as its centre, half-extents and the rotation taking world offsets into its
+  frame, which the packer works out from the game's Euler angles), `blend` (`EnvironmentBlend`:
+  `replace`, `depth` over a distance, `fade` in and out over durations, or `scripted`, from the
+  game's blend modes 0–3; a volume with any other mode is dropped and listed in
+  `debug/environments.json`), priority, and phase index (or `null` when the phase can't be read;
+  such a volume has no control and never applies).
 
 `LevelInfo.environment` names a level's base volume (whose phase is never `null`) and post profile
 ([the level's base environment](extraction/environments.md#the-levels-base-environment)); a viewer
@@ -252,8 +255,8 @@ starts its blend from all of that phase's sections.
 nothing in the chunk data says whether a volume starts enabled
 ([activation](game-data/environment.md#activation)), so each volume with a phase gets an
 `environmentVolume:<index>` control, which its group requires on. it defaults on, except for a
-scripted volume (blend mode 3), whose fade-in script isn't followed: off, and at full strength when
-the user turns it on. a viewer therefore decides whether a volume applies from its group alone.
+`scripted` volume, whose fade-in script isn't followed: off, and at full strength when the user
+turns it on. a viewer therefore decides whether a volume applies from its group alone.
 
 ## binary encodings
 

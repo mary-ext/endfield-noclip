@@ -10,19 +10,18 @@ import { type LensFlareDataSRP, readLensFlareData } from '@endfield-noclip/forma
 import { ShaderPropertyType } from '@endfield-noclip/formats/unity/material';
 import type { PlainKinds, PlainObject } from '@endfield-noclip/formats/unity/plain-object';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
-import {
-	type BlendSchema,
-	type CelestialConfig,
-	type EnvironmentPhaseEntry,
-	type EnvironmentPhaseInfo,
-	type EnvironmentProfile,
-	type EnvironmentSchema,
-	type EnvironmentSectionPools,
-	type EnvironmentSections,
-	type EnvironmentTable,
-	type EnvironmentVolumeInfo,
-	isEnvironmentBlendMode,
-	type PostProfile,
+import type {
+	BlendSchema,
+	CelestialConfig,
+	EnvironmentPhaseEntry,
+	EnvironmentPhaseInfo,
+	EnvironmentProfile,
+	EnvironmentSchema,
+	EnvironmentSectionPools,
+	EnvironmentSections,
+	EnvironmentTable,
+	EnvironmentVolumeInfo,
+	PostProfile,
 } from '@endfield-noclip/package-format/environment';
 import type { LevelEnvironment } from '@endfield-noclip/package-format/manifest';
 import type { ConditionalSetInfo } from '@endfield-noclip/package-format/states';
@@ -30,6 +29,7 @@ import type { ConditionalSetInfo } from '@endfield-noclip/package-format/states'
 import type { Context } from '../context.ts';
 import { type AssetResolver, objectKey, type ObjectRef } from '../game/assets.ts';
 import {
+	environmentBlend,
 	environmentVolumeShape,
 	type LevelEnvironmentChoice,
 	type LoadedPhase,
@@ -282,9 +282,9 @@ export const planEnvironments = async (
 			report({ kind: 'volume', volume: name, reason: shape });
 			continue;
 		}
-		const { blendMode } = volume;
-		if (!isEnvironmentBlendMode(blendMode)) {
-			report({ kind: 'volume', volume: name, reason: `unknown blend mode ${blendMode}` });
+		const blend = environmentBlend(volume);
+		if (typeof blend === 'string') {
+			report({ kind: 'volume', volume: name, reason: blend });
 			continue;
 		}
 		const loadedPhase = volumePhases[i];
@@ -310,11 +310,8 @@ export const planEnvironments = async (
 			group: 0,
 			shape,
 			control: null,
-			blendMode,
+			blend,
 			priority: volume.priority,
-			blendDistance: volume.blendDistance,
-			fadeInDuration: volume.fadeInDuration,
-			fadeOutDuration: volume.fadeOutDuration,
 			phase: index,
 		});
 		plan.volumeOwners.push({ levelTag: tag, sceneStates, condition });

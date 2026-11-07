@@ -33,6 +33,9 @@ export type Vec3 = [x: number, y: number, z: number];
 /** a `Vector4f` */
 export type Vec4 = [x: number, y: number, z: number, w: number];
 
+/** a 3×3 matrix, row-major */
+export type Mat3 = [number, number, number, number, number, number, number, number, number];
+
 /** a unit quaternion */
 export type Quat = [x: number, y: number, z: number, w: number];
 

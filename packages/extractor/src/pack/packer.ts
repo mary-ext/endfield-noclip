@@ -24,11 +24,7 @@ import {
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import { encodeBlobTable } from '@endfield-noclip/package-format/blob-table';
 import { BLOB_KIND_NAMES, BlobKind } from '@endfield-noclip/package-format/blobs';
-import {
-	EnvironmentBlendMode,
-	type EnvironmentTable,
-	type EnvironmentVolumeInfo,
-} from '@endfield-noclip/package-format/environment';
+import type { EnvironmentTable, EnvironmentVolumeInfo } from '@endfield-noclip/package-format/environment';
 import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
 import {
 	encodeChains,
@@ -1855,9 +1851,9 @@ const environmentVolumeControl = (index: number, volume: EnvironmentVolumeInfo):
 		id: `environmentVolume:${index}`,
 		name: volume.name,
 		values: SWITCH_VALUES,
-		default: volume.blendMode === EnvironmentBlendMode.Manual ? 0 : 1,
+		default: volume.blend.kind === 'scripted' ? 0 : 1,
 		assumption:
-			volume.blendMode === EnvironmentBlendMode.Manual
+			volume.blend.kind === 'scripted'
 				? 'off: a level script fades it in, which isn’t followed; on previews it at full strength'
 				: 'on: it applies wherever it holds the camera',
 	});

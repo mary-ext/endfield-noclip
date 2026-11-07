@@ -22,9 +22,10 @@ import {
 import { type PlainObject, toPlainObject } from '@endfield-noclip/formats/unity/plain-object';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { arrayField, asPPtr, stringField } from '@endfield-noclip/formats/unity/values';
-import type { EnvironmentVolumeShape } from '@endfield-noclip/package-format/environment';
+import type { EnvironmentBlend, EnvironmentVolumeShape } from '@endfield-noclip/package-format/environment';
 import { compareVolumes, volumeFootprintContains } from '@endfield-noclip/package-format/environment-volumes';
 import type { ConditionalSetInfo } from '@endfield-noclip/package-format/states';
+import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
@@ -262,6 +263,61 @@ export const resolveLevelPost = (
 
 /**
  * @param volume an environment volume
+ * @returns how it blends in, by its `_blendMode` (the game's `EnvBlendMode`: 0 none, 1 distance, 2 time, 3
+ *   manual), or why the mode isn't understood
+ */
+export const environmentBlend = (volume: EnvironmentVolume): EnvironmentBlend | string => {
+	switch (volume.blendMode) {
+		case 0: {
+			return { kind: 'replace' };
+		}
+		case 1: {
+			return { kind: 'depth', distance: volume.blendDistance };
+		}
+		case 2: {
+			return { kind: 'fade', fadeIn: volume.fadeInDuration, fadeOut: volume.fadeOutDuration };
+		}
+		case 3: {
+			return { kind: 'scripted' };
+		}
+		default: {
+			return `unknown blend mode ${volume.blendMode}`;
+		}
+	}
+};
+
+/**
+ * @param position a box volume's transform position
+ * @param rotation its Euler angles, degrees, which Unity applies z, then x, then y
+ * @param scale its scale
+ * @returns the unit cube under the transform, which is what a box volume covers
+ */
+export const unitCubeShape = (
+	position: Vec3,
+	rotation: Vec3,
+	scale: Vec3,
+): Extract<EnvironmentVolumeShape, { kind: 'box' }> => {
+	const [rx, ry, rz] = rotation.map((degrees) => (degrees * Math.PI) / 180);
+	// undoes the rotation: inverse yaw, then pitch, then roll
+	const toBox = ([vx, vy, vz]: Vec3): Vec3 => {
+		let [x, y, z] = [vx, vy, vz];
+		[x, z] = [x * Math.cos(ry) - z * Math.sin(ry), x * Math.sin(ry) + z * Math.cos(ry)];
+		[y, z] = [y * Math.cos(rx) + z * Math.sin(rx), -y * Math.sin(rx) + z * Math.cos(rx)];
+		[x, y] = [x * Math.cos(rz) + y * Math.sin(rz), -x * Math.sin(rz) + y * Math.cos(rz)];
+		return [x, y, z];
+	};
+	// the images of the world axes are the matrix's columns
+	const [cx, cy, cz] = [toBox([1, 0, 0]), toBox([0, 1, 0]), toBox([0, 0, 1])];
+	return {
+		kind: 'box',
+		center: [...position],
+		toBox: [cx[0], cy[0], cz[0], cx[1], cy[1], cz[1], cx[2], cy[2], cz[2]],
+		halfExtents: [Math.abs(scale[0]) / 2, Math.abs(scale[1]) / 2, Math.abs(scale[2]) / 2],
+	};
+};
+
+/**
+ * @param volume an environment volume
  * @returns where it applies, or why its shape isn't understood
  */
 export const environmentVolumeShape = (volume: EnvironmentVolume): EnvironmentVolumeShape | string => {
@@ -270,11 +326,10 @@ export const environmentVolumeShape = (volume: EnvironmentVolume): EnvironmentVo
 			return { kind: 'global' };
 		}
 		case EnvironmentVolumeType.Box: {
-			// a unit cube under the transform
 			const transform = volume.transform;
 			return transform === null
 				? 'box volume without a transform'
-				: { kind: 'box', position: transform.position, rotation: transform.rotation, scale: transform.scale };
+				: unitCubeShape(transform.position, transform.rotation, transform.scale);
 		}
 		case EnvironmentVolumeType.PolyArea: {
 			const shape = volume.shape;

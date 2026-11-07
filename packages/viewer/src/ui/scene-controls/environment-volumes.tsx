@@ -1,7 +1,4 @@
-import {
-	EnvironmentBlendMode,
-	type EnvironmentVolumeInfo,
-} from '@endfield-noclip/package-format/environment';
+import type { EnvironmentVolumeInfo } from '@endfield-noclip/package-format/environment';
 import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
 
 import { mapDefined, unique } from '@mary-ext/array-fns';
@@ -19,7 +16,7 @@ const blendText = (volume: EnvironmentVolumeInfo): string => {
 	if (volume.control === null) {
 		return 'Phase unavailable';
 	}
-	if (volume.blendMode === EnvironmentBlendMode.Manual) {
+	if (volume.blend.kind === 'scripted') {
 		return 'Scripted blend · preview at full strength';
 	}
 	return `Priority ${volume.priority}`;

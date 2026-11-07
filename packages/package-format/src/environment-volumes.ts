@@ -34,11 +34,14 @@ export const distanceInsideVolume = (shape: EnvironmentVolumeShape, [x, y, z]: R
 			return Infinity;
 		}
 		case 'box': {
-			const local = toBoxFrame(shape, [x - shape.position[0], y - shape.position[1], z - shape.position[2]]);
+			const { center, toBox: m, halfExtents } = shape;
+			const dx = x - center[0];
+			const dy = y - center[1];
+			const dz = z - center[2];
 			let inside = Infinity;
 			for (let axis = 0; axis < 3; axis++) {
-				const half = Math.abs(shape.scale[axis]) / 2;
-				inside = Math.min(inside, half - Math.abs(local[axis]));
+				const local = m[axis * 3] * dx + m[axis * 3 + 1] * dy + m[axis * 3 + 2] * dz;
+				inside = Math.min(inside, halfExtents[axis] - Math.abs(local));
 			}
 			return inside;
 		}
@@ -64,7 +67,7 @@ export const volumeFootprintContains = (shape: EnvironmentVolumeShape, x: number
 			return true;
 		}
 		case 'box': {
-			return distanceInsideVolume(shape, [x, shape.position[1], z]) >= 0;
+			return distanceInsideVolume(shape, [x, shape.center[1], z]) >= 0;
 		}
 		case 'prism': {
 			return distanceInPolygon(shape.points, x, z) > 0;
@@ -84,8 +87,8 @@ export const volumeReaches = (shape: EnvironmentVolumeShape, rect: Rect): boolea
 			return true;
 		}
 		case 'box': {
-			const radius = Math.hypot(shape.scale[0], shape.scale[1], shape.scale[2]) / 2;
-			const [x, , z] = shape.position;
+			const radius = Math.hypot(...shape.halfExtents);
+			const [x, , z] = shape.center;
 			return (
 				x + radius >= rect.minX &&
 				x - radius <= rect.maxX &&
@@ -104,19 +107,6 @@ export const volumeReaches = (shape: EnvironmentVolumeShape, rect: Rect): boolea
 			);
 		}
 	}
-};
-
-/** undoes a Unity Euler rotation (applied z, then x, then y) */
-const toBoxFrame = (shape: Extract<EnvironmentVolumeShape, { kind: 'box' }>, v: Vec3): Vec3 => {
-	const [rx, ry, rz] = shape.rotation.map((degrees) => (degrees * Math.PI) / 180);
-	let [x, y, z] = v;
-	// inverse yaw
-	[x, z] = [x * Math.cos(ry) - z * Math.sin(ry), x * Math.sin(ry) + z * Math.cos(ry)];
-	// inverse pitch
-	[y, z] = [y * Math.cos(rx) + z * Math.sin(rx), -y * Math.sin(rx) + z * Math.cos(rx)];
-	// inverse roll
-	[x, y] = [x * Math.cos(rz) + y * Math.sin(rz), -x * Math.sin(rz) + y * Math.cos(rz)];
-	return [x, y, z];
 };
 
 /** @returns the distance from (x, z) to the polygon's nearest edge inside it, or 0 outside */

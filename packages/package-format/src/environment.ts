@@ -1,6 +1,6 @@
 import type { AnimationCurve, Gradient } from './curves.ts';
 import type { TextureRef } from './textures.ts';
-import type { Color, Vec2, Vec3, Vec4 } from './values.ts';
+import type { Color, Mat3, Vec2, Vec3, Vec4 } from './values.ts';
 
 /**
  * one environment in effect: every section of an `HGEnvironmentPhase` (`EnvParse/Env_*.asset`) plus the
@@ -125,17 +125,33 @@ export interface EnvironmentPhaseInfo {
 /** where an environment volume applies, in the Unity world frame */
 export type EnvironmentVolumeShape =
 	| { kind: 'global' }
-	/** a unit cube under the transform */
-	| { kind: 'box'; position: Vec3; rotation: Vec3; scale: Vec3 }
+	/**
+	 * an oriented box: a world point `p` is at `toBox · (p − center)` in the box's frame, where it spans
+	 * `±halfExtents`. `toBox` is a rotation, row-major
+	 */
+	| { kind: 'box'; center: Vec3; toBox: Mat3; halfExtents: Vec3 }
 	/** a vertical prism over a closed polygon in world x, z, from `bottom` to `top` (world y) */
 	| { kind: 'prism'; points: Vec2[]; bottom: number; top: number };
 
 /**
+ * how strongly a volume applies while it holds the camera (the game's `EnvBlendMode`):
+ *
+ * - `replace`: fully
+ * - `depth`: by how deep inside the camera is, `clamp(distance to the edge / distance)`; a global volume fully
+ * - `fade`: fading in over `fadeIn` seconds while the camera is inside and out over `fadeOut` once it leaves
+ *   (instantly when the camera moves over 5 m in a frame)
+ * - `scripted`: by a factor a level script sets, which isn't followed: fully while its control is on
+ */
+export type EnvironmentBlend =
+	| { kind: 'replace' }
+	| { kind: 'depth'; distance: number }
+	| { kind: 'fade'; fadeIn: number; fadeOut: number }
+	| { kind: 'scripted' };
+
+/**
  * an `HGEnvironmentVolume`. the game blends them at the camera each frame (`HGEnvironmentManager`): starting
  * from the default phase, volumes in ascending order of priority (then shape: global, box, prism) that
- * contain the camera apply their phase: blend mode 0 replaces, 1 lerps by `clamp(distance to the edge /
- * blendDistance)`, 2 fades over `fadeIn/OutDuration` seconds (instantly when the camera moves over 5 m in a
- * frame), 3 lerps by a scripted factor
+ * contain the camera apply their phase, as strongly as their {@link EnvironmentBlend} says
  */
 export interface EnvironmentVolumeInfo {
 	/** the object's name */
@@ -148,41 +164,16 @@ export interface EnvironmentVolumeInfo {
 	group: number;
 	/**
 	 * the `environmentVolume` control that switches it, which its group requires on; `null` for a volume
-	 * without a phase, which never applies. a scripted volume (blend mode 3) defaults off, since the script
-	 * that fades it in isn't followed, and previews at full strength when on
+	 * without a phase, which never applies. a `scripted` volume defaults off, since the script that fades it in
+	 * isn't followed, and previews at full strength when on
 	 */
 	control: string | null;
 	shape: EnvironmentVolumeShape;
-	blendMode: EnvironmentBlendMode;
+	blend: EnvironmentBlend;
 	priority: number;
-	blendDistance: number;
-	fadeInDuration: number;
-	fadeOutDuration: number;
 	/** index into {@link EnvironmentTable.phases}, or `null` if the phase is unset or unreadable */
 	phase: number | null;
 }
-
-/** how a volume blends in (the game's `EnvBlendMode`) */
-export const EnvironmentBlendMode = {
-	/** replaces wherever it holds the camera */
-	None: 0,
-	/** by depth inside, over the blend distance */
-	Distance: 1,
-	/** over time, by the fade durations */
-	Time: 2,
-	/** by a scripted factor */
-	Manual: 3,
-} as const;
-
-/** one of the {@link EnvironmentBlendMode} values */
-export type EnvironmentBlendMode = (typeof EnvironmentBlendMode)[keyof typeof EnvironmentBlendMode];
-
-/**
- * @param mode a volume's `_blendMode`
- * @returns whether it's one of the four blend modes
- */
-export const isEnvironmentBlendMode = (mode: number): mode is EnvironmentBlendMode =>
-	mode === 0 || mode === 1 || mode === 2 || mode === 3;
 
 /**
  * `HGLightConfig`: the sun. physical units: `directLux` is illuminance and `directEV100` the exposure, so

@@ -8,6 +8,7 @@ import type {
 	EnvironmentProfile,
 	EnvironmentVolumeInfo,
 	EnvironmentVolumeShape,
+	EnvironmentBlend,
 } from '@endfield-noclip/package-format/environment';
 import type { LevelEnvironment } from '@endfield-noclip/package-format/manifest';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
@@ -50,21 +51,23 @@ const volume = (patch: Partial<EnvironmentVolumeInfo>): EnvironmentVolumeInfo =>
 	group: LEVEL_1,
 	control: null,
 	shape: { kind: 'global' },
-	blendMode: 1,
+	blend: depth(10),
 	priority: 100,
-	blendDistance: 10,
-	fadeInDuration: 0,
-	fadeOutDuration: 0,
 	phase: 0,
 	...patch,
 });
 
+const REPLACE: EnvironmentBlend = { kind: 'replace' };
+
+/** @returns a blend by depth over `distance` m */
+const depth = (distance: number): EnvironmentBlend => ({ kind: 'depth', distance });
+
 /** a box the camera never enters */
 const FAR: EnvironmentVolumeShape = {
 	kind: 'box',
-	position: [1e6, 0, 1e6],
-	rotation: [0, 0, 0],
-	scale: [1, 1, 1],
+	center: [1e6, 0, 1e6],
+	toBox: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+	halfExtents: [0.5, 0.5, 0.5],
 };
 
 /** the fixtures' fields: numbers lerp unless listed (`…Mode` fields switch), everything else switches */
@@ -115,7 +118,7 @@ const manifest = (
 			phases: all,
 			volumes: [
 				...volumes,
-				volume({ name: 'base', shape: FAR, blendMode: 0, priority: 0, phase: phases.length }),
+				volume({ name: 'base', shape: FAR, blend: REPLACE, priority: 0, phase: phases.length }),
 			],
 			flowNoise: null,
 		},
@@ -169,7 +172,7 @@ describe('environment blend', () => {
 	it('applies volumes by priority, higher over lower', () => {
 		const m = manifest(
 			[phase('global', 1), phase('cave', 3)],
-			[volume({ priority: 300, phase: 1, shape: square, blendMode: 0 }), volume({ phase: 0 })],
+			[volume({ priority: 300, phase: 1, shape: square, blend: REPLACE }), volume({ phase: 0 })],
 		);
 		const inside = blendAt(m, [50, 25, 50], options);
 		assert.equal(density(inside.profile), 3);
@@ -187,7 +190,7 @@ describe('environment blend', () => {
 	});
 
 	it('shares nothing with the manifest', () => {
-		const m = manifest([phase('cave', 3)], [volume({ shape: square, blendMode: 0 })]);
+		const m = manifest([phase('cave', 3)], [volume({ shape: square, blend: REPLACE })]);
 		const { profile } = blendAt(m, [50, 25, 50], options);
 		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the stand-in's field
 		(profile.heightFog as unknown as { heightFogDensity: number }).heightFogDensity = 0;
@@ -195,12 +198,12 @@ describe('environment blend', () => {
 	});
 
 	it('leaves a prism outside its height band', () => {
-		const m = manifest([phase('cave', 3)], [volume({ shape: square, blendMode: 0 })]);
+		const m = manifest([phase('cave', 3)], [volume({ shape: square, blend: REPLACE })]);
 		assert.equal(density(blended(m, [50, 60, 50], options)), 0);
 	});
 
 	it('lerps distance-blended volumes by depth inside over the blend distance', () => {
-		const m = manifest([phase('cave', 4)], [volume({ shape: square, blendDistance: 10 })]);
+		const m = manifest([phase('cave', 4)], [volume({ shape: square, blend: depth(10) })]);
 		// 5 m from the nearest edge (x = 5): halfway in
 		assert.equal(density(blended(m, [5, 25, 50], options)), 2);
 	});
@@ -213,7 +216,7 @@ describe('environment blend', () => {
 	});
 
 	it('skips volumes whose condition (scene states, their own switch) fails', () => {
-		const m = manifest([phase('night', 5)], [volume({ group: LEVEL_1_WITH_STATE, blendMode: 0 })]);
+		const m = manifest([phase('night', 5)], [volume({ group: LEVEL_1_WITH_STATE, blend: REPLACE })]);
 		const at: Vec3 = [0, 0, 0];
 		assert.equal(density(blended(m, at, { ...options, loaded: [false, true] })), 0);
 		assert.equal(density(blended(m, at, { ...options, loaded: [true, true] })), 5);
@@ -222,7 +225,7 @@ describe('environment blend', () => {
 	it('with volumes off, applies the scene-wide global volumes and the base volume wherever the camera is', () => {
 		const m = manifest(
 			[phase('scene', 2), phase('cave', 3)],
-			[volume({ group: LEVEL_2, phase: 0 }), volume({ phase: 1, shape: square, blendMode: 0 })],
+			[volume({ group: LEVEL_2, phase: 0 }), volume({ phase: 1, shape: square, blend: REPLACE })],
 		);
 		// the scene's global volume belongs to tag 0 here: a group the fixture doesn't have
 		m.environment.volumes[0].group = 99;
@@ -240,7 +243,7 @@ describe('environment blend', () => {
 	it('fades time-blended volumes over their durations, and snaps on a jump', () => {
 		const m = manifest(
 			[phase('cave', 6)],
-			[volume({ shape: square, blendMode: 2, fadeInDuration: 2, fadeOutDuration: 3 })],
+			[volume({ shape: square, blend: { kind: 'fade', fadeIn: 2, fadeOut: 3 } })],
 		);
 		const fades = new EnvironmentFades();
 		const at = (eye: [number, number, number], dt: number) =>
@@ -267,7 +270,7 @@ describe('eyeInLevelVolume', () => {
 	});
 
 	it('pulls a viewpoint above the height band down the view line, past the blend distance', () => {
-		const m = manifest([phase('base', 1)], [volume({ shape: square, blendDistance: 10 })]);
+		const m = manifest([phase('base', 1)], [volume({ shape: square, blend: depth(10) })]);
 		const eye = eyeInLevelVolume(m, 1, own, target, [50, 210, 50], {});
 		assert.ok(eye !== null);
 		const [x, y, z] = eye;
@@ -287,7 +290,7 @@ describe('eyeInLevelVolume', () => {
 		} as const satisfies EnvironmentVolumeShape;
 		const m = manifest(
 			[phase('base', 1), phase('next door', 2)],
-			[volume({ shape: square, blendDistance: 1 }), volume({ group: LEVEL_2, phase: 1, shape: neighbour })],
+			[volume({ shape: square, blend: depth(1) }), volume({ group: LEVEL_2, phase: 1, shape: neighbour })],
 		);
 		const eye = eyeInLevelVolume(m, 1, own, target, [-50, 10, 50], {});
 		assert.ok(eye !== null);
@@ -299,7 +302,7 @@ describe('eyeInLevelVolume', () => {
 		const m = manifest(
 			[phase('base', 1), phase('next door', 2)],
 			[
-				volume({ shape: square, blendDistance: 1 }),
+				volume({ shape: square, blend: depth(1) }),
 				volume({ group: LEVEL_2_SWITCHED, phase: 1, shape: square }),
 			],
 		);
@@ -318,7 +321,7 @@ describe('eyeInLevelVolume', () => {
 it('applies a switched-on scripted volume at full strength inside its bounds; a pinned phase applies anyway', () => {
 	const m = manifest(
 		[phase('scripted', 9)],
-		[volume({ group: LEVEL_1_WITH_STATE, shape: square, blendMode: 3 })],
+		[volume({ group: LEVEL_1_WITH_STATE, shape: square, blend: { kind: 'scripted' } })],
 		{ heightFog: { heightFogDensity: 1, enable: true } },
 	);
 	assert.equal(density(blended(m, [50, 25, 50], { ...options, loaded: [false] })), 1);
@@ -336,7 +339,7 @@ const blendSections = (
 ): EnvironmentProfile => {
 	const m = manifest(
 		[sectionsPhase('next', sections, active)],
-		[volume({ shape: square, blendDistance: 20 })],
+		[volume({ shape: square, blend: depth(20) })],
 		base,
 	);
 	return blended(m, [x, 25, 50], options);

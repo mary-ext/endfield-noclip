@@ -13,10 +13,42 @@ import {
 
 import {
 	composeEnvironment,
+	environmentBlend,
 	resolveLevelEnvironment,
 	type SceneEnvironmentVolume,
 	type SceneVolumes,
+	unitCubeShape,
 } from './environment.ts';
+
+test('a box volume is the unit cube under its transform, rotated back as Unity turns z, x, then y', () => {
+	const shape = unitCubeShape([100, 10, 0], [0, 90, 0], [20, 10, -40]);
+	assert.deepEqual(shape.center, [100, 10, 0]);
+	assert.deepEqual(shape.halfExtents, [10, 5, 20]);
+	// a world offset along +x lies along the box's +z
+	const expected = [0, 0, -1, 0, 1, 0, 1, 0, 0];
+	assert.ok(shape.toBox.every((value, i) => Math.abs(value - expected[i]) < 1e-12));
+	// a roll of 90° turns the box's y axis to world −x, and the pitch after it leaves that be
+	const tilted = unitCubeShape([0, 0, 0], [90, 0, 90], [1, 1, 1]);
+	const along = (v: number[]) =>
+		[0, 1, 2].map((row) => tilted.toBox.slice(row * 3, row * 3 + 3).reduce((sum, m, i) => sum + m * v[i], 0));
+	assert.ok(along([-1, 0, 0]).every((value, i) => Math.abs(value - [0, 1, 0][i]) < 1e-12));
+});
+
+test('a volume blends as its blend mode says', () => {
+	const of = (blendMode: number) =>
+		environmentBlend({
+			...rect(1, 0, [0, 0, 1, 1]),
+			blendMode,
+			blendDistance: 7,
+			fadeInDuration: 2,
+			fadeOutDuration: 3,
+		});
+	assert.deepEqual(of(0), { kind: 'replace' });
+	assert.deepEqual(of(1), { kind: 'depth', distance: 7 });
+	assert.deepEqual(of(2), { kind: 'fade', fadeIn: 2, fadeOut: 3 });
+	assert.deepEqual(of(3), { kind: 'scripted' });
+	assert.equal(typeof of(4), 'string');
+});
 
 /** a polyline volume over the world rectangle `[x0, x1) × [z0, z1)` */
 const rect = (id: number, priority: number, [x0, z0, x1, z1]: number[]): EnvironmentVolume => ({

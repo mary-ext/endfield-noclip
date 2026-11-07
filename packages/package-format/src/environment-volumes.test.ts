@@ -24,9 +24,9 @@ const square: EnvironmentVolumeShape = {
 /** a 20 × 10 × 40 box at (100, 10, 0), turned 90° about y so its long side runs along x */
 const box: EnvironmentVolumeShape = {
 	kind: 'box',
-	position: [100, 10, 0],
-	rotation: [0, 90, 0],
-	scale: [20, 10, 40],
+	center: [100, 10, 0],
+	toBox: [0, 0, -1, 0, 1, 0, 1, 0, 0],
+	halfExtents: [10, 5, 20],
 };
 
 describe('distanceInsideVolume', () => {
@@ -64,9 +64,9 @@ describe('volumeReaches', () => {
 		assert.equal(volumeReaches({ kind: 'global' }, rect), true);
 		const far: EnvironmentVolumeShape = {
 			kind: 'box',
-			position: [300, 0, 100],
-			rotation: [0, 0, 0],
-			scale: [10, 10, 10],
+			center: [300, 0, 100],
+			toBox: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+			halfExtents: [5, 5, 5],
 		};
 		assert.equal(volumeReaches(far, rect), false);
 	});
