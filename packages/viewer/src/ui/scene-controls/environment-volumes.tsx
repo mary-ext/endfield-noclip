@@ -1,12 +1,12 @@
 import type { EnvironmentVolumeInfo } from '@endfield-noclip/package-format/environment';
-import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
 
 import { mapDefined, unique } from '@mary-ext/array-fns';
 
-import { type EnvironmentScene, volumeCondition, volumeLevelTag } from '../../environment/blend.ts';
+import { type EnvironmentScene, volumeCondition, volumeLevel } from '../../environment/blend.ts';
 import { type ListedVolume, groupByLevel, volumesForLevel } from '../../scene-states/listing.ts';
 import type { Viewer } from '../../viewer/viewer.ts';
 import { SceneToggle } from '../controls.tsx';
+import { levelName } from '../format.ts';
 import { LazyDetails } from '../lazy-details.tsx';
 
 import { OtherLevels } from './other-levels.tsx';
@@ -27,7 +27,7 @@ const blendText = (volume: EnvironmentVolumeInfo): string => {
  * those listed for the current level first, then the rest by owning level
  *
  * @param props.scene the loaded package's environment table and manifest
- * @param props.level the current level, or `null` for none
+ * @param props.level the current level's index, or `null` for none
  * @param props.matches the panel's filter
  */
 export const EnvironmentVolumes = ({
@@ -38,7 +38,7 @@ export const EnvironmentVolumes = ({
 }: {
 	viewer: Viewer;
 	scene: EnvironmentScene;
-	level: LevelInfo | null;
+	level: number | null;
 	matches: (text: string) => boolean;
 }) => {
 	const { manifest } = scene;
@@ -48,27 +48,24 @@ export const EnvironmentVolumes = ({
 		scene.environment.volumes.flatMap((volume, id) =>
 			listedHere.has(id) || !matches(volume.name)
 				? []
-				: [{ id, volume, owner: volumeLevelTag(manifest, volume) }],
+				: [{ id, volume, owner: volumeLevel(manifest, volume) }],
 		),
 		manifest.levels,
 		level,
-		({ owner }) => [owner],
+		({ owner }) => (owner === null ? [] : [owner]),
 	);
 	// a volume has one owner, so it's in one group
 	const elsewhere = others.reduce((count, { entries }) => count + entries.length, 0);
-	const levelNames = new Map(manifest.levels.map((entry) => [entry.tag, entry.name ?? entry.id]));
-	const controlNames = new Map(manifest.states.controls.map((entry) => [entry.id, entry.name]));
+	const { controls } = manifest.states;
 	/** @returns the controls a volume loads with besides its own switch, by name */
-	const loadingStates = (condition: number, own: string | null): string =>
+	const loadingStates = (condition: number, own: number | null): string =>
 		unique(
 			manifest.states.conditionalSets[condition].alternatives.flatMap((requirements) =>
-				mapDefined(requirements, ({ control }) =>
-					control === own ? undefined : (controlNames.get(control) ?? control),
-				),
+				mapDefined(requirements, ({ control }) => (control === own ? undefined : controls[control]?.name)),
 			),
 		).join(' or ');
-	/** @param shown the level the entries are listed under, whose own volumes don't name it */
-	const toggles = (entries: readonly ListedVolume[], shown: LevelInfo | null) =>
+	/** @param shown the index of the level the entries are listed under, whose own volumes don't name it */
+	const toggles = (entries: readonly ListedVolume[], shown: number | null) =>
 		entries.map(({ volume, id, owner }) => {
 			const { control } = volume;
 			const condition = volumeCondition(manifest, volume);
@@ -86,7 +83,7 @@ export const EnvironmentVolumes = ({
 								viewer.sceneValues[control] === 1 &&
 								!viewer.conditionResults[condition] &&
 								' (not loaded)'}
-							{owner !== 0 && owner !== shown?.tag && ` · from ${levelNames.get(owner) ?? `level ${owner}`}`}
+							{owner !== null && owner !== shown && ` · from ${levelName(manifest.levels[owner])}`}
 						</>
 					}
 					disabled={control === null}

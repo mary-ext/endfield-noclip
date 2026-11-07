@@ -211,12 +211,15 @@ package (its scene, tree, levels, controls and archives); placed content lives i
 | `archives`          | `ArchiveInfo`, by `role`: the core (name only), or a streamed archive's name, size and `dataOffset`, with its tile for shards and assets                                                     |
 | `tree`              | `TreeInfo`                                                                                                                                                                                   |
 | `terrain`           | `baseHeight`, `heightScale`, levels with pages, close-up `splat`; `null` without terrain. the square is the tree's root, and the page layout is fixed ([height page](#height-page-hgt-efht)) |
-| `levels`            | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment                    |
+| `levels`            | every level of the scene, even in a subset: id, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment                         |
 | `states`            | scene controls, conditional sets, visibility groups, stream areas and missions; see [conditions](#conditions)                                                                                |
 | `irradianceRegions` | rooms' own irradiance bakes; see [irradiance cells](#irradiance-cells)                                                                                                                       |
 
 a package's levels are its scene's own map's, which don't overlap, so a viewer can show them all at
-once; a group's level tag says who owns its content (0 for shared content). a level's rect and
+once; a group's `level` (an index into `levels`) says who owns its content (`null` for shared
+content). the package names levels only by index: the game's entity-id level tag, which the packer
+files content by, stays in the extractor ([the level partition](extraction.md#world)). when it files
+content under a tag no level owns, the content counts as every level's. a level's rect and
 `playerInitPos` come from its [LevelConfig](game-data/world.md#levelconfig) (`rectLeftBottom`,
 `rectRightTop`, `playerInitPos`); the viewer lists levels with them and poses its first view of a
 level over the playable rectangle, falling back to the spawn height while coarse terrain loads
@@ -240,9 +243,9 @@ is in [packing environments](extraction/environments.md)):
 - `flowNoise`: texture id of the height fog's 3D flow noise, packed once, or `null`
   ([flow noise](game-data/sky-and-fog.md#flow-noise)).
 - `volumes`: every global, box and prism volume: name without its `#…` suffix, visibility `group`
-  (owning level tag and loading condition), its `environmentVolume` `control`, shape in world
-  coordinates (a box as its centre, half-extents and the rotation taking world offsets into its
-  frame, which the packer works out from the game's Euler angles), `blend` (`EnvironmentBlend`:
+  (owning level and loading condition), the index of its `environmentVolume` `control`, shape in
+  world coordinates (a box as its centre, half-extents and the rotation taking world offsets into
+  its frame, which the packer works out from the game's Euler angles), `blend` (`EnvironmentBlend`:
   `replace`, `depth` over a distance, `fade` in and out over durations, or `scripted`, from the
   game's blend modes 0–3; a volume with any other mode is dropped and listed in
   `debug/environments.json`), priority, and phase index (or `null` when the phase can't be read;
@@ -583,8 +586,8 @@ packing rules:
   normals beyond its wave grid's reach
   ([how surfaces are drawn](game-data/water.md#how-surfaces-are-drawn)). the raw mask and `param1`
   (nothing reads them) stay in `debug/water.json`'s rows.
-- **visibility groups**: each surface's `group` indexes `StatesInfo.groups`, the owning level tag
-  and the scene states of the files holding it (`gateByScene` in
+- **visibility groups**: each surface's `group` indexes `StatesInfo.groups`, the owning level and
+  the scene states of the files holding it (`gateByScene` in
   [packer.ts](../packages/extractor/src/pack/packer.ts)), shared with instances, lights and
   environment volumes.
 - **global maps** go to the common archive. **sector tiles** go to the asset archive of the
@@ -605,17 +608,18 @@ packing rules:
   (finite factory water following no other volume), merged within 1e-4; each takes the speed of a
   script's fill-speed action just before moving the volume there, else the volume's (`fillSpeed`, in
   metres a second: the authored one for an infinite volume, converted from amount units for the
-  rest). a volume with more than one fill gets a `waterLevel:<id>` control, its values indexing
-  `levels` (labelled with the fill's percentage and height, and whether the level authors it or it's
-  a pool's drained or full end). it defaults to the authored fill, or for a pool a quest needs
-  drained (an objective's `CheckFluidVolume` at or under a twentieth of the pool), to empty, as in a
-  finished story; its drivers say what runs each script action setting a fill, and the quests
-  needing it drained, with that fill as their `value`. it gates no content, so it's kept as a
-  consumer of the volume, with the volume's level tag. `parent` indexes the volume whose surface a
-  basin follows (`null` when that volume isn't packed); a following volume has no control.
-  `floaters` are the stored instance rows, as (block blob, row index), of the renderers of every
-  interactive placement whose component 39 names the volume; the packer finds them by entity id once
-  the blocks are stored, and lists a floater with no stored row in `debug/water.json`.
+  rest). a volume with more than one fill gets a `waterLevel:<id>` control, which `control` indexes
+  in `StatesInfo.controls`, its values indexing `levels` (labelled with the fill's percentage and
+  height, and whether the level authors it or it's a pool's drained or full end). it defaults to the
+  authored fill, or for a pool a quest needs drained (an objective's `CheckFluidVolume` at or under
+  a twentieth of the pool), to empty, as in a finished story; its drivers say what runs each script
+  action setting a fill, and the quests needing it drained, with that fill as their `value`. it
+  gates no content, so it's kept as a consumer of the volume, listed for the volume's level.
+  `parent` indexes the volume whose surface a basin follows (`null` when that volume isn't packed);
+  a following volume has no control. `floaters` are the stored instance rows, as (block blob, row
+  index), of the renderers of every interactive placement whose component 39 names the volume; the
+  packer finds them by entity id once the blocks are stored, and lists a floater with no stored row
+  in `debug/water.json`.
 
 ### particles
 
@@ -791,23 +795,28 @@ their defaults are chosen is in [scene controls](extraction/scene-controls.md), 
 ### visibility groups
 
 every piece of placed content (instance blocks through their refs, lights, water surfaces,
-environment volumes) names one `StatesInfo.groups` entry: the level that owns it (`levelTag`, 0 for
-content every level shows) and the conditional set that loads it (`condition`, `null` for content
-that always loads). the packer interns equal pairs into one group, and group 0 is always the shared,
-always-loaded one. a viewer evaluates `groupsShown` once whenever a scene value changes, and every
-consumer filters by that one array, so "is loaded" has a single definition. `groupsShown` reads only
-the condition: the level tag orders and groups a viewer's listings but doesn't hide content.
-environment volumes read the parts too: they apply wherever they hold the camera, whichever level
-owns them.
+environment volumes) names one `StatesInfo.groups` entry: the level that owns it (`level`, an index
+into the manifest's `levels`, `null` for content every level shows) and the conditional set that
+loads it (`condition`, `null` for content that always loads). the packer interns equal pairs into
+one group, and group 0 is always the shared, always-loaded one. a viewer evaluates `groupsShown`
+once whenever a scene value changes, and every consumer filters by that one array, so "is loaded"
+has a single definition. `groupsShown` reads only the condition: the level orders and groups a
+viewer's listings but doesn't hide content. environment volumes read the parts too: they apply
+wherever they hold the camera, whichever level owns them.
 
 ### conditional sets
 
 a `ConditionalSetInfo` is a list of alternatives (`alternatives: SceneRequirement[][]`, a
-disjunction of conjunctions), each a list of `{ control, mask }` requirements; the content is
-visible when any alternative has every requirement met (`conditionVisible`), and a requirement is
-met when bit `value` of `mask` is set for the control's value. a missing or out-of-range value
-fails, so a control absent from the manifest hides its content instead of showing it. groups store a
-`condition` index into `conditionalSets`, `null` when always loaded.
+disjunction of conjunctions), each a list of `{ control, mask }` requirements, `control` an index
+into `StatesInfo.controls`; the content is visible when any alternative has every requirement met
+(`conditionVisible`), and a requirement is met when bit `value` of `mask` is set for the control's
+value. an out-of-range value fails. groups store a `condition` index into `conditionalSets`, `null`
+when always loaded.
+
+the packer builds conditions over controls named by id, then drops the controls nothing consumes and
+orders the rest (the [control registry](../packages/extractor/src/pack/control-registry.ts)), and
+only then turns ids into indices. an alternative requiring a dropped control can't hold, so it's
+left out; a set whose alternatives all go never holds.
 
 - **masks**: an on/off requirement uses mask 2 (value 1); a quest or variable requirement the values
   its test accepts; a progression requirement the group's `logicState`; a facility form `1 << form`,
@@ -833,17 +842,19 @@ a `SceneControl` holds one piece of game state, and a viewer treats every contro
 the control in its section, offers its values and follows its source unless the user picks a value.
 a control has its `id` (`<namespace>:<key>`), its `kind` (the game mechanism it stands for,
 open-ended and descriptive only, see [scene controls](extraction/scene-controls.md)), a `name`, its
-`category` (the section it lists under, one of `StatesInfo.categories`, which give each section's
-title and note in listing order), the selectable `values` (each below 32, with a label), a
-`default`, the `assumption` the default rests on, its `source`, the `levelTags` of the content it
-gates (directly or through a derived control), which a viewer uses to list a control only for the
+`category` (the section it lists under, an index into `StatesInfo.categories`, which give each
+section's id, title and note in listing order), the selectable `values` (each below 32, with a
+label), a `default`, the `assumption` the default rests on, its `source`, the `levels` of the
+content it gates (indices into the manifest's `levels`, directly or through a derived control; every
+level when it gates content every level shows), which a viewer uses to list a control only for the
 levels it matters to, a `story` place, its `drivers` and its `place`. a value is a quest's state, a
 variable's range, a progression's level or form index, a water volume's fill index, or 0/1 for
-on/off controls.
+on/off controls. everything else in the package names a control by its index in `controls`; the `id`
+is for search, debugging and a viewer's own state.
 
 only controls something consumes are listed: a visibility group, a derived control that is listed,
 or other content that follows the control's value (a water volume's surface follows its `waterLevel`
-control). a derived control passes its level tags on to the controls it reads. every derived control
+control). a derived control passes its levels on to the controls it reads. every derived control
 comes after the controls it reads in `controls`; the packer's
 [control registry](../packages/extractor/src/pack/control-registry.ts) orders, prunes and finishes
 them.
@@ -851,23 +862,24 @@ them.
 - **source** (`ControlSource`): `user` controls only change by a pick and otherwise hold their
   default. a `derived` control is 1 while `conditionalSets[condition]` holds and 0 otherwise, and
   its `rule` gives that condition in words (`RuleText`: text runs and references to the controls it
-  reads, so a viewer names them without parsing; `ruleText` joins them); its stored `default` is its
-  value under no picks. a `camera` control is set from the camera, which stands in for the player,
-  by its `test` ([stream areas](#stream-areas), [proximity](#proximity)); its stored default only
-  holds without a camera. `resolveSceneValues` turns the picks and the camera's values
-  (`cameraValues` in [camera.ts](../packages/package-format/src/camera.ts)) into every control's
-  value in one pass: a pick, else the camera's value or the default, then derived controls from
-  their formulas in order.
+  reads, by index or `null` for state no listed control holds, so a viewer names them without
+  parsing; `ruleText` joins them); its stored `default` is its value under no picks. a `camera`
+  control is set from the camera, which stands in for the player, by its `test`
+  ([stream areas](#stream-areas), [proximity](#proximity)); its stored default only holds without a
+  camera. `resolveSceneValues` turns the picks and the camera's values (`cameraValues` in
+  [camera.ts](../packages/package-format/src/camera.ts)), both by control index, into every
+  control's value in one pass in control order: a pick, else a derived control's formula, else the
+  camera's value or the default.
 - **story**: quest and mission controls of a known mission carry a `story` place (whether it holds a
-  quest's or the mission's state, the mission id, the main-flow step); their values are then the
-  game's quest and mission states. `StatesInfo.missions` names those missions (`MissionInfo`: name,
-  quest log category, chapter, episode, where it takes place), so a viewer can group them; the names
-  are the install's English text, extracted at pack time
+  quest's or the mission's state, its mission's index in `missions`, the main-flow step); their
+  values are then the game's quest and mission states. `StatesInfo.missions` names those missions
+  (`MissionInfo`: name, quest log category, chapter, episode, where it takes place), so a viewer can
+  group them; the names are the install's English text, extracted at pack time
   ([quest and mission labels](extraction/scene-controls.md#quest-and-mission-labels)).
-  `StatesInfo.mainStory` lists the main story's missions in story order, which the extractor reads
-  from their ids (`e<episode>m<mission>[d<decimal>]`, compared number by number), not from game
-  data. [story.ts](../packages/package-format/src/story.ts) turns a point in an ordered mission list
-  into consistent picks for all of them.
+  `StatesInfo.mainStory` lists the main story's missions by index in story order, which the
+  extractor reads from their ids (`e<episode>m<mission>[d<decimal>]`, compared number by number),
+  not from game data. [story.ts](../packages/package-format/src/story.ts) turns a point in an
+  ordered mission list into consistent picks for all of them.
 - **drivers**: what sets a control in game according to the level scripts (`ControlDriver`: quests,
   a switch, a trigger area, the script's area, another level, the server, another classified game
   event, or an `unknown` event by its game name), each with the value it sets and a position where
@@ -959,9 +971,6 @@ provenance lives there rather than in the manifest, which only identifies the bu
 - **geometricError** is a placeholder the viewer uses only for request priority; the HLOD rings
   replaced it for refinement.
 - **instance compression**: meshopt filters or quantized rows could roughly halve instance blobs.
-- **references by string**: conditional sets, environment volumes and water volumes name controls by
-  id, and groups and controls name levels by the game's entity-id tag, where the rest of the package
-  uses indices; the viewer's scene state and listings are keyed by both.
 - **entry ids**: table entries repeat their own index as `id`, which the viewer's texture streaming
   passes around.
 - **coalesced reads**: the viewer copies each blob of a coalesced range read into a buffer of its

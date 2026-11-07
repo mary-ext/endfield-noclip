@@ -88,10 +88,14 @@ applies the budget.
   environment.
 - `viewer.manifest` holds levels and controls, and `viewer.scene.pkg.environment` the environment
   table (`volumes`, `phases` with their sections looked up, `posts`); `viewer.currentLevel` is the
-  current level's entry. `await import('/src/environment/derive.ts')` gives `deriveEnvironment` for
-  checking derived values against a profile.
-- scene states: `viewer.sceneValues` (every control), `viewer.scenePicks`,
-  `viewer.conditionResults`, `viewer.setSceneValue(id, value)` (`null` drops the pick).
+  current level's entry and `viewer.currentLevelIndex` its index.
+  `await import('/src/environment/derive.ts')` gives `deriveEnvironment` for checking derived values
+  against a profile.
+- scene states are keyed by control index, the control's position in
+  `viewer.manifest.states.controls` (find one with
+  `controls.findIndex(({ id }) => id === 'quest:…')`): `viewer.sceneValues` (every control's value),
+  `viewer.scenePicks` (a `Map`), `viewer.conditionResults`, `viewer.setSceneValue(index, value)`
+  (`null` drops the pick).
 - stream areas: `viewer.visibleStreamAreas` (the areas shown at the camera, `null` when every area
   shows) and `viewer.options.streamAreas`. the viewer re-runs the trigger test whenever the camera
   moves and re-evaluates conditions when the set changes. above or below every trigger the game

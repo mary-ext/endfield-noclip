@@ -95,10 +95,10 @@ const volumeApplies = (
 /**
  * @param manifest the volume's package manifest
  * @param volume an environment volume
- * @returns the tag of the level that owns it, 0 for scene-wide volumes
+ * @returns the index of the level that owns it, or `null` for scene-wide volumes
  */
-export const volumeLevelTag = (manifest: PackageManifest, volume: EnvironmentVolumeInfo): number =>
-	manifest.states.groups[volume.group]?.levelTag ?? 0;
+export const volumeLevel = (manifest: PackageManifest, volume: EnvironmentVolumeInfo): number | null =>
+	manifest.states.groups[volume.group]?.level ?? null;
 
 /**
  * @param manifest the volume's package manifest
@@ -214,7 +214,7 @@ export const planBlend = (
 	};
 	if (options.pinnedPhase !== null || !options.volumes) {
 		for (const { id, volume } of volumesOf(table)) {
-			const sceneWide = volume.shape.kind === 'global' && volumeLevelTag(manifest, volume) === 0;
+			const sceneWide = volume.shape.kind === 'global' && volumeLevel(manifest, volume) === null;
 			if ((id === environment.volume || sceneWide) && volumeApplies(manifest, volume, options)) {
 				apply(id, volume.name, volume.phase, 1);
 			}
@@ -306,7 +306,7 @@ const VIEW_STEPS = 64;
  * neighbour's environment or only the scene's global one.
  *
  * @param scene the loaded package's environment table and manifest
- * @param level the shown level's tag
+ * @param level the shown level's index
  * @param environment the level's base environment
  * @param target the point the view looks at
  * @param eye the viewpoint
@@ -325,12 +325,14 @@ export const eyeInLevelVolume = (
 	const { manifest } = scene;
 	const volumes = scene.environment.volumes;
 	const applicable = volumes.filter((volume) => volumeApplies(manifest, volume, options));
-	const owner = (volume: EnvironmentVolumeInfo): number => volumeLevelTag(manifest, volume);
 	const own = volumes[environment.volume];
 	if (own === undefined || !volumeApplies(manifest, own, options)) {
 		return null;
 	}
-	const others = applicable.filter((volume) => owner(volume) !== 0 && owner(volume) !== level);
+	const others = applicable.filter((volume) => {
+		const owner = volumeLevel(manifest, volume);
+		return owner !== null && owner !== level;
+	});
 	// time-faded volumes apply fully anywhere inside; keep a metre off the edge
 	const margin = Math.max(own.blend.kind === 'depth' ? own.blend.distance : 0, 1);
 	for (let step = VIEW_STEPS; step >= 0; step--) {

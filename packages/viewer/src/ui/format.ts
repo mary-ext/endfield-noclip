@@ -1,3 +1,4 @@
+import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
 import type { ControlPlace, RuleText, SceneControl } from '@endfield-noclip/package-format/states';
 
 /**
@@ -36,6 +37,12 @@ export const formatCount = (n: number): string => {
  * @returns its message
  */
 export const describeError = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * @param level a package level
+ * @returns its display name, else its id
+ */
+export const levelName = (level: Pick<LevelInfo, 'id' | 'name'>): string => level.name ?? level.id;
 
 /**
  * @param place where a control's content is

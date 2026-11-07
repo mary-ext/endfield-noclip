@@ -23,7 +23,6 @@ import {
 	unityEulerQuaternion,
 } from '@endfield-noclip/formats/unity/transform';
 import { isObject, numberField, objectField, stringField } from '@endfield-noclip/formats/unity/values';
-import type { ConditionalSetInfo, SceneControl } from '@endfield-noclip/package-format/states';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import type { Context } from '../context.ts';
@@ -45,7 +44,13 @@ import type { StructureModel } from './dynamic-structures.ts';
 import { allOf, type Alternatives } from './game-state.ts';
 import { prefabNodeMatrices } from './prefab-nodes.ts';
 import type { PrefabPose } from './prefab.ts';
-import { sceneControl, switchValues, SWITCH_VALUES } from './scene-control.ts';
+import {
+	type Visibility,
+	type DraftControl,
+	sceneControl,
+	switchValues,
+	SWITCH_VALUES,
+} from './scene-control.ts';
 import { progressionControl } from './scenery-variants.ts';
 import { readTelescopicPoses, type TelescopicPoses } from './telescopic-bridge.ts';
 import { isOneShotEffect } from './view-state-effects.ts';
@@ -707,7 +712,7 @@ const ACTIVITY_SNAPSHOT_COMPONENT = 2000;
 /** the id of {@link activityControl} */
 const ACTIVITY_CONTROL_ID = 'activity:snapshot';
 
-const activityControl = (): SceneControl =>
+const activityControl = (): DraftControl =>
 	sceneControl({
 		kind: 'activity',
 		id: ACTIVITY_CONTROL_ID,
@@ -801,7 +806,7 @@ const areaOf = (row: LevelInteractive): string | null => {
 
 /** a placed door and its open/closed control */
 export interface InteractiveDoor {
-	control: SceneControl;
+	control: DraftControl;
 	position: [number, number, number];
 }
 
@@ -817,7 +822,7 @@ export interface InteractiveStandIn {
 	rotation: [number, number, number];
 	scale: [number, number, number];
 	/** when it shows: always, or with its level's `created` control for a row the game creates later */
-	visibility: ConditionalSetInfo;
+	visibility: Visibility;
 }
 
 /**
@@ -854,17 +859,17 @@ export const loadInteractiveFacilities = async (
 	erosionCores: ReadonlyMap<string, Alternatives>,
 ): Promise<{
 	models: StructureModel[];
-	progressions: SceneControl[];
+	progressions: DraftControl[];
 	/** by logic id, the controls of the rows level scripts show and hide, shown as placed */
-	scriptControls: Map<string, SceneControl>;
+	scriptControls: Map<string, DraftControl>;
 	/** per level with rows the game creates later (`createState` ≠ 0), the control that shows them, off */
-	created: SceneControl[];
+	created: DraftControl[];
 	/** the control that shows limited-time event placements, off; empty when the scene has none */
-	activities: SceneControl[];
+	activities: DraftControl[];
 	/** controls of interactives whose look follows the player's presence */
-	proximityControls: SceneControl[];
+	proximityControls: DraftControl[];
 	doors: InteractiveDoor[];
-	bridges: SceneControl[];
+	bridges: DraftControl[];
 	unsupported: { path: string; reason: string }[];
 	standIns: InteractiveStandIn[];
 	/** every placed row's template and position, by logic id */
@@ -915,7 +920,7 @@ export const loadInteractiveFacilities = async (
 		created: string | null;
 	}[] = [];
 	/** by level id, the control of its rows created later */
-	const createdControls = new Map<string, SceneControl>();
+	const createdControls = new Map<string, DraftControl>();
 	/** by level id, its LevelData files, which also hold the splines its moving platforms ride */
 	const levelDataPaths = new Map<string, string[]>();
 	{
@@ -1369,7 +1374,7 @@ export const loadInteractiveFacilities = async (
 
 	// Dijiang's region walls hide once the Control Nexus level unlocks their construction area. one control,
 	// offered at the levels that unlock an area; levels between them change no wall
-	let nexus: { control: SceneControl; unlockOf: Map<string, number> } | null = null;
+	let nexus: { control: DraftControl; unlockOf: Map<string, number> } | null = null;
 	{
 		const walls = placed.filter(({ row }) => regionWalls.has(row.template));
 		const file = walls.length > 0 ? await vfs.find(VfsGroup.Table, AREA_UNLOCK_TABLE) : undefined;
@@ -1401,10 +1406,10 @@ export const loadInteractiveFacilities = async (
 	}
 
 	const models: StructureModel[] = [];
-	const progressions: SceneControl[] = nexus === null ? [] : [nexus.control];
-	const proximityControls: SceneControl[] = [];
+	const progressions: DraftControl[] = nexus === null ? [] : [nexus.control];
+	const proximityControls: DraftControl[] = [];
 	const doors: InteractiveDoor[] = [];
-	const bridges: SceneControl[] = [];
+	const bridges: DraftControl[] = [];
 	const doodadLevels = new Map<string, Set<number>>();
 	const standIns: InteractiveStandIn[] = [];
 	/** by prefab and piece count; `null` when the prefab isn't a readable telescopic bridge (drawn as saved) */
@@ -1467,7 +1472,7 @@ export const loadInteractiveFacilities = async (
 		effect: string;
 		source: string;
 		levelTag: number;
-		visibility: ConditionalSetInfo;
+		visibility: Visibility;
 		/** the world matrix the effect is placed relative to: its model's placement, or its own */
 		frame: Float32Array;
 		/** the model and pose whose GameObject the effect plays on, `null` when placed at {@link frame} itself */
@@ -1538,7 +1543,7 @@ export const loadInteractiveFacilities = async (
 		}
 		return { spline, move };
 	};
-	const scriptControls = new Map<string, SceneControl>();
+	const scriptControls = new Map<string, DraftControl>();
 	// a vertical rope's port finds its other port by id
 	const rowsById = new Map(placed.map(({ row }) => [row.id, row]));
 	// a crane tower starts at its steps and hangs its container from its hook, wherever that was placed
@@ -1651,7 +1656,7 @@ export const loadInteractiveFacilities = async (
 		// a blight core shows while its erosion root or sludge loads, so both go when the core is destroyed
 		const erosion = erosionCores.get(logicId);
 		const switchRequirements = switches.map((control) => ({ control, mask: 2 }));
-		const gate = (visibility: ConditionalSetInfo): ConditionalSetInfo => {
+		const gate = (visibility: Visibility): Visibility => {
 			const alternatives =
 				erosion === undefined ? visibility.alternatives : allOf(visibility.alternatives, erosion);
 			return { alternatives: alternatives.map((requirements) => requirements.concat(switchRequirements)) };
@@ -1675,7 +1680,7 @@ export const loadInteractiveFacilities = async (
 		}
 		const place = (
 			model: { prefab: string; scale: number },
-			shown: ConditionalSetInfo,
+			shown: Visibility,
 			pose: PrefabPose | null,
 		): void => {
 			const visibility = gate(shown);
@@ -1720,7 +1725,7 @@ export const loadInteractiveFacilities = async (
 		// a settled look's model, and the looping effects its states leave playing on it
 		const placeLook = (
 			model: { prefab: string; scale: number },
-			shown: ConditionalSetInfo,
+			shown: Visibility,
 			look: SettledLook,
 		): void => {
 			place(model, shown, look.pose);

@@ -1,17 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { SceneControl } from '@endfield-noclip/package-format/states';
-
-import { derivedSource, sceneControl, SWITCH_VALUES } from '../game/scene-control.ts';
+import { type DraftControl, derivedSource, sceneControl, SWITCH_VALUES } from '../game/scene-control.ts';
 
 import { ControlRegistry } from './control-registry.ts';
 
-const toggle = (id: string, value = 0): SceneControl =>
+const toggle = (id: string, value = 0): DraftControl =>
 	sceneControl({ kind: 'script', id, name: id, values: SWITCH_VALUES, default: value, assumption: '' });
 
 /** a toggle on while every input is on */
-const derive = (registry: ControlRegistry, id: string, inputs: string[]): SceneControl => ({
+const derive = (registry: ControlRegistry, id: string, inputs: string[]): DraftControl => ({
 	...toggle(id),
 	source: derivedSource(
 		registry.condition({ alternatives: [inputs.map((control) => ({ control, mask: 2 }))] }),
@@ -126,6 +124,42 @@ test('defaults resolve registered and extra controls before finishing', () => {
 	assert.deepEqual(registry.defaults([toggle('cabin', 1)]), { cabin: 1, door: 1 });
 	// an input not known yet fails its requirement
 	assert.deepEqual(registry.defaults(), { door: 0 });
+});
+
+test('indexing names controls, levels and categories by index and drops what reads dropped controls', () => {
+	const registry = new ControlRegistry();
+	registry.add(toggle('unused'), toggle('water'), toggle('gated'), derive(registry, 'orphan', ['unused']));
+	registry.keep('water', [3]);
+	shows(registry, 2, 'gated');
+	// the package's levels own tags 1 and 2; tag 3 has no level, so it stands for every level
+	const { states, controlIndex } = registry.index(registry.finish(NOWHERE), {
+		levelTags: [1, 2],
+		missions: [],
+		mainStory: [],
+	});
+	assert.deepEqual(
+		states.controls.map(({ id, category, levels }) => [id, category, levels]),
+		[
+			['water', 0, [0, 1]],
+			['gated', 0, [1]],
+		],
+	);
+	assert.deepEqual(states.conditionalSets, [
+		// the dropped `orphan` read the dropped `unused`, so its set can't hold
+		{ alternatives: [] },
+		{ alternatives: [[{ control: 1, mask: 2 }]] },
+	]);
+	assert.deepEqual(states.groups, [
+		{ level: null, condition: null },
+		{ level: 1, condition: 1 },
+	]);
+	assert.deepEqual(
+		[...controlIndex],
+		[
+			['water', 0],
+			['gated', 1],
+		],
+	);
 });
 
 test('equivalent conditions share a set, and equal owners and conditions a group', () => {

@@ -118,9 +118,9 @@ export class WaterLevels {
 	 * starts moving each volume towards the level its `waterLevel` control picks, at that level's speed, from
 	 * the next {@link update}
 	 *
-	 * @param values every scene control's value
+	 * @param values every scene control's value, by index
 	 */
-	follow(values: Readonly<Record<string, number>>): void {
+	follow(values: readonly number[]): void {
 		for (const [i, volume] of this.#volumes.entries()) {
 			const level = volume.control === null ? undefined : volume.levels[values[volume.control] ?? -1];
 			if (level === undefined || level.fraction === this.#target[i]) {

@@ -4,11 +4,11 @@
  * @module
  */
 
-import type { SceneControl } from '@endfield-noclip/package-format/states';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import type { ReactNode } from 'react';
 
+import type { ListedControl } from '../scene-states/listing.ts';
 import type { Viewer } from '../viewer/viewer.ts';
 
 import { followLabel } from './format.ts';
@@ -101,26 +101,27 @@ export const SceneToggle = ({
  * the value it follows to; otherwise the default is marked "(initial)"
  *
  * @param viewer the loaded scene
- * @param control a scene control
+ * @param entry a scene control and its index
  */
-export const ControlValueSelect = ({ viewer, control }: { viewer: Viewer; control: SceneControl }) => {
-	const value = viewer.sceneValues[control.id] ?? control.default;
-	const picked = control.id in viewer.scenePicks;
+export const ControlValueSelect = ({ viewer, entry }: { viewer: Viewer; entry: ListedControl }) => {
+	const { index, control } = entry;
+	const value = viewer.sceneValues[index] ?? control.default;
+	const picked = viewer.scenePicks.has(index);
 	const follows = followLabel(control);
-	const label = control.values.find((entry) => entry.value === value)?.label ?? String(value);
+	const label = control.values.find((option) => option.value === value)?.label ?? String(value);
 	return (
 		<select
 			value={follows !== null && !picked ? '' : String(value)}
 			onChange={(event) => {
 				const text = event.currentTarget.value;
-				viewer.setSceneValue(control.id, text === '' ? null : Number(text));
+				viewer.setSceneValue(index, text === '' ? null : Number(text));
 			}}
 		>
 			{follows !== null && <option value="">{picked ? follows : `${follows} (${label})`}</option>}
-			{control.values.map((entry) => (
-				<option key={entry.value} value={entry.value}>
-					{entry.label}
-					{follows === null && entry.value === control.default ? ' (initial)' : ''}
+			{control.values.map((option) => (
+				<option key={option.value} value={option.value}>
+					{option.label}
+					{follows === null && option.value === control.default ? ' (initial)' : ''}
 				</option>
 			))}
 		</select>

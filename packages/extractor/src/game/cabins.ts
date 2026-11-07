@@ -8,7 +8,6 @@ import { DynamicData, type ExtraSceneSlot } from '@endfield-noclip/formats/endfi
 import { cellOf, levelOfCell, type LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { isObject } from '@endfield-noclip/formats/unity/values';
-import type { SceneControl } from '@endfield-noclip/package-format/states';
 
 import { unique } from '@mary-ext/array-fns';
 
@@ -18,7 +17,7 @@ import { VfsGroup } from '../hg/vfs.ts';
 import type { AssetResolver } from './assets.ts';
 import type { StructureModel } from './dynamic-structures.ts';
 import { readGrowBoxShutter, readPlantingFieldLevels } from './grow-boxes.ts';
-import { sceneControl, switchValues } from './scene-control.ts';
+import { type DraftControl, sceneControl, switchValues } from './scene-control.ts';
 
 // Dijiang's cabins: rooms the player builds into fixed slots of the spaceship
 // (docs/game-data/scene-states.md#dijiang-cabins). a built cabin's rows are placed at the slot origin, turned
@@ -128,7 +127,7 @@ export const loadCabins = async (
 	context: Pick<Context, 'vfs' | 'resolver'>,
 	slots: readonly { id: string; slot: ExtraSceneSlot }[],
 	partition: LevelPartition | undefined,
-): Promise<{ controls: SceneControl[]; models: StructureModel[]; rooms: CabinRoom[] }> => {
+): Promise<{ controls: DraftControl[]; models: StructureModel[]; rooms: CabinRoom[] }> => {
 	if (slots.length === 0) {
 		return { controls: [], models: [], rooms: [] };
 	}
@@ -191,7 +190,7 @@ export const loadCabins = async (
 		return { controls: [], models: [], rooms: [] };
 	}
 
-	const controls: SceneControl[] = [];
+	const controls: DraftControl[] = [];
 	const placed: StructureModel[] = [];
 	const rooms: CabinRoom[] = [];
 	for (const { id, slot } of slots) {

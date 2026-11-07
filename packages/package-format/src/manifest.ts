@@ -25,7 +25,7 @@ export const PACKAGE_FORMAT = 'endfield-noclip.package';
  * bumped on any incompatible change to the manifest or a table. binary encodings carry their own versions in
  * their headers
  */
-export const PACKAGE_VERSION = 83;
+export const PACKAGE_VERSION = 84;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -79,7 +79,8 @@ export interface PackageManifest {
 	terrain: TerrainInfo | null;
 	/**
 	 * every level of the scene, whether or not the package's subset includes its content; they don't overlap,
-	 * so a viewer shows them all at once. empty for scenes without levels
+	 * so a viewer shows them all at once. `VisibilityGroup.level` and `SceneControl.levels` index this list.
+	 * empty for scenes without levels
 	 */
 	levels: LevelInfo[];
 	states: StatesInfo;
@@ -99,8 +100,6 @@ export interface SceneInfo {
 export interface LevelInfo {
 	/** LevelConfig id, e.g. `map02_lv001` */
 	id: string;
-	/** the id `VisibilityGroup.levelTag` and `SceneControl.levelTags` name the level by */
-	tag: number;
 	name: string | null;
 	/** LevelConfig rect */
 	rect: Rect;

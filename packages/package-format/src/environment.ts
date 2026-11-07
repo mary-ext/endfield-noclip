@@ -157,17 +157,17 @@ export interface EnvironmentVolumeInfo {
 	/** the object's name */
 	name: string;
 	/**
-	 * index into `StatesInfo.groups`: the owning level (tag 0 for scene-wide), the scene states that load it,
+	 * index into `StatesInfo.groups`: the owning level (none for scene-wide), the scene states that load it,
 	 * and its {@link control}. a volume applies wherever it holds the camera, whichever level is shown, once its
 	 * condition holds
 	 */
 	group: number;
 	/**
-	 * the `environmentVolume` control that switches it, which its group requires on; `null` for a volume
-	 * without a phase, which never applies. a `scripted` volume defaults off, since the script that fades it in
-	 * isn't followed, and previews at full strength when on
+	 * index into `StatesInfo.controls` of the `environmentVolume` control that switches it, which its group
+	 * requires on; `null` for a volume without a phase, which never applies. a `scripted` volume defaults off,
+	 * since the script that fades it in isn't followed, and previews at full strength when on
 	 */
-	control: string | null;
+	control: number | null;
 	shape: EnvironmentVolumeShape;
 	blend: EnvironmentBlend;
 	priority: number;

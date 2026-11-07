@@ -103,10 +103,11 @@ export const levelPose = (
 		return fallback;
 	}
 	const target: Vec3 = [cx, floor, cz];
+	const index = ground.manifest.levels.indexOf(level);
 	let best: { position: Vec3; yaw: number; distance: number } | null = null;
 	for (let i = 0; i < VIEW_HEADINGS; i++) {
 		const yaw = (i / VIEW_HEADINGS) * 2 * Math.PI;
-		const position = eyeInLevelVolume(ground, level.tag, base, target, fromHeading(yaw), {
+		const position = eyeInLevelVolume(ground, index, base, target, fromHeading(yaw), {
 			loaded: options.loaded,
 			// over the treetops and the cell's tallest scenery (Yinglung's chasm walls are meshes). holes in the
 			// terrain aren't clear; terrain that isn't resident yet is

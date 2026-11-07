@@ -53,12 +53,7 @@ import {
 	type SubsetInfo,
 } from '@endfield-noclip/package-format/manifest';
 import type { MaterialTable } from '@endfield-noclip/package-format/materials';
-import type {
-	ConditionalSetInfo,
-	ControlDriver,
-	SceneControl,
-	StatesInfo,
-} from '@endfield-noclip/package-format/states';
+import type { ControlDriver, StatesInfo } from '@endfield-noclip/package-format/states';
 import type { StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
 import type { TerrainSplatInfo, TerrainInfo } from '@endfield-noclip/package-format/terrain';
 import type { TextureTable } from '@endfield-noclip/package-format/textures';
@@ -110,10 +105,12 @@ import {
 } from '../game/scene-conditions.ts';
 import {
 	derivedSource,
+	type DraftControl,
 	sceneControl,
 	streamAreaControl,
 	switchValues,
 	SWITCH_VALUES,
+	type Visibility,
 } from '../game/scene-control.ts';
 import { loadProgressions, progressionControl, progressionId } from '../game/scenery-variants.ts';
 import {
@@ -180,7 +177,10 @@ import { packTerrain as packTerrainStep, type TerrainDebug } from './terrain.ts'
 import { TileTreeBuilder } from './tile-tree.ts';
 import {
 	finishWater,
+	hasWaterLevelControl,
+	indexWaterControls,
 	planWater,
+	waterLevelControl,
 	type WaterDebug,
 	type WaterLevelSource,
 	type WaterPlan,
@@ -547,6 +547,10 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 		timer.end('states');
 
 		const [environmentTextureIds, waterTextureIds] = assetTables.extraTextureIds;
+		const environmentTable = finishEnvironments(environments, environmentTextureIds);
+		indexEnvironmentControls(environmentTable, states.controlIndex);
+		const waterTable = finishWater(water, waterTextureIds, instances.rowsOf);
+		indexWaterControls(waterTable, states.controlIndex);
 		const written = await writePackage(
 			pack,
 			assetTables,
@@ -554,8 +558,8 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			{
 				...states,
 				chains: chainOrder.chains,
-				environment: finishEnvironments(environments, environmentTextureIds),
-				water: finishWater(water, waterTextureIds, instances.rowsOf),
+				environment: environmentTable,
+				water: waterTable,
 				lights,
 				irradiance: irradiance?.table ?? {
 					keys: new Uint32Array(),
@@ -914,7 +918,7 @@ const collectEntities = async (
 		/** the HLOD name match, or `null` for other renderers */
 		hlod: RegExpExecArray | null;
 		/** when it loads, `null` for always */
-		visibility: ConditionalSetInfo | null;
+		visibility: Visibility | null;
 		/** whether a scene state gates it, so no HLOD stands in for it */
 		stateGated: boolean;
 	}): void => {
@@ -1161,7 +1165,7 @@ const collectEntities = async (
 	collected.states.add(...dynamic.controls);
 	/** script-controlled dynamic entities' controls by global id */
 	const scripted = new Map(
-		mapDefined(dynamic.controls, (control): [string, SceneControl] | undefined =>
+		mapDefined(dynamic.controls, (control): [string, DraftControl] | undefined =>
 			control.kind === 'script' ? [control.id.slice('script:'.length), control] : undefined,
 		),
 	);
@@ -1183,7 +1187,7 @@ const collectEntities = async (
 		row: InstanceInput,
 		tag: number,
 		name: string,
-		{ visibility, loadGrid }: { visibility: ConditionalSetInfo; loadGrid: number | null },
+		{ visibility, loadGrid }: { visibility: Visibility; loadGrid: number | null },
 	): void => {
 		const [x, , z] = row.bounds.center;
 		const key = tileAt(grid, grid.leafLevel, x, z);
@@ -1208,7 +1212,7 @@ const collectEntities = async (
 			matrix: Float32Array;
 			tag: number;
 			entityId: number;
-			visibility: ConditionalSetInfo;
+			visibility: Visibility;
 			/** see {@link addStructure} */
 			loadGrid: number | null;
 		},
@@ -1316,7 +1320,7 @@ const collectEntities = async (
 	);
 	counts.interactiveFacilities = facilities.progressions.length;
 	/** proximity controls of the trigger volumes script groups follow */
-	const volumeProximities: SceneControl[] = [];
+	const volumeProximities: DraftControl[] = [];
 	{
 		for (const [id, control] of facilities.scriptControls) {
 			if (!scripted.has(id)) {
@@ -1738,7 +1742,7 @@ const collectEntities = async (
 const defaultValues = (
 	scene: Pick<SceneIndex, 'sceneStates' | 'game'>,
 	collected: Collector,
-	progressions: readonly SceneControl[],
+	progressions: readonly DraftControl[],
 ): Record<string, number> => {
 	const enabled = defaultSceneStates(scene.sceneStates, scene.game);
 	const states = new Set([...collected.states.sceneStates, ...scene.sceneStates.map(({ index }) => index)]);
@@ -1758,7 +1762,7 @@ const defaultValues = (
 const progressionControls = async (
 	world: WorldIndex,
 	scene: Pick<SceneIndex, 'options'>,
-): Promise<SceneControl[]> =>
+): Promise<DraftControl[]> =>
 	(await loadProgressions(world, scene.options.scene)).map((progression) =>
 		progressionControl(
 			progression.kind,
@@ -1802,9 +1806,9 @@ const gateByScene = (
 			volume.group = states.groupOf(levelTag, loads);
 			continue;
 		}
+		// the volume's control index is known once the package's controls are (see `indexEnvironmentControls`)
 		const control = environmentVolumeControl(i, volume);
 		states.add(control);
-		volume.control = control.id;
 		const on = [[{ control: control.id, mask: 2 }]];
 		volume.group = states.groupOf(levelTag, {
 			alternatives: loads === null ? on : allOf(loads.alternatives, on),
@@ -1846,15 +1850,44 @@ const gateByScene = (
 };
 
 /**
- * @param index the volume's manifest index
+ * @param index the volume's index in the environment table
+ * @returns the id of the control switching it
+ */
+const environmentVolumeControlId = (index: number): string => `environmentVolume:${index}`;
+
+/**
+ * points each environment volume with a phase at the control switching it; the volumes are modified in place
+ *
+ * @param environment the environment table
+ * @param controlIndex by control id, the package's index of each control
+ * @throws {Error} if a volume's control isn't among the package's
+ */
+const indexEnvironmentControls = (
+	environment: EnvironmentTable,
+	controlIndex: ReadonlyMap<string, number>,
+): void => {
+	for (const [i, volume] of environment.volumes.entries()) {
+		if (volume.phase !== null) {
+			const id = environmentVolumeControlId(i);
+			const index = controlIndex.get(id);
+			if (index === undefined) {
+				throw new Error(`environment volume control ${id} isn't among the package's controls`);
+			}
+			volume.control = index;
+		}
+	}
+};
+
+/**
+ * @param index the volume's index in the environment table
  * @param volume an environment volume with a phase
  * @returns the control that switches it: on by default, except a scripted (mode 3) volume, whose script isn't
  *   followed
  */
-const environmentVolumeControl = (index: number, volume: EnvironmentVolumeInfo): SceneControl =>
+const environmentVolumeControl = (index: number, volume: EnvironmentVolumeInfo): DraftControl =>
 	sceneControl({
 		kind: 'environmentVolume',
-		id: `environmentVolume:${index}`,
+		id: environmentVolumeControlId(index),
 		name: volume.name,
 		values: SWITCH_VALUES,
 		default: volume.blend.kind === 'scripted' ? 0 : 1,
@@ -1881,8 +1914,8 @@ const waterLevelControlOf = (
 		drains: readonly WaterDrain[];
 		position: Vec3;
 	},
-): SceneControl | null => {
-	if (volume.control === null) {
+): DraftControl | null => {
+	if (!hasWaterLevelControl(volume)) {
 		return null;
 	}
 	const found: ControlDriver[] = [];
@@ -1915,7 +1948,7 @@ const waterLevelControlOf = (
 	}
 	return sceneControl({
 		kind: 'waterLevel',
-		id: volume.control,
+		id: waterLevelControl(volume.entityId),
 		name: `${pumped ? 'Pool' : 'Water volume'} ${volume.entityId}`,
 		values: volume.levels.map(({ fraction }, value) => {
 			const tags = definite([
@@ -2165,6 +2198,8 @@ const packInstances = async (
 /** the manifest's levels and scenery states */
 interface SceneStateInfo extends StatesInfo {
 	levels: LevelInfo[];
+	/** by control id, the index of each of the package's controls */
+	controlIndex: ReadonlyMap<string, number>;
 }
 
 const sceneStates = async (
@@ -2206,20 +2241,21 @@ const sceneStates = async (
 		}
 	}
 	const locator = await Locator.load(world, partition);
-	const { controls, categories } = states.finish({
+	const finished = states.finish({
 		groupBounds: collected.groupBounds(),
 		locate: (position) => locator.locate(position),
 	});
-	const missions = await labelStory(world, controls);
-	return {
-		levels,
-		categories,
-		controls,
-		conditionalSets: states.conditions,
-		groups: states.groups,
-		streamAreas: await streamAreasInfo(world, scene.options.scene, states.areas),
+	const missions = await labelStory(world, finished.controls);
+	const indexed = states.index(finished, {
+		levelTags: (partition?.levels ?? []).map(({ tag }) => tag),
 		missions,
 		mainStory: mainStoryOrder(missions),
+	});
+	return {
+		levels,
+		...indexed.states,
+		streamAreas: await streamAreasInfo(world, scene.options.scene, states.areas),
+		controlIndex: indexed.controlIndex,
 	};
 };
 
@@ -2667,7 +2703,7 @@ class Collector {
 		key: TileKey,
 		row: InstanceInput,
 		name: string,
-		{ visibility, file, grid }: { visibility: ConditionalSetInfo; file: number; grid: number | null },
+		{ visibility, file, grid }: { visibility: Visibility; file: number; grid: number | null },
 	): void {
 		this.#addDetail(
 			{ visibility: this.states.groupOf(level, visibility), conditional: true, grid },
@@ -2784,7 +2820,6 @@ const levelInfo = (
 	const { config } = level;
 	return {
 		id: level.id,
-		tag: level.tag,
 		name: scene.names.get(level.id) ?? null,
 		rect: {
 			minX: config.rectLeftBottom[0],

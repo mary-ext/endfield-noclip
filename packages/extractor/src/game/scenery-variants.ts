@@ -1,13 +1,12 @@
 import type { DynamicController, DynamicEntity } from '@endfield-noclip/formats/endfield/dynamic-scene';
 import { levelOfTag, type LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import type { StreamAreaTable } from '@endfield-noclip/formats/endfield/stream-area';
-import type { SceneControl } from '@endfield-noclip/package-format/states';
 
 import { groupByDefined, mapDefined } from '@mary-ext/array-fns';
 
 import { mapPool } from '../pool.ts';
 
-import { sceneControl } from './scene-control.ts';
+import { type DraftControl, sceneControl } from './scene-control.ts';
 import type { ChunkFile, WorldIndex } from './world-index.ts';
 
 // the catalogue behind `variants <scene>`: a scene's stream areas (docs/game-data/world.md#stream-areas) and
@@ -321,7 +320,7 @@ export const progressionControl = (
 	levels: readonly number[],
 	initial: number,
 	assumption: string,
-): SceneControl => {
+): DraftControl => {
 	// facility form numbers are list positions, not upgrade levels
 	// (docs/game-data/scene-states.md#facility-visual-forms)
 	const unit = kind === 'facility' ? 'Visual form' : kind === 'doodadGroups' ? 'Group level' : 'Level';

@@ -5,14 +5,9 @@ import type {
 	SceneCondition,
 } from '@endfield-noclip/formats/endfield/map-config';
 import { conditionVisible } from '@endfield-noclip/package-format/conditions';
-import type {
-	RuleText,
-	SceneControl,
-	SceneControlValue,
-	SceneRequirement,
-} from '@endfield-noclip/package-format/states';
+import type { SceneControlValue } from '@endfield-noclip/package-format/states';
 
-import { sceneControl } from './scene-control.ts';
+import { sceneControl, type DraftControl, type DraftRuleText, type Requirement } from './scene-control.ts';
 
 // shares quest, mission and variable controls across MapConfig conditions and dynamic load gates.
 // conditions are disjunctions of conjunctions. defaults: docs/extraction/scene-controls.md#defaults.
@@ -145,7 +140,7 @@ const compare = (value: number, op: CompareOperator, target: number): boolean =>
 // #region requirement algebra
 
 /** a disjunction of conjunctions of required control values; `[]` is false, `[[]]` true */
-export type Alternatives = SceneRequirement[][];
+export type Alternatives = Requirement[][];
 
 /** beyond this, a condition is reported rather than expanded */
 const MAX_ALTERNATIVES = 4096;
@@ -329,7 +324,7 @@ export class GameState {
 	 * @returns it in words, referring to the controls it reads: a quest's or mission's, a variable's, or the
 	 *   progression a linked mission stands for
 	 */
-	describe(condition: GameCondition): RuleText {
+	describe(condition: GameCondition): DraftRuleText {
 		switch (condition.kind) {
 			case 'quest':
 			case 'mission': {
@@ -352,7 +347,7 @@ export class GameState {
 			}
 			case 'all':
 			case 'any': {
-				const parts: RuleText = [condition.reverse ? 'not (' : '('];
+				const parts: DraftRuleText = [condition.reverse ? 'not (' : '('];
 				for (const [i, child] of condition.conditions.entries()) {
 					if (i > 0) {
 						parts.push(condition.kind === 'all' ? ' and ' : ' or ');
@@ -379,8 +374,8 @@ export class GameState {
 	}
 
 	/** @returns one control per quest, mission and variable a translated condition reads, by id */
-	controls(): SceneControl[] {
-		const controls: SceneControl[] = [];
+	controls(): DraftControl[] {
+		const controls: DraftControl[] = [];
 		for (const [id, kind] of this.#quests) {
 			const values = STATE_NAMES.map((label, value) => ({ value, label })).filter(
 				({ value }) => kind === 'mission' || value !== 1,

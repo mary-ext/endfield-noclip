@@ -1,6 +1,5 @@
 import type { ChunkEntity } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
-import type { SceneRequirement } from '@endfield-noclip/package-format/states';
 
 import type { Context } from '../context.ts';
 
@@ -9,6 +8,7 @@ import { loadDynamicStructures, type StructureModel } from './dynamic-structures
 import { GameState, type Alternatives } from './game-state.ts';
 import { loadInteractiveFacilities, type InteractiveStandIn } from './interactive-facilities.ts';
 import { loadMapVariables } from './scene-conditions.ts';
+import type { Requirement } from './scene-control.ts';
 import { loadUpgradeLinks } from './settlement-upgrades.ts';
 import { pivotOf, type IndexedEntity } from './world-index.ts';
 
@@ -90,7 +90,7 @@ export const describeAlternatives = (alternatives: Alternatives): string => {
 	return unique.join(' | ');
 };
 
-const describeRequirement = ({ control, mask }: SceneRequirement): string => {
+const describeRequirement = ({ control, mask }: Requirement): string => {
 	const values: number[] = [];
 	for (let bit = 0; bit < 32; bit++) {
 		if ((mask >>> bit) & 1) {

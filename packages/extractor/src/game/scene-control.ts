@@ -1,15 +1,54 @@
 import type {
+	CameraTest,
 	ControlCategory,
 	ControlDriver,
-	ControlSource,
-	RuleText,
 	SceneControl,
 	SceneControlValue,
+	StoryPlace,
 } from '@endfield-noclip/package-format/states';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 // the package's control sections, and which mechanism (control kind) lists under which; see
 // docs/extraction/scene-controls.md. a new mechanism adds its kind here
+
+// #region drafts
+
+// mechanisms build controls and visibility naming controls by id, levels by tag and categories and missions by
+// id, since which controls a package keeps and in what order is only known once they are all registered. the
+// control registry turns the drafts into the package's indexed form
+
+/** a required value of a control named by id */
+export interface Requirement {
+	control: string;
+	/** bit n set means value n satisfies it */
+	mask: number;
+}
+
+/** a visibility expression over controls named by id: any alternative with every requirement met holds */
+export interface Visibility {
+	alternatives: Requirement[][];
+}
+
+/** a rule in words, its references naming controls by id */
+export type DraftRuleText = (string | { control: string; text: string })[];
+
+/** a control's source; a derived control's `condition` indexes the registry's conditions */
+export type DraftControlSource =
+	| { kind: 'user' }
+	| { kind: 'derived'; condition: number; rule: DraftRuleText }
+	| { kind: 'camera'; test: CameraTest };
+
+/** a scene control before indexing: category and mission by id, levels by tag */
+export interface DraftControl extends Omit<SceneControl, 'category' | 'source' | 'levels' | 'story'> {
+	/** a {@link CONTROL_CATEGORIES} id */
+	category: string;
+	source: DraftControlSource;
+	/** level tags whose content (or derived controls) it gates; the registry fills them in */
+	levelTags: number[];
+	story: (Omit<StoryPlace, 'mission'> & { mission: string }) | null;
+}
+
+// #endregion
 
 /** the package's control sections, in listing order */
 export const CONTROL_CATEGORIES: readonly ControlCategory[] = [
@@ -106,7 +145,7 @@ export const switchValues = (off: string, on: string): SceneControlValue[] => [
  * @param rule the game's rule in words
  * @returns the source of a control that follows that formula
  */
-export const derivedSource = (condition: number, rule: RuleText): ControlSource => ({
+export const derivedSource = (condition: number, rule: DraftRuleText): DraftControlSource => ({
 	kind: 'derived',
 	condition,
 	rule,
@@ -126,10 +165,10 @@ export const sceneControl = (fields: {
 	values: readonly SceneControlValue[];
 	default: number;
 	assumption: string;
-	source?: ControlSource;
+	source?: DraftControlSource;
 	drivers?: ControlDriver[];
 	position?: Readonly<Vec3>;
-}): SceneControl => {
+}): DraftControl => {
 	const category = CATEGORY_OF_KIND[fields.kind];
 	if (category === undefined) {
 		throw new Error(`scene control kind ${fields.kind} has no category`);

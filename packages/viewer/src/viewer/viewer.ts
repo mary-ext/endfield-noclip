@@ -355,7 +355,7 @@ export class Viewer {
 	/** @returns the phases the volumes listed for the current level apply, for pinning one: index and name */
 	environmentPhases(): { index: number; name: string }[] {
 		const pkg = this.scene?.pkg;
-		const level = this.#level;
+		const level = this.currentLevelIndex;
 		if (pkg === undefined || level === null) {
 			return [];
 		}
@@ -469,17 +469,23 @@ export class Viewer {
 		return this.#level;
 	}
 
+	/** @returns {@link currentLevel} 's index into the manifest's levels, or `null` */
+	get currentLevelIndex(): number | null {
+		const index = this.#level === null ? -1 : (this.manifest?.levels.indexOf(this.#level) ?? -1);
+		return index === -1 ? null : index;
+	}
+
 	// #endregion
 
 	// #region scene states
 
-	/** @returns every scene control's current value */
-	get sceneValues(): Readonly<Record<string, number>> {
+	/** @returns every scene control's current value, by index into the manifest's controls */
+	get sceneValues(): readonly number[] {
 		return this.#sceneState.values;
 	}
 
-	/** @returns the values the user picked, by control id; other controls follow their default or formula */
-	get scenePicks(): Readonly<Record<string, number>> {
+	/** @returns the values the user picked, by control index; other controls follow their default or formula */
+	get scenePicks(): ReadonlyMap<number, number> {
 		return this.#sceneState.picks;
 	}
 
@@ -502,20 +508,20 @@ export class Viewer {
 	}
 
 	/**
-	 * @param id a scene control's id
+	 * @param control a scene control's index into the manifest's controls
 	 * @param value one of its values, or `null` to drop the pick so it follows its default or formula again
 	 */
-	setSceneValue(id: string, value: number | null): void {
-		this.setSceneValues({ [id]: value });
+	setSceneValue(control: number, value: number | null): void {
+		this.setSceneValues(new Map([[control, value]]));
 	}
 
 	/**
 	 * sets several controls at once, re-evaluating visibility once
 	 *
-	 * @param values by control id, one of its values or `null` to drop the pick; unknown controls and values
+	 * @param values by control index, one of its values or `null` to drop the pick; unknown controls and values
 	 *   are ignored
 	 */
-	setSceneValues(values: Readonly<Record<string, number | null>>): void {
+	setSceneValues(values: ReadonlyMap<number, number | null>): void {
 		if (!this.#sceneState.pick(values)) {
 			return;
 		}

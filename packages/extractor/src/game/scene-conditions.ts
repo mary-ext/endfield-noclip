@@ -1,5 +1,3 @@
-import type { ConditionalSetInfo, SceneControl } from '@endfield-noclip/package-format/states';
-
 import { mapDefined } from '@mary-ext/array-fns';
 
 import {
@@ -9,7 +7,13 @@ import {
 	type GameState,
 	type MapVariables,
 } from './game-state.ts';
-import { derivedSource, sceneControl, SWITCH_VALUES } from './scene-control.ts';
+import {
+	type Visibility,
+	type DraftControl,
+	derivedSource,
+	sceneControl,
+	SWITCH_VALUES,
+} from './scene-control.ts';
 import type { WorldIndex } from './world-index.ts';
 
 // MapConfig scene states and the conditions that switch them; see
@@ -83,8 +87,8 @@ export const defaultSceneStates = (states: readonly SceneStateDefinition[], game
 export const sceneStateControls = (
 	states: readonly SceneStateDefinition[],
 	game: GameState,
-	intern: (formula: ConditionalSetInfo) => number,
-): SceneControl[] =>
+	intern: (formula: Visibility) => number,
+): DraftControl[] =>
 	states.map(({ index, name, condition }) =>
 		sceneControl({
 			kind: 'sceneState',
@@ -107,7 +111,7 @@ export const sceneStateControls = (
  * @param index a scene state index no MapConfig names
  * @returns a control for it, off
  */
-export const unnamedSceneStateControl = (index: number): SceneControl =>
+export const unnamedSceneStateControl = (index: number): DraftControl =>
 	sceneControl({
 		kind: 'sceneState',
 		id: sceneStateControl(index),

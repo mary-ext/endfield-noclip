@@ -1,8 +1,9 @@
 import type { MissionRuntime } from '@endfield-noclip/formats/endfield/mission-runtime';
-import type { MissionInfo, QuestRef, SceneControl } from '@endfield-noclip/package-format/states';
+import type { MissionInfo, QuestRef } from '@endfield-noclip/package-format/states';
 
 import { definite, mapDefined } from '@mary-ext/array-fns';
 
+import type { DraftControl } from './scene-control.ts';
 import type { WorldIndex } from './world-index.ts';
 
 // names quest and mission controls from the game's mission definitions and English text. a quest's id is its
@@ -38,7 +39,7 @@ const CHAPTERS = new Map([
  */
 export const labelStory = async (
 	world: WorldIndex,
-	controls: readonly SceneControl[],
+	controls: readonly DraftControl[],
 ): Promise<MissionInfo[]> => {
 	const text = await world.text();
 	const plain = (key: string | null): string | null => {

@@ -13,34 +13,33 @@ const COMPLETED = 3;
 
 /**
  * @param controls a package's controls
- * @param missions mission ids in story order
+ * @param missions `StatesInfo.missions` indices in story order
  * @param point where the story stands
- * @returns picks for the missions' quest and mission controls: missions before the point completed, after it
- *   not started; in its mission, quests before its step completed, at it in progress and after it not
- *   started. `null` drops a pick, so the finished story (the default) clears them. quests without a step are
- *   left alone
+ * @returns picks by control index for the missions' quest and mission controls: missions before the point
+ *   completed, after it not started; in its mission, quests before its step completed, at it in progress and
+ *   after it not started. `null` drops a pick, so the finished story (the default) clears them. quests
+ *   without a step are left alone
  */
 export const storyPointPicks = (
 	controls: readonly SceneControl[],
-	missions: readonly string[],
+	missions: readonly number[],
 	point: StoryPoint,
-): Record<string, number | null> => {
-	const picks: Record<string, number | null> = {};
-	for (const control of controls) {
-		const { story } = control;
+): Map<number, number | null> => {
+	const picks = new Map<number, number | null>();
+	for (const [i, { story }] of controls.entries()) {
 		const index = story === null ? -1 : missions.indexOf(story.mission);
 		if (story === null || index === -1) {
 			continue;
 		}
 		if (point === null) {
-			picks[control.id] = null;
+			picks.set(i, null);
 		} else if (index !== point.mission) {
-			picks[control.id] = index < point.mission ? COMPLETED : NONE;
+			picks.set(i, index < point.mission ? COMPLETED : NONE);
 		} else if (story.role === 'mission') {
-			picks[control.id] = PROCESSING;
-		} else if (story.step != null) {
+			picks.set(i, PROCESSING);
+		} else if (story.step !== null) {
 			const { step } = story;
-			picks[control.id] = step < point.step ? COMPLETED : step === point.step ? PROCESSING : NONE;
+			picks.set(i, step < point.step ? COMPLETED : step === point.step ? PROCESSING : NONE);
 		}
 	}
 	return picks;
@@ -48,21 +47,22 @@ export const storyPointPicks = (
 
 /**
  * @param controls a package's controls
- * @param missions mission ids in story order
+ * @param missions `StatesInfo.missions` indices in story order
  * @returns the points that tell the controls apart: each mission's start and each step quest controls sit at,
- *   in order, with the quests at that step (several off-flow quests can share one), then the finished story
+ *   in order, with the mission and the quests at that step (several off-flow quests can share one), then the
+ *   finished story, whose mission is `null`
  */
 export const storyPoints = (
 	controls: readonly SceneControl[],
-	missions: readonly string[],
-): { point: StoryPoint; mission: string; quests: SceneControl[] }[] => {
-	const points: { point: StoryPoint; mission: string; quests: SceneControl[] }[] = [];
+	missions: readonly number[],
+): { point: StoryPoint; mission: number | null; quests: SceneControl[] }[] => {
+	const points: { point: StoryPoint; mission: number | null; quests: SceneControl[] }[] = [];
 	for (const [index, mission] of missions.entries()) {
 		points.push({ point: { mission: index, step: 0 }, mission, quests: [] });
 		const steps = Map.groupBy(
 			controls.filter(
 				(control) =>
-					control.story?.role === 'quest' && control.story.mission === mission && control.story.step != null,
+					control.story?.role === 'quest' && control.story.mission === mission && control.story.step !== null,
 			),
 			(control) => control.story?.step ?? 0,
 		);
@@ -70,6 +70,6 @@ export const storyPoints = (
 			points.push({ point: { mission: index, step }, mission, quests });
 		}
 	}
-	points.push({ point: null, mission: '', quests: [] });
+	points.push({ point: null, mission: null, quests: [] });
 	return points;
 };

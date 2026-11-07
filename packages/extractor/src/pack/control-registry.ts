@@ -1,21 +1,30 @@
-import { resolveSceneValues } from '@endfield-noclip/package-format/conditions';
+import { conditionVisible } from '@endfield-noclip/package-format/conditions';
 import type {
 	ConditionalSetInfo,
 	ControlCategory,
+	MissionInfo,
+	RuleText,
 	SceneControl,
+	StatesInfo,
 	VisibilityGroup,
 } from '@endfield-noclip/package-format/states';
 import type { Bounds, Vec3 } from '@endfield-noclip/package-format/values';
 
 import { sceneStateControl } from '../game/scene-conditions.ts';
-import { CONTROL_CATEGORIES } from '../game/scene-control.ts';
+import {
+	CONTROL_CATEGORIES,
+	type DraftControl,
+	type DraftRuleText,
+	type Visibility,
+} from '../game/scene-control.ts';
 import type { ChunkSource } from '../game/world-index.ts';
 
 import { sourceVisibility } from './chunk-sources.ts';
 
 // one owner for a package's scene controls, conditional sets and visibility groups (docs/package-format.md#conditions).
 // mechanisms register controls in any order; finish() orders derived controls after the controls they read,
-// keeps only the controls something consumes, and fills in their level tags and derived defaults
+// keeps only the controls something consumes, and fills in their level tags and derived defaults; index()
+// then turns ids and tags into the package's indices
 
 /**
  * beyond this width or depth (metres), a control's content counts as spread over the scene, so a box around
@@ -55,7 +64,7 @@ const spread = (into: Reach, tags: Iterable<number>, bounds: Bounds | null): voi
 };
 
 /** a control's inputs: the controls its formula reads */
-const inputsOf = (control: SceneControl, conditions: readonly ConditionalSetInfo[]): Set<string> => {
+const inputsOf = (control: DraftControl, conditions: readonly Visibility[]): Set<string> => {
 	const inputs = new Set<string>();
 	if (control.source.kind === 'derived') {
 		for (const requirements of conditions[control.source.condition]?.alternatives ?? []) {
@@ -67,15 +76,37 @@ const inputsOf = (control: SceneControl, conditions: readonly ConditionalSetInfo
 	return inputs;
 };
 
+/**
+ * @param map indices by key
+ * @param key a key
+ * @param what what the key names, for the error
+ * @returns its index
+ * @throws {Error} if the key has none
+ */
+const indexOf = <K>(map: ReadonlyMap<K, number>, key: K, what: string): number => {
+	const index = map.get(key);
+	if (index === undefined) {
+		throw new Error(`${what} ${String(key)} isn't listed`);
+	}
+	return index;
+};
+
+/** a visibility group before indexing: its owner by level tag, 0 for shared content */
+export interface DraftGroup {
+	levelTag: number;
+	/** index into the registry's conditions, or `null` for content that always loads */
+	condition: number | null;
+}
+
 /** the scene controls, conditional sets and visibility groups of one package */
 export class ControlRegistry {
-	readonly conditions: ConditionalSetInfo[] = [];
-	readonly groups: VisibilityGroup[] = [];
+	readonly conditions: Visibility[] = [];
+	readonly groups: DraftGroup[] = [];
 	/** MapConfig scene state indices some visibility expression requires */
 	readonly sceneStates = new Set<number>();
 	/** stream areas some visibility expression requires */
 	readonly areas = new Set<number>();
-	readonly #controls = new Map<string, SceneControl>();
+	readonly #controls = new Map<string, DraftControl>();
 	/** controls consumed by something other than a visibility group (water levels), with its level tags */
 	readonly #kept = new Map<string, Set<number>>();
 	readonly #conditionIds = new Map<string, number>();
@@ -93,7 +124,7 @@ export class ControlRegistry {
 	 *   defaults when finishing
 	 * @throws {Error} if a control's id is already registered
 	 */
-	add(...controls: SceneControl[]): void {
+	add(...controls: DraftControl[]): void {
 		for (const control of controls) {
 			if (this.#controls.has(control.id)) {
 				throw new Error(`duplicate scene control ${control.id}`);
@@ -106,7 +137,7 @@ export class ControlRegistry {
 	 * @param id a control id
 	 * @returns the registered control, or `undefined`
 	 */
-	get(id: string): SceneControl | undefined {
+	get(id: string): DraftControl | undefined {
 		return this.#controls.get(id);
 	}
 
@@ -130,12 +161,12 @@ export class ControlRegistry {
 	 * @returns every control's default value, derived controls evaluated after their inputs; a derived control
 	 *   whose input isn't known reads it as missing, which fails its requirement
 	 */
-	defaults(extra: readonly SceneControl[] = []): Record<string, number> {
+	defaults(extra: readonly DraftControl[] = []): Record<string, number> {
 		const all = new Map(extra.map((control) => [control.id, control]));
 		for (const [id, control] of this.#controls) {
 			all.set(id, control);
 		}
-		return resolveSceneValues({ controls: this.#ordered(all, false), conditionalSets: this.conditions }, {});
+		return this.#defaultsOf(this.#ordered(all, false));
 	}
 
 	/**
@@ -152,7 +183,7 @@ export class ControlRegistry {
 	finish(options: {
 		groupBounds: ReadonlyMap<number, Bounds>;
 		locate: (position: Readonly<Vec3>) => string | null;
-	}): { controls: SceneControl[]; categories: ControlCategory[] } {
+	}): { controls: DraftControl[]; categories: ControlCategory[] } {
 		const ordered = this.#ordered(this.#controls, true);
 		/** per control, the levels and the box of what it gates */
 		const reaches = new Map<string, Reach>();
@@ -193,7 +224,7 @@ export class ControlRegistry {
 			const position = control.place?.position ?? (bounds && local(bounds) ? centre(bounds) : null);
 			control.place = position === null ? null : { position, bounds, label: options.locate(position) };
 		}
-		const values = resolveSceneValues({ controls: used, conditionalSets: this.conditions }, {});
+		const values = this.#defaultsOf(used);
 		for (const control of used) {
 			if (control.source.kind === 'derived') {
 				control.default = values[control.id];
@@ -207,14 +238,107 @@ export class ControlRegistry {
 	}
 
 	/**
+	 * the package's form of the finished controls, conditions and groups: controls, levels, categories and
+	 * missions named by index. an alternative requiring a control that wasn't kept can't hold, so it's dropped
+	 *
+	 * @param finished what {@link finish} returned, story places filled in
+	 * @param options.levelTags per package level, its tag. a tag of no level stands for content every level
+	 *   shows
+	 * @param options.missions the missions story places name, in package order
+	 * @param options.mainStory the main story's mission ids in story order
+	 * @returns the indexed states, and by control id the index of each kept control
+	 * @throws {Error} if a story place names a mission not listed, or a category isn't among the finished ones
+	 */
+	index(
+		finished: { controls: readonly DraftControl[]; categories: readonly ControlCategory[] },
+		options: { levelTags: readonly number[]; missions: readonly MissionInfo[]; mainStory: readonly string[] },
+	): {
+		states: Pick<
+			StatesInfo,
+			'categories' | 'controls' | 'conditionalSets' | 'groups' | 'missions' | 'mainStory'
+		>;
+		controlIndex: ReadonlyMap<string, number>;
+	} {
+		const controlIndex = new Map(finished.controls.map((control, index) => [control.id, index]));
+		const levelOfTag = new Map(options.levelTags.map((tag, index) => [tag, index]));
+		const everyLevel = options.levelTags.map((_, index) => index);
+		const missionIndex = new Map(options.missions.map((mission, index) => [mission.id, index]));
+		const categoryIndex = new Map(finished.categories.map((category, index) => [category.id, index]));
+		const rule = (text: DraftRuleText): RuleText =>
+			text.map((part) =>
+				typeof part === 'string'
+					? part
+					: { control: controlIndex.get(part.control) ?? null, text: part.text },
+			);
+		const levels = (tags: readonly number[]): number[] => {
+			const indices = new Set<number>();
+			for (const tag of tags) {
+				const level = levelOfTag.get(tag);
+				if (level === undefined) {
+					return everyLevel;
+				}
+				indices.add(level);
+			}
+			return [...indices].toSorted((a, b) => a - b);
+		};
+		const controls = finished.controls.map((draft): SceneControl => {
+			const { category, source, levelTags, story, ...rest } = draft;
+			return {
+				...rest,
+				category: indexOf(categoryIndex, category, 'category'),
+				source: source.kind === 'derived' ? { ...source, rule: rule(source.rule) } : source,
+				levels: levels(levelTags),
+				story: story === null ? null : { ...story, mission: indexOf(missionIndex, story.mission, 'mission') },
+			};
+		});
+		const conditionalSets = this.conditions.map((condition): ConditionalSetInfo => ({
+			alternatives: condition.alternatives.flatMap((requirements) =>
+				requirements.every(({ control }) => controlIndex.has(control))
+					? [requirements.map(({ control, mask }) => ({ control: controlIndex.get(control)!, mask }))]
+					: [],
+			),
+		}));
+		const groups = this.groups.map(({ levelTag, condition }): VisibilityGroup => ({
+			level: levelOfTag.get(levelTag) ?? null,
+			condition,
+		}));
+		return {
+			states: {
+				categories: [...finished.categories],
+				controls,
+				conditionalSets,
+				groups,
+				missions: [...options.missions],
+				mainStory: options.mainStory.map((id) => indexOf(missionIndex, id, 'mission')),
+			},
+			controlIndex,
+		};
+	}
+
+	/** @returns the controls' default values, each derived control's from its formula; in input order */
+	#defaultsOf(controls: readonly DraftControl[]): Record<string, number> {
+		const values: Record<string, number> = {};
+		for (const control of controls) {
+			const { source } = control;
+			if (source.kind === 'derived') {
+				const formula = this.conditions[source.condition];
+				values[control.id] = Number(formula !== undefined && conditionVisible(formula, values));
+			} else {
+				values[control.id] = control.default;
+			}
+		}
+		return values;
+	}
+
+	/**
 	 * @param strict whether an unknown input throws rather than being skipped
 	 * @returns the controls in registration order, each moved after the controls it reads
 	 */
-	#ordered(controls: ReadonlyMap<string, SceneControl>, strict: boolean): SceneControl[] {
-		const ordered: SceneControl[] = [];
+	#ordered(controls: ReadonlyMap<string, DraftControl>, strict: boolean): DraftControl[] {
+		const ordered: DraftControl[] = [];
 		const done = new Set<string>();
 		const visiting = new Set<string>();
-		const visit = (control: SceneControl): void => {
+		const visit = (control: DraftControl): void => {
 			if (done.has(control.id)) {
 				return;
 			}
@@ -248,7 +372,7 @@ export class ControlRegistry {
 	 * @param visibility a visibility expression
 	 * @returns its index in {@link conditions}, shared by equivalent expressions
 	 */
-	condition(visibility: ConditionalSetInfo): number {
+	condition(visibility: Visibility): number {
 		// canonical order at both levels, so equivalent expressions share one set
 		const alternatives = [
 			...new Map(
@@ -284,7 +408,7 @@ export class ControlRegistry {
 	 * @param visibility when the content loads, `null` for always
 	 * @returns its visibility group
 	 */
-	groupOf(levelTag: number, visibility: ConditionalSetInfo | null): number {
+	groupOf(levelTag: number, visibility: Visibility | null): number {
 		return this.group(levelTag, visibility === null ? null : this.condition(visibility));
 	}
 
@@ -292,7 +416,7 @@ export class ControlRegistry {
 	 * @param indices MapConfig scene state indices
 	 * @returns visibility while any of them is active
 	 */
-	stateVisibility(indices: readonly number[]): ConditionalSetInfo {
+	stateVisibility(indices: readonly number[]): Visibility {
 		for (const index of indices) {
 			this.sceneStates.add(index);
 		}
@@ -303,7 +427,7 @@ export class ControlRegistry {
 	 * @param sources the chunk files holding some content
 	 * @returns when it loads, noting the scene states and stream areas it needs
 	 */
-	sourceVisibility(sources: readonly ChunkSource[]): ConditionalSetInfo | null {
+	sourceVisibility(sources: readonly ChunkSource[]): Visibility | null {
 		const visibility = sourceVisibility(sources);
 		if (visibility !== null) {
 			for (const { sceneState, area } of sources) {

@@ -25,10 +25,10 @@ import {
 	stringField,
 } from '@endfield-noclip/formats/unity/values';
 import { conditionVisible } from '@endfield-noclip/package-format/conditions';
-import type { ConditionalSetInfo } from '@endfield-noclip/package-format/states';
 
 import type { AssetResolver, ObjectRef } from './assets.ts';
 import type { SceneEnvironmentVolume } from './environment.ts';
+import type { Visibility } from './scene-control.ts';
 
 // reads HGEnvironmentVolume components from gated prefabs; phases are PPtrs rather than path hashes.
 // source layout: docs/game-data/environment.md#prefab-volumes.
@@ -52,7 +52,7 @@ export interface Placement {
 export interface PlacedPrefab {
 	model: DynamicModel;
 	levelTag: number;
-	visibility: ConditionalSetInfo;
+	visibility: Visibility;
 }
 
 /**

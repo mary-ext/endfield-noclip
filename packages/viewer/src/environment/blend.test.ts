@@ -40,10 +40,10 @@ const LEVEL_2 = 1;
 const LEVEL_1_WITH_STATE = 2;
 const LEVEL_2_SWITCHED = 3;
 const groups = [
-	{ levelTag: 1, condition: null },
-	{ levelTag: 2, condition: null },
-	{ levelTag: 1, condition: 0 },
-	{ levelTag: 2, condition: 1 },
+	{ level: 0, condition: null },
+	{ level: 1, condition: null },
+	{ level: 0, condition: 0 },
+	{ level: 1, condition: 1 },
 ];
 
 const volume = (patch: Partial<EnvironmentVolumeInfo>): EnvironmentVolumeInfo => ({
@@ -266,12 +266,12 @@ describe('eyeInLevelVolume', () => {
 
 	it('keeps a viewpoint the level volume already holds', () => {
 		const m = manifest([phase('base', 1)], [volume({ shape: square })]);
-		assert.deepEqual(eyeInLevelVolume(m, 1, own, target, [50, 30, 50], {}), [50, 30, 50]);
+		assert.deepEqual(eyeInLevelVolume(m, 0, own, target, [50, 30, 50], {}), [50, 30, 50]);
 	});
 
 	it('pulls a viewpoint above the height band down the view line, past the blend distance', () => {
 		const m = manifest([phase('base', 1)], [volume({ shape: square, blend: depth(10) })]);
-		const eye = eyeInLevelVolume(m, 1, own, target, [50, 210, 50], {});
+		const eye = eyeInLevelVolume(m, 0, own, target, [50, 210, 50], {});
 		assert.ok(eye !== null);
 		const [x, y, z] = eye;
 		assert.deepEqual([x, z], [50, 50]);
@@ -292,7 +292,7 @@ describe('eyeInLevelVolume', () => {
 			[phase('base', 1), phase('next door', 2)],
 			[volume({ shape: square, blend: depth(1) }), volume({ group: LEVEL_2, phase: 1, shape: neighbour })],
 		);
-		const eye = eyeInLevelVolume(m, 1, own, target, [-50, 10, 50], {});
+		const eye = eyeInLevelVolume(m, 0, own, target, [-50, 10, 50], {});
 		assert.ok(eye !== null);
 		const [x] = eye;
 		assert.ok(x > 20 && x <= 22, `x ${x}`);
@@ -307,14 +307,14 @@ describe('eyeInLevelVolume', () => {
 			],
 		);
 		// the switched-off neighbour doesn't block the view
-		const eye = eyeInLevelVolume(m, 1, own, target, [50, 30, 50], { loaded: [true, false] });
+		const eye = eyeInLevelVolume(m, 0, own, target, [50, 30, 50], { loaded: [true, false] });
 		assert.deepEqual(eye, [50, 30, 50]);
-		assert.equal(eyeInLevelVolume(m, 1, own, target, [50, 30, 50], { loaded: [true, true] }), null);
+		assert.equal(eyeInLevelVolume(m, 0, own, target, [50, 30, 50], { loaded: [true, true] }), null);
 	});
 
 	it('finds no viewpoint when the base volume doesn’t apply', () => {
 		const m = manifest([phase('scripted', 1)], [volume({ group: LEVEL_1_WITH_STATE, shape: square })]);
-		assert.deepEqual(eyeInLevelVolume(m, 1, own, target, [50, 210, 50], { loaded: [false] }), null);
+		assert.deepEqual(eyeInLevelVolume(m, 0, own, target, [50, 210, 50], { loaded: [false] }), null);
 	});
 });
 

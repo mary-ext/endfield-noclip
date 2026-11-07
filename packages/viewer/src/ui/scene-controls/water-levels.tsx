@@ -1,4 +1,4 @@
-import { controlListedFor, groupByLevel } from '../../scene-states/listing.ts';
+import { controlListedFor, groupByLevel, listedControls } from '../../scene-states/listing.ts';
 import { surfaceView, volumeSurface, waterHeight } from '../../scene-states/water-levels.ts';
 import type { Viewer } from '../../viewer/viewer.ts';
 import { ChoiceRow, ControlValueSelect, FlyButton } from '../controls.tsx';
@@ -34,32 +34,34 @@ export const WaterLevels = ({ viewer, matches }: { viewer: Viewer; matches: (tex
 	if (manifest === null) {
 		return null;
 	}
-	const level = viewer.currentLevel;
+	const level = viewer.currentLevelIndex;
 	const surfaces = viewer.waterSurfaces;
-	const controls = new Map(manifest.states.controls.map((control) => [control.id, control]));
+	const controls = listedControls(manifest.states);
 	// a volume is listed with its `waterLevel` control, for the levels that control is listed for
 	const all = viewer.waterVolumes.flatMap((state, index) => {
 		const surface = volumeSurface(surfaces, index);
-		const control = state.entry.control === null ? undefined : controls.get(state.entry.control);
-		if (surface === undefined || control === undefined || !matches(`${control.name} ${control.id}`)) {
+		const listed = state.entry.control === null ? undefined : controls[state.entry.control];
+		if (surface === undefined || listed === undefined) {
 			return [];
 		}
-		return [{ state, surface, control }];
+		const { control } = listed;
+		return matches(`${control.name} ${control.id}`) ? [{ state, surface, listed }] : [];
 	});
-	const here = all.filter(({ control }) => controlListedFor(control, level));
+	const here = all.filter(({ listed }) => controlListedFor(listed.control, level));
 	const others = groupByLevel(
-		all.filter(({ control }) => !controlListedFor(control, level)),
+		all.filter(({ listed }) => !controlListedFor(listed.control, level)),
 		manifest.levels,
 		level,
-		({ control }) => control.levelTags,
+		({ listed }) => listed.control.levels,
 	);
 	const rows = (entries: readonly (typeof all)[number][]) =>
-		entries.map(({ state, surface, control }) => {
+		entries.map(({ state, surface, listed }) => {
+			const { control } = listed;
 			const { entry, current, target } = state;
 			const height = metres(waterHeight(entry, current));
 			const { center, size } = surfaceView(state, surface);
 			return (
-				<div key={control.id}>
+				<div key={listed.index}>
 					<ChoiceRow
 						label={control.name}
 						detail={
@@ -69,7 +71,7 @@ export const WaterLevels = ({ viewer, matches }: { viewer: Viewer; matches: (tex
 							</>
 						}
 					>
-						<ControlValueSelect viewer={viewer} control={control} />
+						<ControlValueSelect viewer={viewer} entry={listed} />
 					</ChoiceRow>
 					<FlyButton viewer={viewer} point={center} size={size} back={0.75} />
 					<Drivers viewer={viewer} control={control} />

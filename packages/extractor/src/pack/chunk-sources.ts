@@ -1,7 +1,5 @@
-import type { ConditionalSetInfo, SceneRequirement } from '@endfield-noclip/package-format/states';
-
 import { sceneStateControl } from '../game/scene-conditions.ts';
-import { streamAreaControl } from '../game/scene-control.ts';
+import { type Visibility, type Requirement, streamAreaControl } from '../game/scene-control.ts';
 import type { ChunkSource } from '../game/world-index.ts';
 
 /**
@@ -9,10 +7,10 @@ import type { ChunkSource } from '../game/world-index.ts';
  * @returns when the game loads it, one alternative per file: the file's scene state and stream area; `null`
  *   when an always-loaded file of the default area holds it
  */
-export const sourceVisibility = (sources: Iterable<ChunkSource>): ConditionalSetInfo | null => {
-	const alternatives: SceneRequirement[][] = [];
+export const sourceVisibility = (sources: Iterable<ChunkSource>): Visibility | null => {
+	const alternatives: Requirement[][] = [];
 	for (const { sceneState, area } of sources) {
-		const requirements: SceneRequirement[] = [];
+		const requirements: Requirement[] = [];
 		if (sceneState !== 0) {
 			requirements.push({ control: sceneStateControl(sceneState - 1), mask: 2 });
 		}

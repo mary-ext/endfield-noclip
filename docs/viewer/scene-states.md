@@ -87,9 +87,9 @@ the volumes listed):
   distance to its box, else to its position), nearest first, in the sections that have any. the list
   follows the camera in 25 m steps. controls whose content is spread over the scene have no place
   and aren't listed here
-- **this level**: first the controls whose `levelTags` include 0 or the
-  [current level's](streaming.md#levels) tag, then, under "Other levels", a collapsed group per
-  other level with the controls it gates; a control gating several levels is in each of their groups
+- **this level**: first the controls whose `levels` include the
+  [current level](streaming.md#levels), then, under "Other levels", a collapsed group per other
+  level with the controls it gates; a control gating several levels is in each of their groups
 - **everything**, and **picked**: the controls the user picked a value for, wherever they are
 
 "Reset" drops every pick. the settings panel's "stream areas at camera" toggle switches every area

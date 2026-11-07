@@ -38,10 +38,10 @@ export interface WaterVolumeEntry {
 	/** fills the scene's level scripts set the volume to, ascending and deduplicated; {@link initial} is listed */
 	levels: WaterVolumeLevel[];
 	/**
-	 * the `waterLevel` control whose value indexes {@link levels}, with what sets each; `null` when scripts set
-	 * no fill other than {@link initial}
+	 * index into `StatesInfo.controls` of the `waterLevel` control whose value indexes {@link levels}, with what
+	 * sets each; `null` when scripts set no fill other than {@link initial}
 	 */
-	control: string | null;
+	control: number | null;
 	/**
 	 * index into {@link WaterTable.volumes} of the volume whose surface this one follows, clamped to its own
 	 * depth: the surface sits at the parent's height, but no lower than {@link base} and no higher than full.

@@ -1,8 +1,8 @@
 import { type ChunkLight, LightType } from '@endfield-noclip/formats/endfield/chunk-lights';
 import { unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
 import { type LightEntry, LightKind, type LightsTable } from '@endfield-noclip/package-format/lights';
-import type { ConditionalSetInfo } from '@endfield-noclip/package-format/states';
 
+import type { Visibility } from '../game/scene-control.ts';
 import type { ChunkSource } from '../game/world-index.ts';
 
 // local lights for `tables/lights.json`. lights repeat in every cell chunk they overlap, in scene states and in
@@ -12,7 +12,7 @@ import type { ChunkSource } from '../game/world-index.ts';
 /** collects a scene's lights across its chunk files */
 export class LightCollector {
 	readonly #lights = new Map<number, { light: ChunkLight; sources: ChunkSource[] }>();
-	readonly #conditional = new Map<number, { light: ChunkLight; visibility: ConditionalSetInfo }>();
+	readonly #conditional = new Map<number, { light: ChunkLight; visibility: Visibility }>();
 	/** lights left out, by reason */
 	readonly skipped: Record<string, number> = {};
 
@@ -37,7 +37,7 @@ export class LightCollector {
 	 * @param light a light from a dynamic structure's ECS group
 	 * @param visibility its structure's visibility
 	 */
-	addConditional(light: ChunkLight, visibility: ConditionalSetInfo): void {
+	addConditional(light: ChunkLight, visibility: Visibility): void {
 		if (this.#lights.has(light.id)) {
 			return;
 		}
@@ -56,7 +56,7 @@ export class LightCollector {
 	 */
 	finish(
 		groupOf: (levelTag: number, sources: readonly ChunkSource[]) => number,
-		groupOfVisibility: (levelTag: number, visibility: ConditionalSetInfo) => number,
+		groupOfVisibility: (levelTag: number, visibility: Visibility) => number,
 	): LightsTable {
 		const entries: { light: ChunkLight; group: () => number }[] = [];
 		for (const { light, sources } of this.#lights.values()) {

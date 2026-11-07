@@ -122,6 +122,32 @@ export const pumped = (volume: LevelWaterVolume): boolean =>
  */
 export const waterLevelControl = (volume: string): string => `waterLevel:${volume}`;
 
+/**
+ * @param volume a water volume's table entry
+ * @returns whether scripts set it to a fill other than its authored one, so it has a `waterLevel` control
+ */
+export const hasWaterLevelControl = (volume: WaterVolumeEntry): boolean => volume.levels.length > 1;
+
+/**
+ * points each volume with a `waterLevel` control at it; the table's volumes are modified in place
+ *
+ * @param table the water table
+ * @param controlIndex by control id, the package's index of each control
+ * @throws {Error} if a volume's control isn't among the package's
+ */
+export const indexWaterControls = (table: WaterTable, controlIndex: ReadonlyMap<string, number>): void => {
+	for (const volume of table.volumes) {
+		if (hasWaterLevelControl(volume)) {
+			const id = waterLevelControl(volume.entityId);
+			const index = controlIndex.get(id);
+			if (index === undefined) {
+				throw new Error(`water volume control ${id} isn't among the package's controls`);
+			}
+			volume.control = index;
+		}
+	}
+};
+
 /** the scene's gameplay water volumes, as the entity pass found them */
 export interface WaterVolumeInput {
 	volumes: LevelWaterVolume[];
@@ -638,7 +664,8 @@ export const volumeEntry = (
 			initial: volume.fraction,
 			fillSpeed,
 			levels,
-			control: levels.length > 1 ? waterLevelControl(volume.id) : null,
+			// the control's index is known once the package's controls are (see `indexWaterControls`)
+			control: null,
 			// the table index of the parent is known once every volume is in (see `parent` below)
 			parent: null,
 			floaters: [],

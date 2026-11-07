@@ -16,8 +16,8 @@ export interface GroupsConsumer {
 
 /** what follows the resolved scene values beyond the visibility groups */
 export interface ValuesConsumer {
-	/** @param values every control's value */
-	follow(values: Readonly<Record<string, number>>): void;
+	/** @param values every control's value, by index */
+	follow(values: readonly number[]): void;
 }
 
 /**
@@ -34,18 +34,18 @@ const sameResults = (a: readonly boolean[], b: readonly boolean[]): boolean =>
  * which go to every consumer
  */
 export class SceneState {
-	/** values the user picked, by control id */
-	#picks: Readonly<Record<string, number>> = {};
-	/** every control's value, from the picks and the package's defaults and derived controls */
-	#values: Readonly<Record<string, number>> = {};
+	/** values the user picked, by control index */
+	#picks: ReadonlyMap<number, number> = new Map();
+	/** every control's value by index, from the picks and the package's defaults and derived controls */
+	#values: readonly number[] = [];
 	/** per conditional set, whether the values satisfy it; replaced only when a result changes */
 	#results: readonly boolean[] = [];
 	/** stream areas the conditions were last evaluated with, or `null` for every area */
 	#visibleAreas: ReadonlySet<number> | null = null;
 	/** camera position {@link follow} last tested */
 	#areasEye: Vec3 = [Number.NaN, 0, 0];
-	/** camera control values the conditions were last evaluated with */
-	#camera: Record<string, number> = {};
+	/** camera control values the conditions were last evaluated with, by control index */
+	#camera: ReadonlyMap<number, number> = new Map();
 	#states: StatesInfo | null = null;
 	/** the package's consumers of the shown groups, the selector among them */
 	#groups: readonly GroupsConsumer[] = [];
@@ -61,13 +61,13 @@ export class SceneState {
 		this.#options = options;
 	}
 
-	/** @returns the values the user picked, by control id; other controls follow their default or formula */
-	get picks(): Readonly<Record<string, number>> {
+	/** @returns the values the user picked, by control index; other controls follow their default or formula */
+	get picks(): ReadonlyMap<number, number> {
 		return this.#picks;
 	}
 
-	/** @returns every scene control's current value */
-	get values(): Readonly<Record<string, number>> {
+	/** @returns every scene control's current value, by index; empty without a package */
+	get values(): readonly number[] {
 		return this.#values;
 	}
 
@@ -93,27 +93,27 @@ export class SceneState {
 	setPackage(states: StatesInfo | null, groups: readonly GroupsConsumer[]): void {
 		this.#states = states;
 		this.#groups = groups;
-		this.#picks = {};
+		this.#picks = new Map();
 		if (states === null) {
-			this.#values = {};
+			this.#values = [];
 		}
 	}
 
 	/**
 	 * changes picks without evaluating
 	 *
-	 * @param values by control id, one of its values or `null` to drop the pick; unknown controls and values
+	 * @param values by control index, one of its values or `null` to drop the pick; unknown controls and values
 	 *   are ignored
 	 * @returns whether there's a package to pick for
 	 */
-	pick(values: Readonly<Record<string, number | null>>): boolean {
+	pick(values: ReadonlyMap<number, number | null>): boolean {
 		const controls = this.#states?.controls;
 		if (controls === undefined) {
 			return false;
 		}
-		const picks = { ...this.#picks };
-		for (const [id, value] of Object.entries(values)) {
-			const control = controls.find((entry) => entry.id === id);
+		const picks = new Map(this.#picks);
+		for (const [index, value] of values) {
+			const control = controls[index];
 			if (
 				control === undefined ||
 				(value !== null && !control.values.some((entry) => entry.value === value))
@@ -121,9 +121,9 @@ export class SceneState {
 				continue;
 			}
 			if (value === null) {
-				delete picks[id];
+				picks.delete(index);
 			} else {
-				picks[id] = value;
+				picks.set(index, value);
 			}
 		}
 		this.#picks = picks;
@@ -132,7 +132,7 @@ export class SceneState {
 
 	/** drops every pick without evaluating */
 	resetPicks(): void {
-		this.#picks = {};
+		this.#picks = new Map();
 	}
 
 	/**
@@ -147,7 +147,7 @@ export class SceneState {
 		this.#areasEye = [...eye];
 		// camera controls follow the camera unless pinned, so the camera's values go under the picks
 		this.#camera = cameraValues(states?.controls ?? [], eye, this.#visibleAreas);
-		const values = states === null ? {} : resolveSceneValues(states, this.#picks, this.#camera);
+		const values = states === null ? [] : resolveSceneValues(states, this.#picks, this.#camera);
 		this.#values = values;
 		// water volumes move to the fill their `waterLevel` control picks, at the game's speed times the rate
 		this.#followers.follow(values);
@@ -181,7 +181,7 @@ export class SceneState {
 				? visible === current
 				: visible.size === current.size && visible.isSubsetOf(current);
 		const camera = cameraValues(this.#states?.controls ?? [], eye, visible);
-		const sameCamera = Object.entries(camera).every(([id, value]) => this.#camera[id] === value);
+		const sameCamera = camera.entries().every(([index, value]) => this.#camera.get(index) === value);
 		if (same && sameCamera) {
 			return false;
 		}

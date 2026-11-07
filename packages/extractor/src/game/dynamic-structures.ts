@@ -25,7 +25,6 @@ import {
 	RECT_DECAL_MATERIAL_KEY,
 } from '@endfield-noclip/formats/endfield/streaming-chunk-data';
 import { unpackHgPayload } from '@endfield-noclip/formats/hg/payload';
-import type { ConditionalSetInfo, SceneControl } from '@endfield-noclip/package-format/states';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
@@ -35,7 +34,14 @@ import { VfsGroup } from '../hg/vfs.ts';
 import { allOf, gateCondition, type Alternatives, type GameCondition, type GameState } from './game-state.ts';
 import type { PrefabPose } from './prefab.ts';
 import { sceneStateControl } from './scene-conditions.ts';
-import { sceneControl, streamAreaControl, switchValues, SWITCH_VALUES } from './scene-control.ts';
+import {
+	type Visibility,
+	type DraftControl,
+	sceneControl,
+	streamAreaControl,
+	switchValues,
+	SWITCH_VALUES,
+} from './scene-control.ts';
 import { controllerKey, progressionId } from './scenery-variants.ts';
 import { readViewStates, settledPose, testedValues, type ViewStates } from './view-state-poses.ts';
 
@@ -94,7 +100,7 @@ const blightLink = (entity: DynamicSceneEntity): BlightLink | null => {
  * @param position its core's position
  * @returns the control of one blight and its core: its variable, told apart only as the core destroyed or not
  */
-const blightControl = (id: string, position: readonly [number, number, number]): SceneControl =>
+const blightControl = (id: string, position: readonly [number, number, number]): DraftControl =>
 	sceneControl({
 		kind: 'mapVar',
 		id,
@@ -171,7 +177,7 @@ export interface StructureModel {
 	model: DynamicModel;
 	levelTag: number;
 	source: string;
-	visibility: ConditionalSetInfo;
+	visibility: Visibility;
 	/** the pose to draw the prefab in, `null` for the saved one */
 	pose: PrefabPose | null;
 	/** whether the placement starts locked, drawing its model's locked look; absent for placements without locks */
@@ -185,7 +191,7 @@ export interface DynamicEntity {
 	entity: ChunkEntity;
 	/** a rect decal's material key, from its chunk's `fb_streaming` payload; `null` for other entities */
 	decalMaterial: bigint | null;
-	visibility: ConditionalSetInfo;
+	visibility: Visibility;
 	/** the coarsest `fb_main` grid referencing the entity's group, whose level sets its load distance */
 	grid: number;
 }
@@ -194,9 +200,9 @@ export interface DynamicEntity {
 export interface DynamicStructures {
 	entities: DynamicEntity[];
 	/** local lights in the ECS groups, under their structure's visibility */
-	lights: { light: ChunkLight; visibility: ConditionalSetInfo }[];
+	lights: { light: ChunkLight; visibility: Visibility }[];
 	/** script-group and logic-gate controls; load gates read controls of the game state instead */
-	controls: SceneControl[];
+	controls: DraftControl[];
 	/** MapConfig scene state indices the visibility expressions require, as `sceneStateControl` controls */
 	sceneStates: Set<number>;
 	/** stream areas the visibility expressions require, as `streamAreaControl` controls */
@@ -265,9 +271,9 @@ export const loadDynamicStructures = async (
 		erosionCores: new Map(),
 		counts: { owners: owners.length, ecsGroups: 0, models: 0, effects: 0 },
 	};
-	const controls = new Map<string, SceneControl>();
+	const controls = new Map<string, DraftControl>();
 	// each blight's variable gets a control describing it, claimed before the other gates are noted
-	const blights = new Map<DynamicSceneEntity, { link: BlightLink; control: SceneControl }>();
+	const blights = new Map<DynamicSceneEntity, { link: BlightLink; control: DraftControl }>();
 	for (const { entity } of owners) {
 		const link = blightLink(entity);
 		const condition = link === null ? null : gateCondition(link.gate);
@@ -333,7 +339,7 @@ export const loadDynamicStructures = async (
 		);
 	result.counts.viewStatesUnsettled = 0;
 	/** by `fb_init` chunk key and group index, when the group loads and the coarsest grid referencing it */
-	const chunks = new Map<string, Map<number, { visibility: ConditionalSetInfo; grid: number }>>();
+	const chunks = new Map<string, Map<number, { visibility: Visibility; grid: number }>>();
 	const models = new Map<string, StructureModel>();
 	const ordinals = new Map<number, number>();
 	const addSwitch = (kind: 'script' | 'logic', id: string, enabled: boolean): void => {
@@ -524,7 +530,7 @@ export const loadDynamicStructures = async (
 		}
 	}
 	const entities = new Map<number, DynamicEntity>();
-	const lights = new Map<number, { light: ChunkLight; visibility: ConditionalSetInfo }>();
+	const lights = new Map<number, { light: ChunkLight; visibility: Visibility }>();
 	for (const [key, indices] of chunks) {
 		// oxlint-disable-next-line no-await-in-loop -- release each pair after its renderer groups are decoded
 		const [init, streaming] = await Promise.all([

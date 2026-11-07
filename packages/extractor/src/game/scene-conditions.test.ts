@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { MapConfig } from '@endfield-noclip/formats/endfield/map-config';
-import { resolveSceneValues } from '@endfield-noclip/package-format/conditions';
-import type { ConditionalSetInfo } from '@endfield-noclip/package-format/states';
+import { conditionVisible } from '@endfield-noclip/package-format/conditions';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
 import { GameState } from './game-state.ts';
 import { defaultSceneStates, loadSceneStates, sceneStateControls } from './scene-conditions.ts';
+import type { Visibility } from './scene-control.ts';
 import type { WorldIndex } from './world-index.ts';
 
 test('scene states follow the quests their conditions read; states without a condition start off', async () => {
@@ -25,7 +25,7 @@ test('scene states follow the quests their conditions read; states without a con
 	const game = new GameState();
 	game.note(mapDefined(states, ({ condition }) => condition ?? undefined));
 	assert.deepEqual([...defaultSceneStates(states, game)], [0]);
-	const conditionalSets: ConditionalSetInfo[] = [];
+	const conditionalSets: Visibility[] = [];
 	const controls = sceneStateControls(states, game, (formula) => conditionalSets.push(formula) - 1);
 	assert.deepEqual(
 		controls.map(({ id, name, default: value, source }) => [
@@ -44,18 +44,12 @@ test('scene states follow the quests their conditions read; states without a con
 		{ control: 'quest:e1m8_q#3', text: 'quest e1m8_q#3' },
 		' ≠ completed',
 	]);
-	const info = {
-		controls: [...game.controls(), ...controls],
-		conditionalSets,
-		groups: [],
-		streamAreas: null,
-		categories: [],
-		missions: [],
-	};
-	assert.deepEqual(resolveSceneValues(info, { 'quest:e1m8_q#3': 2 }), {
-		'quest:e1m8_q#3': 2,
-		'sceneState:0': 0,
-		'sceneState:1': 1,
-		'sceneState:2': 0,
-	});
+	// the quest in progress: the damaged state holds, the normal one doesn't
+	const values = { 'quest:e1m8_q#3': 2 };
+	assert.deepEqual(
+		controls.map(({ source }) =>
+			source.kind === 'derived' ? conditionVisible(conditionalSets[source.condition], values) : null,
+		),
+		[false, true, null],
+	);
 });

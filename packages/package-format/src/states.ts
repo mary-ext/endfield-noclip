@@ -33,10 +33,11 @@ export interface StatesInfo {
 	/** the missions quest and mission controls belong to, for labels and grouping */
 	missions: MissionInfo[];
 	/**
-	 * the main story's {@link missions} ids in story order, for one progress choice over all of them. the order
-	 * is read from the ids (`e<episode>m<mission>[d<decimal>]`), not from game data
+	 * the main story's missions as indices into {@link missions}, in story order, for one progress choice over
+	 * all of them. the order is read from the mission ids (`e<episode>m<mission>[d<decimal>]`), not from game
+	 * data
 	 */
-	mainStory: string[];
+	mainStory: number[];
 }
 
 /** a mission, labelled from the game's text */
@@ -104,8 +105,8 @@ export type CameraTest = { kind: 'area'; area: number } | { kind: 'near'; reache
 export interface StoryPlace {
 	/** whether the control holds a quest's state or its mission's */
 	role: 'quest' | 'mission';
-	/** a {@link StatesInfo.missions} id */
-	mission: string;
+	/** index into {@link StatesInfo.missions} */
+	mission: number;
 	/**
 	 * position in the mission's flow: 1-based in its main flow (hidden steps included); a quest off it sits
 	 * half a step after its predecessor, since it starts once that completes. `null` for missions and
@@ -117,8 +118,8 @@ export interface StoryPlace {
 
 /** an owner and a load condition shared by placed content */
 export interface VisibilityGroup {
-	/** the owning level's tag, matching `LevelInfo.tag`; 0 for content every level shows */
-	levelTag: number;
+	/** index into `PackageManifest.levels` of the owning level, or `null` for content every level shows */
+	level: number | null;
 	/** index into {@link StatesInfo.conditionalSets}, or `null` for content that always loads */
 	condition: number | null;
 }
@@ -137,8 +138,8 @@ export interface SceneControl {
 	 */
 	kind: string;
 	name: string;
-	/** a {@link ControlCategory.id} of {@link StatesInfo.categories} */
-	category: string;
+	/** index into {@link StatesInfo.categories} */
+	category: number;
 	/** the selectable values, ascending; each below 32 */
 	values: SceneControlValue[];
 	/** the value shown unless the user picks one; for a derived control, its value under the other defaults */
@@ -146,8 +147,11 @@ export interface SceneControl {
 	/** what the default assumes, e.g. "story finished" */
 	assumption: string;
 	source: ControlSource;
-	/** level tags whose content (or derived controls) this control gates; 0 means content every level shows */
-	levelTags: number[];
+	/**
+	 * indices into `PackageManifest.levels` of the levels whose content (or derived controls) this control
+	 * gates, ascending; every level when it gates content every level shows
+	 */
+	levels: number[];
 	/** where it sits in the story, for a quest or mission control of a known mission; `null` otherwise */
 	story: StoryPlace | null;
 	/** what sets it in game according to the level scripts, deduplicated; empty when nothing found does */
@@ -213,8 +217,8 @@ export type RuleText = (string | RuleReference)[];
 
 /** a reference in a {@link RuleText} */
 export interface RuleReference {
-	/** the control holding that state; it needn't be among the package's controls */
-	control: string;
+	/** index into {@link StatesInfo.controls} of the control holding that state, or `null` when it isn't listed */
+	control: number | null;
 	/** how the reference reads on its own, e.g. `quest e1m8_q#3` */
 	text: string;
 }
@@ -236,7 +240,8 @@ export interface SceneControlValue {
 
 /** one required value of a scene control */
 export interface SceneRequirement {
-	control: string;
+	/** index into {@link StatesInfo.controls} */
+	control: number;
 	/** bit n set means selected value n satisfies this requirement */
 	mask: number;
 }

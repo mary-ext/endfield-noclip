@@ -93,13 +93,13 @@ is deferred, which is why `formats` stays environment-agnostic.
 **one package per streaming scene, every level shown at once.** a package holds one scene (one world
 and coordinate frame, e.g. `map02`), and every instance carries the level that owns it, but the
 viewer shows all of a package's levels together, as the game streams map01's and map02's seamless
-levels. the level tag is metadata: the current level (the `level` URL parameter, then whichever
-level the camera moves into) picks the base environment, streams right after what's near the camera,
-and orders the scene controls. the viewer once showed one level at a time, after Snowy Forest's snow
-peaks showed over Test Area on map02; that overlap turned out to be stream-area content, which the
-viewer switches by camera, and the levels themselves don't overlap. a package holds only its scene's
-own map's levels, so a level streaming another scene (`dung02_gdg001` on map02, `dung02_rdg012` on
-`dung02_rdg008`) never shares a package with the levels it would overlap.
+levels. a group's owning level is metadata: the current level (the `level` URL parameter, then
+whichever level the camera moves into) picks the base environment, streams right after what's near
+the camera, and orders the scene controls. the viewer once showed one level at a time, after Snowy
+Forest's snow peaks showed over Test Area on map02; that overlap turned out to be stream-area
+content, which the viewer switches by camera, and the levels themselves don't overlap. a package
+holds only its scene's own map's levels, so a level streaming another scene (`dung02_gdg001` on
+map02, `dung02_rdg012` on `dung02_rdg008`) never shares a package with the levels it would overlap.
 
 **czar archives as the package container, with assets shared across levels.** a package is a small
 always-resident `core.czar` plus shard and asset archives (layout in

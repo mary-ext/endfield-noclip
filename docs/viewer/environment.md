@@ -75,7 +75,7 @@ and its visibility group's condition holds.
 ## activation
 
 a volume's group requires its `environmentVolume` control on, alongside its scene states, so the
-volume checkboxes are scene controls like any other: picks, "Reset" and level tags work the same
+volume checkboxes are scene controls like any other: picks, "Reset" and level listing work the same
 way. the package defaults scripted volumes (`blend.kind` `scripted`) off and others on; a scripted
 volume that is on applies at full strength inside it. phase pinning goes over either. volume names
 do not establish activation ([activation](../game-data/environment.md#activation)).

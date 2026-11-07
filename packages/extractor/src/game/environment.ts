@@ -24,7 +24,6 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { arrayField, asPPtr, stringField } from '@endfield-noclip/formats/unity/values';
 import type { EnvironmentBlend, EnvironmentVolumeShape } from '@endfield-noclip/package-format/environment';
 import { compareVolumes, volumeFootprintContains } from '@endfield-noclip/package-format/environment-volumes';
-import type { ConditionalSetInfo } from '@endfield-noclip/package-format/states';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { mapDefined } from '@mary-ext/array-fns';
@@ -32,6 +31,7 @@ import { mapDefined } from '@mary-ext/array-fns';
 import { mapPool } from '../pool.ts';
 
 import type { AssetResolver, ObjectRef } from './assets.ts';
+import type { Visibility } from './scene-control.ts';
 import type { WorldIndex } from './world-index.ts';
 
 // which environment a level is lit by. the game has no per-level setting, only environment volumes blended by
@@ -59,7 +59,7 @@ export interface SceneEnvironmentVolume extends TaggedVolume<EnvironmentVolume> 
 	/** a prefab volume's `HGEnvironmentPhase` object (its `envPhase` is `null`); `null` for chunk volumes */
 	phaseObject: ObjectRef | null;
 	/** a prefab volume's load condition (its placing entity's), `null` for chunk volumes */
-	condition: ConditionalSetInfo | null;
+	condition: Visibility | null;
 	/** whether {@link condition} holds under the default scene values; true without one */
 	loadedByDefault: boolean;
 }

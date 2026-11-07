@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { MissionRuntime } from '@endfield-noclip/formats/endfield/mission-runtime';
-import type { MissionInfo, SceneControl } from '@endfield-noclip/package-format/states';
+import type { MissionInfo } from '@endfield-noclip/package-format/states';
 
-import { sceneControl } from './scene-control.ts';
+import { sceneControl, type DraftControl } from './scene-control.ts';
 import { labelStory, mainStoryOrder, stripMarkup } from './story.ts';
 import type { WorldIndex } from './world-index.ts';
 
@@ -55,7 +55,7 @@ const MISSION: MissionRuntime = {
 	],
 };
 
-const control = (kind: 'quest' | 'mission', id: string): SceneControl =>
+const control = (kind: 'quest' | 'mission', id: string): DraftControl =>
 	sceneControl({ kind, id: `${kind}:${id}`, name: id, values: [], default: 3, assumption: 'story finished' });
 
 test('quests take their objective text, step and mission; unknown missions keep their ids', async () => {

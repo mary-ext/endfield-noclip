@@ -16,12 +16,12 @@ import {
 	type IrradianceTable,
 	irradianceStem,
 } from '@endfield-noclip/package-format/irradiance';
-import type { ConditionalSetInfo, SceneRequirement } from '@endfield-noclip/package-format/states';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
 import type { Context } from '../context.ts';
 import { sceneStateControl } from '../game/scene-conditions.ts';
+import type { Visibility, Requirement } from '../game/scene-control.ts';
 import type { VfsFile } from '../hg/vfs.ts';
 
 import type { BlobStore } from './blob-store.ts';
@@ -343,8 +343,8 @@ export const packIrradiance = async (
 export const sceneStateBakeCondition = (
 	names: readonly string[],
 	indexOf: (name: string) => number | undefined,
-): ConditionalSetInfo | null => {
-	const requirements: SceneRequirement[] = [];
+): Visibility | null => {
+	const requirements: Requirement[] = [];
 	for (const name of names) {
 		const index = indexOf(name);
 		if (index === undefined) {

@@ -3,7 +3,14 @@ import type { RuleText, SceneControl } from '@endfield-noclip/package-format/sta
 
 import { useId, useState } from 'react';
 
-import { controlsForLevel, controlsNear, groupByLevel, NEARBY_RADIUS } from '../../scene-states/listing.ts';
+import {
+	controlListedFor,
+	controlsNear,
+	groupByLevel,
+	type ListedControl,
+	listedControls,
+	NEARBY_RADIUS,
+} from '../../scene-states/listing.ts';
 import type { Viewer } from '../../viewer/viewer.ts';
 import { ChoiceRow } from '../controls.tsx';
 import { ruleOf } from '../format.ts';
@@ -41,15 +48,13 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 		return null;
 	}
 	const { manifest } = pkg;
-	const level = viewer.currentLevel;
+	const { states } = manifest;
+	const level = viewer.currentLevelIndex;
 	const matches = (name: string): boolean => name.toLowerCase().includes(query.toLowerCase());
-	const missions = new Map(manifest.states.missions.map((mission) => [mission.id, mission]));
-	const byId = new Map(manifest.states.controls.map((entry) => [entry.id, entry]));
-	/** @returns a quest control's name with its mission's, else the control's name */
 	/** @returns a quest control's name with its mission's, else the control's name */
 	const storyName = (control: SceneControl): string => {
 		const { story } = control;
-		const mission = story && missions.get(story.mission);
+		const mission = story && states.missions[story.mission];
 		if (!mission?.name || story?.role === 'mission') {
 			return control.name;
 		}
@@ -58,47 +63,38 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 	// a reference to a quest or mission reads as its story name; others as their own text
 	const describe = (rule: RuleText): string =>
 		ruleText(rule, (reference) => {
-			const control = byId.get(reference.control);
+			const control = reference.control === null ? undefined : states.controls[reference.control];
 			return control?.story ? `“${storyName(control)}”` : reference.text;
 		});
-	const controls = manifest.states.controls.filter((entry) => {
-		const rule = ruleOf(entry);
-		return matches(`${storyName(entry)} ${entry.id} ${rule ? describe(rule) : ''}`);
+	const controls = listedControls(states).filter(({ control }) => {
+		const rule = ruleOf(control);
+		return matches(`${storyName(control)} ${control.id} ${rule ? describe(rule) : ''}`);
 	});
-	const levelNames = new Map(manifest.levels.map((entry) => [entry.id, entry.name ?? entry.id]));
 	// story controls are picked as points in the story rather than one by one
-	const sectionRows = (entries: readonly SceneControl[]) =>
-		entries.length > 0 && entries.every((entry) => entry.story !== null) ? (
-			<StoryControls
-				viewer={viewer}
-				controls={entries}
-				all={manifest.states.controls}
-				missions={missions}
-				mainLine={manifest.states.mainStory}
-				describe={describe}
-				levelName={(id) => levelNames.get(id) ?? id}
-			/>
+	const sectionRows = (entries: readonly ListedControl[]) =>
+		entries.length > 0 && entries.every(({ control }) => control.story !== null) ? (
+			<StoryControls viewer={viewer} entries={entries} describe={describe} />
 		) : (
 			entries.map((entry) => (
-				<ControlRow key={entry.id} viewer={viewer} control={entry} describe={describe} />
+				<ControlRow key={entry.index} viewer={viewer} entry={entry} describe={describe} />
 			))
 		);
 	const picks = viewer.scenePicks;
-	const picked = controls.filter((entry) => picks[entry.id] !== undefined);
+	const picked = controls.filter(({ index }) => picks.has(index));
 	/** per category: the controls listed first, and the other levels' below them */
-	const listing = (inCategory: SceneControl[]) => {
+	const listing = (inCategory: ListedControl[]) => {
 		switch (scope) {
 			case 'nearby': {
 				return { here: controlsNear(inCategory, viewer.camera.position), others: [] };
 			}
 			case 'level': {
-				const here = controlsForLevel(inCategory, level);
+				const here = inCategory.filter(({ control }) => controlListedFor(control, level));
 				const listedHere = new Set(here);
 				const others = groupByLevel(
 					inCategory.filter((entry) => !listedHere.has(entry)),
 					manifest.levels,
 					level,
-					(entry) => entry.levelTags,
+					({ control }) => control.levels,
 				);
 				return { here, others };
 			}
@@ -106,7 +102,7 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 				return { here: inCategory, others: [] };
 			}
 			case 'picked': {
-				return { here: inCategory.filter((entry) => picks[entry.id] !== undefined), others: [] };
+				return { here: inCategory.filter(({ index }) => picks.has(index)), others: [] };
 			}
 		}
 	};
@@ -139,34 +135,35 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 					onChange={(event) => setQuery(event.currentTarget.value)}
 				/>
 			</label>
-			{manifest.states.categories
-				.filter(({ id }) => !OWN_SECTIONS.has(id))
-				.map(({ id, title, note }) => {
-					const inCategory = controls.filter((entry) => entry.category === id);
-					const { here, others } = listing(inCategory);
-					if (scope !== 'level' && here.length === 0) {
-						return null;
-					}
-					const count = others.length > 0 ? `${here.length} here · ${inCategory.length} in all` : here.length;
-					return (
-						<LazyDetails
-							key={`${scope}/${id}`}
-							summary={
-								<summary>
-									{title} ({count})
-								</summary>
-							}
-						>
-							{() => (
-								<>
-									{note !== null && <p className="muted small">{note}</p>}
-									{sectionRows(here)}
-									<OtherLevels groups={others} render={sectionRows} />
-								</>
-							)}
-						</LazyDetails>
-					);
-				})}
+			{states.categories.map(({ id, title, note }, category) => {
+				if (OWN_SECTIONS.has(id)) {
+					return null;
+				}
+				const inCategory = controls.filter(({ control }) => control.category === category);
+				const { here, others } = listing(inCategory);
+				if (scope !== 'level' && here.length === 0) {
+					return null;
+				}
+				const count = others.length > 0 ? `${here.length} here · ${inCategory.length} in all` : here.length;
+				return (
+					<LazyDetails
+						key={`${scope}/${id}`}
+						summary={
+							<summary>
+								{title} ({count})
+							</summary>
+						}
+					>
+						{() => (
+							<>
+								{note !== null && <p className="muted small">{note}</p>}
+								{sectionRows(here)}
+								<OtherLevels groups={others} render={sectionRows} />
+							</>
+						)}
+					</LazyDetails>
+				);
+			})}
 			<WaterLevels viewer={viewer} matches={matches} />
 			<EnvironmentVolumes viewer={viewer} scene={pkg} level={level} matches={matches} />
 		</section>

@@ -24,7 +24,6 @@ import type {
 	PostProfile,
 } from '@endfield-noclip/package-format/environment';
 import type { LevelEnvironment } from '@endfield-noclip/package-format/manifest';
-import type { ConditionalSetInfo } from '@endfield-noclip/package-format/states';
 
 import type { Context } from '../context.ts';
 import { type AssetResolver, objectKey, type ObjectRef } from '../game/assets.ts';
@@ -46,6 +45,7 @@ import {
 	type SectionSource,
 } from '../game/environment.ts';
 import { type LoadedMaterial, loadMaterial } from '../game/material-load.ts';
+import type { Visibility } from '../game/scene-control.ts';
 
 // the environment table: every volume with its phase, each level's base volume and its post-processing
 // profile. textures the phases reference are converted with the other assets, so planning happens before
@@ -111,7 +111,7 @@ export interface EnvironmentPlan {
 	 * per volume: its level's tag, the MapConfig scene state indices that load it (empty if always loaded) and,
 	 * for prefab volumes, their placement's load condition
 	 */
-	volumeOwners: { levelTag: number; sceneStates: number[]; condition: ConditionalSetInfo | null }[];
+	volumeOwners: { levelTag: number; sceneStates: number[]; condition: Visibility | null }[];
 	/** textures the phases reference; slots index this list */
 	textures: ObjectRef[];
 	/** index into {@link textures} of the height fog's flow noise, or `null` if the install lacks it */

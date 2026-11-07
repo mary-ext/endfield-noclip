@@ -1,7 +1,7 @@
-import type { SceneControl } from '@endfield-noclip/package-format/states';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import type { MapVariables } from './game-state.ts';
+import type { DraftControl } from './scene-control.ts';
 import type { WorldIndex } from './world-index.ts';
 
 // map variables that are an interactive's saved property (docs/game-data/scene-states.md#variables): the
@@ -100,7 +100,7 @@ export const loadInteractiveVariables = async (
  * @param placement the interactive's template and position, or `undefined` when it isn't placed in the scene
  */
 export const nameInteractiveVariable = (
-	control: SceneControl,
+	control: DraftControl,
 	variable: InteractiveVariable,
 	placement: { template: string; position: Readonly<Vec3> } | undefined,
 ): void => {

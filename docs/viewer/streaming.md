@@ -21,8 +21,9 @@ conditional refs. each node at or below the cell level records its cell id, for 
 
 ## levels
 
-every level of a package shows at once; a level tag only says who owns the content. the viewer keeps
-one current level ([`viewer/viewer.ts`](../../packages/viewer/src/viewer/viewer.ts),
+every level of a package shows at once; a visibility group's level only says who owns the content.
+the viewer keeps one current level
+([`viewer/viewer.ts`](../../packages/viewer/src/viewer/viewer.ts),
 [`scene/level-pose.ts`](../../packages/viewer/src/scene/level-pose.ts)): the `level` URL parameter
 at load, the level picked in the levels panel (`flyToLevel`, which also flies over it), and after a
 flight lands, the level owning the 128 m cell the camera moves into. the cell a flight lands in

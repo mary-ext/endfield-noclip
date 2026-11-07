@@ -10,6 +10,7 @@ import type { LevelWaterVolume } from '../game/water-volumes.ts';
 import {
 	configEntry,
 	finishWater,
+	hasWaterLevelControl,
 	sectorsOverlapping,
 	selectSurfaces,
 	volumeEntry,
@@ -145,7 +146,7 @@ describe('volumeEntry', () => {
 			infinite: false,
 		};
 		const { entry, sources } = volumeEntry(pond, []);
-		assert.equal(entry.control, 'waterLevel:22800060004');
+		assert.equal(hasWaterLevelControl(entry), true);
 		assert.deepEqual(
 			entry.levels.map(({ fraction }) => fraction),
 			[0, 1],
@@ -160,7 +161,7 @@ describe('volumeEntry', () => {
 		);
 		// a basin following it gets no fills of its own
 		const basin = volumeEntry({ ...pond, id: '22800060019', parent: '22800060004' }, []);
-		assert.equal(basin.entry.control, null);
+		assert.equal(hasWaterLevelControl(basin.entry), false);
 		assert.equal(basin.parent, '22800060004');
 	});
 
@@ -184,7 +185,7 @@ describe('volumeEntry', () => {
 		const { entry, sources } = volumeEntry(volume, actions);
 		assert.equal(entry.base, 51.187);
 		assert.equal(entry.initial, 0.5);
-		assert.equal(entry.control, 'waterLevel:46300000002');
+		assert.equal(hasWaterLevelControl(entry), true);
 		assert.deepEqual(entry.floaters, []);
 		assert.deepEqual(entry.levels, [
 			{ fraction: 0.08, speed: 0.11 },
