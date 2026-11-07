@@ -8,11 +8,41 @@ with their poses. the controls these placements sit under are in
 
 ## prefabs
 
-`readPrefabRenderers` ([prefab.ts](../../packages/extractor/src/game/prefabs/prefab.ts)) walks a
-prefab's GameObject hierarchy through exact PPtrs and returns its drawable renderers relative to the
-prefab root; the caller supplies the root's placement. it follows the hierarchy rules in
-[prefabs](../game-data/assets.md#prefabs), walks inactive subtrees for their Transforms, and takes a
-UI node's RectTransform as its Transform (as the light, volume and effect walkers do).
+`readPrefabRenderers` ([prefab.ts](../../packages/extractor/src/game/prefabs/prefab.ts)) returns a
+prefab's drawable renderers relative to the prefab root; the caller supplies the root's placement.
+it follows the hierarchy rules in [prefabs](../game-data/assets.md#prefabs) and walks inactive
+subtrees for their Transforms.
+
+### hierarchy walks
+
+every prefab reader walks the hierarchy with `walkPrefab`
+([prefab-walk.ts](../../packages/extractor/src/game/prefabs/prefab-walk.ts)). it reads each
+GameObject, resolves its components through their exact PPtrs (reading each once, when first asked),
+takes its Transform (a UI node's RectTransform), places it in prefab space with the root at the
+identity, stops at a cycle, and goes on to the children in authored order, so whatever a reader
+hands out in walk order stays stable. a reader is a visitor: `enter` prunes a GameObject or derives
+the state its children start from (its path below an Animator, a switched-off ancestor), `local`
+replaces the saved local transform (a pose's), and `visit` collects once the matrix is known. the
+light, environment volume and Animator default readers prune inactive subtrees; the others walk
+them. clip binding paths and posed local transforms are shared in
+[pose-paths.ts](../../packages/extractor/src/game/prefabs/pose-paths.ts).
+
+the renderer walk ([renderer-walk.ts](../../packages/extractor/src/game/prefabs/renderer-walk.ts))
+decides at each GameObject whether it's switched off, hands each component to the first reader that
+accepts it (those acting on other GameObjects, the subtree or the pose: `VFXAdjustLength`, a root
+`UnlockEffectConfigMono`, emission overrides, view-state controllers, `EffectSetting`s, Animators),
+then once it's placed runs the steps that need its matrix (followers, force fields, distance
+origins, billboards) and, when it draws, the candidate sources
+([renderer-candidates.ts](../../packages/extractor/src/game/prefabs/renderer-candidates.ts)):
+LODGroups, skinned and mesh renderers, the particle system and spline movers, in the order their
+renderers are kept. a new component kind is one reader, one step or one source. what depends on the
+whole hierarchy being placed, followers and force fields, settles after the walk
+([renderer-passes.ts](../../packages/extractor/src/game/prefabs/renderer-passes.ts)); skinned poses
+and looping-clip frames are in
+[skin-pose.ts](../../packages/extractor/src/game/prefabs/skin-pose.ts) and pose material values in
+[material-values.ts](../../packages/extractor/src/game/prefabs/material-values.ts).
+
+### what the renderers carry
 
 - **LODGroups**: under an enabled `LODGroup`, each LOD's renderers, matched by object identity,
   never by name, carry the span of screen-relative heights they show at (a renderer in consecutive

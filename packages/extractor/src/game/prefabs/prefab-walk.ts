@@ -71,10 +71,11 @@ export interface PlacedPrefabNode extends PrefabNode {
 export const PRUNE: unique symbol = Symbol('prune');
 
 /**
- * what a reader does at each GameObject of {@link walkPrefab}, parents before children. `State` is what a
- * GameObject hands its children, such as their path below an Animator or whether an ancestor is switched off
+ * what a reader does at each GameObject of {@link walkPrefab}, parents before children. `State` is a
+ * GameObject's own state, which its children's {@link enter} reads, such as their path below an Animator or
+ * whether an ancestor is switched off; `Parent` is the part of it children read, which the start state has
  */
-export interface PrefabVisitor<State> {
+export interface PrefabVisitor<State extends Parent, Parent = State> {
 	/**
 	 * called first on each GameObject
 	 *
@@ -82,7 +83,7 @@ export interface PrefabVisitor<State> {
 	 * @param parent the parent's state, or the walk's start state on the root
 	 * @returns its own state, or {@link PRUNE} to skip it and its subtree
 	 */
-	enter(node: PrefabNode, parent: State): State | typeof PRUNE | Promise<State | typeof PRUNE>;
+	enter(node: PrefabNode, parent: Parent): State | typeof PRUNE | Promise<State | typeof PRUNE>;
 	/**
 	 * replaces the saved local transform the GameObject's matrix composes, as a pose does; not called on the
 	 * root
@@ -210,15 +211,15 @@ export const prefabChildren = async (resolver: AssetResolver, node: PrefabNode):
  * @throws {FormatError} on a cyclic hierarchy, a GameObject without a Transform or a malformed component
  *   list, and whatever the visitor throws
  */
-export const walkPrefab = async <State>(
+export const walkPrefab = async <State extends Parent, Parent = State>(
 	resolver: AssetResolver,
 	root: ObjectRef,
-	visitor: PrefabVisitor<State>,
-	start: State,
+	visitor: PrefabVisitor<State, Parent>,
+	start: Parent,
 ): Promise<void> => {
 	const seen = new Set<string>();
 	const identity = trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]);
-	const walk = async (go: ObjectRef, parent: PlacedPrefabNode | null, parentState: State): Promise<void> => {
+	const walk = async (go: ObjectRef, parent: PlacedPrefabNode | null, parentState: Parent): Promise<void> => {
 		const key = objectKey(go);
 		if (seen.has(key)) {
 			throw new FormatError(`cyclic prefab hierarchy at ${key}`);

@@ -490,6 +490,9 @@ couldn't read. so:
   [prefab-placements.ts](../packages/extractor/src/pack/content/prefab-placements.ts), which reads
   each prefab's root once for all of them, and `world find` and `world env` list it too, as they run
   the placement sources on their own ([survey.ts](../packages/extractor/src/pack/survey.ts)).
+- **a new prefab component** that renderers depend on is one reader, step or candidate source of the
+  renderer walk, and a new reader of something else in prefabs is a visitor of `walkPrefab`
+  ([hierarchy walks](extraction/prefabs-and-interactives.md#hierarchy-walks)).
 - **a new kind of content** is a module in `content/` called from `collectEntities` at a fixed point
   in the order.
 - **a new table** adds its type and `CORE_PATHS` entry to package-format, a module here that plans
