@@ -53,6 +53,64 @@ export interface BlendSchema {
 export type EnvironmentSchema = Record<keyof EnvironmentSections, BlendSchema>;
 
 /**
+ * `tables/environment.json.zst`: the scene's environment volumes and everything they apply. phases share
+ * their sections through per-section pools, since most phases repeat most sections of others
+ */
+export interface EnvironmentTable {
+	/** levels' post-processing profiles, deduplicated; `LevelEnvironment.post` indexes this list */
+	posts: PostProfile[];
+	/** how the phases' fields blend */
+	schema: EnvironmentSchema;
+	/** per section, every distinct value a phase holds; {@link EnvironmentPhaseEntry.sections} index these */
+	sections: EnvironmentSectionPools;
+	/** every phase a volume applies; {@link EnvironmentVolumeInfo.phase} indexes this list */
+	phases: EnvironmentPhaseEntry[];
+	/** the scene's environment volumes, for blending at the camera */
+	volumes: EnvironmentVolumeInfo[];
+	/** the 3D noise the height fog's flow noise samples (one channel), or `null` if the install lacks it */
+	flowNoise: TextureRef;
+}
+
+/** per section, the distinct values phases hold */
+export type EnvironmentSectionPools = {
+	[K in keyof EnvironmentSections]-?: NonNullable<EnvironmentSections[K]>[];
+};
+
+/** an {@link EnvironmentPhaseInfo} as stored: its sections as indices into {@link EnvironmentTable.sections} */
+export interface EnvironmentPhaseEntry {
+	name: string;
+	active: (keyof EnvironmentSections)[];
+	/** per section the phase holds, its index in the section's pool */
+	sections: { [K in keyof EnvironmentSections]?: number };
+}
+
+/** an {@link EnvironmentTable} with its phases' sections looked up */
+export interface ResolvedEnvironmentTable extends Omit<EnvironmentTable, 'sections' | 'phases'> {
+	phases: EnvironmentPhaseInfo[];
+}
+
+/**
+ * @param table a package's environment table
+ * @returns the table with each phase's sections looked up in the pools; phases share section objects
+ */
+export const resolveEnvironment = (table: EnvironmentTable): ResolvedEnvironmentTable => {
+	const { sections: pools, phases, ...rest } = table;
+	return {
+		...rest,
+		phases: phases.map(({ name, active, sections }) => {
+			const resolved: Partial<Record<keyof EnvironmentSections, unknown>> = {};
+			for (const [key, index] of Object.entries(sections)) {
+				// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- entries of a section-keyed object
+				const section = key as keyof EnvironmentSections;
+				resolved[section] = pools[section][index];
+			}
+			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- every section a phase holds was looked up
+			return { name, active, sections: resolved as EnvironmentSections };
+		}),
+	};
+};
+
+/**
  * an `HGEnvironmentPhase` as the environment volumes apply it: its own sections, uncomposed. sections it
  * marks inactive leave what's under them unchanged
  */
@@ -100,7 +158,7 @@ export interface EnvironmentVolumeInfo {
 	blendDistance: number;
 	fadeInDuration: number;
 	fadeOutDuration: number;
-	/** index into {@link PackageManifest.environmentPhases}, or `null` if the phase is unset or unreadable */
+	/** index into {@link EnvironmentTable.phases}, or `null` if the phase is unset or unreadable */
 	phase: number | null;
 }
 

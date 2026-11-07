@@ -58,13 +58,13 @@ dropped, and so are editor-only previews (`*ForEdit`).
   ([lens flare data](../extraction.md#asset-classes)), each image a texture-table id.
 
 the render pipeline's `HeightFogFlowNoise` texture
-([flow noise](../game-data/sky-and-fog.md#flow-noise)) is packed once, as the manifest's
-`heightFogFlowNoise`.
+([flow noise](../game-data/sky-and-fog.md#flow-noise)) is packed once, as the environment table's
+`flowNoise`.
 
 ## blend schema
 
-the manifest's `environmentSchema` tells the viewer how each section field blends between phases.
-the extractor builds it from the fields' TypeTree types (`plainKinds` in
+the environment table's `schema` tells the viewer how each section field blends between phases. the
+extractor builds it from the fields' TypeTree types (`plainKinds` in
 [unity/plain-object.ts](../../packages/formats/src/unity/plain-object.ts)), merged over every packed
 phase: floats, colours, vectors and SH lerp; booleans, strings and references (textures, materials,
 lens flares) switch at ½; integers round, except those named like an enum (`…Mode`, `…Type`), which
@@ -127,7 +127,7 @@ debug index.
 
 the post profile is the level's own global `Volume`, else the scene's, highest priority first; its
 `Bloom`, `GTAmbientOcclusion`, `Vignette` and `ScreenSpaceReflectionVolume` components become a
-manifest `environmentPosts` entry that `LevelInfo.environment.post` names.
+environment table `posts` entry that `LevelInfo.environment.post` names.
 
 the pack report lists each level's base volume, its coverage and where it's shown, and which
 sections were inherited, and `world env` explains the choice (voting on chunk volumes only, not

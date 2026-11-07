@@ -86,10 +86,10 @@ applies the budget.
   switch a volume with `viewer.setSceneValue(volume.control, 0 | 1)`. volumes have height bands, so
   pose near the ground to see a level's own look; a high camera gets only the scene's global
   environment.
-- `viewer.manifest` holds levels, environment profiles, `environmentVolumes` and
-  `environmentPhases`; `viewer.currentLevel` is the current level's entry.
-  `await import('/src/environment/derive.ts')` gives `deriveEnvironment` for checking derived values
-  against a profile.
+- `viewer.manifest` holds levels and controls, and `viewer.scene.pkg.environment` the environment
+  table (`volumes`, `phases` with their sections looked up, `posts`); `viewer.currentLevel` is the
+  current level's entry. `await import('/src/environment/derive.ts')` gives `deriveEnvironment` for
+  checking derived values against a profile.
 - scene states: `viewer.sceneValues` (every control), `viewer.scenePicks`,
   `viewer.conditionResults`, `viewer.setSceneValue(id, value)` (`null` drops the pick).
 - stream areas: `viewer.visibleStreamAreas` (the areas shown at the camera, `null` when every area

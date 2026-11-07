@@ -315,7 +315,7 @@ export class Viewer {
 	#blendEnvironment({ force, dt }: { force: boolean; dt: number }): void {
 		const look = this.#environment.update(
 			{
-				manifest: this.scene?.pkg.manifest,
+				scene: this.scene?.pkg,
 				eye: this.camera.position,
 				volumes: this.options.environmentVolumes,
 				pinnedPhase: this.options.environmentPin,
@@ -354,19 +354,19 @@ export class Viewer {
 
 	/** @returns the phases the volumes listed for the current level apply, for pinning one: index and name */
 	environmentPhases(): { index: number; name: string }[] {
-		const manifest = this.scene?.pkg.manifest;
+		const pkg = this.scene?.pkg;
 		const level = this.#level;
-		if (manifest === undefined || level === null) {
+		if (pkg === undefined || level === null) {
 			return [];
 		}
 		const indices = new Set<number>();
-		for (const { volume } of volumesForLevel(manifest, level)) {
+		for (const { volume } of volumesForLevel(pkg, level)) {
 			if (volume.phase !== null) {
 				indices.add(volume.phase);
 			}
 		}
 		return [...indices]
-			.map((index) => ({ index, name: manifest.environmentPhases[index].name }))
+			.map((index) => ({ index, name: pkg.environment.phases[index].name }))
 			.toSorted((a, b) => a.name.localeCompare(b.name));
 	}
 

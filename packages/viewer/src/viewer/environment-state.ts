@@ -1,8 +1,14 @@
 import type { EnvironmentProfile } from '@endfield-noclip/package-format/environment';
-import type { LevelEnvironment, PackageManifest } from '@endfield-noclip/package-format/manifest';
+import type { LevelEnvironment } from '@endfield-noclip/package-format/manifest';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { type AppliedVolume, applyBlend, EnvironmentFades, planBlend } from '../environment/blend.ts';
+import {
+	type AppliedVolume,
+	applyBlend,
+	EnvironmentFades,
+	type EnvironmentScene,
+	planBlend,
+} from '../environment/blend.ts';
 import { type CelestialLook, celestialLook } from '../environment/celestial-look.ts';
 import { deriveEnvironment } from '../environment/derive.ts';
 import type { Environment } from '../environment/environment.ts';
@@ -22,8 +28,8 @@ export interface EnvironmentLook {
 
 /** what {@link EnvironmentState.update} blends at */
 export interface BlendInput {
-	/** the loaded package's manifest, `undefined` without one */
-	manifest: PackageManifest | undefined;
+	/** the loaded package's environment table and manifest, `undefined` without one */
+	scene: EnvironmentScene | undefined;
 	eye: Vec3;
 	/** blend the volumes by position; off applies the global and base volumes fully */
 	volumes: boolean;
@@ -102,13 +108,13 @@ export class EnvironmentState {
 		this.#volumes = input.volumes;
 		this.#pinnedPhase = input.pinnedPhase;
 		this.#loaded = input.loaded;
-		const { manifest } = input;
+		const { scene } = input;
 		const base = this.#base;
 		const plan =
-			manifest === undefined || base === null
+			scene === undefined || base === null
 				? null
 				: planBlend(
-						manifest,
+						scene,
 						base,
 						eye,
 						{ volumes: input.volumes, pinnedPhase: input.pinnedPhase, loaded: input.loaded },

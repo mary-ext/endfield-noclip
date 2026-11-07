@@ -9,10 +9,17 @@ import type {
 	EnvironmentVolumeInfo,
 	EnvironmentVolumeShape,
 } from '@endfield-noclip/package-format/environment';
-import type { LevelEnvironment, PackageManifest } from '@endfield-noclip/package-format/manifest';
+import type { LevelEnvironment } from '@endfield-noclip/package-format/manifest';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { applyBlend, type BlendPlan, EnvironmentFades, eyeInLevelVolume, planBlend } from './blend.ts';
+import {
+	applyBlend,
+	type BlendPlan,
+	EnvironmentFades,
+	type EnvironmentScene,
+	eyeInLevelVolume,
+	planBlend,
+} from './blend.ts';
 
 // only the fields the blend reads; sections are opaque records to it
 const phase = (name: string, density: number): EnvironmentPhaseInfo =>
@@ -89,7 +96,7 @@ const manifest = (
 	phases: EnvironmentPhaseInfo[],
 	volumes: EnvironmentVolumeInfo[],
 	base: Record<string, unknown> = { heightFog: { heightFogDensity: 0, enable: true } },
-): PackageManifest => {
+): EnvironmentScene => {
 	const all = [...phases, sectionsPhase('base', base, [])];
 	const schema: Record<string, BlendSchema> = {};
 	for (const { sections } of all) {
@@ -102,26 +109,29 @@ const manifest = (
 	}
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the blend reads only these lists
 	return {
-		environmentPhases: all,
-		environmentVolumes: [
-			...volumes,
-			volume({ name: 'base', shape: FAR, blendMode: 0, priority: 0, phase: phases.length }),
-		],
-		environmentPosts: [],
-		environmentSchema: schema,
-		states: { groups },
-	} as unknown as PackageManifest;
+		environment: {
+			posts: [],
+			schema,
+			phases: all,
+			volumes: [
+				...volumes,
+				volume({ name: 'base', shape: FAR, blendMode: 0, priority: 0, phase: phases.length }),
+			],
+			flowNoise: null,
+		},
+		manifest: { states: { groups } },
+	} as unknown as EnvironmentScene;
 };
 
 /** the fixture's base environment: its last volume */
-const baseOf = (m: PackageManifest): LevelEnvironment => ({
-	volume: m.environmentVolumes.length - 1,
+const baseOf = (m: EnvironmentScene): LevelEnvironment => ({
+	volume: m.environment.volumes.length - 1,
 	post: null,
 });
 
 /** blends at `eye`; without `time`, a fresh fade state whose first frame (a jump) takes time fades fully in */
 const blendAt = (
-	m: PackageManifest,
+	m: EnvironmentScene,
 	eye: Vec3,
 	options: Parameters<typeof planBlend>[3],
 	time: Parameters<typeof planBlend>[4] = { fades: new EnvironmentFades(), dt: 1 },
@@ -132,7 +142,7 @@ const blendAt = (
 };
 
 const blended = (
-	m: PackageManifest,
+	m: EnvironmentScene,
 	eye: Vec3,
 	options: Parameters<typeof planBlend>[3],
 	time?: Parameters<typeof planBlend>[4],
@@ -215,7 +225,7 @@ describe('environment blend', () => {
 			[volume({ group: LEVEL_2, phase: 0 }), volume({ phase: 1, shape: square, blendMode: 0 })],
 		);
 		// the scene's global volume belongs to tag 0 here: a group the fixture doesn't have
-		m.environmentVolumes[0].group = 99;
+		m.environment.volumes[0].group = 99;
 		const off = { volumes: false, pinnedPhase: null };
 		assert.equal(density(blended(m, [500, 25, 500], off)), 2);
 		// the cave isn't the base volume, so it doesn't apply with volumes off

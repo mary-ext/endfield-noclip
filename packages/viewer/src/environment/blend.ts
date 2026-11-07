@@ -1,5 +1,6 @@
 import {
 	type BlendSchema,
+	type ResolvedEnvironmentTable,
 	EnvironmentBlendMode,
 	type EnvironmentPhaseInfo,
 	type EnvironmentProfile,
@@ -17,7 +18,7 @@ import { SUN_EFFECTS } from './sun.ts';
 
 /** a volume that applied at the camera, and how strongly */
 export interface AppliedVolume {
-	/** index into the manifest's volumes, or -1 for a pinned phase */
+	/** index into the environment table's volumes, or -1 for a pinned phase */
 	id: number;
 	name: string;
 	phase: string;
@@ -53,12 +54,23 @@ interface BlendOptions {
 	loaded?: readonly boolean[];
 }
 
-/** volumes with their manifest index, in the order they stack, per manifest */
-const sortedVolumes = new WeakMap<PackageManifest, { id: number; volume: EnvironmentVolumeInfo }[]>();
+/** what the blend reads of a package: its environment table, and the manifest whose groups gate volumes */
+export interface EnvironmentScene {
+	manifest: PackageManifest;
+	environment: ResolvedEnvironmentTable;
+}
 
-const volumesOf = (manifest: PackageManifest): { id: number; volume: EnvironmentVolumeInfo }[] => {
-	return sortedVolumes.getOrInsertComputed(manifest, () =>
-		manifest.environmentVolumes
+/** volumes with their table index, in the order they stack, per environment */
+const sortedVolumes = new WeakMap<
+	ResolvedEnvironmentTable,
+	{ id: number; volume: EnvironmentVolumeInfo }[]
+>();
+
+const volumesOf = (
+	environment: ResolvedEnvironmentTable,
+): { id: number; volume: EnvironmentVolumeInfo }[] => {
+	return sortedVolumes.getOrInsertComputed(environment, () =>
+		environment.volumes
 			.map((volume, id) => ({ id, volume }))
 			.toSorted(({ volume: a }, { volume: b }) => compareVolumes(a, b)),
 	);
@@ -172,7 +184,7 @@ interface BlendTime {
  * post profile. with volumes off (or a phase pinned), the scene-wide global volumes and the level's base
  * volume apply fully wherever the camera is: the level's own look, which a pinned phase then goes over
  *
- * @param manifest the loaded package's manifest
+ * @param scene the loaded package's environment table and manifest
  * @param environment the shown level's base environment
  * @param eye the camera's world position
  * @param options which volumes may apply
@@ -180,28 +192,29 @@ interface BlendTime {
  * @returns what applies at the camera, or `null` if the package lacks the base phase
  */
 export const planBlend = (
-	manifest: PackageManifest,
+	scene: EnvironmentScene,
 	environment: LevelEnvironment,
 	eye: Vec3,
 	options: BlendOptions,
 	time: BlendTime,
 ): BlendPlan | null => {
-	const baseIndex = manifest.environmentVolumes[environment.volume]?.phase ?? null;
-	const base = baseIndex === null ? undefined : manifest.environmentPhases[baseIndex];
+	const { manifest, environment: table } = scene;
+	const baseIndex = table.volumes[environment.volume]?.phase ?? null;
+	const base = baseIndex === null ? undefined : table.phases[baseIndex];
 	if (base === undefined) {
 		return null;
 	}
 	const applied: AppliedVolume[] = [];
 	const phases: EnvironmentPhaseInfo[] = [];
 	const apply = (id: number, name: string, index: number, factor: number): void => {
-		const phase = manifest.environmentPhases[index];
+		const phase = table.phases[index];
 		if (phase !== undefined && factor > 1e-4) {
 			applied.push({ id, name, phase: phase.name, factor });
 			phases.push(phase);
 		}
 	};
 	if (options.pinnedPhase !== null || !options.volumes) {
-		for (const { id, volume } of volumesOf(manifest)) {
+		for (const { id, volume } of volumesOf(table)) {
 			const sceneWide = volume.shape.kind === 'global' && volumeLevelTag(manifest, volume) === 0;
 			if ((id === environment.volume || sceneWide) && volumeApplies(manifest, volume, options)) {
 				apply(id, volume.name, volume.phase, 1);
@@ -212,7 +225,7 @@ export const planBlend = (
 		}
 	} else {
 		const speed = time.fades.step(eye);
-		for (const { id, volume } of volumesOf(manifest)) {
+		for (const { id, volume } of volumesOf(table)) {
 			if (volumeApplies(manifest, volume, options)) {
 				apply(
 					id,
@@ -223,14 +236,14 @@ export const planBlend = (
 			}
 		}
 	}
-	const post = environment.post === null ? null : (manifest.environmentPosts[environment.post] ?? null);
+	const post = environment.post === null ? null : (table.posts[environment.post] ?? null);
 	return {
 		applied,
 		key: applied.map(({ name, phase, factor }) => `${name}/${phase}@${factor.toFixed(2)}`).join('|'),
 		base,
 		post,
 		phases,
-		schema: manifest.environmentSchema,
+		schema: table.schema,
 	};
 };
 
@@ -293,7 +306,7 @@ const VIEW_STEPS = 64;
  * neighbours' volumes overlap a level's rectangle, so a view framed from the rectangle alone often shows a
  * neighbour's environment or only the scene's global one.
  *
- * @param manifest the loaded package's manifest
+ * @param scene the loaded package's environment table and manifest
  * @param level the shown level's tag
  * @param environment the level's base environment
  * @param target the point the view looks at
@@ -303,16 +316,18 @@ const VIEW_STEPS = 64;
  * @returns the point nearest `eye` on the segment from `target` that qualifies, or `null` when none does
  */
 export const eyeInLevelVolume = (
-	manifest: PackageManifest,
+	scene: EnvironmentScene,
 	level: number,
 	environment: LevelEnvironment,
 	target: Vec3,
 	eye: Vec3,
 	options: { clear?: (point: Vec3) => boolean } & Pick<BlendOptions, 'loaded'>,
 ): Vec3 | null => {
-	const applicable = manifest.environmentVolumes.filter((volume) => volumeApplies(manifest, volume, options));
+	const { manifest } = scene;
+	const volumes = scene.environment.volumes;
+	const applicable = volumes.filter((volume) => volumeApplies(manifest, volume, options));
 	const owner = (volume: EnvironmentVolumeInfo): number => volumeLevelTag(manifest, volume);
-	const own = manifest.environmentVolumes[environment.volume];
+	const own = volumes[environment.volume];
 	if (own === undefined || !volumeApplies(manifest, own, options)) {
 		return null;
 	}

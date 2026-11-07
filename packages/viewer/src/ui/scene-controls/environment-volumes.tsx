@@ -2,11 +2,11 @@ import {
 	EnvironmentBlendMode,
 	type EnvironmentVolumeInfo,
 } from '@endfield-noclip/package-format/environment';
-import type { LevelInfo, PackageManifest } from '@endfield-noclip/package-format/manifest';
+import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
 
 import { mapDefined, unique } from '@mary-ext/array-fns';
 
-import { volumeCondition, volumeLevelTag } from '../../environment/blend.ts';
+import { type EnvironmentScene, volumeCondition, volumeLevelTag } from '../../environment/blend.ts';
 import { type ListedVolume, groupByLevel, volumesForLevel } from '../../scene-states/listing.ts';
 import type { Viewer } from '../../viewer/viewer.ts';
 import { SceneToggle } from '../controls.tsx';
@@ -29,25 +29,26 @@ const blendText = (volume: EnvironmentVolumeInfo): string => {
  * the "Lighting / environment volumes" section: a checkbox per volume over its `environmentVolume` control,
  * those listed for the current level first, then the rest by owning level
  *
- * @param props.manifest the loaded package's manifest
+ * @param props.scene the loaded package's environment table and manifest
  * @param props.level the current level, or `null` for none
  * @param props.matches the panel's filter
  */
 export const EnvironmentVolumes = ({
 	viewer,
-	manifest,
+	scene,
 	level,
 	matches,
 }: {
 	viewer: Viewer;
-	manifest: PackageManifest;
+	scene: EnvironmentScene;
 	level: LevelInfo | null;
 	matches: (text: string) => boolean;
 }) => {
-	const volumes = volumesForLevel(manifest, level).filter(({ volume }) => matches(volume.name));
+	const { manifest } = scene;
+	const volumes = volumesForLevel(scene, level).filter(({ volume }) => matches(volume.name));
 	const listedHere = new Set(volumes.map(({ id }) => id));
 	const others = groupByLevel(
-		manifest.environmentVolumes.flatMap((volume, id) =>
+		scene.environment.volumes.flatMap((volume, id) =>
 			listedHere.has(id) || !matches(volume.name)
 				? []
 				: [{ id, volume, owner: volumeLevelTag(manifest, volume) }],

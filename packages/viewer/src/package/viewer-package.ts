@@ -1,4 +1,9 @@
 import { decodeBlobTable, type BlobRecord } from '@endfield-noclip/package-format/blob-table';
+import {
+	type ResolvedEnvironmentTable,
+	type EnvironmentTable,
+	resolveEnvironment,
+} from '@endfield-noclip/package-format/environment';
 import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
 import { decodeChains, type Chain } from '@endfield-noclip/package-format/instances';
 import { decodeIrradianceTable, type IrradianceTable } from '@endfield-noclip/package-format/irradiance';
@@ -48,6 +53,8 @@ export interface ViewerPackage {
 	lights: LightsTable;
 	/** the particle systems chain draws emit */
 	particles: ParticlesTable;
+	/** the environment volumes and their phases, the phases' sections looked up */
+	environment: ResolvedEnvironmentTable;
 	/** the baked irradiance volume's cells (empty without one) */
 	irradiance: IrradianceTable;
 	/**
@@ -131,6 +138,8 @@ export const openViewerPackage = async (
 	const lights = (await json(CORE_PATHS.lights)) as LightsTable;
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
 	const particles = (await json(CORE_PATHS.particles)) as ParticlesTable;
+	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
+	const environment = resolveEnvironment((await json(CORE_PATHS.environment)) as EnvironmentTable);
 	const irradiance = decodeIrradianceTable(await member(CORE_PATHS.irradiance));
 
 	return {
@@ -145,6 +154,7 @@ export const openViewerPackage = async (
 		water,
 		lights,
 		particles,
+		environment,
 		irradiance,
 		readCoreBlob(index) {
 			const blob = blobs[index];

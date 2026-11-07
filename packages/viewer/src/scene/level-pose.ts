@@ -8,7 +8,7 @@ import type { LevelInfo, PackageManifest } from '@endfield-noclip/package-format
 import { tileAt, tileId } from '@endfield-noclip/package-format/tiles';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { eyeInLevelVolume } from '../environment/blend.ts';
+import { type EnvironmentScene, eyeInLevelVolume } from '../environment/blend.ts';
 
 import { type GroundSource, type TreeFrame, groundHeight, sceneryTop } from './ground.ts';
 import type { CameraPose } from './noclip-controls.ts';
@@ -68,7 +68,7 @@ export const cellIdAt = (tree: TreeFrame, point: Vec3): string =>
 	tileId(tileAt(tree, tree.cellLevel, point[0], point[2]));
 
 /**
- * @param ground the package, whose manifest also holds the environment volumes
+ * @param ground the package's ground, with its environment table and manifest
  * @param level the level to look over
  * @param options whether the view keeps where the level's own environment applies, and the condition results
  *   that decide which volumes apply
@@ -77,7 +77,7 @@ export const cellIdAt = (tree: TreeFrame, point: Vec3): string =>
  *   settled: unsettled poses fell back to the spawn height while the coarse pages load
  */
 export const levelPose = (
-	ground: GroundSource & { manifest: PackageManifest },
+	ground: GroundSource & EnvironmentScene,
 	level: LevelInfo,
 	options: { environmentVolumes: boolean; loaded: readonly boolean[] },
 ): { pose: CameraPose; settled: boolean } => {
@@ -106,7 +106,7 @@ export const levelPose = (
 	let best: { position: Vec3; yaw: number; distance: number } | null = null;
 	for (let i = 0; i < VIEW_HEADINGS; i++) {
 		const yaw = (i / VIEW_HEADINGS) * 2 * Math.PI;
-		const position = eyeInLevelVolume(ground.manifest, level.tag, base, target, fromHeading(yaw), {
+		const position = eyeInLevelVolume(ground, level.tag, base, target, fromHeading(yaw), {
 			loaded: options.loaded,
 			// over the treetops and the cell's tallest scenery (Yinglung's chasm walls are meshes). holes in the
 			// terrain aren't clear; terrain that isn't resident yet is

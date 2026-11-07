@@ -52,11 +52,10 @@ the post profile, not a Unity `VolumeProfile`.
 - time-mode factors are kept per camera in `EnvironmentFades`.
 - manual volumes stay off unless ticked in the scene-conditions panel, which previews them at full
   strength, since the scripts that drive them aren't recovered.
-- a factor ≥ 1 copies the section. below that, each field blends as the manifest's
-  `environmentSchema` says ([schema](../extraction/environments.md#blend-schema)): lerp, lerp and
-  round, or switch at ½. the cloud panorama, height-fog flow noise, lens flare and rain wetness
-  follow the game's special cases; the falling rain's has no use while rain isn't drawn, and snow
-  isn't packed.
+- a factor ≥ 1 copies the section. below that, each field blends as the environment table's `schema`
+  says ([schema](../extraction/environments.md#blend-schema)): lerp, lerp and round, or switch at ½.
+  the cloud panorama, height-fog flow noise, lens flare and rain wetness follow the game's special
+  cases; the falling rain's has no use while rain isn't drawn, and snow isn't packed.
 - where the game's lerp of a plain field isn't known
   ([blending](../game-data/environment.md#blending-at-the-camera)), the viewer picks one that keeps
   the value meaningful: the sun's and every effect's direction lerp as pitch and yaw (the yaw the

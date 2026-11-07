@@ -122,7 +122,7 @@ export class Traversal {
 		this.particlesShown = meshSelection?.particles ?? false;
 		times.span('mesh select');
 		updateSkyTextures(
-			{ stream, textures: scene.textures, flowNoise: scene.pkg.manifest.heightFogFlowNoise ?? null },
+			{ stream, textures: scene.textures, flowNoise: scene.pkg.environment.flowNoise },
 			{ environment, celestial, flowNoise: options.flowNoise },
 			{ post: renderer.post, bindings: renderer.bindings },
 		);

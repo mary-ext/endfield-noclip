@@ -11,16 +11,9 @@
  * @module
  */
 
-import type {
-	EnvironmentPhaseInfo,
-	EnvironmentSchema,
-	EnvironmentVolumeInfo,
-	PostProfile,
-} from './environment.ts';
 import type { IrradianceRegionInfo } from './irradiance.ts';
 import type { StatesInfo } from './states.ts';
 import type { TerrainInfo } from './terrain.ts';
-import type { TextureRef } from './textures.ts';
 import { type TileKey, tileId } from './tiles.ts';
 import type { TreeInfo } from './tree.ts';
 import type { Rect, Bounds } from './values.ts';
@@ -32,7 +25,7 @@ export const PACKAGE_FORMAT = 'endfield-noclip.package';
  * bumped on any incompatible change to the manifest or a table. binary encodings carry their own versions in
  * their headers
  */
-export const PACKAGE_VERSION = 75;
+export const PACKAGE_VERSION = 76;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -55,6 +48,7 @@ export const CORE_PATHS = {
 	water: 'tables/water.json.zst',
 	lights: 'tables/lights.json.zst',
 	particles: 'tables/particles.json.zst',
+	environment: 'tables/environment.json.zst',
 	irradiance: 'tables/irradiance.bin',
 } as const;
 
@@ -78,18 +72,8 @@ export interface PackageManifest {
 	 * empty for scenes without levels, whose content is all shown
 	 */
 	levels: LevelInfo[];
-	/** levels' post-processing profiles, deduplicated; {@link LevelEnvironment.post} indexes this list */
-	environmentPosts: PostProfile[];
-	/** every phase an environment volume applies; {@link EnvironmentVolumeInfo.phase} indexes this list */
-	environmentPhases: EnvironmentPhaseInfo[];
-	/** how the phases' fields blend */
-	environmentSchema: EnvironmentSchema;
-	/** the scene's environment volumes, for blending at the camera */
-	environmentVolumes: EnvironmentVolumeInfo[];
 	/** rooms' own irradiance bakes, each applying while its group shows */
 	irradianceRegions: IrradianceRegionInfo[];
-	/** the 3D noise the height fog's flow noise samples (one channel), or `null` if the install lacks it */
-	heightFogFlowNoise?: TextureRef;
 	states: StatesInfo;
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
 	archives: ArchiveInfo[];
@@ -163,9 +147,9 @@ export interface LevelInfo {
  * keeps the base phase's own values (an assumption)
  */
 export interface LevelEnvironment {
-	/** index into {@link PackageManifest.environmentVolumes}; its phase is never `null` */
+	/** index into `EnvironmentTable.volumes`; its phase is never `null` */
 	volume: number;
-	/** index into {@link PackageManifest.environmentPosts}, or `null` if the level has none */
+	/** index into `EnvironmentTable.posts`, or `null` if the level has none */
 	post: number | null;
 }
 

@@ -13,10 +13,13 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import {
 	type BlendSchema,
 	type CelestialConfig,
+	type EnvironmentPhaseEntry,
 	type EnvironmentPhaseInfo,
 	type EnvironmentProfile,
 	type EnvironmentSchema,
+	type EnvironmentSectionPools,
 	type EnvironmentSections,
+	type EnvironmentTable,
 	type EnvironmentVolumeInfo,
 	isEnvironmentBlendMode,
 	type PostProfile,
@@ -44,7 +47,7 @@ import {
 } from '../game/environment.ts';
 import { type LoadedMaterial, loadMaterial } from '../game/material-load.ts';
 
-// the manifest's environments: every volume with its phase, each level's base volume and its post-processing
+// the environment table: every volume with its phase, each level's base volume and its post-processing
 // profile. textures the phases reference are converted with the other assets, so planning happens before
 // conversion and the texture ids are filled in after.
 
@@ -131,15 +134,6 @@ interface PendingPhase {
 	/** owned; texture fields are `null` until {@link finishEnvironments} */
 	phase: EnvironmentPhaseInfo;
 	slots: TextureSlot[];
-}
-
-/** the manifest's environment lists */
-export interface FinishedEnvironments {
-	environmentPosts: PostProfile[];
-	environmentPhases: EnvironmentPhaseInfo[];
-	environmentVolumes: EnvironmentVolumeInfo[];
-	heightFogFlowNoise: number | null;
-	environmentSchema: EnvironmentSchema;
 }
 
 /**
@@ -753,26 +747,45 @@ const fillTextureSlots = (
  *
  * @param plan the plan; its profiles and phases are completed in place and handed out
  * @param textureIds per {@link EnvironmentPlan.textures} entry, its texture-table id or `null`
- * @returns the manifest's environment lists
+ * @returns the environment table, equal sections of different phases stored once
  */
 export const finishEnvironments = (
 	plan: EnvironmentPlan,
 	textureIds: readonly (number | null)[],
-): FinishedEnvironments => {
+): EnvironmentTable => {
 	const fill = (slots: readonly TextureSlot[]): void => {
 		for (const { holder, key, texture } of slots) {
 			holder[key] = textureIds[texture] ?? null;
 		}
 	};
+	const sections: Partial<Record<keyof EnvironmentSections, unknown[]>> = {};
+	const ids = new Map<string, number>();
+	const intern = (key: keyof EnvironmentSections, value: unknown): number => {
+		const pool = (sections[key] ??= []);
+		return ids.getOrInsertComputed(`${key}\0${JSON.stringify(value)}`, () => pool.push(value) - 1);
+	};
+	const phases = plan.phases.map(({ phase, slots }): EnvironmentPhaseEntry => {
+		fill(slots);
+		const indices: EnvironmentPhaseEntry['sections'] = {};
+		for (const [key, value] of Object.entries(phase.sections)) {
+			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- entries of a section-keyed object
+			const section = key as keyof EnvironmentSections;
+			if (value !== undefined) {
+				indices[section] = intern(section, value);
+			}
+		}
+		return { name: phase.name, active: phase.active, sections: indices };
+	});
 	return {
-		environmentPosts: plan.posts,
-		environmentPhases: plan.phases.map(({ phase, slots }) => {
-			fill(slots);
-			return phase;
-		}),
-		environmentVolumes: plan.volumes,
-		environmentSchema: plan.schema,
-		heightFogFlowNoise: plan.flowNoise === null ? null : (textureIds[plan.flowNoise] ?? null),
+		posts: plan.posts,
+		schema: plan.schema,
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- each pool holds its own section's values
+		sections: Object.fromEntries(
+			Object.values(SECTION_KEYS).map((key) => [key, sections[key] ?? []]),
+		) as unknown as EnvironmentSectionPools,
+		phases,
+		volumes: plan.volumes,
+		flowNoise: plan.flowNoise === null ? null : (textureIds[plan.flowNoise] ?? null),
 	};
 };
 

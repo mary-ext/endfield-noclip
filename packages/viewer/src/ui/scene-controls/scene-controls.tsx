@@ -36,10 +36,11 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 	const [query, setQuery] = useState('');
 	const [scope, setScope] = useState<Scope>('nearby');
 	useCameraCell(viewer, scope === 'nearby');
-	const manifest = viewer.manifest;
-	if (manifest === null) {
+	const pkg = viewer.scene?.pkg;
+	if (pkg === undefined) {
 		return null;
 	}
+	const { manifest } = pkg;
 	const level = viewer.currentLevel;
 	const matches = (name: string): boolean => name.toLowerCase().includes(query.toLowerCase());
 	const missions = new Map(manifest.states.missions.map((mission) => [mission.id, mission]));
@@ -167,7 +168,7 @@ export const SceneControls = ({ viewer }: { viewer: Viewer }) => {
 					);
 				})}
 			<WaterLevels viewer={viewer} matches={matches} />
-			<EnvironmentVolumes viewer={viewer} manifest={manifest} level={level} matches={matches} />
+			<EnvironmentVolumes viewer={viewer} scene={pkg} level={level} matches={matches} />
 		</section>
 	);
 };

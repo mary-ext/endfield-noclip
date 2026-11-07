@@ -1,7 +1,6 @@
-import type { PackageManifest } from '@endfield-noclip/package-format/manifest';
-
 import { markBillboardRows } from '../content/instance-rows.ts';
 import { instanceRowKinds } from '../content/row-kinds.ts';
+import type { EnvironmentScene } from '../environment/blend.ts';
 import { materialLooks } from '../looks/material-looks.ts';
 import type { DecodePool } from '../package/decode-pool.ts';
 import type { ViewerPackage } from '../package/viewer-package.ts';
@@ -32,7 +31,7 @@ export interface LoadedScene {
 	tree: TileTree;
 	stream: StreamManager;
 	/** ground height queries over the resident coarse terrain */
-	ground: GroundSource & { manifest: PackageManifest };
+	ground: GroundSource & EnvironmentScene;
 	selector: Selector;
 	/** per-instance LOD selection, when the package has converted geometry */
 	meshes: MeshSelector | null;
@@ -139,6 +138,7 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 		stream,
 		ground: {
 			manifest,
+			environment: pkg.environment,
 			tree,
 			heights: (blob) => {
 				const resident = stream.get(blob)?.resident;

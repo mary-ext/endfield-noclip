@@ -7,11 +7,11 @@
 
 import type { EnvironmentVolumeInfo } from '@endfield-noclip/package-format/environment';
 import { volumeReaches } from '@endfield-noclip/package-format/environment-volumes';
-import type { LevelInfo, PackageManifest } from '@endfield-noclip/package-format/manifest';
+import type { LevelInfo } from '@endfield-noclip/package-format/manifest';
 import type { ControlPlace, SceneControl, StatesInfo } from '@endfield-noclip/package-format/states';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { volumeLevelTag } from '../environment/blend.ts';
+import { type EnvironmentScene, volumeLevelTag } from '../environment/blend.ts';
 
 /** entries listed under one of the other levels */
 export interface LevelGroup<T> {
@@ -117,7 +117,7 @@ export const controlsNear = <T extends SceneControl>(controls: readonly T[], eye
 
 /** an environment volume listed for a level */
 export interface ListedVolume {
-	/** index into {@link PackageManifest.environmentVolumes} */
+	/** index into the environment table's volumes */
 	id: number;
 	volume: EnvironmentVolumeInfo;
 	/** the level tag of the volume's group; 0 for scene-wide volumes */
@@ -128,13 +128,13 @@ export interface ListedVolume {
  * volumes apply wherever they hold the camera, so a neighbour's volume reaching into the level is listed with
  * the level's own and the scene-wide ones
  *
- * @param manifest the package manifest
+ * @param scene the package's environment table and manifest
  * @param level the current level, or `null` for none (then only scene-wide volumes are listed)
  * @returns the package's environment volumes listed for the level, in order
  */
-export const volumesForLevel = (manifest: PackageManifest, level: LevelInfo | null): ListedVolume[] =>
-	manifest.environmentVolumes.flatMap((volume, id) => {
-		const owner = volumeLevelTag(manifest, volume);
+export const volumesForLevel = (scene: EnvironmentScene, level: LevelInfo | null): ListedVolume[] =>
+	scene.environment.volumes.flatMap((volume, id) => {
+		const owner = volumeLevelTag(scene.manifest, volume);
 		const listed =
 			owner === 0 || (level !== null && (owner === level.tag || volumeReaches(volume.shape, level.rect)));
 		return listed ? [{ id, volume, owner }] : [];

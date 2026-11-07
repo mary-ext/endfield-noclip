@@ -26,9 +26,7 @@ import { encodeBlobTable } from '@endfield-noclip/package-format/blob-table';
 import { BLOB_KIND_NAMES, BlobKind } from '@endfield-noclip/package-format/blobs';
 import {
 	EnvironmentBlendMode,
-	type EnvironmentPhaseInfo,
-	type EnvironmentSchema,
-	type PostProfile,
+	type EnvironmentTable,
 	type EnvironmentVolumeInfo,
 } from '@endfield-noclip/package-format/environment';
 import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
@@ -542,7 +540,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			{ dir: stage, previous },
 			{
 				...states,
-				...finishEnvironments(environments, environmentTextureIds),
+				environment: finishEnvironments(environments, environmentTextureIds),
 				water: finishWater(water, waterTextureIds, instances.rowsOf),
 				lights,
 				irradiance: irradiance?.table ?? {
@@ -2245,11 +2243,7 @@ const writePackage = async (
 	/** where to write, and the package being replaced (whose unchanged archives are cloned), or `null` */
 	{ dir, previous }: { dir: string; previous: string | null },
 	states: SceneStateInfo & {
-		environmentPosts: PostProfile[];
-		environmentPhases: EnvironmentPhaseInfo[];
-		environmentSchema: EnvironmentSchema;
-		environmentVolumes: EnvironmentVolumeInfo[];
-		heightFogFlowNoise: number | null;
+		environment: EnvironmentTable;
 		water: WaterTable;
 		lights: LightsTable;
 		irradiance: IrradianceTable;
@@ -2273,6 +2267,7 @@ const writePackage = async (
 		zstdTable(json(states.water)),
 		zstdTable(json(states.lights)),
 		zstdTable(json(pack.particles.table())),
+		zstdTable(json(states.environment)),
 	]);
 
 	const stems = new Map([
@@ -2281,11 +2276,9 @@ const writePackage = async (
 	]);
 	const archiveNames = [...stems.keys()];
 	const blobsBin = encodeBlobTable(store.records(archiveNames));
-	const [written, [geometries, materials, textures, water, lights, particles]] = await Promise.all([
-		store.writeArchives(dir, previous),
-		tablesReady,
-	]);
-	const tables = { geometries, materials, textures, water, lights, particles };
+	const [written, [geometries, materials, textures, water, lights, particles, environment]] =
+		await Promise.all([store.writeArchives(dir, previous), tablesReady]);
+	const tables = { geometries, materials, textures, water, lights, particles, environment };
 
 	const generation = createHash('sha256');
 	for (const part of [
@@ -2298,6 +2291,7 @@ const writePackage = async (
 		tables.water,
 		tables.lights,
 		tables.particles,
+		tables.environment,
 		irradianceBin,
 	]) {
 		generation.update(part);
@@ -2325,12 +2319,7 @@ const writePackage = async (
 				? null
 				: { ...scene.terrain, levels: states.terrainLevels, splat: states.terrainSplat },
 		levels: states.levels,
-		environmentPosts: states.environmentPosts,
-		environmentPhases: states.environmentPhases,
-		environmentSchema: states.environmentSchema,
-		environmentVolumes: states.environmentVolumes,
 		irradianceRegions: states.irradianceRegions,
-		heightFogFlowNoise: states.heightFogFlowNoise,
 		states: {
 			categories: states.categories,
 			controls: states.controls,
@@ -2355,6 +2344,7 @@ const writePackage = async (
 		{ path: CORE_PATHS.water, data: tables.water },
 		{ path: CORE_PATHS.lights, data: tables.lights },
 		{ path: CORE_PATHS.particles, data: tables.particles },
+		{ path: CORE_PATHS.environment, data: tables.environment },
 		{ path: CORE_PATHS.irradiance, data: irradianceBin },
 	]);
 
@@ -2370,6 +2360,7 @@ const writePackage = async (
 			[CORE_PATHS.water]: tables.water.length,
 			[CORE_PATHS.lights]: tables.lights.length,
 			[CORE_PATHS.particles]: tables.particles.length,
+			[CORE_PATHS.environment]: tables.environment.length,
 			[CORE_PATHS.irradiance]: irradianceBin.length,
 		},
 		archives: [core, ...written.values()].map(({ name, size, headerLength, members, reused }) => ({

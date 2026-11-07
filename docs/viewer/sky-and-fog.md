@@ -72,8 +72,8 @@ volumetric light's flow noise aren't drawn.
 ## flow noise
 
 the viewer sways the fog in the composite, on opaque surfaces only (not the sky), where the game
-does it in its deferred lighting after all the fog. the noise texture comes packed once in the
-manifest's `heightFogFlowNoise`.
+does it in its deferred lighting after all the fog. the noise texture comes packed once as the
+environment table's `flowNoise`.
 
 the "drifting fog" toggle turns it off. it drifts by the viewer's animation clock, so it pauses when
 the view idles or "animate" is off ([performance](performance.md)).
