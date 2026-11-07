@@ -9,6 +9,7 @@ import { DOOR_COMPONENTS } from './doors.ts';
 import type { FacilitySources } from './facility-sources.ts';
 import { FIXABLE_ROBOT_COMPONENTS } from './fixable-robots.ts';
 import { JUMP_MACHINE_COMPONENTS, JUMP_MACHINE_VERTICAL_COMPONENTS } from './jump-pads.ts';
+import { LIFTER_CORE_COMPONENTS } from './lifters.ts';
 import { REGION_WALL_COMPONENTS } from './region-walls.ts';
 import { CAMPFIRE_COMPONENTS, type PlayerKey, playerKeys, VERTICAL_ROPE_COMPONENTS } from './rest-looks.ts';
 import {
@@ -43,6 +44,8 @@ export type TemplateTraits =
 			craneTower: MemoryPackValue | null;
 			/** a broken robot's decoded template, `null` for other templates */
 			fixableRobot: MemoryPackValue | null;
+			/** a lift's decoded template, `null` for other templates */
+			lifter: MemoryPackValue | null;
 			entity: EntityProperties | null;
 	  };
 
@@ -59,6 +62,7 @@ const UNREADABLE: TemplateTraits = {
 	verticalRope: false,
 	craneTower: null,
 	fixableRobot: null,
+	lifter: null,
 	entity: null,
 };
 
@@ -101,6 +105,7 @@ export const readTemplateTraits = (template: MemoryPackValue, path: string): Tra
 		verticalRope: hasComponent(template, VERTICAL_ROPE_COMPONENTS),
 		craneTower: hasComponent(template, CRANE_TOWER_COMPONENTS) ? template : null,
 		fixableRobot: hasComponent(template, FIXABLE_ROBOT_COMPONENTS) ? template : null,
+		lifter: hasComponent(template, LIFTER_CORE_COMPONENTS) ? template : null,
 		entity: entityProperties(template),
 	};
 };

@@ -150,6 +150,11 @@ export interface PrefabPose {
 	/** lengths the states set on GameObjects' `VFXAdjustLength`, by GameObject name; absent when none */
 	lengths?: ReadonlyMap<string, number>;
 	/**
+	 * set when nothing but this pose switches the prefab's GameObjects (no view state and no component), so
+	 * what it leaves switched off never shows instead of drawing as stand-ins
+	 */
+	closed?: boolean;
+	/**
 	 * the root's matrices in the placement's space at evenly spaced times of a loop, for a prefab that moves as
 	 * a whole (an auto-moving platform); absent for one that stays at its placement
 	 */

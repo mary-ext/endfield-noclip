@@ -122,12 +122,12 @@ placed template file once for its models (`template-models.ts`) and its traits
 (`template-traits.ts`), reads doodad shells, then hands each single-model template's traits to every
 kind's `prepare`, in first-placement order. after the region walls' unlock table and the crane
 towers' poses, each row is drawn by the first kind whose `place` claims it (bridges, doors, rest
-looks, animator starts, region walls, crane towers), else as its plain model with any doodad forms,
-else as facility forms. every model goes through the row's `InteractiveRow` (`interactive-row.ts`),
-which adds its switches, blight core, model scale, ride, crane hang and lock; resting effects are
-placed last. a new kind of interactive is one module implementing `InteractiveKind`, a trait it's
-detected by, and a place in that list. the order is the order models, controls and diagnostics come
-out in, which ids follow.
+looks (lifts among them), animator starts, region walls, crane towers), else as its plain model with
+any doodad forms, else as facility forms. every model goes through the row's `InteractiveRow`
+(`interactive-row.ts`), which adds its switches, blight core, model scale, ride, crane hang and
+lock; resting effects are placed last. a new kind of interactive is one module implementing
+`InteractiveKind`, a trait it's detected by, and a place in that list. the order is the order
+models, controls and diagnostics come out in, which ids follow.
 
 ### templates and models
 
@@ -306,3 +306,15 @@ container is drawn there, lowered by its `height`, instead of at its own placeme
 step list is empty or whose prefab lacks the MonoBehaviour is reported in
 `unsupported-interactives.json` and drawn as saved; one whose container isn't placed is posed and
 reported.
+
+### lifts
+
+a [lift](../game-data/interactives.md#lifts)
+([lifters.ts](../../packages/extractor/src/game/interactives/lifters.ts)) is a rest look whose
+template has the lift core component. `lifterStart` reads its floor and the floor's position, and
+the door bools, which settle its view states with the other numbers; `readLifterLook` adds one clip
+on the prefab root that moves the moving part to the floor (the world position taken into its
+parent's saved space) and scales the pole. when no view state of the model switches a GameObject,
+the pose is `closed`: the walk draws nothing, not stand-ins, for what's switched off as saved. a
+floor missing from `position_list`, or a prefab without the MonoBehaviour, is reported in
+`unsupported-interactives.json` and drawn as saved.

@@ -204,6 +204,21 @@ export const testedValues = (states: ViewStates, key: string): number[] => {
 	return [...values].toSorted((a, b) => a - b);
 };
 
+/**
+ * @param states a model's view states
+ * @returns whether any state of any layer has a `SetActive` behaviour, so it can switch a GameObject
+ */
+export const switchesGameObjects = (states: ViewStates): boolean =>
+	records(states.data.modelAnimatorDatas).some((animator) =>
+		records(animator.layerFsmDatas).some((layer) =>
+			records(layer.stateDatas).some((state) =>
+				records(state.behaviors).some((behavior) =>
+					text(behavior.$type)?.endsWith('SetActiveBehaviorDataForMemoryPack'),
+				),
+			),
+		),
+	);
+
 /** an effect a model's view states keep playing once they rest */
 export interface RestingEffect {
 	/** the effect's name, which names its prefab */

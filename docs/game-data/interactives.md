@@ -209,6 +209,34 @@ rope's end block (`P_anm_com_machine+1_001_04`) follows the rope's `rope_mount_p
 about a metre above the bottom port. as saved, the rope is 0.5 m long and the block sits under the
 arm. indie_race001's lift near 88, 116–123, 102 sets `state` 1, so it starts unrolled.
 
+### lifts
+
+a lift (template `int_lifter_v2` and its variants) has a lift core component (`LifterCoreComponent`,
+type 154) that moves a platform between floors. the entity's `state` is the floor, and the entity
+property `position_list` lists each floor's platform position in world space (type 12, three floats
+per floor). a `state` past the list's end is an error the game only logs. as the lift starts, and
+whenever it's set to a floor:
+
+- the postmodel MonoBehaviour on the model's root (`InteractiveMovingPlatformPostmodelMono`) names
+  the moving part (`MovingPartRoot`, the `platform` GameObject), an optional pole (`Pole`), the
+  pole's saved height (`PoleHeight`) and the platform's thickness (`PlacformThickness`). the moving
+  part's world position becomes the floor's position.
+- with a pole, its local scale becomes (1, s, 1) with s = (floor y − pole y − thickness) / height,
+  the pole's y taken as placed, before the platform moves. so its top meets the platform's
+  underside, and at a bottom floor that sits a thickness above the pole's foot it shrinks to
+  nothing.
+- the component's own `doorside_list` (template parameters, then the placement's under type 154)
+  entry for the floor sets the view-state bools `left_opened` (bit 1 clear) and `right_opened` (bit
+  0 clear); `moving` is false at rest. the template's list is all 0, both doors open.
+
+the component switches no GameObject. the pole lifts' models (`int_lifter_v2_postmodel_lv005_only`,
+`_pole_only`) keep the cabin (`P_interactive_elevatorcar+1_001_01`) and the call-button frame
+(`int_lifter_button_postmodel`) the cabin lift (`_door_only`) shows, switched off, and their view
+states (only `MovingLayer`'s camera shakes) switch nothing either, so those never show. the server
+saves the floor as the player rides; a fresh world starts at the placement's `state`. The Hub's lift
+2100010064 (−84, 132.9, −88.2) starts at floor 1, its platform 14 m up at y 146.9 on a pole scaled
+1.49 times its 9 m.
+
 ### broken robots
 
 a broken robot (`int_fixable_robot`) has a fixable-robot component (`FixableRobotComponent`,

@@ -375,8 +375,9 @@ packs or renders correctly.
 - interactives ([interactives](game-data/interactives.md)) with view states draw the pose their
   state machines settle in from the placement's starting `state`, ignoring its other component
   properties; a `state` the server or a level script sets later isn't followed. of the floats
-  components set before view states start, only a vertical rope's `RopeLength` is read; of
-  `VFXAdjustLength`, only scale targets and tiling (a component switching anything else boxes its
+  components set before view states start, only a vertical rope's `RopeLength` and a lift's door
+  bools are read (a lift stays at its starting floor, which the server saves as the player rides);
+  of `VFXAdjustLength`, only scale targets and tiling (a component switching anything else boxes its
   prefab), and a `PositionFollower` holds its walk position under a looping clip.
   [one-shot effects](game-data/effects.md#one-shot-effects) and transitions' bursts (the talosites'
   activation) aren't drawn. looping effects that rest looks' states play are

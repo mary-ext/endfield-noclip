@@ -1,15 +1,23 @@
 import type { LevelInteractive } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
+import { unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
 
 import type { PrefabPose } from '../prefabs/prefab.ts';
 import { type DraftControl, sceneControl, switchValues } from '../state/scene-control.ts';
 
-import type { FacilityContext, FacilitySources } from './facility-sources.ts';
+import type { FacilityContext, FacilitySources, PrefabHashes } from './facility-sources.ts';
 import { fixableRobotInts } from './fixable-robots.ts';
 import type { InteractiveKind, InteractiveRow, SingleModelTemplate } from './interactive-row.ts';
-import { componentFloat, STATE_KEY, stateOf } from './template-data.ts';
+import { lifterStart, readLifterLook } from './lifters.ts';
+import { componentFloat, type EntityProperties, STATE_KEY, stateOf } from './template-data.ts';
 import type { TemplateTraits } from './template-traits.ts';
-import { type ModelViews, readViewStates, type RestingEffect, settledPose } from './view-state-poses.ts';
+import {
+	type ModelViews,
+	readViewStates,
+	type RestingEffect,
+	settledPose,
+	switchesGameObjects,
+} from './view-state-poses.ts';
 
 /** the component of campfires */
 export const CAMPFIRE_COMPONENTS = ['_InteractiveCampfireComponentDataForMemoryPack'];
@@ -52,6 +60,8 @@ export interface SettledLook {
 export interface InteractiveLooks {
 	away: SettledLook[];
 	near: SettledLook[] | null;
+	/** whether any of the model's view states switches a GameObject on or off */
+	switches: boolean;
 }
 
 /** a view-state key that follows the player, and how near the player must be for it to hold */
@@ -137,7 +147,7 @@ export const readInteractiveLooks = async (
 		}
 	}
 	const changes = near.some((look, i) => look.states.join() !== away[i].states.join());
-	return { away, near: changes ? near : null };
+	return { away, near: changes ? near : null, switches: switchesGameObjects(states) };
 };
 
 /** a template's settled looks and what they were settled with */
@@ -154,17 +164,22 @@ interface TemplateLooks {
 	verticalRope: boolean;
 	/** a broken robot's decoded template, whose look also follows its component parameters */
 	fixableRobot: MemoryPackValue | null;
+	/** a lift's decoded template, whose platform and pole follow its floor */
+	lifter: MemoryPackValue | null;
+	entity: EntityProperties | null;
 }
 
 /**
  * interactives with view states, drawn as they rest: campfires locked or activated under an `activation:<row
  * id>` control, and those the player's presence changes away or near under a `proximity:<row id>` control. a
- * placement's own `state`, and a vertical rope's length, settle its model again
+ * placement's own `state`, a vertical rope's length and a lift's floor settle its model again; a lift's
+ * platform and pole are also placed at its floor
  */
 export class RestLooks implements InteractiveKind {
 	/** controls of interactives whose look follows the player's presence, in placement order */
 	readonly proximityControls: DraftControl[] = [];
 	readonly #sources: FacilitySources;
+	readonly #prefabs: PrefabHashes;
 	readonly #progressions: DraftControl[];
 	readonly #doodads: { has(key: string): boolean };
 	readonly #rows: ReadonlyMap<bigint, LevelInteractive>;
@@ -175,6 +190,7 @@ export class RestLooks implements InteractiveKind {
 
 	/**
 	 * @param sources install readers, where unreadable view states are reported
+	 * @param options.prefabs the prefab hash lookup, where a lift's prefab is found
 	 * @param options.progressions where campfires' activation controls go
 	 * @param options.doodads doodad-group shells, which draw no look of their own
 	 * @param options.rows placed rows by id, where a vertical rope's port finds its other port
@@ -182,16 +198,19 @@ export class RestLooks implements InteractiveKind {
 	constructor(
 		sources: FacilitySources,
 		{
+			prefabs,
 			progressions,
 			doodads,
 			rows,
 		}: {
+			prefabs: PrefabHashes;
 			progressions: DraftControl[];
 			doodads: { has(key: string): boolean };
 			rows: ReadonlyMap<bigint, LevelInteractive>;
 		},
 	) {
 		this.#sources = sources;
+		this.#prefabs = prefabs;
 		this.#progressions = progressions;
 		this.#doodads = doodads;
 		this.#rows = rows;
@@ -201,17 +220,28 @@ export class RestLooks implements InteractiveKind {
 		if (traits.kind !== 'other' || this.#doodads.has(key)) {
 			return;
 		}
-		const { campfire, keys, start, verticalRope, fixableRobot } = traits;
+		const { campfire, keys, start, verticalRope, fixableRobot, lifter, entity } = traits;
 		const state = start === null ? null : (start.variants.get(key) ?? start.state);
 		const looks = await this.#looksOf(model, { campfire, keys, state, numbers: new Map() });
 		if (looks !== null) {
 			const radius = looks.near === null ? null : Math.max(...keys.map((entry) => entry.radius));
-			this.#templates.set(key, { model, looks, campfire, keys, radius, state, verticalRope, fixableRobot });
+			this.#templates.set(key, {
+				model,
+				looks,
+				campfire,
+				keys,
+				radius,
+				state,
+				verticalRope,
+				fixableRobot,
+				lifter,
+				entity,
+			});
 		}
 	}
 
 	async place(placed: InteractiveRow): Promise<boolean> {
-		const { row, template } = placed;
+		const { row } = placed;
 		const rest = this.#templates.get(row.template);
 		if (rest === undefined) {
 			return false;
@@ -231,8 +261,53 @@ export class RestLooks implements InteractiveKind {
 				numbers.set(key, value);
 			}
 		}
+		const lift = rest.lifter && rest.entity && lifterStart(rest.lifter, rest.entity, row);
+		if (lift && 'reason' in lift) {
+			this.#sources.report(placed.source, `${lift.reason}; drawn as saved`);
+		} else if (lift) {
+			for (const [key, value] of lift.keys) {
+				numbers.set(key, value);
+			}
+		}
 		if (state !== rest.state || numbers.size > 0) {
 			looks = (await this.#looksOf(rest.model, { campfire, keys: rest.keys, state, numbers })) ?? looks;
+		}
+		const [form] = placed.template.forms;
+		if (lift && !('reason' in lift)) {
+			const posed = await this.#sources.attempt(
+				form.prefab,
+				async () =>
+					readLifterLook(
+						await this.#sources.context.resolver(),
+						await this.#prefabs.root(form.prefab),
+						{
+							position: row.position,
+							rotation: unityEulerQuaternion(row.rotation),
+							scale: placed.scaleOf(form),
+						},
+						lift,
+					),
+				null,
+			);
+			if (posed === null) {
+				this.#sources.report(
+					placed.source,
+					'lift prefab has no lift postmodel MonoBehaviour; drawn as saved',
+				);
+			} else {
+				// the core component switches nothing, so without view states that do, the model keeps what's saved
+				const closed = !looks.switches;
+				const withLift = (look: SettledLook): SettledLook => ({
+					...look,
+					pose: {
+						...look.pose,
+						key: `${look.pose.key} ${posed.key}${closed ? ' closed' : ''}`,
+						clips: [...look.pose.clips, posed.clip],
+						closed,
+					},
+				});
+				looks = { ...looks, away: looks.away.map(withLift), near: looks.near?.map(withLift) ?? null };
+			}
 		}
 		const activation = `activation:${row.id}`;
 		if (campfire) {
@@ -270,7 +345,6 @@ export class RestLooks implements InteractiveKind {
 				}),
 			);
 		}
-		const [form] = template.forms;
 		for (const [i, away] of looks.away.entries()) {
 			const requirements = campfire ? [{ control: activation, mask: 1 << i }] : [];
 			const near = looks.near?.[i];

@@ -230,8 +230,8 @@ export const ABOVE_ROOT: RendererScope = {
 /**
  * @returns how a GameObject whose parent is drawn is switched off, `null` when it's drawn. a switched-off
  *   subtree draws only stand-ins, since a script or view state can switch it on, unless the pose or lock
- *   switched it off: that pose's other states are placed on their own. skinned meshes can still use its
- *   transforms as bones
+ *   switched it off (that pose's other states are placed on their own) or the pose is closed. skinned meshes
+ *   can still use its transforms as bones
  */
 const switchedOff = async (
 	walk: RendererWalk,
@@ -273,6 +273,9 @@ const switchedOff = async (
 		scopes.some((scope) => scope.hidden.has(bindingKey(scope.path))) ||
 		(walk.lodSwitched.has(node.key) && !walk.played.has(node.key));
 	if (neverShown || (walk.played.has(node.key) && (await isOneShotEffect(walk.resolver, node.go)))) {
+		return { standIn: null };
+	}
+	if (walk.pose?.closed === true && !walk.played.has(node.key)) {
 		return { standIn: null };
 	}
 	return { standIn: 'switched off until a script or view state turns it on' };
