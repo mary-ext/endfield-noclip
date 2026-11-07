@@ -10,8 +10,8 @@
 
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
 
-import type { DecodeJob } from '../package/decode-pool.ts';
-import type { Decoded, StoredBlob } from '../package/decode-protocol.ts';
+import type { DecodeJob, StoredBlob } from '../package/decode-pool.ts';
+import type { Decoded } from '../package/decode-protocol.ts';
 
 import type { Resident } from './resident.ts';
 

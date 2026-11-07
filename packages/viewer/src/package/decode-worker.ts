@@ -27,20 +27,38 @@ import type {
 	DecodeRequest,
 	DecodeResponse,
 	UvTransform,
+	WorkerMessage,
 } from './decode-protocol.ts';
 import { decompressZstd, zstdReady } from './zstd.ts';
 
-const unwrap = (data: ArrayBuffer, codec: BlobCodec, rawLength: number): Uint8Array<ArrayBuffer> => {
-	const stored = new Uint8Array(data);
-	switch (codec) {
+/** buffers sent by the pool, by id, until no request reads them */
+const buffers = new Map<number, ArrayBuffer>();
+
+/** a request's blob with its codec undone */
+interface Unwrapped {
+	raw: Uint8Array<ArrayBuffer>;
+	/** nothing else reads {@link raw}'s buffer, so it may be transferred */
+	owned: boolean;
+}
+
+const unwrap = (request: DecodeRequest): Unwrapped => {
+	const data = buffers.get(request.buffer);
+	if (request.last) {
+		buffers.delete(request.buffer);
+	}
+	if (data === undefined) {
+		throw new Error(`decode request reads buffer ${request.buffer}, which this worker doesn't hold`);
+	}
+	const stored = new Uint8Array(data, request.offset, request.length);
+	switch (request.codec) {
 		case BlobCodec.None: {
-			return stored;
+			return { raw: stored, owned: request.last };
 		}
 		case BlobCodec.Zstd: {
-			return decompressZstd(stored, rawLength);
+			return { raw: decompressZstd(stored, request.rawLength), owned: true };
 		}
 		default: {
-			throw new Error(`unknown blob codec ${String(codec)}`);
+			throw new Error(`unknown blob codec ${String(request.codec)}`);
 		}
 	}
 };
@@ -333,7 +351,8 @@ const decodeSkin = (
 };
 
 const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: Transferable[] } => {
-	const raw = unwrap(request.data, request.codec, request.rawLength);
+	const unwrapped = unwrap(request);
+	const raw = unwrapped.raw;
 	switch (request.kind) {
 		case 'heights': {
 			const { side, samples } = decodeHeightPage(raw);
@@ -377,7 +396,8 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 		case 'texture':
 		case 'irradiance': {
 			// stored as the GPU reads them
-			const data = ownBuffer(raw);
+			// copied where other requests read the same buffer
+			const data = unwrapped.owned ? ownBuffer(raw) : raw.slice().buffer;
 			return { response: { id: request.id, kind: request.kind, data }, transfer: [data] };
 		}
 		case 'instances': {
@@ -406,9 +426,7 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 	}
 };
 
-self.addEventListener('message', async (event: MessageEvent<DecodeRequest>) => {
-	const request = event.data;
-	await wasmReady;
+const decode = (request: DecodeRequest): void => {
 	try {
 		const { response, transfer } = handle(request);
 		// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a worker posting to its owner
@@ -417,5 +435,25 @@ self.addEventListener('message', async (event: MessageEvent<DecodeRequest>) => {
 		const response: DecodeResponse = { id: request.id, kind: 'error', message: String(err) };
 		// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a worker posting to its owner
 		self.postMessage(response);
+	}
+};
+
+self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
+	const message = event.data;
+	// every message waits, so they're handled in the order they came
+	await wasmReady;
+	switch (message.type) {
+		case 'buffer': {
+			buffers.set(message.buffer, message.data);
+			return;
+		}
+		case 'release': {
+			buffers.delete(message.buffer);
+			return;
+		}
+		case 'decode': {
+			decode(message.request);
+			return;
+		}
 	}
 });

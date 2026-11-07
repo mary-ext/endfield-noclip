@@ -2,16 +2,21 @@ import type { BlobCodec } from '@endfield-noclip/package-format/blobs';
 
 import type { InstanceRows, RowKinds } from '../content/instance-rows.ts';
 
-/** a blob as stored, which every decode job carries */
-export interface StoredBlob {
-	/** stored blob bytes; transferred */
-	data: ArrayBuffer;
+/** how a blob's stored bytes are encoded */
+export interface BlobEncoding {
 	codec: BlobCodec;
 	rawLength: number;
 }
 
-interface RequestBase extends StoredBlob {
+interface RequestBase extends BlobEncoding {
 	id: number;
+	/** the worker's buffer holding the stored bytes, from an earlier {@link WorkerMessage} of type `buffer` */
+	buffer: number;
+	/** the stored bytes' range in the buffer */
+	offset: number;
+	length: number;
+	/** no later request reads the buffer, so the worker drops it and may keep its bytes */
+	last: boolean;
 }
 
 /** a UV dequantization as a `_ST` transform: `uv = value · xy + zw` */
@@ -159,6 +164,17 @@ export type Decoded =
 	| DecodedGeometry
 	| DecodedTexture
 	| DecodedIrradiance;
+
+/**
+ * a message to a worker. a worker handles them in order: a buffer arrives before the requests that read it,
+ * and is released after them
+ */
+export type WorkerMessage =
+	/** stored bytes later requests read ranges of; transferred */
+	| { type: 'buffer'; buffer: number; data: ArrayBuffer }
+	| { type: 'decode'; request: DecodeRequest }
+	/** no request will read the buffer any more */
+	| { type: 'release'; buffer: number };
 
 /** a worker's answer */
 export type DecodeResponse = Decoded | { id: number; kind: 'error'; message: string };

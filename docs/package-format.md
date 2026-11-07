@@ -973,8 +973,6 @@ provenance lives there rather than in the manifest, which only identifies the bu
 - **instance compression**: meshopt filters or quantized rows could roughly halve instance blobs.
 - **entry ids**: table entries repeat their own index as `id`, which the viewer's texture streaming
   passes around.
-- **coalesced reads**: the viewer copies each blob of a coalesced range read into a buffer of its
-  own so it can go to a decode worker alone; handing a worker the whole read would skip the copies.
 - **core tables as JSON**: the geometry and texture tables could be fixed-size binary records, read
   without parsing.
 - **water floaters** point at instance rows by (blob, row) from the water table; a row section in

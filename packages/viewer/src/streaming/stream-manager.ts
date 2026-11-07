@@ -1,6 +1,6 @@
 import { CORE_ARCHIVE_INDEX } from '@endfield-noclip/package-format/manifest';
 
-import type { DecodePool } from '../package/decode-pool.ts';
+import { type DecodePool, SharedBytes } from '../package/decode-pool.ts';
 import type { Decoded } from '../package/decode-protocol.ts';
 import { PackageChangedError } from '../package/package-source.ts';
 import type { ViewerPackage } from '../package/viewer-package.ts';
@@ -55,6 +55,13 @@ const MAX_UNDECODED = 384;
 /** fetched or decoded blobs nobody has wanted for this many frames are dropped instead of decoded or uploaded */
 const STALE_FRAMES = 30;
 
+/** a fetched blob's stored bytes: a range of its read's bytes */
+interface FetchedBytes {
+	bytes: SharedBytes;
+	offset: number;
+	length: number;
+}
+
 /** a shard blob's byte range, with what reading its archive needs */
 interface ShardRange extends QueuedRange {
 	path: string;
@@ -97,8 +104,11 @@ export class StreamManager {
 	#queued = new Set<ContentItem>();
 	/** queued core blobs, read from memory without a request slot */
 	#queuedCore = new Set<ContentItem>();
-	/** fetched blobs' stored bytes, waiting for a decode slot; the most wanted is decoded first */
-	#fetched = new Map<ContentItem, ArrayBuffer>();
+	/**
+	 * fetched blobs' stored bytes, waiting for a decode slot; the most wanted is decoded first. each is a use
+	 * of its bytes, which is passed to the pool as a job or released
+	 */
+	#fetched = new Map<ContentItem, FetchedBytes>();
 	/** blobs in range reads under way */
 	#fetching = 0;
 	#uploads: ContentItem[] = [];
@@ -288,6 +298,9 @@ export class StreamManager {
 			request.abort.abort();
 		}
 		this.#decodes.abort();
+		for (const fetched of this.#fetched.values()) {
+			this.#pool.release(fetched.bytes);
+		}
 		this.#fetched.clear();
 		for (const item of this.#items) {
 			if (item !== undefined && item.resident !== null) {
@@ -431,18 +444,16 @@ export class StreamManager {
 			)
 			.then((bytes) => {
 				this.stats.downloadedBytes += bytes.byteLength;
-				const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
-				for (const item of members) {
-					if (item.state !== 'fetching') {
-						continue;
-					}
+				const received = members.filter((item) => item.state === 'fetching');
+				// the read goes to one worker whole, which decodes each member from it
+				const shared = new SharedBytes(bytes.buffer, received.length);
+				for (const item of received) {
 					const member = this.#shardRange(item.blob);
-					// each member is transferred to a worker on its own, so it needs a buffer of its own
-					const data =
-						whole && member.start === start && member.end === end
-							? bytes.buffer
-							: bytes.slice(member.start - start, member.end - start).buffer;
-					this.#received(item, data);
+					this.#received(item, {
+						bytes: shared,
+						offset: bytes.byteOffset + member.start - start,
+						length: member.end - member.start,
+					});
 				}
 				this.#startDecodes();
 			})
@@ -479,7 +490,7 @@ export class StreamManager {
 		this.#package
 			.readCoreBlob(item.blob)
 			.then((data) => {
-				this.#received(item, data);
+				this.#received(item, { bytes: new SharedBytes(data, 1), offset: 0, length: data.byteLength });
 				this.#startDecodes();
 			})
 			.catch((err: unknown) => this.#fail(item, err))
@@ -487,12 +498,13 @@ export class StreamManager {
 	}
 
 	/** keeps a fetched blob's stored bytes until a decode slot frees */
-	#received(item: ContentItem, data: ArrayBuffer): void {
+	#received(item: ContentItem, fetched: FetchedBytes): void {
 		if (this.#destroyed) {
+			// never posted, so no worker holds the bytes
 			return;
 		}
 		item.state = 'fetched';
-		this.#fetched.set(item, data);
+		this.#fetched.set(item, fetched);
 		this.stats.decoding++;
 	}
 
@@ -504,9 +516,10 @@ export class StreamManager {
 		const fetched = this.#fetched;
 		while (fetched.size > 0 && this.#pool.free > 0) {
 			let best: ContentItem | null = null;
-			for (const item of fetched.keys()) {
+			for (const [item, bytes] of fetched) {
 				// while saturated, unpinned content would only be dropped once decoded
 				if (!item.pinned && (item.wantedFrame < this.#frame - STALE_FRAMES || this.#saturated)) {
+					this.#pool.release(bytes.bytes);
 					fetched.delete(item);
 					item.state = 'idle';
 					this.stats.decoding--;
@@ -526,17 +539,19 @@ export class StreamManager {
 		}
 	}
 
-	#decode(item: ContentItem, data: ArrayBuffer): void {
+	#decode(item: ContentItem, fetched: FetchedBytes): void {
 		if (this.#destroyed) {
+			this.#pool.release(fetched.bytes);
 			return;
 		}
 		const record = this.#package.blobs[item.blob];
 		const kind = RESIDENT_KINDS[record.kind];
 		if (kind === null) {
+			this.#pool.release(fetched.bytes);
 			this.#fail(item, new Error(`blob kind ${record.kind} isn't supported yet`));
 			return;
 		}
-		const stored = { data, codec: record.codec, rawLength: record.rawLength };
+		const stored = { ...fetched, codec: record.codec, rawLength: record.rawLength };
 		const job = this.#pool.run(decodeJob(this.#handlers, kind, item.blob, stored), this.#decodes.signal);
 		item.state = 'decoding';
 		this.#working++;

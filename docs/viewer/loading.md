@@ -61,9 +61,23 @@ throws on a page of any other size, which fails that blob.
 ## decode workers and zstd
 
 [`package/decode-pool.ts`](../../packages/viewer/src/package/decode-pool.ts) runs 2–4 module workers
-(half the hardware threads, clamped) and hands each job to the least busy one, transferring the
-blob's buffer. each worker holds at most two jobs at once; the rest wait in the pool, so the jobs of
-an unloaded package that no worker has taken yet are dropped instead of keeping the workers busy.
+(half the hardware threads, clamped) and hands each job to the least busy one. each worker holds at
+most four jobs at once; the rest wait in the pool, so the jobs of an unloaded package that no worker
+has taken yet are dropped instead of keeping the workers busy.
+
+a job is a range of a `SharedBytes` buffer: a whole coalesced range read, or a core blob copied out
+of the core's bytes (which stay on the main thread). the pool transfers the buffer to the worker
+that takes its first job, uncopied, and sends the buffer's later jobs to that worker too, so a full
+worker can hold them back while another idles; decoding isn't what bounds loading (see
+[decoding](streaming.md#residency-and-budgets)), so this costs little. the buffer counts its jobs
+not yet posted: the stream manager releases the ones it drops instead of decoding, and once none is
+left the worker frees the buffer. until then the whole read stays in memory, gaps included, for its
+last waiting blob. per-blob copies remain only for uncompressed texture, layer and irradiance blobs
+that share their read, whose bytes the worker copies out to transfer back; every other kind is
+decoded into new arrays anyway. on two flights between map02 levels, 954–1,148 of ~2,900 decoded
+blobs shared a read; copying them out on the main thread, as the viewer once did, was about 21 MB
+per flight, and the workers copied under 3 KiB in their place.
+
 [`package/decode-worker.ts`](../../packages/viewer/src/package/decode-worker.ts) undoes the blob
 codec and builds GPU-ready arrays:
 
