@@ -1,6 +1,7 @@
 import { chacha20 } from '@noble/ciphers/chacha.js';
 
 import { BinaryReader, FormatError, toHex } from '../binary/binary-reader.ts';
+import { bytesEqual } from '../binary/pe.ts';
 
 // #region types
 
@@ -8,8 +9,6 @@ import { BinaryReader, FormatError, toHex } from '../binary/binary-reader.ts';
 export interface VfsFileEntry {
 	/** logical path, e.g. `Data/Streaming/PC/map02/Streaming/InitChunkData_0_0_0_0.bytes` */
 	name: string;
-	/** 8-byte name hash as uppercase hex */
-	nameHash: string;
 	/** md5 name of the chunk holding the bytes, i.e. `<chunkMd5>.chk` */
 	chunkMd5: string;
 	/** md5 of the logical file's decrypted bytes, uppercase hex */
@@ -108,7 +107,8 @@ export const parseVfsCatalog = (raw: Uint8Array, key: Uint8Array): VfsCatalog =>
 	const chunks: VfsChunkEntry[] = [];
 	let parsedFiles = 0;
 	for (let c = 0; c < chunkCount; c++) {
-		const md5 = toHex(r.bytesView(16));
+		const md5Bytes = r.bytesView(16);
+		const md5 = toHex(md5Bytes);
 		const contentMd5 = toHex(r.bytesView(16));
 		const length = r.i64Number();
 		const chunkBlockType = r.u8();
@@ -121,8 +121,11 @@ export const parseVfsCatalog = (raw: Uint8Array, key: Uint8Array): VfsCatalog =>
 		const files: VfsFileEntry[] = [];
 		for (let i = 0; i < itemCount; i++) {
 			const name = readShortString(r);
-			const nameHash = toHex(r.bytesView(8));
-			const chunkMd5 = toHex(r.bytesView(16));
+			// the name hash isn't needed to read files
+			r.skip(8);
+			// a Bundle catalog has ~280k files, so they share their chunk's string rather than each holding a copy
+			const chunkMd5Bytes = r.bytesView(16);
+			const chunkMd5 = bytesEqual(chunkMd5Bytes, md5Bytes) ? md5 : toHex(chunkMd5Bytes);
 			const dataMd5 = toHex(r.bytesView(16));
 			const offset = r.i64Number();
 			const fileLength = r.i64Number();
@@ -136,7 +139,6 @@ export const parseVfsCatalog = (raw: Uint8Array, key: Uint8Array): VfsCatalog =>
 			}
 			files.push({
 				name,
-				nameHash,
 				chunkMd5,
 				dataMd5,
 				offset,
