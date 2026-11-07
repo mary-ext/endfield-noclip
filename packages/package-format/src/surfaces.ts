@@ -855,6 +855,34 @@ export interface EffectStackSurface {
 	stencil: EffectStencil | null;
 	/** the reveal around the player; `null` without one */
 	appear: EffectAppear | null;
+	/** a VFXDecal's parallax and cracks (`_USE_PARALLAX`); `null` without */
+	parallax: DecalParallax | null;
+}
+
+/**
+ * VFXDecal's `_USE_PARALLAX` (`docs/game-data/effects.md#vfxdecal`): the view ray steps down through a depth
+ * texture from the main texture's UVs, shifting the main texture, and cracks add their colour where a mask
+ * marks them. the textures take stack slots no layer uses
+ */
+export interface DecalParallax {
+	/** `_ParallaxScale`: the UV shift per unit of the view ray's slope across the box */
+	scale: number;
+	/** the depth texture's slot; its red is the height, 1 at the top. sampled at the main texture's UVs */
+	depthSlot: number;
+	depth: EffectTexture;
+	/** the crack mask's slot; its red weighs the crack noise against the crack colour */
+	crackSlot: number;
+	crack: EffectTexture;
+	/** the crack noise's slot, with its own transform, scroll and UV source, shifted by the parallax */
+	noiseSlot: number;
+	noise: EffectTexture;
+	noiseSource: EffectUvSource;
+	/** the share of the distortion the noise's UVs take (`_ParallaxUseDisturb`) */
+	noiseDisturb: number;
+	/** `_CrackColor` (HDR, rgb) */
+	crackColor: [number, number, number];
+	/** `_CrackNoiseColor` (HDR, rgb) times `_CrackNoiseIntensity` */
+	noiseColor: [number, number, number];
 }
 
 /** an opaque VFXBaseV2 material that only writes the stencil: a portal's mask */

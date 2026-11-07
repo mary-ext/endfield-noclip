@@ -504,6 +504,7 @@ export const describeVfxBase = (
 		screenUv: screenUvOf(reader),
 		stencil,
 		appear: null,
+		parallax: null,
 	};
 };
 

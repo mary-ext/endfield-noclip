@@ -158,6 +158,15 @@ export const EffectRow = {
 	disturbNormal: 174,
 	/** 1 when the vertex colour scales the blend tint (`EffectStackSurface.blendVertexColor`) */
 	blendVertexColor: 175,
+	/**
+	 * a decal's parallax (`DecalParallax`), in the reveal's rows, which decals don't have: the UV shift per
+	 * layer per unit of slope (`−scale / 30`), then the depth, crack mask and crack noise slots (0 without)
+	 */
+	parallax: 160,
+	/** the decal's crack colour (HDR rgb), then the share of the distortion the crack noise takes */
+	crack: 164,
+	/** the decal's crack noise colour (HDR rgb, times its intensity) */
+	crackNoise: 168,
 } as const;
 
 /**

@@ -280,6 +280,56 @@ describe('VFXDecal', () => {
 		assert.deepEqual(main.customScroll, [0, 0]);
 		assert.ok(Math.abs(main.offset[0]) < 1e-9 && Math.abs(main.offset[1] - 0.5) < 1e-9, String(main.offset));
 	});
+
+	// Marker Stone Interiors' ash (`M_fxmap_map02_lv004_ash_01_03`)
+	const ash = (overrides: Partial<MaterialValues> = {}) =>
+		material({
+			keywords: ['_USE_DISSOLVE', '_USE_DISTURB', '_USE_PARALLAX', '_USE_POLARUV'],
+			slots: {
+				_MainTex: slot(1),
+				_DisturbTex1: slot(2),
+				_DissolveTex: slot(3),
+				_DepthTex: slot(4),
+				_CrackMask: slot(5),
+				_CrackNoiseTex: slot(6, [3, 1]),
+			},
+			floats: {
+				_UsePolarUV: 1,
+				_ParallaxScale: 0.007,
+				_ParallaxSwitchUV: 2,
+				_ParallaxUseDisturb: 1,
+				_CrackNoiseIntensity: 2,
+			},
+			colors: {
+				_CrackColor: [0.5, 0.7, 1, 0],
+				_CrackNoiseColor: [1, 1, 2, 1],
+				_CrackNoiseSpeed: [0, -0.02, 0, 0],
+			},
+			...overrides,
+		});
+
+	it('steps its parallax through the depth texture and adds cracks, in the slots no layer takes', () => {
+		const { parallax } = ofKind(describeMaterial(ash(), decal), 'effectStack');
+		assert.ok(parallax !== null);
+		// main, disturb 1 and the dissolve take slots 0, 1 and 6
+		assert.deepEqual([parallax.depthSlot, parallax.crackSlot, parallax.noiseSlot], [2, 3, 4]);
+		assert.deepEqual([parallax.depth.texture, parallax.crack.texture, parallax.noise.texture], [4, 5, 6]);
+		assert.deepEqual([parallax.noiseSource, parallax.noiseDisturb, parallax.scale], ['polar', 1, 0.007]);
+		// the noise scrolls after its `_ST`
+		assert.deepEqual(parallax.noise.scroll, [0, -0.02]);
+		assert.deepEqual(
+			[parallax.crackColor, parallax.noiseColor],
+			[
+				[0.5, 0.7, 1],
+				[2, 2, 4],
+			],
+		);
+	});
+
+	it('leaves out parallax beside a blend layer', () => {
+		const blended = ash({ keywords: ['_USE_PARALLAX', '_USE_BLEND'] });
+		assert.equal(describeMaterial(blended, decal).kind, 'unsupported');
+	});
 });
 
 describe('lit decals', () => {

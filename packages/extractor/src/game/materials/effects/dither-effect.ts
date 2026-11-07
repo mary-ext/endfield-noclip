@@ -198,5 +198,6 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 		screenUv: screenUvOf(reader),
 		stencil: null,
 		appear,
+		parallax: null,
 	};
 };

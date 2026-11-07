@@ -78,6 +78,10 @@ const FX_APPEAR_BRIGHT = 42u;
 // the texture stack's switches: the vertex alpha scales the reveal's brightening, the global radii add to the
 // reveal's, the first disturb texture holds a normal, the vertex colour scales the blend tint
 const FX_STACK_FLAGS = 43u;
+// a decal's parallax (`EffectRow.parallax`), crack colour and crack noise colour, in the reveal's rows
+const FX_PARALLAX = 40u;
+const FX_CRACK = 41u;
+const FX_CRACK_NOISE = 42u;
 // the slot of the vertex offset's texture (`OFFSET_SLOT` in stack.ts)
 const FX_OFFSET_SLOT = 6u;
 // how the vertex stage moves vertices (`VertexMotion` in stack.ts)
@@ -384,8 +388,10 @@ fn fx_custom_shift(id: u32, slot: u32, custom: vec4f) -> vec2f {
 
 // the texture stack: the distortion and weight run through the slots in order, then the main texture, its mask,
 // the blend layer and the dissolve, whose threshold the particle's custom data's z adds to as the schedule.
-// `vertex_color` scales the blend tint where the look says so. returns the colour (before exposure) and alpha
-fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f, vertex_color: vec4f) -> vec4f {
+// `vertex_color` scales the blend tint where the look says so. a decal's parallax (`cracked`) shifts the main
+// texture by `parallax` and adds its cracks before the dissolve. returns the colour (before exposure) and alpha
+fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f, vertex_color: vec4f, cracked: bool, parallax: vec2f)
+	-> vec4f {
 	let weight_row = fx_row(id, FX_WEIGHT);
 	let disturb = fx_row(id, FX_DISTURB);
 	let flags = fx_row(id, FX_STACK_FLAGS);
@@ -448,13 +454,10 @@ fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f, vertex_color:
 	}
 	let bits = fx_slot_bits(id, 0u);
 	let base = fx_slot_base(bases, bits);
-	let uv = fx_slot_coords(id, 0u, base[0] + fx_custom_shift(id, 0u, custom)) + offset * slot_disturb(bits);
-	var main_sample = fx_sample(
-		0u,
-		uv,
-		fx_slot_gradient(id, 0u, base[1]) * bias,
-		fx_slot_gradient(id, 0u, base[2]) * bias,
-	);
+	let main_uv = fx_slot_coords(id, 0u, base[0] + fx_custom_shift(id, 0u, custom));
+	let main_dx = fx_slot_gradient(id, 0u, base[1]) * bias;
+	let main_dy = fx_slot_gradient(id, 0u, base[2]) * bias;
+	var main_sample = fx_sample(0u, main_uv + offset * slot_disturb(bits) + parallax, main_dx, main_dy);
 	if ((bits & SLOT_RED_ALPHA) != 0u) {
 		main_sample = vec4f(1.0, 1.0, 1.0, main_sample.r);
 	}
@@ -462,6 +465,9 @@ fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f, vertex_color:
 	let blend_tint = fx_row(id, FX_BLEND_TINT) * select(vec4f(1.0), vertex_color, flags.w != 0.0);
 	var color = blend.rgb * saturate((c.a + blend.a) * blend_tint.w) * blend_tint.rgb + c.rgb;
 	var alpha = c.a;
+	if (cracked) {
+		color += fx_decal_cracks(id, bases, main_uv + parallax, main_dx, main_dy, offset, parallax);
+	}
 	if (dissolve.w != 0.0) {
 		let threshold = mix(-1.0, dissolve.x + custom.z * 2.02, (1.0 - weight_row.z) + weight.x * weight_row.z);
 		let v = dissolved - threshold;
@@ -657,7 +663,7 @@ fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
 	if (fx_row(id, FX_APPEAR_NOISE).w > 0.0) {
 		tint = fx_appear(in, bases, tint);
 	}
-	var combined = fx_combine(id, bases, tint, in.custom, in.color);
+	var combined = fx_combine(id, bases, tint, in.custom, in.color, false, vec2f(0.0));
 	let depth = dot(in.rel, frame.view_forward.xyz);
 	// `_USE_EDGECOLOR` marks where the surface nears what lies behind it: mode 1 adds the edge colour and the tint
 	// alpha by its strength, 0 multiplies the colour by the edge colour and the alpha by the strength
@@ -1451,6 +1457,66 @@ fn fx_surface_normal(px: vec2i) -> vec3f {
 	return surface.normal;
 }
 
+// VFXDecal's `_USE_PARALLAX`: from the main texture's UVs, the view ray (`view`, towards the camera) steps down
+// through the depth texture's red (1 at the top) in 30 layers across the box's x and z over its y, and the UV
+// shift interpolates between the last layer above the surface and the first below
+fn fx_decal_parallax(id: u32, in: EffectOut, bases: FxBases, view: vec3f) -> vec2f {
+	let row = fx_row(id, FX_PARALLAX);
+	let depth_slot = u32(row.y);
+	let v = vec3f(
+		dot(view, normalize(in.to_object0.xyz)),
+		dot(view, normalize(in.to_object2.xyz)),
+		dot(view, in.up),
+	);
+	let step = v.xy / v.z * row.x;
+	let bits = fx_slot_bits(id, 0u);
+	let base = fx_slot_base(bases, bits);
+	let bias = exp2(frame.params.y);
+	let uv = fx_slot_coords(id, 0u, base[0]);
+	let dx = fx_slot_gradient(id, 0u, base[1]) * bias;
+	let dy = fx_slot_gradient(id, 0u, base[2]) * bias;
+	var shift = step;
+	var previous = vec2f(0.0);
+	var layer = 29.0 / 30.0;
+	var height = 0.0;
+	var previous_layer = 1.0;
+	var previous_height = 0.0;
+	for (var i = 0; i < 31; i++) {
+		height = fx_sample(depth_slot, uv + shift, dx, dy).r;
+		if (height > layer) {
+			break;
+		}
+		previous = shift;
+		previous_layer = layer;
+		previous_height = height;
+		shift += step;
+		layer -= 1.0 / 30.0;
+	}
+	let t = (previous_height - previous_layer) / ((previous_height - height) + layer - previous_layer);
+	return previous + step * t;
+}
+
+// a decal's cracks at the parallax-shifted main UVs: the crack colour weighed against the crack noise by the
+// crack mask's red. the noise takes its own UVs, the distortion's share and the parallax shift
+fn fx_decal_cracks(id: u32, bases: FxBases, uv: vec2f, dx: vec2f, dy: vec2f, offset: vec2f, parallax: vec2f)
+	-> vec3f {
+	let row = fx_row(id, FX_PARALLAX);
+	let crack_row = fx_row(id, FX_CRACK);
+	let crack = fx_sample(u32(row.z), uv, dx, dy).r;
+	let noise_slot = u32(row.w);
+	let bits = fx_slot_bits(id, noise_slot);
+	let base = fx_slot_base(bases, bits);
+	let bias = exp2(frame.params.y);
+	let noise_uv = fx_slot_coords(id, noise_slot, base[0]) + offset * crack_row.w + parallax;
+	let noise = fx_sample(
+		noise_slot,
+		noise_uv,
+		fx_slot_gradient(id, noise_slot, base[1]) * bias,
+		fx_slot_gradient(id, noise_slot, base[2]) * bias,
+	);
+	return mix(crack_row.rgb * crack, noise.rgb * fx_row(id, FX_CRACK_NOISE).rgb, crack);
+}
+
 // VFXDecal boxes, drawn by their back faces without a depth test: each covered pixel finds the main pass's
 // surface along its view ray, and the texture stack projects onto it down the box's y, faded towards the
 // box's sides and top and bottom, on surfaces facing away from the projection, and near the camera
@@ -1477,7 +1543,12 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 		}
 		return fx_lit_decal(in, px, rel, rel_dx, rel_dy, uv, bases.dx[0], bases.dy[0]);
 	}
-	let combined = fx_combine(id, bases, fx_row(id, FX_TINT), in.custom, in.color);
+	let cracked = fx_row(id, FX_PARALLAX).y != 0.0;
+	var parallax = vec2f(0.0);
+	if (cracked) {
+		parallax = fx_decal_parallax(id, in, bases, normalize(-rel));
+	}
+	let combined = fx_combine(id, bases, fx_row(id, FX_TINT), in.custom, in.color, cracked, parallax);
 	let soft = fx_row(id, FX_SOFT);
 	let color = clamp(combined.rgb, vec3f(0.0), vec3f(1000.0)) * mix(1.0, frame.ambient.y, soft.z);
 

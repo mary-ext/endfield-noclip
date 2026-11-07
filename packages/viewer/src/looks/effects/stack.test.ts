@@ -77,6 +77,7 @@ const stack = (overrides: Partial<EffectStackSurface> = {}): EffectStackSurface 
 	screenUv: { localPivot: false, byDepth: true, heightAsV: false },
 	stencil: null,
 	appear: null,
+	parallax: null,
 	...overrides,
 });
 
@@ -225,6 +226,41 @@ test('a texture stack flags screen UVs taken about the object’s origin', () =>
 		entries: [described(stack({ screenUv: { localPivot: true, byDepth: false, heightAsV: true } }))],
 	});
 	assert.equal(pivot.params[EffectRow.unfogged + 3], 6);
+});
+
+test('a decal’s parallax takes its slots without a role, the noise keeping its source', () => {
+	const [look] = materialLooks({
+		entries: [
+			described(
+				stack({
+					variant: 'decal',
+					parallax: {
+						scale: 0.03,
+						depthSlot: 2,
+						depth: texture(4),
+						crackSlot: 3,
+						crack: texture(5),
+						noiseSlot: 4,
+						noise: texture(6),
+						noiseSource: 'polar',
+						noiseDisturb: 0.5,
+						crackColor: [1, 2, 3],
+						noiseColor: [4, 5, 6],
+					},
+				}),
+			),
+		],
+	});
+	assert.deepEqual(
+		[...look.params.subarray(EffectRow.slotBits + 2, EffectRow.slotBits + 5)],
+		[ROLE_NONE, ROLE_NONE, ROLE_NONE + SlotSource.Polar * 32],
+	);
+	assert.deepEqual(
+		[...look.params.subarray(EffectRow.parallax, EffectRow.parallax + 4)],
+		[Math.fround(-0.001), 2, 3, 4],
+	);
+	assert.deepEqual([...look.params.subarray(EffectRow.crack, EffectRow.crack + 4)], [1, 2, 3, 0.5]);
+	assert.deepEqual([...look.params.subarray(EffectRow.crackNoise, EffectRow.crackNoise + 3)], [4, 5, 6]);
 });
 
 test('a breathing stack keeps its pulse in the decal fade row, which decals don’t share with it', () => {

@@ -272,6 +272,21 @@ alpha its alpha times `_TintColorAlpha`, faded towards the box's x and z faces (
 `_USE_NORMALBLEND` on surfaces facing away from the box's y (`N·up` to the power
 `_AngleBlendFallOff`, N the surface's normal). the colour is premultiplied by the alpha twice.
 
+`_USE_PARALLAX` sinks the decal into the surface. the view direction, taken in the box's frame (x
+and z across, y up), steps the main texture's UVs by `−_ParallaxScale · v.xz / v.y / 30` per layer
+through `_DepthTex`'s red, a height that is 1 at the top: from 29/30 down, 30 layers and at most 31
+samples, stopping at the first layer below the height, and the shift interpolates between that
+sample and the one before. the main texture and `_CrackMask` sample at the shifted UVs (the mask
+without the distortion), and `_CrackNoiseTex` at its own UVs (`_ParallaxSwitchUV`, its `_ST`, then
+`_CrackNoiseSpeed` per second), shifted by `_ParallaxUseDisturb` of the distortion and by the
+parallax. the colour adds
+`lerp(_CrackColor · m, noise · _CrackNoiseColor · _CrackNoiseIntensity, m)`, m the crack mask's red,
+before the dissolve's edge colour; all three textures default to white. the dissolve doesn't take
+the shift. two materials use it: the ash on Marker Stone Interiors' floors
+(`M_fxmap_map02_lv004_ash_01_03` in `p_fxmap_map02_lv004_ash_large_01`, 69 placements on
+indie_dg007), dark blue under glowing pale cracks on polar UVs, and the core of the erosion-mud
+anchors (`M_fx_angel_anchorcore_852`).
+
 off particles its textures shift by their speed's zw times constants of the material
 (`_MainCustomData`, `_DisturbCustomData`, `_MaskCustomData`, `_BlendCustomData`,
 `_DissolveCustomData`), where VFXBaseV2's take custom data, and its dissolve schedule takes nothing.

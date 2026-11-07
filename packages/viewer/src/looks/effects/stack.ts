@@ -1,4 +1,5 @@
 import type {
+	DecalParallax,
 	EffectSoftBody,
 	EffectStackSurface,
 	EffectUvSource,
@@ -119,6 +120,24 @@ const setSoftBody = (look: EffectLook, body: EffectSoftBody): void => {
 };
 
 /**
+ * a decal's parallax slots and rows ({@link EffectRow.parallax}): the depth texture and crack mask sample at
+ * the main texture's UVs, the noise at its own source's
+ */
+const setParallax = (look: EffectLook, parallax: DecalParallax): void => {
+	const params = look.params;
+	setSlot(look, parallax.depthSlot, parallax.depth, ROLE_NONE);
+	setSlot(look, parallax.crackSlot, parallax.crack, ROLE_NONE);
+	// the fragment stage skips it in the stack's loop, but reads its source bits
+	setSlot(look, parallax.noiseSlot, parallax.noise, ROLE_NONE + SOURCES[parallax.noiseSource] * 32);
+	params.set(
+		[-parallax.scale / 30, parallax.depthSlot, parallax.crackSlot, parallax.noiseSlot],
+		EffectRow.parallax,
+	);
+	params.set([...parallax.crackColor, parallax.noiseDisturb], EffectRow.crack);
+	params.set(parallax.noiseColor, EffectRow.crackNoise);
+};
+
+/**
  * the texture stack of VFXBaseV2, VFXDecal, VFXDitherAlpha's effect variants and VFXAdvance ({@link
  * EffectStackSurface})
  *
@@ -187,6 +206,9 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 	}
 	if (stack.lighting !== null) {
 		params.set([1, stack.lighting.worldUp ? 1 : 0], EffectRow.offsetMode + 2);
+	}
+	if (stack.parallax !== null) {
+		setParallax(look, stack.parallax);
 	}
 	if (stack.appear !== null) {
 		const { appear } = stack;

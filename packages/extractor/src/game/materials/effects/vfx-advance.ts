@@ -236,5 +236,6 @@ const describeFixedSlots = (
 		screenUv: screenUvOf(reader),
 		stencil: null,
 		appear,
+		parallax: null,
 	};
 };

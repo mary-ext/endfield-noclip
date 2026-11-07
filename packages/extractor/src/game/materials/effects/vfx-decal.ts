@@ -1,5 +1,6 @@
 import type { TextureSlot } from '@endfield-noclip/package-format/materials';
 import type {
+	DecalParallax,
 	EffectStackSurface,
 	EffectUvSource,
 	StackLayer,
@@ -7,9 +8,9 @@ import type {
 } from '@endfield-noclip/package-format/surfaces';
 
 import { pastUvSets, undrawnBlend, undrawnKeywords } from '../describe-steps.ts';
-import { type MaterialReader, unsupported } from '../material-values.ts';
+import { isUnsupported, type MaterialReader, unsupported } from '../material-values.ts';
 
-import { degreesRotation, effectTexture, speedOf } from './effect-steps.ts';
+import { degreesRotation, type EffectSlot, effectTexture, speedOf, UNSET_WHITE } from './effect-steps.ts';
 import { stackSharedOf } from './texture-stack.ts';
 
 /**
@@ -103,7 +104,68 @@ const DECAL_KEYWORDS = new Set([
 	'_USE_FOG',
 	'_USE_POLARUV',
 	'_USE_SCREENUV',
+	'_USE_PARALLAX',
 ]);
+
+/**
+ * `_USE_PARALLAX`'s depth texture, crack mask and crack noise, in the stack slots no layer takes
+ *
+ * @param reader the material's properties
+ * @param layers the stack's slots
+ * @param sources the UV sources a switch can pick, by its value
+ * @returns the parallax, `null` without the keyword, or `unsupported`
+ */
+const parallaxOf = (
+	reader: MaterialReader,
+	layers: readonly (StackLayer | null)[],
+	sources: ReadonlyMap<number, EffectUvSource>,
+): DecalParallax | UnsupportedSurface | null => {
+	const { float, colorOrVector: color, has } = reader;
+	if (!has('_USE_PARALLAX')) {
+		return null;
+	}
+	// where the shader adds the cracks against the blend layer isn't known
+	if (has('_USE_BLEND')) {
+		return unsupported('parallax with a blend layer');
+	}
+	const free = [1, 2, 3, 4, 5, 6].filter((i) => layers[i] === null);
+	if (free.length < 3) {
+		return unsupported('parallax with too few free slots');
+	}
+	// each defaults to white, which an unset slot binds
+	const bound = (name: string): EffectSlot => reader.slot(name) ?? UNSET_WHITE;
+	const noiseSlot = bound('_CrackNoiseTex');
+	for (const [name, slot] of [
+		['_DepthTex', bound('_DepthTex')],
+		['_CrackMask', bound('_CrackMask')],
+		['_CrackNoiseTex', noiseSlot],
+	] as const) {
+		const uvSet = pastUvSets(name, slot);
+		if (uvSet !== null) {
+			return uvSet;
+		}
+	}
+	// the noise scrolls after its `_ST`, so its scroll is divided by the scale the viewer applies after it
+	const speed = speedOf(reader, '_CrackNoiseSpeed');
+	const scroll = [0, 1].map((k) => (noiseSlot.scale[k] === 0 ? 0 : speed[k] / noiseSlot.scale[k]));
+	const crackColor = color('_CrackColor') ?? [0, 0, 0, 0];
+	const noiseColor = color('_CrackNoiseColor') ?? [0, 0, 0, 0];
+	const intensity = float('_CrackNoiseIntensity', 1);
+	return {
+		scale: float('_ParallaxScale', 0),
+		// the depth texture and crack mask take the main texture's UVs, so their own transforms are unused
+		depthSlot: free[0],
+		depth: effectTexture({ ...UNSET_WHITE, texture: bound('_DepthTex').texture }),
+		crackSlot: free[1],
+		crack: effectTexture({ ...UNSET_WHITE, texture: bound('_CrackMask').texture }),
+		noiseSlot: free[2],
+		noise: effectTexture(noiseSlot, scroll),
+		noiseSource: sources.get(float('_ParallaxSwitchUV', 0)) ?? 'uv0',
+		noiseDisturb: float('_ParallaxUseDisturb', 0),
+		crackColor: [crackColor[0], crackColor[1], crackColor[2]],
+		noiseColor: [noiseColor[0] * intensity, noiseColor[1] * intensity, noiseColor[2] * intensity],
+	};
+};
 
 /**
  * `HGRP/Effect/VFXDecal`, a box projecting the texture stack onto the surfaces inside it
@@ -176,6 +238,10 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 	if (layers[0] === null) {
 		return unsupported('no main texture');
 	}
+	const parallax = parallaxOf(reader, layers, sources);
+	if (isUnsupported(parallax)) {
+		return parallax;
+	}
 	// the dissolve edge takes the base colour's red as its intensity, as the shader reads it
 	const shared = stackSharedOf(reader, base[0]);
 	const weighted = has('_USE_WEIGHT');
@@ -229,5 +295,6 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		screenUv: { localPivot: false, byDepth: false, heightAsV: false },
 		stencil: null,
 		appear: null,
+		parallax,
 	};
 };

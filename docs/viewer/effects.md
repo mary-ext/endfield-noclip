@@ -58,7 +58,12 @@ what's left out is in [status](../status.md).
   inside. each covered pixel reconstructs the main pass's surface from the depth buffer, and
   `_USE_NORMALBLEND` reads its normal from the main pass's packed surface normal. the extractor
   folds the shift of their `*CustomData` constants into each slot's offset; the `_USE_IN_PARTICLE`
-  variant is unsupported.
+  variant is unsupported. [parallax](../game-data/effects.md#vfxdecal) (`DecalParallax`) puts the
+  depth texture, crack mask and crack noise in three slots no layer takes, with no role so the
+  stack's loop skips them, and its values in the reveal's rows (`EffectRow.parallax`, `crack`,
+  `crackNoise`), which decals don't have; `fx_decal_parallax` and `fx_decal_cracks` in `effect.wgsl`
+  follow the shader. parallax beside a blend layer stays unsupported, since where the cracks add
+  against it isn't known.
 
 ## VFXAdvance and the reveal
 
