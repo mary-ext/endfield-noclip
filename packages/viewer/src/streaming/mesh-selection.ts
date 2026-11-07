@@ -169,6 +169,12 @@ interface SelectedBlock {
 	groupSegments: Uint32Array;
 }
 
+/** a stand-in LOD's slots for one chain, wanted LOD and filter, as found in `frame` */
+interface StandIn {
+	frame: number;
+	slots: ChainSlot[];
+}
+
 /** the group {@link MeshSelector.run} hands to the GPU path, as it tested it */
 interface CulledGroup {
 	/** the rows of the selected range in it */
@@ -207,6 +213,12 @@ export class MeshSelector {
 	#casterFloats = 0;
 	#casterDistance = 0;
 	#pending: ChainSlot[] = [];
+	/**
+	 * per chain, by `wanted LOD * 2 + castOnly`: the stand-in {@link #residentLod} found, and the frame it was
+	 * found in. residency and the shown slots hold for the frame, and a chain that's still streaming is asked
+	 * once per row or segment
+	 */
+	readonly #standIns: (StandIn[] | undefined)[] = [];
 	/** the block being selected's origin relative to the eye, for {@link #selectRows} */
 	#ox = 0;
 	#oy = 0;
@@ -518,7 +530,8 @@ export class MeshSelector {
 				continue;
 			}
 			// rows with no LOD resident draw their box, which only listed rows can
-			if (!ready && block.boxes[run] === 1 && !castOnly && this.#needsBox(slots, count)) {
+			const chain = instances.runs[run * 3];
+			if (!ready && block.boxes[run] === 1 && !castOnly && this.#needsBox(chain, slots, count)) {
 				this.#selectRows(instances, first, end, { inside: group.inside, block });
 				continue;
 			}
@@ -560,7 +573,7 @@ export class MeshSelector {
 					continue;
 				}
 				// the stand-in's slots draw in the band of the LOD they stand in for
-				const standIns = this.#residentLod(slots, lod, { castOnly });
+				const standIns = this.#residentLod(chain, slots, lod, { castOnly });
 				const band = candidates[c];
 				for (let p = 0; p < standIns; p++) {
 					this.#addSlot(band, this.#pending[p]);
@@ -604,15 +617,16 @@ export class MeshSelector {
 	}
 
 	/**
+	 * @param chain the run's chain
 	 * @param slots the run's shown slots
 	 * @param count candidates in {@link #candidates}
 	 * @returns whether a candidate LOD has a slot not resident and no resident LOD to stand in for it
 	 */
-	#needsBox(slots: readonly ChainSlot[], count: number): boolean {
+	#needsBox(chain: number, slots: readonly ChainSlot[], count: number): boolean {
 		for (let c = 0; c < count; c++) {
 			if (
 				this.#ready[this.#candidates[c].geometry] === 0 &&
-				this.#residentLod(slots, this.#candidates[c].lod, { castOnly: false }) === 0
+				this.#residentLod(chain, slots, this.#candidates[c].lod, { castOnly: false }) === 0
 			) {
 				return true;
 			}
@@ -805,7 +819,7 @@ export class MeshSelector {
 				}
 				const row = instances.alloc.start + i;
 				if (!ready) {
-					pendingCount = this.#residentLod(slots, lod, { castOnly });
+					pendingCount = this.#residentLod(runs[r], slots, lod, { castOnly });
 					if (pendingCount === 0) {
 						if (box && !castOnly) {
 							boxes.push(row);
@@ -903,13 +917,42 @@ export class MeshSelector {
 	 * finds a stand-in for an instance whose wanted LOD is still streaming: the nearest LOD whose geometry is
 	 * all resident, coarser first on ties because far LODs are smaller and more often loaded. usually that's
 	 * the LOD drawn before the switch, so the instance keeps its shape instead of dropping to its box.
-	 * stand-ins are kept in use but not requested, so they don't add to the streaming queue.
+	 * stand-ins are kept in use but not requested, so they don't add to the streaming queue. found once per
+	 * frame for each chain, LOD and filter.
 	 *
+	 * @param chain the slots' chain
 	 * @param slots the slots the view's options show
 	 * @param filter `castOnly` when only the shadow-casting slots are wanted
 	 * @returns how many of the stand-in's slots were written to `#pending` (0 when no LOD is resident)
 	 */
-	#residentLod(slots: readonly ChainSlot[], wanted: number, { castOnly }: { castOnly: boolean }): number {
+	#residentLod(
+		chain: number,
+		slots: readonly ChainSlot[],
+		wanted: number,
+		{ castOnly }: { castOnly: boolean },
+	): number {
+		const byKey = (this.#standIns[chain] ??= []);
+		const key = wanted * 2 + (castOnly ? 1 : 0);
+		const standIn = (byKey[key] ??= { frame: -1, slots: [] });
+		if (standIn.frame !== this.#frame) {
+			standIn.frame = this.#frame;
+			const count = this.#findResidentLod(slots, wanted, castOnly);
+			standIn.slots.length = 0;
+			for (let p = 0; p < count; p++) {
+				standIn.slots.push(this.#pending[p]);
+				this.#keepGeometry(this.#pending[p].geometry);
+			}
+			return count;
+		}
+		const pending = this.#pending;
+		for (let p = 0; p < standIn.slots.length; p++) {
+			pending[p] = standIn.slots[p];
+		}
+		return standIn.slots.length;
+	}
+
+	/** {@link #residentLod}'s search, uncached and without marking the stand-in's geometry used */
+	#findResidentLod(slots: readonly ChainSlot[], wanted: number, castOnly: boolean): number {
 		let maxLod = 0;
 		for (const slot of slots) {
 			maxLod = Math.max(maxLod, slot.lod);
@@ -934,9 +977,6 @@ export class MeshSelector {
 					pending[count++] = slot;
 				}
 				if (resident && count > 0) {
-					for (let p = 0; p < count; p++) {
-						this.#keepGeometry(pending[p].geometry);
-					}
 					return count;
 				}
 			}
