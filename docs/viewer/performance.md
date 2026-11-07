@@ -99,6 +99,17 @@
 - geometry pools never shrink, and the stream budget counts the ranges in them, not their spare
   capacity: after flying under a 384 MiB budget, one pool held 170 MiB of buffers for 27 MiB of
   geometry. compacting or shrinking pools once they're mostly free would return that.
+- mesh selection is the largest CPU cost (3.4–4 ms at map02's still views): picking LOD slots and
+  making room in buckets on the GPU (count, prefix sum, write) would leave the CPU one item per row
+  group instead of per segment.
+- the game culls shadow casters below a size per layer (`CSMScreenSizeMin`, `ASMScreenSizeMin`),
+  where the viewer draws every caster into every layer from its first; how the game measures the
+  size isn't decoded, so check a candidate rule against an in-game shot of small props 30–80 m away
+  first.
+- the game caches its far shadow map in 200 m tiles and redraws only the ones that changed, at most
+  8 a frame; the viewer redraws the whole far layer when its casters or fit change.
+- settle frames re-run the whole selection while particles or spinning rows are in view; giving
+  emitters fixed row spans and spinning rows rotation-proof bounds would let them reuse it.
 - reduce the AO blur's reads by packing depth with AO or using `textureGather`.
 - profile terrain close-up blending; stochastic projection or fewer anisotropy taps may reduce cost.
 - measure timestamp-query overhead before limiting profiling to the stats panel.
