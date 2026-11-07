@@ -27,7 +27,7 @@ import {
 import { conditionVisible } from '@endfield-noclip/package-format/conditions';
 
 import { formatErrorOnly } from '../../errors.ts';
-import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
+import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
 import type { SceneEnvironmentVolume } from '../environment.ts';
 import type { Visibility } from '../state/scene-control.ts';
 
@@ -138,15 +138,17 @@ export const readPrefabEnvironmentVolumes = async (
 		placement.position.every((v) => v === 0) &&
 		placement.rotation.slice(0, 3).every((v) => v === 0) &&
 		placement.scale.every((v) => v === 1);
+	const seen = new Set<string>();
 	const visit = async (
 		go: ObjectRef,
 		parent: { position: number[]; rotation: number[]; scale: number[] },
 		isRoot: boolean,
-		depth: number,
 	): Promise<void> => {
-		if (depth > 64) {
-			throw new FormatError('prefab hierarchy deeper than 64');
+		const key = objectKey(go);
+		if (seen.has(key)) {
+			throw new FormatError(`cyclic prefab hierarchy at ${key}`);
 		}
+		seen.add(key);
 		const data = await resolver.read(go);
 		if (!booleanField(data, 'm_IsActive')) {
 			return;
@@ -224,7 +226,7 @@ export const readPrefabEnvironmentVolumes = async (
 			}
 			const childGo = await resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject'));
 			if (childGo !== null) {
-				await visit(childGo, world, false, depth + 1);
+				await visit(childGo, world, false);
 			}
 		}
 	};
@@ -232,7 +234,6 @@ export const readPrefabEnvironmentVolumes = async (
 		root,
 		{ position: [...placement.position], rotation: [...placement.rotation], scale: [...placement.scale] },
 		true,
-		0,
 	);
 	return result;
 };
