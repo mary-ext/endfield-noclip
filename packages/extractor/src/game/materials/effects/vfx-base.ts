@@ -156,6 +156,8 @@ const BASE_KEYWORDS = new Set([
 	'_USE_POLARUV',
 	'_USE_ANIM_BREATHING',
 	'_USE_EDGECOLOR',
+	// a material toggle no compiled variant reads, so the game draws the variant without it
+	'_USE_FORCE_DYNAMIC_LIGHTING',
 ]);
 
 // #endregion

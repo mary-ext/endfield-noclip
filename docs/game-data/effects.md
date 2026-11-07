@@ -69,7 +69,9 @@ metres of what lies behind it.
 **lighting.** with `_USE_LIGHTING` the colour is an albedo lit by the irradiance volume, the
 shadowed sun and local lights, at the vertex normal turned towards the camera or at the world's up
 (`_RotateNormalToWorldUp`), and divided by the post exposure under `_IgnorePostExposure`. the mist
-cards rising at the foot of falls are lit so.
+cards rising at the foot of falls are lit so. `_USE_FORCE_DYNAMIC_LIGHTING` is a material toggle in
+the shader's keyword space that none of its compiled variants reads, so it changes nothing; the glow
+over Marker Stone Interiors' rift monsters (`M_fx_monster_enemy_etthillu_lsq_01`) sets it.
 
 **blend modes.** the shader writes its alpha times `1 − _BlendMode`, so under `_BlendMode` 1, the
 shader's default, the premultiplied colour adds to what lies behind instead of covering it; about a

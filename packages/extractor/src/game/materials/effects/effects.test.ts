@@ -469,6 +469,12 @@ describe('VFXBaseV2', () => {
 		assert.equal(ofKind(stackOf({ floats: { _WaterHeight: 0 } }), 'effectStack').waterBlendBelow, null);
 	});
 
+	it('draws _USE_FORCE_DYNAMIC_LIGHTING as without it, since no variant reads it', () => {
+		// the rift monsters' glow (`M_fx_monster_enemy_etthillu_lsq_01`, Marker Stone Interiors)
+		const forced = stackOf({ keywords: ['_USE_FORCE_DYNAMIC_LIGHTING'] });
+		assert.deepEqual(ofKind(forced, 'effectStack'), ofKind(stackOf({}), 'effectStack'));
+	});
+
 	it('pulses its alpha under _USE_ANIM_BREATHING, and not without the keyword', () => {
 		// Dijiang's clue board (`M_fxmap_base01_lv001_clue_wall_2515`), added over the board
 		const breathing = {
