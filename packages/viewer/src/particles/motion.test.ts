@@ -68,6 +68,14 @@ describe('motion', () => {
 		const [, falling] = draggedFall(drag, 9.81, 1, 100, 0);
 		assert.ok(Math.abs(falling - Math.sqrt(9.81)) < 1e-6);
 	});
+	it('slows a launch at a constant rate under plain drag, and holds a fall it outweighs', () => {
+		const drag = { kind: 'drag', amount: constant(2), bySize: false, byVelocity: false } as const;
+		// 4 m/s slowed by 2 m/s² stops after 2 s, 4 m on
+		assert.deepEqual(dragged(drag, 4, 1, 1, 0), [3, 2]);
+		assert.deepEqual(dragged(drag, 4, 1, 5, 0), [4, 0]);
+		assert.deepEqual(draggedFall(drag, 9.81, 1, 2, 0), [2 * (9.81 - 2), 2 * (9.81 - 2)]);
+		assert.deepEqual(draggedFall({ ...drag, amount: constant(20) }, 9.81, 1, 2, 0), [0, 0]);
+	});
 	// the challenge start point's rising stones: 1 m/s up from velocity over lifetime, limited to 0.1 m/s with
 	// a dampen of 0.1
 	const stones = {

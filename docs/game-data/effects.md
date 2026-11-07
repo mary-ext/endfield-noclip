@@ -648,18 +648,20 @@ stretched 1, horizontal 2, vertical 3. the fields its systems use, as the game's
   (`P_fxmap_common_robot_lamp_802`) offset their eyes, a 0.1 m plane, by ±0.95 of it: each eye sits
   7 cm off centre under the eyes' 30× scaled parent, not 70 cm.
 - **Limit Velocity.** with `dampen` 0 the speed limit does nothing, and the module only applies its
-  drag: an amount, optionally scaled by the particle's size and by its speed squared. the splashes
-  at the foot of Jingyu Valley's falls (`shuihua` in `P_fxmap_common_splashes_middle_2501`) rely on
-  it to hang in the air rather than drop under their 2–6× gravity. with `dampen` above 0 the engine
-  runs the module right after Velocity over Lifetime each frame and limits the whole speed `s`, the
-  particle's own velocity plus the velocity-over-lifetime part: above the limit `L` (`magnitude`,
-  read at the particle's age; two constants pick a random value per particle) the speed becomes
-  `s + (L − s)·k` with `k = 1 − (1 − dampen)^(30·dt)`, frame-rate independent against 30 fps, and
-  the excess comes out of the particle's own velocity alone, so the velocity-over-lifetime part is
-  added in full again next frame. a particle moved only by velocity over lifetime thus builds up an
-  opposing velocity of its own and settles at the limit. the challenge start point's rising rock
-  cards (`stone` in `int_challenge_start_point_once_postmodel`) start still, are pushed up at 0.2–1
-  m/s and limited to 0.1–1 m/s with a dampen of 0.1.
+  drag: each frame the whole speed loses `k · dt`, or `k · s² · dt` with
+  `multiplyDragByParticleVelocity` (k the amount, times `π (size / 2)²` with
+  `multiplyDragByParticleSize`), stopping at 0. the splashes at the foot of Jingyu Valley's falls
+  (`shuihua` in `P_fxmap_common_splashes_middle_2501`) rely on it to hang in the air rather than
+  drop under their 2–6× gravity. with `dampen` above 0 the engine runs the module right after
+  Velocity over Lifetime each frame and limits the whole speed `s`, the particle's own velocity plus
+  the velocity-over-lifetime part: above the limit `L` (`magnitude`, read at the particle's age; two
+  constants pick a random value per particle) the speed becomes `s + (L − s)·k` with
+  `k = 1 − (1 − dampen)^(30·dt)`, frame-rate independent against 30 fps, and the excess comes out of
+  the particle's own velocity alone, so the velocity-over-lifetime part is added in full again next
+  frame. a particle moved only by velocity over lifetime thus builds up an opposing velocity of its
+  own and settles at the limit. the challenge start point's rising rock cards (`stone` in
+  `int_challenge_start_point_once_postmodel`) start still, are pushed up at 0.2–1 m/s and limited to
+  0.1–1 m/s with a dampen of 0.1.
 - **speed modifier.** each frame the engine reads Velocity over Lifetime's `speedModifier` at the
   particle's age over its lifetime (the time the linear velocity curves are read at; two constants
   pick a random value per particle) and moves the particle by its whole velocity, its own plus the

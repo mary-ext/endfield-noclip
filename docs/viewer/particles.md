@@ -89,10 +89,11 @@ system and its index, so any moment can be evaluated on its own:
   [scales every step](../game-data/effects.md#particle-systems); the fall, built up in the velocity
   it scales, becomes `∫ g τ m(τ) dτ` (`½ g m a²` for a constant). systems with such a curve and drag
   stand in.
-- drag slows the start velocity alone, by `k v` or `k v²` (k the amount, times the cross-section
-  `π (size / 2)²` when it scales with size), and gravity falls towards the matching terminal speed;
-  the velocity module's own terms and orbits aren't slowed, and the size is the start size. the
-  speed modifier then scales the slowed launch and fall alike.
+- drag slows the start velocity alone, by `k` or `k v²` per second (k the amount, times the
+  cross-section `π (size / 2)²` when it scales with size), and a fall gathers speed at `g − k` (none
+  when drag outweighs gravity) or towards the terminal speed `√(g / k)` under `k v²`; the velocity
+  module's own terms and orbits aren't slowed, and the size is the start size. the speed modifier
+  then scales the slowed launch and fall alike.
 - under a speed limit or force fields (`steppedPath`) there is no closed form, so the particle is
   stepped to its age at 30 Hz (at most 600 steps, longer ones beyond), from its birth the first time
   it's drawn and from where the previous frame left it after that; a step back in time starts it

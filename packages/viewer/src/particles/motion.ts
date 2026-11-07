@@ -10,7 +10,7 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { evaluateMinMax, livedAt } from './curves.ts';
 
-/** the drag's deceleration per unit of speed (or speed squared), for a particle of a size */
+/** the drag's deceleration (m/s², or per unit of speed squared), for a particle of a size */
 const dragRate = (drag: ParticleDragInfo, size: number, r: number): number =>
 	Math.max(evaluateMinMax(drag.amount, 0, r), 0) * (drag.bySize ? Math.PI * (size / 2) ** 2 : 1);
 
@@ -30,19 +30,20 @@ export const dragged = (
 	if (k <= 0) {
 		return [speed * age, speed];
 	}
+	const sign = Math.sign(speed);
+	const v = Math.abs(speed);
 	if (drag.byVelocity) {
 		// dv/dt = −k v²
-		const sign = Math.sign(speed);
-		const v = Math.abs(speed);
 		return [(sign * Math.log1p(k * v * age)) / k, (sign * v) / (1 + k * v * age)];
 	}
-	// dv/dt = −k v
-	const decay = Math.exp(-k * age);
-	return [(speed * (1 - decay)) / k, speed * decay];
+	// dv/dt = −k until the particle stops
+	const moving = Math.min(age, v / k);
+	return [sign * (v * moving - 0.5 * k * moving * moving), sign * (v - k * moving)];
 };
 
 /**
- * a fall from rest under gravity and drag, which the particle approaches its terminal speed in
+ * a fall from rest under gravity and drag: towards its terminal speed under drag by speed squared, else at
+ * gravity less the drag's deceleration, or not at all when that's the larger
  *
  * @param gravity the acceleration down the world's y, m/s² (negative rises)
  * @returns how far it has fallen by `age` (m), and its speed then (m/s)
@@ -67,8 +68,8 @@ export const draggedFall = (
 		const logCosh = x + Math.log1p(Math.exp(-2 * x)) - Math.LN2;
 		return [(sign * terminal * terminal * logCosh) / g, sign * terminal * Math.tanh(x)];
 	}
-	const decay = Math.exp(-k * age);
-	return [(sign * g * (age - (1 - decay) / k)) / k, (sign * g * (1 - decay)) / k];
+	const a = Math.max(g - k, 0);
+	return [sign * 0.5 * a * age * age, sign * a * age];
 };
 
 /** the most steps {@link steppedPath} takes; longer ages take longer steps */
