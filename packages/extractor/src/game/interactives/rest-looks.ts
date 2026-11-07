@@ -5,6 +5,7 @@ import type { PrefabPose } from '../prefabs/prefab.ts';
 import { type DraftControl, sceneControl, switchValues } from '../state/scene-control.ts';
 
 import type { FacilityContext, FacilitySources } from './facility-sources.ts';
+import { fixableRobotInts } from './fixable-robots.ts';
 import type { InteractiveKind, InteractiveRow, SingleModelTemplate } from './interactive-row.ts';
 import { componentFloat, STATE_KEY, stateOf } from './template-data.ts';
 import type { TemplateTraits } from './template-traits.ts';
@@ -90,8 +91,8 @@ export interface LookKeys {
 	keys: readonly PlayerKey[];
 	/** the `state` key's value, `null` when nothing sets it */
 	state: number | null;
-	/** float keys the interactive's components set before its view states start */
-	floats: ReadonlyMap<string, number>;
+	/** float and int keys the interactive's components set before its view states start */
+	numbers: ReadonlyMap<string, number>;
 }
 
 /**
@@ -104,7 +105,7 @@ export interface LookKeys {
 export const readInteractiveLooks = async (
 	context: FacilityContext,
 	model: ModelViews,
-	{ campfire, keys, state, floats }: LookKeys,
+	{ campfire, keys, state, numbers }: LookKeys,
 ): Promise<InteractiveLooks | null> => {
 	const states = await readViewStates(context, model);
 	if (states === null) {
@@ -112,7 +113,7 @@ export const readInteractiveLooks = async (
 	}
 	const activations = campfire ? [false, true] : [null];
 	const settle = (activated: boolean | null, near: boolean) => {
-		const blackboard = new Map<string, boolean | number>(floats);
+		const blackboard = new Map<string, boolean | number>(numbers);
 		if (state !== null) {
 			blackboard.set(STATE_KEY, state);
 		}
@@ -151,6 +152,8 @@ interface TemplateLooks {
 	state: number | null;
 	/** whether it's a vertical rope's port, whose look also follows its other port */
 	verticalRope: boolean;
+	/** a broken robot's decoded template, whose look also follows its component parameters */
+	fixableRobot: MemoryPackValue | null;
 }
 
 /**
@@ -198,12 +201,12 @@ export class RestLooks implements InteractiveKind {
 		if (traits.kind !== 'other' || this.#doodads.has(key)) {
 			return;
 		}
-		const { campfire, keys, start, verticalRope } = traits;
+		const { campfire, keys, start, verticalRope, fixableRobot } = traits;
 		const state = start === null ? null : (start.variants.get(key) ?? start.state);
-		const looks = await this.#looksOf(model, { campfire, keys, state, floats: new Map() });
+		const looks = await this.#looksOf(model, { campfire, keys, state, numbers: new Map() });
 		if (looks !== null) {
 			const radius = looks.near === null ? null : Math.max(...keys.map((entry) => entry.radius));
-			this.#templates.set(key, { model, looks, campfire, keys, radius, state, verticalRope });
+			this.#templates.set(key, { model, looks, campfire, keys, radius, state, verticalRope, fixableRobot });
 		}
 	}
 
@@ -217,9 +220,19 @@ export class RestLooks implements InteractiveKind {
 		let { looks } = rest;
 		// a placement's own `state` overrides its template's
 		const state = (rest.state === null ? null : stateOf(row)) ?? rest.state;
-		const floats = rest.verticalRope ? verticalRopeFloats(row, this.#rows) : new Map<string, number>();
-		if (state !== rest.state || floats.size > 0) {
-			looks = (await this.#looksOf(rest.model, { campfire, keys: rest.keys, state, floats })) ?? looks;
+		const numbers = new Map<string, number>();
+		if (rest.verticalRope) {
+			for (const [key, value] of verticalRopeFloats(row, this.#rows)) {
+				numbers.set(key, value);
+			}
+		}
+		if (rest.fixableRobot !== null) {
+			for (const [key, value] of fixableRobotInts(rest.fixableRobot, row)) {
+				numbers.set(key, value);
+			}
+		}
+		if (state !== rest.state || numbers.size > 0) {
+			looks = (await this.#looksOf(rest.model, { campfire, keys: rest.keys, state, numbers })) ?? looks;
 		}
 		const activation = `activation:${row.id}`;
 		if (campfire) {
@@ -272,10 +285,10 @@ export class RestLooks implements InteractiveKind {
 	}
 
 	#looksOf(model: string, keys: LookKeys): Promise<InteractiveLooks | null> {
-		const { campfire, state, floats } = keys;
+		const { campfire, state, numbers } = keys;
 		const sources = this.#sources;
 		return this.#looks.getOrInsertComputed(
-			`${model} ${campfire} ${keys.keys.map((entry) => entry.key).join()} ${state} ${JSON.stringify([...floats])}`,
+			`${model} ${campfire} ${keys.keys.map((entry) => entry.key).join()} ${state} ${JSON.stringify([...numbers])}`,
 			() =>
 				sources.attempt(
 					model,

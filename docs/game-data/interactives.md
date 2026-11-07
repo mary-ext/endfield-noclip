@@ -209,6 +209,21 @@ rope's end block (`P_anm_com_machine+1_001_04`) follows the rope's `rope_mount_p
 about a metre above the bottom port. as saved, the rope is 0.5 m long and the block sits under the
 arm. indie_race001's lift near 88, 116–123, 102 sets `state` 1, so it starts unrolled.
 
+### broken robots
+
+a broken robot (`int_fixable_robot`) has a fixable-robot component (`FixableRobotComponent`,
+type 97) that passes its int parameters `level`, `damage_type` and `exit_type` to its view states
+under the same keys when its view controller starts. they're the component's own parameters
+(template 0, then the placement's under type 97), not entity properties. its model's effect layer
+picks the SOS sign by `level`: at 0 it rests in `damage_type_yellow`, the yellow sign
+(`P_interactive_robotemoji_sos_01` on `EmojiEffects`, `P_interactive_robotsos_middle_01` on
+`HeadEffects`); above 0 in `damage_type_red`, the red sign (`P_interactive_robotemoji_sos_02`,
+`P_interactive_robotsos_large_01`). both also play `P_fxmap_uninteractive_storehous_01` and
+`P_lv005_smokeblack_small_01` on `Effect`. its base layer lies in `damage_type_01` at `damage_type`
+0 and `damage_type_02` above it; `exit_type` only matters once it's fixed (`state` 1). of the
+install's 91 placements, 43 set `level` 1, including map02_lv010's robot 37900200005 at 491,
+237, 1231.
+
 ### keys the player sets
 
 some blackboard keys follow the player:

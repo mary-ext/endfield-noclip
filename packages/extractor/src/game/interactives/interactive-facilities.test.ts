@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import type { LevelInteractive } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
+import { fixableRobotInts } from './fixable-robots.ts';
 import { jumpPadArrow, verticalPadEffect } from './jump-pads.ts';
 import { verticalRopeFloats } from './rest-looks.ts';
 import { startState, stateOf } from './template-data.ts';
@@ -143,6 +144,43 @@ test("a vertical rope's length is the height to the port its target names", () =
 	assert.ok(Math.abs(height - 7) < 1e-9);
 	assert.deepEqual(verticalRopeFloats(bottom, rows), new Map());
 	assert.deepEqual(verticalRopeFloats(port(1n, 0, 1n), rows), new Map());
+});
+
+// the broken robot (int_fixable_robot): its component's parameters default to 0
+const fixableRobot: MemoryPackValue = {
+	componentList: [
+		commonPerform,
+		{
+			$type: 'Beyond_Gameplay_Core_FixableRobotComponentDataForMemoryPack',
+			propertyList: [property('destroy_self', '1'), property('damage_type', '0'), property('level', '0')],
+		},
+	],
+	saveProperties: [property('state', '0')],
+	templateVariant: [],
+};
+
+test("a broken robot passes its component's damage type, level and exit type to its view states", () => {
+	const traits = readTemplateTraits(fixableRobot, 'robot');
+	assert.ok('kind' in traits && traits.kind === 'other' && traits.fixableRobot !== null);
+	// map02_lv010's robot 37900200005 near 491, 237, 1231 sets level 1 and exit type 2
+	const placed = { ...row(null, []), template: 'int_fixable_robot' };
+	placed.componentProperties = new Map([
+		[
+			97,
+			[
+				{ key: 'level', type: 3, values: [{ bits: 1n, text: null }] },
+				{ key: 'exit_type', type: 3, values: [{ bits: 2n, text: null }] },
+			],
+		],
+	]);
+	assert.deepEqual(
+		fixableRobotInts(fixableRobot, placed),
+		new Map([
+			['damage_type', 0],
+			['level', 1],
+			['exit_type', 2],
+		]),
+	);
 });
 
 // the vertical jump pad (int_jumpmachine_vertical): saved `state` 0; map01_lv006's pads set 1
