@@ -17,12 +17,17 @@ describe('fireSeedControl', () => {
 		{ script: '10200260001', node: 200, level: null },
 	];
 	const script: ControlDriver = { kind: 'script', position: [1, 2, 3], radius: 50, value: null };
+	const other: ControlDriver = { kind: 'script', position: [3, 4, 5], radius: 50, value: null };
 
-	it('offers a level per radius, not carried by default, with the value each script sets', () => {
-		const drivers = new Map(actions.map((action) => [fireSeedActionTarget(action), [script]]));
+	it('offers a level per radius, the highest by default, with the value each script sets', () => {
+		const drivers = new Map(
+			actions.map((action, i) => [fireSeedActionTarget(action), [i === 2 ? other : script]]),
+		);
 		const control = fireSeedControl(radii, actions, drivers);
 		assert.equal(control.id, FIRE_SEED_CONTROL);
-		assert.equal(control.default, 0);
+		assert.equal(control.default, 2);
+		// placed at the middle of its drivers, so the panel lists it near them
+		assert.deepEqual(control.place?.position, [2, 3, 4]);
 		assert.deepEqual(
 			control.values.map(({ label }) => label),
 			['not carried, invisible bridges hidden', 'level 1, reveals within 4 m', 'level 2, reveals within 7 m'],

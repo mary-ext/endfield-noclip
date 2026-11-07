@@ -155,7 +155,8 @@ Fresnel-rimmed body; `…_802`, the ink strokes, with a vertex offset) and VFXDi
 the solid surface) layers, all with `_USE_BRIGHT` and `_USE_GLOBAL_APPEAR`. the bridge between the
 pillars west of unity −602, 248, 569 is two script groups of such pieces along x ≈ −623: z 515–534
 (group 10200150050, loaded by default) and z 556–587 (10200150054, which only script 10200030004
-shows).
+shows, on custom event `#16fa73e2`). no client data raises that event (no level script, table or
+config names it), so the server does: the northern group is server-driven.
 
 **the reveal.** for d the distance from the player's position (`_VFXParams0.xyz`) raised by
 `_CharacterHeight`, and `s(x) = smoothstep(_OuterRadius + R.y, _InnerRadius + R.x, x)` with R the
@@ -176,6 +177,14 @@ the body).
 (9999 and 50000 m), which leave every revealed effect transparent; at level n, `effectRadius[n − 1]`
 (4, 7, 10, 10, 12 m) and that plus `radiusThickness` (0.5 m). the radius eases to a new level over
 `fadeTime` along `radiusChangeCurve`. what R holds before any script sets a level isn't recovered.
+
+script 10200030004 runs over the whole pass (an active sphere of 442 m about unity −589, 257, 607).
+on the player entering its trigger volume 80001 (two boxes covering the pass) it sets the level to
+map variable #142, `fire_seed_level_map`, and on leaving it sets level 0; other custom events set
+levels 1–4 (`#72485a44`, `#86ef311f`, `#d5cf68e0`, `#8da37c78`) and 0 (`#e5aceaf8`), and 10200260001
+also reads the variable. like those events, nothing in client data writes the variable (MapConfig
+only declares it), so the fire seed's level is server-held: no quest or mission state gates it on
+the client.
 
 ### water blending
 

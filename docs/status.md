@@ -248,9 +248,10 @@ packs or renders correctly.
     pieces of Yinglung Pass's ink bridge prefabs (floors, walls, joins). the ink simulation isn't
     run
   - [invisible bridges](game-data/effects.md#invisible-bridges): the fire seed reveals them about
-    the camera, without its radius easing between levels; the bridges' look is unchecked against an
-    in-game shot, as is the reveal radii before any script sets a level (0 in scenes without a fire
-    seed)
+    the camera, at its highest level by default since the server holds its level, without its radius
+    easing between levels; the northern bridge's group is server-driven and stays at its stored
+    default (hidden). the bridges' look is unchecked against an in-game shot, as is the reveal radii
+    before any script sets a level (0 in scenes without a fire seed)
   - VFXBaseV2 and VFXDecal: additive blend states, `_BlendMode` 2 outside a multiplying blend or
     with a stencil, opaque blending with a stencil, a soft blend or an edge colour (opaque layers
     are fogged by the composite and the falling gravel is unchecked in game), the sixth sample

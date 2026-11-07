@@ -39,7 +39,7 @@ the package side of [the selectors](../game-data/scene-states.md#the-selectors-a
 | controller-less logic gate | `logic:<entity id>:<mask>`                         | off                                                               |
 | environment volume         | `environmentVolume:<index>`                        | on, except scripted volumes                                       |
 | water volume fill          | `waterLevel:<id>`                                  | the authored fill; drained for a pool a quest needs drained       |
-| fire seed level            | `fireSeed:player`, not carried / levels 1–5        | not carried                                                       |
+| fire seed level            | `fireSeed:player`, not carried / levels 1–5        | the highest level                                                 |
 
 the control's kind is the selector's name in its id (`door`, `script`, …). every control is built by
 `sceneControl` in [scene-control.ts](../../packages/extractor/src/game/state/scene-control.ts),
@@ -52,8 +52,10 @@ the interactive controls' poses come from
 environment volume and water level controls are described with their tables
 ([environments](../package-format.md#environments), [water](../package-format.md#water)). the
 [fire seed](../game-data/effects.md#invisible-bridges)'s control exists in scenes whose level
-scripts set its level, listed under "Player nearby" with those scripts as drivers;
-`PackageManifest.fireSeed` gives each value's reveal radii, read from `FireSeedGameplayConfig`.
+scripts set its level, listed under "Player nearby" with those scripts as drivers and placed at
+their middle, since it gates no content of its own. it defaults to the highest level, so the bridges
+show around the camera; `PackageManifest.fireSeed` gives each value's reveal radii, read from
+`FireSeedGameplayConfig`.
 
 ## MapConfig scene states
 

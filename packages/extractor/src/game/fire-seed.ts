@@ -1,5 +1,6 @@
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { ControlDriver } from '@endfield-noclip/package-format/states';
+import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import type { Context } from '../context.ts';
 
@@ -61,8 +62,8 @@ export const FIRE_SEED_CONTROL = 'fireSeed:player';
  * @param radii per level from 0, the reveal radii ({@link loadFireSeedRadii})
  * @param actions the levels the scene's scripts set
  * @param drivers by {@link fireSeedActionTarget}, what runs each action
- * @returns the fire seed's control: a level per radius, without a seed by default, as before any script
- *   lights it, and the drivers of each level the scripts set
+ * @returns the fire seed's control: a level per radius, the highest by default, the drivers of each level the
+ *   scripts set, and the middle of those drivers as its place
  */
 export const fireSeedControl = (
 	radii: readonly (readonly [number, number])[],
@@ -81,6 +82,19 @@ export const fireSeedControl = (
 			}
 		}
 	}
+	// it gates no placed content, so it stands at the middle of what sets it, where the panel lists it as nearby
+	const unique = new Map<string, Vec3>();
+	for (const driver of found) {
+		if ('position' in driver && driver.position !== null) {
+			unique.set(driver.position.join(), driver.position);
+		}
+	}
+	let position: Vec3 | undefined;
+	if (unique.size > 0) {
+		const mean = (axis: number): number =>
+			unique.values().reduce((sum, at) => sum + at[axis], 0) / unique.size;
+		position = [mean(0), mean(1), mean(2)];
+	}
 	return sceneControl({
 		kind: 'fireSeed',
 		id: FIRE_SEED_CONTROL,
@@ -90,9 +104,11 @@ export const fireSeedControl = (
 			label:
 				value === 0 ? 'not carried, invisible bridges hidden' : `level ${value}, reveals within ${inner} m`,
 		})),
-		default: 0,
-		assumption: 'not carried, as before a level script lights it',
+		// the bridges are what a player crossing the pass sees, so the seed is lit at its widest
+		default: radii.length - 1,
+		assumption: 'lit at its highest level, so the bridges show around the camera',
 		drivers: found,
+		position,
 	});
 };
 
