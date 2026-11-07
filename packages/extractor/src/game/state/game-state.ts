@@ -266,6 +266,9 @@ export class GameState {
 				}
 				case 'mapVar':
 				case 'globalVar': {
+					if (this.#otherMapGate(condition)) {
+						break;
+					}
 					const { id, label } = this.#variable(condition);
 					if (this.#claimed.has(id)) {
 						throw new Error(`variable ${id} has a control of its own`);
@@ -340,6 +343,11 @@ export class GameState {
 			case 'mapVar':
 			case 'globalVar': {
 				const scope = condition.kind === 'mapVar' ? `map ${condition.mapId} variable` : 'global variable';
+				if (this.#otherMapGate(condition)) {
+					return [
+						`${scope} ${condition.name} ${OPERATORS[condition.compare]} ${condition.target} (another map's, so never here)`,
+					];
+				}
 				return [
 					{ control: this.#variable(condition).id, text: `${scope} ${condition.name}` },
 					` ${OPERATORS[condition.compare]} ${condition.target}`,
@@ -443,6 +451,9 @@ export class GameState {
 			}
 			case 'mapVar':
 			case 'globalVar': {
+				if (this.#otherMapGate(condition)) {
+					return negate ? [[]] : [];
+				}
 				const { id } = this.#variable(condition);
 				const ranges = this.#ranges(id);
 				return leaf(
@@ -461,6 +472,21 @@ export class GameState {
 				return conjunction ? children.reduce(allOf, [[]]) : dedupe(children.flat());
 			}
 		}
+	}
+
+	/**
+	 * a load gate on another map's variable never passes: the game checks a gate's map id against the current
+	 * scene's before comparing. dungeons that stream a map (Typhoeus's dung02_rdg009 in map02's lv009) gate
+	 * their own scenery this way. gates give numeric map ids, MapConfig conditions string ones
+	 */
+	#otherMapGate(condition: Extract<GameCondition, { kind: 'mapVar' | 'globalVar' }>): boolean {
+		const known = this.#mapVariables;
+		return (
+			condition.kind === 'mapVar' &&
+			known !== null &&
+			/^\d+$/.test(condition.mapId) &&
+			condition.mapId !== String(known.mapId)
+		);
 	}
 
 	/** @returns the variable's control id and name, by numeric id where the MapConfig names it */

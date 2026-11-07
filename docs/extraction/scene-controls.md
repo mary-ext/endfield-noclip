@@ -126,7 +126,9 @@ wherever the scene's MapConfig names it: a MapConfig condition's name resolves t
 `mapVarName2NumId`, and the control is labelled from `mapVarNumId2Name`, so a scene state and a load
 gate on the same variable share one control. a map variable the MapConfig doesn't name (map01 names
 none) keeps the key its source gives it. global variables have no name table, so MapConfig's named
-ones and gates' numbered ones stay apart.
+ones and gates' numbered ones stay apart. a gate on another map's variable never holds and takes no
+control
+([gates on another map's variable](../game-data/scene-states.md#gates-on-another-maps-variable)).
 
 a map variable that is an interactive's saved property
 ([variables](../game-data/scene-states.md#variables)) is named after that interactive and placed at

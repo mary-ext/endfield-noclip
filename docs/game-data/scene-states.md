@@ -152,8 +152,10 @@ every gate on an entity must pass.
   equals `state` (`isSame` 1) or differs from it (otherwise). `compareType` 0 needs all conditions,
   any other value one. the entity loads while the combined result equals `toBeTrue == 1`.
 - **variable gate** (`GlobalVarControlComp`, `MapVarControlComp`): with `controlLoad` 1 the entity
-  loads while `variable <compareType> compareValue` holds, and not while the variable is unset. with
-  `controlLoad` 0 the variable doesn't gate loading; it drives the entity's level and view state
+  loads while `variable <compareType> compareValue` holds, and not while the variable is unset. a
+  map variable gate whose map id isn't the current MapConfig's never holds
+  ([gates on another map's variable](#gates-on-another-maps-variable)). with `controlLoad` 0 the
+  variable doesn't gate loading; it drives the entity's level and view state
   ([below](#view-states-on-dynamic-entities)).
 
 variable keys are numeric client game-variable ids, not root strings. MapConfig's `mapVarName2NumId`
@@ -161,6 +163,26 @@ and `mapVarNumId2Name` map a map's variable names to these ids and back, and a g
 MapConfig's numeric `mapId` (85 for map02), so a MapConfig condition and a gate can read the same
 variable: map02's `map02lv005stateflower` is #125, which 5 dynamic entities gate on. map01's tables
 are empty.
+
+### gates on another map's variable
+
+the game checks a map variable gate's map id against the current scene's numeric map id before
+comparing, and a gate on another map fails, so its entity doesn't load. dungeons that stream an open
+world use this to dress its levels for themselves: the dungeon runs under its own MapConfig, and its
+scenery gates on its own variables, which the open world never satisfies, while the open world's
+gates fail inside the dungeon.
+
+the cabin in Snowy Forest (map02_lv009, near unity 0, 195, 474) is one. Typhoeus's operator-story
+dungeon `dung02_rdg009` (map id 376, mission `c34m3d5`) streams map02 and gates its after-ritual set
+(`…yishihou`: the floor rune effect `p_fxmap_map02_lv009_big_runes_01`, lights, props and decals) on
+its own variable `magic` (#2) = 0, so none of it loads in the open world. the cabin's open-world
+looks are map02's `woodhouse` (#295): 0 with the `…house_light_off` lights and cobwebs, 1 with the
+`…house_light_on` lights and the `Env_map02_lv009_house_light_on` prefab volume, and 2 with a
+painted rune decal and the `Env_map02_lv009_house_yishiqian` ("before the ritual") prefab volume. no
+client data sets `woodhouse`, so which of these a world shows is up to the server. besides these,
+the cabin's day and night rune effects (`p_fxmap_map02_lv009_cottage_rune_02`/`_01`) follow only the
+level's day/night states, and a rune decal (group 36100050009) shows when script 36100050016, whose
+server task waits on quest `c34m3_q#2`, sees the player enter the cabin.
 
 ### view states on dynamic entities
 
@@ -525,9 +547,8 @@ state conditions, mission gates and level scripts.
 
 - named and global variables' offline values: global variables have no known name table, and the
   server values are unavailable
-- an entity's level before any variable reaches it (0 or its RootComp state), and what dropping a
-  variable component whose map id isn't the current MapConfig's does to loading in a dungeon that
-  streams the open world
+- an entity's level before any variable reaches it (0 or its RootComp state), and what a view-state
+  variable component (`controlLoad` 0) whose map id isn't the current MapConfig's does
 - `ActivityControlComp` gates: on map01 and map02 every entity's component holds no conditions
   (compare type 255), and no level script reads activity state, so limited-time events reach the
   world only through missions, the scripts of event dungeons and

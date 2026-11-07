@@ -481,8 +481,12 @@ packs or renders correctly.
   Yinglung Pass's server-set outpost tier variables are separate controls, so all four tiers show by
   default ([outpost tiers](game-data/scene-states.md#outpost-tiers)), and the server-set gateway
   blockers (`007to009`, `008go010deco_v1d6`) show by default, at their highest compared value
-  ([variables](game-data/scene-states.md#variables)). variable-driven view states on
-  DynamicStreaming entities
+  ([variables](game-data/scene-states.md#variables)), as does the Snowy Forest cabin's server-set
+  `woodhouse` (its before-the-ritual look). gates on another map's variable never load, so scenery a
+  dungeon dresses an open-world level with (Typhoeus's after-ritual cabin) isn't shown in any
+  package
+  ([gates on another map's variable](game-data/scene-states.md#gates-on-another-maps-variable)).
+  variable-driven view states on DynamicStreaming entities
   ([view states on dynamic entities](game-data/scene-states.md#view-states-on-dynamic-entities))
   pose only by their first variable, and draw as saved for values their state machine doesn't test
   and while unset, where the game keeps the starting state; old-version controllers (type 5) and

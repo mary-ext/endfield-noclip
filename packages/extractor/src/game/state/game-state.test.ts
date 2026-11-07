@@ -128,6 +128,24 @@ test('a variable a MapConfig condition names and one a gate numbers share a cont
 	);
 });
 
+test("a gate on another map's variable never passes and takes no control", () => {
+	const game = new GameState({
+		variables: { map: 'map02', mapId: 85, ids: { woodhouse: 295 }, names: { 295: 'woodhouse' } },
+	});
+	// map02_lv009's after-ritual lights read dung02_rdg009's (map 376) `magic`
+	const ritual = gateCondition({ kind: 'mapVar', key: 2, compare: 0, value: 2, mapId: 376 });
+	const house = gateCondition({ kind: 'mapVar', key: 295, compare: 0, value: 4, mapId: 85 });
+	game.note([ritual, house]);
+	assert.deepEqual(game.requirements(ritual), []);
+	assert.deepEqual(game.requirements({ kind: 'all', reverse: true, conditions: [ritual] }), [[]]);
+	assert.equal(ruleText(game.describe(ritual)), "map 376 variable #2 = 2 (another map's, so never here)");
+	game.requirements(house);
+	assert.deepEqual(
+		game.controls().map(({ id }) => id),
+		['mapVar:85:#295'],
+	);
+});
+
 test('a MapConfig variable test fails while the variable is unset, even one that 0 passes', () => {
 	const game = new GameState();
 	// map02_lv009's day: State = 0
