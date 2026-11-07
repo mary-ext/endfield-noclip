@@ -123,9 +123,10 @@ export type EffectPass = 'relight' | 'transparent' | 'multiply' | 'refract' | 'w
 
 /** each pass's phases, in the order they draw */
 export const PASS_PHASES: Record<MeshPass, readonly DrawPhase[]> = {
-	prepass: [PHASES.prepass],
+	// alpha-tested cut-outs lay down their depth before the terrain too, so it isn't shaded under leaves and grass
+	prepass: [PHASES.prepass, PHASES.cutoutDepth],
 	// stencil masks after the surfaces they're tested against
-	main: [PHASES.opaque, PHASES.cutoutDepth, PHASES.cutoutShade, PHASES.effectOpaque, PHASES.stencilMask],
+	main: [PHASES.opaque, PHASES.cutoutShade, PHASES.effectOpaque, PHASES.stencilMask],
 	// lit decals that change only the surface's normal, roughness or occlusion, run between the main and the
 	// transparent pass: they add the change in the surface's light to the radiance
 	relight: [PHASES.decalRelight],

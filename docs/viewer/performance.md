@@ -62,11 +62,13 @@
   1.1–1.6 ms of 7–11 ms at dense views and cost about 0.1 ms where little overlaps.
 - **early depth survives alpha testing.** a shader that may discard loses early depth and, on
   tile-based GPUs, hidden-surface removal. opaque meshes use non-discarding pipelines, and shadow
-  pipelines for them have no fragment stage. alpha-tested meshes lay down cut-out depth first, then
-  shade with `depthCompare: 'equal'` and a non-discarding shader, so overlapping leaf cards shade
-  each pixel once. an alpha-tested material draws as opaque until the texture holding its alpha
-  ([alpha testing](../game-data/materials.md#alpha-testing)) has streamed, since there's no alpha to
-  test yet.
+  pipelines for them have no fragment stage. alpha-tested meshes lay down cut-out depth in the
+  prepass, before the terrain, then shade with `depthCompare: 'equal'` and a non-discarding shader,
+  so overlapping leaf cards shade each pixel once and the terrain isn't shaded under them (on RDNA 4
+  at 2560×1600, the main pass at a dense Jingyu view went from 3.5 to 2.4–2.8 ms when the cut-out
+  depth moved ahead of the terrain). an alpha-tested material draws as opaque until the texture
+  holding its alpha ([alpha testing](../game-data/materials.md#alpha-testing)) has streamed, since
+  there's no alpha to test yet.
 - **no MSAA.** at 2560×1600 on an Apple M-series GPU, a dense Wuling City view took ~46 ms of GPU
   time with 4× MSAA and ~16 ms with temporal antialiasing (the `taa` pass is under 1 ms), and the
   render targets shrank from ~440 to ~200 MiB. `renderScale` 0.5 brought the same view to ~5 ms.
