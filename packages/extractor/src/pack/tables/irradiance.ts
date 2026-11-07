@@ -23,6 +23,7 @@ import type { Context } from '../../context.ts';
 import { sceneStateControl } from '../../game/state/scene-conditions.ts';
 import type { Visibility, Requirement } from '../../game/state/scene-control.ts';
 import type { VfsFile } from '../../hg/vfs.ts';
+import { mapPool } from '../../pool.ts';
 import type { BlobStore } from '../store/blob-store.ts';
 import type { PackCache, StepMemo } from '../store/pack-cache.ts';
 
@@ -31,6 +32,9 @@ const IRRADIANCE_GROUP = 'A63D7E6A';
 
 /** zstd level of cells: 1.6 GB of them on map02 are compressed on every pack, too slow at the blob default */
 const ZSTD_LEVEL = 9;
+
+/** cells decoded and compressed at once; a few past the libuv pool keeps it busy */
+const CELLS_IN_FLIGHT = 8;
 
 /** what {@link packIrradiance} reports */
 export interface IrradianceReport {
@@ -77,32 +81,33 @@ const convertCells = async (
 	for (const { name, stateGroup, payload: payloadFile, records } of selected) {
 		// oxlint-disable-next-line no-await-in-loop -- one ~67 MB payload in memory at a time
 		const payload = await vfs.readVerified(payloadFile);
+		for (const record of records) {
+			const { level } = irradianceCellOrigin(record.key);
+			if (record.offset + record.storedLength > payload.length) {
+				throw new Error(`irradiance payload ${name} is shorter than its index says`);
+			}
+			const id = `${stateGroup}:${record.key}`;
+			if (level > 2 || seen.has(id)) {
+				throw new Error(`irradiance cell ${record.key} has an unsupported level or repeats in its bake`);
+			}
+			seen.add(id);
+			report.levels[level] = (report.levels[level] ?? 0) + 1;
+			report.rawBytes += record.size;
+		}
+		// bounded: a payload holds up to a few thousand cells, and a queued zstd call holds its decoded input
+		// and compression context before a pool thread takes it, which took gigabytes on map02
 		// oxlint-disable-next-line no-await-in-loop -- as above
-		const prepared = await Promise.all(
-			records.map((record) => {
-				const { level } = irradianceCellOrigin(record.key);
-				if (record.offset + record.storedLength > payload.length) {
-					throw new Error(`irradiance payload ${name} is shorter than its index says`);
-				}
-				const id = `${stateGroup}:${record.key}`;
-				if (level > 2 || seen.has(id)) {
-					throw new Error(`irradiance cell ${record.key} has an unsupported level or repeats in its bake`);
-				}
-				seen.add(id);
-				report.levels[level] = (report.levels[level] ?? 0) + 1;
-				report.rawBytes += record.size;
-				const raw = decodeIrradianceCell(
-					payload.subarray(record.offset, record.offset + record.storedLength),
-					record,
-				);
-				return store.prepare(raw, {
+		const prepared = await mapPool(records, CELLS_IN_FLIGHT, (record) =>
+			store.prepare(
+				decodeIrradianceCell(payload.subarray(record.offset, record.offset + record.storedLength), record),
+				{
 					kind: BlobKind.Irradiance,
 					compress: true,
 					zstdLevel: ZSTD_LEVEL,
 					stem: cellStem(record.key),
 					locality: null,
-				});
-			}),
+				},
+			),
 		);
 		for (const [i, record] of records.entries()) {
 			memo.blobs.push(prepared[i].meta);
