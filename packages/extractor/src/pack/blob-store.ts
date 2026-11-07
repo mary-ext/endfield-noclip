@@ -239,10 +239,9 @@ export class BlobStore {
 			const { archive: name, offset } = placement[index];
 			const archive = archiveIndex.get(name);
 			if (archive === undefined) {
-				throw new Error(`blob ${blob.hash} is in archive ${name}, which isn't listed`);
+				throw new Error(`blob ${index} is in archive ${name}, which isn't listed`);
 			}
 			return {
-				hash: blob.hash,
 				archive,
 				codec: blob.codec,
 				kind: blob.kind,

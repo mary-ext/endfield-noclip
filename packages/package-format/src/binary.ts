@@ -72,22 +72,3 @@ export const f32Section = (data: Uint8Array, at: number, count: number): Float32
 export const u32Section = (data: Uint8Array, at: number, count: number): Uint32Array => {
 	return new Uint32Array(data.slice(at, at + count * 4).buffer);
 };
-
-export const hexOf = (bytes: Uint8Array): string => {
-	let out = '';
-	for (const byte of bytes) {
-		out += byte.toString(16).padStart(2, '0');
-	}
-	return out;
-};
-
-export const bytesOfHex = (hex: string): Uint8Array => {
-	if (!/^[0-9a-f]{32}$/.test(hex)) {
-		throw new PackageFormatError(`blob hash ${hex} isn't 32 lowercase hex digits`);
-	}
-	const out = new Uint8Array(16);
-	for (let i = 0; i < 16; i++) {
-		out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-	}
-	return out;
-};

@@ -1,11 +1,11 @@
 import { decodeBlobTable, type BlobRecord } from '@endfield-noclip/package-format/blob-table';
-import { blobPath } from '@endfield-noclip/package-format/blobs';
 import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
 import { decodeChains, type Chain } from '@endfield-noclip/package-format/instances';
 import { decodeIrradianceTable, type IrradianceTable } from '@endfield-noclip/package-format/irradiance';
 import type { LightsTable } from '@endfield-noclip/package-format/lights';
 import {
 	CORE_ARCHIVE,
+	CORE_ARCHIVE_INDEX,
 	CORE_PATHS,
 	PACKAGE_FORMAT,
 	PACKAGE_VERSION,
@@ -21,9 +21,6 @@ import { fromUint8Array, openArchive } from '@mary-ext/czar';
 
 import type { PackageSource } from './package-source.ts';
 import { decompressZstd, zstdReady } from './zstd.ts';
-
-/** index of {@link CORE_ARCHIVE} in {@link PackageManifest.archives} */
-export const CORE_ARCHIVE_INDEX = 0;
 
 /** a blob's absolute byte range in its shard archive */
 export interface BlobRange {
@@ -84,7 +81,10 @@ export const openViewerPackage = async (
 	onProgress: (phase: string) => void,
 ): Promise<ViewerPackage> => {
 	onProgress(`reading ${CORE_ARCHIVE}`);
-	const archive = await openArchive(fromUint8Array(await source.readFile(CORE_ARCHIVE)));
+	const core = await source.readFile(CORE_ARCHIVE);
+	const archive = await openArchive(fromUint8Array(core));
+	// the first member sits at the start of the data section, which core blob offsets are relative to
+	const coreData = archive.files[0]?.position ?? 0;
 
 	onProgress('decoding tables');
 	await zstdReady;
@@ -148,13 +148,12 @@ export const openViewerPackage = async (
 		irradiance,
 		readCoreBlob(index) {
 			const blob = blobs[index];
-			const file =
-				blob.archive === CORE_ARCHIVE_INDEX ? archive.get(blobPath(blob.hash, blob.kind)) : undefined;
-			if (file === undefined) {
+			const start = coreData + blob.offset;
+			if (blob.archive !== CORE_ARCHIVE_INDEX || start + blob.length > core.length) {
 				return Promise.reject(new PackageError(`blob ${index} isn't in ${CORE_ARCHIVE}`));
 			}
 			// copied out of the archive buffer, so it can be transferred to a worker
-			return file.arrayBuffer();
+			return Promise.resolve(core.slice(start, start + blob.length).buffer);
 		},
 		blobRange(index) {
 			const blob = blobs[index];

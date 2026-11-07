@@ -98,9 +98,10 @@ uncompressed members as typed arrays.
   [parts](#layout).
 - **the core's offsets**: `ArchiveInfo.dataOffset` is `null` for the core, because the core's header
   holds the sizes and CRCs of the tables that contain the offsets. a reader reads the core whole and
-  gets core blobs through czar. blob paths (`blobs/…`) sort before every fixed member, so blob
-  offsets inside the core don't depend on table sizes; `BlobStore.writeCore` refuses a fixed member
-  that would sort first.
+  takes its data section's start from the position of its first member, which core blob offsets are
+  relative to. blob paths (`blobs/…`) sort before every fixed member, so blob offsets inside the
+  core don't depend on table sizes; `BlobStore.writeCore` refuses a fixed member that would sort
+  first.
 - **generation**: `manifest.generation` hashes the core's binary and table members (not the
   manifest). equal generations mean equal tables, so a reader can key decoded-table caches by it.
 
@@ -248,7 +249,7 @@ all little-endian, every section 4-byte aligned. the tables share a 16-byte head
 | ----------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tree.bin`              | `EFTR` | 24-byte header (nodes, node refs, global refs, reaches); 48-byte nodes: `i32 x, i32 z, u8 level, u8×3 0, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs, the nodes' then the global ones: `u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, u32 reach` (`0xffffffff` for none); 16-byte reaches: `f32 minX, minZ, maxX, maxZ`, `[min, max)`, possibly infinite |
 | `tables/chains.bin`     | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 flags, u8 0`; 32-byte draws: `u32 geometry, u32 material, u32 particles, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u8 flags, u8 0, i16 sortingLayer, i16 sortingOrder, u16 0`; then `f32×3` distance origins, one per `CameraDistance` chain in chain order                                                               |
-| `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 32-byte records: `16-byte hash, u16 archive, u8 codec, u8 kind, u32 offset, u32 length, u32 rawLength`                                                                                                                                                                                                                                                                                              |
+| `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 16-byte records: `u8 kind, u8 codec, u16 archive, u32 offset, u32 length, u32 rawLength`; a blob's hash is only its member path, which readers never need                                                                                                                                                                                                                                           |
 | `tables/irradiance.bin` | `EFIV` | version 2; header (entries, 0); u32 cell keys ascending (repeats allowed), then u32 blob indices, then u32 visibility groups                                                                                                                                                                                                                                                                                           |
 
 nodes are ordered coarse to fine (level, then z, then x); a node's children are the nodes at
@@ -884,8 +885,9 @@ a reader reads `core.czar` whole, checks `format` and `version` before anything 
 binary tables and inflates the JSON ones. a non-core blob is the byte range
 `[dataOffset + offset, + length)` of its archive (`blobRange` in the viewer), so reads can be
 coalesced; the archive's `size` from the manifest lets a reader notice an archive replaced by a
-re-pack. range reads skip czar's CRC; the blob's SHA-256 name is the integrity check when one is
-needed. the viewer's sources, decode workers and zstd decoder are in [loading](viewer/loading.md).
+re-pack. range reads skip czar's CRC; `czar verify` checks an archive's members when needed. the
+core's blobs are the same ranges of the core's bytes, from its first member's position. the viewer's
+sources, decode workers and zstd decoder are in [loading](viewer/loading.md).
 
 ## debug
 

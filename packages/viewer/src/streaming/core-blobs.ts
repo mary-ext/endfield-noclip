@@ -1,6 +1,7 @@
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
+import { CORE_ARCHIVE_INDEX } from '@endfield-noclip/package-format/manifest';
 
-import { CORE_ARCHIVE_INDEX, type ViewerPackage } from '../package/viewer-package.ts';
+import type { ViewerPackage } from '../package/viewer-package.ts';
 
 /**
  * the coarse layer, pinned at load: the core archive's height pages and instance blocks (coarse terrain,

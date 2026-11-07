@@ -151,50 +151,50 @@ describe('blob table', () => {
 	it('round-trips records', () => {
 		const blobs = [
 			{
-				hash: '0123456789abcdef0123456789abcdef',
-				archive: 3,
-				codec: BlobCodec.Zstd,
 				kind: BlobKind.Instances,
+				codec: BlobCodec.Zstd,
+				archive: 3,
 				offset: 4_000_000_000,
 				length: 12,
 				rawLength: 40,
 			},
 		];
 		assert.deepEqual(decodeBlobTable(encodeBlobTable(blobs)), blobs);
-		assert.equal(blobPath(blobs[0].hash, blobs[0].kind), 'blobs/0123456789abcdef0123456789abcdef.inst');
+		assert.equal(
+			blobPath('0123456789abcdef0123456789abcdef', blobs[0].kind),
+			'blobs/0123456789abcdef0123456789abcdef.inst',
+		);
 	});
 
-	it('rejects malformed hashes and 64-bit offsets', () => {
+	it('rejects 64-bit offsets and 17-bit archive indices', () => {
 		const record = {
-			hash: 'xyz',
-			archive: 0,
+			kind: BlobKind.Geometry,
 			codec: BlobCodec.None,
-			kind: BlobKind.Other,
+			archive: 0,
 			offset: 0,
 			length: 0,
 			rawLength: 0,
 		};
-		assert.throws(() => encodeBlobTable([record]), PackageFormatError);
-		assert.throws(() => encodeBlobTable([{ ...record, hash: '0'.repeat(32), offset: 2 ** 32 }]), RangeError);
+		assert.throws(() => encodeBlobTable([{ ...record, offset: 2 ** 32 }]), RangeError);
+		assert.throws(() => encodeBlobTable([{ ...record, archive: 2 ** 16 }]), RangeError);
 	});
 
 	it('rejects unknown codecs and kinds', () => {
 		const table = encodeBlobTable([
 			{
-				hash: '0'.repeat(32),
-				archive: 0,
+				kind: BlobKind.Geometry,
 				codec: BlobCodec.None,
-				kind: BlobKind.Other,
+				archive: 0,
 				offset: 0,
 				length: 0,
 				rawLength: 0,
 			},
 		]);
 		const badCodec = table.slice();
-		badCodec[16 + 18] = 0xee;
+		badCodec[16 + 1] = 0xee;
 		assert.throws(() => decodeBlobTable(badCodec), /unknown blob codec 238/);
 		const badKind = table.slice();
-		badKind[16 + 19] = 0xee;
+		badKind[16] = 0xee;
 		assert.throws(() => decodeBlobTable(badKind), /unknown blob kind 238/);
 	});
 });

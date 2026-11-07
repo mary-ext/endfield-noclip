@@ -1,7 +1,9 @@
+import { CORE_ARCHIVE_INDEX } from '@endfield-noclip/package-format/manifest';
+
 import type { DecodePool } from '../package/decode-pool.ts';
 import type { Decoded } from '../package/decode-protocol.ts';
 import { PackageChangedError } from '../package/package-source.ts';
-import { CORE_ARCHIVE_INDEX, type ViewerPackage } from '../package/viewer-package.ts';
+import type { ViewerPackage } from '../package/viewer-package.ts';
 
 import { type QueuedRange, coalesceRanges } from './coalesce.ts';
 import { type ContentItem, MAX_READ_FAILURES } from './content-item.ts';

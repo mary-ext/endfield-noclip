@@ -24,7 +24,6 @@ export const RESIDENT_KINDS: Readonly<Record<BlobKind, ResidentKind | null>> = {
 	[BlobKind.Instances]: 'instances',
 	[BlobKind.Geometry]: 'geometry',
 	[BlobKind.Texture]: 'texture',
-	[BlobKind.Other]: null,
 	[BlobKind.Irradiance]: 'irradiance',
 	[BlobKind.TerrainSurface]: 'surface',
 	[BlobKind.TerrainSplat]: 'splat',

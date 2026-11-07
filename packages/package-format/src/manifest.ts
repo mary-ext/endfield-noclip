@@ -37,6 +37,9 @@ export const PACKAGE_VERSION = 75;
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
 
+/** index of {@link CORE_ARCHIVE} in {@link PackageManifest.archives} */
+export const CORE_ARCHIVE_INDEX = 0;
+
 /**
  * fixed member paths inside {@link CORE_ARCHIVE}. `.zst` members are one zstd frame each (the JSON shrinks
  * 6–50× that way); the rest are stored as they are

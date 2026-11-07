@@ -274,7 +274,7 @@ describe('BlobStore', () => {
 			const random = Uint8Array.from({ length: 333 }, (_, i) => (i * 2654435761) >>> 24);
 			const [a, b, c] = await store.putMany([
 				{ raw: compressible, options: { kind: BlobKind.Instances, compress: true, stem: 'shards/x' } },
-				{ raw: random, options: { kind: BlobKind.Other, compress: false, stem: 'core.czar' } },
+				{ raw: random, options: { kind: BlobKind.Geometry, compress: false, stem: 'core.czar' } },
 				{ raw: compressible, options: { kind: BlobKind.Instances, compress: true, stem: 'other' } },
 			]);
 			assert.equal(c, a);
@@ -302,7 +302,7 @@ describe('BlobStore', () => {
 				assert.deepEqual(new Uint8Array(zstdDecompressSync(stored)), compressible);
 				const archive = await openArchive(await fromFileHandle(handle));
 				assert.equal(
-					archive.get(blobPath(record.hash, record.kind))!.position,
+					archive.get(blobPath(store.hashOf(a), record.kind))!.position,
 					shard.dataOffset + record.offset,
 				);
 			}
@@ -310,7 +310,7 @@ describe('BlobStore', () => {
 			{
 				await using handle = await open(join(dir, 'core.czar'));
 				const archive = await openArchive(await fromFileHandle(handle));
-				const file = archive.get(blobPath(records[b].hash, BlobKind.Other))!;
+				const file = archive.get(blobPath(store.hashOf(b), BlobKind.Geometry))!;
 				assert.deepEqual(await file.bytes(), random);
 				assert.equal(core.dataOffset + records[b].offset, file.position);
 				assert.ok(archive.get('manifest.json'));
@@ -348,7 +348,7 @@ describe('BlobStore', () => {
 			await using handle = await open(join(dir, 'core.czar'));
 			const archive = await openArchive(await fromFileHandle(handle));
 			const record = store.records(['core.czar'])[index];
-			let bytes = await archive.get(blobPath(record.hash, record.kind))!.bytes();
+			let bytes = await archive.get(blobPath(store.hashOf(index), record.kind))!.bytes();
 			if (record.codec === BlobCodec.Zstd) {
 				bytes = new Uint8Array(zstdDecompressSync(bytes));
 			}
