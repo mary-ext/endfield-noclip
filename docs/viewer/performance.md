@@ -99,6 +99,14 @@
 - geometry pools never shrink, and the stream budget counts the ranges in them, not their spare
   capacity: after flying under a 384 MiB budget, one pool held 170 MiB of buffers for 27 MiB of
   geometry. compacting or shrinking pools once they're mostly free would return that.
+- the shadow map is `depth32float` with a reach of 1500 m towards the sun; the game uses 16-bit
+  depth. tightening each layer's depth range (the casters' bounds, or clamping casters to the near
+  plane with `depth-clip-control`) would make `depth16unorm` precise enough, halving the map (64 to
+  32 MiB) and the bandwidth of every shadow sample; the bias needs retuning.
+- the ambient and sky reflection targets are rgba16f each (16 bytes a pixel together, the
+  reflection's alpha unused); packing them into one `rg32uint` (shared-exponent or 11-11-10 colour)
+  would save about 32 MiB at 2560×1600 and the matching reads in composite and reflections. the
+  celestial pass, which reuses the reflection target, would need its own.
 - mesh selection is the largest CPU cost (3.4–4 ms at map02's still views): picking LOD slots and
   making room in buckets on the GPU (count, prefix sum, write) would leave the CPU one item per row
   group instead of per segment.
