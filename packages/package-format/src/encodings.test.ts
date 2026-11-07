@@ -19,6 +19,7 @@ import {
 	encodeChains,
 	encodeInstanceBlock,
 	type Chain,
+	ChainDrawFlags,
 	ChainFlags,
 	DrawRole,
 	type InstanceBlock,
@@ -104,50 +105,46 @@ describe('chains', () => {
 	it('round-trips draws in order', () => {
 		const chains: Chain[] = [
 			{
-				lodCount: 2,
 				flags: 1,
 				draws: [
 					{
 						geometry: 4,
 						material: 9,
+						particles: null,
 						submesh: 1,
 						lod: 0,
 						role: DrawRole.Lit,
 						minSquared: 0.25,
 						maxSquared: 3.4028234663852886e38,
-						sourceFlags: 0x0bf80000,
+						flags: ChainDrawFlags.CastsCascades | ChainDrawFlags.CastsStatic,
 						sortingLayer: 0,
 						sortingOrder: 0,
-						particles: null,
 					},
 					{
 						geometry: 5,
-						material: 9,
+						material: null,
+						particles: 3,
 						submesh: 0,
 						lod: 1,
 						role: DrawRole.ShadowOnly,
 						minSquared: -0.5,
 						maxSquared: 0.25,
-						sourceFlags: 1 << 10,
+						flags: ChainDrawFlags.CastsStatic,
 						sortingLayer: -1,
 						sortingOrder: -4,
-						particles: 3,
 					},
 				],
 				distanceOrigin: null,
 			},
-			{ lodCount: 1, flags: 2, draws: [], distanceOrigin: null },
-			{ lodCount: 1, flags: ChainFlags.CameraDistance, draws: [], distanceOrigin: [0.5, -2, 12.25] },
-			{ lodCount: 1, flags: 0, draws: [], distanceOrigin: null },
+			{ flags: 2, draws: [], distanceOrigin: null },
+			{ flags: ChainFlags.CameraDistance, draws: [], distanceOrigin: [0.5, -2, 12.25] },
+			{ flags: 0, draws: [], distanceOrigin: null },
 		];
 		assert.deepEqual(decodeChains(encodeChains(chains)), chains);
 	});
 
 	it('refuses a distance origin without its flag', () => {
-		assert.throws(
-			() => encodeChains([{ lodCount: 1, flags: 0, draws: [], distanceOrigin: [0, 0, 0] }]),
-			RangeError,
-		);
+		assert.throws(() => encodeChains([{ flags: 0, draws: [], distanceOrigin: [0, 0, 0] }]), RangeError);
 	});
 });
 

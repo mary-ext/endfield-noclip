@@ -44,15 +44,15 @@ describe('AssetPlacement', () => {
 			role: DrawRole.Lit,
 			minSquared: -1,
 			maxSquared: 1,
-			sourceFlags: 0,
 			sortingLayer: 0,
 			sortingOrder: 0,
+			flags: 0,
 			particles: null,
 		});
 		const chains = [
-			{ lodCount: 1, flags: 0, draws: [draw(0, 0)], distanceOrigin: null },
-			{ lodCount: 1, flags: 0, draws: [draw(1, 0), draw(0, 1)], distanceOrigin: null },
-			{ lodCount: 1, flags: 0, draws: [draw(2, 2)], distanceOrigin: null },
+			{ flags: 0, draws: [draw(0, 0)], distanceOrigin: null },
+			{ flags: 0, draws: [draw(1, 0), draw(0, 1)], distanceOrigin: null },
+			{ flags: 0, draws: [draw(2, 2)], distanceOrigin: null },
 		];
 		const placement = new AssetPlacement(3);
 		// leaves at level 6 lift to their level-3 ancestors
@@ -77,20 +77,16 @@ describe('AssetPlacement', () => {
 			role: DrawRole.Lit,
 			minSquared: -1,
 			maxSquared: 1,
-			sourceFlags: 0,
 			sortingLayer: 0,
 			sortingOrder: 0,
+			flags: 0,
 			particles: null,
 		};
 		const placement = new AssetPlacement(3);
 		placement.note(0, { level: 3, x: 1, z: 1 });
 		placement.noteGeometry(0, null);
 		placement.noteGeometry(1, { level: 6, x: 8, z: 8 });
-		const { geometries } = placement.resolve(
-			[{ lodCount: 1, flags: 0, draws: [draw], distanceOrigin: null }],
-			2,
-			1,
-		);
+		const { geometries } = placement.resolve([{ flags: 0, draws: [draw], distanceOrigin: null }], 2, 1);
 		assert.equal(geometries[0], null);
 		assert.deepEqual(geometries[1], { level: 3, x: 1, z: 1 });
 	});

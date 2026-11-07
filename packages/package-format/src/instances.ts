@@ -21,16 +21,21 @@ export const DrawRole = {
 	/**
 	 * a stand-in for something the game draws that the viewer can't (a particle system it can't play, a prefab
 	 * it can't read), drawn with the viewer's unsupported look rather than its material. the material names
-	 * what it would have drawn, or is {@link NO_MATERIAL} when that isn't known; the geometry is the content's
-	 * own mesh, or a unit cube spanning −0.5 to 0.5 that the instance transform scales to its extent
+	 * what it would have drawn, or is `null` when that isn't known; the geometry is the content's own mesh, or
+	 * a unit cube spanning −0.5 to 0.5 that the instance transform scales to its extent
 	 */
 	Unsupported: 2,
 } as const;
 
-/** {@link ChainDraw.material} of a `DrawRole.Unsupported` stand-in whose material isn't known */
-export const NO_MATERIAL = 0xffff_ffff;
-
 export type DrawRole = (typeof DrawRole)[keyof typeof DrawRole];
+
+/** chain draw flag bits: which shadow maps the draw casts into, when its material casts at all */
+export const ChainDrawFlags = {
+	/** casts into the sharp cascades around the camera */
+	CastsCascades: 1 << 0,
+	/** casts into the cached far shadow map */
+	CastsStatic: 1 << 1,
+} as const;
 
 /**
  * chain flag bits. whether a chain is an HLOD cluster's follows from the tree ref that holds it
@@ -64,8 +69,14 @@ export const InstanceBlockFlags = {
 export interface ChainDraw {
 	/** index into the geometry table */
 	geometry: number;
-	/** index into the material table, or {@link NO_MATERIAL} for some stand-ins */
-	material: number;
+	/** index into the material table, or `null` for a stand-in whose material isn't known */
+	material: number | null;
+	/**
+	 * index into the particles table when the draw is a particle system's mesh: the instance is the emitter,
+	 * its transform the system's frame and its bounds everywhere the particles reach. `null` for an ordinary
+	 * draw
+	 */
+	particles: number | null;
 	submesh: number;
 	/** LOD level, 0 = nearest */
 	lod: number;
@@ -77,8 +88,8 @@ export interface ChainDraw {
 	 */
 	minSquared: number;
 	maxSquared: number;
-	/** the game's `RendererInfo.renderFlags`, kept for bits not yet understood */
-	sourceFlags: number;
+	/** {@link ChainDrawFlags} */
+	flags: number;
 	/**
 	 * the renderer's sorting layer (its place in the layer order) and order within it, i16 each; 0 where the
 	 * game records none (static scenery). the transparent pass draws lower layers, then lower orders, first,
@@ -86,17 +97,10 @@ export interface ChainDraw {
 	 */
 	sortingLayer: number;
 	sortingOrder: number;
-	/**
-	 * index into the particles table when the draw is a particle system's mesh: the instance is the emitter,
-	 * its transform the system's frame and its bounds everywhere the particles reach. `null` for an ordinary
-	 * draw
-	 */
-	particles: number | null;
 }
 
 /** a LOD-chain template shared by every instance with the same ordered draws */
 export interface Chain {
-	lodCount: number;
 	/** {@link ChainFlags} */
 	flags: number;
 	draws: ChainDraw[];
@@ -167,8 +171,8 @@ export interface DecalPlacements {
 const CHAIN_SIZE = 8;
 const DRAW_SIZE = 32;
 const ORIGIN_SIZE = 12;
-/** {@link ChainDraw.particles} of a draw without particles, as encoded */
-const NO_PARTICLES = 0xff_ff_ff_ff;
+/** a `null` reference, as encoded */
+const NONE = 0xff_ff_ff_ff;
 const INSTANCE_HEADER_SIZE = 32;
 /** bytes per instance row across all sections */
 const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4;
@@ -176,7 +180,7 @@ const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4;
 /** 'EFCH' */
 const CHAINS_HEADER: HeaderShape = {
 	magic: 0x48_43_46_45,
-	version: 6,
+	version: 7,
 	size: TABLE_HEADER_SIZE,
 	label: 'chain table',
 };
@@ -194,9 +198,9 @@ const hasDistanceOrigin = (flags: number): boolean => (flags & ChainFlags.Camera
 
 /**
  * tables/chains.bin: 16-byte header (`'EFCH'`, u16 version, u16 0, u32 chainCount, u32 drawCount), 8-byte
- * chains (u32 firstDraw, u16 drawCount, u8 lodCount, u8 flags), then 32-byte draws (u32 geometry, u32
- * material, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u32 sourceFlags, u32 particles,
- * `0xffffffff` for none, i16 sortingLayer, i16 sortingOrder), then f32×3 distance origins, one per
+ * chains (u32 firstDraw, u16 drawCount, u8 flags, u8 0), then 32-byte draws (u32 geometry, u32 material, u32
+ * particles, `0xffffffff` for none, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u8 flags,
+ * u8 0, i16 sortingLayer, i16 sortingOrder, u16 0), then f32×3 distance origins, one per
  * {@link ChainFlags.CameraDistance} chain in chain order.
  *
  * @param chains chain templates in id order
@@ -234,21 +238,20 @@ export const encodeChains = (chains: readonly Chain[]): Uint8Array => {
 		}
 		view.setUint32(chainAt, firstDraw, true);
 		view.setUint16(chainAt + 4, chain.draws.length, true);
-		view.setUint8(chainAt + 6, chain.lodCount);
-		view.setUint8(chainAt + 7, chain.flags);
+		view.setUint8(chainAt + 6, chain.flags);
 		chainAt += CHAIN_SIZE;
 		for (const draw of chain.draws) {
 			view.setUint32(drawAt, draw.geometry, true);
-			view.setUint32(drawAt + 4, draw.material, true);
-			view.setUint16(drawAt + 8, draw.submesh, true);
-			view.setUint8(drawAt + 10, draw.lod);
-			view.setUint8(drawAt + 11, draw.role);
-			view.setFloat32(drawAt + 12, draw.minSquared, true);
-			view.setFloat32(drawAt + 16, draw.maxSquared, true);
-			view.setUint32(drawAt + 20, draw.sourceFlags, true);
-			view.setUint32(drawAt + 24, draw.particles ?? NO_PARTICLES, true);
-			view.setInt16(drawAt + 28, draw.sortingLayer, true);
-			view.setInt16(drawAt + 30, draw.sortingOrder, true);
+			view.setUint32(drawAt + 4, draw.material ?? NONE, true);
+			view.setUint32(drawAt + 8, draw.particles ?? NONE, true);
+			view.setUint16(drawAt + 12, draw.submesh, true);
+			view.setUint8(drawAt + 14, draw.lod);
+			view.setUint8(drawAt + 15, draw.role);
+			view.setFloat32(drawAt + 16, draw.minSquared, true);
+			view.setFloat32(drawAt + 20, draw.maxSquared, true);
+			view.setUint8(drawAt + 24, draw.flags);
+			view.setInt16(drawAt + 26, draw.sortingLayer, true);
+			view.setInt16(drawAt + 28, draw.sortingOrder, true);
 			drawAt += DRAW_SIZE;
 		}
 		firstDraw += chain.draws.length;
@@ -256,7 +259,7 @@ export const encodeChains = (chains: readonly Chain[]): Uint8Array => {
 	return out;
 };
 
-const particlesOf = (value: number): number | null => (value === NO_PARTICLES ? null : value);
+const indexOf = (value: number): number | null => (value === NONE ? null : value);
 
 /**
  * @param data tables/chains.bin
@@ -271,7 +274,7 @@ export const decodeChains = (data: Uint8Array): Chain[] => {
 	let originCount = 0;
 	if (data.length >= TABLE_HEADER_SIZE + chainCount * CHAIN_SIZE) {
 		for (let c = 0; c < chainCount; c++) {
-			originCount += Number(hasDistanceOrigin(view.getUint8(TABLE_HEADER_SIZE + c * CHAIN_SIZE + 7)));
+			originCount += Number(hasDistanceOrigin(view.getUint8(TABLE_HEADER_SIZE + c * CHAIN_SIZE + 6)));
 		}
 	}
 	checkLength(
@@ -295,26 +298,26 @@ export const decodeChains = (data: Uint8Array): Chain[] => {
 			const drawAt = drawsAt + d * DRAW_SIZE;
 			draws.push({
 				geometry: view.getUint32(drawAt, true),
-				material: view.getUint32(drawAt + 4, true),
-				submesh: view.getUint16(drawAt + 8, true),
-				lod: view.getUint8(drawAt + 10),
-				role: checkedEnum(isDrawRole, view.getUint8(drawAt + 11), 'draw role'),
-				minSquared: view.getFloat32(drawAt + 12, true),
-				maxSquared: view.getFloat32(drawAt + 16, true),
-				sourceFlags: view.getUint32(drawAt + 20, true),
-				sortingLayer: view.getInt16(drawAt + 28, true),
-				sortingOrder: view.getInt16(drawAt + 30, true),
-				particles: particlesOf(view.getUint32(drawAt + 24, true)),
+				material: indexOf(view.getUint32(drawAt + 4, true)),
+				particles: indexOf(view.getUint32(drawAt + 8, true)),
+				submesh: view.getUint16(drawAt + 12, true),
+				lod: view.getUint8(drawAt + 14),
+				role: checkedEnum(isDrawRole, view.getUint8(drawAt + 15), 'draw role'),
+				minSquared: view.getFloat32(drawAt + 16, true),
+				maxSquared: view.getFloat32(drawAt + 20, true),
+				flags: view.getUint8(drawAt + 24),
+				sortingLayer: view.getInt16(drawAt + 26, true),
+				sortingOrder: view.getInt16(drawAt + 28, true),
 			});
 		}
-		const flags = view.getUint8(at + 7);
+		const flags = view.getUint8(at + 6);
 		let distanceOrigin: Chain['distanceOrigin'] = null;
 		if (hasDistanceOrigin(flags)) {
 			const f = (i: number): number => view.getFloat32(originAt + i * 4, true);
 			distanceOrigin = [f(0), f(1), f(2)];
 			originAt += ORIGIN_SIZE;
 		}
-		chains.push({ lodCount: view.getUint8(at + 6), flags, draws, distanceOrigin });
+		chains.push({ flags, draws, distanceOrigin });
 	}
 	return chains;
 };

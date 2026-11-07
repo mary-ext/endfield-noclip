@@ -29,7 +29,7 @@ const block = (chains: number[], decalRows: number[] = []): InstanceBlock => ({
 });
 
 it('marks the rows of billboard chains, keeping the rest of their info words', () => {
-	const chain = (flags: number): Chain => ({ lodCount: 1, flags, draws: [], distanceOrigin: null });
+	const chain = (flags: number): Chain => ({ flags, draws: [], distanceOrigin: null });
 	const chains = [chain(0), chain(ChainFlags.BillboardFacing), chain(ChainFlags.BillboardUpright)];
 	const rows = buildInstanceRows(block([0, 1, 1, 2]), RowKind.Detail);
 	markBillboardRows(rows, chains);

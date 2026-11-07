@@ -38,7 +38,6 @@ import {
 	type ChainDraw,
 	DrawRole,
 	type InstanceBlock,
-	NO_MATERIAL,
 } from '@endfield-noclip/package-format/instances';
 import {
 	encodeIrradianceTable,
@@ -146,7 +145,7 @@ import {
 import { BlobDir } from './blob-file.ts';
 import { BlobStore, type PutOptions } from './blob-store.ts';
 import { aabbBounds, growBounds, squareOverlapsRect } from './bounds.ts';
-import { ChainTable } from './chains.ts';
+import { CASTS_EVERYWHERE, ChainTable, chainDrawFlagsOf } from './chains.ts';
 import { ControlRegistry } from './control-registry.ts';
 import { ConvertPool } from './convert-pool.ts';
 import {
@@ -947,15 +946,15 @@ const collectEntities = async (
 		return {
 			geometry: pack.geometries.intern(draw.meshHash, scene.pathOf),
 			material: pack.materials.intern(draw.materialHash, scene.pathOf),
+			particles: null,
 			submesh: draw.submesh,
 			lod: draw.lod,
 			role: (draw.flags & DrawFlags.ShadowOnly) === 0 ? DrawRole.Lit : DrawRole.ShadowOnly,
 			minSquared: draw.lodMinSquared,
 			maxSquared: draw.lodMaxSquared,
-			sourceFlags: draw.flags,
+			flags: chainDrawFlagsOf(draw.flags),
 			sortingLayer: 0,
 			sortingOrder: 0,
-			particles: null,
 		};
 	};
 
@@ -969,15 +968,15 @@ const collectEntities = async (
 		return {
 			geometry: pack.geometries.intern(cubeHash, scene.pathOf),
 			material: pack.materials.intern(materialHash, scene.pathOf),
+			particles: null,
 			submesh: 0,
 			lod: 0,
 			role: DrawRole.Lit,
 			minSquared: 0,
 			maxSquared: DECAL_MAX_SQUARED,
-			sourceFlags: 0,
+			flags: CASTS_EVERYWHERE,
 			sortingLayer: 0,
 			sortingOrder: 0,
-			particles: null,
 		};
 	};
 
@@ -1004,7 +1003,6 @@ const collectEntities = async (
 				seen.add(entity.id);
 				counts.unique++;
 				let draws: ChainDraw[] | null = null;
-				let lodCount = 1;
 				if (entity.decal !== null) {
 					const material = content.decalMaterials.get(entity.id);
 					const draw = material === undefined ? null : decalDraw(entity.decal, material);
@@ -1046,13 +1044,12 @@ const collectEntities = async (
 				const hlod = HLOD_NAME.exec(entity.name);
 				if (entity.renderer !== null) {
 					draws = entity.renderer.draws.map(chainDraw);
-					lodCount = entity.renderer.lodCount;
 				}
 				if (draws === null) {
 					continue;
 				}
 				const row: InstanceInput = {
-					chain: pack.chains.intern(lodCount, draws),
+					chain: pack.chains.intern(draws),
 					matrix: entity.matrix,
 					bounds,
 					entityId: entity.id,
@@ -1103,7 +1100,7 @@ const collectEntities = async (
 					if (!subset.includesEntity(foliage.levelTag, x, z)) {
 						continue;
 					}
-					const chain = pack.chains.intern(cluster.renderer.lodCount, cluster.renderer.draws.map(chainDraw));
+					const chain = pack.chains.intern(cluster.renderer.draws.map(chainDraw));
 					for (const matrix of cluster.instances) {
 						rows.push({ chain, matrix, bounds: cluster.bounds, entityId: foliage.id });
 					}
@@ -1214,18 +1211,18 @@ const collectEntities = async (
 		}
 		const draw: ChainDraw = {
 			geometry: pack.geometries.internSynthetic('cube'),
-			material: NO_MATERIAL,
+			material: null,
+			particles: null,
 			submesh: 0,
 			lod: 0,
 			role: DrawRole.Unsupported,
 			minSquared: -1,
 			maxSquared: 3.4028234663852886e38,
-			sourceFlags: 0,
+			flags: CASTS_EVERYWHERE,
 			sortingLayer: 0,
 			sortingOrder: 0,
-			particles: null,
 		};
-		addStructure({ chain: pack.chains.intern(1, [draw]), matrix, bounds, entityId }, tag, report.name, {
+		addStructure({ chain: pack.chains.intern([draw]), matrix, bounds, entityId }, tag, report.name, {
 			visibility,
 			loadGrid,
 		});
@@ -1265,7 +1262,7 @@ const collectEntities = async (
 			counts.decal++;
 			addStructure(
 				{
-					chain: pack.chains.intern(1, [draw]),
+					chain: pack.chains.intern([draw]),
 					matrix: entity.matrix,
 					bounds,
 					entityId: entity.id,
@@ -1289,7 +1286,7 @@ const collectEntities = async (
 		}
 		addStructure(
 			{
-				chain: pack.chains.intern(entity.renderer.lodCount, entity.renderer.draws.map(chainDraw)),
+				chain: pack.chains.intern(entity.renderer.draws.map(chainDraw)),
 				matrix: entity.matrix,
 				bounds: entity.bounds,
 				entityId: entity.id,
@@ -1643,15 +1640,15 @@ const collectEntities = async (
 				return spans.map(({ lod, minSquared, maxSquared }) => ({
 					geometry,
 					material: id,
+					particles,
 					submesh: Math.min(index, renderer.submeshes - 1),
 					lod,
 					role,
 					minSquared,
 					maxSquared,
-					sourceFlags: 0,
+					flags: CASTS_EVERYWHERE,
 					sortingLayer: renderer.sorting.layer,
 					sortingOrder: renderer.sorting.order,
-					particles,
 				}));
 			}).flat();
 			if (draws.length === 0) {
@@ -1661,7 +1658,7 @@ const collectEntities = async (
 			floating?.push(entityId);
 			addStructure(
 				{
-					chain: pack.chains.intern(1, draws, {
+					chain: pack.chains.intern(draws, {
 						billboard: renderer.billboard?.flag ?? 0,
 						distanceOrigin:
 							renderer.distances === null

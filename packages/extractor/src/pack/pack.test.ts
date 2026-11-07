@@ -29,15 +29,15 @@ import { TileTreeBuilder } from './tile-tree.ts';
 const draw = (overrides: Partial<ChainDraw>): ChainDraw => ({
 	geometry: 0,
 	material: 0,
+	particles: null,
 	submesh: 0,
 	lod: 0,
 	role: DrawRole.Lit,
 	minSquared: -1,
 	maxSquared: 3.4028234663852886e38,
-	sourceFlags: 0,
+	flags: 0,
 	sortingLayer: 0,
 	sortingOrder: 0,
-	particles: null,
 	...overrides,
 });
 
@@ -45,27 +45,21 @@ describe('ChainTable', () => {
 	it('shares templates between identical ordered draw lists', () => {
 		const table = new ChainTable();
 		const a = [draw({ geometry: 1, maxSquared: 1e30 }), draw({ geometry: 2, lod: 1, minSquared: 0.1 })];
-		const first = table.intern(2, a);
-		assert.equal(
-			table.intern(
-				2,
-				a.map((d) => ({ ...d })),
-			),
-			first,
-		);
-		// order, LOD count and threshold bits all distinguish templates
-		assert.notEqual(table.intern(2, a.toReversed()), first);
-		assert.notEqual(table.intern(3, a), first);
-		assert.notEqual(table.intern(2, [a[0], { ...a[1], minSquared: Math.fround(0.1) + 1e-8 }]), first);
-		// so do the particle systems a draw emits
-		assert.notEqual(table.intern(2, [a[0], { ...a[1], particles: 0 }]), first);
+		const first = table.intern(a);
+		assert.equal(table.intern(a.map((d) => ({ ...d }))), first);
+		// order and threshold bits distinguish templates
+		assert.notEqual(table.intern(a.toReversed()), first);
+		assert.notEqual(table.intern([a[0], { ...a[1], minSquared: Math.fround(0.1) + 1e-8 }]), first);
+		// so do the particle systems a draw emits and the shadow maps it casts into
+		assert.notEqual(table.intern([a[0], { ...a[1], particles: 0 }]), first);
+		assert.notEqual(table.intern([a[0], { ...a[1], flags: 1 }]), first);
 		assert.equal(table.chains.length, 5);
 	});
 
 	it('flags how instances are placed, not what their draws are', () => {
 		const table = new ChainTable();
-		assert.equal(table.chains[table.intern(1, [draw({ role: DrawRole.ShadowOnly })])].flags, 0);
-		const banded = table.intern(1, [draw({})], {
+		assert.equal(table.chains[table.intern([draw({ role: DrawRole.ShadowOnly })])].flags, 0);
+		const banded = table.intern([draw({})], {
 			billboard: ChainFlags.BillboardUpright,
 			distanceOrigin: [0, 1, 0],
 		});

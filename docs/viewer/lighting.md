@@ -45,12 +45,11 @@ planes are swept 250 m towards the sun, and instances inside the swept planes dr
 layers only. off-screen casters smaller than 16 px (as if on screen) are skipped, and terrain
 outside the view doesn't cast. shadow-only renderers draw into the shadow layers only, in view or
 not. they cull back faces like any material, which is enough for Dijiang's roof; `_ShadowCullMode`
-isn't read. as in the game, a draw casts into the sharp cascades only with the `CastShadow`,
-`RealtimeShadowCaster` and cascade bits in its source flags, and into the far layer only with
-`CastShadow` and `StaticShadowCaster`; draws without recorded flags (prefab renderers) cast into
-both. listed rows (the CPU path) can't leave the far layer out, so a realtime-only caster there also
-casts into it. at a dense Jingyu view this left 4.6k of 6.9k draws. which layers each caster draws
-into and when the layers redraw is in [frame](frame.md).
+isn't read. a draw casts into the sharp cascades only with its `CastsCascades` flag and into the far
+layer only with `CastsStatic` ([chains](../package-format.md#binary-encodings)). listed rows (the
+CPU path) can't leave the far layer out, so a realtime-only caster there also casts into it. at a
+dense Jingyu view this left 4.6k of 6.9k draws. which layers each caster draws into and when the
+layers redraw is in [frame](frame.md).
 
 - a point uses the first cascade sphere containing it, dithered with the next one over the outer
   tenth of the sphere's radius.

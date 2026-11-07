@@ -190,6 +190,14 @@ export const Component = {
 export const DrawFlags = {
 	/** set on draws that only cast shadows (shadow proxies) */
 	ShadowOnly: 1 << 10,
+	/** casts shadows at all */
+	CastShadow: 0x8_0000,
+	/** one bit per sharp cascade; the game sets all or none */
+	Cascades: 0xf0_0000,
+	/** casts into the cached far shadow map */
+	StaticShadowCaster: 0x100_0000,
+	/** casts into the sharp cascades */
+	RealtimeShadowCaster: 0x200_0000,
 } as const;
 
 // #endregion

@@ -445,7 +445,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	const tangentUvs = Array.from({ length: input.geometries.length }, () => new Set<number>());
 	for (const chain of input.chains) {
 		for (const draw of chain.draws) {
-			const uv = normalMapUv[draw.material] ?? null;
+			const uv = draw.material === null ? null : (normalMapUv[draw.material] ?? null);
 			if (uv !== null) {
 				tangentUvs[draw.geometry].add(uv);
 			}
@@ -461,7 +461,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 		});
 		for (const chain of input.chains) {
 			for (const draw of chain.draws) {
-				const reach = reaches[draw.material] ?? null;
+				const reach = draw.material === null ? null : (reaches[draw.material] ?? null);
 				const held = sway[draw.geometry];
 				if (reach !== null) {
 					sway[draw.geometry] =

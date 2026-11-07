@@ -1,5 +1,5 @@
 import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
-import { type Chain, DrawRole } from '@endfield-noclip/package-format/instances';
+import { type Chain, ChainDrawFlags, DrawRole } from '@endfield-noclip/package-format/instances';
 
 import type { MaterialLook } from '../looks/look.ts';
 import { unsupportedLook } from '../looks/material-looks.ts';
@@ -69,11 +69,11 @@ export interface ChainSlot {
 	geometry: number;
 	submesh: number;
 	material: number;
-	/** whether it casts into any shadow layer: its material casts, and its source flags let it cast into one */
+	/** whether it casts into any shadow layer: its material casts, and its draw flags let it cast into one */
 	castsShadows: boolean;
-	/** whether it casts into the sharp cascades ({@link casterLayersOf}) */
+	/** whether it casts into the sharp cascades (`ChainDrawFlags.CastsCascades`) */
 	castsRealtime: boolean;
-	/** whether it casts into the far layer ({@link casterLayersOf}) */
+	/** whether it casts into the far layer (`ChainDrawFlags.CastsStatic`) */
 	castsStatic: boolean;
 	/**
 	 * what hides the draw: `material` for a material in the unsupported look ({@link
@@ -97,37 +97,6 @@ export interface ChainSlot {
 	/** the slot's buckets, once they had rows, by {@link bucketIndex} */
 	buckets: (MeshBucket | null)[];
 }
-
-/** bits of a chain draw's `sourceFlags`, the game's render flags, that decide which shadow maps it casts into */
-const SourceFlag = {
-	CastShadow: 0x8_0000,
-	/** one bit per sharp cascade; the game sets all or none */
-	Cascades: 0xf0_0000,
-	StaticShadowCaster: 0x100_0000,
-	RealtimeShadowCaster: 0x200_0000,
-} as const;
-
-/**
- * the game draws a caster into its cascades only with `CastShadow`, `RealtimeShadowCaster` and the cascade's
- * bit, and into its cached far map only with `CastShadow` and `StaticShadowCaster`
- *
- * @param sourceFlags a chain draw's `sourceFlags`; 0 where the packer recorded none (prefab renderers), which
- *   cast into every layer
- * @returns which layers the draw casts into
- */
-export const casterLayersOf = (sourceFlags: number): { realtime: boolean; static: boolean } => {
-	if (sourceFlags === 0) {
-		return { realtime: true, static: true };
-	}
-	const casts = (sourceFlags & SourceFlag.CastShadow) !== 0;
-	return {
-		realtime:
-			casts &&
-			(sourceFlags & SourceFlag.RealtimeShadowCaster) !== 0 &&
-			(sourceFlags & SourceFlag.Cascades) !== 0,
-		static: casts && (sourceFlags & SourceFlag.StaticShadowCaster) !== 0,
-	};
-};
 
 /** @returns {@link ChainSlot.hiddenBy} for a draw of `role` drawn with `look` */
 const hiddenByOf = (role: DrawRole, look: MaterialLook): ChainSlot['hiddenBy'] => {
@@ -270,13 +239,16 @@ export class MeshBuckets {
 			slots = [];
 			for (const draw of this.#chains[chain].draws) {
 				const material = draw.role === DrawRole.Unsupported ? this.#standIn : draw.material;
-				const look = material < this.#looks.length ? this.#looks[material] : undefined;
+				const look = material !== null && material < this.#looks.length ? this.#looks[material] : undefined;
 				const shadowOnly = draw.role === DrawRole.ShadowOnly;
 				const queue = look?.queue;
-				const layers = casterLayersOf(draw.sourceFlags);
+				const layers = {
+					realtime: (draw.flags & ChainDrawFlags.CastsCascades) !== 0,
+					static: (draw.flags & ChainDrawFlags.CastsStatic) !== 0,
+				};
 				const castsShadows = (look?.castsShadows ?? false) && (layers.realtime || layers.static);
 				// a proxy's material is never seen, only whether it casts
-				if (look === undefined || (shadowOnly ? !castsShadows : !look.drawn)) {
+				if (material === null || look === undefined || (shadowOnly ? !castsShadows : !look.drawn)) {
 					continue;
 				}
 				slots.push({

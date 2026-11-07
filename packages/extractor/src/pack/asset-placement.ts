@@ -1,4 +1,4 @@
-import { type Chain, NO_MATERIAL } from '@endfield-noclip/package-format/instances';
+import type { Chain } from '@endfield-noclip/package-format/instances';
 import { assetStem } from '@endfield-noclip/package-format/manifest';
 import { type TileKey, tileAncestor } from '@endfield-noclip/package-format/tiles';
 
@@ -101,7 +101,7 @@ export class AssetPlacement {
 			const place = this.#chains[id];
 			for (const draw of chain.draws) {
 				geometries[draw.geometry] = mergePlaces(geometries[draw.geometry], place);
-				if (draw.material !== NO_MATERIAL) {
+				if (draw.material !== null) {
 					materials[draw.material] = mergePlaces(materials[draw.material], place);
 				}
 			}
