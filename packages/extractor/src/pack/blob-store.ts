@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants, createReadStream, createWriteStream } from 'node:fs';
-import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -93,7 +93,7 @@ export interface WrittenArchive {
 	/** byte length of the JSON header */
 	headerLength: number;
 	members: number;
-	/** whether it was cloned from the previous package rather than written */
+	/** whether it was reused from the previous package rather than written */
 	reused: boolean;
 }
 
@@ -128,7 +128,7 @@ interface Layout {
  *
  * archives are named by their content (`archiveName`): a group whose blobs total more than the cap is split
  * by blob hash into a power-of-two number of parts, so a re-pack that changes a few blobs changes only the
- * archives holding them, and {@link BlobStore.writeArchives} clones every other archive from the previous
+ * archives holding them, and {@link BlobStore.writeArchives} links every other archive from the previous
  * package instead of writing it again
  */
 export class BlobStore {
@@ -298,7 +298,7 @@ export class BlobStore {
 	}
 
 	/**
-	 * puts every archive except the core in place: cloned from the previous package when it holds one of the
+	 * puts every archive except the core in place: linked from the previous package when it holds one of the
 	 * same name and size (names are content ids, so its bytes are equal), else streamed from the store's
 	 * directory
 	 *
@@ -320,8 +320,7 @@ export class BlobStore {
 				const source = join(previous, name);
 				const existing = await ignoreMissing(stat(source), undefined);
 				if (existing?.size === plan.size) {
-					// a copy-on-write clone where the file system has them (APFS, Btrfs), a plain copy elsewhere
-					await copyFile(source, target, constants.COPYFILE_FICLONE);
+					await reuseFile(source, target);
 					return describe(true);
 				}
 			}
@@ -444,6 +443,22 @@ export class BlobStore {
 		return this.dir.path(this.#blobs[index].hash);
 	}
 }
+
+/**
+ * puts an archive the previous package already has into the new one. archives are never written after they're
+ * made, so a hard link shares the bytes without copying them on any file system; where linking fails (another
+ * device), a copy-on-write clone where the file system has them, else a plain copy
+ *
+ * @param source the previous package's archive
+ * @param target where the new package's goes
+ */
+const reuseFile = async (source: string, target: string): Promise<void> => {
+	try {
+		await link(source, target);
+	} catch {
+		await copyFile(source, target, constants.COPYFILE_FICLONE);
+	}
+};
 
 const archiveSizes = <T>(
 	name: string,

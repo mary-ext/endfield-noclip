@@ -75,11 +75,12 @@ and blobs read together stay in one part. splitting by hash rather than by fill 
 part's membership stable: adding or changing an asset changes one part, and the split itself only
 changes when a group doubles.
 
-**reuse**: content names make a re-pack cheap. the packer clones each archive whose name (and size)
-the package it replaces already has, instead of streaming it from the blob store again; on APFS and
-Btrfs that's a copy-on-write clone, elsewhere a plain copy. a warm map02 re-pack writes the core and
-nothing else (20 s → 5 s for the write phase). it also means a reader caching archives by name can't
-pair a stale archive with a newer core.
+**reuse**: content names make a re-pack cheap. the packer hard-links each archive whose name (and
+size) the package it replaces already has, instead of streaming it from the blob store again; an
+archive is never written once made, so the link shares its bytes on any file system. where linking
+fails it falls back to a copy-on-write clone (APFS, Btrfs, reflinked XFS), else a plain copy. a warm
+map02 re-pack writes the core and nothing else (20 s → 5 s for the write phase with clones). it also
+means a reader caching archives by name can't pair a stale archive with a newer core.
 
 **replacing**: the packer replaces a previous package in its output directory but refuses a
 directory holding anything else, so a mistyped `-o` can't wipe unrelated files. it writes the new
