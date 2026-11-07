@@ -8,7 +8,7 @@ import {
 	ParticleMeshSpawn,
 	ParticleShapeKind,
 	type ParticleShapeRadius,
-	type ParticleSpeedLimitInfo,
+	type ParticleClampInfo,
 	type ParticleSystemInfo,
 } from '@endfield-noclip/package-format/particles';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
@@ -901,11 +901,11 @@ export class ParticleSimulation {
 	 * writes where a particle under a speed limit or force fields is at an age and how it moves then, stepped
 	 * ({@link steppedPath}). the velocity module's linear, orbital and radial terms are the extra velocity the
 	 * limit includes, and the speed modifier scales each step's move, not what the limit sees; the orbit moves
-	 * the particle along its circle's tangent at its current place. the packer leaves such systems without
-	 * drag
+	 * the particle along its circle's tangent at its current place. drag slows the limited speed, by the size
+	 * at each step's age
 	 */
 	#steppedPath(
-		limit: ParticleSpeedLimitInfo | null,
+		clamp: ParticleClampInfo | null,
 		velocity: ParticleVelocityInfo | null,
 		motion: PathStart,
 		position: Vec3,
@@ -918,6 +918,8 @@ export class ParticleSimulation {
 			motion;
 		const sizeOver = this.info.sizeOverLifetime;
 		const forces = this.#forces;
+		const limit = clamp?.kind === 'limit' ? clamp : null;
+		const drag = clamp?.kind === 'drag' ? clamp : (limit?.drag ?? null);
 		let push: ((age: number, moved: Readonly<Vec3>, own: Vec3, step: number) => void) | null = null;
 		if (forces !== null) {
 			const randoms = stepped.randoms;
@@ -985,6 +987,23 @@ export class ParticleSimulation {
 			state,
 		} = steppedPath({
 			limit: limit === null ? null : { info: limit, r: random(seed, id, Channel.SpeedLimit) },
+			drag:
+				drag === null
+					? null
+					: {
+							info: drag,
+							r: random(seed, id, Channel.Drag),
+							// the larger axis of a 3D size, as the game reads it
+							size: (t) => {
+								const lived = livedAt(t, life);
+								let size = 0;
+								for (let axis = 0; axis < 3; axis++) {
+									const over = sizeOver === null ? 1 : evaluateMinMax(sizeOver[axis], lived, growth);
+									size = Math.max(size, startSize[axis] * over);
+								}
+								return size;
+							},
+						},
 			start: launch,
 			acceleration,
 			push,
@@ -1049,7 +1068,7 @@ export class ParticleSimulation {
 			path.life = life;
 			path.growth = growth;
 			if (clamp?.kind === 'limit' || motion.forces !== null) {
-				this.#steppedPath(clamp?.kind === 'limit' ? clamp : null, velocity, path, position, moving);
+				this.#steppedPath(clamp, velocity, path, position, moving);
 			} else {
 				this.#freePath(clamp, velocity, path, position, moving);
 			}

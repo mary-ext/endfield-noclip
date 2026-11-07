@@ -522,6 +522,7 @@ const readSpeedLimit = (clamp: TypeTreeObject): ParticleSpeedLimitInfo | null | 
 		kind: 'limit',
 		limit: readMinMaxCurve(objectField(clamp, 'magnitude')),
 		dampen: Math.min(dampen, 1),
+		drag: null,
 	};
 };
 
@@ -866,13 +867,10 @@ export const readParticleSystem = (
 		if (typeof drag === 'string') {
 			return { reason: drag };
 		}
-		// where the game applies drag relative to the limit isn't known
-		if (limit !== null && drag !== null) {
-			return { reason: 'velocity limit with drag' };
-		}
-		clamp = limit ?? drag;
-		// the viewer's dragged path takes the speed modifier as a constant
-		if (drag !== null && velocity !== null && !isConstantCurve(velocity.speedModifier)) {
+		// each frame the game limits the speed, then drags the limited speed
+		clamp = limit === null ? drag : { ...limit, drag };
+		// the viewer's closed-form dragged path takes the speed modifier as a constant
+		if (limit === null && drag !== null && velocity !== null && !isConstantCurve(velocity.speedModifier)) {
 			return { reason: 'speed modifier curve with drag' };
 		}
 	}
@@ -883,10 +881,6 @@ export const readParticleSystem = (
 		const multiplier = readMinMaxCurve(objectField(module, 'multiplierCurve'));
 		// the engine skips the module unless the multiplier's scalar is above 0
 		if (multiplier.scalar > 0) {
-			// the stepped path the forces need takes no drag
-			if (clamp?.kind === 'drag') {
-				return { reason: 'force fields with drag' };
-			}
 			forces = {
 				multiplier,
 				filter: numberField(module, 'influenceFilter'),

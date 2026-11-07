@@ -79,7 +79,8 @@ describe('motion', () => {
 	// the challenge start point's rising stones: 1 m/s up from velocity over lifetime, limited to 0.1 m/s with
 	// a dampen of 0.1
 	const stones = {
-		limit: { info: { kind: 'limit' as const, limit: constant(0.1), dampen: 0.1 }, r: 0 },
+		limit: { info: { kind: 'limit' as const, limit: constant(0.1), dampen: 0.1, drag: null }, r: 0 },
+		drag: null,
 		start: [0, 0, 0] as Vec3,
 		acceleration: [0, 0, 0] as Vec3,
 		push: null,
@@ -110,6 +111,25 @@ describe('motion', () => {
 		// a state past the age is ignored, so a path read earlier starts again from birth
 		const back = steppedPath({ ...stones, age: 0.5, from: fresh.state });
 		assert.equal(back.offset[1], steppedPath({ ...stones, age: 0.5 }).offset[1]);
+	});
+	it('drags the limited speed each step, from the particle’s own velocity', () => {
+		// the rift monsters' smoke: limited, then slowed by a constant drag
+		const drag = { kind: 'drag' as const, amount: constant(0.5), bySize: false, byVelocity: false };
+		const limited = steppedPath({ ...stones, age: 3 }).velocity[1];
+		const slowed = steppedPath({ ...stones, drag: { info: drag, r: 0, size: () => 1 }, age: 3 }).velocity[1];
+		// each 1/30 s step takes 0.5/30 m/s off a speed the limit holds near 0.1
+		assert.ok(slowed < limited - 0.01, `${slowed} vs ${limited}`);
+		const stopped = steppedPath({
+			...stones,
+			extra: (): Vec3 => [0, 0, 0],
+			start: [0, 1, 0],
+			limit: null,
+			drag: { info: { ...drag, amount: constant(2) }, r: 0, size: () => 1 },
+			age: 1,
+		});
+		// 1 m/s slowed by 2 m/s² stops after 0.5 s, about 0.25 m on
+		assert.deepEqual(stopped.velocity, [0, 0, 0]);
+		assert.ok(Math.abs(stopped.offset[1] - 0.25) < 0.02);
 	});
 	it('leaves a particle under the limit alone', () => {
 		const { offset, velocity } = steppedPath({

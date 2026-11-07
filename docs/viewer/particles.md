@@ -99,15 +99,16 @@ system and its index, so any moment can be evaluated on its own:
   it's drawn and from where the previous frame left it after that; a step back in time starts it
   from its birth again. each step adds gravity to its own velocity, lets the force fields change it
   (`applyForces`, from its place and age before the step), limits the whole speed, the velocity
-  module's terms included, as [the game does](../game-data/effects.md#particle-systems), and moves
-  it by the whole velocity times the speed modifier read at the step's age (the limit sees the
-  velocity without it), so the collectible pieces' rings (`ringMid2`) slow as their modifier falls
-  while held near their limit. the fields follow the
-  [game's sphere fields](../game-data/effects.md#particle-systems) term by term, with the viewer's
-  own random values; drag by size reads the particle's x size. the module's terms, each read at the
-  step's age, are its linear velocity, the orbit's velocity at the particle's current place (`ω × r`
-  about the orbit's centre, rather than the closed form's turn of the whole path) and the radial
-  push away from that centre. the limit's random value is the particle's own, not the game's.
+  module's terms included, as [the game does](../game-data/effects.md#particle-systems), drags it
+  (by the size at the step's age, from the particle's own velocity), and moves it by the whole
+  velocity times the speed modifier read at the step's age (the limit sees the velocity without it),
+  so the collectible pieces' rings (`ringMid2`) slow as their modifier falls while held near their
+  limit. the fields follow the [game's sphere fields](../game-data/effects.md#particle-systems) term
+  by term, with the viewer's own random values; drag by size reads the particle's x size. the
+  module's terms, each read at the step's age, are its linear velocity, the orbit's velocity at the
+  particle's current place (`ω × r` about the orbit's centre, rather than the closed form's turn of
+  the whole path) and the radial push away from that centre. the limit's random value is the
+  particle's own, not the game's.
 - a system with a spline ([spline movers](../game-data/effects.md#spline-movers)) ignores the above:
   a particle lies at the path's point its travelled distance reaches (the speed integrated over its
   age), plus its start position in the shape, and leaves once that distance passes the path's end.

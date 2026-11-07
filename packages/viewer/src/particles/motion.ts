@@ -86,19 +86,20 @@ export interface SteppedState {
  * a particle's path where it has no closed form (a speed limit or force fields), stepped at
  * {@link PARTICLE_STEP_RATE} from its birth or from an earlier state of the same path, in the game's order:
  * each step adds gravity to the particle's own velocity, lets the forces change it, pulls the whole speed
- * (its own velocity plus the extra velocity) towards the limit, taking the excess from its own velocity, then
- * moves it by the whole velocity times the speed modifier
+ * (its own velocity plus the extra velocity) towards the limit, then slows it by the drag, taking both from
+ * its own velocity, then moves it by the whole velocity times the speed modifier
  *
- * @param path the limit (and its random value) or `null`, the particle's start velocity, its acceleration,
- *   the forces (which change its own velocity in place, given the step's age, how far it had moved and the
- *   step's length) or `null`, the extra velocity at an age and a distance moved from the start, the speed
- *   modifier at an age, its age and lifetime, in seconds, and the state to continue from (one at or before
- *   `age`, else the birth)
+ * @param path the limit (and its random value) or `null`, the drag (its random value and the particle's size
+ *   at an age) or `null`, the particle's start velocity, its acceleration, the forces (which change its own
+ *   velocity in place, given the step's age, how far it had moved and the step's length) or `null`, the extra
+ *   velocity at an age and a distance moved from the start, the speed modifier at an age, its age and
+ *   lifetime, in seconds, and the state to continue from (one at or before `age`, else the birth)
  * @returns how far it has moved by `age`, the velocity it moves at then (the modifier included), and the
  *   state to continue from later, which holds the same `offset`: neither may be changed
  */
 export const steppedPath = (path: {
 	limit: { info: ParticleSpeedLimitInfo; r: number } | null;
+	drag: { info: ParticleDragInfo; r: number; size: (age: number) => number } | null;
 	start: Readonly<Vec3>;
 	acceleration: Readonly<Vec3>;
 	push: ((age: number, moved: Readonly<Vec3>, own: Vec3, step: number) => void) | null;
@@ -109,7 +110,7 @@ export const steppedPath = (path: {
 	life: number;
 	from?: SteppedState;
 }): { offset: Vec3; velocity: Vec3; state: SteppedState } => {
-	const { limit, acceleration, push, extra, modifier, age, life } = path;
+	const { limit, drag, acceleration, push, extra, modifier, age, life } = path;
 	const from = path.from !== undefined && path.from.age <= age ? path.from : null;
 	const fromAge = from?.age ?? 0;
 	const fromOwn = from?.own ?? path.start;
@@ -133,8 +134,16 @@ export const steppedPath = (path: {
 		}
 		const speed = Math.hypot(whole[0], whole[1], whole[2]);
 		const cap = limit === null ? Infinity : evaluateMinMax(limit.info.limit, livedAt(t, life), limit.r);
+		let target = speed;
 		if (speed > cap) {
-			const scale = (speed + (cap - speed) * pull) / speed;
+			target = speed + (cap - speed) * pull;
+		}
+		if (drag !== null) {
+			const k = dragRate(drag.info, drag.size(t), drag.r);
+			target = Math.max(target - k * (drag.info.byVelocity ? target * target : 1) * h, 0);
+		}
+		if (target !== speed && speed > 0) {
+			const scale = target / speed;
 			for (let axis = 0; axis < 3; axis++) {
 				whole[axis] *= scale;
 				own[axis] = whole[axis] - added[axis];

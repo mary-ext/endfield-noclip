@@ -635,7 +635,10 @@ test('a system lists the force fields it feels for the packer to resolve, unless
 		}),
 		renderer(),
 	);
-	assert.deepEqual(dragged, { reason: 'force fields with drag' });
+	// the stepped path the forces need drags the particles too
+	assert.ok(dragged !== null && 'info' in dragged);
+	const { motion } = dragged.info;
+	assert.equal(motion.kind === 'spline' ? null : motion.clamp?.kind, 'drag');
 });
 
 // #region mesh shape

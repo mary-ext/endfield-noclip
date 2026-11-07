@@ -661,7 +661,10 @@ stretched 1, horizontal 2, vertical 3. the fields its systems use, as the game's
   frame. a particle moved only by velocity over lifetime thus builds up an opposing velocity of its
   own and settles at the limit. the challenge start point's rising rock cards (`stone` in
   `int_challenge_start_point_once_postmodel`) start still, are pushed up at 0.2–1 m/s and limited to
-  0.1–1 m/s with a dampen of 0.1.
+  0.1–1 m/s with a dampen of 0.1. the module limits first and then drags the limited speed, both out
+  of the particle's own velocity; drag reads the particle's current size (the largest axis of a 3D
+  size). the smoke rising off Marker Stone Interiors' rift monsters (`smoke_loop`, `smoke_end` in
+  `p_fxmap_map02_lv004_liexi_only_*`) uses both.
 - **speed modifier.** each frame the engine reads Velocity over Lifetime's `speedModifier` at the
   particle's age over its lifetime (the time the linear velocity curves are read at; two constants
   pick a random value per particle) and moves the particle by its whole velocity, its own plus the

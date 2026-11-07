@@ -577,6 +577,8 @@ export interface ParticleSpeedLimitInfo {
 	limit: MinMaxCurveInfo;
 	/** the fraction of the excess removed per 1/30 s, above 0 */
 	dampen: number;
+	/** the module's drag, which each step applies to the limited speed; `null` without */
+	drag: ParticleDragInfo | null;
 }
 
 /** Unity's `VelocityModule`; every curve is read at the particle's age over its lifetime */
