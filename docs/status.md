@@ -173,7 +173,7 @@ packs or renders correctly.
   cloth sway is unchecked against an in-game shot
 - shaders without a look, shown as [unsupported](viewer/materials.md#unsupported-materials) and
   counted per shader by `pack`: on map02 `Hidden/HGRP/Effect/VFXInkWashPaint`,
-  `HGRP/Effect/VFXRadialBlur`, `HGRP/CharacterNPR` and `…_VFX`, `Hidden/HGRP/LitEffectBlend`,
+  `HGRP/Effect/VFXRadialBlur`, `HGRP/CharacterNPR`, `Hidden/HGRP/LitEffectBlend`,
   `HGRP/Effect/VFXTransparentDepthOnly`, `HGRP/Foliage/Glow` and the factory placement and outline
   shaders
 - forward Lit ([viewer](viewer/materials.md#forward-lit)): the golden treasure chest reflects the
@@ -242,14 +242,20 @@ packs or renders correctly.
 ## effects and particles
 
 - scene effects ([scene effects](game-data/effects.md), [viewer](viewer/effects.md)): drawn are
-  VFXBaseV2, VFXDecal, VFXDitherAlpha, VFXAdvance's simpler variants, VFXRefract, VFXWater sheets,
-  six-way smoke and the mist (FogSimple, VFXFakeVolumeFog). other effect shaders and these shaders'
-  undrawn variants show as [unsupported](viewer/materials.md#unsupported-materials)
+  VFXBaseV2, VFXDecal, VFXDitherAlpha, VFXAdvance's simpler variants, CharacterNPR_VFX, VFXRefract,
+  VFXWater sheets, six-way smoke and the mist (FogSimple, VFXFakeVolumeFog). other effect shaders
+  and these shaders' undrawn variants show as
+  [unsupported](viewer/materials.md#unsupported-materials)
   - [VFXAdvance](game-data/effects.md#vfxadvance): the second disturb texture, polar and screen UVs,
     edge colour, interiors, `_FogIntensity` and a Fresnel colour aren't drawn. the dissolving walls,
     Yinglung Pass's ink rooms (`…_inkroom_floor_*`, the `inkarea_*` walls, shown only within 8 m of
     the camera) and Si's Painting's ink road over the cave falls (which draws mostly white) are
     unchecked against an in-game shot, and the ink simulation isn't run
+  - [CharacterNPR_VFX](game-data/effects.md#characternpr_vfx): drawn as VFXAdvance's stack; its
+    dissolve, a nonzero `_VertCameraOffset` and its other keywords aren't. on Marker Stone
+    Interiors' rift monsters, the shell's screen UVs about the mesh's origin measure from the
+    prefab's origin (the mesh is posed into the prefab), and the look is unchecked against an
+    in-game shot
   - [invisible bridges](game-data/effects.md#invisible-bridges): the fire seed reveals them about
     the camera, at its highest level by default since the server holds its level, without its radius
     easing between levels; the northern bridge's group is server-driven and stays at its stored

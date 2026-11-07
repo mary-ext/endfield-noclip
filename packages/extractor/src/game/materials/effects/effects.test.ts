@@ -1135,6 +1135,65 @@ describe('VFXAdvance', () => {
 	});
 });
 
+describe('CharacterNPR_VFX', () => {
+	const character = shader('HGRP/CharacterNPR_VFX', 'vfxAdvance', {
+		textures: { _MainTex: 'white', _MaskTex: 'white', _BlendTex: 'white', _OffsetTex: 'white' },
+	});
+	// the glow over Marker Stone Interiors' rift monsters (`M_fx_monster_enemy_etthillu_01d11d12_01_04_01`)
+	const glow = (overrides: Partial<MaterialValues> = {}) =>
+		material({
+			keywords: [
+				'_USE_BLEND',
+				'_USE_DISTURB',
+				'_USE_FOG',
+				'_USE_FRESNEL',
+				'_USE_MASK',
+				'_USE_SCREENUV',
+				'_USE_SOFTBLEND',
+				'_USE_VERTOFFSET',
+			],
+			cull: 'none',
+			slots: { _MainTex: slot(1), _DisturbTex1: slot(2), _MaskTex: slot(3), _BlendTex: slot(4) },
+			floats: {
+				_InParticle: 0,
+				_UseScreenUV: 1,
+				_LocalPivortSpace: 1,
+				_ScreenUVUseDepth: 0,
+				_UseMainTexAsAlpha: 1,
+				_UseMaskTexAsAlpha: 1,
+				_MainTexUseDisturb: 0.75,
+				_DisturbUIntensity1: 2,
+				_OffsetSwitchDir: 2,
+				_OffsetIntensity: 0.25,
+			},
+			vectors: { _MainTexUVWeights: [0, 0, 0, 1], _DisturbUVWeights1: [0, 0, 0, 1] },
+			...overrides,
+		});
+
+	it('draws as VFXAdvance’s stack on screen UVs about its origin, pushed out along its normals', () => {
+		const surface = ofKind(describeMaterial(glow(), character), 'effectStack');
+		assert.deepEqual(surface.layers.slice(0, 5).map(roleOf), [
+			['main', true, 'screen', 0.75],
+			['disturb1', false, 'screen', 0],
+			['mask', true, 'uv0', 0],
+			['blend', false, 'uv0', 0],
+			null,
+		]);
+		assert.equal(surface.screenUv.localPivot, true);
+		// the shader defaults its offset texture to white
+		assert.deepEqual([surface.offset?.space, surface.offset?.intensity], ['normal', 0.25]);
+		assert.equal(surface.cameraPull, 0);
+	});
+
+	it('leaves out its dissolve and an uncapped pull towards the camera', () => {
+		const reasons = [
+			glow({ keywords: ['VFX_CHARACTER_DISSOLVE'] }),
+			glow({ floats: { _InParticle: 0, _VertCameraOffset: 1 } }),
+		].map((values) => describeMaterial(values, character).kind);
+		assert.deepEqual(reasons, ['unsupported', 'unsupported']);
+	});
+});
+
 describe('VFXRefract', () => {
 	const refract = (overrides: Partial<ShaderEntry> = {}) =>
 		shader('HGRP/Effect/VFXRefract', 'vfxRefract', {

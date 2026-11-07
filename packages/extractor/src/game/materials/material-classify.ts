@@ -28,6 +28,8 @@ const FAMILIES: [RegExp, ShaderFamily][] = [
 	[/decal/i, 'decal'],
 	[/^HGRP\/Effect\/VFXBase/i, 'vfxBase'],
 	[/^HGRP\/Effect\/VFXAdvance/i, 'vfxAdvance'],
+	// VFXAdvance's slots, drawn over characters
+	[/^HGRP\/CharacterNPR_VFX$/i, 'vfxAdvance'],
 	[/^HGRP\/Effect\/VFXRefract/i, 'vfxRefract'],
 	[/^HGRP\/Effect\/VFXDitherAlpha/i, 'vfxDitherAlpha'],
 	[/^HGRP\/Effect\/VFXSmoke_SixWay$/i, 'vfxSmokeSixWay'],

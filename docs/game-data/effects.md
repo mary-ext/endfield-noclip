@@ -175,6 +175,21 @@ around the player (`_InkSimulationWorldToUV`): the first shifts the UVs by its r
 `_InkMaxAlpha`). both fade on steep surfaces and do nothing outside the simulation's square, so a
 scene the player hasn't disturbed draws as without them.
 
+## CharacterNPR_VFX
+
+`HGRP/CharacterNPR_VFX` is an effect layer over a character's skinned mesh: one forward pass, a
+fixed-slot stack like VFXAdvance's (main texture, `_DisturbTex1`, mask, blend layer, Fresnel fade
+and colour, soft blend, near-camera fade, fog with `_FogIntensity`) with VFXBaseV2's
+[screen UVs](#vfxbasev2), and no dissolve but its own `VFX_CHARACTER_DISSOLVE`. its vertex offset is
+VFXBaseV2's, but its pull towards the camera is the whole `_VertCameraOffset` plus 1 mm rather than
+VFXBaseV2's capped one. Marker Stone Interiors' rift monsters (`p_fxmap_map02_lv004_liexi_only_*`,
+about 80 placements, most always shown) are ethillu meshes drawn only in effect materials: a
+VFXBaseV2 glow (`M_fx_monster_enemy_etthillu_lsq_01`) and a CharacterNPR_VFX shell
+(`M_fx_monster_enemy_etthillu_01d11d12_01_04_01`, and `…a`) pushed 0.25 m out along the normals by
+the shader's white offset texture, black but for its pale blue blend layer, edged by a flipped
+Fresnel term and flowing along screen UVs taken about the mesh's origin. the shell shows only near
+the camera: it fades out between 20 and 40 m (`…a`: 80 and 100 m).
+
 ## invisible bridges
 
 Yinglung Pass (map02_lv007) has ink bridges that show only around the player while they carry a lit

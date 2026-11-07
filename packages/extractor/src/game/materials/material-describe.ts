@@ -18,7 +18,7 @@ import { describeMistCard } from './effects/mist-card.ts';
 import { describeMistVolume } from './effects/mist-volume.ts';
 import { describeRefract } from './effects/refract.ts';
 import { describeSixWaySmoke } from './effects/six-way-smoke.ts';
-import { describeVfxAdvance } from './effects/vfx-advance.ts';
+import { describeCharacterVfx, describeVfxAdvance } from './effects/vfx-advance.ts';
 import { describeVfxBase } from './effects/vfx-base.ts';
 import { describeVfxDecal } from './effects/vfx-decal.ts';
 import { describeWaterFoam } from './effects/water-foam.ts';
@@ -86,7 +86,10 @@ const DESCRIBERS: { readonly [F in ShaderFamily]?: Describer | ReadonlyMap<strin
 	vfxFakeVolumeFog: byShader({ 'HGRP/Effect/VFXFakeVolumeFog': describeMistVolume }),
 	volumetricBeam: describeLightBeam,
 	vfxBase: byShader({ 'HGRP/Effect/VFXBaseV2': describeVfxBase }),
-	vfxAdvance: byShader({ 'HGRP/Effect/VFXAdvance': describeVfxAdvance }),
+	vfxAdvance: byShader({
+		'HGRP/Effect/VFXAdvance': describeVfxAdvance,
+		'HGRP/CharacterNPR_VFX': describeCharacterVfx,
+	}),
 	vfxRefract: byShader({ 'HGRP/Effect/VFXRefract': describeRefract }),
 	vfxSmokeSixWay: describeSixWaySmoke,
 	water: byShader({ 'HGRP/Effect/VFXWater': describeWaterSheet }),

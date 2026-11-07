@@ -71,6 +71,13 @@ colour; their other keywords, a Fresnel colour and interiors stay unsupported. t
 normal, and `blendVertexColor` scales the blend tint by the vertex colour. the ink keywords are
 drawn as the game draws them where the ink simulation hasn't run, since the viewer has none.
 
+[CharacterNPR_VFX](../game-data/effects.md#characternpr_vfx) is classified with VFXAdvance and drawn
+by the same steps (`describeCharacterVfx`), with screen UVs and without the dissolve; a nonzero
+`_VertCameraOffset` stays unsupported, since the viewer's pull is VFXBaseV2's capped one. screen UVs
+about the object's origin (`screenUv.localPivot`, bit 4 of the look's screen-UV flags) measure from
+the draw's origin, which for a skinned mesh posed into its prefab is the prefab's rather than the
+renderer's, so the pattern can sit shifted against the game's.
+
 the [reveal around the player](../game-data/effects.md#invisible-bridges) (`EffectAppear`, rows
 40–43 of the look) changes the tint before the stack combines it (`fx_appear` in `effect.wgsl`), for
 VFXAdvance and VFXDitherAlpha's effect variants alike. the camera stands in for the player, so the

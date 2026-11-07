@@ -38,6 +38,21 @@ const ADVANCE_KEYWORDS = new Set([
 	...APPEAR_KEYWORDS,
 ]);
 
+/**
+ * keywords of CharacterNPR_VFX that are drawn: VFXAdvance's slots but the dissolve, which it lacks, with
+ * VFXBaseV2's screen UVs
+ */
+const CHARACTER_KEYWORDS = new Set([
+	'_USE_DISTURB',
+	'_USE_MASK',
+	'_USE_BLEND',
+	'_USE_FRESNEL',
+	'_USE_FOG',
+	'_USE_SOFTBLEND',
+	'_USE_VERTOFFSET',
+	'_USE_SCREENUV',
+]);
+
 /** VFXAdvance's `_BlendMode` values the viewer draws */
 const BLEND_MODES: readonly EffectStackSurface['blendMode'][] = ['over', 'add'];
 
@@ -49,9 +64,39 @@ const BLEND_MODES: readonly EffectStackSurface['blendMode'][] = ['over', 'add'];
  * @param reader the material's properties
  * @returns its surface, or `unsupported`
  */
-export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface | UnsupportedSurface => {
+export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface | UnsupportedSurface =>
+	describeFixedSlots(reader, ADVANCE_KEYWORDS);
+
+/**
+ * `HGRP/CharacterNPR_VFX` (`docs/game-data/effects.md#characternpr_vfx`) as VFXAdvance's texture stack,
+ * without its dissolve
+ *
+ * @param reader the material's properties
+ * @returns its surface, or `unsupported`
+ */
+export const describeCharacterVfx = (reader: MaterialReader): EffectStackSurface | UnsupportedSurface => {
+	const { float } = reader;
+	// its pull towards the camera is the whole `_VertCameraOffset`, not VFXBaseV2's capped one; at 0 both are 1 mm
+	if (float('_InParticle', 1) === 0 && float('_VertCameraOffset', 0) !== 0) {
+		return unsupported('an uncapped pull towards the camera');
+	}
+	return describeFixedSlots(reader, CHARACTER_KEYWORDS);
+};
+
+/**
+ * the texture stack of the shaders with fixed slots: a main texture, one disturb texture, a mask, a blend
+ * layer and a dissolve, each with its keyword
+ *
+ * @param reader the material's properties
+ * @param drawn the shader's keywords that are drawn
+ * @returns its surface, or `unsupported`
+ */
+const describeFixedSlots = (
+	reader: MaterialReader,
+	drawn: ReadonlySet<string>,
+): EffectStackSurface | UnsupportedSurface => {
 	const { float, colorOrVector: color, has } = reader;
-	const keywords = undrawnKeywords(reader, ADVANCE_KEYWORDS);
+	const keywords = undrawnKeywords(reader, drawn);
 	if (keywords !== null) {
 		return keywords;
 	}
