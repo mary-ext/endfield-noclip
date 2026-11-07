@@ -13,6 +13,8 @@ export type TextureRef = number | null;
 
 /** `tables/textures.json`; entry `i` has id `i` */
 export interface TextureTable {
+	/** the distinct samplers entries use; {@link ReadyTexture.sampler} indexes this list */
+	samplers: TextureSampler[];
 	entries: TextureEntry[];
 }
 
@@ -31,7 +33,8 @@ export interface ReadyTexture {
 	/** WebGPU's: array layers × faces (6 per cube), or depth for `3d`, else 1 */
 	depthOrArrayLayers: number;
 	mipCount: number;
-	sampler: TextureSampler;
+	/** index into {@link TextureTable.samplers} */
+	sampler: number;
 	/**
 	 * the blobs holding the levels, coarse to fine: the first holds the mip tail (see
 	 * {@link TEXTURE_TAIL_BYTES}), each further one a single larger level. together they cover levels

@@ -236,7 +236,7 @@ export class TextureStore {
 				integrated: 0,
 				waiting: new Map(),
 				version: 0,
-				sampler: sampler(this.#device, entry.sampler),
+				sampler: sampler(this.#device, this.#table.samplers[entry.sampler]),
 			};
 		});
 	}

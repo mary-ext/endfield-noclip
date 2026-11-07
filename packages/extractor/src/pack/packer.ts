@@ -607,7 +607,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			assets: {
 				geometries: pack.geometries.assets.length,
 				materials: pack.materials.assets.length,
-				textures: assetTables.textures.length,
+				textures: assetTables.textures.entries.length,
 				shaders: conversion?.stats.shaders ?? 0,
 				unresolvedPaths: [...pack.geometries.assets, ...pack.materials.assets].filter(
 					(asset) => asset.path === null,
@@ -615,7 +615,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 				ready: {
 					geometries: ready(assetTables.geometries),
 					materials: ready(assetTables.materials.entries),
-					textures: ready(assetTables.textures),
+					textures: ready(assetTables.textures.entries),
 				},
 			},
 			conversion: conversion?.stats ?? null,
@@ -2283,7 +2283,7 @@ const writePackage = async (
 	const tablesReady = Promise.all([
 		zstdTable(json({ entries: assetTables.geometries } satisfies GeometryTable)),
 		zstdTable(json(assetTables.materials satisfies MaterialTable)),
-		zstdTable(json({ entries: assetTables.textures } satisfies TextureTable)),
+		zstdTable(json(assetTables.textures satisfies TextureTable)),
 		zstdTable(json(states.water)),
 		zstdTable(json(states.lights)),
 		zstdTable(json(pack.particles.table())),

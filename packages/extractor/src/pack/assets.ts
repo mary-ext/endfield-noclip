@@ -7,7 +7,12 @@ import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
 import type { Chain } from '@endfield-noclip/package-format/instances';
 import type { MaterialEntry, MaterialTable } from '@endfield-noclip/package-format/materials';
 import type { LitSway } from '@endfield-noclip/package-format/surfaces';
-import { type TextureEntry, textureLevelLayout } from '@endfield-noclip/package-format/textures';
+import {
+	type TextureEntry,
+	textureLevelLayout,
+	type TextureSampler,
+	type TextureTable,
+} from '@endfield-noclip/package-format/textures';
 
 import { failureReason } from '../errors.ts';
 import {
@@ -266,7 +271,7 @@ export interface BlobTally {
 export interface AssetConversion {
 	geometries: GeometryEntry[];
 	materials: MaterialTable;
-	textures: TextureEntry[];
+	textures: TextureTable;
 	/**
 	 * per {@link AssetConversionInput.extraTextures} group and entry, its texture-table id, or `null` if it
 	 * failed
@@ -552,6 +557,8 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 
 	// #region textures
 	const textureEntries: TextureEntry[] = [];
+	const samplers: TextureSampler[] = [];
+	const samplerIds = new Map<string, number>();
 	const textureDebug: AssetConversion['debug']['textures'] = [];
 	/** provisional (per object) → texture-table id */
 	const textureIds: number[] = [];
@@ -594,10 +601,15 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 			textureIds.push(id);
 			textureFormats[result.entry.format] = (textureFormats[result.entry.format] ?? 0) + 1;
 			const stem = archives.stem(object.place);
+			const sampler = samplerIds.getOrInsertComputed(
+				JSON.stringify(result.entry.sampler),
+				() => samplers.push(result.entry.sampler) - 1,
+			);
 			textureEntries.push({
 				id,
 				status: 'ready',
 				...result.entry,
+				sampler,
 				pieces: pieces.map((piece, i) => {
 					const { width, height } = textureLevelLayout(result.entry, piece.firstLevel);
 					const group = i === 0 && piece.levelCount > 1 ? 'tail' : String(Math.max(width, height));
@@ -647,7 +659,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	return {
 		geometries: geometryEntries,
 		materials: { entries: materialEntries },
-		textures: textureEntries,
+		textures: { samplers, entries: textureEntries },
 		extraTextureIds: extraIndices.map((group) =>
 			group.map((index) => {
 				const id = textureIds[index];
@@ -685,7 +697,7 @@ export const pendingAssets = (
 ): Pick<AssetConversion, 'geometries' | 'materials' | 'textures' | 'extraTextureIds'> => ({
 	geometries: Array.from({ length: geometries }, (_, id) => ({ id, status: 'pending' })),
 	materials: { entries: Array.from({ length: materials }, (_, id) => ({ id, status: 'pending' })) },
-	textures: [],
+	textures: { samplers: [], entries: [] },
 	extraTextureIds: extraTextures.map((group) => group.map(() => null)),
 });
 
