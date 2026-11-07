@@ -308,6 +308,7 @@ describe('BlobStore', () => {
 				zstdLevel: 3,
 				archiveCap: 1 << 20,
 				core: 'core.czar',
+				memo: null,
 			});
 			const compressible = new Uint8Array(4096).fill(7);
 			const random = Uint8Array.from({ length: 333 }, (_, i) => (i * 2654435761) >>> 24);
@@ -375,6 +376,7 @@ describe('BlobStore', () => {
 				zstdLevel: 3,
 				archiveCap: 1 << 20,
 				core: 'core.czar',
+				memo: null,
 			});
 			const rows = new InstanceBlockBuilder();
 			rows.add(
@@ -414,6 +416,7 @@ describe('BlobStore', () => {
 				zstdLevel: 3,
 				archiveCap: 1 << 20,
 				core: 'core.czar',
+				memo: null,
 			});
 			const options = {
 				kind: BlobKind.Texture,
@@ -457,7 +460,7 @@ describe('BlobStore', () => {
 		try {
 			const blobs = new BlobDir(join(dir, '.spool'));
 			const fill = async (count: number) => {
-				const store = new BlobStore(blobs, { zstdLevel: 3, archiveCap: 4096, core: 'core.czar' });
+				const store = new BlobStore(blobs, { zstdLevel: 3, archiveCap: 4096, core: 'core.czar', memo: null });
 				await store.putMany(
 					Array.from({ length: count }, (_, i) => ({
 						raw: Uint8Array.from({ length: 1024 }, (_, j) => (i * 31 + j * 7) & 0xff),

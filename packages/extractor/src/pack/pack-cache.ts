@@ -189,6 +189,45 @@ export class PackCache {
 	}
 
 	/**
+	 * @param raw a blob's bytes before compression
+	 * @param level the zstd level it would be compressed at
+	 * @returns the key of its stored form, for {@link recallStored} and {@link rememberStored}
+	 */
+	storedKey(raw: Uint8Array, level: number): string {
+		// node's zstd decides the frame's bytes, so another version compresses again
+		return shortHash(`stored ${shortHash(raw)} ${level} ${process.versions.zstd}`);
+	}
+
+	/**
+	 * @param key from {@link storedKey}
+	 * @returns the stored form remembered for the bytes, or `undefined` if there's none or its blob is gone
+	 */
+	async recallStored(key: string): Promise<BlobMeta | undefined> {
+		const text = await ignoreMissing(readFile(this.#memos.path(key), 'utf8'), undefined);
+		if (text === undefined) {
+			return undefined;
+		}
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by rememberStored() under this key
+		const meta = JSON.parse(text) as BlobMeta;
+		if (!(await this.blobs.has(meta.hash))) {
+			return undefined;
+		}
+		this.#used.add(key);
+		return meta;
+	}
+
+	/**
+	 * remembers a blob's stored form; its bytes must be in {@link PackCache.blobs} already
+	 *
+	 * @param key from {@link storedKey}
+	 * @param meta the stored blob
+	 */
+	async rememberStored(key: string, meta: BlobMeta): Promise<void> {
+		await this.#memos.replace(key, JSON.stringify(meta));
+		this.#used.add(key);
+	}
+
+	/**
 	 * records the finished package as a root, then deletes what no root references
 	 *
 	 * @param outDir the package's directory

@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { BlobCodec } from '@endfield-noclip/package-format/blobs';
+import { BlobCodec, BlobKind } from '@endfield-noclip/package-format/blobs';
 
 import { BlobDir } from './blob-file.ts';
+import { BlobStore } from './blob-store.ts';
 import type { ConvertResult } from './convert-pool.ts';
 import { PackCache } from './pack-cache.ts';
 
@@ -78,6 +79,34 @@ describe('PackCache', () => {
 			assert.equal(report.swept.memos, 1);
 			assert.equal(await cache.recall(keyB, current), undefined);
 			assert.equal((await new BlobDir(join(root, 'roots')).names()).length, 1);
+			await cache.close();
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('remembers compressed blobs by their raw bytes, so a later pack skips compressing them', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'pack-cache-test-'));
+		try {
+			const cache = await PackCache.open(join(dir, 'cache'));
+			const store = () =>
+				new BlobStore(cache.blobs, { zstdLevel: 3, archiveCap: 1 << 20, core: 'core.czar', memo: cache });
+			const raw = new Uint8Array(4096).fill(9);
+			const options = {
+				kind: BlobKind.Instances,
+				compress: true,
+				stem: 'shards/x',
+				locality: null,
+			} as const;
+			const first = await store().prepare(raw, options);
+			const key = cache.storedKey(raw, 3);
+			assert.deepEqual(await cache.recallStored(key), first.meta);
+			// another level is another stored form
+			assert.equal(await cache.recallStored(cache.storedKey(raw, 4)), undefined);
+			assert.deepEqual((await store().prepare(raw, options)).meta, first.meta);
+			// a memo whose blob is gone is a miss
+			await rm(cache.blobs.path(first.meta.hash));
+			assert.equal(await cache.recallStored(key), undefined);
 			await cache.close();
 		} finally {
 			await rm(dir, { recursive: true, force: true });

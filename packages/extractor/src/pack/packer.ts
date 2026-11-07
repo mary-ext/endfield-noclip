@@ -376,6 +376,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 		zstdLevel: options.zstdLevel,
 		archiveCap: ARCHIVE_CAP,
 		core: CORE_ARCHIVE,
+		memo: cache,
 	});
 	try {
 		const scene = await indexScene(context, options);

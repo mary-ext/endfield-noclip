@@ -19,6 +19,7 @@ import { mapPool } from '../pool.ts';
 import { zstd } from '../zstd.ts';
 
 import { type BlobDir, type BlobMeta, storedBlob } from './blob-file.ts';
+import type { PackCache } from './pack-cache.ts';
 
 /** archives written at once; a single stream doesn't saturate an SSD */
 const ARCHIVE_WRITES = 8;
@@ -61,6 +62,9 @@ export interface PutOptions extends BlobPlacement {
 	/** zstd level for this blob, instead of the store's */
 	zstdLevel?: number;
 }
+
+/** remembers compressed blobs' stored forms by their raw bytes (`PackCache`) */
+export type StoredMemo = Pick<PackCache, 'storedKey' | 'recallStored' | 'rememberStored'>;
 
 /** a blob whose bytes are in the store's directory, but which has no index yet; see {@link BlobStore.commit} */
 export interface PreparedBlob {
@@ -132,6 +136,7 @@ export class BlobStore {
 	readonly #level: number;
 	readonly #cap: number;
 	readonly #core: string;
+	readonly #memo: StoredMemo | null;
 	readonly #blobs: StoredBlob[] = [];
 	readonly #byHash = new Map<string, number>();
 	/** dropped whenever a blob is added */
@@ -139,14 +144,20 @@ export class BlobStore {
 
 	/**
 	 * @param dir where blob bytes go; its owner removes it when it's scratch space
-	 * @param options zstd level for compressed blobs, the byte size past which a group splits into parts, and
-	 *   the core archive's name (the one stem that isn't content-named)
+	 * @param options zstd level for compressed blobs, the byte size past which a group splits into parts, the
+	 *   core archive's name (the one stem that isn't content-named), and where compressed blobs' stored forms
+	 *   are remembered, keyed by their raw bytes, or `null` to compress every one (the memo's blobs must live
+	 *   in `dir`)
 	 */
-	constructor(dir: BlobDir, options: { zstdLevel: number; archiveCap: number; core: string }) {
+	constructor(
+		dir: BlobDir,
+		options: { zstdLevel: number; archiveCap: number; core: string; memo: StoredMemo | null },
+	) {
 		this.dir = dir;
 		this.#level = options.zstdLevel;
 		this.#cap = options.archiveCap;
 		this.#core = options.core;
+		this.#memo = options.memo;
 	}
 
 	/** number of distinct blobs */
@@ -187,10 +198,25 @@ export class BlobStore {
 	 * @returns the prepared blob, for {@link BlobStore.commit}
 	 */
 	async prepare(raw: Uint8Array, options: PutOptions): Promise<PreparedBlob> {
-		const packed = options.compress ? await zstd(raw, options.zstdLevel ?? this.#level) : null;
-		const { meta, stored } = storedBlob(raw, packed);
+		const placement = { kind: options.kind, stem: options.stem, locality: options.locality };
+		if (!options.compress) {
+			const { meta, stored } = storedBlob(raw, null);
+			await this.dir.write(meta.hash, stored);
+			return { meta, options: placement };
+		}
+		// compression dominates a warm pack's instance blocks, which mostly come out as they did last time
+		const level = options.zstdLevel ?? this.#level;
+		const key = this.#memo?.storedKey(raw, level);
+		const remembered = key === undefined ? undefined : await this.#memo?.recallStored(key);
+		if (remembered !== undefined) {
+			return { meta: remembered, options: placement };
+		}
+		const { meta, stored } = storedBlob(raw, await zstd(raw, level));
 		await this.dir.write(meta.hash, stored);
-		return { meta, options: { kind: options.kind, stem: options.stem, locality: options.locality } };
+		if (key !== undefined) {
+			await this.#memo?.rememberStored(key, meta);
+		}
+		return { meta, options: placement };
 	}
 
 	/**

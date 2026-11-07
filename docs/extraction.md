@@ -565,6 +565,10 @@ it), implemented in [pack/pack-cache.ts](../packages/extractor/src/pack/pack-cac
   of every file it reads; the memo lists its blobs in commit order plus what else the step returns,
   so a hit commits the cached blobs without reading the terrain or the irradiance payloads (map02:
   12 s → 0.3 s and 7 s → 0.1 s).
+- `memo/` also holds the stored form of every blob the packer compresses itself (instance blocks
+  above all), keyed by a hash of its raw bytes, the zstd level and node's zstd version: a block that
+  encodes to the same bytes as in an earlier pack takes its stored blob without compressing again,
+  which at the default level 19 was most of a warm pack's instance phase.
 - `roots/` has one file per package directory listing its blobs and memos. after each pack, roots
   whose directory no longer holds a `core.czar` are dropped and anything no root references is
   deleted, so the cache holds the union of the live packages' content. deleting a package directory
