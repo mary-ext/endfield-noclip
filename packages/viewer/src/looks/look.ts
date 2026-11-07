@@ -157,8 +157,8 @@ export interface MaterialLook {
  *   drawn by the decal relight pass into the main pass's radiance
  * - `screenMultiply`, `refract`: drawn over the composited scene, because they multiply what lies behind or
  *   sample it
- * - `waterFoam`, `waterFoamBehind`: WaterDecal boxes drawn into the water's foam before the water draws,
- *   depth-tested in front of the scene or behind it
+ * - `waterFoam`, `waterFoamBehind`, `waterFoamThrough`: WaterDecal boxes drawn into the water's foam before the
+ *   water draws, depth-tested in front of the scene, behind it, or not at all
  */
 export type LookQueue =
 	| 'opaque'
@@ -174,7 +174,8 @@ export type LookQueue =
 	| 'screenMultiply'
 	| 'refract'
 	| 'waterFoam'
-	| 'waterFoamBehind';
+	| 'waterFoamBehind'
+	| 'waterFoamThrough';
 
 /**
  * a draw's stencil state and the depth test that goes with it, from its material's `_Stencil*` and `_ZTest`

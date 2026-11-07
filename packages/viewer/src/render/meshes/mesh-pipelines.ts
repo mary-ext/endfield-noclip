@@ -274,6 +274,7 @@ export const prepareMeshPipelines = (
 	];
 	describeEffect(PHASES.waterFoam, 'fs_water_foam', foam, 'greater-equal');
 	describeEffect(PHASES.waterFoamBehind, 'fs_water_foam', foam, 'less');
+	describeEffect(PHASES.waterFoamThrough, 'fs_water_foam', foam, 'always');
 	// relit decals add the change in the surface's light to the radiance, leaving its alpha (the albedo's
 	// luminance) alone. they read the depth as a texture, so the pass has no depth attachment
 	describeEffect(

@@ -62,7 +62,8 @@ export const drawRangeOf = (
 		case 'screenMultiply':
 		case 'refract':
 		case 'waterFoam':
-		case 'waterFoamBehind': {
+		case 'waterFoamBehind':
+		case 'waterFoamThrough': {
 			return state.complete ? queue : null;
 		}
 	}

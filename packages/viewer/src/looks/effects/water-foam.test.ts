@@ -46,15 +46,24 @@ test('a water foam box draws into the water’s foam, by the depth test its mate
 		edgeFade: [0, 0],
 		clipToBox: false,
 		depthTest: 'less-equal',
+		mipBias: { base: 0, mask: 0, dissolve: 0 },
 		blendMode: 1,
 		opacity: 0.5,
 		soft: { distance: 0.001, bias: 0.6 },
 		dissolve: null,
 	};
-	const [front, behind] = materialLooks({
-		entries: [described(foam), described({ ...foam, depthTest: 'greater', clipToBox: true }, 'front')],
+	const [front, behind, through] = materialLooks({
+		entries: [
+			described(foam),
+			described({ ...foam, depthTest: 'greater', clipToBox: true }, 'front'),
+			described({ ...foam, depthTest: 'always', mipBias: { base: 3, mask: 2, dissolve: 2 } }),
+		],
 	});
-	assert.deepEqual([front.queue, behind.queue], ['waterFoam', 'waterFoamBehind']);
+	assert.deepEqual(
+		[front.queue, behind.queue, through.queue],
+		['waterFoam', 'waterFoamBehind', 'waterFoamThrough'],
+	);
+	assert.deepEqual([...through.params.subarray(WaterFoamRow.mip, WaterFoamRow.mip + 3)], [3, 2, 2]);
 	assert.deepEqual([front.cull, behind.cull], ['back', 'front']);
 	assert.deepEqual(front.textures, [1, 2, 3, null, null, null, null]);
 	assert.equal(front.params[EffectRow.unfogged + 1], EffectKind.WaterFoam);

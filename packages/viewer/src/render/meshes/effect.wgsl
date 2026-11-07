@@ -181,35 +181,35 @@ fn fx_vertex_offset(id: u32, m: mat3x3f, normal: vec3f, uv: vec4f, vertex_alpha:
 		let slot = u32(mask.x);
 		let mask_st = fx_row(id, FX_UV + slot);
 		let mask_speed = fx_row(id, FX_ANIM + slot).xy;
-		let r = fx_sample_level(slot, base * mask_st.xy + mask_st.zw + mask_speed * frame.eye.w).r;
+		let r = fx_sample_level(slot, base * mask_st.xy + mask_st.zw + mask_speed * frame.eye.w, 0.0).r;
 		weight *= 1.0 - mask.y * (1.0 - r);
 	}
 	return dir * params.x * (t * (1.0 + params.y) - params.y) * weight;
 }
 
-// a stack slot sampled at its top mip, for the vertex stage
-fn fx_sample_level(slot: u32, uv: vec2f) -> vec4f {
+// a stack slot sampled at one mip level, which the vertex stage needs
+fn fx_sample_level(slot: u32, uv: vec2f, level: f32) -> vec4f {
 	switch slot {
 		case 0u: {
-			return textureSampleLevel(fx_tex0, fx_samp0, uv, 0.0);
+			return textureSampleLevel(fx_tex0, fx_samp0, uv, level);
 		}
 		case 1u: {
-			return textureSampleLevel(fx_tex1, fx_samp1, uv, 0.0);
+			return textureSampleLevel(fx_tex1, fx_samp1, uv, level);
 		}
 		case 2u: {
-			return textureSampleLevel(fx_tex2, fx_samp2, uv, 0.0);
+			return textureSampleLevel(fx_tex2, fx_samp2, uv, level);
 		}
 		case 3u: {
-			return textureSampleLevel(fx_tex3, fx_samp3, uv, 0.0);
+			return textureSampleLevel(fx_tex3, fx_samp3, uv, level);
 		}
 		case 4u: {
-			return textureSampleLevel(fx_tex4, fx_samp4, uv, 0.0);
+			return textureSampleLevel(fx_tex4, fx_samp4, uv, level);
 		}
 		case 5u: {
-			return textureSampleLevel(fx_tex5, fx_samp5, uv, 0.0);
+			return textureSampleLevel(fx_tex5, fx_samp5, uv, level);
 		}
 		default: {
-			return textureSampleLevel(fx_tex6, fx_samp6, uv, 0.0);
+			return textureSampleLevel(fx_tex6, fx_samp6, uv, level);
 		}
 	}
 }
@@ -1230,6 +1230,7 @@ const WF_DISSOLVE = 22u;
 const WF_DISSOLVE_COLOR = 23u;
 const WF_BOX_UV = 24u;
 const WF_FADE = 25u;
+const WF_MIP = 26u;
 
 // `WaterFoamFlags`
 const WF_DISTURB_ON = 1u;
@@ -1266,6 +1267,10 @@ fn fs_water_foam(in: EffectOut) -> @location(0) vec4f {
 	let mesh = in.uv.xy;
 	// gradients before anything branches; the polar angle's wraps at its seam
 	let bias = exp2(frame.params.y);
+	// the material's own mip bias, as scaled gradients
+	let mip = fx_row(id, WF_MIP);
+	let base_bias = bias * exp2(mip.x);
+	let mask_bias = bias * exp2(mip.y);
 	var polar_dx = dpdx(polar);
 	var polar_dy = dpdy(polar);
 	polar_dx.x -= round(polar_dx.x);
@@ -1278,14 +1283,14 @@ fn fs_water_foam(in: EffectOut) -> @location(0) vec4f {
 	let mesh_dy = dpdy(mesh);
 	let sources = fx_row(id, WF_SOURCES);
 	let base_src = wf_pick(sources.x, box, polar, world, mesh);
-	let base_dx = wf_pick(sources.x, box_dx, polar_dx, world_dx, mesh_dx) * bias;
-	let base_dy = wf_pick(sources.x, box_dy, polar_dy, world_dy, mesh_dy) * bias;
+	let base_dx = wf_pick(sources.x, box_dx, polar_dx, world_dx, mesh_dx) * base_bias;
+	let base_dy = wf_pick(sources.x, box_dy, polar_dy, world_dy, mesh_dy) * base_bias;
 	let disturb_src = wf_pick(sources.y, box, polar, world, mesh);
 	let disturb_dx = wf_pick(sources.y, box_dx, polar_dx, world_dx, mesh_dx) * bias;
 	let disturb_dy = wf_pick(sources.y, box_dy, polar_dy, world_dy, mesh_dy) * bias;
 	let mask_src = wf_pick(sources.z, box, polar, world, mesh);
-	let mask_dx = wf_pick(sources.z, box_dx, polar_dx, world_dx, mesh_dx) * bias;
-	let mask_dy = wf_pick(sources.z, box_dy, polar_dy, world_dy, mesh_dy) * bias;
+	let mask_dx = wf_pick(sources.z, box_dx, polar_dx, world_dx, mesh_dx) * mask_bias;
+	let mask_dy = wf_pick(sources.z, box_dy, polar_dy, world_dy, mesh_dy) * mask_bias;
 	let dissolve_src = wf_pick(sources.w, box, polar, world, mesh);
 
 	let tint = fx_row(id, WF_TINT);
@@ -1315,12 +1320,12 @@ fn fs_water_foam(in: EffectOut) -> @location(0) vec4f {
 	let base_alpha = mix(1.0, base.a, use_disturb.w);
 	var color = fx_row(id, FX_TINT).rgb + base.rgb * base_alpha * tint.rgb;
 	var cover = 1.0 + base_alpha;
-	// the dissolve, read at the top mip as the game does: scrolled, then its `_ST`
+	// the dissolve, read at a fixed mip level as the game does: scrolled, then its `_ST`
 	if ((flags & WF_DISSOLVE_ON) != 0u) {
 		let st = fx_row(id, FX_UV + 3u);
 		let row = fx_row(id, WF_DISSOLVE);
 		let uv = (dissolve_src + offset * use_disturb.z + fx_row(id, FX_ANIM + 3u).xy * t) * st.xy + st.zw;
-		let v = fx_sample(3u, uv, vec2f(0.0), vec2f(0.0)).r - row.x;
+		let v = fx_sample_level(3u, uv, mip.z).r - row.x;
 		let kept = saturate(v * row.y);
 		let edge = saturate((row.z - v) * row.y);
 		color = mix(color, fx_row(id, WF_DISSOLVE_COLOR).rgb * edge, edge) * kept;

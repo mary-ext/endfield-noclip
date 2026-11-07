@@ -3,6 +3,7 @@ import type {
 	EffectStackSurface,
 	EffectStencil,
 	StencilMaskSurface,
+	WaterFoamSurface,
 } from '@endfield-noclip/package-format/surfaces';
 
 import type { EffectLook } from './effects/effect-look.ts';
@@ -30,6 +31,13 @@ const UNSUPPORTED_COLOR: [r: number, g: number, b: number] = [1, 0, 1];
 
 /** the side of {@link unsupportedLook}'s checker cells, in metres */
 const UNSUPPORTED_CELL = 0.5;
+
+/** the queue of a WaterDecal box, whose pipeline carries its depth test */
+const FOAM_QUEUES: Record<WaterFoamSurface['depthTest'], LookQueue> = {
+	'less-equal': 'waterFoam',
+	greater: 'waterFoamBehind',
+	always: 'waterFoamThrough',
+};
 
 /**
  * unsupported material: a world-space magenta/black checker, unlit and exposure-independent. draws both faces
@@ -171,7 +179,7 @@ const materialLook = (entry: MaterialEntry): MaterialLook => {
 		}
 		case 'waterFoam': {
 			return effectMaterialLook(waterFoamLook(surface), {
-				queue: surface.depthTest === 'less-equal' ? 'waterFoam' : 'waterFoamBehind',
+				queue: FOAM_QUEUES[surface.depthTest],
 				cull: entry.cull,
 			});
 		}

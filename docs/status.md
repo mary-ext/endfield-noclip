@@ -213,13 +213,14 @@ packs or renders correctly.
   a `materialIndex` keep their own looks where the game gives both the last loaded's, and effects
   below the surface show over it, unchecked against the game
 - [foam boxes](viewer/water.md#foam-boxes) (`HGRP/WaterDecal`) ignore their per-placement
-  `HGWaterDecalRenderer` values (neutral on every map02 prefab) and their displacement; which depth
-  the game tests them against is unconfirmed, their variants beyond `_USE_DISTURB`, `_USE_MASK`,
-  `_USE_SOFTBLEND` and `_USE_DISSOLVE`, and those with a `_ZTest` other than 4 or 5, show as
-  [unsupported](viewer/materials.md#unsupported-materials) (2 of map02's 22), and the Wuling falls'
-  foam is unchecked against an in-game shot; map02's 248 static boxes (InitChunkData component 31,
-  [world](game-data/world.md#initchunkdata-layout)) aren't packed, counted in
-  `debug/skipped-entities.json`; other fluid types are unverified
+  `HGWaterDecalRenderer` values (neutral on every map02 prefab), their displacement and the
+  distortion texture's mip bias (an unnamed material value); which depth the game tests them against
+  is unconfirmed, their variants beyond `_USE_DISTURB`, `_USE_MASK`, `_USE_SOFTBLEND` and
+  `_USE_DISSOLVE`, and those with a `_ZTest` other than 4, 5 or 8, show as
+  [unsupported](viewer/materials.md#unsupported-materials) (1 of map02's 22, `_USE_WATER_EROSION`),
+  and the Wuling falls' foam is unchecked against an in-game shot; map02's 248 static boxes
+  (InitChunkData component 31, [world](game-data/world.md#initchunkdata-layout)) aren't packed,
+  counted in `debug/skipped-entities.json`; other fluid types are unverified
 - water volumes ([viewer](viewer/water.md#water-volumes)): volumes without a `WaterConfig` of their
   own draw with their water type's surface prefab config, but without its foam decal or per-level
   multipliers ([game data](game-data/water.md#water-volumes)); moves are linear; floaters keep their

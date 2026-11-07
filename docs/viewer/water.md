@@ -122,18 +122,18 @@ frame has any:
 
 1. **water depth.** the nearest surface's depth, laid down before the composite (above).
 2. **foam.** the boxes draw into an `rgba8unorm` target cleared to (0, 0, 0, 1), with the main
-   pass's depth attached read-only for the game's `_ZTest` (`waterFoam` and `waterFoamBehind` looks,
-   one phase each), each covered pixel projecting the box onto the water depth. rgb takes the box's
-   premultiplied foam plus what's there times one minus its alpha, and alpha the product of those
-   factors.
+   pass's depth attached read-only for the game's `_ZTest` (`waterFoam`, `waterFoamBehind` and
+   `waterFoamThrough` looks, one phase each), each covered pixel projecting the box onto the water
+   depth. rgb takes the box's premultiplied foam plus what's there times one minus its alpha, and
+   alpha the product of those factors. the material's mip bias scales the base colour map's and the
+   mask's UV gradients, and the dissolve texture is read at its fixed level.
 3. **shading.** the water reads the target at its pixel: foam colour `= rgb + saturate(own) · a`,
    saturated, the game's 8-bit clamp. the water's own foam is saturated too, with boxes or without.
 
 materials with keywords beyond `_BLEND_BASECOLOR`, `_USE_DISTURB`, `_USE_MASK`, `_USE_SOFTBLEND` and
-`_USE_DISSOLVE`, or a `_ZTest` other than 4 or 5, show as
+`_USE_DISSOLVE`, or a `_ZTest` other than 4, 5 or 8, show as
 [unsupported](materials.md#unsupported-materials). it differs from the game in that the
 per-placement `HGWaterDecalRenderer` values (and so the displacement pass) aren't packed (every
 map02 prefab has the neutral ones), the static boxes of InitChunkData component 31 aren't packed
 (they're counted in `debug/skipped-entities.json`), the soft blend's device depths use the viewer's
-near plane, and the game's mip bias (`_MinMipLevel`, `_Bias`) is left out (0 on every map02
-material).
+near plane, and the distortion texture's mip bias is left out (its material value is unidentified).

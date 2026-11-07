@@ -1327,6 +1327,23 @@ describe('WaterDecal', () => {
 		assert.deepEqual([foam.dissolve.texture.texture, foam.depthTest, foam.clipToBox], [4, 'greater', true]);
 	});
 
+	it('draws through the scene under _ZTest 8, with its mip bias', () => {
+		// the bamboo raft's wake (`M_fx_interactive_bambooraft_waterdecal_802`)
+		const foam = ofKind(
+			describeMaterial(
+				material({
+					keywords: ['_BLEND_BASECOLOR', '_USE_DISSOLVE', '_USE_DISTURB', '_USE_MASK'],
+					slots: { _BaseColorMap: slot(1), _DisturbTex1: slot(2), _MaskTex: slot(3), _DissolveTex: slot(4) },
+					floats: { _ZTest: 8, _Bias: 2.3, _MinMipLevel: 1 },
+				}),
+				waterDecal,
+			),
+			'waterFoam',
+		);
+		assert.equal(foam.depthTest, 'always');
+		assert.deepEqual(foam.mipBias, { base: 3, mask: 2, dissolve: 2 });
+	});
+
 	it('leaves variants without the base colour blend, or with other keywords, unsupported', () => {
 		for (const keywords of [['_USE_DISTURB'], ['_BLEND_BASECOLOR', '_USE_BUBBLE']]) {
 			const surface = describeMaterial(material({ keywords, slots: { _BaseColorMap: slot(1) } }), waterDecal);

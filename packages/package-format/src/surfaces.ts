@@ -1150,9 +1150,14 @@ export interface WaterFoamSurface {
 	clipToBox: boolean;
 	/**
 	 * the game's `_ZTest` against the scene's depth, in Unity's (forward) depth: `less-equal` draws the faces
-	 * in front, `greater` those behind
+	 * in front, `greater` those behind, `always` both
 	 */
-	depthTest: Extract<EffectCompare, 'less-equal' | 'greater'>;
+	depthTest: Extract<EffectCompare, 'less-equal' | 'greater' | 'always'>;
+	/**
+	 * mip levels added to each texture's: the base colour map's `floor(_MinMipLevel) + floor(_Bias)`, the
+	 * mask's `floor(_Bias)`, and the dissolve texture is read at level `floor(_Bias)`
+	 */
+	mipBias: { base: number; mask: number; dissolve: number };
 	/**
 	 * `_BlendMode`: 0 blends the foam over what's there, 1 adds it, by scaling the cover by `1 − blendMode`;
 	 * fractional values blend the two

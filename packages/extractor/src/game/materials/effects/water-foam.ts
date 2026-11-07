@@ -36,10 +36,28 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 	if (!has('_BLEND_BASECOLOR')) {
 		return unsupported('no _BLEND_BASECOLOR');
 	}
-	const zTest = float('_ZTest', 4);
-	if (zTest !== 4 && zTest !== 5) {
-		return unsupported(`_ZTest ${zTest}`);
+	let depthTest: WaterFoamSurface['depthTest'];
+	{
+		const zTest = float('_ZTest', 4);
+		switch (zTest) {
+			case 4: {
+				depthTest = 'less-equal';
+				break;
+			}
+			case 5: {
+				depthTest = 'greater';
+				break;
+			}
+			case 8: {
+				depthTest = 'always';
+				break;
+			}
+			default: {
+				return unsupported(`_ZTest ${zTest}`);
+			}
+		}
 	}
+	const bias = Math.floor(float('_Bias', 0));
 	const textureOf = (name: string, speed: string): EffectTexture =>
 		effectTexture(reader.slot(name) ?? UNSET_WHITE, speedOf(reader, speed));
 	const edgeRange = color('_EdgeFadeRange') ?? [0, 0, 0, 0];
@@ -78,7 +96,8 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 		],
 		edgeFade: float('_UseEdgeFade', 0) !== 0 ? [edgeRange[0], edgeRange[1]] : null,
 		clipToBox: float('_MeshType', 0) !== 0,
-		depthTest: zTest === 4 ? 'less-equal' : 'greater',
+		depthTest,
+		mipBias: { base: Math.floor(float('_MinMipLevel', 0)) + bias, mask: bias, dissolve: bias },
 		blendMode: float('_BlendMode', 0),
 		opacity: float('_OverallOpacity', 1),
 		soft: has('_USE_SOFTBLEND')

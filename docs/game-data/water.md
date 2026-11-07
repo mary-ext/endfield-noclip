@@ -354,16 +354,19 @@ binds just before), reconstructs the world position there and moves it into the 
   the world's x and z over 10 m, 3 the mesh's UV0. fractional values blend between neighbours.
 - **distortion.** `_USE_DISTURB`: `_DisturbTex1`'s red (UVs scrolled by `_DisturbUVSpeed1.xy`, then
   its `_ST`), remapped by `_Bi_Disturb`, times `_DisturbU/VIntensity1`, shifts the base, mask and
-  dissolve UVs by their `_…UseDisturb` fractions.
+  dissolve UVs by their `_…UseDisturb` fractions. its sample takes a mip bias from a material value
+  the shader's parameter table doesn't name.
+- **mip bias.** the base colour map is sampled with a bias of `floor(_MinMipLevel) + floor(_Bias)`
+  levels and the mask with `floor(_Bias)`; the bamboo raft's wake has `_Bias` 2.3.
 - **colour.** `_BaseColorMap` at its UVs through `_ST` (scaled by the placement's tiling), then
   scrolled by `_BaseColorSpeed.xy` (times the placement's speed).
   `a' = _UseAChannelAsAlpha ? a : 1`; colour `= _BaseColor + rgb · a' · _BaseColorTint` (`[HDR]`),
   times `_MaskTex` (`_USE_MASK`; its UVs turned about 0.5 by `_MaskTexUVRotateMatrix`, then `_ST`,
   then scrolled), and its alpha with `_UseMaskTexAsAlpha`. the output is that times `1 + a'`, the
   edge fade, `_OverallOpacity`, and the placement's opacity, brightness and tint.
-- **dissolve.** `_USE_DISSOLVE`: `_DissolveTex`'s red at the top mip (UVs scrolled, then `_ST`) less
-  `_DissolveScheduleOffset · 2.02 − 1.01`, as in VFXBaseV2, scales colour and alpha, with
-  `_DissolveEmissiveColor` on the edge.
+- **dissolve.** `_USE_DISSOLVE`: `_DissolveTex`'s red at mip level `floor(_Bias)` (UVs scrolled,
+  then `_ST`) less `_DissolveScheduleOffset · 2.02 − 1.01`, as in VFXBaseV2, scales colour and
+  alpha, with `_DissolveEmissiveColor` on the edge.
 - **fades.** `_UseEdgeFade`: `saturate(1 − |abs(uv − 0.5) + _EdgeFadeRange.xy| · √2)`, radial, 0 at
   the corners. `_USE_SOFTBLEND`: `saturate((saturate(water − face) + _SoftBias) / _SoftDistance)`,
   both reversed-Z device depths, the face being the box's fragment. `_MeshType` ≠ 0 drops positions
@@ -373,9 +376,10 @@ binds just before), reconstructs the world position there and moves it into the 
   foam. the pass also draws only where stencil bit 0 is set (compare Equal, reference 1), which the
   water's passes set on its pixels ([how surfaces are drawn](#how-surfaces-are-drawn)). the box is
   culled by `_CullMode` and depth-tested by `_ZTest` (4, LessEqual, for most; 5, Greater, with front
-  faces culled, for `M_fx_map02_lv001_waterfall_2105_05`), and writes no depth. which depth it's
-  tested against isn't confirmed: the camera's depth buffer holds the scene without water, since the
-  water writes its depth into a copy (`depthWithWater`).
+  faces culled, for `M_fx_map02_lv001_waterfall_2105_05`; 8, Always, for the bamboo raft's wake
+  `M_fx_interactive_bambooraft_waterdecal_802`), and writes no depth. which depth it's tested
+  against isn't confirmed: the camera's depth buffer holds the scene without water, since the water
+  writes its depth into a copy (`depthWithWater`).
 
 the placement's `HGWaterDecalRenderer` holds `tilling`, `speed`, `opacity`, `brightness`,
 `tintColor` (the values above), `displacement` (the WaterDecalDisplacement pass, for the water's

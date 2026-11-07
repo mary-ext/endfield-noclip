@@ -28,6 +28,8 @@ export const WaterFoamRow = {
 	boxUv: 96,
 	/** `_EdgeFadeRange` xy, then the soft blend's bias and distance (0 without `_USE_SOFTBLEND`) */
 	fade: 100,
+	/** mip levels added to the base colour map's and the mask's, then the dissolve texture's level */
+	mip: 104,
 } as const;
 
 /** {@link WaterFoamRow.tint}'s w bits, matching `effect.wgsl` */
@@ -79,6 +81,7 @@ export const waterFoamLook = (foam: WaterFoamSurface): EffectLook => {
 		[...(foam.edgeFade ?? [0, 0]), foam.soft?.bias ?? 0, foam.soft?.distance ?? 0],
 		WaterFoamRow.fade,
 	);
+	params.set([foam.mipBias.base, foam.mipBias.mask, foam.mipBias.dissolve, 0], WaterFoamRow.mip);
 	params.set([0, EffectKind.WaterFoam, 0, 0], EffectRow.unfogged);
 	return look;
 };
