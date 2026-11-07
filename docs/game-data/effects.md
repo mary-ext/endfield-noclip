@@ -303,13 +303,14 @@ transparent layer and draw a second layer only where it didn't (`NotEqual`).
 `HGRP/Effect/VFXDitherAlpha` writes the G-buffer like an opaque surface, for effect meshes that are
 solid, such as the rocks floating over Origin Lodespring's crater (mesh particles,
 [assets](#particle-systems)). the colour is `_TintColor · _TintColorIntensity` times `_MainTex` (the
-tint alone with `_UseMainTexAsAlpha`), times `_MainTex2Color` when `_USE_MAIN2` takes only the alpha
-of `_MainTex2` (`_UseMainTex2AsAlpha`) and multiplies (`_MainTex2BlendMode` 0). with `_UseLighting`
-it is the albedo, saturated as the G-buffer stores it, else emitted. `_NORMAL_MAP` adds a
-tangent-space normal map (`_NormalScale`; x from alpha times red, as Unity unpacks it); roughness
-and metallic are `_Roughness` and `_Metallic`. the shader has no shadow caster pass. the rocks'
-material multiplies a gold mask by a tint twelve times over, so the saturated albedo is black rock
-with gold veins.
+tint alone with `_UseMainTexAsAlpha`), times `_MainTex2Color` when `_USE_MAIN2` takes `_MainTex2` as
+alpha (`_UseMainTex2AsAlpha`) and multiplies (`_MainTex2BlendMode` 0); the G-buffer pass then
+doesn't sample `_MainTex2` at all, and the depth pass has no `_USE_MAIN2` variant, so the texture
+changes neither the colour nor the dithered alpha. with `_UseLighting` it is the albedo, saturated
+as the G-buffer stores it, else emitted. `_NORMAL_MAP` adds a tangent-space normal map
+(`_NormalScale`; x from alpha times red, as Unity unpacks it); roughness and metallic are
+`_Roughness` and `_Metallic`. the shader has no shadow caster pass. the rocks' material multiplies a
+gold mask by a tint twelve times over, so the saturated albedo is black rock with gold veins.
 
 `HGRP/Effect/VFXWaterDitherAlpha` has the same G-buffer and depth passes under another name, with
 fewer variants (`_NORMAL_MAP`, `_USE_DISTURB`, `_USE_DISSOLVE`, `_USE_MASK` in the depth pass, and

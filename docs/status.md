@@ -268,11 +268,12 @@ packs or renders correctly.
     Dijiang's clue board and the aisle-guide panels' edge colour are unchecked in game
   - VFXDitherAlpha's effect variants blend rather than dither and write no depth; lit ones, other
     dither modes and non-red masks stay unsupported; the plain variant's dither leaves out the
-    vertex alpha and the near-camera fade, and `_USE_MAIN2` draws only as a mask. the NoLighting
-    variant goes through the G-buffer path without its colour's extra factor of the alpha, so it's
-    fogged and its soft edges are brighter than the game's; its effect variants stay unsupported
-    (Si's Painting's ink sheet `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very
-    Large Rift's escaping trails are unchecked in game
+    vertex alpha and the near-camera fade, and `_USE_MAIN2` draws only as a mask (Wuling City's
+    red-tide walls, unchecked in game). the NoLighting variant goes through the G-buffer path
+    without its colour's extra factor of the alpha, so it's fogged and its soft edges are brighter
+    than the game's; its effect variants stay unsupported (Si's Painting's ink sheet
+    `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very Large Rift's escaping trails
+    are unchecked in game
   - [VFXWaterDitherAlpha](game-data/effects.md#solid-effects) splashes draw as VFXDitherAlpha's
     plain variant; `_SUBSURFACE` and the sequence-frame variants stay unsupported (6 of map02's 17),
     and the splash at the foot of Si's Painting's cave falls is unchecked against an in-game shot

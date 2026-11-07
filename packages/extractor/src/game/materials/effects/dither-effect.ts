@@ -3,9 +3,10 @@ import type {
 	StackLayer,
 	UnsupportedSurface,
 } from '@endfield-noclip/package-format/surfaces';
+import type { Rgb } from '@endfield-noclip/package-format/values';
 
 import { pastUvSets, undrawnKeywords } from '../describe-steps.ts';
-import { isUnsupported, type MaterialReader, unsupported } from '../material-values.ts';
+import { isUnsupported, linearRgb, type MaterialReader, unsupported } from '../material-values.ts';
 
 import { effectTexture, matrixRotationOf, speedOf, UNSET_WHITE } from './effect-steps.ts';
 import {
@@ -29,7 +30,7 @@ const DITHER_EFFECT_KEYWORDS = new Set([
 ]);
 
 /** keywords VFXDitherAlpha's effect variants also draw, alongside one of {@link DITHER_EFFECT_KEYWORDS} */
-const DITHER_EFFECT_EXTRA_KEYWORDS = new Set(['_USE_VERTOFFSET']);
+const DITHER_EFFECT_EXTRA_KEYWORDS = new Set(['_USE_VERTOFFSET', '_USE_MAIN2']);
 
 /**
  * @returns whether a VFXDitherAlpha material is one of its effect variants (a distortion, dissolve, mask or
@@ -75,6 +76,15 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 	// the mask feeds only the tested alpha; the stack's mask also tints, which matches only when it's the red
 	if (has('_USE_MASK') && float('_UseMaskTexAsAlpha', 1) === 0) {
 		return unsupported('a mask that isn’t its red');
+	}
+	// with `_UseMainTex2AsAlpha` the colour pass doesn't sample the second texture and only multiplies by its
+	// colour; the depth pass has no `_USE_MAIN2` variant, so the tested alpha is unchanged
+	let second: Rgb = [1, 1, 1];
+	if (has('_USE_MAIN2')) {
+		if (float('_UseMainTex2AsAlpha', 0) === 0 || float('_MainTex2BlendMode', 0) !== 0) {
+			return unsupported('a second texture that colours or blends rather than masks');
+		}
+		second = linearRgb(color('_MainTex2Color') ?? [1, 1, 1, 1]);
 	}
 	const computed = computedUvSources(reader);
 	// the shader's slots and their properties; the distortion comes first, so it can shift the others
@@ -142,7 +152,13 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 	// the colour pass emits `tint · intensity · vertex colour · main`; the depth pass tests the tint's alpha times
 	// `_TintColorAlpha`, the vertex alpha, the main texture's alpha (its red), the mask's red, the dissolve and the
 	// near fade
-	const { tint, intensity } = stackTintOf(reader);
+	const { tint: ownTint, intensity } = stackTintOf(reader);
+	const tint: typeof ownTint = [
+		ownTint[0] * second[0],
+		ownTint[1] * second[1],
+		ownTint[2] * second[2],
+		ownTint[3],
+	];
 	const shared = stackSharedOf(reader, intensity);
 	return {
 		kind: 'effectStack',

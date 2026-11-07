@@ -865,6 +865,30 @@ describe('VFXDitherAlpha effect variants', () => {
 		assert.equal(raised.alphaPower, 3);
 	});
 
+	it('multiply the colour by _MainTex2Color when _USE_MAIN2 takes the second texture as alpha', () => {
+		// the red tide's walls in Wuling City (`M_fxmap_chichao_06_05`)
+		const entry = dither(
+			{ _UseMainTexAsAlpha: 1, _UseMainTex2AsAlpha: 0, _MainTex2BlendMode: 0 },
+			{ _MainTex: 'white', _MainTex2: 'white', _DisturbTex1: 'white', _DissolveTex: 'white' },
+		);
+		const tide = (floats: Record<string, number>) =>
+			describeMaterial(
+				material({
+					blend: 'alphaTest',
+					blendFactors: null,
+					keywords: ['_USE_DISSOLVE', '_USE_DISTURB', '_USE_MAIN2'],
+					slots: { _MainTex: slot(1), _MainTex2: slot(2) },
+					floats: { _UseMainTex2AsAlpha: 1, ...floats },
+					colors: { _TintColor: [1, 1, 1, 1], _MainTex2Color: [1, 0, 1, 1] },
+				}),
+				entry,
+			);
+		assert.deepEqual(ofKind(tide({}), 'effectStack').tint, [1, 0, 1, 1]);
+		// colouring or adding the second texture isn't drawn
+		assert.equal(tide({ _UseMainTex2AsAlpha: 0 }).kind, 'unsupported');
+		assert.equal(tide({ _MainTex2BlendMode: 1 }).kind, 'unsupported');
+	});
+
 	it('move their vertices by the offset texture outside particle mode, without VFXBaseV2-only terms', () => {
 		// the rift's escaping trails (`M_fxmap_dung02_dg005_boss_semicircle_escapism_trail_01_1101`)
 		const entry = dither(
