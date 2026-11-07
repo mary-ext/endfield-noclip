@@ -1,7 +1,7 @@
 import type { ConditionalSetInfo, SceneRequirement } from '@endfield-noclip/package-format/states';
-import { streamAreaControl } from '@endfield-noclip/package-format/stream-areas';
 
 import { sceneStateControl } from '../game/scene-conditions.ts';
+import { streamAreaControl } from '../game/scene-control.ts';
 import type { ChunkSource } from '../game/world-index.ts';
 
 /**

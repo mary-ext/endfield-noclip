@@ -12,7 +12,6 @@ import {
 import { CELL_SIZE } from '@endfield-noclip/formats/endfield/map-config';
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import { ruleText } from '@endfield-noclip/package-format/conditions';
-import { streamAreaControl } from '@endfield-noclip/package-format/stream-areas';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
@@ -50,6 +49,7 @@ import {
 	loadSceneStates,
 	sceneStateControl,
 } from '../game/scene-conditions.ts';
+import { streamAreaControl } from '../game/scene-control.ts';
 import { stripMarkup } from '../game/story.ts';
 import type { IndexedEntity, WorldIndex } from '../game/world-index.ts';
 

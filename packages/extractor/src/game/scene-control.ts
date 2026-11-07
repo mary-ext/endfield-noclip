@@ -79,6 +79,12 @@ const CATEGORY_OF_KIND: Readonly<Record<string, string>> = {
 	environmentVolume: 'environment',
 };
 
+/**
+ * @param area a stream area id
+ * @returns the id of the camera control whose value is 1 while the area is shown
+ */
+export const streamAreaControl = (area: number): string => `area:${area}`;
+
 /** the values of an on/off control */
 export const SWITCH_VALUES: readonly SceneControlValue[] = [
 	{ value: 0, label: 'off' },

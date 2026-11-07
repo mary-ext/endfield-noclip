@@ -26,7 +26,6 @@ import {
 } from '@endfield-noclip/formats/endfield/streaming-chunk-data';
 import { unpackHgPayload } from '@endfield-noclip/formats/hg/payload';
 import type { ConditionalSetInfo, SceneControl } from '@endfield-noclip/package-format/states';
-import { streamAreaControl } from '@endfield-noclip/package-format/stream-areas';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
@@ -36,7 +35,7 @@ import { VfsGroup } from '../hg/vfs.ts';
 import { allOf, gateCondition, type Alternatives, type GameCondition, type GameState } from './game-state.ts';
 import type { PrefabPose } from './prefab.ts';
 import { sceneStateControl } from './scene-conditions.ts';
-import { sceneControl, switchValues, SWITCH_VALUES } from './scene-control.ts';
+import { sceneControl, streamAreaControl, switchValues, SWITCH_VALUES } from './scene-control.ts';
 import { controllerKey, progressionId } from './scenery-variants.ts';
 import { readViewStates, settledPose, testedValues, type ViewStates } from './view-state-poses.ts';
 

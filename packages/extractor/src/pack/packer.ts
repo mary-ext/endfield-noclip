@@ -59,7 +59,7 @@ import type {
 	SceneControl,
 	StatesInfo,
 } from '@endfield-noclip/package-format/states';
-import { streamAreaControl, type StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
+import type { StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
 import type { TerrainSplatInfo, TerrainInfo } from '@endfield-noclip/package-format/terrain';
 import type { TextureTable } from '@endfield-noclip/package-format/textures';
 import {
@@ -108,7 +108,13 @@ import {
 	type SceneStateDefinition,
 	unnamedSceneStateControl,
 } from '../game/scene-conditions.ts';
-import { derivedSource, sceneControl, switchValues, SWITCH_VALUES } from '../game/scene-control.ts';
+import {
+	derivedSource,
+	sceneControl,
+	streamAreaControl,
+	switchValues,
+	SWITCH_VALUES,
+} from '../game/scene-control.ts';
 import { loadProgressions, progressionControl, progressionId } from '../game/scenery-variants.ts';
 import {
 	activationCondition,
