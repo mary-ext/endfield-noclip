@@ -259,6 +259,25 @@ also declares screen refraction (`_IoR`, `_RefractionIntensity`, `_RefractThickn
 `_RefractTint`, `_RefractTex`, `_UseProbeRefraction`) and planar reflection
 (`_EnabledPlanarReflection`); how they shade isn't decompiled.
 
+the base variant (no keywords) writes straight colour: Lit's shading, fogged in the shader at the
+glass's own depth (height, atmosphere and volumetric fog), then the scene-effect grade
+(`_VFXParams1`). its opacity is `_BaseColorMap.a · _BaseColor.a` (times the vertex colour's red with
+`_Use_VerexTexColorAsOpacity`); the alpha channel blends `One, OneMinusSrcAlpha`. Dijiang's deck
+glass (`M_common_glass+1_001_03b`) is 180/255 opaque across its whole map, so 29% of what lies
+behind it shows through.
+
+### transparent draw order
+
+glass and effects share one list. the transparent pass copies the opaque scene into its own target,
+then draws decals, then every queue 2900–3100 renderer (both the static ECS scenery and GameObject
+renderers such as prefab effects, whose shaders are all `LightMode` `ForwardOnly`) in one order:
+each side is sorted back to front (sorting layer, render queue, then distance, then renderer
+priority, Unity's `CommonTransparent`) and the two sorted lists are merged by their keys, farther
+first. so an effect kilometres behind a window draws first and the window blends over it.
+`_TransparentSortPriority` (±50) acts only through the material's render queue. at PC settings
+nothing renders transparents at half size, so the order holds there. what distance each side sorts
+by (bounds centre, most likely) isn't traced.
+
 ## decals
 
 `HGRP/DecalLit` is the scenery's projected decal: moss, sand, stains, cracks and tyre tracks laid
