@@ -82,12 +82,7 @@ export const litDecalLook = (decal: LitDecalSurface): EffectLook => {
 			setSlot(look, DECAL_PBR_SLOT, still(decal.pbr.texture), ROLE_NONE);
 			params[DecalLitRow.pbrPlaced] = 1;
 		} else {
-			setSlot(
-				look,
-				DECAL_PBR_SLOT,
-				{ ...still(decal.pbr.texture), scale: [own[0], own[1]], offset: [own[2], own[3]] },
-				ROLE_NONE,
-			);
+			setSlot(look, DECAL_PBR_SLOT, { ...still(decal.pbr.texture), ...own }, ROLE_NONE);
 		}
 	}
 	params.set([1, 1, 1, decal.opacity], EffectRow.tint);

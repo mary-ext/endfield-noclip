@@ -6,6 +6,7 @@
  */
 
 import type { EffectNearFade, EffectTexture } from '@endfield-noclip/package-format/surfaces';
+import type { TextureRef } from '@endfield-noclip/package-format/textures';
 
 import { emptySlots, type LookSlots, placeTexture } from '../look.ts';
 
@@ -179,10 +180,10 @@ export const setSlot = (look: EffectLook, i: number, texture: EffectTexture, bit
 };
 
 /**
- * @param texture a texture id
+ * @param texture a texture
  * @returns the texture, still and without its own transform
  */
-export const still = (texture: number): EffectTexture => ({
+export const still = (texture: TextureRef): EffectTexture => ({
 	texture,
 	scale: [1, 1],
 	offset: [0, 0],

@@ -24,7 +24,7 @@ export interface ReadyMaterial {
 
 /** a texture bound to a material slot */
 export interface TextureSlot {
-	/** index into the texture table */
+	/** index into the texture table: a slot is always bound */
 	texture: number;
 	/** UV set ({@link VertexAttribute.TexCoord0} + `uv`) */
 	uv: number;

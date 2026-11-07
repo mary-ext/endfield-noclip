@@ -40,7 +40,7 @@ export const drawRangeOf = (
 	}
 	// unlit looks are their texture, so they wait for it rather than draw as solid cards. the unsupported
 	// checker has none to wait for
-	if ((look.flags & LookFlags.Unlit) !== 0 && look.textures[0] >= 0 && state.slots[0] === null) {
+	if ((look.flags & LookFlags.Unlit) !== 0 && look.textures[0] !== null && state.slots[0] === null) {
 		return null;
 	}
 	switch (queue) {

@@ -46,7 +46,7 @@ test('six-way smoke samples its negative lightmap at the positive one’s UVs, a
 	};
 	const look = sixWaySmokeLook(smoke);
 	const { params } = look;
-	assert.deepEqual(look.textures, [1, 3, -1, 4, -1, -1, 2]);
+	assert.deepEqual(look.textures, [1, 3, null, 4, null, null, 2]);
 	assert.deepEqual(
 		[...params.subarray(EffectRow.uv + 24, EffectRow.uv + 28)],
 		[...params.subarray(EffectRow.uv, EffectRow.uv + 4)],

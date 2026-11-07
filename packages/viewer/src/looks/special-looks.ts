@@ -5,23 +5,14 @@
  * @module
  */
 
-import type { MaterialCull } from '@endfield-noclip/package-format/materials';
+import type { MaterialCull, TextureSlot } from '@endfield-noclip/package-format/materials';
 import type {
 	DitheredSurface,
 	ErosionSurface,
 	MattePaintingSurface,
-	TiledTexture,
 } from '@endfield-noclip/package-format/surfaces';
 
-import {
-	emptyLook,
-	LookFlags,
-	LookRow,
-	type MaterialLook,
-	setTexture,
-	setTiledTexture,
-	Slot,
-} from './look.ts';
+import { emptyLook, LookFlags, LookRow, type MaterialLook, setTexture, Slot } from './look.ts';
 
 // #region erosion
 
@@ -67,17 +58,17 @@ export const erosionLook = (surface: ErosionSurface, cull: MaterialCull): Materi
 	look.flags |= LookFlags.Erosion;
 	const params = look.params;
 	const { textures, noise, flow } = surface;
-	const slots: [number, TiledTexture | null][] = [
+	const slots: [number, TextureSlot | null][] = [
 		[Slot.Normal, textures.baseNormal],
 		[Slot.Mask, textures.metalMix],
-		[Slot.Emissive, textures.flowRamp === null ? null : { texture: textures.flowRamp, tiling: 1 }],
+		[Slot.Emissive, textures.flowRamp],
 		[Slot.Detail, textures.detailNormal],
 		[Slot.Parallax, textures.noisePattern],
-		[Slot.ParallaxNoise, textures.noisePattern === null ? null : { ...textures.noisePattern, tiling: 1 }],
+		[Slot.ParallaxNoise, textures.noisePattern === null ? null : { ...textures.noisePattern, scale: [1, 1] }],
 	];
-	for (const [i, texture] of slots) {
-		if (texture !== null) {
-			setTiledTexture(look, i, texture.texture, texture.tiling, 0);
+	for (const [i, slot] of slots) {
+		if (slot !== null) {
+			setTexture(look, i, slot);
 		}
 	}
 	// the ramp is sampled at its finest level whatever its size on screen
@@ -164,7 +155,7 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 	}
 	look.flags |= LookFlags.NormalRag;
 	// untextured, the tint is the albedo, which the G-buffer saturates
-	const untextured = look.textures[Slot.Base] < 0;
+	const untextured = look.textures[Slot.Base] === null;
 	params.set([...(untextured ? color.map((c) => Math.min(c, 1)) : color), -1], LookRow.tint);
 	params.set(
 		[lighting.roughness, lighting.roughness, lighting.metallic, lighting.normalScale],
@@ -197,7 +188,7 @@ export const mattePaintingLook = (surface: MattePaintingSurface, cull: MaterialC
 	}
 	const threshold = surface.alphaClip ?? -1;
 	params.set([...surface.color, threshold], LookRow.tint);
-	if (threshold >= 0 && look.textures[Slot.Base] >= 0) {
+	if (threshold >= 0 && look.textures[Slot.Base] !== null) {
 		look.queue = 'cutout';
 	}
 	params[LookRow.surface] = surface.highlight.threshold;

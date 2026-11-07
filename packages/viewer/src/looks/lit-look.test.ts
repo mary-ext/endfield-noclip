@@ -99,10 +99,8 @@ test('pulsing emission takes the free parallax rows; a surface with a glow keeps
 	};
 	const glow = {
 		kind: 'parallax' as const,
-		pattern: slot(6),
-		patternTiling: 2,
-		noise: 7,
-		noiseTiling: 3,
+		pattern: { ...slot(6), scale: [2, 2] as [number, number] },
+		noise: { ...slot(7), scale: [3, 3] as [number, number] },
 		depth: 0.314,
 		steps: 3,
 		fresnelPower: 1,
@@ -218,7 +216,7 @@ test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot except und
 			described(1, litSurface({ layout: 'mro', textures: { ...textures, mro: slot(3) }, triChannel })),
 		],
 	});
-	assert.deepEqual(crystal.textures, [1, 2, 4, -1, 5, -1, -1]);
+	assert.deepEqual(crystal.textures, [1, 2, 4, null, 5, null, null]);
 	assert.notEqual(crystal.flags & LookFlags.TriChannelMask, 0);
 	assert.notEqual(crystal.flags & LookFlags.NormalOcclusion, 0);
 	// base and detail sample UV set 1
@@ -232,13 +230,14 @@ test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot except und
 	assert.notEqual(mro.flags & LookFlags.NormalRag, 0);
 });
 
+/** a layer map, tiled and offset by the layer's own values */
+const layerMap = (texture: number): TextureSlot => ({ texture, uv: 0, scale: [2, 2], offset: [0.25, 0.5] });
+
 /** a top layer with no moss */
 const topLayer = (overrides: Partial<LitLayer> = {}): LitLayer => ({
 	kind: 'layer',
-	base: 2,
-	bump: 3,
-	tiling: 2,
-	offset: [0.25, 0.5],
+	base: layerMap(2),
+	bump: layerMap(3),
 	uvType: 2,
 	coverage: { kind: 'top' },
 	top: { bumped: 0, threshold: -1, smoothness: 0.5 },
@@ -267,7 +266,7 @@ test('moss rock: the top layer takes the parallax slots and rows, its own tiling
 			),
 		],
 	});
-	assert.deepEqual(look.textures, [-1, 1, -1, -1, -1, 2, 3]);
+	assert.deepEqual(look.textures, [null, 1, null, null, null, 2, 3]);
 	assert.notEqual(look.flags & LookFlags.LayerBlend, 0);
 	const row = (at: number) => Array.from(look.params.subarray(at, at + 4));
 	assert.deepEqual(row(LookRow.uv + 5 * 4), [2, 2, 0.25, 0.5]);
@@ -294,7 +293,10 @@ test('moss mounds: the mask layer takes its mask map into the emissive slot, unt
 		brightPower: 6,
 		normalStrength: 0,
 	};
-	const maskLayer = topLayer({ coverage: { kind: 'maskMap', texture: 4, uv: 1 }, moss });
+	const maskLayer = topLayer({
+		coverage: { kind: 'maskMap', map: { texture: 4, uv: 1, scale: [1, 1], offset: [0, 0] } },
+		moss,
+	});
 	const [mound, channel, emissiveMapped] = materialLooks({
 		entries: [
 			described(
@@ -306,7 +308,7 @@ test('moss mounds: the mask layer takes its mask map into the emissive slot, unt
 			described(2, litSurface({ textures: { base, normal: null, mro: null, emissive }, overlay: maskLayer })),
 		],
 	});
-	assert.deepEqual(mound.textures, [0, -1, -1, 4, -1, 2, 3]);
+	assert.deepEqual(mound.textures, [0, null, null, 4, null, 2, 3]);
 	assert.notEqual(mound.flags & LookFlags.LayerBlend, 0);
 	assert.notEqual(mound.flags & LookFlags.EmissiveMap, 0);
 	assert.notEqual(mound.flags & (1 << (UV1_SHIFT + 3)), 0);
@@ -316,9 +318,9 @@ test('moss mounds: the mask layer takes its mask map into the emissive slot, unt
 	assert.deepEqual(row(LayerBlendRow.fuzzy), [0.2, 0, 0.01, 0].map(Math.fround));
 	assert.deepEqual(row(LayerBlendRow.fuzzy2), [0, 0.1, 6, 0].map(Math.fround));
 	assert.equal(channel.params[LayerBlendRow.height + 3], LayerSource.BaseAlpha);
-	assert.equal(channel.textures[3], -1);
+	assert.equal(channel.textures[3], null);
 	assert.equal(emissiveMapped.flags & LookFlags.LayerBlend, 0);
-	assert.deepEqual(emissiveMapped.textures.slice(3), [5, -1, -1, -1]);
+	assert.deepEqual(emissiveMapped.textures.slice(3), [5, null, null, null]);
 });
 
 test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit decals off set their bit', () => {

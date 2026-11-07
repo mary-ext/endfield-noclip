@@ -31,7 +31,7 @@ test('effects wait for all their textures, unlit looks for their base colour', (
 	};
 	assert.equal(drawRangeOf(effect, { ...waiting, state: ready }), 'refract');
 	assert.equal(drawRangeOf(effect, waiting), null);
-	const unlit = look({ flags: LookFlags.Unlit, textures: [3, -1, -1, -1, -1, -1, -1] });
+	const unlit = look({ flags: LookFlags.Unlit, textures: [3, null, null, null, null, null, null] });
 	assert.equal(drawRangeOf(unlit, waiting), null);
 	assert.equal(drawRangeOf(unlit, { ...waiting, state: ready }), 'opaque');
 });

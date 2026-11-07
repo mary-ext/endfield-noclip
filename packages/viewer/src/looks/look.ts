@@ -1,4 +1,6 @@
 import type { MaterialCull, TextureSlot } from '@endfield-noclip/package-format/materials';
+import type { EffectTexture } from '@endfield-noclip/package-format/surfaces';
+import type { TextureRef } from '@endfield-noclip/package-format/textures';
 
 /**
  * the texture slots the mesh shader samples, in binding order. the frame group leaves seven sampled textures
@@ -118,12 +120,12 @@ export interface MaterialLook {
 	cull: MaterialCull;
 	/** whether the material draws into shadow maps */
 	castsShadows: boolean;
-	/** texture id per {@link SLOTS} entry, or -1 */
-	textures: number[];
+	/** texture per {@link SLOTS} entry; `null` slots bind white */
+	textures: TextureRef[];
 	/** largest UV scale of each slot, for picking the mip level to stream */
 	uvScales: number[];
-	/** a 3D texture an effect samples besides its slots (the mist boxes' noise), or -1 */
-	volumeTexture: number;
+	/** a 3D texture an effect samples besides its slots (the mist boxes' noise), or `null` */
+	volumeTexture: TextureRef;
 	/** {@link LookFlags}, with every slot that has a texture set */
 	flags: number;
 	/** {@link LOOK_FLOATS} draw parameters */
@@ -273,9 +275,9 @@ export const LookRow = {
 
 /**
  * @param look a material look
- * @returns the texture id whose alpha an alpha-tested look tests, or -1 when it has none
+ * @returns the texture whose alpha an alpha-tested look tests, or `null` when it has none
  */
-export const alphaTextureOf = (look: MaterialLook): number =>
+export const alphaTextureOf = (look: MaterialLook): TextureRef =>
 	look.textures[(look.flags & LookFlags.AlphaNormal) !== 0 ? Slot.Normal : Slot.Base];
 
 /** the part of a look that holds its textures and draw parameters, all an effect's own builder fills */
@@ -291,9 +293,9 @@ export const emptySlots = (): LookSlots => {
 		params.set([1, 1, 0, 0], LookRow.uv + i * 4);
 	}
 	return {
-		textures: SLOTS.map(() => -1),
+		textures: SLOTS.map(() => null),
 		uvScales: SLOTS.map(() => 1),
-		volumeTexture: -1,
+		volumeTexture: null,
 		params,
 	};
 };
@@ -325,7 +327,7 @@ export const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => ({
 export const placeTexture = (
 	look: LookSlots,
 	i: number,
-	texture: Pick<TextureSlot, 'texture' | 'scale' | 'offset'>,
+	texture: Pick<EffectTexture, 'texture' | 'scale' | 'offset'>,
 ): void => {
 	look.textures[i] = texture.texture;
 	look.uvScales[i] = Math.max(Math.abs(texture.scale[0]), Math.abs(texture.scale[1]), 1e-3);
@@ -342,23 +344,4 @@ export const placeTexture = (
 export const setTexture = (look: MaterialLook, i: number, slot: TextureSlot): void => {
 	placeTexture(look, i, slot);
 	look.flags |= SLOT_FLAGS[i] | (slot.uv << (UV1_SHIFT + i));
-};
-
-/**
- * binds a texture to a slot of {@link SLOTS}, tiled by its own scale, setting the slot's flag
- *
- * @param look the look to change
- * @param i the slot
- * @param texture the texture id
- * @param tiling the scale of both UV axes
- * @param uv the UV set, 0 or 1
- */
-export const setTiledTexture = (
-	look: MaterialLook,
-	i: number,
-	texture: number,
-	tiling: number,
-	uv: number,
-): void => {
-	setTexture(look, i, { texture, uv, scale: [tiling, tiling], offset: [0, 0] });
 };

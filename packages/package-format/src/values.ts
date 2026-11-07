@@ -21,8 +21,14 @@ export interface Bounds {
 	max: [x: number, y: number, z: number];
 }
 
-/** an RGBA colour, as authored (not converted to linear; HDR colours exceed 1) */
+/**
+ * an RGBA colour, as authored (not converted to linear; HDR colours exceed 1) unless its field says it's
+ * linear
+ */
 export type Color = [r: number, g: number, b: number, a: number];
+
+/** an RGB colour, as authored unless its field says it's linear, as {@link Color} */
+export type Rgb = [r: number, g: number, b: number];
 
 /** a `Vector2f` */
 export type Vec2 = [x: number, y: number];

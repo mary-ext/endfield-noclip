@@ -493,8 +493,16 @@ model with its inputs resolved (the Lit model, a matte painting, erosion rock, a
 texture stack, a lit decal, a water sheet, refraction, mist, a light beam, a portal's stencil mask),
 with Unity property names, keyword rules, colour spaces and the shaders' formulas already applied;
 `undrawn` for materials the game draws nothing visible with; or `unsupported` with the reason the
-viewer can't draw it. textures are texture-table ids with their UV set and transform. the viewer
-packs a surface into its draw parameters without reading Unity properties.
+viewer can't draw it. the viewer packs a surface into its draw parameters without reading Unity
+properties.
+
+a texture is a `TextureSlot` (a bound texture-table id with its UV set and `_ST`, which the
+extractor has already replaced where a shader tiles by a property of its own), an `EffectTexture`
+(also its scroll, rotation and custom-data shift), or a bare id where nothing else is read. a
+`number` id is always bound; a `TextureRef` is `null` for a slot the material leaves unset, which
+the shader samples as white. a texture the surface doesn't sample is a `null` field. colours are
+`Color`/`Rgb` ([values.ts](../packages/package-format/src/values.ts)), linear where the field says
+so; Unity vectors that aren't colours are named tuples.
 
 **rect decals**: a rect decal placement draws the game's VFXDecal cube with its material
 ([decals](game-data/materials.md#decals)), its colour and UV transform being its row's

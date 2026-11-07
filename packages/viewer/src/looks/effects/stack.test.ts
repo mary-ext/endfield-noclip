@@ -103,7 +103,7 @@ test('a texture stack packs each layer’s role, red alpha, source and distortio
 		[look.queue, look.castsShadows, look.cull, look.flags],
 		['effect', false, 'back', LookFlags.Effect],
 	);
-	assert.deepEqual(look.textures, [1, 2, -1, -1, 4, -1, -1]);
+	assert.deepEqual(look.textures, [1, 2, null, null, 4, null, null]);
 	assert.deepEqual(
 		[...look.params.subarray(EffectRow.slotBits, EffectRow.slotBits + 5)],
 		[

@@ -18,10 +18,9 @@ import type {
 	MaskChannel,
 	MattePaintingSurface,
 	ParallaxGlow,
-	Rgb,
-	TiledTexture,
 	UnsupportedSurface,
 } from '@endfield-noclip/package-format/surfaces';
+import type { Rgb } from '@endfield-noclip/package-format/values';
 
 import {
 	linearRgb,
@@ -302,7 +301,7 @@ export const describeLit = (reader: MaterialReader): LitSurface | UnsupportedSur
 	// `M_interactive_campfire+1_003_02` and Dijiang's far crystal leave it empty). an empty pattern would glow in
 	// the dark colour alone; none is seen
 	if (pattern !== null) {
-		overlay = parallaxGlowOf(reader, pattern, noise?.texture ?? null);
+		overlay = parallaxGlowOf(reader, pattern, noise);
 	} else if (lit && !parallax) {
 		overlay = layerOf(reader);
 	}
@@ -385,18 +384,34 @@ export const swayOf = (reader: MaterialReader): LitSway | null => {
 	};
 };
 
+/**
+ * @param slot a bound slot
+ * @param tiling the scale of both UV axes, in place of the slot's `_ST`
+ * @param uv the UV set it samples
+ * @returns the slot tiled by its own scale
+ */
+const tiledSlot = (slot: TextureSlot, tiling: number, uv: number): TextureSlot => ({
+	texture: slot.texture,
+	uv,
+	scale: [tiling, tiling],
+	offset: [0, 0],
+});
+
 /** `_PARALLAX_MAP`'s glow (`docs/game-data/materials.md#lit-layers`) */
-const parallaxGlowOf = (reader: MaterialReader, pattern: TextureSlot, noise: number | null): ParallaxGlow => {
+const parallaxGlowOf = (
+	reader: MaterialReader,
+	pattern: TextureSlot,
+	noise: TextureSlot | null,
+): ParallaxGlow => {
 	const { float, color } = reader;
 	// the step count is an integer uniform: the float property truncates
 	const steps = Math.min(Math.max(Math.trunc(float('_ParallaxMarchNum', 3)), 1), 20);
 	const intensity = float('_ParallaxIntensity', 1);
 	return {
 		kind: 'parallax',
-		pattern,
-		patternTiling: float('_ParallaxTilling', 1),
-		noise,
-		noiseTiling: float('_ParallaxNoiseMapTilling', 1),
+		pattern: tiledSlot(pattern, float('_ParallaxTilling', 1), pattern.uv),
+		// the noise follows the pattern's UV set
+		noise: noise === null ? null : tiledSlot(noise, float('_ParallaxNoiseMapTilling', 1), pattern.uv),
 		depth: float('_ParallaxStrength', 0),
 		steps,
 		fresnelPower: Math.floor(float('_ParallaxFresnelStrength', 1)),
@@ -447,8 +462,7 @@ const layerOf = (reader: MaterialReader): LitLayer | null => {
 				// the mask map samples UV set 1 when `_LayerBlendMaskUVType` is 0, whatever the slot's own set
 				coverage = {
 					kind: 'maskMap',
-					texture: mask.texture,
-					uv: float('_LayerBlendMaskUVType', 0) === 0 ? 1 : 0,
+					map: tiledSlot(mask, 1, float('_LayerBlendMaskUVType', 0) === 0 ? 1 : 0),
 				};
 			}
 		} else {
@@ -462,13 +476,16 @@ const layerOf = (reader: MaterialReader): LitLayer | null => {
 		return null;
 	}
 	const offset = vector('_Layer1Offset') ?? [0, 0, 0, 0];
+	const tiling = float('_Layer1Tilling', 1);
+	const layered = (slot: TextureSlot): TextureSlot => ({
+		...tiledSlot(slot, tiling, 0),
+		offset: [offset[0], offset[1]],
+	});
 	const moss = has('_LAYERBLEND_MOSS');
 	return {
 		kind: 'layer',
-		base: layerBase.texture,
-		bump: layerBump.texture,
-		tiling: float('_Layer1Tilling', 1),
-		offset: [offset[0], offset[1]],
+		base: layered(layerBase),
+		bump: layered(layerBump),
 		uvType: float('_LayerBlendUVType', 0),
 		coverage,
 		top: {
@@ -670,11 +687,9 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
  */
 export const describeErosion = (reader: MaterialReader): ErosionSurface => {
 	const { float, color } = reader;
-	const tiled = (name: string, tiling: string | null): TiledTexture | null => {
+	const tiled = (name: string, tiling: string | null): TextureSlot | null => {
 		const slot = reader.slot(name);
-		return slot === undefined
-			? null
-			: { texture: slot.texture, tiling: tiling === null ? 1 : float(tiling, 1) };
+		return slot === undefined ? null : tiledSlot(slot, tiling === null ? 1 : float(tiling, 1), 0);
 	};
 	const hdr = (name: string): Rgb => {
 		const value = color(name) ?? [1, 1, 1, 1];
@@ -685,7 +700,7 @@ export const describeErosion = (reader: MaterialReader): ErosionSurface => {
 		textures: {
 			baseNormal: tiled('_BaseNormalMap', '_BaseNormalTilling'),
 			metalMix: tiled('_MetalMixMap', null),
-			flowRamp: reader.slot('_FlowRampMap')?.texture ?? null,
+			flowRamp: tiled('_FlowRampMap', null),
 			detailNormal: tiled('_DetailNormalMap', '_DetailNormalTilling'),
 			noisePattern: tiled('_NoisePatternMap', '_NoisePatternMapTilling'),
 		},

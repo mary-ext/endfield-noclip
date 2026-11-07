@@ -17,7 +17,6 @@ import {
 	LookRow,
 	type MaterialLook,
 	setTexture,
-	setTiledTexture,
 	Slot,
 } from './look.ts';
 
@@ -91,7 +90,7 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 		look.castsShadows = false;
 		params[LookRow.emissive2 + 3] = surface.opacity;
 		params[LookRow.detail2 + 2] = surface.blend === 'premultiplied' ? 1 : 0;
-	} else if (surface.alphaClip !== null && surface.alphaClip >= 0 && alphaTextureOf(look) >= 0) {
+	} else if (surface.alphaClip !== null && surface.alphaClip >= 0 && alphaTextureOf(look) !== null) {
 		look.queue = 'cutout';
 	}
 	params[LookRow.emissive + 3] = surface.tintCover;
@@ -271,10 +270,10 @@ const grassParams = (look: MaterialLook, grass: GrassInputs): void => {
 /** `_PARALLAX_MAP`'s glow (`docs/game-data/materials.md#lit-layers`), in the parallax slots and rows */
 const parallaxParams = (look: MaterialLook, glow: ParallaxGlow): void => {
 	const params = look.params;
-	// the noise follows the pattern's UV set. without one the noise flag stays clear, and the march reads height 0
-	setTiledTexture(look, Slot.Parallax, glow.pattern.texture, glow.patternTiling, glow.pattern.uv);
+	// without a noise map the noise flag stays clear, and the march reads height 0
+	setTexture(look, Slot.Parallax, glow.pattern);
 	if (glow.noise !== null) {
-		setTiledTexture(look, Slot.ParallaxNoise, glow.noise, glow.noiseTiling, glow.pattern.uv);
+		setTexture(look, Slot.ParallaxNoise, glow.noise);
 	}
 	// the pulse runs between the minimum brightness and 1
 	const minimum = glow.pulseMinimum;
@@ -358,15 +357,10 @@ const layerBlendParams = (look: MaterialLook, layer: LitLayer, source: LayerSour
 	const params = look.params;
 	look.flags |= LookFlags.LayerBlend;
 	if (layer.coverage.kind === 'maskMap') {
-		setTiledTexture(look, Slot.Emissive, layer.coverage.texture, 1, layer.coverage.uv);
+		setTexture(look, Slot.Emissive, layer.coverage.map);
 	}
-	for (const [slot, texture] of [
-		[Slot.Parallax, layer.base],
-		[Slot.ParallaxNoise, layer.bump],
-	] as const) {
-		setTiledTexture(look, slot, texture, layer.tiling, 0);
-		params.set(layer.offset, LookRow.uv + slot * 4 + 2);
-	}
+	setTexture(look, Slot.Parallax, layer.base);
+	setTexture(look, Slot.ParallaxNoise, layer.bump);
 	params.set(
 		[layer.top.bumped, layer.top.threshold, layer.top.smoothness, layer.uvType],
 		LayerBlendRow.coverage,

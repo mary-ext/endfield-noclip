@@ -339,7 +339,7 @@ describe('lit decals', () => {
 			'litDecal',
 		);
 		// its `_ST` scale per metre
-		assert.deepEqual(water.pbr, { texture: 3, ownTransform: [0.1, 0.2, 0, 0] });
+		assert.deepEqual(water.pbr, { texture: 3, ownTransform: { scale: [0.1, 0.2], offset: [0, 0] } });
 		assert.deepEqual([water.writesNormal, water.writesRoughness, water.relight], [true, true, true]);
 		assert.deepEqual(water.waterFlow, {
 			normalScale: 0.4,
@@ -615,7 +615,7 @@ describe('VFXBaseV2', () => {
 			),
 		);
 		assert.deepEqual(roleOf(masks[0].layers[1]), ['mask', true, 'uv0', 0]);
-		assert.equal(masks[0].layers[1]?.texture, -1);
+		assert.equal(masks[0].layers[1]?.texture, null);
 		assert.equal(masks[1].layers[1], null);
 		// slot 0 binds white without a main texture when that's the default
 		const noMain = ofKind(

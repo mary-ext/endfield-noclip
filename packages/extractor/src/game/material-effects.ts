@@ -21,7 +21,6 @@ import type {
 	MistCardSurface,
 	MistVolumeSurface,
 	RefractSurface,
-	Rgba,
 	DisturbLayer,
 	SixWaySmokeSurface,
 	SixWayTexture,
@@ -33,6 +32,8 @@ import type {
 	WaterFoamSurface,
 	WaterSheetSurface,
 } from '@endfield-noclip/package-format/surfaces';
+import type { TextureRef } from '@endfield-noclip/package-format/textures';
+import type { Color } from '@endfield-noclip/package-format/values';
 
 import { BlendFactor } from './material-classify.ts';
 import { linearRgb, type MaterialReader, scaleRgb, unsupported } from './material-values.ts';
@@ -210,15 +211,18 @@ const stencilOf = (reader: MaterialReader): EffectStencil | UnsupportedSurface |
 	};
 };
 
+/** a slot an effect samples: a bound one, or an unset one whose shader samples white ({@link UNSET_WHITE}) */
+type EffectSlot = Omit<TextureSlot, 'texture'> & { texture: TextureRef };
+
 /** an unset slot, where the shader's white default stands in */
-const UNSET_WHITE: TextureSlot = { texture: -1, uv: 0, scale: [1, 1], offset: [0, 0] };
+const UNSET_WHITE: EffectSlot = { texture: null, uv: 0, scale: [1, 1], offset: [0, 0] };
 
 /**
  * a slot as an effect texture, with its scroll and rotation. a `*UVSpeed` vector's zw is its shift per unit
  * of a particle's custom data
  */
 const effectTexture = (
-	slot: Pick<TextureSlot, 'texture' | 'scale' | 'offset'>,
+	slot: Pick<EffectSlot, 'texture' | 'scale' | 'offset'>,
 	scroll: readonly number[] = [0, 0],
 	rotation: [cos: number, sin: number] = [1, 0],
 ): EffectTexture => ({
@@ -275,7 +279,7 @@ const softBlendOf = ({ float, has }: MaterialReader): { distance: number; bias: 
 		: null;
 
 /** the tint of the stack shaders: the LDR `_TintColor` linearized, times its intensity, and its alpha */
-const stackTintOf = (reader: MaterialReader): { tint: Rgba; intensity: number } => {
+const stackTintOf = (reader: MaterialReader): { tint: Color; intensity: number } => {
 	const { float, colorOrVector: color } = reader;
 	const intensity = float('_TintColorIntensity', 1);
 	const tint = color('_TintColor') ?? [1, 1, 1, 1];
@@ -295,7 +299,7 @@ const sourceOf = (weights: readonly number[], computed: readonly boolean[]): Eff
 const OFFSET_TEXTURE = '_OffsetTex';
 
 /** @returns the vertex offset's texture: the bound slot, or white when unset and the shader defaults to it */
-const offsetSlotOf = (reader: MaterialReader): TextureSlot | null =>
+const offsetSlotOf = (reader: MaterialReader): EffectSlot | null =>
 	reader.slot(OFFSET_TEXTURE) ?? (reader.shader.textures[OFFSET_TEXTURE] === 'white' ? UNSET_WHITE : null);
 
 /**
@@ -597,7 +601,7 @@ export const describeVfxBase = (
 		if (i > 0 && !has(`_SAMPLE_TEX${i - 1}`)) {
 			continue;
 		}
-		let slot = reader.slot(name);
+		let slot: EffectSlot | undefined = reader.slot(name);
 		// a sample texture samples the shader's default when the material binds none; an unset slot binds white.
 		// the white talosite's shards take their mask from such a slot
 		if (slot === undefined && i > 0 && reader.shader.textures[name] === 'white') {
@@ -1340,7 +1344,7 @@ export const describeLitDecal = (
 		// the water's normal map projects at world positions; its `_ST` scale is per metre
 		const water = reader.slot('_WaterNormalTex');
 		if (water !== undefined) {
-			pbr = { texture: water.texture, ownTransform: [water.scale[0], water.scale[1], 0, 0] };
+			pbr = { texture: water.texture, ownTransform: { scale: [...water.scale], offset: [0, 0] } };
 		}
 	} else {
 		const map = pbrBase ? base : reader.slot('_SampleTex1');
@@ -1349,7 +1353,7 @@ export const describeLitDecal = (
 			const own = !pbrBase && float('_SampleTex1UVSet', 0) !== 0;
 			pbr = {
 				texture: map.texture,
-				ownTransform: own ? [map.scale[0], map.scale[1], map.offset[0], map.offset[1]] : null,
+				ownTransform: own ? { scale: [...map.scale], offset: [...map.offset] } : null,
 			};
 		}
 	}
@@ -1768,7 +1772,7 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 		}
 	};
 	/** a used slot; the shader samples every texture on UV set 0, or the default when none is bound */
-	const used = (name: string): TextureSlot | null | 'uv' => {
+	const used = (name: string): EffectSlot | null | 'uv' => {
 		const slot = reader.slot(name);
 		if (slot === undefined) {
 			return reader.shader.textures[name] === 'white' ? UNSET_WHITE : null;
@@ -1812,12 +1816,7 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 		...switchedSource('_LightMap'),
 		disturbShare: float('_LightMapUseDisturb', 0),
 	};
-	const layer = (
-		slot: TextureSlot,
-		prefix: string,
-		share: string,
-		source: SixWayUvSource,
-	): SixWayTexture => ({
+	const layer = (slot: EffectSlot, prefix: string, share: string, source: SixWayUvSource): SixWayTexture => ({
 		...effectTexture(slot, color(`${prefix}UVSpeed`) ?? [0, 0, 0, 0], turned(prefix)),
 		...source,
 		disturbShare: float(share, 0),
@@ -1825,7 +1824,7 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 	// UV set 1 replaces the dissolve's switched UVs; on particles it holds UV0's (above)
 	const dissolveSource: SixWayUvSource =
 		float('_DissolveUVSet', 0) !== 0 ? { source: 'uv0', screenDepth: false } : switchedSource('_Dissolve');
-	const disturbLayer = (slot: TextureSlot | null, n: 1 | 2): DisturbLayer | null =>
+	const disturbLayer = (slot: EffectSlot | null, n: 1 | 2): DisturbLayer | null =>
 		slot === null
 			? null
 			: {

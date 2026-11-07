@@ -87,5 +87,5 @@ test('mist: cards and boxes draw in the mist rows; boxes by their back faces, wi
 		),
 		[0, -0.3, 0.05, 1],
 	);
-	assert.deepEqual([plainLook.volumeTexture, plainLook.params[MistRow.volumeNoiseMix + 3]], [-1, 0]);
+	assert.deepEqual([plainLook.volumeTexture, plainLook.params[MistRow.volumeNoiseMix + 3]], [null, 0]);
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { MaterialCull, ReadyMaterial } from '@endfield-noclip/package-format/materials';
+import type { MaterialCull, ReadyMaterial, TextureSlot } from '@endfield-noclip/package-format/materials';
 
 import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
 import { materialLooks } from './material-looks.ts';
@@ -69,7 +69,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 		],
 	});
 	assert.deepEqual([rock.queue, rock.castsShadows, rock.cull], ['opaque', false, 'none']);
-	assert.deepEqual(rock.textures.slice(0, 3), [3, 5, -1]);
+	assert.deepEqual(rock.textures.slice(0, 3), [3, 5, null]);
 	assert.equal(rock.flags, LookFlags.BaseMap | LookFlags.NormalMap | LookFlags.NormalRag);
 	assert.deepEqual(Array.from(rock.params.subarray(LookRow.surface, LookRow.surface + 4)), [1, 1, 0, 1.5]);
 	assert.deepEqual(Array.from(rock.params.subarray(LookRow.uv, LookRow.uv + 4)), [4, 4, 0, 0]);
@@ -77,7 +77,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 	assert.notEqual(spot.flags & LookFlags.Unlit, 0);
 	assert.equal(spot.params[LookRow.tint + 3], -1);
 	assert.deepEqual(Array.from(spot.params.subarray(DitherRow.dither, DitherRow.dither + 4)), [0.75, 1, 1, 0]);
-	assert.deepEqual(mask.textures.slice(0, 2), [-1, 6]);
+	assert.deepEqual(mask.textures.slice(0, 2), [null, 6]);
 	assert.equal(mask.flags & (LookFlags.BaseMap | LookFlags.AlphaNormal), LookFlags.AlphaNormal);
 	assert.deepEqual(Array.from(mask.params.subarray(LookRow.uv + 4, LookRow.uv + 8)), [2, 2, 0, 0]);
 	assert.deepEqual(Array.from(mask.params.subarray(DitherRow.dither, DitherRow.dither + 4)), [
@@ -89,14 +89,20 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 });
 
 test('erosion rock: its maps tile by their own scales on UV set 0, the ramp streams whole', () => {
+	const tiled = (texture: number, tiling: number): TextureSlot => ({
+		texture,
+		uv: 0,
+		scale: [tiling, tiling],
+		offset: [0, 0],
+	});
 	const entry = described(0, {
 		kind: 'erosion',
 		textures: {
-			baseNormal: { texture: 1, tiling: 1 },
-			metalMix: { texture: 2, tiling: 1 },
-			flowRamp: 3,
-			detailNormal: { texture: 4, tiling: 5 },
-			noisePattern: { texture: 5, tiling: 3 },
+			baseNormal: tiled(1, 1),
+			metalMix: tiled(2, 1),
+			flowRamp: tiled(3, 1),
+			detailNormal: tiled(4, 5),
+			noisePattern: tiled(5, 3),
 		},
 		baseColor: [0.214, 0.214, 0.214],
 		roughness: 0,
@@ -123,7 +129,7 @@ test('erosion rock: its maps tile by their own scales on UV set 0, the ramp stre
 		},
 	});
 	const [look] = materialLooks({ entries: [entry] });
-	assert.deepEqual(look.textures, [-1, 1, 2, 3, 4, 5, 5]);
+	assert.deepEqual(look.textures, [null, 1, 2, 3, 4, 5, 5]);
 	assert.equal(look.flags & (0x7f << UV1_SHIFT), 0);
 	assert.notEqual(look.flags & LookFlags.Erosion, 0);
 	assert.equal(look.uvScales[3], 0);

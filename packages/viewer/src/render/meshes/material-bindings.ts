@@ -117,15 +117,15 @@ export class MaterialBindings {
 		let complete = true;
 		for (let i = 0; i < SLOTS.length; i++) {
 			const texture = look.textures[i];
-			const binding = texture < 0 ? null : textures.binding(texture);
+			const binding = texture === null ? null : textures.binding(texture);
 			slots.push(binding);
 			if (binding === null) {
 				flags &= ~SLOT_FLAGS[i];
-				complete &&= texture < 0;
+				complete &&= texture === null;
 			}
 		}
-		const volume = look.volumeTexture < 0 ? null : textures.binding(look.volumeTexture);
-		complete &&= look.volumeTexture < 0 || volume !== null;
+		const volume = look.volumeTexture === null ? null : textures.binding(look.volumeTexture);
+		complete &&= look.volumeTexture === null || volume !== null;
 		const state: MaterialState = {
 			material,
 			version: textures.version,

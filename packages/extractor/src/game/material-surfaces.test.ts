@@ -158,12 +158,19 @@ describe('erosion', () => {
 		if (surface.kind !== 'erosion') {
 			return;
 		}
+		// UV set 0, tiled by their own properties in place of their `_ST`
+		const tiled = (texture: number, tiling: number) => ({
+			texture,
+			uv: 0,
+			scale: [tiling, tiling],
+			offset: [0, 0],
+		});
 		assert.deepEqual(surface.textures, {
-			baseNormal: { texture: 1, tiling: 1 },
-			metalMix: { texture: 2, tiling: 1 },
-			flowRamp: 3,
-			detailNormal: { texture: 4, tiling: 5 },
-			noisePattern: { texture: 5, tiling: 3 },
+			baseNormal: tiled(1, 1),
+			metalMix: tiled(2, 1),
+			flowRamp: tiled(3, 1),
+			detailNormal: tiled(4, 5),
+			noisePattern: tiled(5, 3),
 		});
 		assert.ok(Math.abs(surface.baseColor[0] - 0.214) < 1e-3);
 		assert.deepEqual(surface.flow.bottom, [4, 4, 4]);
@@ -425,10 +432,9 @@ describe('the Lit model', () => {
 		);
 		assert.deepEqual(surface.overlay, {
 			kind: 'parallax',
-			pattern: slot(6),
-			patternTiling: 2,
-			noise: 7,
-			noiseTiling: 3,
+			// tiled by their own properties, the noise on the pattern's UV set
+			pattern: slot(6, 0, 2),
+			noise: slot(7, 0, 3),
 			depth: 0.314,
 			// the step count truncates
 			steps: 3,
@@ -502,10 +508,8 @@ describe('the Lit model', () => {
 		);
 		const layer = surface.overlay;
 		assert.ok(layer?.kind === 'layer');
-		assert.deepEqual(
-			[layer.base, layer.bump, layer.tiling, layer.offset, layer.uvType],
-			[2, 3, 2, [0.25, 0.5], 2],
-		);
+		const layered = (texture: number) => ({ texture, uv: 0, scale: [2, 2], offset: [0.25, 0.5] });
+		assert.deepEqual([layer.base, layer.bump, layer.uvType], [layered(2), layered(3), 2]);
 		assert.deepEqual(layer.coverage, { kind: 'top' });
 		assert.deepEqual(layer.top, { bumped: 0, threshold: -1, smoothness: 0.5 });
 		assert.equal(layer.heightTransition, 0.056);
@@ -550,7 +554,7 @@ describe('the Lit model', () => {
 			{ _Layer1FuzzyCoreDarkness: 0.2, _Layer1FuzzyEdgeShadowRange: 0.01, _Layer1FuzzyDarkPower: 0.05 },
 		).overlay;
 		assert.ok(moss?.kind === 'layer');
-		assert.deepEqual(moss.coverage, { kind: 'maskMap', texture: 4, uv: 1 });
+		assert.deepEqual(moss.coverage, { kind: 'maskMap', map: slot(4, 1) });
 		// the dark power is floored at 0.1
 		assert.deepEqual(moss.moss, {
 			coreDarkness: 0.2,

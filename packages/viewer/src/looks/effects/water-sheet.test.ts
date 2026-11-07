@@ -77,7 +77,7 @@ test('a water sheet lays out its frames, motion vectors and normals, and keeps i
 	const [look] = materialLooks({ entries: [described(0, sheet)] });
 	assert.equal(look.flags, LookFlags.Effect);
 	// main (white default), mask, flipbook colour and motion, normals in slot 6
-	assert.deepEqual(look.textures, [-1, -1, 2, -1, 5, 6, 7]);
+	assert.deepEqual(look.textures, [null, null, 2, null, 5, 6, 7]);
 	assert.deepEqual([...look.params.subarray(EffectRow.tint, EffectRow.tint + 4)], [0.5, 0.25, 2, 2]);
 	assert.equal(
 		look.params[WaterSheetRow.flags],

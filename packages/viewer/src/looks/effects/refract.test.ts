@@ -54,7 +54,7 @@ test('a refraction draws over the composited scene, its mask red as alpha, with 
 	};
 	const [look] = materialLooks({ entries: [described(0, refract, 'none')] });
 	assert.equal(look.queue, 'refract');
-	assert.deepEqual(look.textures, [2, 1, 3, -1, -1, -1, -1]);
+	assert.deepEqual(look.textures, [2, 1, 3, null, null, null, null]);
 	assert.equal(look.params[EffectRow.slotBits + 2], SlotSource.Uv0 * 32);
 	assert.deepEqual(
 		[...look.params.subarray(RefractRow.dissolve, RefractRow.dissolve + 4)].map(
@@ -104,7 +104,7 @@ test('a refraction packs its blend layer in slot 3 and its spread in slot 4, off
 		near: { on: true, range: [0, 1, 1e5, 2e5] },
 	};
 	const [look] = materialLooks({ entries: [described(0, refract, 'none')] });
-	assert.deepEqual(look.textures, [2, -1, -1, 5, 6, -1, -1]);
+	assert.deepEqual(look.textures, [2, null, null, 5, 6, null, null]);
 	assert.deepEqual(
 		[...look.params.subarray(EffectRow.slotBits + 3, EffectRow.slotBits + 5)],
 		[SlotSource.Uv0 * 32, SlotSource.Uv0 * 32],

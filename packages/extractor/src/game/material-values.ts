@@ -5,7 +5,8 @@
  */
 
 import type { MaterialCull, TextureSlot } from '@endfield-noclip/package-format/materials';
-import type { Rgb, UnsupportedSurface } from '@endfield-noclip/package-format/surfaces';
+import type { UnsupportedSurface } from '@endfield-noclip/package-format/surfaces';
+import type { Rgb } from '@endfield-noclip/package-format/values';
 
 /** @returns an unsupported surface for `reason` */
 export const unsupported = (reason: string): UnsupportedSurface => ({ kind: 'unsupported', reason });

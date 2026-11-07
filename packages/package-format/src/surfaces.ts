@@ -3,10 +3,17 @@
  * shading model, with the game's property names, keyword rules and unit conversions already applied. the
  * viewer turns a description into its draw parameters without reading Unity properties.
  *
+ * a texture is a {@link TextureSlot} with its UV set and `_ST`, an {@link EffectTexture} with its animation,
+ * or a texture-table id where nothing else of the slot is read. a `number` id is always a bound texture; a
+ * {@link TextureRef} can also be `null` for a slot the material leaves unset, which the shader samples as
+ * white. a texture the surface doesn't sample at all is a `null` field of its own
+ *
  * @module
  */
 
 import type { TextureSlot } from './materials.ts';
+import type { TextureRef } from './textures.ts';
+import type { Color, Rgb, Vec2 } from './values.ts';
 
 /**
  * a material's surface: a model the viewer draws, `undrawn` for materials the game draws nothing visible
@@ -29,19 +36,6 @@ export type MaterialSurface =
 	| LitDecalSurface
 	| RefractSurface
 	| WaterFoamSurface;
-
-/** an RGBA colour */
-export type Rgba = [r: number, g: number, b: number, a: number];
-
-/** a texture sampled on UV set 0, tiled by a scale of its own in place of its `_ST` */
-export interface TiledTexture {
-	/** index into the texture table */
-	texture: number;
-	tiling: number;
-}
-
-/** a linear RGB colour */
-export type Rgb = [r: number, g: number, b: number];
 
 /** a material the game draws nothing visible with */
 export interface UndrawnSurface {
@@ -202,18 +196,19 @@ export interface LitDetail {
 	overlayCover: number;
 }
 
-/** `_PARALLAX_MAP`'s glow; both maps ignore their `_ST` and tile by their own scale */
+/**
+ * `_PARALLAX_MAP`'s glow. both maps ignore their `_ST`: each slot's scale is its own tiling property, its
+ * offset 0
+ */
 export interface ParallaxGlow {
 	kind: 'parallax';
 	/** the pattern, on its own UV set; its G picks between the colours */
 	pattern: TextureSlot;
-	patternTiling: number;
 	/**
 	 * the height field marched through, on the pattern's UV set; `null` when the slot is empty, which the
 	 * shader reads as black: height 0 everywhere, so the march ends at its full depth
 	 */
-	noise: number | null;
-	noiseTiling: number;
+	noise: TextureSlot | null;
 	depth: number;
 	/** march steps, 1–20 */
 	steps: number;
@@ -235,8 +230,8 @@ export interface ParallaxGlow {
 /** what decides how much a Lit layer covers */
 export type LayerCoverage =
 	| { kind: 'top' }
-	/** `_LayerBlendMaskMap`'s R, untiled, on UV set 0 or 1 */
-	| { kind: 'maskMap'; texture: number; uv: number }
+	/** `_LayerBlendMaskMap`'s R, untiled (scale 1, offset 0), on UV set 0 or 1 */
+	| { kind: 'maskMap'; map: TextureSlot }
 	| { kind: 'layerBumpAlpha' }
 	| { kind: 'baseAlpha' }
 	| { kind: 'normalAlpha' }
@@ -245,11 +240,12 @@ export type LayerCoverage =
 /** `_LAYERBLEND_TOP` and `_LAYERBLEND_MASK`, with `_LAYERBLEND_MOSS` */
 export interface LitLayer {
 	kind: 'layer';
-	/** both sampled at one coordinate, tiled and offset by the layer's own values */
-	base: number;
-	bump: number;
-	tiling: number;
-	offset: [u: number, v: number];
+	/**
+	 * both sampled at one coordinate ({@link LitLayer.uvType}), so their UV sets are 0, and tiled and offset by
+	 * the layer's own values (`_Layer1Tilling`, `_Layer1Offset`) in place of their `_ST`
+	 */
+	base: TextureSlot;
+	bump: TextureSlot;
 	/** 0 UV set 0, 1 world XZ, 2 UV set 2 */
 	uvType: number;
 	coverage: LayerCoverage;
@@ -387,15 +383,16 @@ export interface DitheredSurface {
  */
 export interface ErosionSurface {
 	kind: 'erosion';
+	/** every map samples UV set 0, tiled by its own property (scale) rather than its `_ST`, offset 0 */
 	textures: {
-		baseNormal: TiledTexture | null;
+		baseNormal: TextureSlot | null;
 		/** R metal (0) or not, G occlusion, B the flow band's mask */
-		metalMix: TiledTexture | null;
-		/** sampled at a coordinate of its own, not by UV */
-		flowRamp: number | null;
-		detailNormal: TiledTexture | null;
-		/** the noise layer: the parallax march samples it untiled, the colour lookup tiled */
-		noisePattern: TiledTexture | null;
+		metalMix: TextureSlot | null;
+		/** sampled at a coordinate of its own, not by UV: its slot's scale is 1 */
+		flowRamp: TextureSlot | null;
+		detailNormal: TextureSlot | null;
+		/** the noise layer: the colour lookup samples it tiled, the parallax march untiled */
+		noisePattern: TextureSlot | null;
 	};
 	baseColor: Rgb;
 	roughness: number;
@@ -455,7 +452,7 @@ export interface MistCardSurface {
 	main: TextureSlot;
 	noise: TextureSlot;
 	/** HDR, as stored, with its alpha */
-	color: Rgba;
+	color: Color;
 	baseAlphaIntensity: number;
 	noiseIntensity: number;
 	/** 1 when the wind moves the noise */
@@ -486,7 +483,7 @@ export interface MistCardSurface {
 export interface MistVolumeSurface {
 	kind: 'mistVolume';
 	/** linear, with the alpha times `_TintColorAlpha` */
-	color: Rgba;
+	color: Color;
 	exponent: number;
 	density: number;
 	edgeFade: number;
@@ -518,13 +515,13 @@ export interface MistVolumeSurface {
 export interface LightBeamSurface {
 	kind: 'lightBeam';
 	/** linear, with its alpha */
-	color: Rgba;
+	color: Color;
 	/** `_ConeParams0`: start and end radius, the side's normal (cosine and sine of the half angle) */
-	cone: Rgba;
-	/** `_ConeParams1`: the direction xyz, 1 when the start cap is drawn */
-	direction: Rgba;
-	/** `_DistanceFallOff`: attenuation start and end, length, fade-in length */
-	falloff: Rgba;
+	cone: [startRadius: number, endRadius: number, cos: number, sin: number];
+	/** `_ConeParams1`: the direction, then 1 when the start cap is drawn */
+	direction: [x: number, y: number, z: number, startCap: number];
+	/** `_DistanceFallOff` */
+	falloff: [attenuationStart: number, attenuationEnd: number, length: number, fadeInLength: number];
 	alphaInside: number;
 	alphaOutside: number;
 	attenuationLerp: number;
@@ -543,8 +540,7 @@ export interface LightBeamSurface {
 	depthBlend: number;
 	depthBlendCapOff: number;
 	useClippingPlane: number;
-	/** world-space normal, offset */
-	clippingPlane: Rgba;
+	clippingPlane: [normalX: number, normalY: number, normalZ: number, offset: number];
 	tilt: [x: number, y: number];
 	clippingPlaneTransition: number;
 	/** drawn without fog (no `VLB_USE_FOG`) */
@@ -557,8 +553,8 @@ export interface LightBeamSurface {
 
 /** a texture an effect samples, with its UV transform and animation */
 export interface EffectTexture {
-	/** index into the texture table, or -1 for an unset slot whose shader defaults to white */
-	texture: number;
+	/** `null` for a slot the material leaves unset, which the shader samples as white */
+	texture: TextureRef;
 	/** `uv' = uv · scale + offset` */
 	scale: [u: number, v: number];
 	offset: [u: number, v: number];
@@ -699,9 +695,9 @@ export interface EffectStackSurface {
 	/** seven slots; the last is the vertex offset's when there is one */
 	layers: (StackLayer | null)[];
 	/** linear rgb times its intensity, alpha */
-	tint: Rgba;
+	tint: Color;
 	/** the blend layer's tint (HDR) and how strongly it covers */
-	blendTint: Rgba;
+	blendTint: Color;
 	/** distortion per unit of the first and second disturb texture: u1, v1, u2, v2 */
 	disturb: [number, number, number, number];
 	/** `_Bi_Disturb` */
@@ -735,7 +731,7 @@ export interface EffectStackSurface {
 	 * (HDR, as stored) and `alpha` (`_TintColorAlpha`) by it; 0 multiplies the colour by it and the alpha by
 	 * the edge; between, a blend of the two
 	 */
-	edge: { color: Rgba; alpha: number; mode: number; distance: number; offset: number } | null;
+	edge: { color: Color; alpha: number; mode: number; distance: number; offset: number } | null;
 	/** VFXDecal's fades: across x and z, their width, the height fade and its offset, the angle falloff */
 	decalFade: {
 		edge: [x: number, z: number];
@@ -785,7 +781,7 @@ export interface StencilMaskSurface {
 export interface WaterSheetSurface {
 	kind: 'waterSheet';
 	/** HDR, as stored, times its intensity, with the alpha */
-	tint: Rgba;
+	tint: Color;
 	textures: {
 		main: EffectTexture | null;
 		disturb: EffectTexture | null;
@@ -861,7 +857,7 @@ export interface SixWaySmokeSurface {
 	/** rgb: light from +x (the texture's right), +y (its up), +z (away from the camera); a: opacity */
 	positive: SixWayTexture;
 	/** rgb: light from −x, −y, −z; sampled at the positive map's UVs */
-	negative: number;
+	negative: TextureRef;
 	/** the distortion's textures, both read from red: u, v per unit, or a normal in (a·r, g) when `normal` */
 	disturb: [first: DisturbLayer | null, second: DisturbLayer | null];
 	/** where both distortion textures' UVs start (`_DisturbSwitchUV`) */
@@ -875,10 +871,10 @@ export interface SixWaySmokeSurface {
 	/** its scale and offset are `_BlendTex_ST`, which the game applies again after the distortion */
 	blend: SixWayTexture | null;
 	/** the blend layer's tint (HDR, times the vertex colour) and how strongly it covers */
-	blendTint: Rgba;
+	blendTint: Color;
 	dissolve: { texture: SixWayTexture; dissolve: EffectDissolve } | null;
 	/** linear rgb times its intensity, alpha: with the mask, blend and dissolve, the colour the smoke absorbs */
-	tint: Rgba;
+	tint: Color;
 	vertexColor: boolean;
 	brighten: { threshold: number; intensity: number };
 	/** the most light a lightmap passes after absorption, as the game derives it from `_AbsorptionRange` */
@@ -911,9 +907,9 @@ export interface LitDecalSurface {
 	/**
 	 * the PBR map (normal RG, roughness B): through the placement's UV transform, or its own `_ST` of the box's
 	 * UVs (`ownTransform`); or with `_BLEND_WATER_FLOW` the water normal map at world positions, its scale per
-	 * metre
+	 * metre (`ownTransform`, offset 0)
 	 */
-	pbr: { texture: number; ownTransform: [number, number, number, number] | null } | null;
+	pbr: { texture: number; ownTransform: { scale: Vec2; offset: Vec2 } | null } | null;
 	/** it writes no albedo: drawn by adding its change to the surface's light */
 	relight: boolean;
 	roughness: [min: number, max: number];
@@ -937,8 +933,8 @@ export interface LitDecalSurface {
 		normalScale: number;
 		roughness: number;
 		normalFactor: number;
-		/** the two layers' scroll speeds, then their UV scales */
-		movement: Rgba;
+		/** `_UVMovement` */
+		movement: [firstSpeed: number, secondSpeed: number, firstScale: number, secondScale: number];
 		levelFade: number;
 	} | null;
 	/** `_BLEND_EMISSIVE` */
@@ -991,7 +987,7 @@ export interface RefractSurface {
 		polar: boolean;
 		redAlpha: boolean;
 		/** `_BlendColor`, HDR */
-		color: Rgba;
+		color: Color;
 		/** `_BlendTexUseRefract`: the share of the refraction offset its UVs take */
 		usesRefraction: number;
 	} | null;
@@ -1039,9 +1035,9 @@ export interface WaterFoamSurface {
 		dissolve: WaterFoamSource;
 	};
 	/** the mask's UV matrix about the texture's centre, by columns (`_MaskTexUVRotateMatrix`) */
-	maskMatrix: Rgba;
+	maskMatrix: [m00: number, m10: number, m01: number, m11: number];
 	/** the box's UV scale and offset (`_UVScaleOffset`) */
-	boxUv: Rgba;
+	boxUv: [scaleU: number, scaleV: number, offsetU: number, offsetV: number];
 	/** added to the tinted base colour, as stored */
 	baseColor: Rgb;
 	/** `[HDR]`, as stored */

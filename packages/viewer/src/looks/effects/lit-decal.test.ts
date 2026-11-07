@@ -47,7 +47,7 @@ test('a lit decal draws its maps through the placement or the PBR map’s own tr
 			described(1, {
 				...decal,
 				relight: true,
-				pbr: { texture: 3, ownTransform: [0.1, 0.2, 0, 0] },
+				pbr: { texture: 3, ownTransform: { scale: [0.1, 0.2], offset: [0, 0] } },
 				waterFlow: {
 					normalScale: 0.4,
 					roughness: 0.13,

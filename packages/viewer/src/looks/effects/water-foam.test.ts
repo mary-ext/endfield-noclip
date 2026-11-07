@@ -58,7 +58,7 @@ test('a water foam box draws into the water’s foam, by the depth test its mate
 	});
 	assert.deepEqual([front.queue, behind.queue], ['waterFoam', 'waterFoamBehind']);
 	assert.deepEqual([front.cull, behind.cull], ['back', 'front']);
-	assert.deepEqual(front.textures, [1, 2, 3, -1, -1, -1, -1]);
+	assert.deepEqual(front.textures, [1, 2, 3, null, null, null, null]);
 	assert.equal(front.params[EffectRow.unfogged + 1], EffectKind.WaterFoam);
 	assert.equal(front.params[WaterFoamRow.base + 3], 0.5);
 	assert.equal(

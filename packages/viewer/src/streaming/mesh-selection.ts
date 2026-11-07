@@ -373,8 +373,8 @@ export class MeshSelector {
 			}
 			if (bucket.castOnly) {
 				// a shadow needs only the texture holding the alpha it's cut out by
-				const alpha = look.queue === 'cutout' ? alphaTextureOf(look) : -1;
-				if (alpha >= 0) {
+				const alpha = look.queue === 'cutout' ? alphaTextureOf(look) : null;
+				if (alpha !== null) {
 					this.#textures.forPixels(
 						alpha,
 						bucket.pixels * texturePixels,
@@ -384,11 +384,12 @@ export class MeshSelector {
 				continue;
 			}
 			for (let i = 0; i < look.textures.length; i++) {
-				if (look.textures[i] >= 0) {
-					this.#textures.forPixels(look.textures[i], bucket.pixels * texturePixels, look.uvScales[i]);
+				const texture = look.textures[i];
+				if (texture !== null) {
+					this.#textures.forPixels(texture, bucket.pixels * texturePixels, look.uvScales[i]);
 				}
 			}
-			if (look.volumeTexture >= 0) {
+			if (look.volumeTexture !== null) {
 				this.#textures.whole(look.volumeTexture, '3d', bucket.pixels);
 			}
 		}
