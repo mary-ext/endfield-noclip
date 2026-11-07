@@ -108,7 +108,7 @@ export class RestingEffects {
 		}
 		const sources = this.#sources;
 		const prefabs = this.#prefabs;
-		prefabs.find(new Set(pending.map(({ effect }) => effectPrefab(effect))));
+		await prefabs.find(new Set(pending.map(({ effect }) => effectPrefab(effect))));
 		const resolver = await sources.context.resolver();
 		/** by effect prefab, whether it keeps playing at rest; `null` when it's missing or unreadable */
 		const looping = new Map<string, Promise<boolean | null>>();

@@ -122,7 +122,7 @@ export const loadInteractiveFacilities = async (
 	const templates = await resolveTemplateModels(sources, interactives, placed);
 	const { authored, modelless } = templates;
 	const prefabs = await PrefabHashes.open(context);
-	prefabs.find(authored.values().flatMap((template) => template.forms.map((form) => form.prefab)));
+	await prefabs.find(authored.values().flatMap((template) => template.forms.map((form) => form.prefab)));
 	const doodads = new DoodadGroups(sources, prefabs);
 	await doodads.read(authored);
 

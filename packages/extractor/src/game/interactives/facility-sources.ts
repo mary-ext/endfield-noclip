@@ -174,20 +174,29 @@ export class PrefabHashes {
 	}
 
 	/**
-	 * looks up the hashes of prefabs not found yet. the manifest maps hashes to paths only, and each path
-	 * decompresses on read, so it's walked once per call and the walk stops once all are found
+	 * looks up the hashes of prefabs not found yet
 	 *
 	 * @param paths bundle paths
 	 */
-	find(paths: Iterable<string>): void {
-		const missing = new Set([...paths].filter((path) => !this.#hashes.has(path)));
-		for (const asset of this.#manifest.assets()) {
-			if (missing.size === 0) {
-				break;
-			}
-			const path = this.#manifest.assetPath(asset);
-			if (missing.delete(path)) {
-				this.#hashes.set(path, asset.pathHash);
+	async find(paths: Iterable<string>): Promise<void> {
+		const manifest = this.#manifest;
+		const missing = [...new Set(paths)].filter((path) => !this.#hashes.has(path));
+		// the path table matches case-insensitively, so each candidate is confirmed against the manifest's
+		// own path, which is exact
+		const found = await Promise.all(
+			missing.map(async (path) => {
+				for (const hash of await this.#context.world.hashesOf(path)) {
+					if (manifest.findAssets(hash).some((asset) => manifest.assetPath(asset) === path)) {
+						return hash;
+					}
+				}
+				return undefined;
+			}),
+		);
+		for (const [i, path] of missing.entries()) {
+			const hash = found[i];
+			if (hash !== undefined) {
+				this.#hashes.set(path, hash);
 			}
 		}
 	}
