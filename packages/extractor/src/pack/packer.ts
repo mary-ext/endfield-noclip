@@ -44,7 +44,6 @@ import {
 import type { LightsTable } from '@endfield-noclip/package-format/lights';
 import {
 	type ArchiveInfo,
-	COORDINATE_CONVENTIONS,
 	CORE_ARCHIVE,
 	CORE_PATHS,
 	type LevelEnvironment,
@@ -53,6 +52,7 @@ import {
 	PACKAGE_VERSION,
 	type PackageManifest,
 	shardStem,
+	type StreamedArchive,
 	type SubsetInfo,
 } from '@endfield-noclip/package-format/manifest';
 import type { MaterialTable } from '@endfield-noclip/package-format/materials';
@@ -2297,29 +2297,26 @@ const writePackage = async (
 		generation.update(part);
 	}
 	const archives = archiveNames.map((name): ArchiveInfo => {
-		const archive = written.get(name);
-		const { role, tile } = archivePlacement(pack, stems.get(name)!);
-		return {
-			name,
-			role,
-			tile,
-			size: archive?.size ?? null,
-			dataOffset: archive?.dataOffset ?? null,
-		};
+		if (name === CORE_ARCHIVE) {
+			return { role: 'core', name };
+		}
+		const { size, dataOffset } = written.get(name)!;
+		return archiveInfo(pack, stems.get(name)!, { name, size, dataOffset });
 	});
 	const manifest: PackageManifest = {
 		format: PACKAGE_FORMAT,
 		version: PACKAGE_VERSION,
 		generation: generation.digest('hex').slice(0, 32),
+		source: scene.source,
 		scene: { id: options.scene, name: scene.names.get(options.scene) ?? null },
-		coordinates: COORDINATE_CONVENTIONS,
+		subset: scene.subset.info,
+		archives,
 		tree: grid,
 		terrain:
 			scene.terrain === null
 				? null
 				: { ...scene.terrain, levels: states.terrainLevels, splat: states.terrainSplat },
 		levels: states.levels,
-		irradianceRegions: states.irradianceRegions,
 		states: {
 			categories: states.categories,
 			controls: states.controls,
@@ -2329,9 +2326,7 @@ const writePackage = async (
 			missions: states.missions,
 			mainStory: states.mainStory,
 		},
-		archives,
-		subset: scene.subset.info,
-		source: scene.source,
+		irradianceRegions: states.irradianceRegions,
 	};
 	const core = await store.writeCore(dir, [
 		{ path: CORE_PATHS.manifest, data: await zstdTable(json(manifest)) },
@@ -2524,19 +2519,21 @@ const archiveForTile = (pack: PackState, key: TileKey): string => {
 	return stem;
 };
 
-/** @returns the role and tile of an archive group, as recorded when its stem was handed out */
-const archivePlacement = (pack: PackState, stem: string): Pick<ArchiveInfo, 'role' | 'tile'> => {
-	if (stem === CORE_ARCHIVE) {
-		return { role: 'core', tile: null };
-	}
+/**
+ * @param pack the pack's state
+ * @param stem a written archive's group, other than the core's
+ * @param archive the written archive
+ * @returns its manifest entry, its role and tile as recorded when its stem was handed out
+ */
+const archiveInfo = (pack: PackState, stem: string, archive: StreamedArchive): ArchiveInfo => {
 	if (stem.startsWith('irradiance/')) {
-		return { role: 'irradiance', tile: null };
+		return { role: 'irradiance', ...archive };
 	}
 	const shard = pack.shardTiles.get(stem);
 	if (shard !== undefined) {
-		return { role: 'shards', tile: shard };
+		return { role: 'shards', ...archive, tile: shard };
 	}
-	return { role: 'assets', tile: pack.assetArchives.tileOf(stem) ?? null };
+	return { role: 'assets', ...archive, tile: pack.assetArchives.tileOf(stem) ?? null };
 };
 
 const placement = (kind: BlobKind, stem: string, locality: string | null): PutOptions => ({
@@ -2765,7 +2762,6 @@ const levelInfo = (
 	const { config } = level;
 	return {
 		id: level.id,
-		idNum: level.idNum,
 		tag: level.tag,
 		name: scene.names.get(level.id) ?? null,
 		rect: {

@@ -121,13 +121,13 @@ package.
 
 ## coordinates
 
-everything is in the game's Unity frame: left-handed, +Y up, +Z north, metres
-(`COORDINATE_CONVENTIONS`). a right-handed scene can convert with `viewerRoot: scale(1, 1, -1)` and
-reversed front-face winding. this viewer keeps Unity coordinates and constructs its view-projection
-accordingly ([camera.ts](../packages/viewer/src/scene/camera.ts)). matrices are `rows3x4`: the top
-three rows of object-to-world, row-major, matching a WGSL `array<vec4f, 3>`. instance translations
-and bounds centres are relative to their block's origin, which keeps f32 precise anywhere in the
-world.
+everything is in the game's Unity frame: left-handed, +Y up, +Z north, metres. every package uses
+it, so the manifest doesn't record it. a right-handed scene can convert with `scale(1, 1, -1)` at
+its root and reversed front-face winding. this viewer keeps Unity coordinates and constructs its
+view-projection accordingly ([camera.ts](../packages/viewer/src/scene/camera.ts)). matrices are
+`rows3x4`: the top three rows of object-to-world, row-major, matching a WGSL `array<vec4f, 3>`.
+instance translations and bounds centres are relative to their block's origin, which keeps f32
+precise anywhere in the world.
 
 ## tile tree
 
@@ -204,16 +204,15 @@ package (its scene, tree, levels, controls and archives); placed content lives i
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `format`, `version` | `'endfield-noclip.package'`, `PACKAGE_VERSION` (see [versioning](#versioning))                                                                                                               |
 | `generation`        | see [containers and blobs](#containers-and-blobs)                                                                                                                                            |
+| `source`            | the bundle manifest's build guid and content hash: identifies the game build                                                                                                                 |
 | `scene`             | streaming scene id and display name                                                                                                                                                          |
-| `coordinates`       | `COORDINATE_CONVENTIONS`                                                                                                                                                                     |
+| `subset`            | what `--level` / `--bounds` kept, or `null`                                                                                                                                                  |
+| `archives`          | `ArchiveInfo`, by `role`: the core (name only), or a streamed archive's name, size and `dataOffset`, with its tile for shards and assets                                                     |
 | `tree`              | `TreeInfo`                                                                                                                                                                                   |
 | `terrain`           | `baseHeight`, `heightScale`, levels with pages, close-up `splat`; `null` without terrain. the square is the tree's root, and the page layout is fixed ([height page](#height-page-hgt-efht)) |
 | `levels`            | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment                    |
-| `irradianceRegions` | rooms' own irradiance bakes; see [irradiance cells](#irradiance-cells)                                                                                                                       |
 | `states`            | scene controls, conditional sets, visibility groups, stream areas and missions; see [conditions](#conditions)                                                                                |
-| `archives`          | `ArchiveInfo`: name, role, tile, size, `dataOffset`                                                                                                                                          |
-| `subset`            | what `--level` / `--bounds` kept, or `null`                                                                                                                                                  |
-| `source`            | the bundle manifest's build guid and content hash: identifies the game build                                                                                                                 |
+| `irradianceRegions` | rooms' own irradiance bakes; see [irradiance cells](#irradiance-cells)                                                                                                                       |
 
 a package's levels are its scene's own map's, which don't overlap, so a viewer can show them all at
 once; a group's level tag says who owns its content (0 for shared content). a level's rect and

@@ -168,8 +168,8 @@ export const openViewerPackage = async (
 		blobRange(index) {
 			const blob = blobs[index];
 			const info = manifest.archives[blob.archive];
-			if (info.dataOffset === null || info.size === null) {
-				throw new PackageError(`archive ${info.name} has no data offset or size`);
+			if (info.role === 'core') {
+				throw new PackageError(`blob ${index} is in ${CORE_ARCHIVE}, which is read whole`);
 			}
 			return {
 				archive: blob.archive,

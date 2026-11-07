@@ -25,7 +25,7 @@ export const PACKAGE_FORMAT = 'endfield-noclip.package';
  * bumped on any incompatible change to the manifest or a table. binary encodings carry their own versions in
  * their headers
  */
-export const PACKAGE_VERSION = 76;
+export const PACKAGE_VERSION = 77;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -52,7 +52,14 @@ export const CORE_PATHS = {
 	irradiance: 'tables/irradiance.bin',
 } as const;
 
-/** `manifest.json.zst` in the core archive */
+/**
+ * `manifest.json.zst` in the core archive: what the package is and how it's laid out. placed content lives in
+ * the tree and the tables.
+ *
+ * every package is in the game's Unity frame: left-handed, +X east, +Y up, +Z north (forward on the game
+ * map), metres. a right-handed renderer applies `scale(1, 1, -1)` at its root and swaps its front-face
+ * winding. matrices are `rows3x4` (see {@link InstanceBlock.transforms})
+ */
 export interface PackageManifest {
 	format: typeof PACKAGE_FORMAT;
 	version: number;
@@ -61,26 +68,23 @@ export interface PackageManifest {
 	 * and blob placement, so a reader can key caches of decoded tables by it
 	 */
 	generation: string;
+	/** identifies the game build the package came from; per-asset provenance lives in the debug index */
+	source: SourceFingerprint;
 	scene: SceneInfo;
-	coordinates: CoordinateConventions;
+	/** the slice of the scene that was packed, or `null` for all of it */
+	subset: SubsetInfo | null;
+	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
+	archives: ArchiveInfo[];
 	tree: TreeInfo;
 	terrain: TerrainInfo | null;
 	/**
-	 * every level of the scene, whether or not the package's subset includes its content. a viewer shows one
-	 * level at a time: the content whose group carries its tag (each level's content includes its own
-	 * backdrop), plus groups with tag 0 (shared content, on maps with several levels), over the shared terrain.
-	 * empty for scenes without levels, whose content is all shown
+	 * every level of the scene, whether or not the package's subset includes its content; they don't overlap,
+	 * so a viewer shows them all at once. empty for scenes without levels
 	 */
 	levels: LevelInfo[];
+	states: StatesInfo;
 	/** rooms' own irradiance bakes, each applying while its group shows */
 	irradianceRegions: IrradianceRegionInfo[];
-	states: StatesInfo;
-	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
-	archives: ArchiveInfo[];
-	/** the slice of the scene that was packed, or `null` for all of it */
-	subset: SubsetInfo | null;
-	/** identifies the game build the package came from; per-asset provenance lives in the debug index */
-	source: SourceFingerprint;
 }
 
 /** the streaming scene */
@@ -91,39 +95,11 @@ export interface SceneInfo {
 	name: string | null;
 }
 
-/**
- * coordinate and matrix conventions shared by all package data. renderers may keep Unity coordinates or apply
- * {@link viewerRoot} when converting to a right-handed scene
- */
-export interface CoordinateConventions {
-	frame: 'unity';
-	/** Unity is left-handed: +X right, +Y up, +Z forward (north on the game map) */
-	handedness: 'left';
-	units: 'm';
-	/**
-	 * the transform a right-handed viewer applies at its root. it mirrors geometry, so the viewer also swaps
-	 * its front-face winding
-	 */
-	viewerRoot: 'scale(1, 1, -1)';
-	/** see {@link InstanceBlock.transforms} */
-	matrices: 'rows3x4';
-}
-
-/** the conventions every package uses */
-export const COORDINATE_CONVENTIONS: CoordinateConventions = {
-	frame: 'unity',
-	handedness: 'left',
-	units: 'm',
-	viewerRoot: 'scale(1, 1, -1)',
-	matrices: 'rows3x4',
-};
-
 /** a level (named area) of the scene */
 export interface LevelInfo {
 	/** LevelConfig id, e.g. `map02_lv001` */
 	id: string;
-	idNum: number;
-	/** entity-id tag (`id >>> 27`) of the content the level owns; also on every instance's entity id */
+	/** the id `VisibilityGroup.levelTag` and `SceneControl.levelTags` name the level by */
 	tag: number;
 	name: string | null;
 	/** LevelConfig rect */
@@ -153,35 +129,52 @@ export interface LevelEnvironment {
 	post: number | null;
 }
 
-/** one archive of the package */
-export interface ArchiveInfo {
-	/**
-	 * path relative to the package root: `core.czar`, or a content-named archive (see {@link archiveName}) such
-	 * as `shards/3_2_5-<id>.czar`, `assets/2_1_2-<id>.czar` or `assets/common.1-<id>.czar`. a group over the
-	 * size cap is split by blob hash into a power-of-two number of parts, so adding a blob changes one part
-	 */
+/**
+ * one archive of the package. every archive but the core is content-named (see {@link archiveName}): a group
+ * over the size cap is split into a power-of-two number of parts, so adding a blob changes one part
+ */
+export type ArchiveInfo =
+	| {
+			role: 'core';
+			/**
+			 * {@link CORE_ARCHIVE}. its size and header depend on this manifest and the tables holding the offsets,
+			 * so a reader reads it whole and takes its blobs from the position of its first member
+			 */
+			name: typeof CORE_ARCHIVE;
+	  }
+	| (StreamedArchive & {
+			/** `shards/<l>_<x>_<z>-<id>.czar` */
+			role: 'shards';
+			/** the {@link TreeInfo.shardLevel} tile whose subtree content it holds */
+			tile: TileKey;
+	  })
+	| (StreamedArchive & {
+			/**
+			 * `assets/<l>_<x>_<z>[.<part>]-<id>.czar`, `assets/common[.<part>]-<id>.czar` or
+			 * `assets/terrain-layers-<id>.czar`
+			 */
+			role: 'assets';
+			/**
+			 * the tile at or above the shard level whose subtree is the smallest one containing every use of each
+			 * asset in it, or `null` for common and terrain layer archives (global content, or uses under different
+			 * root tiles). so everything a tile draws lives in the `assets` archives of that tile and its
+			 * ancestors, plus common
+			 */
+			tile: TileKey | null;
+	  })
+	| (StreamedArchive & {
+			/** `irradiance/<x>_<z>-<id>.czar`: the cells over one 512 m square (see `irradianceStem`) */
+			role: 'irradiance';
+	  });
+
+/** what every archive but the core records */
+export interface StreamedArchive {
+	/** path relative to the package root */
 	name: string;
-	role: 'core' | 'shards' | 'assets' | 'irradiance';
-	/**
-	 * `null` for `irradiance` archives (`irradiance/<x>_<z>-<id>.czar`: the cells over one 512 m square, see
-	 * `irradianceStem`). for `shards` archives: the {@link TreeInfo.shardLevel} tile whose subtree content it
-	 * holds. for `assets` archives: the tile at or above the shard level whose subtree is the smallest one
-	 * containing every use of each asset in it, or `null` for `assets/common*` (global content, or uses under
-	 * different root tiles). so everything a tile draws lives in the `assets` archives of that tile and its
-	 * ancestors, plus common
-	 */
-	tile: TileKey | null;
-	/**
-	 * total byte length, which a reader can compare to notice an archive replaced by a re-pack. `null` for the
-	 * core, whose size depends on this manifest
-	 */
-	size: number | null;
-	/**
-	 * byte position of the archive's data section, which {@link BlobRecord.offset} is relative to. `null` for
-	 * the core, whose header depends on the tables that hold the offsets: read the core whole and take its
-	 * blobs through czar
-	 */
-	dataOffset: number | null;
+	/** total byte length, which a reader can compare to notice an archive replaced by a re-pack */
+	size: number;
+	/** byte position of the archive's data section, which {@link BlobRecord.offset} is relative to */
+	dataOffset: number;
 }
 
 /** what a partial package holds */
