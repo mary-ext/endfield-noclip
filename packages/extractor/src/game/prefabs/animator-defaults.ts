@@ -1,24 +1,23 @@
-/* oxlint-disable no-await-in-loop -- walks a prefab's hierarchy in authored order */
+/* oxlint-disable no-await-in-loop -- reads Animators and their clips in authored order */
 import { crc32 } from 'node:zlib';
 
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import { type ClipMotion, readClipEndPose } from '@endfield-noclip/formats/unity/animation-clip';
-import { isTransformClass, UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
+import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	arrayField,
 	asPPtr,
-	booleanField,
 	isObject,
 	numberField,
 	objectField,
 	pptrField,
-	stringField,
 } from '@endfield-noclip/formats/unity/values';
 
 import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 import { loopingMotion } from '../interactives/view-state-poses.ts';
 
+import { PRUNE, walkPrefab } from './prefab-walk.ts';
 import type { PoseClip, PrefabPose } from './prefab.ts';
 
 // what a prefab's own Animators play when nothing drives them: docs/game-data/animation.md#scenery-animators
@@ -266,68 +265,47 @@ export const animatorPose = async (
 	parameters: AnimatorParameters,
 ): Promise<PrefabPose | null> => {
 	const clips: PoseClip[] = [];
-	const visit = async (go: ObjectRef, isRoot: boolean): Promise<void> => {
-		const goData = await resolver.read(go);
-		if (!booleanField(goData, 'm_IsActive')) {
-			return;
-		}
-		let transform: { ref: ObjectRef; data: TypeTreeObject } | null = null;
-		for (const item of arrayField(goData, 'm_Component')) {
-			if (!isObject(item)) {
-				throw new FormatError('prefab component is not an object');
-			}
-			const ref = await resolver.resolve(go, pptrField(item, 'component'));
-			if (ref === null) {
-				continue;
-			}
-			if (isTransformClass(ref.info.classId)) {
-				transform = { ref, data: await resolver.read(ref) };
-				continue;
-			}
-			if (ref.info.classId !== UnityClass.Animator) {
-				continue;
-			}
-			const animator = await resolver.read(ref);
-			const controller =
-				numberField(animator, 'm_Enabled') === 0
-					? null
-					: await resolver.resolve(ref, pptrField(animator, 'm_Controller'));
-			// override controllers swap clips by name; their base controller isn't followed yet
-			if (controller === null || controller.info.classId !== UnityClass.AnimatorController) {
-				continue;
-			}
-			const controllerData = await resolver.read(controller);
-			const pointers = arrayField(controllerData, 'm_AnimationClips');
-			for (const { clip, speed } of settledStateClips(controllerData, parameters)) {
-				const pointer = pointers[clip];
-				const clipRef = pointer === undefined ? null : await resolver.resolve(controller, asPPtr(pointer));
-				if (clipRef === null) {
-					continue;
+	await walkPrefab(
+		resolver,
+		root,
+		{
+			enter: async (node) => {
+				if (!node.active) {
+					return PRUNE;
 				}
-				const clipData = await resolver.read(clipRef);
-				const motion = loopingMotion(clipData);
-				clips.push({
-					animator: isRoot ? null : stringField(goData, 'm_Name'),
-					...readClipEndPose(clipData),
-					motion: motion === null ? null : atSpeed(motion, speed),
-				});
-			}
-		}
-		if (transform === null) {
-			throw new FormatError(`prefab GameObject has no Transform`);
-		}
-		for (const pointer of arrayField(transform.data, 'm_Children')) {
-			const child = await resolver.resolve(transform.ref, asPPtr(pointer));
-			if (child === null) {
-				continue;
-			}
-			const childGo = await resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject'));
-			if (childGo !== null) {
-				await visit(childGo, false);
-			}
-		}
-	};
-	await visit(root, true);
+				for (const component of node.ofClass(UnityClass.Animator)) {
+					const animator = await component.read();
+					const controller =
+						numberField(animator, 'm_Enabled') === 0
+							? null
+							: await resolver.resolve(component.ref, pptrField(animator, 'm_Controller'));
+					// override controllers swap clips by name; their base controller isn't followed yet
+					if (controller === null || controller.info.classId !== UnityClass.AnimatorController) {
+						continue;
+					}
+					const controllerData = await resolver.read(controller);
+					const pointers = arrayField(controllerData, 'm_AnimationClips');
+					for (const { clip, speed } of settledStateClips(controllerData, parameters)) {
+						const pointer = pointers[clip];
+						const clipRef =
+							pointer === undefined ? null : await resolver.resolve(controller, asPPtr(pointer));
+						if (clipRef === null) {
+							continue;
+						}
+						const clipData = await resolver.read(clipRef);
+						const motion = loopingMotion(clipData);
+						clips.push({
+							animator: node.isRoot ? null : node.name,
+							...readClipEndPose(clipData),
+							motion: motion === null ? null : atSpeed(motion, speed),
+						});
+					}
+				}
+				return undefined;
+			},
+		},
+		undefined,
+	);
 	if (clips.length === 0) {
 		return null;
 	}

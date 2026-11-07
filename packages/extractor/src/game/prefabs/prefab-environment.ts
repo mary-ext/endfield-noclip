@@ -7,7 +7,6 @@ import {
 	type PolyLineShape,
 	yawRotation,
 } from '@endfield-noclip/formats/endfield/environment-volume';
-import { isTransformClass, UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import {
 	multiplyQuaternions,
 	quaternionUnityEuler,
@@ -16,22 +15,21 @@ import {
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	arrayField,
-	asPPtr,
 	booleanField,
 	isObject,
 	numberField,
 	objectField,
 	pptrField,
-	stringField,
 } from '@endfield-noclip/formats/unity/values';
 import { conditionVisible } from '@endfield-noclip/package-format/conditions';
 
 import { formatErrorOnly } from '../../errors.ts';
-import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
+import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 import type { SceneEnvironmentVolume } from '../environment.ts';
 import type { Visibility } from '../state/scene-control.ts';
 
 import type { PrefabRoots } from './prefab-root.ts';
+import { PRUNE, walkPrefab } from './prefab-walk.ts';
 
 // reads HGEnvironmentVolume components from gated prefabs; phases are PPtrs rather than path hashes.
 // source layout: docs/game-data/environment.md#prefab-volumes.
@@ -138,102 +136,65 @@ export const readPrefabEnvironmentVolumes = async (
 		placement.position.every((v) => v === 0) &&
 		placement.rotation.slice(0, 3).every((v) => v === 0) &&
 		placement.scale.every((v) => v === 1);
-	const seen = new Set<string>();
-	const visit = async (
-		go: ObjectRef,
-		parent: { position: number[]; rotation: number[]; scale: number[] },
-		isRoot: boolean,
-	): Promise<void> => {
-		const key = objectKey(go);
-		if (seen.has(key)) {
-			throw new FormatError(`cyclic prefab hierarchy at ${key}`);
-		}
-		seen.add(key);
-		const data = await resolver.read(go);
-		if (!booleanField(data, 'm_IsActive')) {
-			return;
-		}
-		let transform: { ref: ObjectRef; data: TypeTreeObject } | null = null;
-		const volumes: ObjectRef[] = [];
-		for (const item of arrayField(data, 'm_Component')) {
-			if (!isObject(item)) {
-				throw new FormatError('prefab component is not an object');
-			}
-			const ref = await resolver.resolve(go, pptrField(item, 'component'));
-			if (ref !== null && isTransformClass(ref.info.classId)) {
-				transform = { ref, data: await resolver.read(ref) };
-			} else if (ref?.info.classId === UnityClass.MonoBehaviour && isVolumeType(ref)) {
-				volumes.push(ref);
-			}
-		}
-		if (transform === null) {
-			throw new FormatError('prefab GameObject has no Transform');
-		}
-		// the root's own transform is the placement's
-		let world = parent;
-		if (!isRoot) {
-			const t = transform.data;
-			const local = objectField(t, 'm_LocalPosition');
-			const rotation = objectField(t, 'm_LocalRotation');
-			const quaternion = [...xyz(rotation), numberField(rotation, 'w')];
-			const scale = xyz(objectField(t, 'm_LocalScale'));
-			const [px, py, pz] = rotate(parent.rotation, [
-				numberField(local, 'x') * parent.scale[0],
-				numberField(local, 'y') * parent.scale[1],
-				numberField(local, 'z') * parent.scale[2],
-			]);
-			world = {
-				position: [parent.position[0] + px, parent.position[1] + py, parent.position[2] + pz],
-				rotation: multiplyQuaternions(parent.rotation, quaternion),
-				scale: scale.map((s, i) => s * parent.scale[i]),
-			};
-		}
-		for (const ref of volumes) {
-			const value = await resolver.read(ref);
-			if (!booleanField(value, 'm_Enabled')) {
-				continue;
-			}
-			const volumeType = numberField(value, '_volumeType');
-			const shape = readShape(objectField(value, '_polyLineShape'));
-			if (shape !== null && volumeType === EnvironmentVolumeType.PolyArea && !identity) {
-				throw new FormatError('prefab prism volume under a moved placement');
-			}
-			result.push({
-				volume: {
-					id: 0,
-					name: stringField(data, 'm_Name'),
-					transform: {
-						position: [world.position[0], world.position[1], world.position[2]],
-						rotation: quaternionUnityEuler(world.rotation),
-						scale: [world.scale[0], world.scale[1], world.scale[2]],
-					},
-					volumeType,
-					blendMode: numberField(value, '_blendMode'),
-					priority: numberField(value, '_priority'),
-					blendDistance: numberField(value, '_blendDistance'),
-					fadeInDuration: numberField(value, '_fadeInDuration'),
-					fadeOutDuration: numberField(value, '_fadeOutDuration'),
-					envPhase: null,
-					shape,
-				},
-				phase: await resolver.resolve(ref, pptrField(value, '_envPhase')),
-			});
-		}
-		for (const pointer of arrayField(transform.data, 'm_Children')) {
-			const child = await resolver.resolve(transform.ref, asPPtr(pointer));
-			if (child === null) {
-				continue;
-			}
-			const childGo = await resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject'));
-			if (childGo !== null) {
-				await visit(childGo, world, false);
-			}
-		}
-	};
-	await visit(
+	await walkPrefab<Placement>(
+		resolver,
 		root,
-		{ position: [...placement.position], rotation: [...placement.rotation], scale: [...placement.scale] },
-		true,
+		{
+			enter: (node, parent) => {
+				if (!node.active) {
+					return PRUNE;
+				}
+				// the root's own transform is the placement's
+				if (node.isRoot) {
+					return parent;
+				}
+				const { position, rotation, scale } = node.saved;
+				const [px, py, pz] = rotate(parent.rotation, [
+					position[0] * parent.scale[0],
+					position[1] * parent.scale[1],
+					position[2] * parent.scale[2],
+				]);
+				return {
+					position: [parent.position[0] + px, parent.position[1] + py, parent.position[2] + pz],
+					rotation: multiplyQuaternions(parent.rotation, rotation),
+					scale: scale.map((s, i) => s * parent.scale[i]),
+				};
+			},
+			visit: async (node, world) => {
+				for (const component of node.behaviours(isVolumeType)) {
+					const value = await component.read();
+					if (!booleanField(value, 'm_Enabled')) {
+						continue;
+					}
+					const volumeType = numberField(value, '_volumeType');
+					const shape = readShape(objectField(value, '_polyLineShape'));
+					if (shape !== null && volumeType === EnvironmentVolumeType.PolyArea && !identity) {
+						throw new FormatError('prefab prism volume under a moved placement');
+					}
+					result.push({
+						volume: {
+							id: 0,
+							name: node.name,
+							transform: {
+								position: [world.position[0], world.position[1], world.position[2]],
+								rotation: quaternionUnityEuler(world.rotation),
+								scale: [world.scale[0], world.scale[1], world.scale[2]],
+							},
+							volumeType,
+							blendMode: numberField(value, '_blendMode'),
+							priority: numberField(value, '_priority'),
+							blendDistance: numberField(value, '_blendDistance'),
+							fadeInDuration: numberField(value, '_fadeInDuration'),
+							fadeOutDuration: numberField(value, '_fadeOutDuration'),
+							envPhase: null,
+							shape,
+						},
+						phase: await resolver.resolve(component.ref, pptrField(value, '_envPhase')),
+					});
+				}
+			},
+		},
+		placement,
 	);
 	return result;
 };

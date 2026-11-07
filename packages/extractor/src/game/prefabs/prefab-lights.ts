@@ -1,4 +1,4 @@
-/* oxlint-disable no-await-in-loop -- traverse in authored order with bounded bundle residency */
+/* oxlint-disable no-await-in-loop -- reads a GameObject's MonoBehaviours in order */
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import type { ChunkLight } from '@endfield-noclip/formats/endfield/chunk-lights';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
@@ -10,21 +10,12 @@ import {
 	unityEulerQuaternion,
 } from '@endfield-noclip/formats/unity/transform';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
-import {
-	arrayField,
-	asPPtr,
-	booleanField,
-	isObject,
-	numberField,
-	objectField,
-	pptrField,
-	stringField,
-	vector3Field,
-} from '@endfield-noclip/formats/unity/values';
+import { booleanField, numberField, objectField, vector3Field } from '@endfield-noclip/formats/unity/values';
 
-import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
+import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 
 import type { Placement } from './prefab-environment.ts';
+import { PRUNE, walkPrefab } from './prefab-walk.ts';
 
 // local lights inside prefabs the game places through model rows, such as the lighting prefab of a Dijiang
 // cabin (docs/game-data/lighting.md#local-lights). they are Unity `Light` components with HG's additional
@@ -50,82 +41,32 @@ export interface PrefabLight {
  */
 export const readPrefabLights = async (resolver: AssetResolver, root: ObjectRef): Promise<PrefabLight[]> => {
 	const result: PrefabLight[] = [];
-	const seen = new Set<string>();
-	const visit = async (go: ObjectRef, parent: Float32Array, isRoot: boolean): Promise<void> => {
-		const key = objectKey(go);
-		if (seen.has(key)) {
-			throw new FormatError(`cyclic prefab hierarchy at ${key}`);
-		}
-		seen.add(key);
-		const data = await resolver.read(go);
-		if (!booleanField(data, 'm_IsActive')) {
-			return;
-		}
-		let transform: { ref: ObjectRef; data: TypeTreeObject } | null = null;
-		let light: TypeTreeObject | null = null;
-		const behaviours: ObjectRef[] = [];
-		for (const item of arrayField(data, 'm_Component')) {
-			if (!isObject(item)) {
-				throw new FormatError('prefab component is not an object');
-			}
-			const ref = await resolver.resolve(go, pptrField(item, 'component'));
-			switch (ref?.info.classId) {
-				case UnityClass.Transform:
-				case UnityClass.RectTransform: {
-					transform = { ref, data: await resolver.read(ref) };
-					break;
+	await walkPrefab(
+		resolver,
+		root,
+		{
+			enter: (node) => (node.active ? undefined : PRUNE),
+			visit: async (node) => {
+				const light = await node.ofClass(UnityClass.Light).at(-1)?.read();
+				if (light === undefined || !booleanField(light, 'm_Enabled')) {
+					return;
 				}
-				case UnityClass.Light: {
-					light = await resolver.read(ref);
-					break;
+				let additional: TypeTreeObject | null = null;
+				for (const behaviour of node.ofClass(UnityClass.MonoBehaviour)) {
+					const value = await behaviour.read();
+					if ('m_falloffExponent' in value && 'm_volumetricScatteringIntensity' in value) {
+						additional = value;
+						break;
+					}
 				}
-				case UnityClass.MonoBehaviour: {
-					behaviours.push(ref);
-					break;
+				if (additional === null) {
+					throw new FormatError(`prefab light ${node.name} has no HG light data`);
 				}
-			}
-		}
-		if (transform === null) {
-			throw new FormatError(`prefab GameObject ${key} has no Transform`);
-		}
-		// the root's own placement comes from the caller
-		let matrix = parent;
-		if (!isRoot) {
-			const t = transform.data;
-			const rotation = objectField(t, 'm_LocalRotation');
-			const quaternion = ['x', 'y', 'z', 'w'].map((axis) => numberField(rotation, axis));
-			matrix = multiplyMatrices(
-				parent,
-				trsMatrix(vector3Field(t, 'm_LocalPosition'), quaternion, vector3Field(t, 'm_LocalScale')),
-			);
-		}
-		if (light !== null && booleanField(light, 'm_Enabled')) {
-			let additional: TypeTreeObject | null = null;
-			for (const ref of behaviours) {
-				const value = await resolver.read(ref);
-				if ('m_falloffExponent' in value && 'm_volumetricScatteringIntensity' in value) {
-					additional = value;
-					break;
-				}
-			}
-			const name = stringField(data, 'm_Name');
-			if (additional === null) {
-				throw new FormatError(`prefab light ${name} has no HG light data`);
-			}
-			result.push({ name, matrix, light: readLight(name, light, additional) });
-		}
-		for (const pointer of arrayField(transform.data, 'm_Children')) {
-			const child = await resolver.resolve(transform.ref, asPPtr(pointer));
-			if (child === null) {
-				continue;
-			}
-			const childGo = await resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject'));
-			if (childGo !== null) {
-				await visit(childGo, matrix, false);
-			}
-		}
-	};
-	await visit(root, trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]), true);
+				result.push({ name: node.name, matrix: node.matrix, light: readLight(node.name, light, additional) });
+			},
+		},
+		undefined,
+	);
 	return result;
 };
 
