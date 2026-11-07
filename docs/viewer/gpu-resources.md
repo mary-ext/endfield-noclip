@@ -29,9 +29,30 @@
   layer per page (1024 layers, or the device's array-layer limit if lower; 34 MiB); splat pages use
   256 slots of an RGBA8 control array, a BC3 tint array and an index buffer (22 MiB); the package's
   layer textures get two BC7 arrays sized at load. the surface and splat arrays are allocated at
-  full size up front, since a texture array can't grow without copying every layer. geometry gets
-  one vertex and one index buffer per blob; an animated one also gets its bind pose, frames and
-  skinning parameters, and its vertex buffer is writable from compute.
+  full size up front, since a texture array can't grow without copying every layer.
+- **geometry pools**
+  ([`render/meshes/geometry-pools.ts`](../../packages/viewer/src/render/meshes/geometry-pools.ts)):
+  still geometry is sub-allocated out of shared buffers, so draws of different geometries bind the
+  same buffers once and pick their data with `baseVertex` and `firstIndex` (the residency's
+  submeshes are offset to the geometry's ranges, and the GPU culler copies them into the indirect
+  arguments). `baseVertex` applies to every vertex stream, so a vertex pool keeps one buffer per
+  stream, all allocated by the same vertex range; a geometry pays for every stream its pool stores,
+  missing ones written as the zeros or UV set 0 an unpooled geometry would bind. there are four
+  vertex pools, by UV format and stream set: _compact_ for geometry with neither UV set 1 nor
+  colours (90% of the vertices at map02_lv007's opening view), which stores positions, normals, UV
+  set 0 and tangents and binds UV set 0 for set 1 and the normals for the colours (ignored without
+  `HasColors`), and _full_ for the rest, with all six; and one index pool per index format. at that
+  view, with 106 MiB of geometry, a single full pool per UV format would have held 33 MiB of padding
+  for missing streams; the compact split leaves about 1 MiB. pools start at 64k vertices and 1 MiB
+  of indices, grow 1.5× by copying into larger buffers (up to the device's `maxBufferSize`) when no
+  free range fits, and never shrink, like the other pools, so they keep the size of the most
+  geometry resident at once (after flying over map02 under a 384 MiB budget, the compact pool held
+  27 MiB in 170 MiB). a geometry's residency counts only its ranges, and the stats' pool bytes count
+  the whole buffers. draws are sorted by pool within each pipeline, so the main pass rebinds vertex
+  buffers a handful of times instead of for nearly every draw. an animated geometry keeps one vertex
+  buffer of its own, which its skinning pass writes from compute (its bind pose, frames and skinning
+  parameters beside it), and binds a zero buffer for the streams it lacks; so does a still geometry
+  the pools have no room for.
 - **uniform ring** ([`gfx/uniform-ring.ts`](../../packages/viewer/src/gfx/uniform-ring.ts)): one
   uniform buffer in 3 per-frame regions, sub-allocated at `minUniformBufferOffsetAlignment`. callers
   fill CPU views; `flush` uploads the frame's region in one `writeBuffer`, and draws bind group 0 at

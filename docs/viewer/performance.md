@@ -52,12 +52,16 @@
   layer their bounds reach, as mesh rows are grouped, so each layer draws a prefix of them rather
   than all; at the lv008 overview this took each sharp layer from 0.12 to 0.04 ms. each mesh bucket
   is one instanced `drawIndexed` over its slice of the visible list. depth-writing draws are sorted
-  by pipeline, then nearest first, which early depth testing rewards; the rest by pipeline, geometry
-  and material, so runs share bindings
+  by pipeline and geometry pool, then nearest first, which early depth testing rewards; the rest by
+  pipeline, pool, geometry and material, so runs share bindings
   ([`render/meshes/draw-order.ts`](../../packages/viewer/src/render/meshes/draw-order.ts)). drawing
   the depth-equal shading and the shadow layers of the depth-writing draws in binding order instead
   didn't shorten encoding at all on map02 (1.3 ms at a dense Jingyu view either way) and cost 0.2 ms
-  of sorting: neighbouring buckets rarely share a geometry, so each draw rebinds anyway.
+  of sorting: neighbouring buckets rarely share a geometry. pooling geometry
+  ([GPU resources](gpu-resources.md)) fixed that instead: draws from one pool share vertex and index
+  buffers, so they no longer rebind up to six vertex streams and the indices each, and on RDNA 4
+  encoding went from 1.0 to 0.5–0.7 ms at a map02 view of 3k draws and from 1.5–1.8 to 1.1 ms at one
+  of 5k draws over Jingyu.
 - **each pixel shades once.** a depth prepass draws the opaque meshes' positions alone (no fragment
   work) before anything else; the terrain then skips what they cover, and the opaque meshes shade
   with `depthCompare: 'equal'`. the prepass and the shading compute positions through the same
@@ -89,10 +93,12 @@
 
 ## optimization candidates
 
-- GPU culling leaves the buckets it picked empty in draws the CPU still encodes; pooling geometry so
-  draws share vertex buffers would make each cheaper. flying over Jingyu, preparing and encoding
-  draws take about 5 ms of an 11 ms CPU frame.
+- GPU culling leaves the buckets it picked empty in draws the CPU still encodes. flying over Jingyu,
+  preparing and encoding draws took about 5 ms of an 11 ms CPU frame before geometry was pooled.
 - cache shadow layers across new selections when their fit and casters are unchanged.
+- geometry pools never shrink, and the stream budget counts the ranges in them, not their spare
+  capacity: after flying under a 384 MiB budget, one pool held 170 MiB of buffers for 27 MiB of
+  geometry. compacting or shrinking pools once they're mostly free would return that.
 - reduce the AO blur's reads by packing depth with AO or using `textureGather`.
 - profile terrain close-up blending; stochastic projection or fewer anisotropy taps may reduce cost.
 - measure timestamp-query overhead before limiting profiling to the stats panel.

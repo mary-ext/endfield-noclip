@@ -8,6 +8,7 @@ import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { placeholder } from '../../gfx/placeholders.ts';
 import { LINEAR_REPEAT_MIPMAPPED, sampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
+import { GeometryFlags } from '../../looks/look.ts';
 import { type Plane, boxInFrustum } from '../../scene/camera.ts';
 import type { ResidentGeometry } from '../../streaming/resident.ts';
 import type { StreamManager } from '../../streaming/stream-manager.ts';
@@ -319,7 +320,7 @@ export class WaterRenderer {
 			data.set(resident.positionOffset, at + 12);
 			words[at + 15] = surface.config;
 			data.set(resident.positionScale, at + 16);
-			data[at + 19] = surface.meshNormals && resident.normalOffset !== null ? 1 : 0;
+			data[at + 19] = surface.meshNormals && (resident.streamFlags & GeometryFlags.HasNormals) !== 0 ? 1 : 0;
 			this.#draws.push({ geometry: resident, slot });
 			slot++;
 		}
@@ -507,9 +508,11 @@ export class WaterRenderer {
 		pass.setBindGroup(2, group);
 		pass.setBindGroup(3, context.postUniforms);
 		for (const { geometry, slot } of this.#draws) {
-			pass.setVertexBuffer(0, geometry.vertices, 0, geometry.positionBytes);
-			pass.setVertexBuffer(1, geometry.vertices, geometry.normalOffset ?? 0);
-			pass.setIndexBuffer(geometry.indices, geometry.indexFormat);
+			// positions and normals, as the meshes bind them; without normals in the mesh the shader ignores slot 1
+			const [position, normal] = geometry.vertices.streams;
+			pass.setVertexBuffer(0, position.buffer, position.offset, position.size);
+			pass.setVertexBuffer(1, normal.buffer ?? position.buffer, normal.offset, normal.size);
+			pass.setIndexBuffer(geometry.indices.buffer, geometry.indices.format);
 			for (const submesh of geometry.submeshes) {
 				pass.drawIndexed(submesh.indexCount, 1, submesh.firstIndex, submesh.baseVertex, slot);
 			}

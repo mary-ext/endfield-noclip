@@ -1,6 +1,6 @@
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
-import { GeometryFlags, LOOK_FLOATS, type LookStencil } from '../../looks/look.ts';
+import { LOOK_FLOATS, type LookStencil } from '../../looks/look.ts';
 import type { DecodedGeometry } from '../../package/decode-protocol.ts';
 import type { Camera } from '../../scene/camera.ts';
 import { type GpuCullWork, INDIRECT_WORDS } from '../../streaming/gpu-cull-work.ts';
@@ -26,6 +26,7 @@ import {
 	PASS_PHASES,
 	type SurfacePass,
 } from './draw-ranges.ts';
+import { type GeometryIndices, GeometryPools, type GeometryVertices } from './geometry-pools.ts';
 import { releaseGeometry, uploadGeometry } from './geometry-residency.ts';
 import { type CullTargets, type CulledBucket, InstanceCuller, type Occlusion } from './instance-culler.ts';
 import { type EffectInputs, type EffectMaterial, MaterialBindings } from './material-bindings.ts';
@@ -105,7 +106,8 @@ interface EncodeState {
 	variant: number;
 	stencil: LookStencil | null;
 	reference: number;
-	geometry: ResidentGeometry | null;
+	vertices: GeometryVertices | null;
+	indices: GeometryIndices | null;
 	material: GPUBindGroup | null;
 }
 
@@ -124,7 +126,7 @@ interface PreparedRange {
 }
 
 /**
- * draws the mesh buckets: owns geometry buffers, material bind groups and the mesh pipelines, prepares each
+ * draws the mesh buckets: owns the geometry pools, material bind groups and the mesh pipelines, prepares each
  * frame's draws into the ranges of draw-ranges.ts and encodes the passes over them
  */
 export class MeshRenderer {
@@ -162,6 +164,8 @@ export class MeshRenderer {
 	#fog: { uniforms: GPUBuffer; froxels: GPUTextureView; sampler: GPUSampler };
 	#drawGroup: GPUBindGroup;
 	#vertexBindings: VertexBindings;
+	/** the still geometries' vertex streams and indices */
+	#pools: GeometryPools;
 	#materials: MaterialBindings;
 	/** every range, in {@link DRAW_RANGES} order */
 	#ranges: PreparedRange[] = DRAW_RANGES.map((info) => ({
@@ -250,6 +254,7 @@ export class MeshRenderer {
 		this.#stencil = format.stencil;
 		this.#skins = new SkinAnimator(device, pipelines);
 		this.#vertexBindings = new VertexBindings(device);
+		this.#pools = new GeometryPools(device);
 		this.#params = device.createBuffer({
 			label: 'mesh draws',
 			size: this.#paramData.byteLength,
@@ -280,23 +285,23 @@ export class MeshRenderer {
 	 *
 	 * @param blob the geometry's blob, for labels
 	 * @param decoded vertex streams and indices
-	 * @returns the residency (geometry buffers aren't pooled; the memory budget bounds them)
+	 * @returns the residency (still geometry is pooled; the memory budget bounds the pools)
 	 */
 	upload(blob: number, decoded: DecodedGeometry): ResidentGeometry {
 		return uploadGeometry(
 			this.#device,
-			{ skins: this.#skins, bindings: this.#vertexBindings },
+			{ pools: this.#pools, skins: this.#skins, bindings: this.#vertexBindings },
 			blob,
 			decoded,
 		);
 	}
 
-	/** @param resident a geometry from {@link upload}; its buffers are destroyed */
+	/** @param resident a geometry from {@link upload}; its pool ranges are freed and its own buffers destroyed */
 	release(resident: ResidentGeometry): void {
 		if (resident.skin !== null) {
 			this.#drawnSkins.delete(resident.skin);
 		}
-		releaseGeometry(resident);
+		releaseGeometry(resident, this.#pools);
 	}
 
 	/** forgets material bind groups and the look table (when a package is unloaded) */
@@ -329,11 +334,13 @@ export class MeshRenderer {
 
 	/**
 	 * @returns bytes of the GPU allocations: the draw parameters, the look table, the draw ids, the zero
-	 *   streams and the culling buffers
+	 *   streams, the geometry pools (whose ranges the geometries' residency counts too) and the culling
+	 *   buffers
 	 */
 	get bytes(): number {
 		return (
 			this.#params.size +
+			this.#pools.bytes +
 			this.#looks.bytes +
 			this.#drawIds.size +
 			this.#vertexBindings.bytes +
@@ -348,11 +355,12 @@ export class MeshRenderer {
 	}
 
 	/**
-	 * destroys the renderer's own GPU allocations; geometries stay with their residency, released through
-	 * {@link release}. the renderer can't be used after
+	 * destroys the renderer's own GPU allocations, the geometry pools included; geometries' own buffers stay
+	 * with their residency, released through {@link release}. the renderer can't be used after
 	 */
 	destroy(): void {
 		this.#params.destroy();
+		this.#pools.destroy();
 		this.#looks.destroy();
 		this.#drawIds.destroy();
 		this.#vertexBindings.destroy();
@@ -669,11 +677,7 @@ export class MeshRenderer {
 		params[at] = ox;
 		params[at + 1] = oy;
 		params[at + 2] = oz;
-		words[at + 3] =
-			state.flags |
-			(resident.normalOffset === null ? 0 : GeometryFlags.HasNormals) |
-			(resident.tangentOffset === null ? 0 : GeometryFlags.HasTangents) |
-			(resident.colorOffset === null ? 0 : GeometryFlags.HasColors);
+		words[at + 3] = state.flags | resident.streamFlags;
 		params[at + 4] = sx;
 		params[at + 5] = sy;
 		params[at + 6] = sz;
@@ -888,7 +892,8 @@ export class MeshRenderer {
 			variant: -1,
 			stencil: null,
 			reference: -1,
-			geometry: null,
+			vertices: null,
+			indices: null,
 			material: null,
 		};
 		let draws = 0;
@@ -959,7 +964,7 @@ export class MeshRenderer {
 			state.keys = this.#variantKeys(phase);
 			state.variant = -1;
 			state.stencil = null;
-			state.geometry = null;
+			state.vertices = null;
 			state.material = null;
 		}
 		if (draw.variant !== state.variant || draw.stencil !== state.stencil) {
@@ -989,10 +994,15 @@ export class MeshRenderer {
 			state.material = draw.material;
 			pass.setBindGroup(3, draw.material);
 		}
-		if (draw.geometry !== state.geometry) {
-			state.geometry = draw.geometry;
-			this.#vertexBindings.bindStreams(pass, draw.geometry, phase.streams);
-			pass.setIndexBuffer(draw.geometry.indices, draw.geometry.indexFormat);
+		// pooled geometries share buffers, so this binds again only past a pool or an animated geometry
+		const { vertices, indices } = draw.geometry;
+		if (vertices !== state.vertices) {
+			state.vertices = vertices;
+			this.#vertexBindings.bind(pass, vertices, phase.streams);
+		}
+		if (indices !== state.indices) {
+			state.indices = indices;
+			pass.setIndexBuffer(indices.buffer, indices.format);
 		}
 		if (draw.indirect < 0) {
 			pass.drawIndexed(draw.indexCount, count, draw.firstIndex, draw.baseVertex, first);

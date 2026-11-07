@@ -1,6 +1,11 @@
 import type { RowFloaters, RowSpins } from '../content/instance-rows.ts';
 import type { RangeAllocation } from '../gfx/range-allocator.ts';
 import type { UvTransform } from '../package/decode-protocol.ts';
+import type {
+	GeometryIndices,
+	GeometryPlacement,
+	GeometryVertices,
+} from '../render/meshes/geometry-pools.ts';
 import type { ResidentSkin } from '../render/meshes/skin-animation.ts';
 
 /** GPU residency of a height page */
@@ -68,27 +73,29 @@ export interface ResidentGeometry {
 	kind: 'geometry';
 	/** GPU bytes */
 	bytes: number;
-	/** positions, then normals, UV sets 0 and 1, tangents and colours where present, in one buffer */
-	vertices: GPUBuffer;
-	positionBytes: number;
-	normalOffset: number | null;
-	uv0Offset: number | null;
-	/** UV set 1, or set 0 for meshes without it: the game reads a missing UV set as set 0 */
-	uv1Offset: number | null;
+	/**
+	 * where its vertex streams bind from: a geometry pool's buffers, shared with other geometries, or its own.
+	 * a stream it lacks binds zeros, except UV set 1, which binds set 0 as the game reads a missing set
+	 */
+	vertices: GeometryVertices;
+	/** where its indices bind from, shared like {@link vertices} */
+	indices: GeometryIndices;
+	/** `GeometryFlags` of the normals, tangents and colours it has, which shaders read only where present */
+	streamFlags: number;
 	/** the UV streams' vertex format */
 	uvFormat: 'unorm16x2' | 'float32x2';
 	/** each UV set's dequantization */
 	uvTransforms: [uv0: UvTransform, uv1: UvTransform];
-	tangentOffset: number | null;
-	/** `unorm8x4` vertex colours */
-	colorOffset: number | null;
-	indices: GPUBuffer;
-	indexFormat: GPUIndexFormat;
 	positionOffset: [x: number, y: number, z: number];
 	positionScale: [x: number, y: number, z: number];
+	/** index and vertex ranges in {@link indices} and {@link vertices}, a pooled geometry's offset to its own */
 	submeshes: { firstIndex: number; indexCount: number; baseVertex: number }[];
-	/** the skeletal animation skinned into {@link vertices} each frame, or `null` for a still geometry */
+	/** its ranges of the geometry pools, or `null` when it has buffers of its own */
+	placement: GeometryPlacement | null;
+	/** the skeletal animation skinned into its own vertex buffer each frame, or `null` for a still geometry */
 	skin: ResidentSkin | null;
+	/** its own vertex and index buffers when it isn't pooled, destroyed with it */
+	buffers: GPUBuffer[];
 }
 
 /** GPU residency of a texture piece (the texture store owns the texture) */

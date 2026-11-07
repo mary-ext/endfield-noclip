@@ -1,6 +1,5 @@
-import type { ResidentGeometry } from '../../streaming/resident.ts';
-
 import type { VertexStreams } from './draw-ranges.ts';
+import type { GeometryVertices, StreamBinding } from './geometry-pools.ts';
 
 /** a geometry's quantized positions, at location 0 */
 export const POSITION_STREAM: GPUVertexBufferLayout = {
@@ -19,9 +18,16 @@ const ZERO_STRIDE = 8;
 /** vertices the zero buffer starts with */
 const INITIAL_ZERO_VERTICES = 65_536;
 
+/** per vertex buffer slot of each phase's layout, the {@link GeometryVertices.streams} entry it binds */
+const SLOT_STREAMS: Record<VertexStreams, readonly number[]> = {
+	position: [0],
+	uv: [0, 2, 3],
+	all: [0, 1, 2, 3, 4, 5],
+};
+
 /**
- * binds geometries' vertex streams in a pass, skipping a buffer already bound at the same offset, and owns
- * the zeros bound in place of streams a geometry lacks
+ * binds geometries' vertex streams in a pass, skipping a buffer already bound at the same range, and owns the
+ * zeros bound in place of streams a geometry with its own buffers lacks
  */
 export class VertexBindings {
 	#device: GPUDevice;
@@ -29,6 +35,7 @@ export class VertexBindings {
 	// one per vertex buffer slot of the widest layout
 	#buffers: (GPUBuffer | null)[] = [null, null, null, null, null, null];
 	#offsets: number[] = [0, 0, 0, 0, 0, 0];
+	#sizes: (number | undefined)[] = [undefined, undefined, undefined, undefined, undefined, undefined];
 
 	/** @param device the device */
 	constructor(device: GPUDevice) {
@@ -46,7 +53,7 @@ export class VertexBindings {
 	}
 
 	/**
-	 * grows the zeros to cover a geometry that lacks a stream
+	 * grows the zeros to cover a geometry with its own buffers that lacks a stream
 	 *
 	 * @param vertexCount the geometry's vertices
 	 */
@@ -63,31 +70,17 @@ export class VertexBindings {
 	}
 
 	/**
-	 * binds a geometry's vertex streams in the slots a phase's pipelines read, zeros where it lacks one
+	 * binds a geometry's vertex streams in the slots a phase's pipelines read; slots already bound to the same
+	 * range, as for every geometry of a pool, are skipped
 	 *
 	 * @param pass the pass
-	 * @param geometry the geometry
+	 * @param vertices the geometry's vertex buffers
 	 * @param streams the streams the phase reads
 	 */
-	bindStreams(pass: GPURenderPassEncoder, geometry: ResidentGeometry, streams: VertexStreams): void {
-		this.#set(pass, 0, geometry.vertices, 0, geometry.positionBytes);
-		switch (streams) {
-			case 'position': {
-				break;
-			}
-			case 'uv': {
-				this.#stream(pass, 1, geometry.vertices, geometry.uv0Offset);
-				this.#stream(pass, 2, geometry.vertices, geometry.uv1Offset);
-				break;
-			}
-			case 'all': {
-				this.#stream(pass, 1, geometry.vertices, geometry.normalOffset);
-				this.#stream(pass, 2, geometry.vertices, geometry.uv0Offset);
-				this.#stream(pass, 3, geometry.vertices, geometry.uv1Offset);
-				this.#stream(pass, 4, geometry.vertices, geometry.tangentOffset);
-				this.#stream(pass, 5, geometry.vertices, geometry.colorOffset);
-				break;
-			}
+	bind(pass: GPURenderPassEncoder, vertices: GeometryVertices, streams: VertexStreams): void {
+		const slots = SLOT_STREAMS[streams];
+		for (let slot = 0; slot < slots.length; slot++) {
+			this.#set(pass, slot, vertices.streams[slots[slot]]);
 		}
 	}
 
@@ -96,22 +89,14 @@ export class VertexBindings {
 		this.#zeros.destroy();
 	}
 
-	#set(pass: GPURenderPassEncoder, slot: number, buffer: GPUBuffer, offset: number, size?: number): void {
-		if (this.#buffers[slot] === buffer && this.#offsets[slot] === offset && size === undefined) {
+	#set(pass: GPURenderPassEncoder, slot: number, { buffer, offset, size }: StreamBinding): void {
+		const bound = buffer ?? this.#zeros;
+		if (this.#buffers[slot] === bound && this.#offsets[slot] === offset && this.#sizes[slot] === size) {
 			return;
 		}
-		pass.setVertexBuffer(slot, buffer, offset, size);
-		// a sized binding isn't remembered: the next geometry's positions always rebind
-		this.#buffers[slot] = size === undefined ? buffer : null;
+		pass.setVertexBuffer(slot, bound, offset, size);
+		this.#buffers[slot] = bound;
 		this.#offsets[slot] = offset;
-	}
-
-	/** binds a stream of `vertices` at `offset`, or the zeros where the geometry lacks it (`null`) */
-	#stream(pass: GPURenderPassEncoder, slot: number, vertices: GPUBuffer, offset: number | null): void {
-		if (offset === null) {
-			this.#set(pass, slot, this.#zeros, 0);
-		} else {
-			this.#set(pass, slot, vertices, offset);
-		}
+		this.#sizes[slot] = size;
 	}
 }

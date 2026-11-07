@@ -103,11 +103,12 @@ what each post pass computes is in [post-processing](post-processing.md) and
   skinned on the GPU before anything draws: each frame, for each drawn geometry whose vertices don't
   hold the clock's frame yet, `skin` blends the two current frames' bone matrices, skins the bind
   pose (kept in its own storage buffer with the weights and bones) and writes positions, normals and
-  tangents over the geometry's own vertex streams, in the formats every mesh pipeline already reads,
-  positions quantized to the animation's box. so the prepass, shading and shadow passes need no
-  variants, and every placement of a geometry shows the same frame of the viewer's clock. normals
-  and tangents turn by the blended matrix itself, as Unity's skinning turns them. a frame that skins
-  one redraws the shadow layers, so with the clock stopped they stay as drawn.
+  tangents over the geometry's own vertex streams (an animated geometry stays out of the
+  [geometry pools](gpu-resources.md)), in the formats every mesh pipeline already reads, positions
+  quantized to the animation's box. so the prepass, shading and shadow passes need no variants, and
+  every placement of a geometry shows the same frame of the viewer's clock. normals and tangents
+  turn by the blended matrix itself, as Unity's skinning turns them. a frame that skins one redraws
+  the shadow layers, so with the clock stopped they stay as drawn.
 - **post** ([`render/post/post-process.ts`](../../packages/viewer/src/render/post/post-process.ts))
   is fullscreen triangles with `auto` layouts
   ([`gfx/fullscreen-pass.ts`](../../packages/viewer/src/gfx/fullscreen-pass.ts)); `taa` and the
