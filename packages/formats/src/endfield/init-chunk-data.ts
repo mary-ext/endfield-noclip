@@ -117,15 +117,18 @@ export interface ChunkEntity {
 	 * StreamingChunkData, not here
 	 */
 	decal: RectDecal | null;
-	/** a constant spin the entity turns with, or `null` for entities that hold still */
+	/**
+	 * a constant spin the entity turns with (component 54, or 52 turned into world space), or `null` for
+	 * entities that hold still
+	 */
 	rotator: Rotator | null;
 	/** descriptor ids present on the entity */
 	components: number[];
 }
 
 /**
- * a constant spin about a world axis (component 54). at time `t` the entity's stored transform is turned by
- * `speed · t` radians about `axis` through `pivot`, as Unity's `Quaternion.AngleAxis` turns
+ * a constant spin about a world axis. at time `t` the entity's stored transform is turned by `speed · t`
+ * radians about `axis` through `pivot`, as Unity's `Quaternion.AngleAxis` turns
  */
 export interface Rotator {
 	/** radians per second, non-negative; the axis carries the direction */
@@ -174,6 +177,11 @@ export const Component = {
 	Name: 21,
 	/** 160-byte rect decal constants: matrix, inverse, params, packed color + flags */
 	RectDecal: 27,
+	/**
+	 * 16-byte spin about the entity's own origin: `f32 speed` (rad/s, non-negative), `f32×3 axis` (unit, local
+	 * space)
+	 */
+	LocalSpin: 52,
 	/**
 	 * 92-byte spin: `f32 speed` (rad/s), `f32×3 axis`, `f32×3 pivot`, then f32×6 (a local box, unchecked) and
 	 * the stored position, rotation quaternion (xyzw) and scale
@@ -359,6 +367,7 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 		const decalColumn = column(Component.RectDecal);
 		const matrixColumn = column(Component.InstanceData) ?? decalColumn;
 		const rotatorColumn = column(Component.Rotator);
+		const localSpinColumn = column(Component.LocalSpin);
 		const nameOf = groupNames(group, names);
 		const lodColumn = column(Component.LodRanges);
 		const refColumns = group.columns.filter(
@@ -402,6 +411,13 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 				renderer = { draws, lodCount };
 			}
 
+			let rotator: Rotator | null = null;
+			if (rotatorColumn !== undefined) {
+				rotator = readRotator(blobView, rotatorColumn, i, id);
+			} else if (localSpinColumn !== undefined && matrix !== null) {
+				rotator = readLocalSpin(blobView, localSpinColumn, { index: i, entityId: id, matrix });
+			}
+
 			entities.push({
 				id,
 				levelTag: levelTagOf(id),
@@ -410,7 +426,7 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 				bounds,
 				renderer,
 				decal: decalColumn === undefined ? null : readRectDecal(blobView, decalColumn, i, id),
-				rotator: rotatorColumn === undefined ? null : readRotator(blobView, rotatorColumn, i, id),
+				rotator,
 				components: ids,
 			});
 		}
@@ -432,6 +448,47 @@ const readRotator = (view: DataView, column: ComponentColumn, index: number, ent
 		throw new FormatError(`entity ${entityId} has a rotator of speed ${speed} about [${axis.join(', ')}]`);
 	}
 	return { speed, axis, pivot: [f(4), f(5), f(6)] };
+};
+
+const LOCAL_SPIN_SIZE = 16;
+
+/**
+ * reads component 52 as a world-space spin: the local axis through the matrix, pivoting on its translation.
+ * turning the world transform about that axis equals turning the local one only under uniform scale, which
+ * every entity with the component has
+ */
+const readLocalSpin = (
+	view: DataView,
+	column: ComponentColumn,
+	{ index, entityId, matrix }: { index: number; entityId: number; matrix: Float32Array },
+): Rotator => {
+	if (column.stride !== LOCAL_SPIN_SIZE) {
+		throw new FormatError(`entity ${entityId} has a ${column.stride}-byte local spin`);
+	}
+	const at = column.offset + index * column.stride;
+	const f = (k: number): number => view.getFloat32(at + k * 4, true);
+	const speed = f(0);
+	const local = [f(1), f(2), f(3)];
+	if (!(speed >= 0) || Math.abs(Math.hypot(...local) - 1) > 1e-3) {
+		throw new FormatError(
+			`entity ${entityId} has a local spin of speed ${speed} about [${local.join(', ')}]`,
+		);
+	}
+	const scales = [0, 4, 8].map((c) => Math.hypot(matrix[c], matrix[c + 1], matrix[c + 2]));
+	if (Math.max(...scales) - Math.min(...scales) > 1e-3 * Math.max(...scales)) {
+		throw new FormatError(
+			`entity ${entityId} has a local spin under non-uniform scale [${scales.join(', ')}]`,
+		);
+	}
+	const world = [0, 1, 2].map(
+		(r) => matrix[r] * local[0] + matrix[4 + r] * local[1] + matrix[8 + r] * local[2],
+	);
+	const length = Math.hypot(...world);
+	return {
+		speed,
+		axis: [world[0] / length, world[1] / length, world[2] / length],
+		pivot: [matrix[12], matrix[13], matrix[14]],
+	};
 };
 
 const RECT_DECAL_SIZE = 160;

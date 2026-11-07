@@ -442,12 +442,12 @@ packs or renders correctly.
   partial-weight layers, override controllers and the Animators of models with view states hold
   their saved pose. vertex-animation-texture meshes (`_vat`, e.g. floating rocks) draw their rest
   pose
-- [spinning scenery](game-data/animation.md#spinning-scenery) (Qingbo's other waterwheels) turns
-  from its stored pose at the viewer clock's zero rather than at the game's gameplay-clock phase,
-  and how the native system turns it is inferred from the data, not read. renderers under
-  MonoBehaviour rotators (`DynamicSceneSimpleRotate`, `TransformRotateAroundAxis`) in prefabs hold
-  still; whether any placed prefab has such renderers isn't surveyed (the waterwheels' rotators turn
-  only colliders and decals)
+- [spinning scenery](game-data/animation.md#spinning-scenery) (Qingbo's other waterwheels, the
+  originium hub frames) turns from its stored pose at the viewer clock's zero rather than at the
+  game's clock phase, and how the native systems turn it is inferred from the data, not read.
+  renderers under MonoBehaviour rotators (`DynamicSceneSimpleRotate`, `TransformRotateAroundAxis`)
+  in prefabs hold still; whether any placed prefab has such renderers isn't surveyed (the
+  waterwheels' rotators turn only colliders and decals)
 - runtime world-space UI, including Dijiang's cabin nameplates and assigned-operator panels, is not
   drawn ([cabins](game-data/scene-states.md#dijiang-cabins)); neither are the Images and Text of
   world-space canvases inside prefabs, such as the counters on Dijiang's weapon wall displays

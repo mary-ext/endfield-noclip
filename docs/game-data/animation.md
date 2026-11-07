@@ -132,3 +132,12 @@ entities isn't read: that it turns them `speed · gameplayTime` about the axis t
 from their stored pose, is inferred from the data agreeing with the collider's script. the small
 wheels load with their owner's script group (default on,
 [script groups](scene-states.md#script-groups)).
+
+the originium hub frames (`zmdhubframe+1_001`: four in base01_lv001 around −68, 15, −105 and −64,
+40, −164, three in dung01_rdg003) roll about their long axis. their prefab's root carries an
+`HGTransformAnimatedBehaviour`, a native component whose one motion phase has `eulerAngleSpeed` (0,
+3.5, 0) degrees per second, no translation and its rotation anchor at the origin; the system that
+runs it is fed an absolute time. the baked ECS entities hold it as column 52: 3.5° in radians per
+second (0.0611) about local +y, which their matrices lay horizontal along the frame. no other entity
+in any scene has column 52. that the entity turns `speed · t` about its local axis through its own
+origin, from the stored pose, is inferred from the profile, not read from the native system.

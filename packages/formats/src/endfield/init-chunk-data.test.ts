@@ -21,7 +21,9 @@ const encoder = new TextEncoder();
  * builds a chunk with one object row per entity and one component group holding them, with components 0–5
  * (bounds), 18 (instance data, or 27 with `decal`), 21 (name), 67 (lod ranges), 9 + 69 (two draws)
  */
-const buildChunk = (options: { version?: number; drawCount?: number; decal?: boolean } = {}): Uint8Array => {
+const buildChunk = (
+	options: { version?: number; drawCount?: number; decal?: boolean; localSpin?: boolean } = {},
+): Uint8Array => {
 	const w = new Writer();
 	const ids = [(1 << 27) | 0x123, (2 << 27) | 0x456];
 	const names = ['P_rock#1_123', 'P_tree#2_456'];
@@ -79,6 +81,7 @@ const buildChunk = (options: { version?: number; drawCount?: number; decal?: boo
 		[Component.LodRanges, 24],
 		[9, 4 + 32 * 2],
 		[69, 8 + 40 * 2],
+		...(options.localSpin ? [[Component.LocalSpin, 16] as [number, number]] : []),
 	];
 	const descriptorVector = w.vector(8, descriptors.length);
 	w.link(group.fields[3], descriptorVector.at);
@@ -112,6 +115,10 @@ const buildChunk = (options: { version?: number; drawCount?: number; decal?: boo
 					for (let k = 0; k < 16; k++) {
 						w.view.setFloat32(at + k * 4, k % 5 === 0 ? 1 : 0, true);
 					}
+					if (options.localSpin) {
+						// a hub frame's matrix: local x → world −y, y → world −z, z → world x, scaled by 2
+						[0, -2, 0, 0, 0, 0, -2, 0, 2, 0, 0].forEach((v, k) => w.view.setFloat32(at + k * 4, v, true));
+					}
 					w.view.setFloat32(at + 48, 100 + e, true);
 					w.view.setFloat32(at + 56, -200 - e, true);
 					if (id === Component.RectDecal) {
@@ -140,6 +147,11 @@ const buildChunk = (options: { version?: number; drawCount?: number; decal?: boo
 					w.view.setFloat32(at + 4 + 48 + 4, 0.25, true);
 					w.view.setFloat32(at + 4 + 56, 0.25, true);
 					w.view.setFloat32(at + 4 + 56 + 4, -1, true);
+					break;
+				}
+				case Component.LocalSpin: {
+					// 3.5° per second about local +y, as the hub frames store it
+					[0.0610865, 0, 1, 0].forEach((v, k) => w.view.setFloat32(at + k * 4, v, true));
 					break;
 				}
 				case 69: {
@@ -210,6 +222,16 @@ test('readChunkEntities reads a rect decal’s matrix and placement values', () 
 		sectorAngle: 270,
 		flags: 0,
 	});
+});
+
+test('readChunkEntities turns a local spin into a world spin through the entity origin', () => {
+	const [plain] = readChunkEntities(parseInitChunk(buildChunk()));
+	assert.equal(plain.rotator, null);
+	const [first] = readChunkEntities(parseInitChunk(buildChunk({ localSpin: true })));
+	assert.ok(first.rotator !== null);
+	assert.ok(Math.abs(first.rotator.speed - (3.5 * Math.PI) / 180) < 1e-6);
+	assert.deepEqual(first.rotator.axis, [0, 0, -1]);
+	assert.deepEqual(first.rotator.pivot, [100, 0, -200]);
 });
 
 test('parseInitChunk rejects unknown versions', () => {
