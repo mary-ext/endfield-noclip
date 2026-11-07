@@ -149,7 +149,7 @@ export class Traversal {
 		}
 
 		const eye = camera.position;
-		terrain.prepare(options.terrain ? selection.patches : [], eye);
+		terrain.prepare(options.terrain ? selection.patches : [], eye, shadows ? renderer.shadows.volumes : null);
 		instances.rebase(eye);
 		if (meshSelection === null) {
 			instances.prepareRanges(options.instances && options.boxes ? selection.instances : []);

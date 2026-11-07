@@ -48,9 +48,12 @@
   frames that reuse the last selection (settling the antialiasing, adapting the exposure) keep the
   shadow layers from the frame that drew them, unless a layer's fit moved or pipelines were still
   compiling.
-- **few draws.** terrain is one draw; each mesh bucket is one instanced `drawIndexed` over its slice
-  of the visible list. depth-writing draws are sorted by pipeline, then nearest first, which early
-  depth testing rewards; the rest by pipeline, geometry and material, so runs share bindings
+- **few draws.** terrain is one draw per pass. its patches are written in order of the first shadow
+  layer their bounds reach, as mesh rows are grouped, so each layer draws a prefix of them rather
+  than all; at the lv008 overview this took each sharp layer from 0.12 to 0.04 ms. each mesh bucket
+  is one instanced `drawIndexed` over its slice of the visible list. depth-writing draws are sorted
+  by pipeline, then nearest first, which early depth testing rewards; the rest by pipeline, geometry
+  and material, so runs share bindings
   ([`render/meshes/draw-order.ts`](../../packages/viewer/src/render/meshes/draw-order.ts)). drawing
   the depth-equal shading and the shadow layers of the depth-writing draws in binding order instead
   didn't shorten encoding at all on map02 (1.3 ms at a dense Jingyu view either way) and cost 0.2 ms
@@ -89,8 +92,7 @@
 - GPU culling leaves the buckets it picked empty in draws the CPU still encodes; pooling geometry so
   draws share vertex buffers would make each cheaper. flying over Jingyu, preparing and encoding
   draws take about 5 ms of an 11 ms CPU frame.
-- cache shadow layers across new selections when their fit and casters are unchanged; terrain still
-  draws into every layer.
+- cache shadow layers across new selections when their fit and casters are unchanged.
 - reduce the AO blur's reads by packing depth with AO or using `textureGather`.
 - profile terrain close-up blending; stochastic projection or fewer anisotropy taps may reduce cost.
 - measure timestamp-query overhead before limiting profiling to the stats panel.

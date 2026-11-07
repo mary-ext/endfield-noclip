@@ -284,7 +284,7 @@ export const encodeFrame = (
 				{ group: context.shadowFrame.group, offset },
 			);
 			if (settings.terrain) {
-				draws += systems.terrain.encodeShadow(pass);
+				draws += systems.terrain.encodeShadow(pass, i);
 			}
 			draws += meshes.encodeShadow(pass, i);
 			pass.end();

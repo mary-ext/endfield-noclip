@@ -20,6 +20,7 @@ import type {
 	DecodedLayer,
 	DecodedSurface,
 } from '../../package/decode-protocol.ts';
+import { firstShadowLayer } from '../../streaming/instance-culling.ts';
 import type {
 	ResidentSplat,
 	ResidentHeights,
@@ -32,7 +33,7 @@ import { describeFill, describeWire } from '../frame/fill-and-wire.ts';
 import { FRAME_WGSL } from '../frame/frame-uniforms.ts';
 import type { MainPassFormat } from '../frame/render-targets.ts';
 import { wgslConst } from '../shaders/wgsl-const.ts';
-import { SHADOW_DEPTH_STATE } from '../shadows/shadow-map.ts';
+import { SHADOW_DEPTH_STATE, SHADOW_LAYERS, type ShadowLayerVolumes } from '../shadows/shadow-map.ts';
 
 import terrainWgsl from './terrain.wgsl?raw';
 
@@ -156,6 +157,12 @@ export class TerrainRenderer {
 	#patchCapacity: number;
 	#patchData: Float32Array;
 	#patchWords: Uint32Array;
+	/** by selected patch: the first shadow layer it reaches, reused */
+	#firstLayers = new Uint8Array(0);
+	/** per first shadow layer, then one past the last: where its patches start, reused */
+	#layerStarts = new Int32Array(SHADOW_LAYERS + 2);
+	/** per shadow layer: how many patches from the start it draws */
+	#layerEnds = new Int32Array(SHADOW_LAYERS);
 	#fillIndices: GPUBuffer;
 	#wireIndices: GPUBuffer;
 	#fillCount: number;
@@ -561,15 +568,62 @@ export class TerrainRenderer {
 	 *
 	 * @param patches selected patches
 	 * @param eye camera position, f64
+	 * @param shadowLayers the shadow layers as fitted this frame, which the patches are grouped by, or `null`
+	 *   without shadows
 	 */
-	prepare(patches: readonly TerrainPatch[], eye: Vec3): void {
-		const count = Math.min(patches.length, this.#patchCapacity);
+	prepare(patches: readonly TerrainPatch[], eye: Vec3, shadowLayers: ShadowLayerVolumes | null): void {
+		// the patches whose quadrants fit, in selection order
+		let count = 0;
+		let total = 0;
+		for (; count < patches.length; count++) {
+			const quadrants = patches[count].quadrant < 0 ? 4 : 1;
+			if (total + quadrants > this.#patchCapacity) {
+				break;
+			}
+			total += quadrants;
+		}
 		const data = this.#patchData;
 		const words = this.#patchWords;
 		const layersReady = this.#layersReady;
+		// patches go in order of the first shadow layer their bounds reach, so each layer draws a prefix
+		if (this.#firstLayers.length < count) {
+			this.#firstLayers = new Uint8Array(this.#patchCapacity);
+		}
+		const firsts = this.#firstLayers;
+		const starts = this.#layerStarts;
+		starts.fill(0);
+		for (let i = 0; i < count; i++) {
+			const { min, max } = patches[i].node.bounds;
+			const hx = (max[0] - min[0]) / 2;
+			const hy = (max[1] - min[1]) / 2;
+			const hz = (max[2] - min[2]) / 2;
+			const first =
+				shadowLayers === null
+					? 0
+					: firstShadowLayer(
+							shadowLayers,
+							min[0] + hx - eye[0],
+							min[1] + hy - eye[1],
+							min[2] + hz - eye[2],
+							Math.sqrt(hx * hx + hy * hy + hz * hz),
+						);
+			firsts[i] = first;
+			// a whole page draws as its four quadrants
+			starts[first + 1] += patches[i].quadrant < 0 ? 4 : 1;
+		}
+		for (let layer = 1; layer <= SHADOW_LAYERS + 1; layer++) {
+			starts[layer] += starts[layer - 1];
+		}
+		// a layer draws the patches that reach it first or an earlier layer: those before the next group
+		const ends = this.#layerEnds;
+		for (let layer = 0; layer < SHADOW_LAYERS; layer++) {
+			ends[layer] = starts[layer + 1];
+		}
 		for (let i = 0; i < count; i++) {
 			const { item, node, quadrant, morphStart, morphEnd, surface, detail } = patches[i];
-			const at = i * PATCH_FLOATS;
+			const quadrants = quadrant < 0 ? 4 : 1;
+			const at = starts[firsts[i]] * PATCH_FLOATS;
+			starts[firsts[i]] += quadrants;
 			data[at] = node.minX - eye[0];
 			data[at + 1] = node.minZ - eye[2];
 			data[at + 2] = node.size / QUADS;
@@ -595,25 +649,16 @@ export class TerrainRenderer {
 			data[at + 17] = node.minZ;
 			data[at + 18] = eye[1];
 			words[at + 19] = splatPage?.kind === 'splat' ? splatPage.slot + 1 : 0;
-		}
-		// a whole page is drawn as its four quadrants
-		let expanded = count;
-		for (let i = 0; i < count && expanded < this.#patchCapacity; i++) {
-			if (patches[i].quadrant >= 0) {
-				continue;
-			}
-			for (let q = 1; q < 4 && expanded < this.#patchCapacity; q++) {
-				const from = i * PATCH_FLOATS;
-				const at = expanded * PATCH_FLOATS;
-				data.copyWithin(at, from, from + PATCH_FLOATS);
-				words[at + 5] = (q & 1) * (GRID - 1);
-				words[at + 6] = (q >> 1) * (GRID - 1);
-				expanded++;
+			for (let q = 1; q < quadrants; q++) {
+				const to = at + q * PATCH_FLOATS;
+				data.copyWithin(to, at, at + PATCH_FLOATS);
+				words[to + 5] = (q & 1) * (GRID - 1);
+				words[to + 6] = (q >> 1) * (GRID - 1);
 			}
 		}
-		this.patchCount = expanded;
-		if (expanded > 0) {
-			this.#device.queue.writeBuffer(this.#patches, 0, data, 0, expanded * PATCH_FLOATS);
+		this.patchCount = total;
+		if (total > 0) {
+			this.#device.queue.writeBuffer(this.#patches, 0, data, 0, total * PATCH_FLOATS);
 		}
 	}
 
@@ -628,13 +673,14 @@ export class TerrainRenderer {
 	}
 
 	/**
-	 * draws the terrain into a shadow cascade.
+	 * draws the terrain into a shadow cascade: the patches that reach it, as {@link prepare} grouped them.
 	 *
 	 * @param pass a shadow pass, with group 0 bound
+	 * @param layer the shadow layer
 	 * @returns draw calls issued
 	 */
-	encodeShadow(pass: GPURenderPassEncoder): number {
-		return this.#encode(pass, SHADOW_KEY, this.#fillIndices, this.#fillCount);
+	encodeShadow(pass: GPURenderPassEncoder, layer: number): number {
+		return this.#encode(pass, SHADOW_KEY, this.#fillIndices, this.#fillCount, this.#layerEnds[layer]);
 	}
 
 	/**
@@ -647,9 +693,15 @@ export class TerrainRenderer {
 		return this.#encode(pass, WIRE_KEY, this.#wireIndices, this.#wireCount);
 	}
 
-	#encode(pass: GPURenderPassEncoder, key: string, indices: GPUBuffer, indexCount: number): number {
+	#encode(
+		pass: GPURenderPassEncoder,
+		key: string,
+		indices: GPUBuffer,
+		indexCount: number,
+		patches = this.patchCount,
+	): number {
 		const pipeline = this.#pipelines.get(key);
-		if (pipeline === undefined || this.patchCount === 0) {
+		if (pipeline === undefined || patches === 0) {
 			return 0;
 		}
 		if (this.#heightsVersion !== this.#heights.version) {
@@ -658,7 +710,7 @@ export class TerrainRenderer {
 		pass.setPipeline(pipeline);
 		pass.setBindGroup(1, this.#bindGroup);
 		pass.setIndexBuffer(indices, 'uint16');
-		pass.drawIndexed(indexCount, this.patchCount);
+		pass.drawIndexed(indexCount, patches);
 		return 1;
 	}
 }
