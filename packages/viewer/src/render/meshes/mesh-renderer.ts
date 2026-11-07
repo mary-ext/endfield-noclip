@@ -101,6 +101,13 @@ interface PreparedRange {
 	castOnlyEnd: number;
 	/** the end of the shadow-casting draws, sorted before the rest, where the shadow passes stop */
 	castersEnd: number;
+	/**
+	 * for a range sorted nearest first: its draws in {@link sortKeyOf} order, for the phases that gain nothing
+	 * from nearest first ({@link DrawPhase.nearestFirst}), so runs of one geometry and material share bindings.
+	 * the key's top bits are the shadow role and the pipeline, so each prefix the passes draw holds the same
+	 * draws in either order
+	 */
+	byBindings: number[];
 }
 
 /**
@@ -134,7 +141,10 @@ export class MeshRenderer {
 		end: 0,
 		castOnlyEnd: 0,
 		castersEnd: 0,
+		byBindings: [],
 	}));
+	/** by prepared draw: its bucket's {@link sortKeyOf} */
+	#drawKeys = new Float64Array(MAX_DRAWS);
 	#rangeOf = new Map(this.#ranges.map((range) => [range.info.range, range]));
 	/** the entries queued in the ranges, reused across frames */
 	#entries: DrawEntry[] = [];
@@ -431,15 +441,17 @@ export class MeshRenderer {
 		let listStart = LIST_CAPACITY;
 		let listEnd = 0;
 		let d = 0;
+		const keys = this.#drawKeys;
 		for (const range of this.#ranges) {
 			range.entries.sort(COMPARATORS[range.info.order]);
 			range.start = d;
 			range.castOnlyEnd = d;
 			range.castersEnd = d;
-			for (const { bucket, span } of range.entries) {
+			for (const { bucket, span, key } of range.entries) {
 				if (d >= MAX_DRAWS || !this.#prepareDraw(d, bucket, span, range.info, textures)) {
 					continue;
 				}
+				keys[d] = key;
 				// the GPU writes its buckets' draw ids
 				if (bucket.gpu === null) {
 					listStart = Math.min(listStart, span.first);
@@ -454,6 +466,14 @@ export class MeshRenderer {
 				}
 			}
 			range.end = d;
+			const byBindings = range.byBindings;
+			byBindings.length = 0;
+			if (range.info.order === 'pipelineThenNearest') {
+				for (let i = range.start; i < d; i++) {
+					byBindings.push(i);
+				}
+				byBindings.sort((a, b) => keys[a] - keys[b]);
+			}
 		}
 		this.#drawCount = d;
 		this.#prepareSorted();
@@ -797,8 +817,9 @@ export class MeshRenderer {
 			// shadow passes draw the casters, cast-only ones first; the rest skip those
 			const from = phase.shadow ? range.start : range.castOnlyEnd;
 			const to = phase.shadow ? range.castersEnd : range.end;
+			const order = phase.nearestFirst || range.byBindings.length === 0 ? null : range.byBindings;
 			for (let i = from; i < to; i++) {
-				const draw = this.#draws[i];
+				const draw = this.#draws[order === null ? i : order[i - range.start]];
 				let count = 0;
 				if (draw.indirect < 0) {
 					count = layer < 0 ? draw.count : draw.layerCounts[layer];
