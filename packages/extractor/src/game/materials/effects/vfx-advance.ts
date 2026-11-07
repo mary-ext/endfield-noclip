@@ -7,7 +7,7 @@ import type {
 import { pastUvSets, undrawnBlend, undrawnKeywords } from '../describe-steps.ts';
 import { isUnsupported, type MaterialReader, unsupported } from '../material-values.ts';
 
-import { effectTexture, matrixRotationOf, speedOf, UNSET_WHITE } from './effect-steps.ts';
+import { effectTexture, matrixRotationOf, softBlendOf, speedOf, UNSET_WHITE } from './effect-steps.ts';
 import {
 	APPEAR_KEYWORDS,
 	appearOf,
@@ -31,6 +31,7 @@ const ADVANCE_KEYWORDS = new Set([
 	'_USE_DISSOLVE',
 	'_USE_FRESNEL',
 	'_USE_FOG',
+	'_USE_SOFTBLEND',
 	'_USE_VERTOFFSET',
 	'_INK_DISTORT',
 	'_INK_COLOR_DISTORT',
@@ -42,8 +43,8 @@ const BLEND_MODES: readonly EffectStackSurface['blendMode'][] = ['over', 'add'];
 
 /**
  * `HGRP/Effect/VFXAdvance` (`docs/game-data/effects.md#vfxadvance`) as a texture stack: its main texture, one
- * disturb texture, a mask, a blend layer and a dissolve, tinted, optionally faded by a Fresnel term and
- * revealed around the player
+ * disturb texture, a mask, a blend layer and a dissolve, tinted, optionally faded by a Fresnel term and in
+ * front of what lies behind, and revealed around the player
  *
  * @param reader the material's properties
  * @returns its surface, or `unsupported`
@@ -169,7 +170,7 @@ export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface |
 					opacity: float('_FresnelAffectOpacity', 0),
 				}
 			: null,
-		soft: null,
+		soft: softBlendOf(reader),
 		ignorePostExposure: shared.ignorePostExposure,
 		vertexColor: float('_DisableVertColor', 0) === 0,
 		near: shared.near,

@@ -144,7 +144,11 @@ distortion), with the edge colour `_DissolveEmissiveColor · _TintColorIntensity
 after the mask and before the near-camera fade. the ink bridge prefabs' walls, floors and joins
 (`M_fx_map02_lv007_inkbridge_freelance_wall_*`, `…_floor_*`, `…_join_*`) tear their edges with it.
 `_FogIntensity` mixes how much of the fog a fogged layer takes, fully past
-`_FogIntensityFadeOutDistance` metres.
+`_FogIntensityFadeOutDistance` metres. `_USE_SOFTBLEND` is VFXBaseV2's: the alpha fades by
+`saturate((d_scene − d + _SoftBias) / _SoftDistance)`, d the view depth, alongside the near-camera
+fade. the black and white ink layers of Si's Painting's ink road over the cave falls
+(`M_fxmap_map02_lv010_cave_inkroad_02_fj_01`, `…_02`, `…_04`, near unity 727, 239, 1166, script
+group 37900020000) fade so where they meet the rocks.
 
 `_USE_BLEND` is the texture stack's [blend layer](#the-texture-stack) on `_BlendTex` (UVs built like
 the main texture's from `_BlendTex*` properties, its `_ST` applied once, shifted by

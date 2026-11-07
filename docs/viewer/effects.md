@@ -63,13 +63,13 @@ what's left out is in [status](../status.md).
 ## VFXAdvance and the reveal
 
 [VFXAdvance](../game-data/effects.md#vfxadvance) materials with only a main texture, the first
-disturb texture, a mask, a blend layer, a dissolve, a Fresnel fade, fog, a vertex offset and the
-reveal draw through the texture stack (`variant: 'advance'`, `describeVfxAdvance`), in slots 0–4
-(main, disturb, mask, blend, dissolve), the dissolve with VFXBaseV2's sweep and edge colour; their
-other keywords, a Fresnel colour and interiors stay unsupported. two switches in row 43 of the look
-cover what only VFXAdvance does: `disturbNormal` reads the disturb texture as a normal, and
-`blendVertexColor` scales the blend tint by the vertex colour. the ink keywords are drawn as the
-game draws them where the ink simulation hasn't run, since the viewer has none.
+disturb texture, a mask, a blend layer, a dissolve, a Fresnel fade, a soft blend, fog, a vertex
+offset and the reveal draw through the texture stack (`variant: 'advance'`, `describeVfxAdvance`),
+in slots 0–4 (main, disturb, mask, blend, dissolve), the dissolve with VFXBaseV2's sweep and edge
+colour; their other keywords, a Fresnel colour and interiors stay unsupported. two switches in row
+43 of the look cover what only VFXAdvance does: `disturbNormal` reads the disturb texture as a
+normal, and `blendVertexColor` scales the blend tint by the vertex colour. the ink keywords are
+drawn as the game draws them where the ink simulation hasn't run, since the viewer has none.
 
 the [reveal around the player](../game-data/effects.md#invisible-bridges) (`EffectAppear`, rows
 40–43 of the look) changes the tint before the stack combines it (`fx_appear` in `effect.wgsl`), for

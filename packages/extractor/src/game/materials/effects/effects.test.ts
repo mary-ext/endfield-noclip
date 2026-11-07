@@ -1065,9 +1065,24 @@ describe('VFXAdvance', () => {
 		);
 	});
 
+	// Si's Painting's ink road over the cave falls (`M_fxmap_map02_lv010_cave_inkroad_02_fj_01`)
+	it('fades in front of what lies behind under _USE_SOFTBLEND, and not without it', () => {
+		const road = (keywords: string[]) =>
+			ofKind(
+				describeMaterial(
+					bridge({ keywords, floats: { _SoftDistance: 2, _SoftBias: 0.5, _InParticle: 0 } }),
+					advance,
+				),
+				'effectStack',
+			);
+		const keywords = ['_INK_DISTORT', '_USE_DISTURB', '_USE_FOG', '_USE_MASK'];
+		assert.deepEqual(road([...keywords, '_USE_SOFTBLEND']).soft, { distance: 2, bias: 0.5 });
+		assert.equal(road(keywords).soft, null);
+	});
+
 	it('leaves out what it can’t draw', () => {
 		const reasons = [
-			bridge({ keywords: ['_USE_SOFTBLEND'] }),
+			bridge({ keywords: ['_USE_EDGECOLOR'] }),
 			bridge({ keywords: ['_USE_GLOBAL_APPEAR'] }),
 			bridge({ colors: { _BrightCenter: [1, 2, 3, 1] } }),
 			bridge({ floats: { _UseInterior: 1 } }),

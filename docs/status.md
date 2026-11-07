@@ -244,10 +244,10 @@ packs or renders correctly.
   six-way smoke and the mist (FogSimple, VFXFakeVolumeFog). other effect shaders and these shaders'
   undrawn variants show as [unsupported](viewer/materials.md#unsupported-materials)
   - [VFXAdvance](game-data/effects.md#vfxadvance): the second disturb texture, polar and screen UVs,
-    soft blend, edge colour, interiors, `_FogIntensity` and a Fresnel colour aren't drawn. the
-    dissolving walls and Yinglung Pass's ink rooms (`…_inkroom_floor_*`, the `inkarea_*` walls,
-    shown only within 8 m of the camera) are unchecked against an in-game shot, and the ink
-    simulation isn't run
+    edge colour, interiors, `_FogIntensity` and a Fresnel colour aren't drawn. the dissolving walls,
+    Yinglung Pass's ink rooms (`…_inkroom_floor_*`, the `inkarea_*` walls, shown only within 8 m of
+    the camera) and Si's Painting's ink road over the cave falls (which draws mostly white) are
+    unchecked against an in-game shot, and the ink simulation isn't run
   - [invisible bridges](game-data/effects.md#invisible-bridges): the fire seed reveals them about
     the camera, at its highest level by default since the server holds its level, without its radius
     easing between levels; the northern bridge's group is server-driven and stays at its stored
