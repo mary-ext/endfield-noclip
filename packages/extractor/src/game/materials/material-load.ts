@@ -47,19 +47,22 @@ export const loadMaterial = async (resolver: AssetResolver, ref: ObjectRef): Pro
 		throw new FormatError(`material ${record.name} has no shader`);
 	}
 	const shader = await loadShaderSummary(resolver, shaderRef);
-	const textures: Record<string, ResolvedTextureSlot> = {};
-	await Promise.all(
-		Object.entries(record.textures).map(async ([slot, { texture }]) => {
-			if (texture === null) {
-				textures[slot] = { ref: null };
-				return;
-			}
-			try {
-				textures[slot] = { ref: await resolver.resolve(ref, texture) };
-			} catch (error) {
-				textures[slot] = { ref: null, error: errorText(error) };
-			}
-		}),
+	// in the material's slot order, whichever resolves first: texture ids follow it
+	const textures = Object.fromEntries(
+		await Promise.all(
+			Object.entries(record.textures).map(
+				async ([slot, { texture }]): Promise<[string, ResolvedTextureSlot]> => {
+					if (texture === null) {
+						return [slot, { ref: null }];
+					}
+					try {
+						return [slot, { ref: await resolver.resolve(ref, texture) }];
+					} catch (error) {
+						return [slot, { ref: null, error: errorText(error) }];
+					}
+				},
+			),
+		),
 	);
 	return { record, shader, classification: classifyHgrpMaterial(record, shader), textures };
 };
