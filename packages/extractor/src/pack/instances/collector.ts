@@ -173,6 +173,20 @@ export class Collector {
 		return bounds;
 	}
 
+	/**
+	 * empties every group's rows and debug names, keeping bounds and counts, so they're freed once their blocks
+	 * are stored (a few hundred MB on map02)
+	 */
+	releaseRows(): void {
+		for (const map of [this.detail, this.hlod, this.global]) {
+			for (const group of map.values()) {
+				group.rows = new InstanceBlockBuilder();
+				group.names = [];
+				group.files = [];
+			}
+		}
+	}
+
 	/** grows the bounds of a packed instance's level */
 	noteOwner(tag: number, bounds: Aabb): void {
 		const current = this.tagBounds.get(tag);

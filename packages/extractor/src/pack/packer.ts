@@ -239,6 +239,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			volumes: new Map(water.table.volumes.map(({ entityId }, i) => [entityId, i])),
 		});
 		await debugLog.close();
+		content.collector.releaseRows();
 		timer.end('instances');
 		// #endregion
 
