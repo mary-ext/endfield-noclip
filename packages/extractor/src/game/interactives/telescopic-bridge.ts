@@ -1,3 +1,4 @@
+/* oxlint-disable no-await-in-loop -- reads the root's components and children in authored order */
 import { crc32 } from 'node:zlib';
 
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
@@ -7,13 +8,13 @@ import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	arrayField,
 	asPPtr,
-	isObject,
 	numberField,
 	pptrField,
 	stringField,
 } from '@endfield-noclip/formats/unity/values';
 
 import { type AssetResolver, type ObjectRef, objectKey } from '../assets/assets.ts';
+import { type PrefabComponent, prefabChildren, readPrefabNode, walkPrefab } from '../prefabs/prefab-walk.ts';
 import type { PoseClip, PrefabPose } from '../prefabs/prefab.ts';
 
 // settled looks of a telescopic bridge (`InteractiveTelescopicPostmodelMono`): retracted, or extended by a
@@ -47,56 +48,13 @@ const rootClip = (transforms: Map<number, ClipTransformValue[]>): PoseClip => ({
 	motion: null,
 });
 
-/** a GameObject's components of one class */
-const componentsOf = async (
-	resolver: AssetResolver,
-	go: ObjectRef,
-	classId: number,
-): Promise<{ ref: ObjectRef; data: TypeTreeObject }[]> => {
-	const refs = await Promise.all(
-		arrayField(await resolver.read(go), 'm_Component').map((item) => {
-			if (!isObject(item)) {
-				throw new FormatError('prefab component is not an object');
-			}
-			return resolver.resolve(go, pptrField(item, 'component'));
-		}),
-	);
-	return Promise.all(
-		refs
-			.filter((ref) => ref?.info.classId === classId)
-			.map(async (ref) => ({ ref: ref!, data: await resolver.read(ref!) })),
-	);
-};
-
-/** a GameObject's children, with their names */
-const childrenOf = async (
-	resolver: AssetResolver,
-	go: ObjectRef,
-): Promise<{ ref: ObjectRef; name: string }[]> => {
-	const [transform] = await componentsOf(resolver, go, UnityClass.Transform);
-	if (transform === undefined) {
-		throw new FormatError(`prefab GameObject ${go.info.pathId} has no Transform`);
-	}
-	return Promise.all(
-		arrayField(transform.data, 'm_Children').map(async (pointer) => {
-			const child = await resolver.resolve(transform.ref, asPPtr(pointer));
-			const ref =
-				child && (await resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject')));
-			if (!ref) {
-				throw new FormatError('prefab Transform child is missing');
-			}
-			return { ref, name: stringField(await resolver.read(ref), 'm_Name') };
-		}),
-	);
-};
-
 /** the one open-idle clip of an Animator's controller */
 const openIdleClip = async (
 	resolver: AssetResolver,
-	animator: { ref: ObjectRef; data: TypeTreeObject },
+	animator: PrefabComponent,
 	where: string,
 ): Promise<TypeTreeObject> => {
-	const controller = await resolver.resolve(animator.ref, pptrField(animator.data, 'm_Controller'));
+	const controller = await resolver.resolve(animator.ref, pptrField(await animator.read(), 'm_Controller'));
 	if (controller === null) {
 		throw new FormatError(`${where}'s Animator has no controller`);
 	}
@@ -126,27 +84,31 @@ const railPose = async (
 	/** by binding key below the Animator, the same GameObject's path below the prefab root */
 	const rootPaths = new Map<number, string>();
 	// `below` is the path below the Animator, `null` above it
-	const walk = async (go: ObjectRef, rootPath: string, below: string | null): Promise<void> => {
-		let here = below;
-		const [animator] = here === null ? await componentsOf(resolver, go, UnityClass.Animator) : [];
-		if (animator !== undefined) {
-			clip = await openIdleClip(resolver, animator, rootPath);
-			here = '';
-		}
-		if (here !== null) {
-			rootPaths.set(pathKey(here), rootPath);
-		}
-		await Promise.all(
-			(await childrenOf(resolver, go)).map(({ ref, name }) => {
-				let next: string | null = null;
-				if (here !== null) {
-					next = here === '' ? name : `${here}/${name}`;
+	await walkPrefab<{ rootPath: string; below: string | null }>(
+		resolver,
+		piece,
+		{
+			enter: async (node, parent) => {
+				let { rootPath, below } = parent;
+				if (!node.isRoot) {
+					rootPath = `${rootPath}/${node.name}`;
+					if (below !== null) {
+						below = below === '' ? node.name : `${below}/${node.name}`;
+					}
 				}
-				return walk(ref, `${rootPath}/${name}`, next);
-			}),
-		);
-	};
-	await walk(piece, pieceName, null);
+				const [animator] = below === null ? node.ofClass(UnityClass.Animator) : [];
+				if (animator !== undefined) {
+					clip = await openIdleClip(resolver, animator, rootPath);
+					below = '';
+				}
+				if (below !== null) {
+					rootPaths.set(pathKey(below), rootPath);
+				}
+				return { rootPath, below };
+			},
+		},
+		{ rootPath: pieceName, below: null },
+	);
 	const rekeyed = new Map<number, ClipTransformValue[]>();
 	for (const [key, values] of clip === null ? [] : readClipEndPose(clip).transforms) {
 		const rootPath = rootPaths.get(key);
@@ -178,15 +140,22 @@ export const readTelescopicPoses = async (
 	key: string,
 	pieces: number,
 ): Promise<TelescopicPoses | null> => {
-	const mono = (await componentsOf(resolver, root, UnityClass.MonoBehaviour)).find(
-		({ data }) => 'platformLength' in data && 'platformGameObject' in data,
-	);
+	const rootNode = await readPrefabNode(resolver, root);
+	let mono: { ref: ObjectRef; data: TypeTreeObject } | undefined;
+	for (const component of rootNode.ofClass(UnityClass.MonoBehaviour)) {
+		const data = await component.read();
+		if ('platformLength' in data && 'platformGameObject' in data) {
+			mono = { ref: component.ref, data };
+			break;
+		}
+	}
 	if (mono === undefined) {
 		return null;
 	}
-	const children = new Map(
-		(await childrenOf(resolver, root)).map(({ ref, name }) => [objectKey(ref), name] as const),
-	);
+	const children = new Map<string, string>();
+	for (const child of await prefabChildren(resolver, rootNode)) {
+		children.set(objectKey(child), stringField(await resolver.read(child), 'm_Name'));
+	}
 	const childNamed = async (field: string): Promise<{ ref: ObjectRef; name: string }> => {
 		const ref = await resolver.resolve(mono.ref, pptrField(mono.data, field));
 		const name = ref === null ? undefined : children.get(objectKey(ref));

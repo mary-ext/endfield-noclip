@@ -93,7 +93,7 @@ const pptr = (id: number) => ({ m_FileID: 0, m_PathID: BigInt(id) });
 		}
 		objects.set(BigInt(id), {
 			classId: UnityClass.GameObject,
-			data: { m_Name: name, m_Component: components },
+			data: { m_Name: name, m_IsActive: 1, m_Component: components },
 		});
 		objects.set(BigInt(id + 10), {
 			classId: UnityClass.Transform,

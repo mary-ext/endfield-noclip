@@ -1,4 +1,4 @@
-/* oxlint-disable no-await-in-loop -- walks a prefab's hierarchy in authored order */
+/* oxlint-disable no-await-in-loop -- reads a GameObject's MonoBehaviours in order */
 import { crc32 } from 'node:zlib';
 
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
@@ -8,7 +8,7 @@ import {
 	interactiveParamFromValue,
 } from '@endfield-noclip/formats/endfield/level-interactives';
 import { isMemoryPackObject, type MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
-import { isTransformClass, UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
+import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import {
 	multiplyMatrices,
 	multiplyQuaternions,
@@ -16,17 +16,11 @@ import {
 	unityEulerQuaternion,
 } from '@endfield-noclip/formats/unity/transform';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
-import {
-	arrayField,
-	asPPtr,
-	isObject,
-	numberField,
-	objectField,
-	pptrField,
-	stringField,
-} from '@endfield-noclip/formats/unity/values';
+import { pptrField } from '@endfield-noclip/formats/unity/values';
 
 import { type AssetResolver, objectKey, type ObjectRef } from '../assets/assets.ts';
+import type { LocalTransform } from '../effects/particle-mesh.ts';
+import { walkPrefab } from '../prefabs/prefab-walk.ts';
 import type { PrefabPose } from '../prefabs/prefab.ts';
 
 // crane towers and the containers they hang: docs/game-data/interactives.md#crane-towers
@@ -131,21 +125,19 @@ export interface CraneLook {
 }
 
 /** a Transform of the prefab, as saved */
-interface Node {
+interface Node extends LocalTransform {
 	/** the GameObject's path below the prefab root, `/`-joined; '' for the root */
 	path: string;
 	/** the parent Transform's key, `null` for the root */
 	parent: string | null;
-	position: [number, number, number];
-	rotation: [number, number, number, number];
-	scale: [number, number, number];
 }
 
-const xyz = (value: TypeTreeObject): [number, number, number] => [
-	numberField(value, 'x'),
-	numberField(value, 'y'),
-	numberField(value, 'z'),
-];
+/** local values the tower component sets on a Transform */
+interface Posed {
+	position?: [number, number, number];
+	rotation?: [number, number, number, number];
+	scale?: [number, number, number];
+}
 
 /** the crane postmodel MonoBehaviour's Transform fields, as the game's tower component reads them */
 const MONO_FIELDS = ['rotateBaseTrans', 'rotateHeaderTrans', 'ropeEndTrans', 'ropeScaleTrans', 'attachTrans'];
@@ -177,53 +169,28 @@ export const readCraneLook = async (
 	const nodes = new Map<string, Node>();
 	// the game takes the first such MonoBehaviour in the hierarchy, the root's own first
 	let mono: { ref: ObjectRef; data: TypeTreeObject } | null = null;
-	const visit = async (go: ObjectRef, parent: string | null, path: string): Promise<void> => {
-		const data = await resolver.read(go);
-		let transform: ObjectRef | null = null;
-		for (const item of arrayField(data, 'm_Component')) {
-			if (!isObject(item)) {
-				throw new FormatError('prefab component is not an object');
-			}
-			const ref = await resolver.resolve(go, pptrField(item, 'component'));
-			if (ref === null) {
-				continue;
-			}
-			if (isTransformClass(ref.info.classId)) {
-				transform ??= ref;
-			} else if (mono === null && ref.info.classId === UnityClass.MonoBehaviour) {
-				const component = await resolver.read(ref);
-				if (MONO_FIELDS.every((field) => field in component)) {
-					mono = { ref, data: component };
+	await walkPrefab<string>(
+		resolver,
+		root,
+		{
+			enter: async (node, parentPath) => {
+				let path = '';
+				if (!node.isRoot) {
+					path = parentPath === '' ? node.name : `${parentPath}/${node.name}`;
 				}
-			}
-		}
-		if (transform === null) {
-			throw new FormatError(`prefab GameObject ${objectKey(go)} has no Transform`);
-		}
-		const t = await resolver.read(transform);
-		const tKey = objectKey(transform);
-		if (nodes.has(tKey)) {
-			throw new FormatError(`cyclic prefab hierarchy at ${tKey}`);
-		}
-		const rotation = objectField(t, 'm_LocalRotation');
-		nodes.set(tKey, {
-			path,
-			parent,
-			position: xyz(objectField(t, 'm_LocalPosition')),
-			rotation: [...xyz(rotation), numberField(rotation, 'w')],
-			scale: xyz(objectField(t, 'm_LocalScale')),
-		});
-		for (const pointer of arrayField(t, 'm_Children')) {
-			const child = await resolver.resolve(transform, asPPtr(pointer));
-			const childGo =
-				child && (await resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject')));
-			if (childGo) {
-				const name = stringField(await resolver.read(childGo), 'm_Name');
-				await visit(childGo, tKey, path === '' ? name : `${path}/${name}`);
-			}
-		}
-	};
-	await visit(root, null, '');
+				nodes.set(node.transformKey, { ...node.saved, path, parent: node.parent?.transformKey ?? null });
+				for (const component of mono === null ? node.ofClass(UnityClass.MonoBehaviour) : []) {
+					const data = await component.read();
+					if (MONO_FIELDS.every((field) => field in data)) {
+						mono = { ref: component.ref, data };
+						break;
+					}
+				}
+				return path;
+			},
+		},
+		'',
+	);
 	const found = mono as { ref: ObjectRef; data: TypeTreeObject } | null;
 	if (found === null) {
 		return null;
@@ -239,7 +206,7 @@ export const readCraneLook = async (
 		}),
 	);
 	// local overrides by Transform key, applied over the saved values
-	const posed = new Map<string, Partial<Pick<Node, 'position' | 'rotation' | 'scale'>>>();
+	const posed = new Map<string, Posed>();
 	const local = (tKey: string): Node => ({ ...nodes.get(tKey)!, ...posed.get(tKey) });
 	const placementRotation = [...placement.rotation];
 	const worldRotation = (tKey: string | null): [number, number, number, number] => {

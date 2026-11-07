@@ -1,7 +1,7 @@
 /* oxlint-disable no-await-in-loop -- walks a small subtree in authored order */
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import { readClipActivity } from '@endfield-noclip/formats/unity/animation-clip';
-import { isTransformClass, UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
+import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	arrayField,
@@ -13,6 +13,7 @@ import {
 } from '@endfield-noclip/formats/unity/values';
 
 import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
+import { PRUNE, walkPrefab } from '../prefabs/prefab-walk.ts';
 
 // effects a prefab's view states never show at rest: docs/game-data/effects.md#one-shot-effects
 
@@ -238,40 +239,27 @@ export const effectDistanceLod = async (
  */
 export const isOneShotEffect = async (resolver: AssetResolver, go: ObjectRef): Promise<boolean> => {
 	let settings = 0;
-	const visit = async (node: ObjectRef): Promise<boolean> => {
-		const data = await resolver.read(node);
-		let transform: ObjectRef | null = null;
-		for (const item of arrayField(data, 'm_Component')) {
-			if (!isObject(item)) {
-				throw new FormatError('prefab component is not an object');
-			}
-			const ref = await resolver.resolve(node, pptrField(item, 'component'));
-			if (ref === null) {
-				continue;
-			}
-			if (isTransformClass(ref.info.classId)) {
-				transform = ref;
-			} else if (ref.info.classId === UnityClass.MonoBehaviour && isEffectSettingType(ref)) {
-				settings++;
-				if (numberField(objectField(await resolver.read(ref), 'effectLogicCfg'), 'isLoop') !== 0) {
-					return false;
+	let loops = false;
+	await walkPrefab(
+		resolver,
+		go,
+		{
+			enter: async (node) => {
+				// one looping setting settles it, so the rest of the subtree isn't read
+				if (loops) {
+					return PRUNE;
 				}
-			}
-		}
-		if (transform === null) {
-			throw new FormatError(`prefab GameObject ${objectKey(node)} has no Transform`);
-		}
-		for (const pointer of arrayField(await resolver.read(transform), 'm_Children')) {
-			const child = await resolver.resolve(transform, asPPtr(pointer));
-			if (child === null) {
-				continue;
-			}
-			const childGo = await resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject'));
-			if (childGo !== null && !(await visit(childGo))) {
-				return false;
-			}
-		}
-		return true;
-	};
-	return (await visit(go)) && settings > 0;
+				for (const setting of node.behaviours(isEffectSettingType)) {
+					settings++;
+					if (numberField(objectField(await setting.read(), 'effectLogicCfg'), 'isLoop') !== 0) {
+						loops = true;
+						return PRUNE;
+					}
+				}
+				return undefined;
+			},
+		},
+		undefined,
+	);
+	return !loops && settings > 0;
 };
