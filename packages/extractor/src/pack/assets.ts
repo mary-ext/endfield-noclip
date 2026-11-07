@@ -510,6 +510,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				{
 					kind: BlobKind.Geometry,
 					stem: archives.stem(input.places.geometries[id]),
+					locality: null,
 				},
 				geometry,
 			);
@@ -580,10 +581,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 			byContent.set(result.contentKey, id);
 			textureIds.push(id);
 			textureFormats[result.entry.format] = (textureFormats[result.entry.format] ?? 0) + 1;
-			const placement: BlobPlacement = {
-				kind: BlobKind.Texture,
-				stem: archives.stem(object.place),
-			};
+			const stem = archives.stem(object.place);
 			textureEntries.push({
 				id,
 				status: 'ready',
@@ -592,6 +590,12 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 					const { width, height } = textureLevelLayout(result.entry, piece.firstLevel);
 					const group = i === 0 && piece.levelCount > 1 ? 'tail' : String(Math.max(width, height));
 					texturePieces[group] ??= { count: 0, stored: 0, raw: 0 };
+					// a texture's pieces sit together under its tail's hash, coarse to fine
+					const placement: BlobPlacement = {
+						kind: BlobKind.Texture,
+						stem,
+						locality: `${pieces[0].blob.hash}.${i.toString(16).padStart(2, '0')}`,
+					};
 					return {
 						blob: commit(store, piece.blob, placement, texturePieces[group]),
 						firstLevel: piece.firstLevel,

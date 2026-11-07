@@ -9,6 +9,7 @@ import { crc32 } from 'node:zlib';
 import type { BlobRecord } from '@endfield-noclip/package-format/blob-table';
 import { blobPath, type BlobKind } from '@endfield-noclip/package-format/blobs';
 import { ARCHIVE_ID_LENGTH, archiveName } from '@endfield-noclip/package-format/manifest';
+import type { TileKey } from '@endfield-noclip/package-format/tiles';
 
 import { mapDefined } from '@mary-ext/array-fns';
 import { type ArchivePlan, encodeArchive, encodeArchiveStream, planArchive } from '@mary-ext/czar';
@@ -30,7 +31,28 @@ export interface BlobPlacement {
 	 * already stored keeps its first group
 	 */
 	stem: string;
+	/**
+	 * the blob's locality key (`blobPath`): blobs read together share its part before the first `.` and sort by
+	 * the rest, and a group split into parts keeps each such set in one part. derived from content (tile keys,
+	 * hashes), never from ids, so paths only change with what they hold. `null` for a blob read alone
+	 */
+	locality: string | null;
 }
+
+/**
+ * @param tile a tile
+ * @returns the locality key of the blobs a tile node reads together: its level, then a Morton code of its x,
+ *   z, so a node's blobs are adjacent and nearby nodes' close
+ */
+export const tileLocality = (tile: TileKey): string => {
+	let code = 0;
+	const x = (tile.x + 0x80_00) & 0xff_ff;
+	const z = (tile.z + 0x80_00) & 0xff_ff;
+	for (let bit = 0; bit < 16; bit++) {
+		code |= (((x >>> bit) & 1) << (bit * 2)) | (((z >>> bit) & 1) << (bit * 2 + 1));
+	}
+	return `${tile.level.toString(16).padStart(2, '0')}${(code >>> 0).toString(16).padStart(8, '0')}`;
+};
 
 /** how to store one blob */
 export interface PutOptions extends BlobPlacement {
@@ -47,10 +69,7 @@ export interface PreparedBlob {
 }
 
 /** a blob as the store tracks it */
-interface StoredBlob extends BlobMeta {
-	kind: BlobKind;
-	stem: string;
-}
+interface StoredBlob extends BlobMeta, BlobPlacement {}
 
 /** a non-blob member of the core archive (manifest, tables) */
 export interface ArchiveMember {
@@ -171,7 +190,7 @@ export class BlobStore {
 		const packed = options.compress ? await zstd(raw, options.zstdLevel ?? this.#level) : null;
 		const { meta, stored } = storedBlob(raw, packed);
 		await this.dir.write(meta.hash, stored);
-		return { meta, options: { kind: options.kind, stem: options.stem } };
+		return { meta, options: { kind: options.kind, stem: options.stem, locality: options.locality } };
 	}
 
 	/**
@@ -187,7 +206,7 @@ export class BlobStore {
 			return existing;
 		}
 		const index = this.#blobs.length;
-		this.#blobs.push({ ...meta, kind: options.kind, stem: options.stem });
+		this.#blobs.push({ ...meta, kind: options.kind, stem: options.stem, locality: options.locality });
 		this.#byHash.set(meta.hash, index);
 		this.#layoutCache = undefined;
 		return index;
@@ -305,7 +324,10 @@ export class BlobStore {
 		const blobs = await Promise.all(
 			indices.map(async (index) => {
 				const blob = this.#blobs[index];
-				return { path: blobPath(blob.hash, blob.kind), data: await readFile(this.#blobPath(index)) };
+				return {
+					path: blobPath(blob.hash, blob.kind, blob.locality),
+					data: await readFile(this.#blobPath(index)),
+				};
 			}),
 		);
 		const files = [...blobs, ...members];
@@ -356,8 +378,9 @@ export class BlobStore {
 
 	/**
 	 * @param indices one group's blobs
-	 * @returns its parts: the whole group under `null` when it fits the cap, else buckets by the top bits of
-	 *   each blob's hash, a power of two of them so a group's split only changes when its size doubles
+	 * @returns its parts: the whole group under `null` when it fits the cap, else buckets by the top bits of a
+	 *   hash of each blob's locality set (its own hash without one), a power of two of them so a group's split
+	 *   only changes when its size doubles, and blobs read together stay in one part
 	 */
 	#split(indices: readonly number[]): Map<number | null, readonly number[]> {
 		const total = indices.reduce((sum, index) => sum + this.#blobs[index].length, 0);
@@ -367,7 +390,10 @@ export class BlobStore {
 		const bits = Math.ceil(Math.log2(total / this.#cap));
 		const parts = new Map<number, number[]>();
 		for (const index of indices) {
-			const part = Number.parseInt(this.#blobs[index].hash.slice(0, 8), 16) >>> (32 - bits);
+			const { hash, locality } = this.#blobs[index];
+			const spread =
+				locality === null ? hash : createHash('sha256').update(locality.split('.', 1)[0]).digest('hex');
+			const part = Number.parseInt(spread.slice(0, 8), 16) >>> (32 - bits);
 			parts.getOrInsertComputed(part, () => []).push(index);
 		}
 		// oxlint-disable-next-line unicorn/no-array-sort -- sorts a fresh copy
@@ -378,7 +404,12 @@ export class BlobStore {
 		return planArchive(
 			indices.map((index) => {
 				const blob = this.#blobs[index];
-				return { path: blobPath(blob.hash, blob.kind), size: blob.length, crc32: blob.crc32, index };
+				return {
+					path: blobPath(blob.hash, blob.kind, blob.locality),
+					size: blob.length,
+					crc32: blob.crc32,
+					index,
+				};
 			}),
 		);
 	}

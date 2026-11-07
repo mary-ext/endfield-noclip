@@ -142,7 +142,7 @@ import {
 	type PlacedTexture,
 } from './assets.ts';
 import { BlobDir } from './blob-file.ts';
-import { BlobStore, type PutOptions } from './blob-store.ts';
+import { BlobStore, type PutOptions, tileLocality } from './blob-store.ts';
 import { aabbBounds, growBounds, squareOverlapsRect } from './bounds.ts';
 import { CASTS_EVERYWHERE, ChainTable, chainDrawFlagsOf } from './chains.ts';
 import { ControlRegistry } from './control-registry.ts';
@@ -2063,7 +2063,7 @@ const packInstances = async (
 		const blobs = await store.putMany(
 			encoded.map(({ group, block }) => ({
 				raw: encodeInstanceBlock(block),
-				options: placement(BlobKind.Instances, archiveForTile(pack, group.key)),
+				options: placement(BlobKind.Instances, archiveForTile(pack, group.key), tileLocality(group.key)),
 			})),
 		);
 		for (const [i, { group, order }] of encoded.entries()) {
@@ -2094,7 +2094,7 @@ const packInstances = async (
 		const blobs = await store.putMany(
 			encoded.map(({ block }) => ({
 				raw: encodeInstanceBlock(block),
-				options: placement(BlobKind.Instances, CORE_ARCHIVE),
+				options: placement(BlobKind.Instances, CORE_ARCHIVE, null),
 			})),
 		);
 		for (const [i, { group, order }] of encoded.entries()) {
@@ -2548,7 +2548,12 @@ const archivePlacement = (pack: PackState, stem: string): Pick<ArchiveInfo, 'rol
 	return { role: 'assets', tile: pack.assetArchives.tileOf(stem) ?? null };
 };
 
-const placement = (kind: BlobKind, stem: string): PutOptions => ({ kind, compress: true, stem });
+const placement = (kind: BlobKind, stem: string, locality: string | null): PutOptions => ({
+	kind,
+	compress: true,
+	stem,
+	locality,
+});
 
 // #endregion
 

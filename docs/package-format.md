@@ -23,8 +23,8 @@ other workspace packages so both sides can import it.
 ```
 <package>/
   core.czar                       read whole when the package opens
-    blobs/<hash>.hgt              terrain height pages coarser than the 128 m cells
-    blobs/<hash>.tsp              terrain surface pages, likewise
+    blobs/<tile>/<hash>.hgt       terrain height pages coarser than the 128 m cells
+    blobs/<tile>/<hash>.tsp       terrain surface pages, likewise
     blobs/<hash>.inst             HLOD and global instance blocks, one of each per visibility group
     manifest.json.zst             PackageManifest
     tables/blobs.bin              blob index → archive, codec, kind, offset, lengths
@@ -38,17 +38,17 @@ other workspace packages so both sides can import it.
     tables/irradiance.bin         irradiance cell keys → blobs, per bake
     tree.bin                      tile nodes + content refs
   shards/<l>_<x>_<z>-<id>.czar        content of one shard-level tile's subtree
-    blobs/<hash>.hgt                  terrain height pages at the cell level and finer
-    blobs/<hash>.tsp                  terrain surface pages, likewise
-    blobs/<hash>.tsl                  terrain splat pages (leaves)
-    blobs/<hash>.inst                 detail and conditional instance blocks
+    blobs/<tile>/<hash>.hgt           terrain height pages at the cell level and finer
+    blobs/<tile>/<hash>.tsp           terrain surface pages, likewise
+    blobs/<tile>/<hash>.tsl           terrain splat pages (leaves)
+    blobs/<tile>/<hash>.inst          detail and conditional instance blocks
   assets/<l>_<x>_<z>[.<n>]-<id>.czar  geometry and texture blobs whose uses all lie under that tile
   assets/common[.<n>]-<id>.czar       ... used by global content or under several root tiles
   assets/terrain-layers-<id>.czar     terrain layer textures (.tly)
     blobs/<hash>.mesh                 one mesh
-    blobs/<hash>.tex                  mip levels of one texture
+    blobs/<tail>.<i>/<hash>.tex       mip levels of one texture, piece i under its tail's hash
   irradiance/<x>_<z>-<id>.czar        irradiance cells over one 512 m square
-    blobs/<hash>.iv
+    blobs/<cell key>/<hash>.iv
   debug/                              provenance; never loaded by the viewer
 ```
 
@@ -59,11 +59,20 @@ member's path (a blob hash), offset, size and CRC. so a name changes exactly whe
 bytes do. `manifest.archives` lists every archive with its `role` (`core`, `shards`, `assets`,
 `irradiance`) and `tile`; the core is entry 0, the rest follow sorted by name.
 
+**locality**: czar lays members out in path order, so a blob's path leads with a locality key
+(`blobPath`) that puts blobs read together next to each other, and the viewer's
+[coalescing](viewer/streaming.md#residency-and-budgets) reads them in one request: a tile node's
+terrain pages and instance blocks share its key (its level, then a Morton code of x and z, so nearby
+tiles sit close), a texture's pieces sort coarse to fine under its tail's hash, and irradiance cells
+by cell key. keys come from content, never from table ids, so a path changes only with what it
+holds. meshes, the core's blobs and terrain layers are read alone and have none.
+
 **parts**: a group whose blobs total more than 1 GiB is split into a power-of-two number of parts by
-the top bits of each blob's hash, so parts land at 0.5–1 GiB (u32 offsets allow 4 GiB, and the size
-suits HTTP and OPFS). splitting by hash rather than by fill order keeps each part's membership
-stable: adding or changing an asset changes one part, and the split itself only changes when a group
-doubles.
+the top bits of a hash of each blob's locality set (the key before its first `.`; its own hash
+without one), so parts land at 0.5–1 GiB (u32 offsets allow 4 GiB, and the size suits HTTP and OPFS)
+and blobs read together stay in one part. splitting by hash rather than by fill order keeps each
+part's membership stable: adding or changing an asset changes one part, and the split itself only
+changes when a group doubles.
 
 **reuse**: content names make a re-pack cheap. the packer clones each archive whose name (and size)
 the package it replaces already has, instead of streaming it from the blob store again; on APFS and
@@ -88,8 +97,8 @@ fetches a shard's JSON header. czar contributes CRCs, deterministic output,
 uncompressed members as typed arrays.
 
 - **blob identity**: the first 128 bits of the SHA-256 of the **stored** (post-codec) bytes, as 32
-  lowercase hex digits. equal stored bytes are one blob, kept in the archive of its first use.
-  member path is `blobs/<hash>.<ext>` (`BLOB_EXTENSIONS`).
+  lowercase hex digits. equal stored bytes are one blob, kept in the archive and locality of its
+  first use. member path is `blobs/[<locality>/]<hash>.<ext>` (`blobPath`).
 - **codec** (`BlobCodec`): `0` none, `1` one zstd frame. the packer keeps the zstd frame only when
   it saves at least 1/32 of the bytes, since a frame costs a decode pass and small BC7 mip tails
   barely compress. compression settings are in

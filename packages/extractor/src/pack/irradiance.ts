@@ -101,6 +101,7 @@ const convertCells = async (
 					compress: true,
 					zstdLevel: ZSTD_LEVEL,
 					stem: cellStem(record.key),
+					locality: null,
 				});
 			}),
 		);
@@ -194,6 +195,7 @@ export const packIrradianceRegions = async (
 			compress: true,
 			zstdLevel: ZSTD_LEVEL,
 			stem: irradianceStem(centre(0), centre(2)),
+			locality: null,
 		});
 		regions.push({ name, group, origin: region.origin, size: region.size, blob: store.commit(prepared) });
 	}
@@ -304,7 +306,15 @@ export const packIrradiance = async (
 		}
 		return {
 			key: cell,
-			blob: store.commit({ meta, options: { kind: BlobKind.Irradiance, stem: cellStem(cell) } }),
+			blob: store.commit({
+				meta,
+				options: {
+					kind: BlobKind.Irradiance,
+					stem: cellStem(cell),
+					// by cell key, so a cell's neighbours at its level are near it
+					locality: cell.toString(16).padStart(8, '0'),
+				},
+			}),
 			group,
 			states: names.length,
 		};

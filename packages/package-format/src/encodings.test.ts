@@ -161,8 +161,12 @@ describe('blob table', () => {
 		];
 		assert.deepEqual(decodeBlobTable(encodeBlobTable(blobs)), blobs);
 		assert.equal(
-			blobPath('0123456789abcdef0123456789abcdef', blobs[0].kind),
+			blobPath('0123456789abcdef0123456789abcdef', blobs[0].kind, null),
 			'blobs/0123456789abcdef0123456789abcdef.inst',
+		);
+		assert.equal(
+			blobPath('0123456789abcdef0123456789abcdef', blobs[0].kind, '06.01'),
+			'blobs/06.01/0123456789abcdef0123456789abcdef.inst',
 		);
 	});
 

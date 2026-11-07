@@ -20,7 +20,7 @@ import { openArchive } from '@mary-ext/czar';
 import { fromFileHandle } from '@mary-ext/czar/node';
 
 import { BlobDir } from './blob-file.ts';
-import { BlobStore } from './blob-store.ts';
+import { BlobStore, tileLocality } from './blob-store.ts';
 import { ChainTable } from './chains.ts';
 import { type HlodSample, hlodCandidates, layoutHlodGrid, pickHlodTile } from './hlod-cells.ts';
 import { InstanceBlockBuilder } from './instances.ts';
@@ -273,9 +273,18 @@ describe('BlobStore', () => {
 			const compressible = new Uint8Array(4096).fill(7);
 			const random = Uint8Array.from({ length: 333 }, (_, i) => (i * 2654435761) >>> 24);
 			const [a, b, c] = await store.putMany([
-				{ raw: compressible, options: { kind: BlobKind.Instances, compress: true, stem: 'shards/x' } },
-				{ raw: random, options: { kind: BlobKind.Geometry, compress: false, stem: 'core.czar' } },
-				{ raw: compressible, options: { kind: BlobKind.Instances, compress: true, stem: 'other' } },
+				{
+					raw: compressible,
+					options: { kind: BlobKind.Instances, compress: true, stem: 'shards/x', locality: '0a' },
+				},
+				{
+					raw: random,
+					options: { kind: BlobKind.Geometry, compress: false, stem: 'core.czar', locality: null },
+				},
+				{
+					raw: compressible,
+					options: { kind: BlobKind.Instances, compress: true, stem: 'other', locality: null },
+				},
 			]);
 			assert.equal(c, a);
 			assert.equal(store.size, 2);
@@ -302,7 +311,7 @@ describe('BlobStore', () => {
 				assert.deepEqual(new Uint8Array(zstdDecompressSync(stored)), compressible);
 				const archive = await openArchive(await fromFileHandle(handle));
 				assert.equal(
-					archive.get(blobPath(store.hashOf(a), record.kind))!.position,
+					archive.get(blobPath(store.hashOf(a), record.kind, '0a'))!.position,
 					shard.dataOffset + record.offset,
 				);
 			}
@@ -310,7 +319,7 @@ describe('BlobStore', () => {
 			{
 				await using handle = await open(join(dir, 'core.czar'));
 				const archive = await openArchive(await fromFileHandle(handle));
-				const file = archive.get(blobPath(store.hashOf(b), BlobKind.Geometry))!;
+				const file = archive.get(blobPath(store.hashOf(b), BlobKind.Geometry, null))!;
 				assert.deepEqual(await file.bytes(), random);
 				assert.equal(core.dataOffset + records[b].offset, file.position);
 				assert.ok(archive.get('manifest.json'));
@@ -343,12 +352,13 @@ describe('BlobStore', () => {
 				kind: BlobKind.Instances,
 				compress: true,
 				stem: 'core.czar',
+				locality: null,
 			});
 			await store.writeCore(dir, []);
 			await using handle = await open(join(dir, 'core.czar'));
 			const archive = await openArchive(await fromFileHandle(handle));
 			const record = store.records(['core.czar'])[index];
-			let bytes = await archive.get(blobPath(store.hashOf(index), record.kind))!.bytes();
+			let bytes = await archive.get(blobPath(store.hashOf(index), record.kind, null))!.bytes();
 			if (record.codec === BlobCodec.Zstd) {
 				bytes = new Uint8Array(zstdDecompressSync(bytes));
 			}
@@ -366,7 +376,13 @@ describe('BlobStore', () => {
 				archiveCap: 1 << 20,
 				core: 'core.czar',
 			});
-			const options = { kind: BlobKind.Texture, compress: true, zstdLevel: 1, stem: 'assets/common' };
+			const options = {
+				kind: BlobKind.Texture,
+				compress: true,
+				zstdLevel: 1,
+				stem: 'assets/common',
+				locality: null,
+			};
 			// pseudo-random bytes: zstd can't save 1/32 of them
 			let seed = 1;
 			const noise = Uint8Array.from({ length: 4096 }, () => {
@@ -388,7 +404,16 @@ describe('BlobStore', () => {
 		}
 	});
 
-	it('splits large groups by blob hash and clones unchanged archives from the previous package', async () => {
+	it('keys tiles by level, then interleaved x and z', () => {
+		assert.equal(tileLocality({ level: 6, x: 0, z: 0 }), '06c0000000');
+		// x is the even bits, z the odd ones
+		assert.equal(tileLocality({ level: 6, x: 1, z: 0 }), '06c0000001');
+		assert.equal(tileLocality({ level: 6, x: 0, z: 1 }), '06c0000002');
+		// west of the root square sorts before it
+		assert.ok(tileLocality({ level: 6, x: -1, z: 0 }) < tileLocality({ level: 6, x: 0, z: 0 }));
+	});
+
+	it('splits large groups by locality and clones unchanged archives from the previous package', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-test-'));
 		try {
 			const blobs = new BlobDir(join(dir, '.spool'));
@@ -397,18 +422,29 @@ describe('BlobStore', () => {
 				await store.putMany(
 					Array.from({ length: count }, (_, i) => ({
 						raw: Uint8Array.from({ length: 1024 }, (_, j) => (i * 31 + j * 7) & 0xff),
-						options: { kind: BlobKind.Texture, compress: false, stem: 'assets/common' },
+						// pairs read together; the odd one out of an odd count is read alone
+						options: {
+							kind: BlobKind.Texture,
+							compress: false,
+							stem: 'assets/common',
+							locality: i < count - (count % 2) ? `${(i >> 1).toString(16)}.${i & 1}` : null,
+						},
 					})),
 				);
 				return store;
 			};
-			// 12 KiB over a 4 KiB cap: four parts named by bucket, each holding blobs whose hashes start alike
+			// 12 KiB over a 4 KiB cap: four parts named by bucket, each holding whole pairs
 			const first = await fill(12);
 			const parts = first.archives();
 			assert.ok(parts.length > 1 && parts.length <= 4);
 			for (const { name, stem } of parts) {
 				assert.equal(stem, 'assets/common');
 				assert.match(name, /^assets\/common\.[0-3]-[0-9a-f]{16}\.czar$/);
+			}
+			const records = first.records(['core.czar', ...parts.map(({ name }) => name)]);
+			for (let i = 0; i < 12; i += 2) {
+				assert.equal(records[i].archive, records[i + 1].archive);
+				assert.equal(records[i + 1].offset, records[i].offset + records[i].length);
 			}
 			const previous = join(dir, 'previous');
 			await first.writeArchives(previous, null);
@@ -421,7 +457,7 @@ describe('BlobStore', () => {
 				assert.deepEqual(await readFile(join(dir, 'next', name)), await readFile(join(previous, name)));
 			}
 
-			// one more blob changes only the part it hashes into
+			// one more blob, read alone, changes only the part it hashes into
 			const grown = await fill(13);
 			const written = await grown.writeArchives(join(dir, 'grown'), previous);
 			assert.equal([...written.values()].filter((archive) => !archive.reused).length, 1);

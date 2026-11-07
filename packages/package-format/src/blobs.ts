@@ -64,8 +64,13 @@ export const BlobCodec = {
 export type BlobCodec = (typeof BlobCodec)[keyof typeof BlobCodec];
 
 /**
+ * archives lay members out in path order, so blobs sharing a locality key sit next to each other, ordered by
+ * the key, and a reader can fetch them in one range read
+ *
  * @param hash blob hash
  * @param kind blob kind
- * @returns the blob's member path inside its archive
+ * @param locality the blob's locality key (lowercase hex digits and `.`), or `null` for a blob read alone
+ * @returns the blob's member path inside its archive: `blobs/[<locality>/]<hash>.<ext>`
  */
-export const blobPath = (hash: string, kind: BlobKind): string => `blobs/${hash}.${BLOB_EXTENSIONS[kind]}`;
+export const blobPath = (hash: string, kind: BlobKind, locality: string | null): string =>
+	`blobs/${locality === null ? '' : `${locality}/`}${hash}.${BLOB_EXTENSIONS[kind]}`;

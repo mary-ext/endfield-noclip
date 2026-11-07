@@ -51,7 +51,7 @@ import {
 import type { VfsFile } from '../hg/vfs.ts';
 
 import type { BlobMeta } from './blob-file.ts';
-import type { BlobStore, PutOptions } from './blob-store.ts';
+import { type BlobStore, type PutOptions, tileLocality } from './blob-store.ts';
 import type { PackCache, StepMemo } from './pack-cache.ts';
 
 /** tiles read and compressed at once; bounds memory */
@@ -203,16 +203,17 @@ export const packTerrain = async (
 
 	// commit in memo order: tiles, then layer textures
 	let next = 0;
-	const commit = (kind: BlobKind, stem: string): number =>
-		store.commit({ meta: memo.blobs[next++], options: { kind, stem } });
+	const commit = (kind: BlobKind, stem: string, locality: string | null): number =>
+		store.commit({ meta: memo.blobs[next++], options: { kind, stem, locality } });
 	const packed = memo.value.tiles.map(({ key: tile, minY, maxY, surface: hasSurface, splat: hasSplat }) => {
 		const stem = input.stemOf(tile);
+		const locality = tileLocality(tile);
 		const { minX, minZ, size } = tileFootprint(input.grid, tile);
 		return {
 			key: tile,
-			heights: commit(BlobKind.TerrainHeights, stem),
-			surface: hasSurface ? commit(BlobKind.TerrainSurface, stem) : null,
-			splat: hasSplat ? commit(BlobKind.TerrainSplat, stem) : null,
+			heights: commit(BlobKind.TerrainHeights, stem, locality),
+			surface: hasSurface ? commit(BlobKind.TerrainSurface, stem, locality) : null,
+			splat: hasSplat ? commit(BlobKind.TerrainSplat, stem, locality) : null,
 			bounds: { min: [minX, minY, minZ], max: [minX + size, maxY, minZ + size] },
 		} satisfies PackedTerrainTile;
 	});
@@ -221,8 +222,8 @@ export const packTerrain = async (
 		const diffuse: number[] = [];
 		const normal: number[] = [];
 		while (next < memo.blobs.length) {
-			diffuse.push(commit(BlobKind.TerrainLayer, input.layerStem));
-			normal.push(commit(BlobKind.TerrainLayer, input.layerStem));
+			diffuse.push(commit(BlobKind.TerrainLayer, input.layerStem, null));
+			normal.push(commit(BlobKind.TerrainLayer, input.layerStem, null));
 		}
 		splat = { ...memo.value.splat, diffuse, normal };
 	}
@@ -288,6 +289,7 @@ const pageOptions = (kind: BlobKind, zstdLevel: number): PutOptions => ({
 	compress: true,
 	zstdLevel,
 	stem: '',
+	locality: null,
 });
 
 /** reads, encodes and compresses the terrain into the store's directory, without committing anything */
@@ -463,6 +465,7 @@ const convertLayers = async (
 				compress: true,
 				zstdLevel: input.textureZstdLevel,
 				stem: input.layerStem,
+				locality: null,
 			});
 			blobs.push(prepared.meta);
 		}
