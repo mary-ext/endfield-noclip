@@ -71,11 +71,13 @@ const FX_CAMERA_PULL = 35u;
 // effect-look.ts)
 const FX_CUSTOM_SCROLL = 36u;
 // the texture stack's reveal around the player (`EffectRow.appear*`): radii, alpha factor and edge; noise
-// scale, speed, centre height and 1 with a reveal; brightening colour; 1 when the vertex alpha scales it
+// scale, speed, centre height and 1 with a reveal; brightening colour
 const FX_APPEAR = 40u;
 const FX_APPEAR_NOISE = 41u;
 const FX_APPEAR_BRIGHT = 42u;
-const FX_APPEAR_VERTEX_ALPHA = 43u;
+// the texture stack's switches: the vertex alpha scales the reveal's brightening, the global radii add to the
+// reveal's, the first disturb texture holds a normal, the vertex colour scales the blend tint
+const FX_STACK_FLAGS = 43u;
 // the slot of the vertex offset's texture (`OFFSET_SLOT` in stack.ts)
 const FX_OFFSET_SLOT = 6u;
 // how the vertex stage moves vertices (`VertexMotion` in stack.ts)
@@ -382,10 +384,11 @@ fn fx_custom_shift(id: u32, slot: u32, custom: vec4f) -> vec2f {
 
 // the texture stack: the distortion and weight run through the slots in order, then the main texture, its mask,
 // the blend layer and the dissolve, whose threshold the particle's custom data's z adds to as the schedule.
-// returns the colour (before exposure) and alpha
-fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f) -> vec4f {
+// `vertex_color` scales the blend tint where the look says so. returns the colour (before exposure) and alpha
+fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f, vertex_color: vec4f) -> vec4f {
 	let weight_row = fx_row(id, FX_WEIGHT);
 	let disturb = fx_row(id, FX_DISTURB);
+	let flags = fx_row(id, FX_STACK_FLAGS);
 	let distorting = fx_row(id, FX_MISC).w != 0.0;
 	let dissolve = fx_row(id, FX_DISSOLVE);
 	let dissolve_color = fx_row(id, FX_DISSOLVE_COLOR);
@@ -417,7 +420,12 @@ fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f) -> vec4f {
 		let centred = t.r * (weight_row.x + 1.0) - weight_row.x;
 		switch role {
 			case ROLE_DISTURB1: {
-				offset += select(vec2f(0.0), centred * disturb.xy * disturb_scale, distorting);
+				// VFXAdvance's `_DisturbTex1Normal` reads it as a normal, scaled by its u strength alone
+				var shift = centred * disturb.xy;
+				if (flags.z != 0.0) {
+					shift = (vec2f(t.a * centred, t.g) * 2.0 - 1.0) * disturb.x;
+				}
+				offset += select(vec2f(0.0), shift * disturb_scale, distorting);
 			}
 			case ROLE_DISTURB2: {
 				offset += select(vec2f(0.0), centred * disturb.zw * disturb_scale, distorting);
@@ -451,7 +459,7 @@ fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f) -> vec4f {
 		main_sample = vec4f(1.0, 1.0, 1.0, main_sample.r);
 	}
 	let c = tint * main_sample * mask;
-	let blend_tint = fx_row(id, FX_BLEND_TINT);
+	let blend_tint = fx_row(id, FX_BLEND_TINT) * select(vec4f(1.0), vertex_color, flags.w != 0.0);
 	var color = blend.rgb * saturate((c.a + blend.a) * blend_tint.w) * blend_tint.rgb + c.rgb;
 	var alpha = c.a;
 	if (dissolve.w != 0.0) {
@@ -605,17 +613,20 @@ fn fx_appear_noise(p: vec2f) -> f32 {
 }
 
 // VFXAdvance's and VFXDitherAlpha's reveal around the player (`EffectAppear`), the camera standing in for the
-// player: the tint brightens towards the global radii (`frame.render_size.zw`, the fire seed's) and its alpha
-// fades past them, over an edge the noise frays. returns the tint
+// player: the tint brightens towards the material's radii, plus the global ones (`frame.render_size.zw`, the
+// fire seed's) under `_USE_GLOBAL_APPEAR`, and its alpha fades past them, over an edge the noise frays. returns
+// the tint
 fn fx_appear(in: EffectOut, bases: FxBases, tint: vec4f) -> vec4f {
 	let id = in.look;
 	let appear = fx_row(id, FX_APPEAR);
 	let noise = fx_row(id, FX_APPEAR_NOISE);
-	let inner = appear.x + frame.render_size.z;
-	let outer = appear.y + frame.render_size.w;
+	let flags = fx_row(id, FX_STACK_FLAGS);
+	let global = select(vec2f(0.0), frame.render_size.zw, flags.y != 0.0);
+	let inner = appear.x + global.x;
+	let outer = appear.y + global.y;
 	let d = length(in.rel - vec3f(0.0, noise.z, 0.0));
 	var bright = fx_row(id, FX_APPEAR_BRIGHT) * fx_smoothstep(outer, inner, d);
-	bright.a *= select(1.0, in.color.a, fx_row(id, FX_APPEAR_VERTEX_ALPHA).x != 0.0);
+	bright.a *= select(1.0, in.color.a, flags.x != 0.0);
 	var revealed = tint + bright;
 	// the noise runs over the main texture's UVs, before the distortion
 	let base = fx_slot_base(bases, fx_slot_bits(id, 0u));
@@ -642,7 +653,7 @@ fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
 	if (fx_row(id, FX_APPEAR_NOISE).w > 0.0) {
 		tint = fx_appear(in, bases, tint);
 	}
-	var combined = fx_combine(id, bases, tint, in.custom);
+	var combined = fx_combine(id, bases, tint, in.custom, in.color);
 	let depth = dot(in.rel, frame.view_forward.xyz);
 	// `_USE_EDGECOLOR` marks where the surface nears what lies behind it: mode 1 adds the edge colour and the tint
 	// alpha by its strength, 0 multiplies the colour by the edge colour and the alpha by the strength
@@ -1392,7 +1403,7 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 		}
 		return fx_lit_decal(in, px, rel, rel_dx, rel_dy, uv, bases.dx[0], bases.dy[0]);
 	}
-	let combined = fx_combine(id, bases, fx_row(id, FX_TINT), in.custom);
+	let combined = fx_combine(id, bases, fx_row(id, FX_TINT), in.custom, in.color);
 	let soft = fx_row(id, FX_SOFT);
 	let color = clamp(combined.rgb, vec3f(0.0), vec3f(1000.0)) * mix(1.0, frame.ambient.y, soft.z);
 

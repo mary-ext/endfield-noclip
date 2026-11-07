@@ -721,16 +721,18 @@ export interface TexturedDissolve<Texture extends EffectTexture = EffectTexture>
 }
 
 /**
- * the reveal around the player of VFXAdvance's and VFXDitherAlpha's `_USE_BRIGHT` with `_USE_GLOBAL_APPEAR`
+ * the reveal around the player of VFXAdvance's and VFXDitherAlpha's `_USE_BRIGHT`
  * (`docs/game-data/effects.md#invisible-bridges`). for `d` the distance from the player's position raised by
  * `characterHeight`, `s(x) = smoothstep(outer + R.outer, inner + R.inner, x)` with `R` the global radii
- * (`FireSeedInfo.radii`):
+ * (`FireSeedInfo.radii`) under `global`, zero otherwise:
  *
  * - the tint gains `brightColor · s(d)`, its alpha times the vertex alpha with `brightVertexAlpha`
  * - the tint's alpha then becomes `saturate(mix(a, a · alphaFar, s(d + edge · n)))`, `n` a value noise in −1…1
  *   over the main texture's UVs times `noiseScale`, scrolled by `noiseSpeed` per second on both axes
  */
 export interface EffectAppear {
+	/** `_USE_GLOBAL_APPEAR`: the global radii add to the material's */
+	global: boolean;
 	inner: number;
 	outer: number;
 	/** `_DistortAlpha`: the alpha's factor where `s` reaches 1 */
@@ -759,12 +761,19 @@ export interface EffectStackSurface {
 	tint: Color;
 	/** the blend layer's tint (HDR) and how strongly it covers */
 	blendTint: Color;
+	/** VFXAdvance's blend tint is times the vertex colour (unless `_BlendDisableVertColor`) */
+	blendVertexColor: boolean;
 	/** distortion per unit of the first and second disturb texture: u1, v1, u2, v2 */
 	disturb: [number, number, number, number];
 	/** `_Bi_Disturb` */
 	disturbBias: number;
 	/** `_USE_DISTURB`/`_UseDisturb`: the distortion is on */
 	distorted: boolean;
+	/**
+	 * VFXAdvance's `_DisturbTex1Normal`: the first disturb texture shifts by `(a · r′, g) · 2 − 1` times its u
+	 * strength, r′ its red remapped by `disturbBias`, rather than by r′ times the u and v strengths
+	 */
+	disturbNormal: boolean;
 	/**
 	 * VFXBaseV2's `_UseParticleDisturb` (off the ink-wash path): a particle's custom data's w scales the whole
 	 * distortion, so a mesh, whose w is 0, isn't distorted

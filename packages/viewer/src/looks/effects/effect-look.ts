@@ -151,6 +151,12 @@ export const EffectRow = {
 	appearBright: 168,
 	/** 1 when the vertex alpha scales the brightening's alpha */
 	appearVertexAlpha: 172,
+	/** 1 when the global radii add to the reveal's (`EffectAppear.global`) */
+	appearGlobal: 173,
+	/** 1 when the first disturb texture holds a normal (`EffectStackSurface.disturbNormal`) */
+	disturbNormal: 174,
+	/** 1 when the vertex colour scales the blend tint (`EffectStackSurface.blendVertexColor`) */
+	blendVertexColor: 175,
 } as const;
 
 /**

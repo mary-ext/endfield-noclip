@@ -977,6 +977,7 @@ describe('VFXAdvance', () => {
 		assert.deepEqual([surface.distorted, surface.masked, surface.unfogged], [true, true, false]);
 		assert.deepEqual(surface.fresnel, { power: 11, bias: 0.6, flip: 1, opacity: 1 });
 		assert.deepEqual(surface.appear, {
+			global: true,
 			inner: 2,
 			outer: -4,
 			alphaFar: 0,
@@ -1009,10 +1010,11 @@ describe('VFXAdvance', () => {
 			),
 			'effectStack',
 		);
-		assert.deepEqual(surface.layers.slice(0, 4).map(roleOf), [
+		assert.deepEqual(surface.layers.slice(0, 5).map(roleOf), [
 			['main', false, 'uv0', 0],
 			['disturb1', false, 'uv0', 0],
 			['mask', false, 'uv0', 0],
+			null,
 			['dissolve', false, 'uv0', 0],
 		]);
 		assert.deepEqual(surface.dissolve, {
@@ -1023,10 +1025,50 @@ describe('VFXAdvance', () => {
 		});
 	});
 
+	// Yinglung Pass's ink room floor (`M_fx_map02_lv007_inkroom_floor_04_01`)
+	it('tints by its blend layer, reads its disturb texture as a normal and reveals by its own radii', () => {
+		const surface = ofKind(
+			describeMaterial(
+				bridge({
+					keywords: ['_INK_COLOR_DISTORT', '_USE_BLEND', '_USE_BRIGHT', '_USE_DISTURB', '_USE_MASK'],
+					slots: { _MainTex: slot(1), _MaskTex: slot(2), _DisturbTex1: slot(3), _BlendTex: slot(4) },
+					floats: {
+						_UseMaskTexAsAlpha: 1,
+						_MainTexUseDisturb: 0.295,
+						_BlendTexUseDisturb: 0.07,
+						_DisturbTex1Normal: 1,
+						_InnerRadius: 8,
+						_OuterRadius: 1,
+						_DistortAlpha: 0,
+						_CharacterHeight: 2,
+					},
+					colors: { _TintColor: [1, 1, 1, 1], _BlendTint: [1.5, 1.5, 1.5, 0.2], _BrightColor: [0, 0, 0, 1] },
+				}),
+				advance,
+			),
+			'effectStack',
+		);
+		assert.deepEqual(surface.layers.slice(0, 5).map(roleOf), [
+			['main', false, 'uv0', 0.295],
+			['disturb1', false, 'uv0', 0],
+			['mask', true, 'uv0', 0],
+			['blend', false, 'uv0', 0.07],
+			null,
+		]);
+		assert.deepEqual(
+			[surface.blendTint, surface.blendVertexColor, surface.disturbNormal],
+			[[1.5, 1.5, 1.5, 0.2], true, true],
+		);
+		assert.deepEqual(
+			[surface.appear?.global, surface.appear?.inner, surface.appear?.outer, surface.appear?.alphaFar],
+			[false, 8, 1, 0],
+		);
+	});
+
 	it('leaves out what it can’t draw', () => {
 		const reasons = [
 			bridge({ keywords: ['_USE_SOFTBLEND'] }),
-			bridge({ keywords: ['_USE_BRIGHT'] }),
+			bridge({ keywords: ['_USE_GLOBAL_APPEAR'] }),
 			bridge({ colors: { _BrightCenter: [1, 2, 3, 1] } }),
 			bridge({ floats: { _UseInterior: 1 } }),
 			bridge({ colors: { _FresnelColor: [1, 1, 1, 1] } }),

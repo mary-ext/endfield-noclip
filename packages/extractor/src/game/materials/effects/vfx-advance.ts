@@ -27,6 +27,7 @@ import {
 const ADVANCE_KEYWORDS = new Set([
 	'_USE_DISTURB',
 	'_USE_MASK',
+	'_USE_BLEND',
 	'_USE_DISSOLVE',
 	'_USE_FRESNEL',
 	'_USE_FOG',
@@ -41,8 +42,8 @@ const BLEND_MODES: readonly EffectStackSurface['blendMode'][] = ['over', 'add'];
 
 /**
  * `HGRP/Effect/VFXAdvance` (`docs/game-data/effects.md#vfxadvance`) as a texture stack: its main texture, one
- * disturb texture, a mask and a dissolve, tinted, optionally faded by a Fresnel term and revealed around the
- * player
+ * disturb texture, a mask, a blend layer and a dissolve, tinted, optionally faded by a Fresnel term and
+ * revealed around the player
  *
  * @param reader the material's properties
  * @returns its surface, or `unsupported`
@@ -64,9 +65,6 @@ export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface |
 	if (float('_UseInterior', 0) !== 0) {
 		return unsupported('an interior');
 	}
-	if (has('_USE_DISTURB') && float('_DisturbTex1Normal', 0) !== 0) {
-		return unsupported('a disturb texture read as a normal');
-	}
 	// the Fresnel colour covers the colour by its w; only the opacity term is drawn
 	if (has('_USE_FRESNEL') && (color('_FresnelColor')?.[3] ?? 0) !== 0) {
 		return unsupported('a Fresnel colour');
@@ -76,8 +74,8 @@ export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface |
 		return appear;
 	}
 	const computed = computedUvSources(reader);
-	// the stack's slots, in the order the distortion runs through them: it shifts the main texture, the mask and
-	// the dissolve
+	// the stack's slots, in the order the distortion runs through them: it shifts the main texture, the mask, the
+	// blend layer and the dissolve
 	const slots = [
 		{
 			name: '_MainTex',
@@ -102,6 +100,14 @@ export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface |
 			redAlpha: float('_UseMaskTexAsAlpha', 0) !== 0,
 			disturbed: '_MaskTexUseDisturb',
 			prefix: '_MaskTex',
+		},
+		{
+			name: '_BlendTex',
+			keyword: '_USE_BLEND',
+			role: 'blend',
+			redAlpha: false,
+			disturbed: '_BlendTexUseDisturb',
+			prefix: '_BlendTex',
 		},
 		{
 			name: '_DissolveTex',
@@ -146,9 +152,11 @@ export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface |
 		layers,
 		tint,
 		blendTint: shared.blendTint,
+		blendVertexColor: has('_USE_BLEND') && float('_BlendDisableVertColor', 0) === 0,
 		disturb: shared.disturb,
 		disturbBias: float('_Bi_Disturb', 0),
 		distorted: has('_USE_DISTURB'),
+		disturbNormal: float('_DisturbTex1Normal', 0) !== 0,
 		particleDisturb: false,
 		weight: { disturb: 0, dissolve: 0, used: false },
 		dissolve: has('_USE_DISSOLVE') ? shared.dissolve : null,

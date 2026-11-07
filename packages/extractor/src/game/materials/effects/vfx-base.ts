@@ -438,9 +438,11 @@ export const describeVfxBase = (
 		layers,
 		tint,
 		blendTint: shared.blendTint,
+		blendVertexColor: false,
 		disturb: shared.disturb,
 		disturbBias: float('_Bi_Disturb', 0),
 		distorted: float('_UseDisturb', 0) !== 0,
+		disturbNormal: false,
 		// the ink-wash path puts UV0's v where the custom data's w would be
 		particleDisturb:
 			float('_UseParticleDisturb', 0) !== 0 &&

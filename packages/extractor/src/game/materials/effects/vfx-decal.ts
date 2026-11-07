@@ -186,9 +186,11 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		layers,
 		tint: [base[0], base[1], base[2], base[3] * float('_TintColorAlpha', 1)],
 		blendTint: shared.blendTint,
+		blendVertexColor: false,
 		disturb: shared.disturb,
 		disturbBias: float('_Bi_Disturb', 0),
 		distorted: has('_USE_DISTURB'),
+		disturbNormal: false,
 		particleDisturb: false,
 		// the distortion and dissolve then scale by `1 − intensity + red · intensity`
 		weight: weighted

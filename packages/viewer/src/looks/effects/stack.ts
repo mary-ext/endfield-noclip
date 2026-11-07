@@ -194,7 +194,10 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 		params.set([appear.noiseScale, appear.noiseSpeed, appear.characterHeight, 1], EffectRow.appearNoise);
 		params.set(appear.brightColor, EffectRow.appearBright);
 		params[EffectRow.appearVertexAlpha] = appear.brightVertexAlpha ? 1 : 0;
+		params[EffectRow.appearGlobal] = appear.global ? 1 : 0;
 	}
+	params[EffectRow.disturbNormal] = stack.disturbNormal ? 1 : 0;
+	params[EffectRow.blendVertexColor] = stack.blendVertexColor ? 1 : 0;
 	params.set(
 		[
 			stack.unfogged ? 1 : 0,

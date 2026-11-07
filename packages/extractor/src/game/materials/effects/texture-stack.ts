@@ -81,20 +81,15 @@ export const APPEAR_KEYWORDS: ReadonlySet<string> = new Set(['_USE_BRIGHT', '_US
  * the reveal around the player of VFXAdvance and VFXDitherAlpha: `_USE_BRIGHT`'s radial brightening and alpha
  * fade, with `_USE_GLOBAL_APPEAR` adding the global radii the fire seed sets to the material's
  *
- * @returns the reveal, `null` without either keyword, or `unsupported` for one keyword alone (the viewer has
- *   no player for a reveal of fixed radii) and for brightenings that aren't radial about the player
+ * @returns the reveal, `null` without `_USE_BRIGHT`, or `unsupported` for `_USE_GLOBAL_APPEAR` alone and for
+ *   brightenings that aren't radial about the player
  */
 export const appearOf = (reader: MaterialReader): EffectAppear | UnsupportedSurface | null => {
 	const { float, colorOrVector: color, has } = reader;
 	const bright = has('_USE_BRIGHT');
 	const global = has('_USE_GLOBAL_APPEAR');
-	if (!bright && !global) {
-		return null;
-	}
-	if (!bright || !global) {
-		return unsupported(
-			bright ? '_USE_BRIGHT without _USE_GLOBAL_APPEAR' : '_USE_GLOBAL_APPEAR without _USE_BRIGHT',
-		);
+	if (!bright) {
+		return global ? unsupported('_USE_GLOBAL_APPEAR without _USE_BRIGHT') : null;
 	}
 	if (float('_BrightType', 0) !== 0) {
 		return unsupported(`_BrightType ${float('_BrightType', 0)}`);
@@ -104,6 +99,7 @@ export const appearOf = (reader: MaterialReader): EffectAppear | UnsupportedSurf
 	}
 	const brightColor = color('_BrightColor') ?? [0, 0, 0, 0];
 	return {
+		global,
 		inner: float('_InnerRadius', 0),
 		outer: float('_OuterRadius', 0),
 		alphaFar: float('_DistortAlpha', 1),

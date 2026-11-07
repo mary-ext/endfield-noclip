@@ -146,6 +146,21 @@ after the mask and before the near-camera fade. the ink bridge prefabs' walls, f
 `_FogIntensity` mixes how much of the fog a fogged layer takes, fully past
 `_FogIntensityFadeOutDistance` metres.
 
+`_USE_BLEND` is the texture stack's [blend layer](#the-texture-stack) on `_BlendTex` (UVs built like
+the main texture's from `_BlendTex*` properties, its `_ST` applied once, shifted by
+`_BlendTexUseDisturb`), except that `_BlendTint` is times the vertex colour unless
+`_BlendDisableVertColor` is set. `_DisturbTex1Normal` reads the disturb texture as a normal: the
+shift is `(a · r′, g) · 2 − 1` times `_DisturbUIntensity1` on both axes, r′ its red remapped by
+`_Bi_Disturb` (for a BC5 texture, whose alpha reads 1, `(r′, g) · 2 − 1`), in place of r′ times the
+u and v strengths.
+
+without `_USE_GLOBAL_APPEAR`, `_USE_BRIGHT` is the [reveal](#invisible-bridges) with the material's
+radii alone. Yinglung Pass's ink rooms (map02_lv007, near unity −450, 270, 703) are such: floors of
+`M_fx_map02_lv007_inkroom_floor_0*` (blend layer, normal-read disturb texture, `_INK_COLOR_DISTORT`)
+and `inkarea_*_postmod` walls of `M_fx_map02_lv007_inkbridge_freelance_wall_*`, in script groups
+10200150010, …011 and …021 (on by default). their materials set inner 8, outer 1 and `_DistortAlpha`
+0, so they show only within 1–8 m of the player, raised 2 m.
+
 `_INK_DISTORT` and `_INK_COLOR_DISTORT` read the runtime ink simulation, a texture the game draws
 around the player (`_InkSimulationWorldToUV`): the first shifts the UVs by its red and green times
 `_InkDisturbOffset`, the second blends `_InkColor` in by its result times `_InkStrength` (at most

@@ -63,20 +63,23 @@ what's left out is in [status](../status.md).
 ## VFXAdvance and the reveal
 
 [VFXAdvance](../game-data/effects.md#vfxadvance) materials with only a main texture, the first
-disturb texture, a mask, a dissolve, a Fresnel fade, fog, a vertex offset and the reveal draw
-through the texture stack (`variant: 'advance'`, `describeVfxAdvance`), in slots 0–3 (main, disturb,
-mask, dissolve), the dissolve with VFXBaseV2's sweep and edge colour; their other keywords, a
-Fresnel colour, a normal-map disturb texture and interiors stay unsupported. the ink keywords are
-drawn as the game draws them where the ink simulation hasn't run, since the viewer has none.
+disturb texture, a mask, a blend layer, a dissolve, a Fresnel fade, fog, a vertex offset and the
+reveal draw through the texture stack (`variant: 'advance'`, `describeVfxAdvance`), in slots 0–4
+(main, disturb, mask, blend, dissolve), the dissolve with VFXBaseV2's sweep and edge colour; their
+other keywords, a Fresnel colour and interiors stay unsupported. two switches in row 43 of the look
+cover what only VFXAdvance does: `disturbNormal` reads the disturb texture as a normal, and
+`blendVertexColor` scales the blend tint by the vertex colour. the ink keywords are drawn as the
+game draws them where the ink simulation hasn't run, since the viewer has none.
 
 the [reveal around the player](../game-data/effects.md#invisible-bridges) (`EffectAppear`, rows
 40–43 of the look) changes the tint before the stack combines it (`fx_appear` in `effect.wgsl`), for
 VFXAdvance and VFXDitherAlpha's effect variants alike. the camera stands in for the player, so the
 fire seed reveals bridges around the camera. the global radii ride in `frame.render_size.zw`, set
 from the `fireSeed:player` control through `PackageManifest.fireSeed` (`revealRadii`); in scenes
-without one they're 0, which leaves the materials' own radii about the camera. a reveal of fixed
-radii (`_USE_BRIGHT` alone) or about a fixed point stays unsupported. the reveal's brightening
-colour is linearized as the tint is.
+without one they're 0, which leaves the materials' own radii about the camera. a reveal without
+`_USE_GLOBAL_APPEAR` (`EffectAppear.global` false) takes the material's radii alone, so Yinglung
+Pass's ink rooms show only within a few metres of the camera; a reveal about a fixed point stays
+unsupported. the reveal's brightening colour is linearized as the tint is.
 
 ## over the composited scene
 

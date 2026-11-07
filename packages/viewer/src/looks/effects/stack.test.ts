@@ -47,9 +47,11 @@ const stack = (overrides: Partial<EffectStackSurface> = {}): EffectStackSurface 
 	layers: [layer(1, 'main'), null, null, null, null, null, null],
 	tint: [1, 1, 1, 1],
 	blendTint: [1, 1, 1, 0],
+	blendVertexColor: false,
 	disturb: [0, 0, 0, 0],
 	disturbBias: 0,
 	distorted: false,
+	disturbNormal: false,
 	particleDisturb: false,
 	weight: { disturb: 0, dissolve: 0, used: false },
 	dissolve: null,
@@ -82,6 +84,7 @@ test('a texture stack’s reveal around the player fills the rows past the custo
 	const params = (appear: EffectStackSurface['appear']) =>
 		materialLooks({ entries: [described(stack({ variant: 'advance', appear }))] })[0].params;
 	const revealed = params({
+		global: true,
 		inner: 2,
 		outer: -4,
 		alphaFar: 0,
@@ -93,12 +96,21 @@ test('a texture stack’s reveal around the player fills the rows past the custo
 		characterHeight: 0.1,
 	});
 	assert.deepEqual(
-		[...revealed.subarray(EffectRow.appear, EffectRow.appearVertexAlpha + 1)],
-		[2, -4, 0, 1, 8, 0.5, Math.fround(0.1), 1, 0, 0, 0, 1, 1],
+		[...revealed.subarray(EffectRow.appear, EffectRow.appearGlobal + 1)],
+		[2, -4, 0, 1, 8, 0.5, Math.fround(0.1), 1, 0, 0, 0, 1, 1, 1],
 	);
 	// without one the switch stays off
 	assert.equal(params(null)[EffectRow.appearNoise + 3], 0);
-	assert.ok(EffectRow.appearVertexAlpha < LOOK_FLOATS);
+	assert.ok(EffectRow.blendVertexColor < LOOK_FLOATS);
+});
+
+test('a texture stack packs its normal-read distortion and vertex-coloured blend tint as switches', () => {
+	const params = (overrides: Partial<EffectStackSurface>) =>
+		materialLooks({ entries: [described(stack({ variant: 'advance', ...overrides }))] })[0].params;
+	const on = params({ disturbNormal: true, blendVertexColor: true });
+	assert.deepEqual([on[EffectRow.disturbNormal], on[EffectRow.blendVertexColor]], [1, 1]);
+	const off = params({});
+	assert.deepEqual([off[EffectRow.disturbNormal], off[EffectRow.blendVertexColor]], [0, 0]);
 });
 
 test('a texture stack packs each layer’s role, red alpha, source and distortion share into its slot bits', () => {
