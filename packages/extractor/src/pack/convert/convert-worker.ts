@@ -13,7 +13,7 @@ import { bakeSkinPose } from '@endfield-noclip/formats/unity/skin-pose';
 import { errorText } from '../../errors.ts';
 import { loadMesh, loadTexture } from '../../game/assets/asset-decode.ts';
 import { AssetResolver, objectKey, recordBundleReads } from '../../game/assets/assets.ts';
-import { loadBundleManifest } from '../../hg/bundles.ts';
+import { sharedBundleManifest } from '../../hg/bundles.ts';
 import { Vfs } from '../../hg/vfs.ts';
 import { zstdSync } from '../../zstd.ts';
 import { BlobDir, type BlobMeta, storedBlob } from '../store/blob-file.ts';
@@ -35,9 +35,7 @@ const data = workerData as ConvertWorkerData;
 const port = parentPort!;
 const vfs = new Vfs(data.gameData, data.keys.vfsKey);
 const blobs = new BlobDir(data.blobDir);
-const resolverReady = loadBundleManifest(vfs).then(
-	(manifest) => new AssetResolver({ vfs, keys: data.keys }, manifest),
-);
+const resolver = new AssetResolver({ vfs, keys: data.keys }, sharedBundleManifest(data.manifest));
 
 const store = async (raw: Uint8Array, zstdLevel: number): Promise<BlobMeta> => {
 	const { meta, stored } = storedBlob(raw, zstdSync(raw, zstdLevel));
@@ -46,8 +44,7 @@ const store = async (raw: Uint8Array, zstdLevel: number): Promise<BlobMeta> => {
 };
 
 const convert = async (job: ConvertJob): Promise<ConvertResult> => {
-	const resolver = await resolverReady;
-	const { result, bundles } = await recordBundleReads(() => convertWith(resolver, job));
+	const { result, bundles } = await recordBundleReads(() => convertWith(job));
 	const sources = await Promise.all(
 		bundles.map(async (index) => ({
 			bundle: resolver.manifest.bundle(index).name,
@@ -57,7 +54,7 @@ const convert = async (job: ConvertJob): Promise<ConvertResult> => {
 	return { ...result, sources };
 };
 
-const convertWith = async (resolver: AssetResolver, job: ConvertJob): Promise<ConvertOutput> => {
+const convertWith = async (job: ConvertJob): Promise<ConvertOutput> => {
 	switch (job.kind) {
 		case 'geometry': {
 			await geometryReady;

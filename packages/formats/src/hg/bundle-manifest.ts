@@ -60,7 +60,7 @@ export interface AssetInfo {
 
 /** options for {@link BundleManifest} */
 export interface BundleManifestOptions {
-	/** Brotli decompressor, for the file and its asset path strings */
+	/** Brotli decompressor, for the asset path strings */
 	brotliDecompress: (data: Uint8Array) => Uint8Array;
 }
 
@@ -82,14 +82,18 @@ export class BundleManifest {
 	readonly contentHash: string;
 	readonly bundleCount: number;
 
+	/** the decompressed file, which the reader reads in place; may be shared with other readers */
+	readonly bytes: Uint8Array;
+
 	/**
-	 * @param stored the file as stored in the VFS (Brotli-compressed)
-	 * @param options decompressor
+	 * @param bytes the file as stored in the VFS, once its outer Brotli stream is decompressed; read in place,
+	 *   so it may be backed by a `SharedArrayBuffer`
+	 * @param options decompressor for the asset paths
 	 * @throws {FormatError} if the framing doesn't match
 	 */
-	constructor(stored: Uint8Array, options: BundleManifestOptions) {
+	constructor(bytes: Uint8Array, options: BundleManifestOptions) {
 		this.#decompress = options.brotliDecompress;
-		const bytes = this.#decompress(stored);
+		this.bytes = bytes;
 		this.#view = new ByteView(bytes, 'bundle manifest');
 
 		if (bytes.length < HEADER_SIZE || this.#view.u32(0) !== HEAD1) {

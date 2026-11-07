@@ -1,4 +1,5 @@
-import { brotliDecompressSync } from 'node:zlib';
+import { promisify } from 'node:util';
+import { brotliDecompress, brotliDecompressSync } from 'node:zlib';
 
 import { type BundleNode, type ByteSource, UnityBundle } from '@endfield-noclip/formats/hg/bundle';
 import { deriveBundlePad } from '@endfield-noclip/formats/hg/bundle-cipher';
@@ -40,9 +41,14 @@ export const BUNDLE_PREFIX = 'Data/Bundles/Windows/';
 /** the bundle manifest's logical path, in {@link VfsGroup.BundleManifest} */
 const MANIFEST_PATH = 'Data/Bundles/Windows/manifest.hgmmap';
 
+const brotliDecompressAsync = promisify(brotliDecompress);
+
+const MANIFEST_OPTIONS = { brotliDecompress: (data: Uint8Array) => brotliDecompressSync(data) };
+
 /**
  * @param vfs the VFS
- * @returns the parsed bundle manifest
+ * @returns the parsed bundle manifest, its {@link BundleManifest.bytes} backed by a `SharedArrayBuffer` so
+ *   worker threads can read it through {@link sharedBundleManifest} without a copy of their own
  * @throws {Error} if it's missing or its md5 doesn't match the catalog
  */
 export const loadBundleManifest = async (vfs: Vfs): Promise<BundleManifest> => {
@@ -50,9 +56,20 @@ export const loadBundleManifest = async (vfs: Vfs): Promise<BundleManifest> => {
 	if (file === undefined) {
 		throw new Error(`${MANIFEST_PATH} not found in vfs group ${VfsGroup.BundleManifest}`);
 	}
-	return new BundleManifest(await vfs.readVerified(file), {
-		brotliDecompress: (data) => brotliDecompressSync(data),
-	});
+	// ~150 MB decompressed; the async form keeps the event loop free for the reads setup runs alongside
+	const decompressed = await brotliDecompressAsync(await vfs.readVerified(file));
+	const bytes = new Uint8Array(new SharedArrayBuffer(decompressed.length));
+	bytes.set(decompressed);
+	return new BundleManifest(bytes, MANIFEST_OPTIONS);
+};
+
+/**
+ * @param bytes {@link BundleManifest.bytes} of a manifest from {@link loadBundleManifest}, e.g. passed to a
+ *   worker
+ * @returns a reader over the same bytes
+ */
+export const sharedBundleManifest = (bytes: Uint8Array): BundleManifest => {
+	return new BundleManifest(bytes, MANIFEST_OPTIONS);
 };
 
 /**

@@ -261,6 +261,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 				gameData: context.config.gameData,
 				keys: context.keys,
 				blobDir: store.dir.root,
+				manifest: (await context.world.manifest()).bytes,
 			});
 			try {
 				conversion = await convertAssets({
