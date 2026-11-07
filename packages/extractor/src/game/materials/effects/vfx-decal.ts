@@ -175,9 +175,15 @@ const parallaxOf = (
  */
 export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | UnsupportedSurface => {
 	const { float, colorOrVector: color, has } = reader;
-	const undrawn = undrawnBlend(reader, ['premultiplied']) ?? undrawnKeywords(reader, DECAL_KEYWORDS);
+	const undrawn =
+		undrawnBlend(reader, ['premultiplied', 'additive']) ?? undrawnKeywords(reader, DECAL_KEYWORDS);
 	if (undrawn !== null) {
 		return undrawn;
+	}
+	// under `Blend One One`, `_BlendMode` 1 leaves the fog's in-scatter out, so the colour only adds
+	const additive = reader.material.blend === 'additive';
+	if (additive && float('_BlendMode', 0) !== 1) {
+		return unsupported(`additive blending with _BlendMode ${float('_BlendMode', 0)}`);
 	}
 	const base = color('_DecalBaseColor') ?? [1, 1, 1, 1];
 	// a texture's UV switch picks polar or screen UVs only where they're computed; the box's otherwise
@@ -291,7 +297,7 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		waterBlendBelow: null,
 		lighting: null,
 		unfogged: !has('_USE_FOG'),
-		blendMode: 'over',
+		blendMode: additive ? 'add' : 'over',
 		opaque: false,
 		screenUv: { localPivot: false, byDepth: false, heightAsV: false },
 		stencil: null,

@@ -1570,6 +1570,9 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 	}
 	let alpha = saturate(combined.a * fx_near_fade(id, scene_depth) * height * edge_x * edge_z) * angle;
 	// the game's decal premultiplies its colour by the alpha twice
+	if (fx_row(id, FX_UNFOGGED).z >= 0.5) {
+		return fx_additive(color * alpha * alpha);
+	}
 	return fx_accumulate(color * alpha * alpha, alpha, rel, in.position.xy, fx_row(id, FX_UNFOGGED).x);
 }
 

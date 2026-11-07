@@ -352,6 +352,22 @@ describe('VFXDecal', () => {
 		const blended = ash({ keywords: ['_USE_PARALLAX', '_USE_BLEND'] });
 		assert.equal(describeMaterial(blended, decal).kind, 'unsupported');
 	});
+
+	it('adds under Blend One One with _BlendMode 1, and leaves out other additive modes', () => {
+		// the flowing light's ground glow (`M_fxmap_dung02_rdg002_flowinglight_02_ground_fj_01`)
+		const glow = (blendMode: number) =>
+			describeMaterial(
+				material({
+					blend: 'additive',
+					blendFactors: [1, 1],
+					slots: { _MainTex: slot(1) },
+					floats: { _BlendMode: blendMode },
+				}),
+				decal,
+			);
+		assert.equal(ofKind(glow(1), 'effectStack').blendMode, 'add');
+		assert.equal(glow(0).kind, 'unsupported');
+	});
 });
 
 describe('lit decals', () => {

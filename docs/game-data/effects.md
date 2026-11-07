@@ -271,7 +271,10 @@ is two such decals around VFXBaseV2 rings and swirls on polar UVs. the colour is
 alpha its alpha times `_TintColorAlpha`, faded towards the box's x and z faces (`_EdgeFadeX/Z`, over
 `_EdgeFadeIntensity`), its top and bottom (`_HeightFade` around `_HeightFadeOffset`), and with
 `_USE_NORMALBLEND` on surfaces facing away from the box's y (`N·up` to the power
-`_AngleBlendFallOff`, N the surface's normal). the colour is premultiplied by the alpha twice.
+`_AngleBlendFallOff`, N the surface's normal). the colour is premultiplied by the alpha twice. under
+`Blend One One` the decal adds that colour, and `_BlendMode` 1 drops the fog's in-scatter from it
+(its alpha output isn't scaled by the mode): the ground glow under Marker Stone Interiors' flowing
+lights (`M_fxmap_dung02_rdg002_flowinglight_02_ground_fj_01`) is such.
 
 `_USE_PARALLAX` sinks the decal into the surface. the view direction, taken in the box's frame (x
 and z across, y up), steps the main texture's UVs by `−_ParallaxScale · v.xz / v.y / 30` per layer
