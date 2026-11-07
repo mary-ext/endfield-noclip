@@ -7,11 +7,12 @@ see [extraction](extraction.md#pack) for packing, [loading](viewer/loading.md) f
 
 the types are the contract: [package-format](../packages/package-format/src/) has one module per
 concern, each holding that concern's types and binary codec (`manifest`, `tiles`, `tree`,
-`instances` for chains and instance blocks, `geometry`, `textures`, `materials`, `terrain`,
-`environment`, `water`, `lights`, `particles`, `irradiance`, `states`, `conditions`, `stream-areas`,
-`story`, `blobs`, `blob-table`, plus shared helpers). the packer and the viewer share them, and
-their JSDoc wins where this page is less precise. `package-format` stays free of node APIs and of
-other workspace packages so both sides can import it.
+`instances` for chains and instance blocks, `geometry`, `geometry-table`, `textures`,
+`texture-table`, `materials`, `terrain`, `environment`, `water`, `lights`, `particles`,
+`irradiance`, `states`, `conditions`, `stream-areas`, `story`, `blobs`, `blob-table`, plus shared
+helpers). the packer and the viewer share them, and their JSDoc wins where this page is less
+precise. `package-format` stays free of node APIs and of other workspace packages so both sides can
+import it.
 
 | side   | code                                                                                                                                               |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,9 +30,9 @@ other workspace packages so both sides can import it.
     manifest.json.zst             PackageManifest
     tables/blobs.bin              blob index → archive, codec, kind, offset, lengths
     tables/chains.bin             LOD-chain templates
-    tables/geometries.json.zst    geometry table
-    tables/materials.json.zst     shader defaults + material table
-    tables/textures.json.zst      texture table
+    tables/geometries.bin         geometry table
+    tables/materials.json.zst     material table
+    tables/textures.bin           texture table
     tables/water.json.zst         water table
     tables/lights.json.zst        local lights
     tables/particles.json.zst     particle systems
@@ -272,6 +273,8 @@ all little-endian, every section 4-byte aligned. the tables share a 16-byte head
 | `tables/chains.bin`     | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 flags, u8 0`; 32-byte draws: `u32 geometry, u32 material, u32 particles, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u8 flags, u8 0, i16 sortingLayer, i16 sortingOrder, u16 0`; then `f32×3` distance origins, one per `CameraDistance` chain in chain order                                                               |
 | `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 16-byte records: `u8 kind, u8 codec, u16 archive, u32 offset, u32 length, u32 rawLength`; a blob's hash is only its member path, which readers never need                                                                                                                                                                                                                                           |
 | `tables/irradiance.bin` | `EFIV` | version 2; header (entries, 0); u32 cell keys ascending (repeats allowed), then u32 blob indices, then u32 visibility groups                                                                                                                                                                                                                                                                                           |
+| `tables/geometries.bin` | `EFGE` | header (geometries, 0); 44-byte records: `u8 status, u8 tangentUv, u16 attributes, u32 blob, u32 vertexCount, u32 indexCount, u16 submeshCount, u16 animationFrames, f32×3 min, f32×3 max`; see [asset tables](#asset-tables)                                                                                                                                                                                          |
+| `tables/textures.bin`   | `EFTX` | 20-byte header (textures, pieces, samplers); 12-byte samplers: `u8 addressModeU, V, W, u8 magFilter, minFilter, mipmapFilter, u16 maxAnisotropy, f32 mipBias`; 16-byte textures: `u8 status, u8 kind, u8 format, u8 mipCount, u16 width, u16 height, u16 depthOrArrayLayers, u16 sampler, u32 firstPiece`; 8-byte pieces: `u32 blob, u8 firstLevel, u8 levelCount, u16 0`; see [asset tables](#asset-tables)           |
 
 nodes are ordered coarse to fine (level, then z, then x); a node's children are the nodes at
 `(l + 1, 2x + dx, 2z + dz)`, and its bounds cover everything it and its descendants draw, overhang
@@ -312,6 +315,33 @@ switches without the game's fade. the nearest billboard up the hierarchy turns a
 upright placements). the packer stores the offset times the renderer's rotation relative to the
 billboard, at the renderer's own position, so a renderer away from the billboard's origin turns in
 place rather than swinging around it.
+
+### asset tables
+
+the geometry and texture tables
+([geometry-table.ts](../packages/package-format/src/geometry-table.ts),
+[texture-table.ts](../packages/package-format/src/texture-table.ts)) are fixed-size records a reader
+uses in place. an entry's id is its index, and its status (`EntryStatus`) is 0 ready, 1 pending
+(packed with `--no-assets`) or 2 failed (the reason is in `debug/assets.json`); an unconverted
+entry's other fields are 0, and draws referencing it are skipped. the decoders check every record
+once and build no per-entry objects: `GeometryTable.blob` reads a ready geometry's blob, the one
+field the viewer needs per frame, and `TextureTable.entry` decodes a texture into a `ReadyTexture`
+on first use. map02's 27,464 geometries and 15,321 textures decode in about 0.5 and 1.2 ms, where
+inflating and parsing them as JSON took about 17 and 13 ms (node, first run).
+
+- **geometries**: the `.mesh` blob, local bounds, vertex, index and submesh counts, the attribute
+  bitmask (bit `a` set for `VertexAttribute` `a`), the UV set tangents were generated from (`0xff`
+  without generated tangents) and the animation's frame count (0 for a geometry that holds still).
+- **textures**: kind (`TEXTURE_KIND_CODES`: `2d`, `cube`, `2d-array`, `cube-array`, `3d` as 0–4),
+  format (an index into `TEXTURE_FORMAT_CODES`, decoded to its WebGPU name, a key of
+  `TEXTURE_FORMATS`), size, `depthOrArrayLayers`, mip count, sampler, and pieces: entries
+  `[firstPiece, next texture's firstPiece)` of the piece list (its end for the last texture), coarse
+  to fine ([textures](#textures-tex)). the sampler indexes the palette, the distinct samplers as
+  `GPUSamplerDescriptor` fields (address modes `repeat`, `clamp-to-edge`, `mirror-repeat` as 0–2,
+  filters `nearest`, `linear` as 0–1) plus Unity's `mipBias`.
+
+the codecs live in their own modules rather than in `geometry` and `textures`, which the
+[pack cache](#versioning) fingerprints, so a table layout change leaves cached conversions valid.
 
 ### irradiance cells
 
@@ -475,18 +505,15 @@ a WebGPU upload of the bytes as they are samples correctly with the game's UVs.
 
 ## JSON tables
 
-each is one zstd frame (level 9) around JSON. an entry's id is its index. an entry is either ready
-or an `UnconvertedEntry` (`pending` when packed with `--no-assets`, `failed` with the reason in
-`debug/assets.json`); draws referencing an unconverted entry are skipped.
+each is one zstd frame (level 9) around JSON. a material's id is its index in `entries`, and a
+material is ready or an `UnconvertedEntry`, as in the [asset tables](#asset-tables).
 
-| table        | contents                                                                                                                                                                                                                                                                                                              |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `geometries` | `ReadyGeometry`: blob, local bounds, vertex/index/submesh counts, attribute bitmask, `tangentUv`                                                                                                                                                                                                                      |
-| `materials`  | `entries`: `ReadyMaterial` with its cull mode and its `surface` ([materials](#materials))                                                                                                                                                                                                                             |
-| `textures`   | `samplers`, the distinct samplers as `GPUSamplerDescriptor` fields plus Unity's `mipBias`; `entries`, `ReadyTexture`: kind, WebGPU format, size, `depthOrArrayLayers`, mip count, sampler index, `pieces` coarse to fine                                                                                              |
-| `water`      | see [water](#water)                                                                                                                                                                                                                                                                                                   |
-| `lights`     | `LightEntry`: kind (spot, point), entity id, visibility group, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lights](#lights) |
-| `particles`  | see [particles](#particles)                                                                                                                                                                                                                                                                                           |
+| table       | contents                                                                                                                                                                                                                                                                                                              |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `materials` | `entries`: `ReadyMaterial` with its cull mode and its `surface` ([materials](#materials))                                                                                                                                                                                                                             |
+| `water`     | see [water](#water)                                                                                                                                                                                                                                                                                                   |
+| `lights`    | `LightEntry`: kind (spot, point), entity id, visibility group, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lights](#lights) |
+| `particles` | see [particles](#particles)                                                                                                                                                                                                                                                                                           |
 
 ### materials
 
@@ -923,17 +950,18 @@ of any of its reaches and 0 beyond all. two kinds exist:
 
 `PACKAGE_VERSION` ([manifest.ts](../packages/package-format/src/manifest.ts)) is written to
 `manifest.version` and covers the manifest, the JSON tables and how the parts fit together. each
-binary encoding (tree, chains, blob table, irradiance table, instance blocks, height, surface and
-splat pages, geometry blobs) carries its own version in its header, next to its codec. readers
-accept exactly the versions they know and reject any other, and nothing migrates old packages: a
-package from another version is re-extracted. bump the package version on any incompatible change to
-the manifest or a table, and an encoding's version when its layout changes. the JSON tables carry no
-version of their own and are trusted once the manifest's version matches.
+binary encoding (tree, chains, blob, geometry, texture and irradiance tables, instance blocks,
+height, surface and splat pages, geometry blobs) carries its own version in its header, next to its
+codec. readers accept exactly the versions they know and reject any other, and nothing migrates old
+packages: a package from another version is re-extracted. bump the package version on any
+incompatible change to the manifest or a table, and an encoding's version when its layout changes.
+the JSON tables carry no version of their own and are trusted once the manifest's version matches.
 
 the [pack cache](extraction.md#pack-cache) fingerprints the converter's code, which imports only the
 `geometry`, `textures` and `blobs` modules of `package-format` (and the helpers they share).
-versioning encodings separately keeps it that way: a change to the manifest, the tree or instance
-blocks leaves cached mesh and texture conversions valid.
+versioning encodings separately keeps it that way: a change to the manifest, the tree, instance
+blocks or the [asset tables](#asset-tables), whose codecs live in their own modules, leaves cached
+mesh and texture conversions valid.
 
 ## reading a package
 
@@ -975,8 +1003,9 @@ provenance lives there rather than in the manifest, which only identifies the bu
 - **geometricError** is a placeholder the viewer uses only for request priority; the HLOD rings
   replaced it for refinement.
 - **instance compression**: meshopt filters or quantized rows could roughly halve instance blobs.
-- **core tables as JSON**: the geometry and texture tables could be fixed-size binary records, read
-  without parsing.
+- **raw binary tables**: the core's binary tables are stored without zstd. on map02,
+  `geometries.bin` (1.21 MB) and `textures.bin` (0.60 MB) would be 0.63 and 0.10 MB at level 9, for
+  a decode pass on open; together they're 0.5 MB larger than the JSON tables they replaced.
 - **detail placement by centre**: a very large object at a leaf disappears while that leaf shows its
   HLOD, unless the HLOD covers it, as the game assumes.
 - **tiny shards**: off-square edges produce sub-KB shards that could merge into a neighbour.

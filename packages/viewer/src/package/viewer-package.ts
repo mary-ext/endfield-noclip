@@ -4,7 +4,7 @@ import {
 	type EnvironmentTable,
 	resolveEnvironment,
 } from '@endfield-noclip/package-format/environment';
-import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
+import { decodeGeometryTable, type GeometryTable } from '@endfield-noclip/package-format/geometry-table';
 import { decodeChains, type Chain } from '@endfield-noclip/package-format/instances';
 import { decodeIrradianceTable, type IrradianceTable } from '@endfield-noclip/package-format/irradiance';
 import type { LightsTable } from '@endfield-noclip/package-format/lights';
@@ -18,7 +18,7 @@ import {
 } from '@endfield-noclip/package-format/manifest';
 import type { MaterialTable } from '@endfield-noclip/package-format/materials';
 import type { ParticlesTable } from '@endfield-noclip/package-format/particles';
-import type { TextureTable } from '@endfield-noclip/package-format/textures';
+import { decodeTextureTable, type TextureTable } from '@endfield-noclip/package-format/texture-table';
 import { decodeTree, type Tree } from '@endfield-noclip/package-format/tree';
 import type { WaterTable } from '@endfield-noclip/package-format/water';
 
@@ -126,12 +126,10 @@ export const openViewerPackage = async (
 	const tree = decodeTree(await member(CORE_PATHS.tree));
 	const blobs = decodeBlobTable(await member(CORE_PATHS.blobs));
 	const chains = decodeChains(await member(CORE_PATHS.chains));
-	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
-	const geometries = (await json(CORE_PATHS.geometries)) as GeometryTable;
+	const geometries = decodeGeometryTable(await member(CORE_PATHS.geometries));
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
 	const materials = (await json(CORE_PATHS.materials)) as MaterialTable;
-	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
-	const textures = (await json(CORE_PATHS.textures)) as TextureTable;
+	const textures = decodeTextureTable(await member(CORE_PATHS.textures));
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest
 	const water = (await json(CORE_PATHS.water)) as WaterTable;
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same package version as the manifest

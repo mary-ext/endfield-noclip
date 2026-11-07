@@ -25,7 +25,7 @@ import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import { encodeBlobTable } from '@endfield-noclip/package-format/blob-table';
 import { BLOB_KIND_NAMES, BlobKind } from '@endfield-noclip/package-format/blobs';
 import type { EnvironmentTable, EnvironmentVolumeInfo } from '@endfield-noclip/package-format/environment';
-import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
+import { encodeGeometryTable } from '@endfield-noclip/package-format/geometry-table';
 import {
 	encodeChains,
 	encodeInstanceBlock,
@@ -56,7 +56,7 @@ import type { MaterialTable } from '@endfield-noclip/package-format/materials';
 import type { ControlDriver, StatesInfo } from '@endfield-noclip/package-format/states';
 import type { StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
 import type { TerrainSplatInfo, TerrainInfo } from '@endfield-noclip/package-format/terrain';
-import type { TextureTable } from '@endfield-noclip/package-format/textures';
+import { encodeTextureTable } from '@endfield-noclip/package-format/texture-table';
 import {
 	type TileKey,
 	tileAncestor,
@@ -2298,11 +2298,11 @@ const writePackage = async (
 	const treeBin = encodeTree(tree);
 	const chainsBin = encodeChains(states.chains);
 	const irradianceBin = encodeIrradianceTable(states.irradiance);
+	const geometriesBin = encodeGeometryTable(assetTables.geometries);
+	const texturesBin = encodeTextureTable(assetTables.textures.samplers, assetTables.textures.entries);
 	// tables compress on the thread pool while the archives are written
 	const tablesReady = Promise.all([
-		zstdTable(json({ entries: assetTables.geometries } satisfies GeometryTable)),
 		zstdTable(json(assetTables.materials satisfies MaterialTable)),
-		zstdTable(json(assetTables.textures satisfies TextureTable)),
 		zstdTable(json(states.water)),
 		zstdTable(json(states.lights)),
 		zstdTable(json(pack.particles.table())),
@@ -2315,18 +2315,20 @@ const writePackage = async (
 	]);
 	const archiveNames = [...stems.keys()];
 	const blobsBin = encodeBlobTable(store.records(archiveNames));
-	const [written, [geometries, materials, textures, water, lights, particles, environment]] =
-		await Promise.all([store.writeArchives(dir, previous), tablesReady]);
-	const tables = { geometries, materials, textures, water, lights, particles, environment };
+	const [written, [materials, water, lights, particles, environment]] = await Promise.all([
+		store.writeArchives(dir, previous),
+		tablesReady,
+	]);
+	const tables = { materials, water, lights, particles, environment };
 
 	const generation = createHash('sha256');
 	for (const part of [
 		treeBin,
 		chainsBin,
 		blobsBin,
-		tables.geometries,
+		geometriesBin,
 		tables.materials,
-		tables.textures,
+		texturesBin,
 		tables.water,
 		tables.lights,
 		tables.particles,
@@ -2372,9 +2374,9 @@ const writePackage = async (
 		{ path: CORE_PATHS.tree, data: treeBin },
 		{ path: CORE_PATHS.blobs, data: blobsBin },
 		{ path: CORE_PATHS.chains, data: chainsBin },
-		{ path: CORE_PATHS.geometries, data: tables.geometries },
+		{ path: CORE_PATHS.geometries, data: geometriesBin },
 		{ path: CORE_PATHS.materials, data: tables.materials },
-		{ path: CORE_PATHS.textures, data: tables.textures },
+		{ path: CORE_PATHS.textures, data: texturesBin },
 		{ path: CORE_PATHS.water, data: tables.water },
 		{ path: CORE_PATHS.lights, data: tables.lights },
 		{ path: CORE_PATHS.particles, data: tables.particles },
@@ -2388,9 +2390,9 @@ const writePackage = async (
 			[CORE_PATHS.tree]: treeBin.length,
 			[CORE_PATHS.blobs]: blobsBin.length,
 			[CORE_PATHS.chains]: chainsBin.length,
-			[CORE_PATHS.geometries]: tables.geometries.length,
+			[CORE_PATHS.geometries]: geometriesBin.length,
 			[CORE_PATHS.materials]: tables.materials.length,
-			[CORE_PATHS.textures]: tables.textures.length,
+			[CORE_PATHS.textures]: texturesBin.length,
 			[CORE_PATHS.water]: tables.water.length,
 			[CORE_PATHS.lights]: tables.lights.length,
 			[CORE_PATHS.particles]: tables.particles.length,

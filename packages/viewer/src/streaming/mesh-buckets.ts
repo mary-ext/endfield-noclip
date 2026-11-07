@@ -1,4 +1,4 @@
-import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
+import type { GeometryTable } from '@endfield-noclip/package-format/geometry-table';
 import { type Chain, ChainDrawFlags, DrawRole } from '@endfield-noclip/package-format/instances';
 
 import type { MaterialLook } from '../looks/look.ts';
@@ -182,7 +182,7 @@ interface MeshBucketsInit {
 	/** LOD-chain templates */
 	chains: readonly Chain[];
 	/** the geometry table */
-	geometries: readonly GeometryEntry[];
+	geometries: GeometryTable;
 	/** by material id, from `materialLooks` */
 	looks: readonly MaterialLook[];
 	stream: Pick<StreamManager, 'get'>;
@@ -191,7 +191,7 @@ interface MeshBucketsInit {
 /** each chain's drawn slots, and the buckets their instances go to */
 export class MeshBuckets {
 	#chains: readonly Chain[];
-	#geometries: readonly GeometryEntry[];
+	#geometries: GeometryTable;
 	/** by material id, then the look stand-ins draw with at {@link #standIn} */
 	#looks: readonly MaterialLook[];
 	/** the material id `DrawRole.Unsupported` draws take, one past the package's */
@@ -287,8 +287,8 @@ export class MeshBuckets {
 		const { geometry, submesh, material } = slot;
 		const key = ((geometry * 256 + submesh) * 65_536 + material) * BUCKET_VARIANTS + index;
 		const bucket = this.#buckets.getOrInsertComputed(key, (): MeshBucket => {
-			const entry = this.#geometries[geometry];
-			const item = entry.status === 'ready' ? this.#stream.get(entry.blob) : undefined;
+			const blob = this.#geometries.blob(geometry);
+			const item = blob === null ? undefined : this.#stream.get(blob);
 			if (item === undefined) {
 				throw new Error(`geometry ${geometry} has no stream item`);
 			}

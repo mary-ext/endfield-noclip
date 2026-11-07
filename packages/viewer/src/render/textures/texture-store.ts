@@ -1,7 +1,7 @@
+import type { TextureTable } from '@endfield-noclip/package-format/texture-table';
 import {
 	type ReadyTexture,
 	TEXTURE_FORMATS,
-	type TextureTable,
 	textureLevelLayout,
 } from '@endfield-noclip/package-format/textures';
 
@@ -99,14 +99,13 @@ export class TextureStore {
 		this.#device = device;
 		this.#table = table;
 		this.#supported = formats.bc;
-		table.entries.forEach((entry, texture) => {
-			if (entry.status !== 'ready') {
-				return;
+		// from the piece records, so entries are only decoded once they're used
+		for (let texture = 0; texture < table.count; texture++) {
+			const count = table.pieceCount(texture);
+			for (let index = 0; index < count; index++) {
+				this.#pieces.getOrInsertComputed(table.pieceBlob(texture, index), () => []).push({ texture, index });
 			}
-			entry.pieces.forEach((piece, index) => {
-				this.#pieces.getOrInsertComputed(piece.blob, () => []).push({ texture, index });
-			});
-		});
+		}
 	}
 
 	/**
@@ -115,7 +114,7 @@ export class TextureStore {
 	 * @returns the entry if this viewer can stream it (that kind, a supported format, block-aligned size)
 	 */
 	streamable(id: number, kind: '2d' | 'cube' | '2d-array' | '3d'): ReadyTexture | null {
-		const entry = this.#table.entries[id];
+		const entry = this.#table.entry(id);
 		if (entry?.status !== 'ready' || entry.kind !== kind) {
 			return null;
 		}
@@ -226,7 +225,7 @@ export class TextureStore {
 
 	#state(id: number): TextureState {
 		return this.#states.getOrInsertComputed(id, (): TextureState => {
-			const entry = this.#table.entries[id];
+			const entry = this.#table.entry(id);
 			if (entry?.status !== 'ready') {
 				throw new Error(`texture ${id} isn't ready`);
 			}

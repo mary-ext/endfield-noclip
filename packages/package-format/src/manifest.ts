@@ -25,7 +25,7 @@ export const PACKAGE_FORMAT = 'endfield-noclip.package';
  * bumped on any incompatible change to the manifest or a table. binary encodings carry their own versions in
  * their headers
  */
-export const PACKAGE_VERSION = 86;
+export const PACKAGE_VERSION = 87;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -42,9 +42,9 @@ export const CORE_PATHS = {
 	tree: 'tree.bin',
 	blobs: 'tables/blobs.bin',
 	chains: 'tables/chains.bin',
-	geometries: 'tables/geometries.json.zst',
+	geometries: 'tables/geometries.bin',
 	materials: 'tables/materials.json.zst',
-	textures: 'tables/textures.json.zst',
+	textures: 'tables/textures.bin',
 	water: 'tables/water.json.zst',
 	lights: 'tables/lights.json.zst',
 	particles: 'tables/particles.json.zst',

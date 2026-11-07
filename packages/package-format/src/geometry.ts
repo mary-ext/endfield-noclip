@@ -178,12 +178,7 @@ export interface GeometrySubmesh {
 	bounds: Bounds;
 }
 
-/** `tables/geometries.json`; a geometry's id is its index in `entries` */
-export interface GeometryTable {
-	entries: GeometryEntry[];
-}
-
-/** one mesh asset */
+/** one mesh asset, an entry of the geometry table (`geometry-table`) */
 export type GeometryEntry = UnconvertedEntry | ReadyGeometry;
 
 /** a converted mesh */

@@ -4,10 +4,12 @@ import { describe, it } from 'node:test';
 import { decodeBlobTable, encodeBlobTable } from './blob-table.ts';
 import { BlobCodec, BlobKind, blobPath } from './blobs.ts';
 import { PackageFormatError } from './errors.ts';
+import { decodeGeometryTable, encodeGeometryTable } from './geometry-table.ts';
 import {
 	decodeGeometryBlob,
 	encodeGeometryBlob,
 	type GeometryBlob,
+	type GeometryEntry,
 	GeometryFlags,
 	GeometryStreamFlags,
 	GeometryVertexFormat,
@@ -33,7 +35,8 @@ import {
 	encodeHeightPage,
 	encodeSurfacePage,
 } from './terrain.ts';
-import { textureLevelLayout } from './textures.ts';
+import { decodeTextureTable, encodeTextureTable, TEXTURE_FORMAT_CODES } from './texture-table.ts';
+import { TEXTURE_FORMATS, type TextureEntry, textureLevelLayout, type TextureSampler } from './textures.ts';
 import { tileAncestor, tileAt } from './tiles.ts';
 import { decodeTree, encodeTree, ContentKind, type Tree } from './tree.ts';
 
@@ -200,6 +203,125 @@ describe('blob table', () => {
 		const badKind = table.slice();
 		badKind[16] = 0xee;
 		assert.throws(() => decodeBlobTable(badKind), /unknown blob kind 238/);
+	});
+});
+
+describe('geometry table', () => {
+	const ready: GeometryEntry = {
+		status: 'ready',
+		blob: 70_000,
+		bounds: { min: [-1.5, 0, -2], max: [1.5, 3.25, 2] },
+		vertexCount: 100_000,
+		indexCount: 300_000,
+		submeshCount: 3,
+		attributes: (1 << 0) | (1 << 1) | (1 << 4),
+		tangentUv: null,
+		animationFrames: null,
+	};
+
+	it('round-trips entries, and gives blobs only for ready ones', () => {
+		const entries: GeometryEntry[] = [
+			ready,
+			{ status: 'failed' },
+			{ status: 'pending' },
+			{ ...ready, blob: 0, tangentUv: 1, animationFrames: 420 },
+		];
+		const table = decodeGeometryTable(encodeGeometryTable(entries));
+		assert.equal(table.count, 4);
+		assert.deepEqual(
+			entries.map((_, id) => table.entry(id)),
+			entries,
+		);
+		assert.deepEqual(
+			[0, 1, 2, 3, 4, -1].map((id) => table.blob(id)),
+			[70_000, null, null, 0, null, null],
+		);
+		assert.throws(() => table.entry(4), RangeError);
+	});
+
+	it('rejects fields past their record and unknown statuses', () => {
+		assert.throws(() => encodeGeometryTable([{ ...ready, submeshCount: 2 ** 16 }]), RangeError);
+		assert.throws(() => encodeGeometryTable([{ ...ready, animationFrames: 0 }]), RangeError);
+		const table = encodeGeometryTable([ready]);
+		table[16] = 7;
+		assert.throws(() => decodeGeometryTable(table), /geometry 0 has unknown status 7/);
+	});
+});
+
+describe('texture table', () => {
+	const sampler: TextureSampler = {
+		addressModeU: 'repeat',
+		addressModeV: 'clamp-to-edge',
+		addressModeW: 'mirror-repeat',
+		magFilter: 'linear',
+		minFilter: 'linear',
+		mipmapFilter: 'nearest',
+		maxAnisotropy: 8,
+		mipBias: -0.5,
+	};
+	const ready: TextureEntry = {
+		status: 'ready',
+		kind: 'cube-array',
+		format: 'bc6h-rgb-ufloat',
+		width: 4096,
+		height: 2048,
+		depthOrArrayLayers: 12,
+		mipCount: 13,
+		sampler: 1,
+		pieces: [
+			{ blob: 9, firstLevel: 5, levelCount: 8 },
+			{ blob: 10, firstLevel: 4, levelCount: 1 },
+		],
+	};
+
+	it('round-trips samplers and entries, and reads pieces without decoding entries', () => {
+		const samplers = [sampler, { ...sampler, addressModeU: 'clamp-to-edge' as const, mipBias: 0 }];
+		const entries: TextureEntry[] = [
+			{ status: 'pending' },
+			ready,
+			{ status: 'failed' },
+			{
+				...ready,
+				kind: '2d',
+				format: 'rgba8unorm-srgb',
+				sampler: 0,
+				pieces: [{ blob: 3, firstLevel: 0, levelCount: 1 }],
+			},
+		];
+		const table = decodeTextureTable(encodeTextureTable(samplers, entries));
+		assert.equal(table.count, 4);
+		assert.deepEqual(table.samplers, samplers);
+		assert.deepEqual(
+			entries.map((_, id) => table.entry(id)),
+			entries,
+		);
+		assert.equal(table.entry(1), table.entry(1));
+		assert.equal(table.entry(4), undefined);
+		assert.deepEqual(
+			[0, 1, 2, 3, 4].map((id) => table.pieceCount(id)),
+			[0, 2, 0, 1, 0],
+		);
+		assert.deepEqual([table.pieceBlob(1, 0), table.pieceBlob(1, 1), table.pieceBlob(3, 0)], [9, 10, 3]);
+	});
+
+	it('codes every texture format', () => {
+		assert.deepEqual(TEXTURE_FORMAT_CODES.toSorted(), Object.keys(TEXTURE_FORMATS).toSorted());
+	});
+
+	it('rejects values without a code, sampler indices past the palette and unknown codes', () => {
+		assert.throws(
+			() => encodeTextureTable([sampler], [{ ...ready, sampler: 0, format: 'astc-4x4-unorm' }]),
+			RangeError,
+		);
+		assert.throws(() => encodeTextureTable([sampler], [ready]), RangeError);
+		const table = encodeTextureTable([sampler, sampler], [ready]);
+		// the texture record follows the 20-byte header and two 12-byte samplers
+		const badFormat = table.slice();
+		badFormat[20 + 24 + 2] = 0xee;
+		assert.throws(() => decodeTextureTable(badFormat), /unknown texture format 238/);
+		const badSampler = table.slice();
+		badSampler[20 + 24 + 10] = 2;
+		assert.throws(() => decodeTextureTable(badSampler), /sampler is past the palette/);
 	});
 });
 

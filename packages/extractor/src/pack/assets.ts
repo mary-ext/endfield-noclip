@@ -11,7 +11,6 @@ import {
 	type TextureEntry,
 	textureLevelLayout,
 	type TextureSampler,
-	type TextureTable,
 } from '@endfield-noclip/package-format/textures';
 
 import { failureReason } from '../errors.ts';
@@ -271,7 +270,8 @@ export interface BlobTally {
 export interface AssetConversion {
 	geometries: GeometryEntry[];
 	materials: MaterialTable;
-	textures: TextureTable;
+	/** the texture table's sampler palette and entries */
+	textures: { samplers: TextureSampler[]; entries: TextureEntry[] };
 	/**
 	 * per {@link AssetConversionInput.extraTextures} group and entry, its texture-table id, or `null` if it
 	 * failed

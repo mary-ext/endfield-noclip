@@ -1,4 +1,4 @@
-import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
+import type { GeometryTable } from '@endfield-noclip/package-format/geometry-table';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 import type { WaterConfig, WaterTable } from '@endfield-noclip/package-format/water';
 
@@ -272,7 +272,7 @@ export class WaterRenderer {
 		eye: Vec3;
 		planes: readonly Plane[];
 		stream: StreamManager;
-		geometries: readonly GeometryEntry[];
+		geometries: GeometryTable;
 		textures: TextureStore;
 		/** the sun as the water column takes it: `Environment.sunRaw` */
 		sun: Vec3;
@@ -292,8 +292,8 @@ export class WaterRenderer {
 			if (!(this.#groupsShown[surface.group] ?? false)) {
 				continue;
 			}
-			const entry = geometries[surface.geometry];
-			if (entry?.status !== 'ready') {
+			const blob = geometries.blob(surface.geometry);
+			if (blob === null) {
 				continue;
 			}
 			// a water volume's surface rises and falls with its fill
@@ -303,7 +303,7 @@ export class WaterRenderer {
 			const max: Vec3 = [packedMax[0], packedMax[1] + lift, packedMax[2]];
 			const dx = Math.max(min[0] - eye[0], 0, eye[0] - max[0]);
 			const dz = Math.max(min[2] - eye[2], 0, eye[2] - max[2]);
-			const item = stream.want(entry.blob, PRIORITY / (1 + Math.hypot(dx, dz)));
+			const item = stream.want(blob, PRIORITY / (1 + Math.hypot(dx, dz)));
 			const resident = item?.resident;
 			if (resident?.kind !== 'geometry' || slot >= MAX_SURFACES || !boxInFrustum(planes, min, max, eye)) {
 				continue;

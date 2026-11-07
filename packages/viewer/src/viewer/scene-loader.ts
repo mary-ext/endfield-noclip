@@ -130,8 +130,13 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 	terrain.setSplat(manifest.terrain?.splat ?? null);
 	stream.pin(coreBlobs(pkg, { surfaces: terrain.surfaces }));
 
-	const geometries = pkg.geometries.entries;
-	const geometriesReady = geometries.reduce((sum, entry) => sum + (entry.status === 'ready' ? 1 : 0), 0);
+	const geometries = pkg.geometries;
+	let geometriesReady = 0;
+	for (let id = 0; id < geometries.count; id++) {
+		if (geometries.blob(id) !== null) {
+			geometriesReady++;
+		}
+	}
 	return {
 		pkg,
 		tree,
@@ -158,7 +163,7 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 					})
 				: null,
 		textures,
-		geometries: { ready: geometriesReady, total: geometries.length },
+		geometries: { ready: geometriesReady, total: geometries.count },
 		levels: manifest.levels.map((level) => ({
 			id: level.id,
 			name: level.name ?? level.id,

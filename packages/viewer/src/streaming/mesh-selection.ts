@@ -1,4 +1,4 @@
-import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
+import type { GeometryTable } from '@endfield-noclip/package-format/geometry-table';
 import type { Chain } from '@endfield-noclip/package-format/instances';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
@@ -86,7 +86,7 @@ export interface MeshSelectorInit {
 	/** LOD-chain templates */
 	chains: readonly Chain[];
 	/** the geometry table */
-	geometries: readonly GeometryEntry[];
+	geometries: GeometryTable;
 	/** by material id, from `materialLooks` */
 	looks: readonly MaterialLook[];
 	stream: StreamManager;
@@ -185,7 +185,7 @@ interface CulledGroup {
 export class MeshSelector {
 	readonly selection: MeshSelection = { buckets: [], boxes: [], particles: false, gpu: gpuCullWork() };
 	#chains: readonly Chain[];
-	#geometries: readonly GeometryEntry[];
+	#geometries: GeometryTable;
 	#stream: StreamManager;
 	#textures: TextureRequests;
 	#particles: ParticleField;
@@ -245,7 +245,7 @@ export class MeshSelector {
 		this.#textures = new TextureRequests(init.stream, init.textures);
 		this.#particles = init.particles;
 		this.#buckets = new MeshBuckets(init);
-		const count = init.geometries.length;
+		const count = init.geometries.count;
 		this.#checkedFrame = new Int32Array(count).fill(-1);
 		this.#ready = new Uint8Array(count);
 		this.#wanted = new Float64Array(count);
@@ -877,10 +877,9 @@ export class MeshSelector {
 		if (this.#checkedFrame[geometry] !== frame) {
 			this.#checkedFrame[geometry] = frame;
 			this.#wanted[geometry] = priority;
-			const entry = this.#geometries[geometry];
-			const known = entry?.status === 'ready';
-			this.#ready[geometry] = known && this.#stream.isReady(entry.blob) ? 1 : 0;
-			if (known) {
+			const blob = this.#geometries.blob(geometry);
+			this.#ready[geometry] = blob !== null && this.#stream.isReady(blob) ? 1 : 0;
+			if (blob !== null) {
 				this.#asked.push(geometry);
 			}
 		} else if (priority > this.#wanted[geometry]) {
@@ -892,9 +891,9 @@ export class MeshSelector {
 	/** wants every geometry asked about this frame at the highest priority it was asked with */
 	#wantAsked(): void {
 		for (const geometry of this.#asked) {
-			const entry = this.#geometries[geometry];
-			if (entry?.status === 'ready') {
-				this.#stream.want(entry.blob, this.#wanted[geometry]);
+			const blob = this.#geometries.blob(geometry);
+			if (blob !== null) {
+				this.#stream.want(blob, this.#wanted[geometry]);
 			}
 		}
 		this.#asked.length = 0;
@@ -947,15 +946,15 @@ export class MeshSelector {
 
 	/** whether a geometry is resident, without requesting it or marking it used */
 	#geometryResident(geometry: number): boolean {
-		const entry = this.#geometries[geometry];
-		return entry?.status === 'ready' && this.#stream.isReady(entry.blob);
+		const blob = this.#geometries.blob(geometry);
+		return blob !== null && this.#stream.isReady(blob);
 	}
 
 	/** marks a resident geometry used this frame, so it isn't evicted */
 	#keepGeometry(geometry: number): void {
-		const entry = this.#geometries[geometry];
-		if (entry?.status === 'ready') {
-			this.#stream.markUsed(entry.blob);
+		const blob = this.#geometries.blob(geometry);
+		if (blob !== null) {
+			this.#stream.markUsed(blob);
 		}
 	}
 }

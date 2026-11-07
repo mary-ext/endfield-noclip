@@ -131,7 +131,7 @@ export class Traversal {
 				eye: camera.position,
 				planes: view.planes,
 				stream,
-				geometries: scene.pkg.geometries.entries,
+				geometries: scene.pkg.geometries,
 				textures: scene.textures,
 				sun: environment.sunRaw,
 				volumeOffsets: input.waterOffsets,

@@ -11,14 +11,10 @@ export const TEXTURE_TAIL_BYTES = 64 * 1024;
 /** a texture-table id, or `null` when unset or not converted */
 export type TextureRef = number | null;
 
-/** `tables/textures.json`; a texture's id is its index in `entries` */
-export interface TextureTable {
-	/** the distinct samplers entries use; {@link ReadyTexture.sampler} indexes this list */
-	samplers: TextureSampler[];
-	entries: TextureEntry[];
-}
-
-/** one texture. textures with identical content and sampler share one entry */
+/**
+ * one texture, an entry of the texture table (`texture-table`). textures with identical content and sampler
+ * share one entry
+ */
 export type TextureEntry = UnconvertedEntry | ReadyTexture;
 
 /** a converted texture: the game's texel data unchanged (no transcoding), split into mip pieces */
@@ -32,7 +28,7 @@ export interface ReadyTexture {
 	/** WebGPU's: array layers × faces (6 per cube), or depth for `3d`, else 1 */
 	depthOrArrayLayers: number;
 	mipCount: number;
-	/** index into {@link TextureTable.samplers} */
+	/** index into the texture table's sampler palette */
 	sampler: number;
 	/**
 	 * the blobs holding the levels, coarse to fine: the first holds the mip tail (see
