@@ -39,20 +39,133 @@ import type { TextureRef } from '@endfield-noclip/package-format/textures';
 import type { Color } from '@endfield-noclip/package-format/values';
 
 import { BlendFactor } from './material-classify.ts';
-import { linearRgb, type MaterialReader, scaleRgb, unsupported } from './material-values.ts';
+import {
+	isUnsupported,
+	linearRgb,
+	type MaterialBlend,
+	type MaterialReader,
+	scaleRgb,
+	unsupported,
+} from './material-values.ts';
+
+// #region shared steps
+
+/** @returns `unsupported` naming the material's blend unless it's one of `drawn`, else `null` */
+const undrawnBlend = (reader: MaterialReader, drawn: readonly MaterialBlend[]): UnsupportedSurface | null =>
+	drawn.includes(reader.material.blend) ? null : unsupported(`${reader.material.blend} blending`);
 
 /** @returns `unsupported` naming the material's keywords outside `drawn`, or `null` when it has none */
-export const undrawnKeywords = (
+const undrawnKeywords = (
 	reader: MaterialReader,
-	drawn: ReadonlySet<string>,
+	drawn: Pick<ReadonlySet<string>, 'has'>,
 ): UnsupportedSurface | null => {
 	const undrawn = reader.material.keywords.filter((keyword) => !drawn.has(keyword));
 	return undrawn.length === 0 ? null : unsupported(`keywords ${undrawn.join(', ')}`);
 };
 
+/** @returns `unsupported` for a slot on a UV set past 1: the geometry carries sets 0 and 1 only */
+const pastUvSets = (name: string, slot: Pick<TextureSlot, 'uv'>): UnsupportedSurface | null =>
+	slot.uv > 1 ? unsupported(`${name} on UV set ${slot.uv}`) : null;
+
 /** a fade between two view depths that also works with equal ends (then a step at the start) */
 const fadeRange = (start: number, end: number): FadeRange =>
 	Math.abs(end - start) < 1e-4 ? [start, start + 1e-4] : [start, end];
+
+/** the near camera fade every effect shader shares, `null` without it */
+const nearFadeOf = ({ float }: MaterialReader): EffectNearFade | null =>
+	float('_UseNearCameraFade', 0) !== 0
+		? [
+				float('_NearCameraFadeDistanceStart', 0),
+				float('_NearCameraFadeDistanceEnd', 1),
+				float('_NearCameraFadeDistanceStart2', 1e5),
+				float('_NearCameraFadeDistanceEnd2', 2e5),
+			]
+		: null;
+
+/** `_USE_SOFTBLEND`'s fade in front of what lies behind, `null` without it */
+const softBlendOf = ({ float, has }: MaterialReader): SoftBlend | null =>
+	has('_USE_SOFTBLEND')
+		? { distance: Math.max(float('_SoftDistance', 1), 1e-3), bias: float('_SoftBias', 0) }
+		: null;
+
+/** a slot an effect samples: a bound one, or an unset one whose shader samples white ({@link UNSET_WHITE}) */
+type EffectSlot = Omit<TextureSlot, 'texture'> & { texture: TextureRef };
+
+/** an unset slot, where the shader's white default stands in */
+const UNSET_WHITE: EffectSlot = { texture: null, uv: 0, scale: [1, 1], offset: [0, 0] };
+
+/**
+ * a slot as an effect texture, with its scroll and rotation. a `*UVSpeed` vector's zw is its shift per unit
+ * of a particle's custom data
+ */
+const effectTexture = (
+	slot: Pick<EffectSlot, 'texture' | 'scale' | 'offset'>,
+	scroll: readonly number[] = [0, 0],
+	rotation: [cos: number, sin: number] = [1, 0],
+): EffectTexture => ({
+	texture: slot.texture,
+	scale: [slot.scale[0], slot.scale[1]],
+	offset: [slot.offset[0], slot.offset[1]],
+	scroll: [scroll[0], scroll[1]],
+	rotation,
+	customScroll: [scroll[2] ?? 0, scroll[3] ?? 0],
+});
+
+/** a `*UVSpeed` property: its xy scroll per second, and its zw per unit of a particle's custom data */
+const speedOf = (reader: MaterialReader, name: string): readonly number[] =>
+	reader.colorOrVector(name) ?? [0, 0, 0, 0];
+
+/** a `*UVSpeed` property's xy scroll alone, for UVs that take no custom data */
+const ownSpeedOf = (reader: MaterialReader, name: string): readonly number[] =>
+	(reader.colorOrVector(name) ?? [0, 0]).slice(0, 2);
+
+/**
+ * a `*UVRotateMat` property: the shaders' UV rotations are pure rotations, so (a, b) of the matrix's first
+ * column is (cos, sin)
+ */
+const matrixRotationOf = (reader: MaterialReader, name: string): [cos: number, sin: number] => {
+	const rotation = reader.colorOrVector(name) ?? [1, 0, 0, 1];
+	return [rotation[0], rotation[1]];
+};
+
+/**
+ * a rotation property's value in degrees, as the matrix with columns (cos, −sin) and (sin, cos): the shaders
+ * turn UVs by `-degrees` about their centre
+ */
+const degreesRotation = (degrees: number): [cos: number, sin: number] => {
+	const angle = (degrees * Math.PI) / 180;
+	return [Math.cos(angle), -Math.sin(angle)];
+};
+
+/** a dissolve's threshold, which sweeps from below 0 to past 1 as the schedule goes from 0 to 1, and edge */
+const dissolveSweepOf = ({ float }: MaterialReader): Pick<EffectDissolve, 'threshold' | 'sharpness'> => ({
+	threshold: float('_DissolveScheduleOffset', 0) * 2.02 - 1.01,
+	sharpness: float('_DissolveEdgeSharp', 1),
+});
+
+/** a dissolve with its glowing edge, whose colour scales by `intensity` */
+const dissolveOf = (reader: MaterialReader, intensity: number): EffectDissolve => {
+	const edge = reader.colorOrVector('_DissolveEmissiveColor') ?? [0, 0, 0, 0];
+	return {
+		...dissolveSweepOf(reader),
+		edgeWidth: reader.float('_DissolveEmissiveEdge', 0),
+		edgeColor: scaleRgb(edge, intensity),
+	};
+};
+
+/** the u and v shifts the `n`th disturb texture distorts by */
+const disturbIntensityOf = ({ float }: MaterialReader, n: 1 | 2): [u: number, v: number] => [
+	float(`_DisturbUIntensity${n}`, 0),
+	float(`_DisturbVIntensity${n}`, 0),
+];
+
+/** the brightening of what's past `_ExpThreshold` */
+const brightenOf = ({ float }: MaterialReader): EffectStackSurface['brighten'] => ({
+	threshold: float('_ExpThreshold', 1),
+	intensity: float('_ExpIntensity', 0),
+});
+
+// #endregion
 
 // #region mist
 
@@ -70,12 +183,10 @@ const MIST_CARD_KEYWORDS = new Set(['_USE_FOG', '_USE_SOFTBLEND', '_USE_LIGHTING
  */
 export const describeMistCard = (reader: MaterialReader): MistCardSurface | UnsupportedSurface => {
 	const { float, colorOrVector: color, has, material } = reader;
-	if (material.blend !== 'premultiplied' && material.blend !== 'additive') {
-		return unsupported(`${material.blend} blending`);
-	}
-	const keywords = undrawnKeywords(reader, MIST_CARD_KEYWORDS);
-	if (keywords !== null) {
-		return keywords;
+	const undrawn =
+		undrawnBlend(reader, ['premultiplied', 'additive']) ?? undrawnKeywords(reader, MIST_CARD_KEYWORDS);
+	if (undrawn !== null) {
+		return undrawn;
 	}
 	const main = reader.slot('_MainTex');
 	const noise = reader.slot('_NoiseTex');
@@ -125,9 +236,10 @@ export const describeMistCard = (reader: MaterialReader): MistCardSurface | Unsu
  * @returns its surface, or `unsupported`
  */
 export const describeMistVolume = (reader: MaterialReader): MistVolumeSurface | UnsupportedSurface => {
-	const { float, colorOrVector: color, has, material } = reader;
-	if (material.blend !== 'additive') {
-		return unsupported(`${material.blend} blending`);
+	const { float, colorOrVector: color, has } = reader;
+	const undrawn = undrawnBlend(reader, ['additive']);
+	if (undrawn !== null) {
+		return undrawn;
 	}
 	const fog = color('_FogColor') ?? [1, 1, 1, 1];
 	const noiseSlot = reader.slot('_NoiseTex3D');
@@ -214,71 +326,19 @@ const stencilOf = (reader: MaterialReader): EffectStencil | UnsupportedSurface |
 	};
 };
 
-/** a slot an effect samples: a bound one, or an unset one whose shader samples white ({@link UNSET_WHITE}) */
-type EffectSlot = Omit<TextureSlot, 'texture'> & { texture: TextureRef };
-
-/** an unset slot, where the shader's white default stands in */
-const UNSET_WHITE: EffectSlot = { texture: null, uv: 0, scale: [1, 1], offset: [0, 0] };
-
-/**
- * a slot as an effect texture, with its scroll and rotation. a `*UVSpeed` vector's zw is its shift per unit
- * of a particle's custom data
- */
-const effectTexture = (
-	slot: Pick<EffectSlot, 'texture' | 'scale' | 'offset'>,
-	scroll: readonly number[] = [0, 0],
-	rotation: [cos: number, sin: number] = [1, 0],
-): EffectTexture => ({
-	texture: slot.texture,
-	scale: [slot.scale[0], slot.scale[1]],
-	offset: [slot.offset[0], slot.offset[1]],
-	scroll: [scroll[0], scroll[1]],
-	rotation,
-	customScroll: [scroll[2] ?? 0, scroll[3] ?? 0],
+/** the rows the texture stack's effects share: blend layer, distortion, dissolve, near fade and post exposure */
+const stackSharedOf = (reader: MaterialReader, intensity: number) => ({
+	blendTint: reader.colorOrVector('_BlendTint') ?? [1, 1, 1, 0],
+	disturb: [...disturbIntensityOf(reader, 1), ...disturbIntensityOf(reader, 2)] satisfies [
+		number,
+		number,
+		number,
+		number,
+	],
+	dissolve: dissolveOf(reader, intensity),
+	near: nearFadeOf(reader),
+	ignorePostExposure: reader.float('_IgnorePostExposure', 1),
 });
-
-const UV_SOURCES: readonly EffectUvSource[] = ['uv0', 'uv1', 'polar', 'screen'];
-
-/** the shared rows of the texture stack: blend layer, distortion, dissolve, near fade and post exposure */
-const sharedOf = (reader: MaterialReader, intensity: number) => {
-	const { float, colorOrVector: color } = reader;
-	const edge = color('_DissolveEmissiveColor') ?? [0, 0, 0, 0];
-	return {
-		blendTint: color('_BlendTint') ?? [1, 1, 1, 0],
-		disturb: [
-			float('_DisturbUIntensity1', 0),
-			float('_DisturbVIntensity1', 0),
-			float('_DisturbUIntensity2', 0),
-			float('_DisturbVIntensity2', 0),
-		] satisfies [number, number, number, number],
-		dissolve: {
-			// the threshold sweeps from below 0 to past 1 as the schedule goes from 0 to 1
-			threshold: float('_DissolveScheduleOffset', 0) * 2.02 - 1.01,
-			sharpness: float('_DissolveEdgeSharp', 1),
-			edgeWidth: float('_DissolveEmissiveEdge', 0),
-			edgeColor: scaleRgb(edge, intensity),
-		} satisfies EffectDissolve,
-		near: nearFadeOf(reader),
-		ignorePostExposure: float('_IgnorePostExposure', 1),
-	};
-};
-
-/** the near camera fade every effect shader shares, `null` without it */
-const nearFadeOf = ({ float }: MaterialReader): EffectNearFade | null =>
-	float('_UseNearCameraFade', 0) !== 0
-		? [
-				float('_NearCameraFadeDistanceStart', 0),
-				float('_NearCameraFadeDistanceEnd', 1),
-				float('_NearCameraFadeDistanceStart2', 1e5),
-				float('_NearCameraFadeDistanceEnd2', 2e5),
-			]
-		: null;
-
-/** `_USE_SOFTBLEND`'s fade in front of what lies behind, `null` without it */
-const softBlendOf = ({ float, has }: MaterialReader): SoftBlend | null =>
-	has('_USE_SOFTBLEND')
-		? { distance: Math.max(float('_SoftDistance', 1), 1e-3), bias: float('_SoftBias', 0) }
-		: null;
 
 /** the tint of the stack shaders: the LDR `_TintColor` linearized, times its intensity, and its alpha */
 const stackTintOf = (reader: MaterialReader): { tint: Color; intensity: number } => {
@@ -291,11 +351,30 @@ const stackTintOf = (reader: MaterialReader): { tint: Color; intensity: number }
 	};
 };
 
+const UV_SOURCES: readonly EffectUvSource[] = ['uv0', 'uv1', 'polar', 'screen'];
+
+/**
+ * which of UV0, UV1, polar and screen UVs a stack shader computes: polar and screen UVs only with their
+ * keyword and switch, and are zero otherwise
+ */
+const computedUvSources = ({ float, has }: MaterialReader): boolean[] => [
+	true,
+	true,
+	has('_USE_POLARUV') && float('_UsePolarUV', 0) !== 0,
+	has('_USE_SCREENUV') && float('_UseScreenUV', 0) !== 0,
+];
+
 /** a layer's UV source: the largest of its weights times UV0, UV1, polar and screen UVs, if computed */
 const sourceOf = (weights: readonly number[], computed: readonly boolean[]): EffectUvSource | null => {
 	const largest = weights.indexOf(Math.max(...weights));
 	return weights[largest] > 0 && computed[largest] ? UV_SOURCES[largest] : null;
 };
+
+/** how a stack shader's screen UVs are taken */
+const screenUvOf = ({ float }: MaterialReader): EffectStackSurface['screenUv'] => ({
+	byDepth: float('_ScreenUVUseDepth', 1) !== 0,
+	heightAsV: float('_UsePosYAsScreenV', 0) !== 0,
+});
 
 /** the material property of the vertex offset's texture */
 const OFFSET_TEXTURE = '_OffsetTex';
@@ -333,7 +412,7 @@ const vertexOffsetOf = (reader: MaterialReader): EffectVertexOffset | null => {
 	return {
 		// the vertex stage reads the scroll after the `_ST`, unscaled and unrotated
 		// its speed's zw scroll by custom data only on particles, where the offset is off
-		texture: effectTexture(slot, (color('_OffsetSpeed') ?? [0, 0]).slice(0, 2)),
+		texture: effectTexture(slot, ownSpeedOf(reader, '_OffsetSpeed')),
 		uv1: float('_OffsetUVSet', 0) !== 0,
 		direction: [dir[0], dir[1], dir[2]],
 		space,
@@ -359,7 +438,7 @@ const offsetMaskOf = (
 	reader: MaterialReader,
 	layers: readonly (StackLayer | null)[],
 ): EffectVertexOffsetMask | UnsupportedSurface | null => {
-	const { float, colorOrVector: color, has } = reader;
+	const { float, has } = reader;
 	if (!has('_USE_VERTOFFSETMASK')) {
 		return null;
 	}
@@ -377,7 +456,7 @@ const offsetMaskOf = (
 	return {
 		// sampled at the offset texture's UVs, scrolled by its speed's xy (zw scroll by custom data, only on
 		// particles, where the offset is off)
-		texture: effectTexture(bound, (color('_OffsetMaskSpeed') ?? [0, 0]).slice(0, 2)),
+		texture: effectTexture(bound, ownSpeedOf(reader, '_OffsetMaskSpeed')),
 		slot,
 		strength: float('_OffsetMaskPower', 0) * 0.2,
 	};
@@ -551,7 +630,7 @@ export const describeVfxBase = (
 ): EffectStackSurface | StencilMaskSurface | UnsupportedSurface => {
 	const { float, colorOrVector: color, has, material } = reader;
 	const stencil = stencilOf(reader);
-	if (stencil !== null && 'kind' in stencil) {
+	if (isUnsupported(stencil)) {
 		return stencil;
 	}
 	// an opaque blend state writes the premultiplied colour over what's behind, drawn in the main pass
@@ -588,31 +667,21 @@ export const describeVfxBase = (
 		return unsupported('a multiplying blend with a stencil');
 	}
 	const softBody = softBodyOf(reader);
-	if (softBody !== null && 'kind' in softBody) {
+	if (isUnsupported(softBody)) {
 		return softBody;
 	}
-	const undrawn = material.keywords.filter(
-		(keyword) => !BASE_KEYWORDS.has(keyword) && !baseKeywordDrawn(keyword, reader),
-	);
-	if (undrawn.length > 0) {
-		return unsupported(`keywords ${undrawn.join(', ')}`);
+	const keywords = undrawnKeywords(reader, {
+		has: (keyword) => BASE_KEYWORDS.has(keyword) || baseKeywordDrawn(keyword, reader),
+	});
+	if (keywords !== null) {
+		return keywords;
 	}
 	const { tint, intensity } = stackTintOf(reader);
-	const animOf = (prefix: string) => {
-		// the shaders' UV rotations are pure rotations: (a, b) of the matrix's first column is (cos, sin)
-		const rotation = color(`${prefix}UVRotateMat`) ?? [1, 0, 0, 1];
-		return {
-			scroll: color(`${prefix}UVSpeed`) ?? [0, 0, 0, 0],
-			rotation: [rotation[0], rotation[1]] as [number, number],
-		};
-	};
-	// polar and screen UVs are computed only with their keyword and switch, and are zero otherwise
-	const computed = [
-		true,
-		true,
-		has('_USE_POLARUV') && float('_UsePolarUV', 0) !== 0,
-		has('_USE_SCREENUV') && float('_UseScreenUV', 0) !== 0,
-	];
+	const animOf = (prefix: string) => ({
+		scroll: speedOf(reader, `${prefix}UVSpeed`),
+		rotation: matrixRotationOf(reader, `${prefix}UVRotateMat`),
+	});
+	const computed = computedUvSources(reader);
 	// a slot's UVs are its weights times UV0, UV1, polar and screen UVs; materials set one weight
 	const source = (prefix: string) => sourceOf(color(`${prefix}UVWeights`) ?? [1, 0, 0, 0], computed);
 	const layers: (StackLayer | null)[] = BASE_SLOTS.map(() => null);
@@ -630,9 +699,9 @@ export const describeVfxBase = (
 		if (slot === undefined) {
 			continue;
 		}
-		// the geometry carries UV sets 0 and 1 only
-		if (slot.uv > 1) {
-			return unsupported(`${name} on UV set ${slot.uv}`);
+		const uvSet = pastUvSets(name, slot);
+		if (uvSet !== null) {
+			return uvSet;
 		}
 		if (i === 0) {
 			const anim = animOf('_MainTex');
@@ -674,7 +743,7 @@ export const describeVfxBase = (
 	if (layers[0] === null && reader.shader.textures['_MainTex'] !== 'white') {
 		return unsupported('no main texture and a non-white default');
 	}
-	const shared = sharedOf(reader, intensity);
+	const shared = stackSharedOf(reader, intensity);
 	const soft = softBlendOf(reader);
 	// both read the main pass's depth, which an opaque layer draws into
 	if (opaque && (soft !== null || has('_USE_EDGECOLOR'))) {
@@ -683,7 +752,7 @@ export const describeVfxBase = (
 	const offset = vertexOffsetOf(reader);
 	// the mask only scales the offset, so without one it changes nothing
 	const mask = offset === null ? null : offsetMaskOf(reader, layers);
-	if (mask !== null && 'kind' in mask) {
+	if (isUnsupported(mask)) {
 		return mask;
 	}
 	return {
@@ -719,7 +788,7 @@ export const describeVfxBase = (
 		ignorePostExposure: shared.ignorePostExposure,
 		vertexColor: float('_DisableVertColor', 0) === 0,
 		near: shared.near,
-		brighten: { threshold: float('_ExpThreshold', 1), intensity: float('_ExpIntensity', 0) },
+		brighten: brightenOf(reader),
 		breathing: has('_USE_ANIM_BREATHING')
 			? {
 					minAlpha: float('_BreathingMinAlpha', 0),
@@ -754,10 +823,7 @@ export const describeVfxBase = (
 		unfogged: !has('_USE_FOG'),
 		blendMode: STACK_BLEND_MODES[blendMode],
 		opaque,
-		screenUv: {
-			byDepth: float('_ScreenUVUseDepth', 1) !== 0,
-			heightAsV: float('_UsePosYAsScreenV', 0) !== 0,
-		},
+		screenUv: screenUvOf(reader),
 		stencil,
 	};
 };
@@ -791,12 +857,12 @@ export const isDitherEffect = (reader: MaterialReader): boolean =>
  * @returns its surface, or `unsupported`
  */
 export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface | UnsupportedSurface => {
-	const { float, colorOrVector: color, has, material } = reader;
-	const undrawn = material.keywords.filter(
-		(keyword) => !DITHER_EFFECT_KEYWORDS.has(keyword) && !DITHER_EFFECT_EXTRA_KEYWORDS.has(keyword),
-	);
-	if (undrawn.length > 0) {
-		return unsupported(`keywords ${undrawn.join(', ')}`);
+	const { float, colorOrVector: color, has } = reader;
+	const keywords = undrawnKeywords(reader, {
+		has: (keyword) => DITHER_EFFECT_KEYWORDS.has(keyword) || DITHER_EFFECT_EXTRA_KEYWORDS.has(keyword),
+	});
+	if (keywords !== null) {
+		return keywords;
 	}
 	if (float('_UseLighting', 0) !== 0) {
 		return unsupported('a lit effect variant');
@@ -811,12 +877,7 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 	if (has('_USE_MASK') && float('_UseMaskTexAsAlpha', 1) === 0) {
 		return unsupported('a mask that isn’t its red');
 	}
-	const computed = [
-		true,
-		true,
-		has('_USE_POLARUV') && float('_UsePolarUV', 0) !== 0,
-		has('_USE_SCREENUV') && float('_UseScreenUV', 0) !== 0,
-	];
+	const computed = computedUvSources(reader);
 	// the shader's slots and their properties; the distortion comes first, so it can shift the others
 	const slots = [
 		{
@@ -867,12 +928,12 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 		}
 		// an unset slot binds white, the shader's default for each of these
 		const bound = reader.slot(slot.name) ?? UNSET_WHITE;
-		if (bound.uv > 1) {
-			return unsupported(`${slot.name} on UV set ${bound.uv}`);
+		const uvSet = pastUvSets(slot.name, bound);
+		if (uvSet !== null) {
+			return uvSet;
 		}
-		const rotation = color(slot.rotation) ?? [1, 0, 0, 1];
 		layers[i] = {
-			...effectTexture(bound, color(slot.speed) ?? [0, 0, 0, 0], [rotation[0], rotation[1]]),
+			...effectTexture(bound, speedOf(reader, slot.speed), matrixRotationOf(reader, slot.rotation)),
 			role: slot.role,
 			redAlpha: slot.redAlpha,
 			source: sourceOf(color(slot.weights) ?? [1, 0, 0, 0], computed),
@@ -883,7 +944,7 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 	// `_TintColorAlpha`, the vertex alpha, the main texture's alpha (its red), the mask's red, the dissolve and the
 	// near fade
 	const { tint, intensity } = stackTintOf(reader);
-	const shared = sharedOf(reader, intensity);
+	const shared = stackSharedOf(reader, intensity);
 	return {
 		kind: 'effectStack',
 		variant: 'dither',
@@ -917,10 +978,7 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 		unfogged: false,
 		blendMode: 'over',
 		opaque: false,
-		screenUv: {
-			byDepth: float('_ScreenUVUseDepth', 1) !== 0,
-			heightAsV: float('_UsePosYAsScreenV', 0) !== 0,
-		},
+		screenUv: screenUvOf(reader),
 		stencil: null,
 	};
 };
@@ -1025,13 +1083,10 @@ const DECAL_KEYWORDS = new Set([
  * @returns its surface, or `unsupported`
  */
 export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | UnsupportedSurface => {
-	const { float, colorOrVector: color, has, material } = reader;
-	if (material.blend !== 'premultiplied') {
-		return unsupported(`${material.blend} blending`);
-	}
-	const keywords = undrawnKeywords(reader, DECAL_KEYWORDS);
-	if (keywords !== null) {
-		return keywords;
+	const { float, colorOrVector: color, has } = reader;
+	const undrawn = undrawnBlend(reader, ['premultiplied']) ?? undrawnKeywords(reader, DECAL_KEYWORDS);
+	if (undrawn !== null) {
+		return undrawn;
 	}
 	const base = color('_DecalBaseColor') ?? [1, 1, 1, 1];
 	// a texture's UV switch picks polar or screen UVs only where they're computed; the box's otherwise
@@ -1051,12 +1106,10 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		if (slot === undefined || (keyword !== null && !has(keyword))) {
 			continue;
 		}
-		// the geometry carries UV sets 0 and 1 only
-		if (slot.uv > 1) {
-			return unsupported(`${name} on UV set ${slot.uv}`);
+		const uvSet = pastUvSets(name, slot);
+		if (uvSet !== null) {
+			return uvSet;
 		}
-		// a rotation in degrees about the texture's centre
-		const angle = rotate === null ? 0 : (float(rotate, 0) * Math.PI) / 180;
 		// the shader applies the blend texture's `_ST` twice
 		const transform: Pick<TextureSlot, 'texture' | 'scale' | 'offset'> =
 			role === 'blend'
@@ -1066,10 +1119,11 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 						offset: [slot.offset[0] * (slot.scale[0] + 1), slot.offset[1] * (slot.scale[1] + 1)],
 					}
 				: slot;
-		const texture = effectTexture(transform, (speed !== null && color(speed)) || [0, 0, 0, 0], [
-			Math.cos(angle),
-			-Math.sin(angle),
-		]);
+		const texture = effectTexture(
+			transform,
+			speed === null ? [0, 0, 0, 0] : speedOf(reader, speed),
+			degreesRotation(rotate === null ? 0 : float(rotate, 0)),
+		);
 		// off particles the shader shifts the UVs by the speed's zw times a constant of the material instead of
 		// custom data, before the rotation: the same as moving the offset by the turned, scaled shift
 		const k = custom === null ? 0 : float(custom, 0);
@@ -1094,7 +1148,7 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		return unsupported('no main texture');
 	}
 	// the dissolve edge takes the base colour's red as its intensity, as the shader reads it
-	const shared = sharedOf(reader, base[0]);
+	const shared = stackSharedOf(reader, base[0]);
 	const weighted = has('_USE_WEIGHT');
 	const intensity = float('_WeightTexIntensity', 1);
 	return {
@@ -1177,13 +1231,10 @@ const texture = (value: EffectTexture | null | 'uv'): EffectTexture | null => (v
  * @returns its surface, or `unsupported` for features the viewer doesn't draw (refraction, vertex animation)
  */
 export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | UnsupportedSurface => {
-	const { float, colorOrVector: color, has, material } = reader;
-	if (material.blend !== 'premultiplied') {
-		return unsupported(`${material.blend} blending`);
-	}
-	const keywords = undrawnKeywords(reader, WATER_KEYWORDS);
-	if (keywords !== null) {
-		return keywords;
+	const { float, colorOrVector: color, has } = reader;
+	const undrawn = undrawnBlend(reader, ['premultiplied']) ?? undrawnKeywords(reader, WATER_KEYWORDS);
+	if (undrawn !== null) {
+		return undrawn;
 	}
 	const sequence = has('_USE_SEQUENCE_FRAME');
 	if (sequence && reader.slot('_SequenceBaseColorMap') === undefined) {
@@ -1202,11 +1253,11 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 		if (slot === null || slot === 'uv') {
 			return slot;
 		}
-		const rotation = color(`${prefix}UVRotateMat${suffix}`) ?? [1, 0, 0, 1];
-		return effectTexture(slot, color(`${prefix}UVSpeed${suffix}`) ?? [0, 0, 0, 0], [
-			rotation[0],
-			rotation[1],
-		]);
+		return effectTexture(
+			slot,
+			speedOf(reader, `${prefix}UVSpeed${suffix}`),
+			matrixRotationOf(reader, `${prefix}UVRotateMat${suffix}`),
+		);
 	};
 	/** the flipbook samples its frames' UVs as they are */
 	const frames = (name: string, on: boolean): EffectTexture | null | 'uv' => {
@@ -1235,15 +1286,15 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 		const name = flipbook ? '_SequenceNormalMap' : has('_NORMAL_MAP') ? '_NormalMap' : null;
 		const slot = name === null ? undefined : reader.slot(name);
 		if (slot !== undefined && slot.uv === 0) {
-			const rotation = color('_NormalMapUVRotateMat') ?? [1, 0, 0, 1];
 			normals = {
 				texture: flipbook
 					? effectTexture({ texture: slot.texture, scale: [1, 1], offset: [0, 0] })
 					: // the normal map takes no custom data
-						effectTexture(slot, (color('_NormalMapUVSpeed') ?? [0, 0]).slice(0, 2), [
-							rotation[0],
-							rotation[1],
-						]),
+						effectTexture(
+							slot,
+							ownSpeedOf(reader, '_NormalMapUVSpeed'),
+							matrixRotationOf(reader, '_NormalMapUVRotateMat'),
+						),
 				flipbook,
 				scale: flipbook ? float('_FrameNormalScale', 1) : float('_NormalScale', 1),
 			};
@@ -1252,7 +1303,6 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 	const intensity = float('_TintColorIntensity', 1);
 	// VFXWater's `_TintColor` and `_DissolveEmissiveColor` are [HDR]: authored linear, used as stored
 	const tint = color('_TintColor') ?? [1, 1, 1, 1];
-	const shared = sharedOf(reader, intensity);
 	const frameSize = color('_SequenceFrameSize') ?? [1, 1, 0, 0];
 	const dissolveTexture = texture(dissolveMap);
 	return {
@@ -1276,14 +1326,15 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 		useLighting: float('_UseLighting', 1),
 		randomUv: float('_WaterRandomUV', 0),
 		disturbBias: float('_Bi_Disturb', 0),
-		disturb: [float('_DisturbUIntensity1', 0), float('_DisturbVIntensity1', 0)],
+		disturb: disturbIntensityOf(reader, 1),
 		disturbUse: [
 			float('_MainTexUseDisturb', 0),
 			float('_MaskTexUseDisturb', 0),
 			float('_NormalMapUseDisturb', 0),
 			float('_DissolveTexUseDisturb', 0),
 		],
-		dissolve: dissolveTexture === null ? null : { ...shared.dissolve, texture: dissolveTexture },
+		dissolve:
+			dissolveTexture === null ? null : { ...dissolveOf(reader, intensity), texture: dissolveTexture },
 		sequence: {
 			columns: Math.max(frameSize[0], 1),
 			rows: Math.max(frameSize[1], 1),
@@ -1307,8 +1358,8 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 		],
 		indirectSaturation: float('_IndirectSaturation', 1),
 		soft: softBlendOf(reader),
-		ignorePostExposure: shared.ignorePostExposure,
-		near: shared.near,
+		ignorePostExposure: float('_IgnorePostExposure', 1),
+		near: nearFadeOf(reader),
 	};
 };
 
@@ -1447,14 +1498,23 @@ const REFRACT_KEYWORDS = new Set([
  * @returns its surface, or `unsupported`
  */
 export const describeRefract = (reader: MaterialReader): RefractSurface | UnsupportedSurface => {
-	const { float, colorOrVector: color, has, material } = reader;
-	if (material.blend !== 'alphaBlend') {
-		return unsupported(`${material.blend} blending`);
+	const { float, colorOrVector: color, has } = reader;
+	const undrawn = undrawnBlend(reader, ['alphaBlend']) ?? undrawnKeywords(reader, REFRACT_KEYWORDS);
+	if (undrawn !== null) {
+		return undrawn;
 	}
-	const keywords = undrawnKeywords(reader, REFRACT_KEYWORDS);
-	if (keywords !== null) {
-		return keywords;
-	}
+	/** a slot on UV0, turned by its rotation property in degrees */
+	const uv0Texture = (
+		name: string,
+		rotate: string,
+		scroll: readonly number[],
+	): EffectTexture | UnsupportedSurface => {
+		const bound = reader.slot(name) ?? UNSET_WHITE;
+		if (bound.uv !== 0) {
+			return unsupported(`${name} on UV set ${bound.uv}`);
+		}
+		return effectTexture(bound, scroll, degreesRotation(float(rotate, 0)));
+	};
 	const polar = has('_USE_POLARUV');
 	/** the shader reads UV0, or polar UVs about its centre with either switch value */
 	const textureOf = (
@@ -1467,52 +1527,38 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 		if (switched && !polar) {
 			return unsupported(`${switchName} without polar UVs`);
 		}
-		const bound = reader.slot(name) ?? UNSET_WHITE;
-		if (bound.uv !== 0) {
-			return unsupported(`${name} on UV set ${bound.uv}`);
-		}
-		// the rotation in degrees, as the matrix with columns (cos, −sin) and (sin, cos)
-		const angle = (float(rotate, 0) * Math.PI) / 180;
-		return {
-			...effectTexture(bound, color(speed) ?? [0, 0, 0, 0], [Math.cos(angle), -Math.sin(angle)]),
-			source: switched ? 'polar' : 'uv0',
-		};
+		const sampled = uv0Texture(name, rotate, speedOf(reader, speed));
+		return isUnsupported(sampled) ? sampled : { ...sampled, source: switched ? 'polar' : 'uv0' };
 	};
 	const refraction = textureOf('_RefractTex', '_RefractTexUVRotate', '_RefractUVSpeed', '_RefractSwitchUV');
-	if ('kind' in refraction) {
+	if (isUnsupported(refraction)) {
 		return refraction;
 	}
 	let mask: RefractSurface['mask'] = null;
 	if (has('_USE_MASK')) {
 		const masked = textureOf('_MaskTex', '_MaskTexUVRotate', '_MaskTexUVSpeed', '_MaskSwitchUV');
-		if ('kind' in masked) {
+		if (isUnsupported(masked)) {
 			return masked;
 		}
 		mask = { texture: masked, redAlpha: float('_UseMaskTexAsAlpha', 1) !== 0 };
 	}
 	let dissolve: RefractSurface['dissolve'] = null;
 	if (has('_USE_DISSOLVE')) {
-		// the dissolve texture always reads UV0, without a polar switch
-		const bound = reader.slot('_DissolveTex') ?? UNSET_WHITE;
-		if (bound.uv !== 0) {
-			return unsupported(`_DissolveTex on UV set ${bound.uv}`);
+		// the dissolve texture always reads UV0, without a polar switch, and its UVs take no custom data
+		const dissolved = uv0Texture('_DissolveTex', '_DissolveUVRotate', ownSpeedOf(reader, '_DissolveUVSpeed'));
+		if (isUnsupported(dissolved)) {
+			return dissolved;
 		}
-		const angle = (float('_DissolveUVRotate', 0) * Math.PI) / 180;
 		dissolve = {
-			// VFXRefract's dissolve UVs take no custom data
-			texture: effectTexture(bound, (color('_DissolveUVSpeed') ?? [0, 0]).slice(0, 2), [
-				Math.cos(angle),
-				-Math.sin(angle),
-			]),
-			threshold: float('_DissolveScheduleOffset', 0) * 2.02 - 1.01,
-			sharpness: float('_DissolveEdgeSharp', 1),
+			texture: dissolved,
+			...dissolveSweepOf(reader),
 			affectsAlpha: float('_DissolveAffectBlend', 0),
 		};
 	}
 	let blend: RefractSurface['blend'] = null;
 	if (has('_USE_BLEND')) {
 		const blended = textureOf('_BlendTex', '_BlendTexUVRotate', '_BlendTexUVSpeed', '_BlendSwitchUV');
-		if ('kind' in blended) {
+		if (isUnsupported(blended)) {
 			return blended;
 		}
 		const tint = color('_BlendColor') ?? [1, 1, 1, 1];
@@ -1527,16 +1573,12 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 	let spread: RefractSurface['spread'] = null;
 	if (has('_USE_SPREAD')) {
 		// no variant pairs the spread with polar UVs, and its UVs take no custom data
-		const bound = reader.slot('_SpreadTex') ?? UNSET_WHITE;
-		if (bound.uv !== 0) {
-			return unsupported(`_SpreadTex on UV set ${bound.uv}`);
+		const spreading = uv0Texture('_SpreadTex', '_SpreadUVRotate', ownSpeedOf(reader, '_SpreadUVSpeed'));
+		if (isUnsupported(spreading)) {
+			return spreading;
 		}
-		const angle = (float('_SpreadUVRotate', 0) * Math.PI) / 180;
 		spread = {
-			texture: effectTexture(bound, (color('_SpreadUVSpeed') ?? [0, 0]).slice(0, 2), [
-				Math.cos(angle),
-				-Math.sin(angle),
-			]),
+			texture: spreading,
 			schedule: float('_SpreadScheduleOffset', 0),
 			range: Math.max(float('_SpreadRange', 1), 1e-6),
 			flip: float('_SpreadFlip', 0),
@@ -1614,19 +1656,13 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 	if (zTest !== 4 && zTest !== 5) {
 		return unsupported(`_ZTest ${zTest}`);
 	}
-	const textureOf = (name: string, speed: string | null): EffectTexture =>
-		effectTexture(reader.slot(name) ?? UNSET_WHITE, (speed !== null && color(speed)) || [0, 0, 0, 0]);
+	const textureOf = (name: string, speed: string): EffectTexture =>
+		effectTexture(reader.slot(name) ?? UNSET_WHITE, speedOf(reader, speed));
 	const edgeRange = color('_EdgeFadeRange') ?? [0, 0, 0, 0];
 	let dissolve: WaterFoamSurface['dissolve'] = null;
 	if (has('_USE_DISSOLVE')) {
-		const edge = color('_DissolveEmissiveColor') ?? [0, 0, 0, 0];
-		dissolve = {
-			texture: textureOf('_DissolveTex', '_DissolveUVSpeed'),
-			threshold: float('_DissolveScheduleOffset', 0) * 2.02 - 1.01,
-			sharpness: float('_DissolveEdgeSharp', 1),
-			edgeWidth: float('_DissolveEmissiveEdge', 0),
-			edgeColor: [edge[0], edge[1], edge[2]],
-		};
+		// the edge colour is used as stored
+		dissolve = { texture: textureOf('_DissolveTex', '_DissolveUVSpeed'), ...dissolveOf(reader, 1) };
 	}
 	const base = color('_BaseColor') ?? [0, 0, 0, 0];
 	const tint = color('_BaseColorTint') ?? [1, 1, 1, 1];
@@ -1650,7 +1686,7 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 		baseAlpha: float('_UseAChannelAsAlpha', 0),
 		maskAsAlpha: float('_UseMaskTexAsAlpha', 0),
 		disturbBias: float('_Bi_Disturb', 0),
-		disturb: [float('_DisturbUIntensity1', 0), float('_DisturbVIntensity1', 0)],
+		disturb: disturbIntensityOf(reader, 1),
 		disturbUse: [
 			float('_MainTexUseDisturb', 0),
 			float('_MaskTexUseDisturb', 0),
@@ -1751,13 +1787,10 @@ const SIX_WAY_KEYWORDS = new Set([
  * @returns its surface, or `unsupported` for keywords, blending or UV sources the viewer doesn't draw
  */
 export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface | UnsupportedSurface => {
-	const { float, colorOrVector: color, has, material } = reader;
-	if (material.blend !== 'alphaBlend') {
-		return unsupported(`${material.blend} blending`);
-	}
-	const keywords = undrawnKeywords(reader, SIX_WAY_KEYWORDS);
-	if (keywords !== null) {
-		return keywords;
+	const { float, colorOrVector: color, has } = reader;
+	const undrawn = undrawnBlend(reader, ['alphaBlend']) ?? undrawnKeywords(reader, SIX_WAY_KEYWORDS);
+	if (undrawn !== null) {
+		return undrawn;
 	}
 	if (!has('_USE_SIXWAY_LIGHTMAP')) {
 		return unsupported('no six-way lightmaps');
@@ -1798,11 +1831,9 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 		}
 		return slot.uv === 0 ? slot : 'uv';
 	};
-	/** the shader turns UVs by `-rotate` degrees about their centre, after the scroll and before the `_ST` */
-	const turned = (prefix: string): [cos: number, sin: number] => {
-		const radians = (float(`${prefix}UVRotate`, 0) * Math.PI) / 180;
-		return [Math.cos(radians), -Math.sin(radians)];
-	};
+	/** the shader turns UVs after the scroll and before the `_ST` */
+	const turned = (prefix: string): [cos: number, sin: number] =>
+		degreesRotation(float(`${prefix}UVRotate`, 0));
 	const positive = used('_PositiveAxesLightmap');
 	const negative = used('_NegativeAxesLightmap');
 	const mask = has('_USE_MASK') ? used('_MaskTex') : null;
@@ -1829,14 +1860,14 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 	const lightmap: SixWayTexture = {
 		...effectTexture(
 			{ texture: positive.texture, scale: [controls[0], controls[1]], offset: [controls[2], controls[3]] },
-			color('_LightMapUVSpeed') ?? [0, 0, 0, 0],
+			speedOf(reader, '_LightMapUVSpeed'),
 			turned('_LightMap'),
 		),
 		...switchedSource('_LightMap'),
 		disturbShare: float('_LightMapUseDisturb', 0),
 	};
 	const layer = (slot: EffectSlot, prefix: string, share: string, source: SixWayUvSource): SixWayTexture => ({
-		...effectTexture(slot, color(`${prefix}UVSpeed`) ?? [0, 0, 0, 0], turned(prefix)),
+		...effectTexture(slot, speedOf(reader, `${prefix}UVSpeed`), turned(prefix)),
 		...source,
 		disturbShare: float(share, 0),
 	});
@@ -1847,12 +1878,12 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 		slot === null
 			? null
 			: {
-					texture: effectTexture(slot, color(`_DisturbUVSpeed${n}`) ?? [0, 0, 0, 0]),
-					intensity: [float(`_DisturbUIntensity${n}`, 0), float(`_DisturbVIntensity${n}`, 0)],
+					texture: effectTexture(slot, speedOf(reader, `_DisturbUVSpeed${n}`)),
+					intensity: disturbIntensityOf(reader, n),
 					normal: float(`_DisturbTex${n}Normal`, 0) !== 0,
 				};
 	const { tint, intensity } = stackTintOf(reader);
-	const shared = sharedOf(reader, intensity);
+	const shared = stackSharedOf(reader, intensity);
 	return {
 		kind: 'sixWaySmoke',
 		positive: lightmap,
@@ -1880,7 +1911,7 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 					},
 		tint,
 		vertexColor: float('_DisableVertColor', 0) === 0,
-		brighten: { threshold: float('_ExpThreshold', 1), intensity: float('_ExpIntensity', 0) },
+		brighten: brightenOf(reader),
 		// as the shader derives it
 		absorptionRange: (float('_AbsorptionRange', 1) + 1 / Math.PI) / (1 - 1 / Math.PI),
 		envSaturation: float('_EnvLightSaturation', 1),

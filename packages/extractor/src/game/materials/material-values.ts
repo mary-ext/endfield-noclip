@@ -11,6 +11,13 @@ import type { Rgb } from '@endfield-noclip/package-format/values';
 /** @returns an unsupported surface for `reason` */
 export const unsupported = (reason: string): UnsupportedSurface => ({ kind: 'unsupported', reason });
 
+/**
+ * @param value a describer step's result: its part of the surface, `unsupported`, or `null` without one
+ * @returns whether the step found the material undrawable
+ */
+export const isUnsupported = (value: object | null): value is UnsupportedSurface =>
+	value !== null && 'kind' in value && value.kind === 'unsupported';
+
 /** a four-component colour or vector property */
 export type Vec4 = [number, number, number, number];
 
