@@ -102,7 +102,7 @@ export const SLOT_FLAGS = [
 ];
 
 /**
- * floats of a material's draw parameters (`Draw` in mesh.wgsl after the dequantization), 44 rows: mesh looks
+ * floats of a material's draw parameters (`Look` in mesh.wgsl, one per look table slot), 44 rows: mesh looks
  * use the first 35 ({@link LookRow}), effect looks all of them for their own (`EffectRow` in
  * effects/effect-look.ts)
  */

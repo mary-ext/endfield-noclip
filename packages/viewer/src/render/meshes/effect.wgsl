@@ -10,10 +10,11 @@
 @group(1) @binding(2) var<storage, read> effect_list: array<u32>;
 // rect decal placements (`DecalPlacements` in package-format): colour, then UV scale and offset
 @group(1) @binding(3) var<storage, read> effect_placements: array<array<vec4f, 2>>;
-// mesh.wgsl's `Draw`: dequantization (4 vec4s), then the look's 44 rows (`EffectRow`, `WaterSheetRow` or
-// `MistRow` in mist.ts)
-@group(2) @binding(0) var<storage, read> effect_draws: array<array<vec4f, 48>>;
+// mesh.wgsl's `Draw`: dequantization, flags and look slot (4 vec4s)
+@group(2) @binding(0) var<storage, read> effect_draws: array<array<vec4f, 4>>;
 @group(2) @binding(1) var<storage, read> effect_draw_ids: array<u32>;
+// mesh.wgsl's `looks`: the look's 44 rows (`EffectRow`, `WaterSheetRow` or `MistRow` in mist.ts)
+@group(2) @binding(5) var<storage, read> effect_looks: array<array<vec4f, 44>>;
 @group(3) @binding(0) var fx_tex0: texture_2d<f32>;
 @group(3) @binding(1) var fx_tex1: texture_2d<f32>;
 @group(3) @binding(2) var fx_tex2: texture_2d<f32>;
@@ -111,7 +112,8 @@ struct EffectOut {
 	@location(1) normal: vec3f,
 	@location(2) uv: vec4f,
 	@location(3) color: vec4f,
-	@location(4) @interpolate(flat) draw: u32,
+	// the draw's look slot, which `fx_row` reads
+	@location(4) @interpolate(flat) look: u32,
 	// camera-relative world → object space, by rows (w: translation)
 	@location(5) @interpolate(flat) to_object0: vec4f,
 	@location(6) @interpolate(flat) to_object1: vec4f,
@@ -133,8 +135,9 @@ struct EffectAccumulated {
 	@location(0) color: vec4f,
 }
 
+// row `r` of the look in slot `id` of `effect_looks`
 fn fx_row(id: u32, r: u32) -> vec4f {
-	return effect_draws[id][4u + r];
+	return effect_looks[id][r];
 }
 
 fn fx_slot_bits(id: u32, slot: u32) -> u32 {
@@ -235,9 +238,10 @@ fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 	let scale = effect_draws[draw_id][1];
 	let uv0 = effect_draws[draw_id][2];
 	let uv1 = effect_draws[draw_id][3];
+	let id = bitcast<u32>(scale.w);
 	var p = offset.xyz + v.position.xyz * scale.xyz;
-	if (fx_row(draw_id, FX_UNFOGGED).y == FX_KIND_BEAM) {
-		p = beam_vertex(draw_id, p);
+	if (fx_row(id, FX_UNFOGGED).y == FX_KIND_BEAM) {
+		p = beam_vertex(id, p);
 	}
 	let origin = vec3f(row.t0.w, row.t1.w, row.t2.w) + effect_blocks[row_block(row.block)].xyz;
 	let m = row_basis(row.t0, row.t1, row.t2, row.info);
@@ -246,16 +250,16 @@ fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 	let uv = sheet_uv(row.sheet, vec4f(v.uv0 * uv0.xy + uv0.zw, v.uv1 * uv1.xy + uv1.zw));
 	let color = select(vec4f(1.0), v.color, (flags & FX_HAS_COLORS) != 0u) * unpack4x8unorm(row.color);
 	let normal = oct_decode(v.normal);
-	let motion = fx_row(draw_id, FX_OFFSET_MODE).x;
+	let motion = fx_row(id, FX_OFFSET_MODE).x;
 	if (motion == FX_MOTION_SOFT_BODY) {
-		p = fx_soft_body(draw_id, p, v.uv1 * uv1.xy + uv1.zw);
+		p = fx_soft_body(id, p, v.uv1 * uv1.xy + uv1.zw);
 	}
 	var rel = m * p + origin;
-	let pull = fx_row(draw_id, FX_CAMERA_PULL).xy;
+	let pull = fx_row(id, FX_CAMERA_PULL).xy;
 	// the pull is measured from the position before the offset, and added beside it
 	let pulled = select(vec3f(0.0), fx_camera_pull(rel, pull.x), pull.y != 0.0);
 	if (motion == FX_MOTION_OFFSET) {
-		rel += fx_vertex_offset(draw_id, m, normal, uv, color.a);
+		rel += fx_vertex_offset(id, m, normal, uv, color.a);
 	}
 	rel += pulled;
 	var out: EffectOut;
@@ -264,7 +268,7 @@ fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 	out.normal = m * normal;
 	out.uv = uv;
 	out.color = color;
-	out.draw = draw_id;
+	out.look = id;
 	out.to_object0 = vec4f(inverse[0], -dot(inverse[0], origin));
 	out.to_object1 = vec4f(inverse[1], -dot(inverse[1], origin));
 	out.to_object2 = vec4f(inverse[2], -dot(inverse[2], origin));
@@ -495,7 +499,7 @@ fn fx_nothing() -> EffectAccumulated {
 // the width, optionally v by the world height, then times the object's view depth past the near plane. call in
 // uniform control flow
 fn fx_layer_bases(in: EffectOut) -> FxBases {
-	let kind = fx_row(in.draw, FX_UNFOGGED);
+	let kind = fx_row(in.look, FX_UNFOGGED);
 	let size = frame.render_size.xy;
 	let q = floor(in.position.xy);
 	let screen_flags = u32(kind.w);
@@ -510,7 +514,7 @@ fn fx_layer_bases(in: EffectOut) -> FxBases {
 // sheets branch off to `water_sheet`
 @fragment
 fn fs_effect(in: EffectOut, @builtin(front_facing) front: bool) -> EffectAccumulated {
-	let id = in.draw;
+	let id = in.look;
 	let dx = dpdx(in.uv);
 	let dy = dpdy(in.uv);
 	let rel_dx = dpdx(in.rel);
@@ -541,7 +545,7 @@ fn fs_effect(in: EffectOut, @builtin(front_facing) front: bool) -> EffectAccumul
 
 // below its `_USE_WATER_BLEND` height the game absorbs and scatters a layer's colour, which isn't drawn
 fn fx_below_water_blend(in: EffectOut) -> bool {
-	return in.rel.y + frame.eye.y < fx_row(in.draw, FX_DECAL).z;
+	return in.rel.y + frame.eye.y < fx_row(in.look, FX_DECAL).z;
 }
 
 // what fragments the viewer can't draw show: a world-space magenta and black checker (as `unsupportedLook` in
@@ -572,7 +576,7 @@ fn fs_effect_multiply(in: EffectOut) -> @location(0) vec4f {
 
 // a texture-stack layer's colour (exposed, unpremultiplied) and alpha
 fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
-	let id = in.draw;
+	let id = in.look;
 	let soft = fx_row(id, FX_SOFT);
 	let misc = fx_row(id, FX_MISC);
 	var tint = fx_row(id, FX_TINT) * select(vec4f(1.0), in.color, soft.w != 0.0);
@@ -672,7 +676,7 @@ fn rf_sample(id: u32, slot: u32, bases: FxBases, custom: vec4f, shift: vec2f) ->
 // of the scene by the soft blend; the mask's and blend layer's colours tint it. blended over by that cover
 @fragment
 fn fs_refract(in: EffectOut) -> @location(0) vec4f {
-	let id = in.draw;
+	let id = in.look;
 	let bases = fx_bases(in.uv.xy, in.uv.zw, fx_polar(in.uv.xy - 0.5), vec2f(0.0));
 	let bias = exp2(frame.params.y);
 	let row = fx_row(id, RF_REFRACT);
@@ -823,7 +827,7 @@ fn ws_frame_offset(frame: f32, size: vec2f) -> vec2f {
 // irradiance volume and the sun, with transmission through the sheet. sun units follow the viewer's
 // illuminance convention; the game's CPU scaling remains unknown (docs/viewer/lighting.md#sun)
 fn water_sheet(in: EffectOut, front: bool, dx: vec2f, dy: vec2f, rel_dx: vec3f, rel_dy: vec3f) -> EffectAccumulated {
-	let id = in.draw;
+	let id = in.look;
 	ws_custom = in.custom;
 	let ws = fx_row(id, WS_FLAGS);
 	let flags = u32(ws.x);
@@ -1054,7 +1058,7 @@ fn sw_absorb(t: f32, exponent: vec3f, range: f32) -> vec3f {
 // weighted by its direction's squared components in that frame, the irradiance volume all six. sun units
 // follow the viewer's convention for the game's light colour (docs/viewer/lighting.md#sun)
 fn six_way_smoke(in: EffectOut, bases: FxBases) -> EffectAccumulated {
-	let id = in.draw;
+	let id = in.look;
 	ws_custom = in.custom;
 	let row = fx_row(id, SW_FLAGS);
 	let flags = u32(row.x);
@@ -1192,7 +1196,7 @@ fn wf_pick(s: f32, a: vec2f, b: vec2f, c: vec2f, d: vec2f) -> vec2f {
 // there it covers (0 with `_BlendMode` 1), clamped as the game's 8-bit target clamps it
 @fragment
 fn fs_water_foam(in: EffectOut) -> @location(0) vec4f {
-	let id = in.draw;
+	let id = in.look;
 	let px = vec2i(in.position.xy);
 	let water_device = textureLoad(fx_depth, px, 0);
 	let water_depth = select(1e9, frame.local_lights.w / water_device, water_device > 0.0);
@@ -1307,7 +1311,7 @@ fn fx_surface_normal(px: vec2i) -> vec3f {
 // box's sides and top and bottom, on surfaces facing away from the projection, and near the camera
 @fragment
 fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
-	let id = in.draw;
+	let id = in.look;
 	let px = vec2i(in.position.xy);
 	let scene_depth = fx_scene_depth(px);
 	let rel = in.rel * (scene_depth / dot(in.rel, frame.view_forward.xyz));
@@ -1410,7 +1414,7 @@ struct LitDecal {
 // alpha) by `_EmissiveChannel`, times the decal's colour unless `_AlbedoAffectEmissive`
 fn ld_decal(in: EffectOut, rel: vec3f, rel_dx: vec3f, rel_dy: vec3f, uv: vec2f, dx: vec2f, dy: vec2f, n: vec3f,
 	roughness: f32) -> LitDecal {
-	let id = in.draw;
+	let id = in.look;
 	let base_t = in.placement_uv;
 	let base = textureSampleGrad(fx_tex0, fx_samp0, uv * base_t.xy + base_t.zw, dx * base_t.xy, dy * base_t.xy);
 	// the PBR map's own transform, or the placement's
@@ -1626,7 +1630,7 @@ fn mist_fade(range: vec2f, depth: f32) -> f32 {
 // depth, towards the card's top (object y) and where it nears what lies behind it
 @fragment
 fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
-	let id = in.draw;
+	let id = in.look;
 	let uv = in.uv.xy;
 	let dx = dpdx(uv);
 	let dy = dpdy(uv);
@@ -1678,7 +1682,7 @@ fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
 // for boxes the camera can't walk into, close to them
 @fragment
 fn fs_mist_volume(in: EffectOut) -> EffectAccumulated {
-	let id = in.draw;
+	let id = in.look;
 	let px = vec2i(in.position.xy);
 	let face = dot(in.rel, frame.view_forward.xyz);
 	let depth = min(fx_scene_depth(px), face);
@@ -1786,7 +1790,7 @@ fn beam_unskew(id: u32, p: vec3f) -> vec3f {
 // to the beam and past an optional clipping plane. the mesh holds the inside and outside faces (UV0's v) and a
 // start cap (u)
 fn light_beam(in: EffectOut) -> EffectAccumulated {
-	let id = in.draw;
+	let id = in.look;
 	let color = fx_row(id, BM_COLOR);
 	let cone = fx_row(id, BM_CONE);
 	let dir = fx_row(id, BM_DIRECTION);

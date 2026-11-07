@@ -1,3 +1,4 @@
+import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { GeometryFlags, LOOK_FLOATS, type LookStencil } from '../../looks/look.ts';
 import type { DecodedGeometry } from '../../package/decode-protocol.ts';
@@ -41,15 +42,34 @@ import { type ResidentSkin, SkinAnimator } from './skin-animation.ts';
 import { type SortedSource, mergeFarToNear } from './sorted-runs.ts';
 import { VertexBindings } from './vertex-bindings.ts';
 
-/** floats of `Draw` in mesh.wgsl: the position and UV dequantizations, then the material look */
-const DRAW_FLOATS = 16 + LOOK_FLOATS;
+/**
+ * floats of `Draw` in mesh.wgsl: the position and UV dequantizations, the flags and the material's slot in
+ * the look table
+ */
+const DRAW_FLOATS = 16;
 /** draws per frame at most; buckets past it aren't drawn */
 const MAX_DRAWS = 16_384;
+/** bytes of a look table slot (`Look` in mesh.wgsl) */
+const LOOK_BYTES = LOOK_FLOATS * 4;
+/** look table slots to start with: a view draws a few thousand materials */
+const INITIAL_LOOKS = 4096;
+/** look table slots at most, more than a package has materials */
+const MAX_LOOKS = 1 << 17;
 /**
  * how far the eye may move between frames for last frame's depth to still stand for what hides rows, m; past
  * it (a jump), every row in view draws
  */
 const OCCLUSION_MAX_MOVE = 8;
+
+/** @returns an empty look table */
+const createLookTable = (device: GPUDevice): GrowableBuffer =>
+	new GrowableBuffer(device, {
+		label: 'mesh looks',
+		unitBytes: LOOK_BYTES,
+		initialUnits: INITIAL_LOOKS,
+		maxUnits: MAX_LOOKS,
+		usage: GPUBufferUsage.STORAGE,
+	});
 
 interface PreparedDraw {
 	geometry: ResidentGeometry;
@@ -123,6 +143,23 @@ export class MeshRenderer {
 	#paramWords = new Uint32Array(this.#paramData.buffer);
 	#drawIds: GPUBuffer;
 	#drawIdData = new Uint32Array(LIST_CAPACITY);
+	/**
+	 * the look table: each drawn material's {@link LOOK_FLOATS} parameters, written once when it's first drawn,
+	 * at the slot draws index it by. looks don't change once built, so only the per-draw part is written every
+	 * frame
+	 */
+	#looks: GrowableBuffer;
+	/** per material id, its slot in {@link #looks} plus 1, 0 until it's written */
+	#lookSlots = new Uint32Array(0);
+	/** the parameters of the materials first drawn this frame and their slots, uploaded by {@link #flushLooks} */
+	#newLooks: Float32Array[] = [];
+	#newLookSlots: number[] = [];
+	/** {@link #newLooks} laid out by slot for the upload, reused */
+	#lookStaging = new Float32Array(0);
+	/** the {@link GrowableBuffer.version} of {@link #looks} that {@link #drawGroup} binds */
+	#looksVersion = -1;
+	#layouts: BindLayouts;
+	#fog: { uniforms: GPUBuffer; froxels: GPUTextureView; sampler: GPUSampler };
 	#drawGroup: GPUBindGroup;
 	#vertexBindings: VertexBindings;
 	#materials: MaterialBindings;
@@ -223,17 +260,10 @@ export class MeshRenderer {
 			size: this.#drawIdData.byteLength,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 		});
-		this.#drawGroup = device.createBindGroup({
-			label: 'mesh draws',
-			layout: layouts.draw,
-			entries: [
-				{ binding: 0, resource: { buffer: this.#params } },
-				{ binding: 1, resource: { buffer: this.#drawIds } },
-				{ binding: 2, resource: { buffer: fog.uniforms } },
-				{ binding: 3, resource: fog.froxels },
-				{ binding: 4, resource: fog.sampler },
-			],
-		});
+		this.#layouts = layouts;
+		this.#fog = fog;
+		this.#looks = createLookTable(device);
+		this.#drawGroup = this.#createDrawGroup();
 		this.#culler = features.indirectFirstInstance
 			? new InstanceCuller(device, pipelines, () => ({ ...instances.buffers, drawIds: this.#drawIds }))
 			: null;
@@ -269,18 +299,42 @@ export class MeshRenderer {
 		releaseGeometry(resident);
 	}
 
-	/** forgets material bind groups (when a package is unloaded) */
+	/** forgets material bind groups and the look table (when a package is unloaded) */
 	releaseMaterials(): void {
 		this.#materials.release();
+		// the next package's material ids name other looks; the old table may still be bound by work in flight,
+		// which destroy waits for
+		this.#looks.destroy();
+		this.#looks = createLookTable(this.#device);
+		this.#lookSlots = new Uint32Array(0);
+		this.#drawGroup = this.#createDrawGroup();
+	}
+
+	/** @returns the draw group (group 2) over the current look table */
+	#createDrawGroup(): GPUBindGroup {
+		this.#looksVersion = this.#looks.version;
+		return this.#device.createBindGroup({
+			label: 'mesh draws',
+			layout: this.#layouts.draw,
+			entries: [
+				{ binding: 0, resource: { buffer: this.#params } },
+				{ binding: 1, resource: { buffer: this.#drawIds } },
+				{ binding: 2, resource: { buffer: this.#fog.uniforms } },
+				{ binding: 3, resource: this.#fog.froxels },
+				{ binding: 4, resource: this.#fog.sampler },
+				{ binding: 5, resource: { buffer: this.#looks.buffer } },
+			],
+		});
 	}
 
 	/**
-	 * @returns bytes of the fixed GPU allocations: the draw parameters, the draw ids, the zero streams and the
-	 *   culling buffers
+	 * @returns bytes of the GPU allocations: the draw parameters, the look table, the draw ids, the zero
+	 *   streams and the culling buffers
 	 */
 	get bytes(): number {
 		return (
 			this.#params.size +
+			this.#looks.bytes +
 			this.#drawIds.size +
 			this.#vertexBindings.bytes +
 			(this.#culler?.bytes ?? 0) +
@@ -299,6 +353,7 @@ export class MeshRenderer {
 	 */
 	destroy(): void {
 		this.#params.destroy();
+		this.#looks.destroy();
 		this.#drawIds.destroy();
 		this.#vertexBindings.destroy();
 		this.#materials.release();
@@ -457,6 +512,10 @@ export class MeshRenderer {
 		}
 		this.#drawCount = d;
 		this.#prepareSorted();
+		this.#flushLooks();
+		if (this.#looks.version !== this.#looksVersion) {
+			this.#drawGroup = this.#createDrawGroup();
+		}
 		if (d > 0) {
 			const queue = this.#device.queue;
 			queue.writeBuffer(this.#params, 0, this.#paramData, 0, d * DRAW_FLOATS);
@@ -511,6 +570,61 @@ export class MeshRenderer {
 		}
 	}
 
+	/**
+	 * @returns the look table slot of a material, handed out with its look queued for {@link #flushLooks} on
+	 *   first use, or -1 when the table is full
+	 */
+	#lookSlot(material: number, params: Float32Array): number {
+		if (material >= this.#lookSlots.length) {
+			const grown = new Uint32Array(Math.max(material + 1, this.#lookSlots.length * 2, 1024));
+			grown.set(this.#lookSlots);
+			this.#lookSlots = grown;
+		}
+		const known = this.#lookSlots[material];
+		if (known !== 0) {
+			return known - 1;
+		}
+		const allocation = this.#looks.allocate(1);
+		if (allocation === null) {
+			return -1;
+		}
+		this.#lookSlots[material] = allocation.start + 1;
+		this.#newLooks.push(params);
+		this.#newLookSlots.push(allocation.start);
+		return allocation.start;
+	}
+
+	/** uploads the looks of the materials first drawn this frame, one write per run of consecutive slots */
+	#flushLooks(): void {
+		const looks = this.#newLooks;
+		const slots = this.#newLookSlots;
+		if (looks.length === 0) {
+			return;
+		}
+		if (this.#lookStaging.length < looks.length * LOOK_FLOATS) {
+			this.#lookStaging = new Float32Array(looks.length * LOOK_FLOATS * 2);
+		}
+		const staging = this.#lookStaging;
+		const queue = this.#device.queue;
+		// slots are handed out in order, so a frame's new looks are almost always one run
+		let runStart = 0;
+		for (let i = 0; i < looks.length; i++) {
+			staging.set(looks[i], i * LOOK_FLOATS);
+			if (i + 1 === looks.length || slots[i + 1] !== slots[i] + 1) {
+				queue.writeBuffer(
+					this.#looks.buffer,
+					slots[runStart] * LOOK_BYTES,
+					staging,
+					runStart * LOOK_FLOATS,
+					(i + 1 - runStart) * LOOK_FLOATS,
+				);
+				runStart = i + 1;
+			}
+		}
+		looks.length = 0;
+		slots.length = 0;
+	}
+
 	/** @returns the prepared range of a draw range */
 	#range(range: DrawRange): PreparedRange {
 		const prepared = this.#rangeOf.get(range);
@@ -538,6 +652,10 @@ export class MeshRenderer {
 			return false;
 		}
 		const look = bucket.look;
+		const lookSlot = this.#lookSlot(bucket.material, look.params);
+		if (lookSlot < 0) {
+			return false;
+		}
 		const state = this.#materials.state(bucket.material, look, textures);
 		if (resident.skin !== null) {
 			this.#drawnSkins.add(resident.skin);
@@ -559,7 +677,7 @@ export class MeshRenderer {
 		params[at + 4] = sx;
 		params[at + 5] = sy;
 		params[at + 6] = sz;
-		params[at + 7] = 0;
+		words[at + 7] = lookSlot;
 		for (let set = 0; set < 2; set++) {
 			const transform = resident.uvTransforms[set];
 			const to = at + 8 + set * 4;
@@ -568,7 +686,6 @@ export class MeshRenderer {
 			params[to + 2] = transform[2];
 			params[to + 3] = transform[3];
 		}
-		params.set(look.params, at + 16);
 		const gpu = bucket.gpu;
 		const culled = this.#culled;
 		if (gpu === null) {

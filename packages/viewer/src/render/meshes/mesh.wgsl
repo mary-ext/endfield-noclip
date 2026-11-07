@@ -1,16 +1,21 @@
 // instanced meshes with the HGRP surface shaders (looks/, docs/game-data/materials.md): Lit and its
 // layers, foliage, glass, matte paintings, erosion and VFXDitherAlpha, opaque, alpha-tested or
 // alpha-blended. quantized positions, octahedral normals and tangents, UV sets 0 and 1 and vertex colours from
-// the geometry blob; instances from this frame's visible list; draw parameters by the list entry's draw id
-// (`LookRow` in look.ts lays them out).
+// the geometry blob; instances from this frame's visible list; draw parameters by the list entry's draw id,
+// and the material's parameters by the draw's look slot (`LookRow` in look.ts lays them out).
 
 struct Draw {
 	// dequantization: position = offset.xyz + value · scale.xyz; offset.w = look flags (u32 bits)
 	offset: vec4f,
+	// w = the material's slot in `looks` (u32 bits)
 	scale: vec4f,
 	// UV sets 0 and 1: uv = value · xy + zw
 	uv0: vec4f,
 	uv1: vec4f,
+}
+
+// a material's parameters, `LOOK_FLOATS` in look.ts
+struct Look {
 	// linear tint, w = alpha-test threshold (negative without alpha testing)
 	tint: vec4f,
 	// UV transforms (uv · xy + zw) of the base colour, normal, mask, emissive, detail, parallax and parallax
@@ -122,6 +127,13 @@ const LAYER_SLOT = 5u;
 @group(2) @binding(0) var<storage, read> draws: array<Draw>;
 // per visible-list entry: its index into `draws`
 @group(2) @binding(1) var<storage, read> draw_ids: array<u32>;
+// written once per material, when it's first drawn
+@group(2) @binding(5) var<storage, read> looks: array<Look>;
+
+// a draw's index into `looks`
+fn look_slot(draw: Draw) -> u32 {
+	return bitcast<u32>(draw.scale.w);
+}
 @group(3) @binding(0) var base_map: texture_2d<f32>;
 @group(3) @binding(1) var normal_map: texture_2d<f32>;
 @group(3) @binding(2) var mask_map: texture_2d<f32>;
@@ -168,10 +180,11 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	let row = rows[list[ii]];
 	let draw_id = draw_ids[ii];
 	let draw = draws[draw_id];
+	let look = looks[look_slot(draw)];
 	let p = draw.offset.xyz + v.position.xyz * draw.scale.xyz;
 	let origin = vec3f(row.t0.w, row.t1.w, row.t2.w) + blocks[row_block(row.block)].xyz;
 	// as vs_cutout_depth computes it, so alpha-tested depth matches exactly where they're shaded
-	let rel = instance_rel(v.position, ii, draw);
+	let rel = instance_rel(v.position, ii, draw, look);
 	let m = row_basis(row.t0, row.t1, row.t2, row.info);
 	let flags = bitcast<u32>(draw.offset.w);
 	// no normals in the mesh: zero here, faceted in the fragment shader
@@ -214,29 +227,29 @@ struct CutoutDepthIn {
 }
 
 // the camera-relative position of a vertex of list entry `ii`; `position.w` is the geometry's sway weight
-fn instance_rel(position: vec4f, ii: u32, draw: Draw) -> vec3f {
+fn instance_rel(position: vec4f, ii: u32, draw: Draw, look: Look) -> vec3f {
 	let row = rows[list[ii]];
 	let p = draw.offset.xyz + position.xyz * draw.scale.xyz;
 	let origin = vec3f(row.t0.w, row.t1.w, row.t2.w) + blocks[row_block(row.block)].xyz;
 	let rel = row_basis(row.t0, row.t1, row.t2, row.info) * p + origin;
-	return rel + grass_lean(draw, p.y) + sway(draw, p, position.w, rel, origin);
+	let flags = bitcast<u32>(draw.offset.w);
+	return rel + grass_lean(flags, look, p.y) + sway(flags, look, p, position.w, rel, origin);
 }
 
 // `_SIMPLE_VERTEXANIM_CLOTH` (`swayParams` in lit-look.ts, docs/game-data/materials.md#swaying-cloth): a
 // horizontal world-space offset by a sine of the wind clock, phased by the object's world X and weighted by
 // the vertex colour's alpha, which the geometry carries in position W. kites swing by their object-space
 // height; other cloth runs as a wave along world Z
-fn sway(draw: Draw, p: vec3f, weight: f32, rel: vec3f, origin: vec3f) -> vec3f {
-	let flags = bitcast<u32>(draw.offset.w);
-	let intensity = draw.foliage2.x;
+fn sway(flags: u32, look: Look, p: vec3f, weight: f32, rel: vec3f, origin: vec3f) -> vec3f {
+	let intensity = look.foliage2.x;
 	if (weight == 0.0 || intensity == 0.0 || (flags & (FOLIAGE | EROSION | UNLIT | EFFECT)) != 0u) {
 		return vec3f(0.0);
 	}
-	let frequency = draw.foliage2.y;
-	let softness = draw.foliage2.z;
-	let kite = draw.foliage2.w;
-	let tendency = draw.canopy_color.x;
-	let along = select(frame.wind.zw, draw.canopy_color.zw, draw.canopy_color.y > 0.5);
+	let frequency = look.foliage2.y;
+	let softness = look.foliage2.z;
+	let kite = look.foliage2.w;
+	let tendency = look.canopy_color.x;
+	let along = select(frame.wind.zw, look.canopy_color.zw, look.canopy_color.y > 0.5);
 	let phase = frame.wind.x * frequency + origin.x + frame.eye.x;
 	var s: f32;
 	var amplitude: f32;
@@ -254,17 +267,18 @@ fn sway(draw: Draw, p: vec3f, weight: f32, rel: vec3f, origin: vec3f) -> vec3f {
 // `_USE_CAMERA_BASED_TILLING` (`grassParams` in lit-look.ts): grass leans away from the camera along its up
 // vector flattened onto the ground, by the vertex's object-space height times the intensity in world metres,
 // so seen from above the blades cover more of the ground
-fn grass_lean(draw: Draw, height: f32) -> vec3f {
-	if ((bitcast<u32>(draw.offset.w) & (FOLIAGE | FOLIAGE_LEAF)) != FOLIAGE) {
+fn grass_lean(flags: u32, look: Look, height: f32) -> vec3f {
+	if ((flags & (FOLIAGE | FOLIAGE_LEAF)) != FOLIAGE) {
 		return vec3f(0.0);
 	}
-	return vec3f(frame.view_up.x, 0.0, frame.view_up.z) * (height * draw.foliage.y);
+	return vec3f(frame.view_up.x, 0.0, frame.view_up.z) * (height * look.foliage.y);
 }
 
 @vertex
 fn vs_depth(v: DepthIn, @builtin(instance_index) ii: u32) -> @builtin(position) @invariant vec4f {
 	let draw = draws[draw_ids[ii]];
-	return frame.view_proj * vec4f(instance_rel(v.position, ii, draw), 1.0);
+	let look = looks[look_slot(draw)];
+	return frame.view_proj * vec4f(instance_rel(v.position, ii, draw, look), 1.0);
 }
 
 // the opaque depth prepass writes depth alone; the targets' write masks are 0
@@ -288,8 +302,9 @@ struct CutoutDepthOut {
 fn vs_cutout_depth(v: CutoutDepthIn, @builtin(instance_index) ii: u32) -> CutoutDepthOut {
 	let draw_id = draw_ids[ii];
 	let draw = draws[draw_id];
+	let look = looks[look_slot(draw)];
 	var out: CutoutDepthOut;
-	out.position = frame.view_proj * vec4f(instance_rel(v.position, ii, draw), 1.0);
+	out.position = frame.view_proj * vec4f(instance_rel(v.position, ii, draw, look), 1.0);
 	let row = rows[list[ii]];
 	out.uv = sheet_uv(row.sheet,vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw));
 	out.draw = draw_id;
@@ -302,8 +317,8 @@ fn slot_set(uv: vec4f, flags: u32, slot: u32) -> vec2f {
 }
 
 // read through the buffer: arrays in a `let` copy can't be indexed by a variable
-fn slot_uv(draw_id: u32, uv: vec4f, flags: u32, slot: u32) -> vec2f {
-	let t = draws[draw_id].slot_uv[slot];
+fn slot_uv(look_id: u32, uv: vec4f, flags: u32, slot: u32) -> vec2f {
+	let t = looks[look_id].slot_uv[slot];
 	return slot_set(uv, flags, slot) * t.xy + t.zw;
 }
 
@@ -329,8 +344,8 @@ fn reorient_normal(base: vec3f, flipped: vec3f) -> vec3f {
 // `foliage_ao` for `_LAYERBLEND_MOSS`'s fuzzy shading)
 
 // the top layer's coverage before the height blend, from the upward component of the normal
-fn top_coverage(draw: Draw, up: f32) -> f32 {
-	let coverage = draw.parallax;
+fn top_coverage(look: Look, up: f32) -> f32 {
+	let coverage = look.parallax;
 	return saturate((up - coverage.y) / coverage.z);
 }
 
@@ -357,8 +372,8 @@ fn mask_coverage(source: f32, mask_r: f32, bump_a: f32, base_a: f32, normal_a: f
 }
 
 // how much the layer covers, from its raw coverage and the layer's height (`layer_a`)
-fn layer_coverage(draw: Draw, raw: f32, layer_a: f32) -> f32 {
-	let height = draw.parallax2;
+fn layer_coverage(look: Look, raw: f32, layer_a: f32) -> f32 {
+	let height = look.parallax2;
 	let cover = saturate(raw);
 	if (height.x == 0.0) {
 		return cover;
@@ -371,14 +386,14 @@ fn layer_coverage(draw: Draw, raw: f32, layer_a: f32) -> f32 {
 }
 
 // `_LAYERBLEND_MOSS`: 1 along the coverage edge the edge shadow offset picks, falling off over its range
-fn layer_fuzzy_edge(draw: Draw, raw: f32) -> f32 {
-	let d = raw - draw.foliage.w;
-	return saturate(1.0 - d * d / draw.foliage.z);
+fn layer_fuzzy_edge(look: Look, raw: f32) -> f32 {
+	let d = raw - look.foliage.w;
+	return saturate(1.0 - d * d / look.foliage.z);
 }
 
 // the layer's tangent-space normal, reoriented onto the base's by the base normal intensity
-fn layer_normal(draw: Draw, base: vec3f, bump: vec4f) -> vec3f {
-	let normal = draw.parallax_bright;
+fn layer_normal(look: Look, base: vec3f, bump: vec4f) -> vec3f {
+	let normal = look.parallax_bright;
 	let xy = bump.rg * 2.0 - 1.0;
 	let layer = vec3f(xy * normal.x, max(1e-16, sqrt(1.0 - saturate(dot(xy, xy)))));
 	let reoriented = reorient_normal(base, layer * vec3f(-1.0, -1.0, 1.0));
@@ -390,7 +405,7 @@ fn layer_normal(draw: Draw, base: vec3f, bump: vec4f) -> vec3f {
 // `_LAYERBLEND_MOSS`)
 fn layer_surface(
 	surface: Surface,
-	draw: Draw,
+	look: Look,
 	cover: f32,
 	layer: vec4f,
 	bump: vec4f,
@@ -398,11 +413,11 @@ fn layer_surface(
 	edge: f32,
 ) -> Surface {
 	var s = surface;
-	let color = draw.parallax_color;
-	let blend = draw.parallax_dark;
-	let normal = draw.parallax_bright;
-	let fuzzy = draw.foliage;
-	let fuzzy2 = draw.foliage_ao;
+	let color = look.parallax_color;
+	let blend = look.parallax_dark;
+	let normal = look.parallax_bright;
+	let fuzzy = look.foliage;
+	let fuzzy2 = look.foliage_ao;
 	let luma = dot(layer.rgb, LUMINANCE);
 	let tinted = mix(vec3f(luma), layer.rgb, color.w) * color.rgb * (1.0 - edge * fuzzy2.x);
 	// darker facing the viewer, brighter towards the silhouette, the more so the brighter the moss
@@ -425,7 +440,7 @@ fn layer_surface(
 @fragment
 fn fs_opaque(in: VertexOut) -> Shaded {
 	var out = shade(in, true);
-	if (draws[in.draw].detail2.w > 0.5) {
+	if (looks[look_slot(draws[in.draw])].detail2.w > 0.5) {
 		out.reflection_surface.y |= SURFACE_NO_LIT_DECALS;
 	}
 	return out;
@@ -438,9 +453,11 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 fn fs_transparent(in: VertexOut) -> @location(0) vec4f {
 	let draw = draws[in.draw];
 	let flags = bitcast<u32>(draw.offset.w);
+	let id = look_slot(draw);
+	let look = looks[id];
 	let bias = frame.params.y;
-	let base = textureSampleBias(base_map, base_sampler, slot_uv(in.draw, in.uv, flags, BASE_SLOT), bias);
-	let packed = textureSampleBias(normal_map, detail_sampler, slot_uv(in.draw, in.uv, flags, NORMAL_SLOT), bias);
+	let base = textureSampleBias(base_map, base_sampler, slot_uv(id, in.uv, flags, BASE_SLOT), bias);
+	let packed = textureSampleBias(normal_map, detail_sampler, slot_uv(id, in.uv, flags, NORMAL_SLOT), bias);
 	let shaded = shade(in, false);
 	// a map still streaming leaves the tint's alpha alone
 	var alpha = select(base.a, packed.a, (flags & ALPHA_NORMAL) != 0u);
@@ -448,9 +465,9 @@ fn fs_transparent(in: VertexOut) -> @location(0) vec4f {
 	if ((flags & alpha_map) == 0u) {
 		alpha = 1.0;
 	}
-	alpha = saturate(alpha * draw.emissive2.w);
+	alpha = saturate(alpha * look.emissive2.w);
 	// premultiplied glass (detail2.z) adds its whole radiance and lets its opacity only dim what's behind
-	let color = shaded.radiance.rgb * select(alpha, 1.0, draw.detail2.z > 0.5);
+	let color = shaded.radiance.rgb * select(alpha, 1.0, look.detail2.z > 0.5);
 	let uv = in.position.xy / frame.render_size.xy;
 	return vec4f(fog_premultiplied(color, alpha, in.rel, uv), alpha);
 }
@@ -458,10 +475,11 @@ fn fs_transparent(in: VertexOut) -> @location(0) vec4f {
 fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let draw = draws[in.draw];
 	let flags = bitcast<u32>(draw.offset.w);
+	let id = look_slot(draw);
+	let look = looks[id];
 	// derivatives (and implicit-LOD sampling) must happen in uniform control flow
 	let faceted = cross(dpdy(in.rel), dpdx(in.rel));
 	let bias = frame.params.y;
-	let id = in.draw;
 	let base = textureSampleBias(base_map, base_sampler, slot_uv(id, in.uv, flags, BASE_SLOT), bias);
 	let packed = textureSampleBias(normal_map, detail_sampler, slot_uv(id, in.uv, flags, NORMAL_SLOT), bias);
 	let mask = textureSampleBias(mask_map, detail_sampler, slot_uv(id, in.uv, flags, MASK_SLOT), bias);
@@ -477,9 +495,9 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let parallax_dy = dpdy(parallax_uv) * gradient_scale;
 	// the layer's coordinates: UV set 0, world XZ, or UV set 2, which the viewer reads as set 0
 	// (`layerBlendParams` in lit-look.ts)
-	let layer_type = draw.parallax.w;
+	let layer_type = look.parallax.w;
 	let layer_source = select(in.uv.xy, (in.rel + frame.eye.xyz).xz, layer_type > 0.5 && layer_type < 1.5);
-	let layer_t = draw.slot_uv[LAYER_SLOT];
+	let layer_t = look.slot_uv[LAYER_SLOT];
 	let layer_uv = layer_source * layer_t.xy + layer_t.zw;
 	let layer_dx = dpdx(layer_uv) * gradient_scale;
 	let layer_dy = dpdy(layer_uv) * gradient_scale;
@@ -487,34 +505,34 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	if ((flags & UNLIT) != 0u) {
 		// matte paintings (`mattePaintingLook` in special-looks.ts): the tinted texture brightened above a threshold,
 		// in pre-exposed units unless it ignores the post exposure
-		var c = draw.tint.rgb;
+		var c = look.tint.rgb;
 		if ((flags & BASE_MAP) != 0u) {
 			c *= base.rgb;
 		}
 		// materials the viewer can't draw (`unsupportedLook` in material-looks.ts): a world-space checker of the tint
 		// and black
-		if (draw.surface.z > 0.0) {
-			let cell = vec3i(floor((in.rel + frame.eye.xyz) / draw.surface.z));
+		if (look.surface.z > 0.0) {
+			let cell = vec3i(floor((in.rel + frame.eye.xyz) / look.surface.z));
 			if (((cell.x + cell.y + cell.z) & 1) != 0) {
 				c = vec3f(0.0);
 			}
 		}
-		c += max(c - vec3f(draw.surface.x), vec3f(0.0)) * draw.surface.y;
-		return unlit(clamp(c * mix(1.0, frame.ambient.y, draw.emissive2.z), vec3f(0.0), vec3f(1000.0)));
+		c += max(c - vec3f(look.surface.x), vec3f(0.0)) * look.surface.y;
+		return unlit(clamp(c * mix(1.0, frame.ambient.y, look.emissive2.z), vec3f(0.0), vec3f(1000.0)));
 	}
 	if ((flags & EROSION) != 0u) {
-		var s = erosion_surface(draw, in, flags, faceted, packed, mask, detail, uv0_dx, uv0_dy);
+		var s = erosion_surface(look, in, flags, faceted, packed, mask, detail, uv0_dx, uv0_dy);
 		if (wet) {
 			s = rain_wet_surface(s, in.rel);
 		}
 		return shade_surface(s, in.rel, in.position.xy);
 	}
 
-	var albedo = clamp(base.rgb * draw.tint.rgb * draw.surface2.w, vec3f(0.0), vec3f(1.0));
+	var albedo = clamp(base.rgb * look.tint.rgb * look.surface2.w, vec3f(0.0), vec3f(1.0));
 	if ((flags & BASE_MAP) == 0u) {
 		albedo = vec3f(1.0);
 	}
-	albedo = mix(albedo, draw.tint.rgb, draw.emissive.w);
+	albedo = mix(albedo, look.tint.rgb, look.emissive.w);
 	let base_a = select(0.0, base.a, (flags & BASE_MAP) != 0u);
 	let has_normal = (flags & NORMAL_MAP) != 0u;
 
@@ -523,21 +541,21 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let has_detail = (flags & DETAIL_MAP) != 0u;
 	var detail_weight = 0.0;
 	if (has_detail) {
-		let mode = draw.detail.y;
+		let mode = look.detail.y;
 		let own = mix(mix(base_a, packed.b, saturate(mode - 2.0)), packed.a, saturate(mode - 3.0));
 		let depth = abs(dot(in.rel, frame.view_forward.xyz));
-		let span = draw.detail2.y - draw.detail2.x;
-		let fade = saturate((draw.detail2.y - depth) / select(span, 1e-6, span == 0.0));
+		let span = look.detail2.y - look.detail2.x;
+		let fade = saturate((look.detail2.y - depth) / select(span, 1e-6, span == 0.0));
 		detail_weight = mix(mix(1.0, detail.a, saturate(mode)), own, saturate(mode - 1.0)) * fade;
 		// colour mode: the overlay, where the detail's B is dark
 		let overlay = mix(
-			clamp(albedo * draw.detail_overlay.rgb * draw.detail2.z, vec3f(0.0), vec3f(1.0)),
-			draw.detail_overlay.rgb,
-			draw.detail_overlay.a,
+			clamp(albedo * look.detail_overlay.rgb * look.detail2.z, vec3f(0.0), vec3f(1.0)),
+			look.detail_overlay.rgb,
+			look.detail_overlay.a,
 		);
-		albedo = mix(albedo, overlay, detail_weight * (1.0 - draw.detail.x) * (1.0 - detail.b));
+		albedo = mix(albedo, overlay, detail_weight * (1.0 - look.detail.x) * (1.0 - detail.b));
 	}
-	let detail_pbr = draw.detail.w * detail_weight;
+	let detail_pbr = look.detail.w * detail_weight;
 
 	var n = in.normal;
 	if (dot(n, n) < 1e-6) {
@@ -554,7 +572,7 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	// the layer, once both its maps are bound; the parallax glow can't share the slots
 	let layer_maps = PARALLAX_MAP | PARALLAX_NOISE_MAP;
 	let layered = (flags & LAYER_BLEND) != 0u && (flags & layer_maps) == layer_maps;
-	let cover_source = draw.parallax2.w;
+	let cover_source = look.parallax2.w;
 	let top_layer = layered && cover_source == LAYER_SOURCE_TOP;
 	// the mask map sits in the emissive slot and reads 0 while streaming
 	let layer_mask_map = layered && cover_source == LAYER_SOURCE_MASK_MAP;
@@ -571,10 +589,10 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		let mask_r = select(0.0, glow.r, (flags & EMISSIVE_MAP) != 0u);
 		let normal_a = select(0.0, packed.a, has_normal);
 		raw_cover = mask_coverage(cover_source, mask_r, layer_bump.a, base_a, normal_a);
-		cover = layer_coverage(draw, raw_cover, layer.a);
+		cover = layer_coverage(look, raw_cover, layer.a);
 	}
 
-	var roughness = draw.surface.y;
+	var roughness = look.surface.y;
 	let grass = (flags & (FOLIAGE | FOLIAGE_LEAF)) == FOLIAGE;
 	if ((has_normal || layered) && in.tangent.w != 0.0) {
 		var tn = vec3f(0.0, 0.0, 1.0);
@@ -586,13 +604,13 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 			var xy = unpack_normal_xy(rg);
 			if (grass) {
 				// `_BendNormalUpward`: towards the blade's up (tangent-space +Y), before the normal scale
-				xy = mix(xy, vec2f(0.0, 1.0), draw.foliage.x);
+				xy = mix(xy, vec2f(0.0, 1.0), look.foliage.x);
 			}
-			tn = vec3f(xy * draw.surface.w, normal_z(xy));
+			tn = vec3f(xy * look.surface.w, normal_z(xy));
 			if (has_detail) {
 				// reoriented normal mapping of the detail onto the base normal
 				let dxy = unpack_normal_xy(detail.rg);
-				let d = vec3f(dxy * (detail_weight * draw.detail.z), normal_z(dxy)) * vec3f(-1.0, -1.0, 1.0);
+				let d = vec3f(dxy * (detail_weight * look.detail.z), normal_z(dxy)) * vec3f(-1.0, -1.0, 1.0);
 				tn = reorient_normal(tn, d);
 			}
 		}
@@ -600,26 +618,26 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		var b = cross(in.normal, in.tangent.xyz) * in.tangent.w;
 		// grass with `_TwoSidedNormal` flips only the surface normal on its back faces, so its bent normal keeps
 		// pointing up the blade
-		if (!towards_viewer && !(grass && draw.foliage_ao.w > 0.5)) {
+		if (!towards_viewer && !(grass && look.foliage_ao.w > 0.5)) {
 			b = -b;
 		}
 		b = normalize(b - n * dot(b, n));
 		if (top_layer) {
 			let bumped = normalize(t * tn.x + b * tn.y + n * tn.z);
-			raw_cover = top_coverage(draw, mix(n.y, bumped.y, draw.parallax.x));
-			cover = layer_coverage(draw, raw_cover, layer.a);
+			raw_cover = top_coverage(look, mix(n.y, bumped.y, look.parallax.x));
+			cover = layer_coverage(look, raw_cover, layer.a);
 		}
 		if (layered) {
-			tn = mix(tn, layer_normal(draw, tn, layer_bump), cover);
+			tn = mix(tn, layer_normal(look, tn, layer_bump), cover);
 		}
 		n = normalize(t * tn.x + b * tn.y + n * tn.z);
 	} else if (top_layer) {
-		raw_cover = top_coverage(draw, n.y);
-		cover = layer_coverage(draw, raw_cover, layer.a);
+		raw_cover = top_coverage(look, n.y);
+		cover = layer_coverage(look, raw_cover, layer.a);
 	}
 	// read whether or not the mesh has tangents: tangentless meshes lose only the normal's bump
 	if (has_normal && (flags & NORMAL_ROUGHNESS) != 0u) {
-		roughness = mix(draw.surface.x, draw.surface.y, packed.b);
+		roughness = mix(look.surface.x, look.surface.y, packed.b);
 	}
 	// `_LAYERBLEND_MOSS` (neutral without it): the fuzzy shading faces the blended normal to the view, and
 	// the coverage edge tips the normal down
@@ -627,88 +645,88 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	var layer_edge = 0.0;
 	if (layered) {
 		layer_facing = 1.0 - saturate(dot(n, normalize(-in.rel)));
-		layer_edge = layer_fuzzy_edge(draw, raw_cover);
-		n = normalize(n - vec3f(0.0, layer_edge * draw.foliage_ao.w, 0.0));
+		layer_edge = layer_fuzzy_edge(look, raw_cover);
+		n = normalize(n - vec3f(0.0, layer_edge * look.foliage_ao.w, 0.0));
 	}
 
 	var s = default_surface(albedo, n);
 	s.roughness = roughness;
-	s.metallic = draw.surface.z;
-	s.f0 = draw.surface2.y;
+	s.metallic = look.surface.z;
+	s.f0 = look.surface2.y;
 	if ((flags & METALLIC_BASE_ALPHA) != 0u) {
 		// dielectric until the base colour streams in
 		s.metallic = base_a;
 	}
 	if ((flags & (NORMAL_MAP | NORMAL_OCCLUSION)) == (NORMAL_MAP | NORMAL_OCCLUSION)) {
-		s.occlusion = mix(1.0, packed.a, draw.surface2.x);
+		s.occlusion = mix(1.0, packed.a, look.surface2.x);
 	}
 	let mro = (flags & (MASK_MAP | TRI_CHANNEL_MASK)) == MASK_MAP;
 	if (mro) {
 		s.metallic = mask.r;
-		s.roughness = mix(draw.surface.x, draw.surface.y, mask.g);
-		s.occlusion = mix(1.0, mask.b, draw.surface2.x);
+		s.roughness = mix(look.surface.x, look.surface.y, mask.g);
+		s.occlusion = mix(1.0, mask.b, look.surface2.x);
 	}
 	if (has_detail) {
 		// PBR mode: roughness toward the detail's B, occlusion times its alpha; colour mode: roughness toward its
 		// alpha only
-		s.roughness = mix(s.roughness, mix(detail.a, detail.b, draw.detail.x), detail_pbr);
-		s.occlusion *= mix(1.0, mix(1.0, detail.a, draw.detail.x), detail_pbr);
+		s.roughness = mix(s.roughness, mix(detail.a, detail.b, look.detail.x), detail_pbr);
+		s.occlusion *= mix(1.0, mix(1.0, detail.a, look.detail.x), detail_pbr);
 	}
 	if ((flags & (MASK_MAP | TRI_CHANNEL_MASK)) == (MASK_MAP | TRI_CHANNEL_MASK)) {
 		// each channel, remapped by its contrast and offset, blends toward its own surface, B first and R last
-		let scale = draw.mask_scale.xyz;
-		let w = saturate(scale * 0.5 + mix(-scale, vec3f(1.0), mask.rgb + draw.mask_offset.xyz)) *
-			vec3f(draw.mask_albedo[0].w, draw.mask_albedo[1].w, draw.mask_albedo[2].w);
-		let roughnesses = draw.mask_roughness;
-		let metallics = draw.mask_metallic;
-		s = blend_mask_channel(s, w.z, draw.mask_albedo[2].rgb, roughnesses.z, metallics.z);
-		s = blend_mask_channel(s, w.y, draw.mask_albedo[1].rgb, roughnesses.y, metallics.y);
-		s = blend_mask_channel(s, w.x, draw.mask_albedo[0].rgb, roughnesses.x, metallics.x);
+		let scale = look.mask_scale.xyz;
+		let w = saturate(scale * 0.5 + mix(-scale, vec3f(1.0), mask.rgb + look.mask_offset.xyz)) *
+			vec3f(look.mask_albedo[0].w, look.mask_albedo[1].w, look.mask_albedo[2].w);
+		let roughnesses = look.mask_roughness;
+		let metallics = look.mask_metallic;
+		s = blend_mask_channel(s, w.z, look.mask_albedo[2].rgb, roughnesses.z, metallics.z);
+		s = blend_mask_channel(s, w.y, look.mask_albedo[1].rgb, roughnesses.y, metallics.y);
+		s = blend_mask_channel(s, w.x, look.mask_albedo[0].rgb, roughnesses.x, metallics.x);
 	}
 	if (layered) {
-		s = layer_surface(s, draw, cover, layer, layer_bump, layer_facing, layer_edge);
+		s = layer_surface(s, look, cover, layer, layer_bump, layer_facing, layer_edge);
 	}
 
 	var emission = vec3f(0.0);
 	if ((flags & EMISSIVE_MAP) != 0u && !layer_mask_map) {
 		// R scales the emissive colour; G, B and A add colours of their own (zero unless `_EmissiveType` is set)
-		let channels = draw.emissive_channels;
-		emission = draw.emissive.rgb * glow.r + channels[0].rgb * glow.g + channels[1].rgb * glow.b
+		let channels = look.emissive_channels;
+		emission = look.emissive.rgb * glow.r + channels[0].rgb * glow.g + channels[1].rgb * glow.b
 			+ channels[2].rgb * glow.a;
 	}
 	if ((flags & EMISSIVE_MASK) != 0u) {
 		// mask channel 1 is the base colour's alpha. in the two-basemap layout 2 is the normal map's B and 3 its
 		// alpha; with an MRO map 2 is the base alpha too and 3 the MRO map's alpha. a map still streaming reads 0
-		emission = draw.emissive.rgb
-			* saturate((map_channel(flags, draw.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
+		emission = look.emissive.rgb
+			* saturate((map_channel(flags, look.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
 	}
 	// emission is in the light's pre-exposed units already; emitters that ignore the post exposure divide it out
 	// (docs/game-data/materials.md#emission)
-	let tint = mix(s.albedo, vec3f(1.0), draw.emissive2.x);
-	s.emission = emission * tint * mix(1.0, frame.ambient.y, draw.emissive2.z);
-	if ((flags & (PARALLAX_MAP | LAYER_BLEND)) == 0u && draw.parallax.z > 0.0) {
-		s.emission *= mix(1.0, emissive_pulse(draw), draw.parallax2.x);
+	let tint = mix(s.albedo, vec3f(1.0), look.emissive2.x);
+	s.emission = emission * tint * mix(1.0, frame.ambient.y, look.emissive2.z);
+	if ((flags & (PARALLAX_MAP | LAYER_BLEND)) == 0u && look.parallax.z > 0.0) {
+		s.emission *= mix(1.0, emissive_pulse(look), look.parallax2.x);
 	}
 
 	// the glow needs its pattern; without a noise map it marches a flat height field
 	if ((flags & (PARALLAX_MAP | LAYER_BLEND)) == PARALLAX_MAP && in.tangent.w != 0.0) {
 		// the glow's mask uses the same channel numbering as the emission mask, one lower
-		let glow_mask = map_channel(flags, draw.parallax_color.w + 1.0, base_a, packed, mask);
+		let glow_mask = map_channel(flags, look.parallax_color.w + 1.0, base_a, packed, mask);
 		if (glow_mask > 0.01) {
 			let v = normalize(-in.rel);
 			let has_noise = (flags & PARALLAX_NOISE_MAP) != 0u;
-			s.emission += parallax_glow(draw, in, v, n, has_noise, parallax_uv, uv0_dx, uv0_dy, parallax_dx, parallax_dy) *
+			s.emission += parallax_glow(look, in, v, n, has_noise, parallax_uv, uv0_dx, uv0_dy, parallax_dx, parallax_dy) *
 				(glow_mask * glow_mask);
 		}
 	}
 
 	if ((flags & FOLIAGE) != 0u) {
 		s.foliage = true;
-		s.transmission = draw.surface2.z;
+		s.transmission = look.surface2.z;
 		if ((flags & FOLIAGE_LEAF) != 0u) {
-			s = leaf_surface(s, draw, in, has_normal, packed.a);
+			s = leaf_surface(s, look, in, has_normal, packed.a);
 		} else {
-			s = grass_surface(s, draw, in, select(1.0, packed.a, has_normal));
+			s = grass_surface(s, look, in, select(1.0, packed.a, has_normal));
 		}
 	}
 	// the game wets what its deferred lighting shades, so not the forward-shaded glass
@@ -728,38 +746,38 @@ fn hermite(low: f32, high: f32, x: f32) -> f32 {
 // `HGRP/Foliage/Leaf`'s inputs to the two-sided foliage lighting (`leafParams` in lit-look.ts). the vertex
 // colour's R is ambient occlusion and A the height in the canopy; the normal map's alpha (`normal_a`) masks
 // transmission and the canopy ramp
-fn leaf_surface(surface: Surface, draw: Draw, in: VertexOut, has_normal: bool, normal_a: f32) -> Surface {
+fn leaf_surface(surface: Surface, look: Look, in: VertexOut, has_normal: bool, normal_a: f32) -> Surface {
 	var s = surface;
 	let thin = select(1.0, saturate(1.0 - normal_a), has_normal);
-	let ao = saturate(mix(1.0, in.color.r, draw.surface2.x));
+	let ao = saturate(mix(1.0, in.color.r, look.surface2.x));
 	s.occlusion = ao;
 	let fade_in = vec2f(
-		hermite(draw.foliage_ao.x, draw.foliage_ao.x + draw.foliage_ao.y, ao),
-		hermite(draw.foliage_ao.z, draw.foliage_ao.z + draw.foliage_ao.w, ao),
+		hermite(look.foliage_ao.x, look.foliage_ao.x + look.foliage_ao.y, ao),
+		hermite(look.foliage_ao.z, look.foliage_ao.z + look.foliage_ao.w, ao),
 	);
 	// transmission fades out between 50 and 60 m from the object
-	let far = select(1.0, hermite(3600.0, 2500.0, dot(in.origin, in.origin)), draw.foliage2.y > 0.5);
-	s.transmission = draw.surface2.z * thin * far * fade_in.x;
-	s.subsurface = draw.foliage2.x * fade_in.y;
+	let far = select(1.0, hermite(3600.0, 2500.0, dot(in.origin, in.origin)), look.foliage2.y > 0.5);
+	s.transmission = look.surface2.z * thin * far * fade_in.x;
+	s.subsurface = look.foliage2.x * fade_in.y;
 
-	let height = select(in.color.a, 1.0 - in.color.a, draw.foliage2.w > 0.5);
-	let ramp = hermite(draw.canopy.x + draw.canopy.y, draw.canopy.x, height) * thin * draw.foliage2.z;
+	let height = select(in.color.a, 1.0 - in.color.a, look.foliage2.w > 0.5);
+	let ramp = hermite(look.canopy.x + look.canopy.y, look.canopy.x, height) * thin * look.foliage2.z;
 	let tinted = mix(
-		saturate(s.albedo * draw.canopy_color.rgb * draw.canopy.z),
-		draw.canopy_color.rgb,
-		draw.canopy.w,
+		saturate(s.albedo * look.canopy_color.rgb * look.canopy.z),
+		look.canopy_color.rgb,
+		look.canopy.w,
 	);
 	s.albedo = mix(s.albedo, tinted, ramp);
 
 	// the sun's shadow: the vertex AO, and a fake shadow on the side of the canopy facing away from the sun
-	let fake = saturate(1.0 - pow(saturate(dot(s.normal, -frame.sun.xyz) * 0.5 + 0.5), draw.foliage.z) * draw.foliage.y);
-	s.sun_shadow = mix(1.0, in.color.r, draw.foliage.x) * fake;
+	let fake = saturate(1.0 - pow(saturate(dot(s.normal, -frame.sun.xyz) * 0.5 + 0.5), look.foliage.z) * look.foliage.y);
+	s.sun_shadow = mix(1.0, in.color.r, look.foliage.x) * fake;
 	// the diffuse N·L, from the vertex normal as the mesh stores it (not turned towards the viewer)
 	var vertex_normal = s.normal;
 	if (dot(in.normal, in.normal) > 1e-6) {
 		vertex_normal = normalize(in.normal);
 	}
-	s.sun_n_dot_l = saturate(dot(mix(s.normal, vertex_normal, draw.foliage.w), frame.sun.xyz));
+	s.sun_n_dot_l = saturate(dot(mix(s.normal, vertex_normal, look.foliage.w), frame.sun.xyz));
 	return s;
 }
 
@@ -767,17 +785,17 @@ fn leaf_surface(surface: Surface, draw: Draw, in: VertexOut, has_normal: bool, n
 // from a floor at the root to 1 up the blade, the sun mask's diffuse and transmission parts masked by the normal
 // map's alpha (`mask`), and transmission where those agree. the game ramps by the distance from a point far
 // below the root, which over a blade's width is the object-space height
-fn grass_surface(surface: Surface, draw: Draw, in: VertexOut, mask: f32) -> Surface {
+fn grass_surface(surface: Surface, look: Look, in: VertexOut, mask: f32) -> Surface {
 	var s = surface;
 	let height = max(in.object_y, 0.0);
-	let ao = draw.foliage_ao;
+	let ao = look.foliage_ao;
 	s.occlusion = 1.0 - ao.z * (1.0 - saturate((height - ao.x) * ao.y));
-	let dir = 1.0 - draw.foliage2.w * (1.0 - saturate((height - draw.foliage2.y) * draw.foliage2.z));
-	let diffuse = dir * mix(1.0, mask, draw.foliage.z);
-	let transmitted = dir * mix(1.0, mask, draw.foliage.w);
+	let dir = 1.0 - look.foliage2.w * (1.0 - saturate((height - look.foliage2.y) * look.foliage2.z));
+	let diffuse = dir * mix(1.0, mask, look.foliage.z);
+	let transmitted = dir * mix(1.0, mask, look.foliage.w);
 	s.sun_shadow = max(diffuse, transmitted);
-	s.transmission = draw.surface2.z * (1.0 - abs(diffuse - transmitted));
-	s.subsurface = draw.foliage2.x;
+	s.transmission = look.surface2.z * (1.0 - abs(diffuse - transmitted));
+	s.subsurface = look.foliage2.x;
 	return s;
 }
 
@@ -797,9 +815,9 @@ fn map_channel(flags: u32, channel: f32, base_a: f32, packed: vec4f, mask: vec4f
 
 // `_EMISSIVE_ANIM`'s pulse (`EmissivePulseRow` in lit-look.ts, docs/game-data/materials.md#emission): each cycle
 // rises from the minimum brightness to 1 and back over the interval's share of it, then stays at the minimum
-fn emissive_pulse(draw: Draw) -> f32 {
-	let x = saturate(fract(frame.eye.w * draw.parallax.x + draw.parallax.y) * draw.parallax.z) * 2.0 - 1.0;
-	let low = min(draw.parallax.w, 0.999);
+fn emissive_pulse(look: Look) -> f32 {
+	let x = saturate(fract(frame.eye.w * look.parallax.x + look.parallax.y) * look.parallax.z) * 2.0 - 1.0;
+	let low = min(look.parallax.w, 0.999);
 	let x2 = x * x;
 	return (2.0 * abs(x2 * x) - 3.0 * x2 + 0.5 + 0.5 * (1.0 + low) / (1.0 - low)) * (1.0 - low);
 }
@@ -809,7 +827,7 @@ fn emissive_pulse(draw: Draw) -> f32 {
 // from the pattern's G; then the Fresnel power and the pulse, plus the brightening near the player. the result
 // is HDR emission before the mask
 fn parallax_glow(
-	draw: Draw,
+	look: Look,
 	in: VertexOut,
 	v: vec3f,
 	n: vec3f,
@@ -823,10 +841,10 @@ fn parallax_glow(
 	// the view direction in the geometric tangent frame
 	let bitangent = cross(in.normal, in.tangent.xyz) * in.tangent.w;
 	let vt = normalize(vec3f(dot(v, in.tangent.xyz), dot(v, bitangent), dot(v, in.normal)));
-	let steps = draw.parallax.y;
+	let steps = look.parallax.y;
 	let step = 1.0 / steps;
-	let delta = vt.xy / (vt.z + 0.42) / max(vt.z, 0.001) * (-draw.parallax.x * step);
-	let noise_uv = uv * draw.slot_uv[NOISE_SLOT].xy;
+	let delta = vt.xy / (vt.z + 0.42) / max(vt.z, 0.001) * (-look.parallax.x * step);
+	let noise_uv = uv * look.slot_uv[NOISE_SLOT].xy;
 
 	var height = 1.0 - step;
 	var offset = delta;
@@ -853,7 +871,7 @@ fn parallax_glow(
 	}
 	let denominator = (previous_sample - hit) + height - previous_height;
 	let t = (previous_sample - previous_height) / select(denominator, 1e-6, denominator == 0.0);
-	let tiling = draw.slot_uv[PARALLAX_SLOT].xy;
+	let tiling = look.slot_uv[PARALLAX_SLOT].xy;
 	let pattern = textureSampleGrad(
 		parallax_map,
 		parallax_sampler,
@@ -862,15 +880,15 @@ fn parallax_glow(
 		dy * tiling,
 	).y;
 
-	let fresnel = pow(max(saturate(dot(v, n)), 0.001), draw.parallax.z);
-	let pulse = cos(frame.eye.w * draw.parallax2.x + draw.parallax2.y * in.phase) * draw.parallax.w + draw.parallax2.w;
+	let fresnel = pow(max(saturate(dot(v, n)), 0.001), look.parallax.z);
+	let pulse = cos(frame.eye.w * look.parallax2.x + look.parallax2.y * in.phase) * look.parallax.w + look.parallax2.w;
 	// the player stands at the camera. a smoothstep from the outer radius down to the inner one, written out
 	// because WGSL's smoothstep wants its edges in ascending order
-	let bright = draw.parallax_bright;
+	let bright = look.parallax_bright;
 	let near_t = saturate((length(in.rel) - bright.x) / (bright.y - bright.x));
 	let near = near_t * near_t * (3.0 - 2.0 * near_t) * bright.z;
-	let color = mix(draw.parallax_dark.rgb, draw.parallax_color.rgb, pattern) * fresnel * (pulse + near);
-	return clamp(color, vec3f(0.0), vec3f(1000.0)) * mix(1.0, frame.ambient.y, draw.parallax2.z);
+	let color = mix(look.parallax_dark.rgb, look.parallax_color.rgb, pattern) * fresnel * (pulse + near);
+	return clamp(color, vec3f(0.0), vec3f(1000.0)) * mix(1.0, frame.ambient.y, look.parallax2.z);
 }
 
 // `HGRP/Erosion` (`erosionLook` in special-looks.ts, parameters by `ErosionRow`): base and metal colours mixed by the
@@ -878,7 +896,7 @@ fn parallax_glow(
 // normal map, `mask` the metal map and `detail` the detail normal map; textures still streaming read as the
 // game's defaults (white, flat normals, the ramp's grey-blue)
 fn erosion_surface(
-	draw: Draw,
+	look: Look,
 	in: VertexOut,
 	flags: u32,
 	faceted: vec3f,
@@ -892,28 +910,28 @@ fn erosion_surface(
 	let packed = select(flat_normal, packed_in, (flags & NORMAL_MAP) != 0u);
 	let metal_map = select(vec4f(1.0), mask_in, (flags & MASK_MAP) != 0u);
 	let detail = select(flat_normal, detail_in, (flags & DETAIL_MAP) != 0u);
-	let base_color = draw.tint.rgb;
-	let roughness = draw.surface.x;
-	let roughness_cover = draw.surface.y;
-	let metallic = draw.surface.z;
-	let normal_scale = draw.surface.w;
-	let occlusion_strength = draw.surface2.x;
-	let metallic_offset = draw.surface2.z;
-	let detail_scale = draw.surface2.w;
-	let noise_emissive = draw.emissive.x;
-	let flow_strength = draw.emissive.y;
-	let flow_emissive = draw.emissive.z;
-	let distance_blend = draw.emissive.w;
-	let metal_color = draw.mask_albedo[0].rgb;
-	let noise_depth = draw.mask_albedo[0].w;
-	let noise_tint = draw.mask_albedo[1].rgb;
-	let noise_min = draw.mask_albedo[1].w;
-	let noise_alpha_tint = draw.mask_albedo[2].rgb;
-	let flow_offset = draw.mask_albedo[2].w;
-	let flow_top = draw.mask_roughness.rgb;
-	let flow_roughness = draw.mask_roughness.w;
-	let flow_bottom = draw.mask_metallic.rgb;
-	let flow = draw.mask_scale;
+	let base_color = look.tint.rgb;
+	let roughness = look.surface.x;
+	let roughness_cover = look.surface.y;
+	let metallic = look.surface.z;
+	let normal_scale = look.surface.w;
+	let occlusion_strength = look.surface2.x;
+	let metallic_offset = look.surface2.z;
+	let detail_scale = look.surface2.w;
+	let noise_emissive = look.emissive.x;
+	let flow_strength = look.emissive.y;
+	let flow_emissive = look.emissive.z;
+	let distance_blend = look.emissive.w;
+	let metal_color = look.mask_albedo[0].rgb;
+	let noise_depth = look.mask_albedo[0].w;
+	let noise_tint = look.mask_albedo[1].rgb;
+	let noise_min = look.mask_albedo[1].w;
+	let noise_alpha_tint = look.mask_albedo[2].rgb;
+	let flow_offset = look.mask_albedo[2].w;
+	let flow_top = look.mask_roughness.rgb;
+	let flow_roughness = look.mask_roughness.w;
+	let flow_bottom = look.mask_metallic.rgb;
+	let flow = look.mask_scale;
 
 	var n = in.normal;
 	if (dot(n, n) < 1e-6) {
@@ -945,7 +963,7 @@ fn erosion_surface(
 	}
 	var noise_rgb = vec3f(1.0);
 	if ((flags & PARALLAX_MAP) != 0u) {
-		let tiling = draw.slot_uv[PARALLAX_SLOT].xy;
+		let tiling = look.slot_uv[PARALLAX_SLOT].xy;
 		noise_rgb = textureSampleGrad(
 			parallax_map,
 			parallax_sampler,
@@ -993,7 +1011,7 @@ fn erosion_surface(
 		mix(mix(roughness * metal_map.a, detail.a, roughness_cover), 0.01, metal) - length(flow_color) * flow_roughness,
 	);
 	s.metallic = saturate(metallic * (metal - metallic_offset));
-	s.f0 = draw.surface2.y;
+	s.f0 = look.surface2.y;
 	s.occlusion = 1.0 - occlusion_strength + metal_map.g * occlusion_strength;
 	s.emission = noise * noise_emissive + flow_color * flow_emissive * saturate(1.0 - metal_map.b);
 	return s;
@@ -1007,17 +1025,19 @@ fn erosion_surface(
 fn fs_cutout_depth(in: CutoutDepthVaryings) {
 	let draw = draws[in.draw];
 	let flags = bitcast<u32>(draw.offset.w);
+	let id = look_slot(draw);
+	let look = looks[id];
 	let bias = frame.params.y;
-	let base = textureSampleBias(base_map, base_sampler, slot_uv(in.draw, in.uv, flags, BASE_SLOT), bias);
-	let packed = textureSampleBias(normal_map, detail_sampler, slot_uv(in.draw, in.uv, flags, NORMAL_SLOT), bias);
+	let base = textureSampleBias(base_map, base_sampler, slot_uv(id, in.uv, flags, BASE_SLOT), bias);
+	let packed = textureSampleBias(normal_map, detail_sampler, slot_uv(id, in.uv, flags, NORMAL_SLOT), bias);
 	let texel = select(base, packed, (flags & ALPHA_NORMAL) != 0u);
-	if (draw.tint.w < 0.0) {
-		let dither = draw.canopy;
+	if (look.tint.w < 0.0) {
+		let dither = look.canopy;
 		let alpha = pow(saturate(select(texel.a, texel.r, dither.w > 0.5) * dither.x), dither.y);
 		if (alpha - gradient_noise(in.position.xy * dither.z) < 1e-5) {
 			discard;
 		}
-	} else if (texel.a < draw.tint.w) {
+	} else if (texel.a < look.tint.w) {
 		discard;
 	}
 }

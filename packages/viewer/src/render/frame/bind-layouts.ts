@@ -25,8 +25,8 @@ export interface BindLayouts {
 	/** group 1 of the instance families: instance rows, block origins, this frame's visible-instance list */
 	instances: GPUBindGroupLayout;
 	/**
-	 * group 2 of the mesh families: per-draw parameters (dequantization, material look), per-entry draw ids,
-	 * and the fog's inputs
+	 * group 2 of the mesh families: per-draw parameters (dequantization, flags, look slot), per-entry draw ids,
+	 * the fog's inputs, and the look table (each drawn material's parameters)
 	 */
 	draw: GPUBindGroupLayout;
 	/** group 3 of the mesh families: the material's texture slots and its base, detail and parallax samplers */
@@ -107,6 +107,8 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 			{ binding: 2, visibility: FRAGMENT, buffer: { type: 'uniform' } },
 			{ binding: 3, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: '3d' } },
 			{ binding: 4, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+			// the look table, by the draw's slot
+			storage(5, VERTEX | FRAGMENT),
 		],
 	});
 	const texture = (binding: number): GPUBindGroupLayoutEntry => ({

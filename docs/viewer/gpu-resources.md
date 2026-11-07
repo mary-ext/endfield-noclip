@@ -9,9 +9,9 @@
 
   | pipeline | sampled textures (16) | samplers (16) | storage buffers (8) |
   | -------- | --------------------- | ------------- | ------------------- |
-  | mesh     | 13                    | 8             | 3                   |
+  | mesh     | 13                    | 8             | 4                   |
   | terrain  | 12                    | 7             | 4                   |
-  | effects  | 18                    | 14            | 3                   |
+  | effects  | 18                    | 14            | 4                   |
   | water    | 19                    | 7             | 3                   |
 
 - **range allocator**
@@ -43,8 +43,16 @@
   ([`render/frame/bind-layouts.ts`](../../packages/viewer/src/render/frame/bind-layouts.ts)): group
   0 is the frame (uniforms, shadow map, reflection cubemap, irradiance clipmaps, shadow ramp, local
   lights and their bins, cloud shadow) for every family and the volumetric fog, so a pass binds it
-  once; group 1 is per family; meshes add group 2 (per-draw parameters) and group 3 (material
-  textures). shadow passes bind a placeholder in place of the shadow map they render into.
+  once; group 1 is per family; meshes add group 2 (per-draw parameters, the look table, the fog's
+  inputs) and group 3 (material textures). a mesh draw's parameters are 16 floats rewritten every
+  frame: the geometry's dequantization, the look flags with the material's streaming state and the
+  geometry's streams, the UV set transforms, and the material's slot in the look table. the look
+  table ([`mesh-renderer.ts`](../../packages/viewer/src/render/meshes/mesh-renderer.ts)) holds each
+  drawn material's `LOOK_FLOATS` parameters, which don't change once built: a material gets the next
+  slot and its upload the first time it's drawn, a frame's new slots going up in one write per run.
+  it's a `GrowableBuffer` of 704-byte slots, starting at 4096 (2.75 MiB) and doubling as a view
+  draws more materials; a package unload replaces it, since the next package's ids name other looks.
+  shadow passes bind a placeholder in place of the shadow map they render into.
   [`render/frame/frame-bindings.ts`](../../packages/viewer/src/render/frame/frame-bindings.ts)
   builds both group 0s; the streamed textures in them (reflection cubemap, shadow ramp, cloud
   shadow) are placeholders until resident, and setting one rebuilds the groups only when its view
