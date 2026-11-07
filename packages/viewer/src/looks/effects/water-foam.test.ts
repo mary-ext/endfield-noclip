@@ -33,7 +33,6 @@ test('a water foam box draws into the water’s foam, by the depth test its mate
 			base: texture(1, { scroll: [0, -1.3] }),
 			disturb: texture(2),
 			mask: texture(3),
-			dissolve: null,
 		},
 		sources: { base: 1, disturb: 0, mask: 0, dissolve: 0 },
 		maskMatrix: [1, 0, 0, 1],
@@ -47,10 +46,10 @@ test('a water foam box draws into the water’s foam, by the depth test its mate
 		disturbUse: [1, 1, 0],
 		edgeFade: [0, 0],
 		clipToBox: false,
-		depthTest: 'lessEqual',
+		depthTest: 'less-equal',
 		blendMode: 1,
 		opacity: 0.5,
-		soft: { bias: 0.6, distance: 0.001 },
+		soft: { distance: 0.001, bias: 0.6 },
 		dissolve: null,
 	};
 	const [front, behind] = materialLooks({

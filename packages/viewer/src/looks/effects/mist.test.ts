@@ -50,7 +50,7 @@ test('mist: cards and boxes draw in the mist rows; boxes by their back faces, wi
 		noise: {
 			texture: 3,
 			tiling: [0.02, 0.02, 0.02],
-			world: 1,
+			world: true,
 			flow: [0.5, 0, -0.5],
 			nearIntensity: 0,
 			farIntensity: -0.3,

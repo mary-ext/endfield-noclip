@@ -208,12 +208,14 @@ export const emptyEffect = (): EffectLook => {
 };
 
 /**
- * writes the near camera fade's rows
+ * writes the near camera fade's rows; without one they stay zero, which the shader reads as off
  *
  * @param look the look to change
- * @param near the fade
+ * @param near the fade, or `null` without one
  */
-export const setNear = (look: EffectLook, near: EffectNearFade): void => {
-	look.params.set(near.range, EffectRow.near);
-	look.params[EffectRow.misc] = near.on ? 1 : 0;
+export const setNear = (look: EffectLook, near: EffectNearFade | null): void => {
+	if (near !== null) {
+		look.params.set(near, EffectRow.near);
+		look.params[EffectRow.misc] = 1;
+	}
 };

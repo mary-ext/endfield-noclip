@@ -73,11 +73,17 @@ const layerBits = (layer: StackLayer): number =>
 	(layer.source === null ? SLOT_NO_BASE : SOURCES[layer.source] * 32) +
 	slotDisturb(layer.disturbShare);
 
+/** {@link EffectRow.offsetDir}'s last float by {@link EffectVertexOffset.space} */
+const OFFSET_SPACES: Record<EffectVertexOffset['space'], number> = { object: 0, world: 1, normal: 2 };
+
+/** {@link EffectRow.unfogged}'s third float by {@link EffectStackSurface.blendMode} */
+const BLEND_MODES: Record<EffectStackSurface['blendMode'], number> = { over: 0, add: 1, multiply: 2 };
+
 /** the vertex offset's slot and rows */
 const setVertexOffset = (look: EffectLook, offset: EffectVertexOffset): void => {
 	const params = look.params;
 	setSlot(look, OFFSET_SLOT, offset.texture, ROLE_NONE);
-	params.set([...offset.direction, offset.space], EffectRow.offsetDir);
+	params.set([...offset.direction, OFFSET_SPACES[offset.space]], EffectRow.offsetDir);
 	params.set([offset.intensity, offset.bias, offset.vertexAlphaWeight], EffectRow.offset);
 	params.set([VertexMotion.Offset, offset.uv1 ? 1 : 0], EffectRow.offsetMode);
 	if (offset.mask !== null) {
@@ -134,11 +140,11 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 		EffectRow.weight,
 	);
 	const { dissolve } = stack;
-	params.set(
-		[dissolve.threshold, dissolve.sharpness, dissolve.edgeWidth, dissolve.on ? 1 : 0],
-		EffectRow.dissolve,
-	);
-	params.set([...dissolve.edgeColor, stack.masked ? 1 : 0], EffectRow.dissolveColor);
+	if (dissolve !== null) {
+		params.set([dissolve.threshold, dissolve.sharpness, dissolve.edgeWidth, 1], EffectRow.dissolve);
+		params.set(dissolve.edgeColor, EffectRow.dissolveColor);
+	}
+	params[EffectRow.dissolveColor + 3] = stack.masked ? 1 : 0;
 	if (stack.fresnel !== null) {
 		const { fresnel } = stack;
 		params.set([fresnel.power, fresnel.bias, fresnel.flip, fresnel.opacity], EffectRow.fresnel);
@@ -185,7 +191,7 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 		[
 			stack.unfogged ? 1 : 0,
 			EffectKind.Stack,
-			stack.blendMode,
+			BLEND_MODES[stack.blendMode],
 			(stack.screenUv.byDepth ? 1 : 0) + (stack.screenUv.heightAsV ? 2 : 0),
 		],
 		EffectRow.unfogged,
@@ -195,7 +201,7 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 
 /**
  * @param stack a texture stack
- * @returns whether it multiplies what lies behind (`_BlendMode` 2), which the transparent pass's targets
- *   can't hold, so it draws over the composited scene instead
+ * @returns whether it multiplies what lies behind, which the transparent pass's targets can't hold, so it
+ *   draws over the composited scene instead
  */
-export const multipliesScene = (stack: EffectStackSurface): boolean => stack.blendMode === 2;
+export const multipliesScene = (stack: EffectStackSurface): boolean => stack.blendMode === 'multiply';

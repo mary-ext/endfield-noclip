@@ -49,8 +49,8 @@ export const WaterFoamFlags = {
 export const waterFoamLook = (foam: WaterFoamSurface): EffectLook => {
 	const look = emptyEffect();
 	const params = look.params;
-	const { textures } = foam;
-	[textures.base, textures.disturb, textures.mask, textures.dissolve].forEach((texture, i) => {
+	const { textures, dissolve } = foam;
+	[textures.base, textures.disturb, textures.mask, dissolve?.texture ?? null].forEach((texture, i) => {
 		if (texture !== null) {
 			setSlot(look, i, texture, EffectRole.Main);
 		}
@@ -58,7 +58,7 @@ export const waterFoamLook = (foam: WaterFoamSurface): EffectLook => {
 	const flags =
 		(textures.disturb === null ? 0 : WaterFoamFlags.Disturb) |
 		(textures.mask === null ? 0 : WaterFoamFlags.Mask) |
-		(foam.dissolve === null ? 0 : WaterFoamFlags.Dissolve) |
+		(dissolve === null ? 0 : WaterFoamFlags.Dissolve) |
 		(foam.edgeFade === null ? 0 : WaterFoamFlags.EdgeFade) |
 		(foam.clipToBox ? WaterFoamFlags.ClipToBox : 0) |
 		(foam.soft === null ? 0 : WaterFoamFlags.Soft);
@@ -69,7 +69,6 @@ export const waterFoamLook = (foam: WaterFoamSurface): EffectLook => {
 	const { sources } = foam;
 	params.set([sources.base, sources.disturb, sources.mask, sources.dissolve], WaterFoamRow.sources);
 	params.set(foam.maskMatrix, WaterFoamRow.maskMatrix);
-	const dissolve = foam.dissolve;
 	params.set(
 		[dissolve?.threshold ?? 0, dissolve?.sharpness ?? 1, dissolve?.edgeWidth ?? 0, foam.maskAsAlpha],
 		WaterFoamRow.dissolve,

@@ -35,7 +35,6 @@ test('a water sheet lays out its frames, motion vectors and normals, and keeps i
 			main: null,
 			disturb: null,
 			mask: texture(2, { scale: [2, 3] }),
-			dissolve: null,
 			sequence: texture(5),
 			sequenceMotion: texture(6),
 			normals: { texture: texture(7), flipbook: true, scale: 0.3 },
@@ -46,13 +45,13 @@ test('a water sheet lays out its frames, motion vectors and normals, and keeps i
 		vertexOpacity: false,
 		fresnelOpacity: false,
 		vertexColor: true,
-		blendMode: 0,
+		additive: false,
 		useLighting: 1,
 		randomUv: 0,
 		disturbBias: 0,
 		disturb: [0, 0],
 		disturbUse: [0, 0, 0, 0],
-		dissolve: { on: false, threshold: -1.01, sharpness: 1, edgeWidth: 0, edgeColor: [0, 0, 0] },
+		dissolve: null,
 		sequence: {
 			columns: 8,
 			rows: 4,
@@ -72,7 +71,7 @@ test('a water sheet lays out its frames, motion vectors and normals, and keeps i
 		indirectSaturation: 1,
 		soft: { distance: 3, bias: 0 },
 		ignorePostExposure: 1,
-		near: { on: false, range: [0, 1, 1e5, 2e5] },
+		near: null,
 	};
 	const [look] = materialLooks({ entries: [described(0, sheet)] });
 	assert.equal(look.flags, LookFlags.Effect);

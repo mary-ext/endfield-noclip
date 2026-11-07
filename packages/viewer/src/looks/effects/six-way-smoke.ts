@@ -52,8 +52,8 @@ export const SIX_WAY_SCREEN_DEPTH = 8;
 const SOURCES = { uv0: SlotSource.Uv0, polar: SlotSource.Polar, screen: SlotSource.Screen } as const;
 
 /** a six-way slot's bits: no stack role, where its UVs start, and whether screen UVs scale by depth */
-const slotBits = ({ source, screenDepth }: SixWayUvSource): number =>
-	ROLE_NONE + SOURCES[source] * 32 + (source === 'screen' && screenDepth ? SIX_WAY_SCREEN_DEPTH : 0);
+const slotBits = ({ source, screenByDepth }: SixWayUvSource): number =>
+	ROLE_NONE + SOURCES[source] * 32 + (source === 'screen' && screenByDepth ? SIX_WAY_SCREEN_DEPTH : 0);
 
 /**
  * six-way lit smoke ({@link SixWaySmokeSurface})
@@ -89,9 +89,9 @@ export const sixWaySmokeLook = (smoke: SixWaySmokeSurface): EffectLook => {
 		setSlot(look, 4, smoke.blend, slotBits(smoke.blend));
 		flags |= SixWayFlags.Blend;
 	}
-	if (smoke.dissolve !== null) {
-		const { dissolve } = smoke.dissolve;
-		setSlot(look, 5, smoke.dissolve.texture, slotBits(smoke.dissolve.texture));
+	const { dissolve } = smoke;
+	if (dissolve !== null) {
+		setSlot(look, 5, dissolve.texture, slotBits(dissolve.texture));
 		params.set([dissolve.threshold, dissolve.sharpness, dissolve.edgeWidth, 0], SixWayRow.dissolve);
 		params.set([...dissolve.edgeColor, 0], SixWayRow.dissolveColor);
 		flags |= SixWayFlags.Dissolve;
@@ -117,7 +117,7 @@ export const sixWaySmokeLook = (smoke: SixWaySmokeSurface): EffectLook => {
 	params.set([smoke.brighten.threshold, smoke.brighten.intensity], EffectRow.misc + 1);
 	// the screen UV options' depth bit stays clear: each slot scales by depth by its own bit
 	params.set(
-		[smoke.unfogged ? 1 : 0, EffectKind.SixWaySmoke, 0, smoke.screenVFromHeight ? 2 : 0],
+		[smoke.unfogged ? 1 : 0, EffectKind.SixWaySmoke, 0, smoke.screenHeightAsV ? 2 : 0],
 		EffectRow.unfogged,
 	);
 	return look;

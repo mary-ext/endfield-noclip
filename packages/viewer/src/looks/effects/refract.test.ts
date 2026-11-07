@@ -29,9 +29,8 @@ const texture = (id: number, overrides: Partial<EffectTexture> = {}): EffectText
 test('a refraction draws over the composited scene, its mask red as alpha, with its colour offsets', () => {
 	const refract: RefractSurface = {
 		kind: 'refract',
-		refraction: texture(2, { scroll: [0, 0.1] }),
-		refractionPolar: false,
-		mask: { texture: texture(1, { rotation: [-1, 0] }), polar: true, redAlpha: true },
+		refraction: { ...texture(2, { scroll: [0, 0.1] }), source: 'uv0' },
+		mask: { texture: { ...texture(1, { rotation: [-1, 0] }), source: 'polar' }, redAlpha: true },
 		direction: [1, 1],
 		strength: 1,
 		bias: 0,
@@ -50,7 +49,7 @@ test('a refraction draws over the composited scene, its mask red as alpha, with 
 		blend: null,
 		spread: null,
 		softDistance: 2.42,
-		near: { on: false, range: [0, 1, 1e5, 2e5] },
+		near: null,
 	};
 	const [look] = materialLooks({ entries: [described(0, refract, 'none')] });
 	assert.equal(look.queue, 'refract');
@@ -81,8 +80,7 @@ test('a refraction draws over the composited scene, its mask red as alpha, with 
 test('a refraction packs its blend layer in slot 3 and its spread in slot 4, off the vertex stage’s rows', () => {
 	const refract: RefractSurface = {
 		kind: 'refract',
-		refraction: texture(2),
-		refractionPolar: false,
+		refraction: { ...texture(2), source: 'uv0' },
 		mask: null,
 		direction: [1, 1],
 		strength: 1,
@@ -93,15 +91,14 @@ test('a refraction packs its blend layer in slot 3 and its spread in slot 4, off
 		dissolve: null,
 		// M_fx_common_smoke_01_02_03_1 (p_fxmap_smoke_range_f_smoke_02, Valley Pass)
 		blend: {
-			texture: texture(5),
-			polar: false,
+			texture: { ...texture(5), source: 'uv0' },
 			redAlpha: false,
 			color: [1.5, 1.06, 1.06, 1],
 			usesRefraction: 1,
 		},
 		spread: { texture: texture(6), schedule: 0.095, range: 0.649, flip: 1, alphaScale: 1 },
 		softDistance: 4.16,
-		near: { on: true, range: [0, 1, 1e5, 2e5] },
+		near: [0, 1, 1e5, 2e5],
 	};
 	const [look] = materialLooks({ entries: [described(0, refract, 'none')] });
 	assert.deepEqual(look.textures, [2, null, null, 5, 6, null, null]);

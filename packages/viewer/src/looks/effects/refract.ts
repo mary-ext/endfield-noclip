@@ -1,4 +1,4 @@
-import type { RefractSurface } from '@endfield-noclip/package-format/surfaces';
+import type { RefractSurface, RefractTexture } from '@endfield-noclip/package-format/surfaces';
 
 import {
 	EffectKind,
@@ -46,7 +46,8 @@ export const RefractRow = {
 } as const;
 
 /** a refraction slot's source bits: polar UVs about the centre, or UV set 0 */
-const polarBits = (polar: boolean): number => (polar ? SlotSource.Polar : SlotSource.Uv0) * 32;
+const sourceBits = (source: RefractTexture['source']): number =>
+	(source === 'polar' ? SlotSource.Polar : SlotSource.Uv0) * 32;
 
 /**
  * a VFXRefract layer ({@link RefractSurface}). it samples the finished scene, so it draws over the composited
@@ -58,13 +59,14 @@ const polarBits = (polar: boolean): number => (polar ? SlotSource.Polar : SlotSo
 export const refractLook = (refract: RefractSurface): EffectLook => {
 	const look = emptyEffect();
 	const params = look.params;
-	setSlot(look, 0, refract.refraction, polarBits(refract.refractionPolar));
-	if (refract.mask !== null) {
-		setSlot(look, 1, refract.mask.texture, polarBits(refract.mask.polar) + (refract.mask.redAlpha ? 16 : 0));
+	setSlot(look, 0, refract.refraction, sourceBits(refract.refraction.source));
+	const { mask } = refract;
+	if (mask !== null) {
+		setSlot(look, 1, mask.texture, sourceBits(mask.texture.source) + (mask.redAlpha ? 16 : 0));
 	}
 	params.set([...refract.direction, refract.strength, refract.bias], RefractRow.refract);
 	params.set(
-		[refract.isNormal ? 1 : 0, refract.maskUsesRefraction, refract.mask === null ? 0 : 1, 0],
+		[refract.isNormal ? 1 : 0, refract.maskUsesRefraction, mask === null ? 0 : 1, 0],
 		RefractRow.refract2,
 	);
 	const offsets = refract.colorOffsets;
@@ -76,17 +78,17 @@ export const refractLook = (refract: RefractSurface): EffectLook => {
 	}
 	const { dissolve } = refract;
 	if (dissolve !== null) {
-		setSlot(look, 2, dissolve.texture, polarBits(false));
+		setSlot(look, 2, dissolve.texture, sourceBits('uv0'));
 		params.set([dissolve.threshold, dissolve.sharpness, dissolve.affectsAlpha, 1], RefractRow.dissolve);
 	}
 	const { blend, spread } = refract;
 	if (blend !== null) {
-		setSlot(look, 3, blend.texture, polarBits(blend.polar) + (blend.redAlpha ? 16 : 0));
+		setSlot(look, 3, blend.texture, sourceBits(blend.texture.source) + (blend.redAlpha ? 16 : 0));
 		params.set(blend.color, RefractRow.blendColor);
 		params.set([1, blend.usesRefraction, 0, 0], RefractRow.blend);
 	}
 	if (spread !== null) {
-		setSlot(look, 4, spread.texture, polarBits(false));
+		setSlot(look, 4, spread.texture, sourceBits('uv0'));
 		params.set([spread.schedule, spread.range, spread.flip, spread.alphaScale], RefractRow.spread);
 	}
 	params[EffectRow.soft] = refract.softDistance;

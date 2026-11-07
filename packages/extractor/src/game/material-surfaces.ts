@@ -434,6 +434,14 @@ const parallaxGlowOf = (
 
 const LAYER_MASK_MAP = '_LayerBlendMaskMap';
 
+/** `_LayerBlendUVType`'s coordinate, the property rounded: 1 the world's x and z, 2 and up UV set 2 */
+const layerUvType = (type: number): LitLayer['uvType'] => {
+	if (type > 0.5 && type < 1.5) {
+		return 'worldXZ';
+	}
+	return type >= 1.5 ? 'uv2' : 'uv0';
+};
+
 /**
  * `_LAYERBLEND_TOP` and `_LAYERBLEND_MASK`, with `_LAYERBLEND_MOSS`
  * (`docs/game-data/materials.md#lit-layers`)
@@ -486,7 +494,7 @@ const layerOf = (reader: MaterialReader): LitLayer | null => {
 		kind: 'layer',
 		base: layered(layerBase),
 		bump: layered(layerBump),
-		uvType: float('_LayerBlendUVType', 0),
+		uvType: layerUvType(float('_LayerBlendUVType', 0)),
 		coverage,
 		top: {
 			bumped: float('_TopBlendWithBumpMap', 0),
@@ -501,12 +509,12 @@ const layerOf = (reader: MaterialReader): LitLayer | null => {
 		saturation: Math.min(Math.max(float('_Layer1Saturation', 0) + 1, 0), 1),
 		colorBlendMode: float('_Layer1BaseColorBlendMode', 0),
 		additiveIntensity: float('_Layer1BaseColorAdditiveIntensity', 1),
-		metallicType: float('_LayerMetallicType', 0),
+		metallicFromAlpha: float('_LayerMetallicType', 0) !== 0,
 		metallic: float('_Layer1Metallic', 0),
 		bumpScale: float('_Layer1BumpScale', 1),
 		baseNormalIntensity: float('_Layer1BaseNormalIntensity', 0),
+		occlusionFromBump: float('_LayerAOType', 0) === 0,
 		aoStrength: float('_Layer1AOStrength', 1),
-		aoType: float('_LayerAOType', 0),
 		moss: moss
 			? {
 					coreDarkness: float('_Layer1FuzzyCoreDarkness', 0),

@@ -6,6 +6,7 @@
 import type { TextureSlot } from '@endfield-noclip/package-format/materials';
 import type {
 	EffectCompare,
+	EffectDissolve,
 	EffectNearFade,
 	EffectRole,
 	EffectSoftBody,
@@ -21,10 +22,12 @@ import type {
 	MistCardSurface,
 	MistVolumeSurface,
 	RefractSurface,
+	RefractTexture,
 	DisturbLayer,
 	SixWaySmokeSurface,
 	SixWayTexture,
 	SixWayUvSource,
+	SoftBlend,
 	StackLayer,
 	StencilMaskSurface,
 	UndrawnSurface,
@@ -136,7 +139,7 @@ export const describeMistVolume = (reader: MaterialReader): MistVolumeSurface | 
 		noise = {
 			texture: noiseSlot.texture,
 			tiling: [tiling[0], tiling[1], tiling[2]],
-			world: float('_NoiseTexUseWorldUVW', 1),
+			world: float('_NoiseTexUseWorldUVW', 1) !== 0,
 			flow: [dir[0] * speed, dir[1] * speed, dir[2] * speed],
 			nearIntensity: float('_NoiseIntensity', 1),
 			farIntensity: float('_NoiseFarIntensity', 1),
@@ -249,31 +252,30 @@ const sharedOf = (reader: MaterialReader, intensity: number) => {
 			float('_DisturbVIntensity2', 0),
 		] satisfies [number, number, number, number],
 		dissolve: {
-			on: false,
 			// the threshold sweeps from below 0 to past 1 as the schedule goes from 0 to 1
 			threshold: float('_DissolveScheduleOffset', 0) * 2.02 - 1.01,
 			sharpness: float('_DissolveEdgeSharp', 1),
 			edgeWidth: float('_DissolveEmissiveEdge', 0),
 			edgeColor: scaleRgb(edge, intensity),
-		},
+		} satisfies EffectDissolve,
 		near: nearFadeOf(reader),
 		ignorePostExposure: float('_IgnorePostExposure', 1),
 	};
 };
 
-/** the near camera fade every effect shader shares */
-const nearFadeOf = ({ float }: MaterialReader): EffectNearFade => ({
-	on: float('_UseNearCameraFade', 0) !== 0,
-	range: [
-		float('_NearCameraFadeDistanceStart', 0),
-		float('_NearCameraFadeDistanceEnd', 1),
-		float('_NearCameraFadeDistanceStart2', 1e5),
-		float('_NearCameraFadeDistanceEnd2', 2e5),
-	],
-});
+/** the near camera fade every effect shader shares, `null` without it */
+const nearFadeOf = ({ float }: MaterialReader): EffectNearFade | null =>
+	float('_UseNearCameraFade', 0) !== 0
+		? [
+				float('_NearCameraFadeDistanceStart', 0),
+				float('_NearCameraFadeDistanceEnd', 1),
+				float('_NearCameraFadeDistanceStart2', 1e5),
+				float('_NearCameraFadeDistanceEnd2', 2e5),
+			]
+		: null;
 
-/** `_USE_SOFTBLEND`'s fade in front of what lies behind: its distance and bias, `null` without it */
-const softBlendOf = ({ float, has }: MaterialReader): { distance: number; bias: number } | null =>
+/** `_USE_SOFTBLEND`'s fade in front of what lies behind, `null` without it */
+const softBlendOf = ({ float, has }: MaterialReader): SoftBlend | null =>
 	has('_USE_SOFTBLEND')
 		? { distance: Math.max(float('_SoftDistance', 1), 1e-3), bias: float('_SoftBias', 0) }
 		: null;
@@ -313,13 +315,28 @@ const vertexOffsetOf = (reader: MaterialReader): EffectVertexOffset | null => {
 		return null;
 	}
 	const dir = color('_OffsetDir') ?? [0, 0, 0, 0];
+	// the shader tests for 1 and 2 exactly, and reads any other value as object space
+	let space: EffectVertexOffset['space'] = 'object';
+	switch (float('_OffsetSwitchDir', 0)) {
+		case 1: {
+			space = 'world';
+			break;
+		}
+		case 2: {
+			space = 'normal';
+			break;
+		}
+		default: {
+			break;
+		}
+	}
 	return {
 		// the vertex stage reads the scroll after the `_ST`, unscaled and unrotated
 		// its speed's zw scroll by custom data only on particles, where the offset is off
 		texture: effectTexture(slot, (color('_OffsetSpeed') ?? [0, 0]).slice(0, 2)),
 		uv1: float('_OffsetUVSet', 0) !== 0,
 		direction: [dir[0], dir[1], dir[2]],
-		space: float('_OffsetSwitchDir', 0),
+		space,
 		intensity: float('_OffsetIntensity', 0),
 		bias: float('_Bi_Offset', 0),
 		vertexAlphaWeight: 0,
@@ -513,6 +530,9 @@ const baseKeywordDrawn = (keyword: string, reader: MaterialReader): boolean => {
 	}
 };
 
+/** VFXBaseV2's `_BlendMode` values the viewer draws */
+const STACK_BLEND_MODES: readonly EffectStackSurface['blendMode'][] = ['over', 'add', 'multiply'];
+
 /** @returns whether a material's blend state multiplies what lies behind by its colour (`Blend DstColor Zero`) */
 const multipliesBehind = (reader: MaterialReader): boolean =>
 	reader.material.blend === 'custom' &&
@@ -684,7 +704,7 @@ export const describeVfxBase = (
 			dissolve: float('_WeightTexIntensity', 1) * float('_DissolveUseWeight', 0),
 			used: float('_UseWeightTex', 0) !== 0,
 		},
-		dissolve: { ...shared.dissolve, on: float('_UseDissolve', 0) !== 0 },
+		dissolve: float('_UseDissolve', 0) !== 0 ? shared.dissolve : null,
 		// as in the game, a mask or weight switched on without a texture in that role leaves nothing
 		masked: float('_UseMask', 0) !== 0,
 		fresnel: has('_USE_FRESNEL')
@@ -732,7 +752,7 @@ export const describeVfxBase = (
 		waterBlendBelow: waterBlendOf(reader),
 		lighting: has('_USE_LIGHTING') ? { worldUp: float('_RotateNormalToWorldUp', 0) !== 0 } : null,
 		unfogged: !has('_USE_FOG'),
-		blendMode,
+		blendMode: STACK_BLEND_MODES[blendMode],
 		opaque,
 		screenUv: {
 			byDepth: float('_ScreenUVUseDepth', 1) !== 0,
@@ -875,7 +895,7 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 		distorted: has('_USE_DISTURB'),
 		particleDisturb: false,
 		weight: { disturb: 0, dissolve: 0, used: false },
-		dissolve: { ...shared.dissolve, on: has('_USE_DISSOLVE') },
+		dissolve: has('_USE_DISSOLVE') ? shared.dissolve : null,
 		masked: has('_USE_MASK'),
 		fresnel: null,
 		soft: null,
@@ -895,7 +915,7 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 		lighting: null,
 		// a G-buffer surface, so the deferred fog covers it
 		unfogged: false,
-		blendMode: 0,
+		blendMode: 'over',
 		opaque: false,
 		screenUv: {
 			byDepth: float('_ScreenUVUseDepth', 1) !== 0,
@@ -1095,7 +1115,7 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 					used: true,
 				}
 			: { disturb: 0, dissolve: 0, used: false },
-		dissolve: { ...shared.dissolve, on: has('_USE_DISSOLVE') },
+		dissolve: has('_USE_DISSOLVE') ? shared.dissolve : null,
 		masked: has('_USE_MASK'),
 		fresnel: null,
 		soft: null,
@@ -1119,7 +1139,7 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		waterBlendBelow: null,
 		lighting: null,
 		unfogged: !has('_USE_FOG'),
-		blendMode: 0,
+		blendMode: 'over',
 		opaque: false,
 		screenUv: { byDepth: false, heightAsV: false },
 		stencil: null,
@@ -1234,6 +1254,7 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 	const tint = color('_TintColor') ?? [1, 1, 1, 1];
 	const shared = sharedOf(reader, intensity);
 	const frameSize = color('_SequenceFrameSize') ?? [1, 1, 0, 0];
+	const dissolveTexture = texture(dissolveMap);
 	return {
 		kind: 'waterSheet',
 		tint: [...scaleRgb(tint, intensity), tint[3] * float('_TintColorAlpha', 1)],
@@ -1241,7 +1262,6 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 			main: texture(main),
 			disturb: texture(disturb),
 			mask: texture(mask),
-			dissolve: texture(dissolveMap),
 			sequence: texture(sequenceMap),
 			sequenceMotion: texture(sequenceMotion),
 			normals,
@@ -1252,7 +1272,7 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 		vertexOpacity: float('_UseVertexColorAsOpacity', 0) !== 0,
 		fresnelOpacity: float('_UseFresnelAsOpacity', 0) !== 0,
 		vertexColor: float('_DisableVertColor', 0) === 0,
-		blendMode: float('_BlendMode', 0),
+		additive: float('_BlendMode', 0) >= 0.5,
 		useLighting: float('_UseLighting', 1),
 		randomUv: float('_WaterRandomUV', 0),
 		disturbBias: float('_Bi_Disturb', 0),
@@ -1263,7 +1283,7 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 			float('_NormalMapUseDisturb', 0),
 			float('_DissolveTexUseDisturb', 0),
 		],
-		dissolve: shared.dissolve,
+		dissolve: dissolveTexture === null ? null : { ...shared.dissolve, texture: dissolveTexture },
 		sequence: {
 			columns: Math.max(frameSize[0], 1),
 			rows: Math.max(frameSize[1], 1),
@@ -1442,7 +1462,7 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 		rotate: string,
 		speed: string,
 		switchName: string,
-	): { texture: EffectTexture; polar: boolean } | UnsupportedSurface => {
+	): RefractTexture | UnsupportedSurface => {
 		const switched = float(switchName, 0) !== 0;
 		if (switched && !polar) {
 			return unsupported(`${switchName} without polar UVs`);
@@ -1454,8 +1474,8 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 		// the rotation in degrees, as the matrix with columns (cos, −sin) and (sin, cos)
 		const angle = (float(rotate, 0) * Math.PI) / 180;
 		return {
-			texture: effectTexture(bound, color(speed) ?? [0, 0, 0, 0], [Math.cos(angle), -Math.sin(angle)]),
-			polar: switched,
+			...effectTexture(bound, color(speed) ?? [0, 0, 0, 0], [Math.cos(angle), -Math.sin(angle)]),
+			source: switched ? 'polar' : 'uv0',
 		};
 	};
 	const refraction = textureOf('_RefractTex', '_RefractTexUVRotate', '_RefractUVSpeed', '_RefractSwitchUV');
@@ -1468,7 +1488,7 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 		if ('kind' in masked) {
 			return masked;
 		}
-		mask = { ...masked, redAlpha: float('_UseMaskTexAsAlpha', 1) !== 0 };
+		mask = { texture: masked, redAlpha: float('_UseMaskTexAsAlpha', 1) !== 0 };
 	}
 	let dissolve: RefractSurface['dissolve'] = null;
 	if (has('_USE_DISSOLVE')) {
@@ -1497,7 +1517,7 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 		}
 		const tint = color('_BlendColor') ?? [1, 1, 1, 1];
 		blend = {
-			...blended,
+			texture: blended,
 			redAlpha: float('_UseBlendTexAsAlpha', 0) !== 0,
 			// [HDR]: used as stored
 			color: [tint[0], tint[1], tint[2], tint[3]],
@@ -1542,8 +1562,7 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 	}
 	return {
 		kind: 'refract',
-		refraction: refraction.texture,
-		refractionPolar: refraction.polar,
+		refraction,
 		mask,
 		direction: [dir[0], dir[1]],
 		strength: float('_Intensity', 1) * float('_TintColorAlpha', 1),
@@ -1602,6 +1621,7 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 	if (has('_USE_DISSOLVE')) {
 		const edge = color('_DissolveEmissiveColor') ?? [0, 0, 0, 0];
 		dissolve = {
+			texture: textureOf('_DissolveTex', '_DissolveUVSpeed'),
 			threshold: float('_DissolveScheduleOffset', 0) * 2.02 - 1.01,
 			sharpness: float('_DissolveEdgeSharp', 1),
 			edgeWidth: float('_DissolveEmissiveEdge', 0),
@@ -1616,7 +1636,6 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 			base: textureOf('_BaseColorMap', '_BaseColorSpeed'),
 			disturb: has('_USE_DISTURB') ? textureOf('_DisturbTex1', '_DisturbUVSpeed1') : null,
 			mask: has('_USE_MASK') ? textureOf('_MaskTex', '_MaskTexUVSpeed') : null,
-			dissolve: dissolve === null ? null : textureOf('_DissolveTex', '_DissolveUVSpeed'),
 		},
 		sources: {
 			base: float('_BaseColorSwitchUV', 0),
@@ -1639,11 +1658,11 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 		],
 		edgeFade: float('_UseEdgeFade', 0) !== 0 ? [edgeRange[0], edgeRange[1]] : null,
 		clipToBox: float('_MeshType', 0) !== 0,
-		depthTest: zTest === 4 ? 'lessEqual' : 'greater',
+		depthTest: zTest === 4 ? 'less-equal' : 'greater',
 		blendMode: float('_BlendMode', 0),
 		opacity: float('_OverallOpacity', 1),
 		soft: has('_USE_SOFTBLEND')
-			? { bias: float('_SoftBias', 0), distance: Math.max(float('_SoftDistance', 1), 1e-6) }
+			? { distance: Math.max(float('_SoftDistance', 1), 1e-6), bias: float('_SoftBias', 0) }
 			: null,
 		dissolve,
 	};
@@ -1758,16 +1777,16 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 	}
 	/** where a texture's UVs start: 1 the screen, 2 polar UVs; the shader reads UV0 for any other value */
 	const switchedSource = (prefix: string): SixWayUvSource => {
-		const screenDepth = float(`${prefix}ScreenDepthUV`, 0) !== 0;
+		const screenByDepth = float(`${prefix}ScreenDepthUV`, 0) !== 0;
 		switch (switched ? float(`${prefix}SwitchUV`, 0) : 0) {
 			case 1: {
-				return { source: 'screen', screenDepth };
+				return { source: 'screen', screenByDepth };
 			}
 			case 2: {
-				return { source: 'polar', screenDepth };
+				return { source: 'polar', screenByDepth };
 			}
 			default: {
-				return { source: 'uv0', screenDepth };
+				return { source: 'uv0', screenByDepth };
 			}
 		}
 	};
@@ -1823,7 +1842,7 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 	});
 	// UV set 1 replaces the dissolve's switched UVs; on particles it holds UV0's (above)
 	const dissolveSource: SixWayUvSource =
-		float('_DissolveUVSet', 0) !== 0 ? { source: 'uv0', screenDepth: false } : switchedSource('_Dissolve');
+		float('_DissolveUVSet', 0) !== 0 ? { source: 'uv0', screenByDepth: false } : switchedSource('_Dissolve');
 	const disturbLayer = (slot: EffectSlot | null, n: 1 | 2): DisturbLayer | null =>
 		slot === null
 			? null
@@ -1841,7 +1860,7 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 		disturb: [disturbLayer(disturb1, 1), disturbLayer(disturb2, 2)],
 		disturbSource: switchedSource('_Disturb'),
 		disturbBias: float('_Bi_Disturb', 0),
-		screenVFromHeight: float('_UsePosYAsScreenV', 0) !== 0,
+		screenHeightAsV: float('_UsePosYAsScreenV', 0) !== 0,
 		mask:
 			mask === null
 				? null
@@ -1856,8 +1875,8 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 			dissolve === null
 				? null
 				: {
+						...shared.dissolve,
 						texture: layer(dissolve, '_Dissolve', '_DissolveTexUseDisturb', dissolveSource),
-						dissolve: { ...shared.dissolve, on: true },
 					},
 		tint,
 		vertexColor: float('_DisableVertColor', 0) === 0,

@@ -112,7 +112,7 @@ describe('mist', () => {
 		assert.deepEqual(noisy.noise, {
 			texture: 3,
 			tiling: [0.02, 0.02, 0.02],
-			world: 1,
+			world: true,
 			flow: [0.5, 0, -0.5],
 			nearIntensity: 0,
 			farIntensity: -0.3,
@@ -598,7 +598,7 @@ describe('VFXBaseV2', () => {
 			stackOf({ ...multiply, floats: { _BlendMode: 2 } }, additive),
 			stackOf({ ...multiply, floats: { _BlendMode: 0 } }, additive),
 		].map((surface) => (surface.kind === 'effectStack' ? surface.blendMode : surface.kind));
-		assert.deepEqual(modes, [1, 0, 'unsupported', 2, 'unsupported']);
+		assert.deepEqual(modes, ['add', 'over', 'unsupported', 'multiply', 'unsupported']);
 	});
 
 	it('samples a switched-on sample texture without a texture at its white default, and not another', () => {
@@ -671,7 +671,7 @@ describe('VFXBaseV2', () => {
 			},
 			uv1: true,
 			direction: [0, 1, 0],
-			space: 1,
+			space: 'world',
 			intensity: 0.5,
 			bias: 0,
 			vertexAlphaWeight: 0,
@@ -824,9 +824,9 @@ describe('VFXDitherAlpha effect variants', () => {
 			['disturb1', false, 'uv0', 0],
 			['dissolve', false, 'polar', 1],
 		]);
-		assert.deepEqual([ripple.dissolve.on, ripple.distorted, ripple.unfogged], [true, true, false]);
+		assert.deepEqual([ripple.dissolve !== null, ripple.distorted, ripple.unfogged], [true, true, false]);
 		assert.deepEqual(ripple.layers[1]?.scroll, [0, 0.05]);
-		assert.deepEqual(ripple.near, { on: true, range: [0, 1, 1000, 500] });
+		assert.deepEqual(ripple.near, [0, 1, 1000, 500]);
 		// lit variants aren't drawn this way
 		const lit = describeMaterial(
 			material({ blend: 'alphaTest', keywords: ['_USE_DISSOLVE'], floats: { _UseLighting: 1 } }),
@@ -906,7 +906,7 @@ describe('VFXDitherAlpha effect variants', () => {
 				moved.offset?.space,
 				moved.offset?.intensity,
 			],
-			[4, [0.005, -0.05], 2, -0.5],
+			[4, [0.005, -0.05], 'normal', -0.5],
 		);
 		assert.deepEqual(
 			// VFXDitherAlpha doesn't pull towards the camera
@@ -947,12 +947,12 @@ describe('VFXRefract', () => {
 			'refract',
 		);
 		assert.deepEqual(
-			[ground.refraction.texture, ground.refraction.scroll, ground.refractionPolar],
-			[2, [0, 0.1], false],
+			[ground.refraction.texture, ground.refraction.scroll, ground.refraction.source],
+			[2, [0, 0.1], 'uv0'],
 		);
 		assert.deepEqual(
-			[ground.mask?.texture.texture, ground.mask?.polar, ground.mask?.redAlpha],
-			[1, false, true],
+			[ground.mask?.texture.texture, ground.mask?.texture.source, ground.mask?.redAlpha],
+			[1, 'uv0', true],
 		);
 		// half a turn: cos −1
 		assert.equal(ground.mask?.texture.rotation[0], -1);
@@ -1074,8 +1074,14 @@ describe('VFXRefract', () => {
 		const { blend, spread } = haze;
 		assert.ok(blend !== null && spread !== null);
 		assert.deepEqual(
-			[blend.texture.texture, blend.texture.scroll, blend.texture.customScroll, blend.polar, blend.redAlpha],
-			[4, [-0.1, 0.05], [1, 1], false, false],
+			[
+				blend.texture.texture,
+				blend.texture.scroll,
+				blend.texture.customScroll,
+				blend.texture.source,
+				blend.redAlpha,
+			],
+			[4, [-0.1, 0.05], [1, 1], 'uv0', false],
 		);
 		// HDR, as stored
 		assert.deepEqual([blend.color, blend.usesRefraction], [[1.498, 1.059, 1.059, 1], 1]);
@@ -1182,10 +1188,10 @@ describe('WaterDecal', () => {
 		);
 		assert.deepEqual([foam.textures.disturb?.texture, foam.textures.disturb?.scroll], [2, [0, 0]]);
 		assert.equal(foam.textures.mask?.texture, 3);
-		assert.equal(foam.textures.dissolve, null);
+		assert.equal(foam.dissolve, null);
 		assert.deepEqual(foam.tint, [3.394, 4.237, 4.229]);
-		assert.deepEqual([foam.blendMode, foam.depthTest, foam.clipToBox], [1, 'lessEqual', false]);
-		assert.deepEqual([foam.edgeFade, foam.soft], [[0, 0], { bias: 0.6, distance: 0.001 }]);
+		assert.deepEqual([foam.blendMode, foam.depthTest, foam.clipToBox], [1, 'less-equal', false]);
+		assert.deepEqual([foam.edgeFade, foam.soft], [[0, 0], { distance: 0.001, bias: 0.6 }]);
 		assert.deepEqual(foam.disturbUse, [1, 1, 0]);
 	});
 
@@ -1205,7 +1211,7 @@ describe('WaterDecal', () => {
 		assert.ok(foam.dissolve !== null);
 		assert.ok(Math.abs(foam.dissolve.threshold - (0.5 * 2.02 - 1.01)) < 1e-9);
 		assert.deepEqual([foam.dissolve.sharpness, foam.dissolve.edgeColor], [3, [2, 1, 0]]);
-		assert.deepEqual([foam.textures.dissolve?.texture, foam.depthTest, foam.clipToBox], [4, 'greater', true]);
+		assert.deepEqual([foam.dissolve.texture.texture, foam.depthTest, foam.clipToBox], [4, 'greater', true]);
 	});
 
 	it('leaves variants without the base colour blend, or with other keywords, unsupported', () => {
@@ -1327,12 +1333,12 @@ describe('VFXSmoke_SixWay', () => {
 			[switched.positive.source, switched.blend?.source, switched.mask?.texture.source],
 			['uv0', 'screen', 'uv0'],
 		);
-		assert.deepEqual(switched.disturbSource, { source: 'polar', screenDepth: true });
+		assert.deepEqual(switched.disturbSource, { source: 'polar', screenByDepth: true });
 		assert.deepEqual(
-			[switched.dissolve?.texture.source, switched.dissolve?.texture.screenDepth],
+			[switched.dissolve?.texture.source, switched.dissolve?.texture.screenByDepth],
 			['screen', true],
 		);
-		assert.equal(switched.screenVFromHeight, true);
+		assert.equal(switched.screenHeightAsV, true);
 		// UV set 1 takes the dissolve's UVs over its switch
 		const uvSet = ofKind(
 			smoke({

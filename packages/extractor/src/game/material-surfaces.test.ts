@@ -509,7 +509,7 @@ describe('the Lit model', () => {
 		const layer = surface.overlay;
 		assert.ok(layer?.kind === 'layer');
 		const layered = (texture: number) => ({ texture, uv: 0, scale: [2, 2], offset: [0.25, 0.5] });
-		assert.deepEqual([layer.base, layer.bump, layer.uvType], [layered(2), layered(3), 2]);
+		assert.deepEqual([layer.base, layer.bump, layer.uvType], [layered(2), layered(3), 'uv2']);
 		assert.deepEqual(layer.coverage, { kind: 'top' });
 		assert.deepEqual(layer.top, { bumped: 0, threshold: -1, smoothness: 0.5 });
 		assert.equal(layer.heightTransition, 0.056);

@@ -316,6 +316,9 @@ const LAYER_SOURCES: Record<LayerCoverage['kind'], LayerSource> = {
 	full: LayerSource.Full,
 };
 
+/** {@link LayerBlendRow.coverage}'s last float by {@link LitLayer.uvType} */
+const LAYER_UV_TYPES: Record<LitLayer['uvType'], number> = { uv0: 0, worldXZ: 1, uv2: 2 };
+
 /** float offsets of a layer's parameters ({@link layerBlendParams}), which reuse the parallax and leaf rows */
 export const LayerBlendRow = {
 	/**
@@ -331,11 +334,14 @@ export const LayerBlendRow = {
 	/** linear `_Layer1TintColor` times `_Layer1ColorBrighterScale`, how much colour the layer keeps */
 	color: LookRow.parallaxColor,
 	/**
-	 * `_Layer1BaseColorBlendMode` (0 replace, 1 add), its additive intensity, `_LayerMetallicType`,
-	 * `_Layer1Metallic`
+	 * `_Layer1BaseColorBlendMode` (0 replace, 1 add), its additive intensity, 1 when metallic is the layer's
+	 * alpha (`_LayerMetallicType`), `_Layer1Metallic`
 	 */
 	blend: LookRow.parallaxDark,
-	/** `_Layer1BumpScale`, `_Layer1BaseNormalIntensity`, `_Layer1AOStrength`, `_LayerAOType` */
+	/**
+	 * `_Layer1BumpScale`, `_Layer1BaseNormalIntensity`, `_Layer1AOStrength`, 1 when the occlusion doesn't come
+	 * from the bump map (`_LayerAOType`)
+	 */
 	normal: LookRow.parallaxBright,
 	/**
 	 * `_LAYERBLEND_MOSS`: `_Layer1FuzzyCoreDarkness`, `…EdgeBrightness`, `…EdgeShadowRange`,
@@ -362,7 +368,7 @@ const layerBlendParams = (look: MaterialLook, layer: LitLayer, source: LayerSour
 	setTexture(look, Slot.Parallax, layer.base);
 	setTexture(look, Slot.ParallaxNoise, layer.bump);
 	params.set(
-		[layer.top.bumped, layer.top.threshold, layer.top.smoothness, layer.uvType],
+		[layer.top.bumped, layer.top.threshold, layer.top.smoothness, LAYER_UV_TYPES[layer.uvType]],
 		LayerBlendRow.coverage,
 	);
 	params.set(
@@ -371,11 +377,11 @@ const layerBlendParams = (look: MaterialLook, layer: LitLayer, source: LayerSour
 	);
 	params.set([...layer.tint, layer.saturation], LayerBlendRow.color);
 	params.set(
-		[layer.colorBlendMode, layer.additiveIntensity, layer.metallicType, layer.metallic],
+		[layer.colorBlendMode, layer.additiveIntensity, layer.metallicFromAlpha ? 1 : 0, layer.metallic],
 		LayerBlendRow.blend,
 	);
 	params.set(
-		[layer.bumpScale, layer.baseNormalIntensity, layer.aoStrength, layer.aoType],
+		[layer.bumpScale, layer.baseNormalIntensity, layer.aoStrength, layer.occlusionFromBump ? 0 : 1],
 		LayerBlendRow.normal,
 	);
 	// neutral fuzz: no darkening, brightening or edge shadow, a unit range so the edge term stays finite

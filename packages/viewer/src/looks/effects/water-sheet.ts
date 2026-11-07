@@ -16,7 +16,7 @@ import {
  * x)
  */
 export const WaterSheetRow = {
-	/** {@link WaterSheetFlags}, `_BlendMode` (1: additive), `_UseLighting`, `_WaterRandomUV` */
+	/** {@link WaterSheetFlags}, 1 when additive (`_BlendMode`), `_UseLighting`, `_WaterRandomUV` */
 	flags: 68,
 	/** `_Bi_Disturb`, `_DisturbUIntensity1`, `_DisturbVIntensity1`, 0 */
 	disturb: 72,
@@ -70,12 +70,12 @@ export const WaterSheetFlags = {
 export const waterSheetLook = (sheet: WaterSheetSurface): EffectLook => {
 	const look = emptyEffect();
 	const params = look.params;
-	const { textures } = sheet;
+	const { textures, dissolve } = sheet;
 	const slots = [
 		textures.main,
 		textures.disturb,
 		textures.mask,
-		textures.dissolve,
+		dissolve?.texture ?? null,
 		textures.sequence,
 		textures.sequenceMotion,
 	];
@@ -91,8 +91,10 @@ export const waterSheetLook = (sheet: WaterSheetSurface): EffectLook => {
 	if (textures.mask !== null) {
 		flags |= WaterSheetFlags.Mask;
 	}
-	if (textures.dissolve !== null) {
+	if (dissolve !== null) {
 		flags |= WaterSheetFlags.Dissolve;
+		params.set([dissolve.threshold, dissolve.sharpness, dissolve.edgeWidth, 0], WaterSheetRow.dissolve);
+		params.set([...dissolve.edgeColor, 0], WaterSheetRow.dissolveColor);
 	}
 	if (textures.sequence !== null) {
 		flags |=
@@ -109,12 +111,10 @@ export const waterSheetLook = (sheet: WaterSheetSurface): EffectLook => {
 		(sheet.fresnelOpacity ? WaterSheetFlags.FresnelOpacity : 0) |
 		(sheet.vertexColor ? WaterSheetFlags.VertexColor : 0);
 	params.set(sheet.tint, EffectRow.tint);
-	params.set([flags, sheet.blendMode, sheet.useLighting, sheet.randomUv], WaterSheetRow.flags);
+	params.set([flags, sheet.additive ? 1 : 0, sheet.useLighting, sheet.randomUv], WaterSheetRow.flags);
 	params.set([sheet.disturbBias, ...sheet.disturb, 0], WaterSheetRow.disturb);
 	params.set(sheet.disturbUse, WaterSheetRow.disturbUse);
-	const { dissolve, sequence } = sheet;
-	params.set([dissolve.threshold, dissolve.sharpness, dissolve.edgeWidth, 0], WaterSheetRow.dissolve);
-	params.set([...dissolve.edgeColor, 0], WaterSheetRow.dissolveColor);
+	const { sequence } = sheet;
 	params.set(
 		[sequence.columns, sequence.rows, sequence.framesPerSecond, sequence.randomStartByPosition],
 		WaterSheetRow.sequence,

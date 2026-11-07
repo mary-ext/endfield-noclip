@@ -100,7 +100,7 @@ export const mistVolumeLook = (volume: MistVolumeSurface): EffectLook => {
 	const { noise } = volume;
 	if (noise !== null) {
 		look.volumeTexture = noise.texture;
-		params.set([...noise.tiling, noise.world], MistRow.volumeNoise);
+		params.set([...noise.tiling, noise.world ? 1 : 0], MistRow.volumeNoise);
 		params.set(noise.flow, MistRow.volumeNoiseFlow);
 		params.set([noise.nearIntensity, noise.farIntensity, noise.farPerMetre, 1], MistRow.volumeNoiseMix);
 	}

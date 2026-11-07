@@ -10,7 +10,7 @@ import type {
 import { EffectKind, EffectRow, ROLE_NONE, SlotSource } from './effect-look.ts';
 import { SIX_WAY_SCREEN_DEPTH, SixWayFlags, SixWayRow, sixWaySmokeLook } from './six-way-smoke.ts';
 
-const UV0: SixWayUvSource = { source: 'uv0', screenDepth: false };
+const UV0: SixWayUvSource = { source: 'uv0', screenByDepth: false };
 
 const texture = (id: number, overrides: Partial<EffectTexture> = {}): EffectTexture => ({
 	texture: id,
@@ -30,7 +30,7 @@ test('six-way smoke samples its negative lightmap at the positive one’s UVs, a
 		disturb: [{ texture: texture(3), intensity: [0.11, 0.09], normal: false }, null],
 		disturbSource: UV0,
 		disturbBias: 0,
-		screenVFromHeight: false,
+		screenHeightAsV: false,
 		mask: { texture: { ...texture(4), ...UV0, disturbShare: 0.5 }, redAlpha: true },
 		blend: null,
 		blendTint: [0.5, 0.5, 0.5, 1],
@@ -41,7 +41,7 @@ test('six-way smoke samples its negative lightmap at the positive one’s UVs, a
 		absorptionRange: 1.934,
 		envSaturation: 1,
 		soft: { distance: 0.5, bias: 0 },
-		near: { on: false, range: [0, 1, 1e5, 2e5] },
+		near: null,
 		unfogged: false,
 	};
 	const look = sixWaySmokeLook(smoke);
@@ -73,15 +73,18 @@ test('six-way smoke starts each slot from its switched UVs, scaling screen UVs b
 		positive: { ...texture(1), ...UV0, disturbShare: 1 },
 		negative: 2,
 		disturb: [{ texture: texture(3), intensity: [-0.03, 0], normal: false }, null],
-		disturbSource: { source: 'polar', screenDepth: true },
+		disturbSource: { source: 'polar', screenByDepth: true },
 		disturbBias: 0,
-		screenVFromHeight: true,
+		screenHeightAsV: true,
 		mask: null,
-		blend: { ...texture(5), source: 'screen', screenDepth: false, disturbShare: 1 },
+		blend: { ...texture(5), source: 'screen', screenByDepth: false, disturbShare: 1 },
 		blendTint: [1.84, 0.25, 0.12, 1],
 		dissolve: {
-			texture: { ...texture(6), source: 'screen', screenDepth: true, disturbShare: 1 },
-			dissolve: { on: true, threshold: -1.01, sharpness: 0.25, edgeWidth: 0, edgeColor: [0, 0, 0] },
+			texture: { ...texture(6), source: 'screen', screenByDepth: true, disturbShare: 1 },
+			threshold: -1.01,
+			sharpness: 0.25,
+			edgeWidth: 0,
+			edgeColor: [0, 0, 0],
 		},
 		tint: [1, 1, 1, 2.3],
 		vertexColor: true,
@@ -89,7 +92,7 @@ test('six-way smoke starts each slot from its switched UVs, scaling screen UVs b
 		absorptionRange: 0.47,
 		envSaturation: 2.2,
 		soft: null,
-		near: { on: true, range: [0.5, 10, 400, 100] },
+		near: [0.5, 10, 400, 100],
 		unfogged: false,
 	};
 	const { params } = sixWaySmokeLook(smoke);

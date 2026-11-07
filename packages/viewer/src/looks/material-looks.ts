@@ -193,7 +193,7 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
 			}
 			case 'waterFoam': {
 				looks[entry.id] = effectMaterialLook(waterFoamLook(surface), {
-					queue: surface.depthTest === 'lessEqual' ? 'waterFoam' : 'waterFoamBehind',
+					queue: surface.depthTest === 'less-equal' ? 'waterFoam' : 'waterFoamBehind',
 					cull: entry.cull,
 				});
 				break;

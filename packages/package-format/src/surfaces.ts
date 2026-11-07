@@ -8,12 +8,31 @@
  * {@link TextureRef} can also be `null` for a slot the material leaves unset, which the shader samples as
  * white. a texture the surface doesn't sample at all is a `null` field of its own
  *
+ * an optional feature is `null` when off. a Unity switch is a `boolean`, and a mode a string union, where the
+ * shaders only test its value; where they blend between its settings by a fractional value, as the game's do,
+ * it stays a number: a {@link Weight}, or a numbered mode its field documents
+ *
  * @module
  */
 
 import type { TextureSlot } from './materials.ts';
 import type { TextureRef } from './textures.ts';
 import type { Color, Rgb, Vec2 } from './values.ts';
+
+/**
+ * a switch the shaders blend by rather than test: 0 off, 1 on, and a fractional value blends between the two
+ * as the game's shaders do
+ */
+export type Weight = number;
+
+/**
+ * `_USE_SOFTBLEND`'s fade in front of what lies behind: by `saturate((behind − depth + bias) / distance)`, in
+ * view-depth metres unless the field says otherwise
+ */
+export interface SoftBlend {
+	distance: number;
+	bias: number;
+}
 
 /**
  * a material's surface: a model the viewer draws, `undrawn` for materials the game draws nothing visible
@@ -141,17 +160,20 @@ export interface LitEmission {
 	color: Rgb;
 	/** `map`: the emissive map's R; `mask`: a channel of the material's own maps */
 	source: 'map' | 'mask';
-	/** `_EmissiveMaskChannel` */
+	/**
+	 * `mask` only: `_EmissiveMaskChannel`, as the game numbers the maps' channels; fractional values blend
+	 * between neighbouring channels
+	 */
 	maskChannel: number;
 	/**
 	 * `map` only: the HDR colours the emissive map's G, B and A add, each times `_EmissiveType`, or `null` when
 	 * they add nothing
 	 */
 	channels: [g: Rgb, b: Rgb, a: Rgb] | null;
-	/** 1 when emission ignores the albedo (`_AlbedoAffectEmissive`) */
-	albedoAffect: number;
-	/** 1 when emission keeps its brightness whatever the exposure */
-	ignorePostExposure: number;
+	/** emission ignores the albedo (`_AlbedoAffectEmissive`) */
+	albedoAffect: Weight;
+	/** emission keeps its brightness whatever the exposure (`_IgnorePostExposure`) */
+	ignorePostExposure: Weight;
 	/** `_EMISSIVE_ANIM`'s pulse, `null` when still */
 	pulse: {
 		/** cycles per second */
@@ -182,9 +204,12 @@ export interface MaskChannel {
 /** `_DETAIL_MAP` */
 export interface LitDetail {
 	texture: TextureSlot;
-	/** 0 colour overlay, 1 PBR */
+	/** `_DetailMode`: 0 colour overlay, 1 PBR; fractional values blend the two */
 	mode: number;
-	/** where the weight comes from (`_DetailMaskMode`) */
+	/**
+	 * where the weight comes from (`_DetailMaskMode`): 0 none (1), 1 the detail's alpha, 2 the base colour's
+	 * alpha, 3 the normal map's B, 4 its A; fractional values blend between neighbours
+	 */
 	maskMode: number;
 	normalIntensity: number;
 	pbrIntensity: number;
@@ -220,9 +245,10 @@ export interface ParallaxGlow {
 	/** HDR colours times the intensity */
 	bright: Rgb;
 	dark: Rgb;
-	/** numbered like the emission mask, minus one */
+	/** `_ParallaxMaskChannel`, numbered like {@link LitEmission.maskChannel} minus one */
 	maskChannel: number;
-	ignorePostExposure: number;
+	/** `_ParallaxIgnorePostExposure` */
+	ignorePostExposure: Weight;
 	/** the brightening near the player: radii and strength (0 for none) */
 	near: { outer: number; inner: number; strength: number };
 }
@@ -246,8 +272,8 @@ export interface LitLayer {
 	 */
 	base: TextureSlot;
 	bump: TextureSlot;
-	/** 0 UV set 0, 1 world XZ, 2 UV set 2 */
-	uvType: number;
+	/** the coordinate both maps sample (`_LayerBlendUVType`): UV set 0, the world's x and z, or UV set 2 */
+	uvType: 'uv0' | 'worldXZ' | 'uv2';
 	coverage: LayerCoverage;
 	/** how much the bumped normal decides top coverage, its threshold and smoothness */
 	top: { bumped: number; threshold: number; smoothness: number };
@@ -256,15 +282,20 @@ export interface LitLayer {
 	/** linear tint times its brightening, and how much colour it keeps (saturation) */
 	tint: Rgb;
 	saturation: number;
-	/** 0 replace, 1 add */
+	/**
+	 * `_Layer1BaseColorBlendMode`: 0 the layer replaces the albedo, 1 adds to it times `additiveIntensity`;
+	 * fractional values blend the two
+	 */
 	colorBlendMode: number;
 	additiveIntensity: number;
-	metallicType: number;
+	/** metallic is the layer base map's alpha (`_LayerMetallicType` not 0) rather than `metallic` */
+	metallicFromAlpha: boolean;
 	metallic: number;
 	bumpScale: number;
 	baseNormalIntensity: number;
+	/** occlusion comes from the bump map's alpha by `aoStrength` (`_LayerAOType` 0) rather than being 1 */
+	occlusionFromBump: boolean;
 	aoStrength: number;
-	aoType: number;
 	/** `_LAYERBLEND_MOSS`'s fuzz */
 	moss: {
 		coreDarkness: number;
@@ -341,8 +372,8 @@ export interface MattePaintingSurface {
 	alphaClip: number | null;
 	/** what exceeds `threshold` is added again times `intensity` */
 	highlight: { threshold: number; intensity: number };
-	/** 1 when the radiance ignores the post exposure (`_IgnorePostExposure`) */
-	ignorePostExposure: number;
+	/** the radiance ignores the post exposure (`_IgnorePostExposure`) */
+	ignorePostExposure: Weight;
 }
 
 /**
@@ -362,7 +393,7 @@ export interface DitheredSurface {
 	dither: {
 		/** the main texture, whose alpha (or red) is tested */
 		texture: TextureSlot;
-		/** 1 when the red is the alpha (`_UseMainTexAsAlpha`) */
+		/** the red is the alpha (`_UseMainTexAsAlpha`) */
 		redAlpha: boolean;
 		/** the tint's alpha times `_TintColorAlpha` */
 		alphaScale: number;
@@ -373,8 +404,8 @@ export interface DitheredSurface {
 	} | null;
 	/** the lit surface's inputs; `null` when unlit (`_UseLighting` off) */
 	lighting: { roughness: number; metallic: number; normalScale: number } | null;
-	/** unlit: 1 when the radiance ignores the post exposure */
-	ignorePostExposure: number;
+	/** unlit: the radiance ignores the post exposure (`_IgnorePostExposure`) */
+	ignorePostExposure: Weight;
 }
 
 /**
@@ -455,8 +486,8 @@ export interface MistCardSurface {
 	color: Color;
 	baseAlphaIntensity: number;
 	noiseIntensity: number;
-	/** 1 when the wind moves the noise */
-	useWind: number;
+	/** the wind moves the noise (`_UseWind`) */
+	useWind: Weight;
 	wind: {
 		noiseIntensity: number;
 		noiseContrast: number;
@@ -491,17 +522,18 @@ export interface MistVolumeSurface {
 	nearFade: number;
 	height: { offset: number; falloff: number; verticalFalloff: [min: number, max: number] };
 	intensityFadeDistance: number;
-	/** 1 to measure the intensity fade from the box's centre */
-	intensityFadeFromCentre: number;
+	/** the intensity fade is measured from the box's centre rather than the point (`_FogIntensityFadeUseCenter`) */
+	intensityFadeFromCentre: Weight;
 	depth: [start: number, end: number];
-	ignorePostExposure: number;
+	/** `_IgnorePostExposure` */
+	ignorePostExposure: Weight;
 	/** `_USE_NOISE3D`'s noise, `null` without it */
 	noise: {
 		/** a 3D texture */
 		texture: number;
 		tiling: [x: number, y: number, z: number];
-		/** 1 to sample it at the world position, else the box's */
-		world: number;
+		/** sampled at the world position rather than the box's (`_NoiseTexUseWorldUVW`) */
+		world: boolean;
 		/** scroll per second */
 		flow: [x: number, y: number, z: number];
 		nearIntensity: number;
@@ -539,7 +571,8 @@ export interface LightBeamSurface {
 	/** the depth blend distance, 0 without `VLB_DEPTH_BLEND` */
 	depthBlend: number;
 	depthBlendCapOff: number;
-	useClippingPlane: number;
+	/** the beam fades past {@link LightBeamSurface.clippingPlane} (`_UseClippingPlane`) */
+	useClippingPlane: Weight;
 	clippingPlane: [normalX: number, normalY: number, normalZ: number, offset: number];
 	tilt: [x: number, y: number];
 	clippingPlaneTransition: number;
@@ -618,8 +651,8 @@ export interface EffectVertexOffset {
 	/** samples UV set 1 rather than 0 */
 	uv1: boolean;
 	direction: [x: number, y: number, z: number];
-	/** 0 object space, 1 world space, 2 along the vertex normal */
-	space: number;
+	/** `_OffsetSwitchDir`: the direction in object or world space, or the vertex normal in its place */
+	space: 'object' | 'world' | 'normal';
 	intensity: number;
 	/** `_Bi_Offset`'s remap */
 	bias: number;
@@ -666,22 +699,25 @@ export interface EffectSoftBody {
 	vScale: number;
 }
 
-/** the fades by view depth every effect shader shares */
-export interface EffectNearFade {
-	on: boolean;
-	/** start, end, second start, second end */
-	range: [number, number, number, number];
-}
+/**
+ * the near camera fade every effect shader shares (`_UseNearCameraFade`): in between the first view depths
+ * (m), out between the second
+ */
+export type EffectNearFade = [start: number, end: number, secondStart: number, secondEnd: number];
 
-/** the dissolve of the texture stack */
+/** an effect's dissolve: the dissolve texture's red eats the surface where it falls below the threshold */
 export interface EffectDissolve {
-	on: boolean;
 	/** sweeps from below 0 to past 1 as the schedule goes from 0 to 1 */
 	threshold: number;
 	sharpness: number;
 	edgeWidth: number;
-	/** HDR, times the tint intensity */
+	/** HDR, times the tint intensity unless the surface says otherwise */
 	edgeColor: Rgb;
+}
+
+/** a dissolve and its texture */
+export interface TexturedDissolve<Texture extends EffectTexture = EffectTexture> extends EffectDissolve {
+	texture: Texture;
 }
 
 /**
@@ -709,16 +745,27 @@ export interface EffectStackSurface {
 	 * distortion, so a mesh, whose w is 0, isn't distorted
 	 */
 	particleDisturb: boolean;
-	/** the weight texture's strength on the distortion and on the dissolve, and whether it's used */
+	/**
+	 * the weight layers' strength on the distortion and on the dissolve. the weight is 1 plus the weight
+	 * layers' texels, or with `used` (`_UseWeightTex`) the texels alone, so one switched on without a texture
+	 * in that role weighs nothing, as in the game
+	 */
 	weight: { disturb: number; dissolve: number; used: boolean };
-	dissolve: EffectDissolve;
-	/** a mask is used: one switched on without a texture in that role leaves nothing, as in the game */
+	/** the dissolve, whose texture is the layer in that role; `null` without one */
+	dissolve: EffectDissolve | null;
+	/**
+	 * the mask is the mask layers' texels alone (`_UseMask`, `_USE_MASK`) rather than 1 plus them, so one
+	 * switched on without a texture in that role leaves nothing, as in the game
+	 */
 	masked: boolean;
-	fresnel: { power: number; bias: number; flip: number; opacity: number } | null;
-	soft: { distance: number; bias: number } | null;
-	ignorePostExposure: number;
+	/** the Fresnel term (`_USE_FRESNEL`), flipped by `flip` and applied to the alpha by `opacity` */
+	fresnel: { power: number; bias: number; flip: Weight; opacity: Weight } | null;
+	soft: SoftBlend | null;
+	/** `_IgnorePostExposure` */
+	ignorePostExposure: Weight;
 	vertexColor: boolean;
-	near: EffectNearFade;
+	/** `null` without the near camera fade */
+	near: EffectNearFade | null;
 	brighten: { threshold: number; intensity: number };
 	/**
 	 * VFXBaseV2's `_USE_ANIM_BREATHING`: the alpha pulses between `minAlpha` and 1, by `saturate(pow(cos(time ·
@@ -731,7 +778,7 @@ export interface EffectStackSurface {
 	 * (HDR, as stored) and `alpha` (`_TintColorAlpha`) by it; 0 multiplies the colour by it and the alpha by
 	 * the edge; between, a blend of the two
 	 */
-	edge: { color: Color; alpha: number; mode: number; distance: number; offset: number } | null;
+	edge: { color: Color; alpha: number; mode: Weight; distance: number; offset: number } | null;
 	/** VFXDecal's fades: across x and z, their width, the height fade and its offset, the angle falloff */
 	decalFade: {
 		edge: [x: number, z: number];
@@ -759,8 +806,8 @@ export interface EffectStackSurface {
 	lighting: { worldUp: boolean } | null;
 	/** drawn after the fog (no `_USE_FOG`); VFXDitherAlpha's G-buffer surface is fogged */
 	unfogged: boolean;
-	/** VFXBaseV2's `_BlendMode`: 0 blends over, 1 adds, 2 multiplies what lies behind */
-	blendMode: number;
+	/** how it composites (VFXBaseV2's `_BlendMode`): blended over, added to or multiplying what lies behind */
+	blendMode: 'over' | 'add' | 'multiply';
 	/**
 	 * VFXBaseV2's opaque blend state (`Blend One Zero`): the colour times the alpha covers what's behind, and
 	 * the layer writes depth. never with a stencil, a soft blend or an edge colour
@@ -786,7 +833,6 @@ export interface WaterSheetSurface {
 		main: EffectTexture | null;
 		disturb: EffectTexture | null;
 		mask: EffectTexture | null;
-		dissolve: EffectTexture | null;
 		/** the flipbook, sampled at its frames' UVs as they are */
 		sequence: EffectTexture | null;
 		sequenceMotion: EffectTexture | null;
@@ -800,15 +846,18 @@ export interface WaterSheetSurface {
 	vertexOpacity: boolean;
 	fresnelOpacity: boolean;
 	vertexColor: boolean;
-	/** 1 additive */
-	blendMode: number;
-	useLighting: number;
+	/** adds to what lies behind rather than blending over it (`_BlendMode` from 0.5) */
+	additive: boolean;
+	/** the share of the colour that's lit, as an albedo (`_UseLighting`) */
+	useLighting: Weight;
+	/** how far a random value per object stretches and offsets the main UVs (`_WaterRandomUV`) */
 	randomUv: number;
 	disturbBias: number;
 	disturb: [u: number, v: number];
 	/** how far the distortion moves the main, mask, normal map and dissolve UVs */
 	disturbUse: [main: number, mask: number, normal: number, dissolve: number];
-	dissolve: EffectDissolve;
+	/** `_USE_DISSOLVE` with its texture, `null` without */
+	dissolve: TexturedDissolve | null;
 	sequence: {
 		columns: number;
 		rows: number;
@@ -828,19 +877,20 @@ export interface WaterSheetSurface {
 	/** hue, saturation, value (0 without `_SUBSURFACE`), indirect strength */
 	subsurface: [hue: number, saturation: number, value: number, indirect: number];
 	indirectSaturation: number;
-	soft: { distance: number; bias: number } | null;
-	ignorePostExposure: number;
-	near: EffectNearFade;
+	soft: SoftBlend | null;
+	/** `_IgnorePostExposure`, for the unlit share of the colour */
+	ignorePostExposure: Weight;
+	near: EffectNearFade | null;
 }
 
 /**
  * where a six-way smoke texture's UVs start (`*SwitchUV` under `_USE_POLARUV` and `_USE_SCREENUV`): UV0,
- * polar coordinates about its centre, or the screen position, which `screenDepth` scales by the object's view
- * depth past the near plane (`*ScreenDepthUV`)
+ * polar coordinates about its centre, or the screen position, which `screenByDepth` scales by the object's
+ * view depth past the near plane (`*ScreenDepthUV`; screen UVs only)
  */
 export interface SixWayUvSource {
-	source: 'uv0' | 'polar' | 'screen';
-	screenDepth: boolean;
+	source: Exclude<EffectUvSource, 'uv1'>;
+	screenByDepth: boolean;
 }
 
 /** a texture of a six-way smoke layer, with the share of the distortion its UVs take */
@@ -862,8 +912,8 @@ export interface SixWaySmokeSurface {
 	disturb: [first: DisturbLayer | null, second: DisturbLayer | null];
 	/** where both distortion textures' UVs start (`_DisturbSwitchUV`) */
 	disturbSource: SixWayUvSource;
-	/** screen UVs take v from the world height (`_UsePosYAsScreenV`) */
-	screenVFromHeight: boolean;
+	/** screen UVs take v from the world height (`_UsePosYAsScreenV`), as the stack's `screenUv.heightAsV` */
+	screenHeightAsV: boolean;
 	/** `_Bi_Disturb` */
 	disturbBias: number;
 	/** red is the alpha (`_UseMaskTexAsAlpha`) */
@@ -872,7 +922,7 @@ export interface SixWaySmokeSurface {
 	blend: SixWayTexture | null;
 	/** the blend layer's tint (HDR, times the vertex colour) and how strongly it covers */
 	blendTint: Color;
-	dissolve: { texture: SixWayTexture; dissolve: EffectDissolve } | null;
+	dissolve: TexturedDissolve<SixWayTexture> | null;
 	/** linear rgb times its intensity, alpha: with the mask, blend and dissolve, the colour the smoke absorbs */
 	tint: Color;
 	vertexColor: boolean;
@@ -881,8 +931,8 @@ export interface SixWaySmokeSurface {
 	absorptionRange: number;
 	/** `_EnvLightSaturation`: the ambient light's saturation */
 	envSaturation: number;
-	soft: { distance: number; bias: number } | null;
-	near: EffectNearFade;
+	soft: SoftBlend | null;
+	near: EffectNearFade | null;
 	/** drawn after the fog (no `_USE_FOG`) */
 	unfogged: boolean;
 }
@@ -925,6 +975,10 @@ export interface LitDecalSurface {
 	occlusionStrength: number;
 	/** the base map is the PBR map and the colour stands alone */
 	pbrBase: boolean;
+	/**
+	 * `_MetallicChannel` and `_OcclusionChannel`, as the game numbers the PBR map's channels
+	 * (`docs/game-data/materials.md#decals`); fractional values blend between neighbouring channels
+	 */
 	metallicChannel: number;
 	occlusionChannel: number;
 	affectNormal: number;
@@ -937,21 +991,30 @@ export interface LitDecalSurface {
 		movement: [firstSpeed: number, secondSpeed: number, firstScale: number, secondScale: number];
 		levelFade: number;
 	} | null;
-	/** `_BLEND_EMISSIVE` */
-	emission: { color: Rgb; channel: number; albedoAffect: number; ignorePostExposure: number } | null;
+	/**
+	 * `_BLEND_EMISSIVE`: `channel` is `_EmissiveChannel` (0–3 the PBR map's R–A, 4 the base map's alpha;
+	 * fractional values blend between neighbours)
+	 */
+	emission: { color: Rgb; channel: number; albedoAffect: Weight; ignorePostExposure: Weight } | null;
+}
+
+/** where a VFXRefract texture's UVs start: UV set 0, or polar coordinates about its centre */
+export interface RefractTexture extends EffectTexture {
+	source: Extract<EffectUvSource, 'uv0' | 'polar'>;
 }
 
 /** `HGRP/Effect/VFXRefract`, the scene behind seen at an offset (`docs/game-data/effects.md#refraction`) */
 export interface RefractSurface {
 	kind: 'refract';
-	refraction: EffectTexture;
-	refractionPolar: boolean;
-	mask: { texture: EffectTexture; polar: boolean; redAlpha: boolean } | null;
+	refraction: RefractTexture;
+	/** red is the alpha (`_UseMaskTexAsAlpha`) */
+	mask: { texture: RefractTexture; redAlpha: boolean } | null;
 	direction: [u: number, v: number];
 	/** `_Intensity · _TintColorAlpha` */
 	strength: number;
 	bias: number;
 	isNormal: boolean;
+	/** `_MaskTexUseRefract`: the share of the refraction offset the mask's UVs take */
 	maskUsesRefraction: number;
 	/** `_USE_RBOFFSET`'s colour offsets, `null` without */
 	colorOffsets: {
@@ -962,7 +1025,8 @@ export interface RefractSurface {
 		/** linear colour masks */
 		main: Rgb;
 		first: Rgb;
-		mainAsMask: number;
+		/** the refraction texture scales the further samples' offset (`_UseMainTexAsMask`) */
+		mainAsMask: Weight;
 		/** `_USE_RGBOFFSET`'s second further sample */
 		second: Rgb | null;
 	} | null;
@@ -976,15 +1040,14 @@ export interface RefractSurface {
 		threshold: number;
 		sharpness: number;
 		/** `_DissolveAffectBlend` */
-		affectsAlpha: number;
+		affectsAlpha: Weight;
 	} | null;
 	/**
 	 * `_USE_BLEND`, `null` without: the texture's colour times `color.rgb` tints the refracted scene by
 	 * `color.a`, and its alpha (or red, `redAlpha`) scales the cover
 	 */
 	blend: {
-		texture: EffectTexture;
-		polar: boolean;
+		texture: RefractTexture;
 		redAlpha: boolean;
 		/** `_BlendColor`, HDR */
 		color: Color;
@@ -1000,12 +1063,14 @@ export interface RefractSurface {
 		texture: EffectTexture;
 		schedule: number;
 		range: number;
-		flip: number;
+		/** `_SpreadFlip` */
+		flip: Weight;
 		/** `_SpreadAlphaCurve` */
 		alphaScale: number;
 	} | null;
+	/** the soft blend's distance, 0 without `_USE_SOFTBLEND` */
 	softDistance: number;
-	near: EffectNearFade;
+	near: EffectNearFade | null;
 }
 
 /**
@@ -1026,7 +1091,6 @@ export interface WaterFoamSurface {
 		base: EffectTexture;
 		disturb: EffectTexture | null;
 		mask: EffectTexture | null;
-		dissolve: EffectTexture | null;
 	};
 	sources: {
 		base: WaterFoamSource;
@@ -1043,8 +1107,9 @@ export interface WaterFoamSurface {
 	/** `[HDR]`, as stored */
 	tint: Rgb;
 	/** the base colour's alpha weighs it and the output (`_UseAChannelAsAlpha`) */
-	baseAlpha: number;
-	maskAsAlpha: number;
+	baseAlpha: Weight;
+	/** the mask's alpha scales the colour (`_UseMaskTexAsAlpha`) */
+	maskAsAlpha: Weight;
 	disturbBias: number;
 	disturb: [u: number, v: number];
 	/** how far the distortion moves the base, mask and dissolve UVs (`*UseDisturb`) */
@@ -1056,9 +1121,15 @@ export interface WaterFoamSurface {
 	edgeFade: [x: number, y: number] | null;
 	/** fragments outside the box are dropped (`_MeshType` ≠ 0); otherwise only the edge fade bounds it */
 	clipToBox: boolean;
-	/** the game's `_ZTest` against the scene's depth: `lessEqual` draws the faces in front, `greater` behind */
-	depthTest: 'lessEqual' | 'greater';
-	/** 1 adds the foam over what's there; 0 blends it over */
+	/**
+	 * the game's `_ZTest` against the scene's depth, in Unity's (forward) depth: `less-equal` draws the faces
+	 * in front, `greater` those behind
+	 */
+	depthTest: Extract<EffectCompare, 'less-equal' | 'greater'>;
+	/**
+	 * `_BlendMode`: 0 blends the foam over what's there, 1 adds it, by scaling the cover by `1 − blendMode`;
+	 * fractional values blend the two
+	 */
 	blendMode: number;
 	/** `_OverallOpacity` */
 	opacity: number;
@@ -1066,9 +1137,9 @@ export interface WaterFoamSurface {
 	 * `_USE_SOFTBLEND`: the foam fades by `saturate((saturate(water − face) + bias) / distance)`, both depths
 	 * in the reversed-Z device depth; `null` without
 	 */
-	soft: { bias: number; distance: number } | null;
-	/** `_USE_DISSOLVE`, as {@link EffectDissolve}, its edge colour `[HDR]` as stored; `null` without */
-	dissolve: { threshold: number; sharpness: number; edgeWidth: number; edgeColor: Rgb } | null;
+	soft: SoftBlend | null;
+	/** `_USE_DISSOLVE` with its texture, its edge colour `[HDR]` as stored; `null` without */
+	dissolve: TexturedDissolve | null;
 }
 
 // #endregion

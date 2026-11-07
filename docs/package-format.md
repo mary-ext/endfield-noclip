@@ -504,6 +504,13 @@ the shader samples as white. a texture the surface doesn't sample is a `null` fi
 `Color`/`Rgb` ([values.ts](../packages/package-format/src/values.ts)), linear where the field says
 so; Unity vectors that aren't colours are named tuples.
 
+an optional feature (a near camera fade, a dissolve, a soft blend, …) is `null` when off. a Unity
+switch the shaders only test is a `boolean`, and a mode they only branch on a string union
+(`'over' | 'add' | 'multiply'`, `'less-equal'`, UV sources as `'uv0' | 'uv1' | 'polar' | 'screen'`).
+a switch or mode the shaders blend by its fractional value, as the game's do, stays a number: a
+`Weight` (0 off, 1 on) such as `ignorePostExposure`, or a numbered mode or channel its field
+documents.
+
 **rect decals**: a rect decal placement draws the game's VFXDecal cube with its material
 ([decals](game-data/materials.md#decals)), its colour and UV transform being its row's
 [placement](#instance-block-inst-efin); its `litDecal` surface holds the material's `_DecalOpacity`,
