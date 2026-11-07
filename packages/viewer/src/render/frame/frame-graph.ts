@@ -329,20 +329,6 @@ export const encodeFrame = (
 		draws += meshes.encodeEffectPass('relight', pass, scene);
 		pass.end();
 	}
-	// always run, so the composite reads cleared targets when nothing is transparent
-	{
-		const { colors, depth } = targets.transparentPassAttachments();
-		const pass = beginPass(
-			encoder,
-			{ label: 'transparent', colorAttachments: colors, depthStencilAttachment: depth },
-			sceneFrame,
-		);
-		if (sceneFrame !== null) {
-			draws += meshes.encodeEffectPass('transparent', pass, scene);
-		}
-		pass.end();
-	}
-
 	const composited = post.encodeComposite(encoder, {
 		scene,
 		camera,
@@ -391,6 +377,20 @@ export const encodeFrame = (
 			colorAttachments: [{ view: composited.target, loadOp: 'load', storeOp: 'store' }],
 			depthStencilAttachment: targets.readOnlyDepthAttachment(),
 		});
+		// as the game, glass and effects after the water, far to near over the scene, each fogging itself
+		if (meshes.has('transparent')) {
+			const pass = beginPass(
+				encoder,
+				{
+					label: 'transparent',
+					colorAttachments: [{ view: composited.target, loadOp: 'load', storeOp: 'store' }],
+					depthStencilAttachment: targets.transparentDepthAttachment(),
+				},
+				sceneFrame,
+			);
+			draws += meshes.encodeEffectPass('transparent', pass, scene);
+			pass.end();
+		}
 		if (meshes.has('multiply')) {
 			const pass = beginPass(encoder, over('effect multiply'), sceneFrame);
 			draws += meshes.encodeEffectPass('multiply', pass, scene);

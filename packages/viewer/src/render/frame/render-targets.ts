@@ -1,4 +1,4 @@
-import { ADDITIVE } from '../../gfx/blend.ts';
+import { KEEP, PREMULTIPLIED_OVER } from '../../gfx/blend.ts';
 
 /**
  * reversed-Z depth: 1 at the near plane, 0 at infinity; cleared to 0 and tested with `greater`. with a
@@ -46,25 +46,12 @@ const MAIN_TARGETS: GPUColorTargetState[] = [
 ];
 
 /**
- * the transparent pass's colour targets (weighted blended order-independent transparency, McGuire and Bavoil
- * 2013): the weighted sum of premultiplied colours with the weights' sum in alpha, and the revealage, the
- * product of `1 − alpha` over the layers. the composite resolves them over the opaque scene. a third target,
- * the glow, sums additively blended light, which the other two can't hold; the composite adds it after the
- * fog. the glow's alpha sums the weights of the layers that stay out of the fog. the fourth sums the layers'
- * distances, weighted as their colours and compressed (`layer_distance_code` in frame.wgsl), so the composite
- * can fog them at about their own distance
+ * the transparent pass's colour target: the composited scene, which each transparent draw blends over, far to
+ * near, as the game draws its transparent queue. shaders write fogged premultiplied colour and their opacity
+ * (0 for additive light), and the scene's alpha stays as the composite left it
  */
 export const TRANSPARENT_TARGETS: GPUColorTargetState[] = [
-	{ format: HDR_FORMAT, blend: ADDITIVE },
-	{
-		format: 'r8unorm',
-		blend: {
-			color: { srcFactor: 'zero', dstFactor: 'one-minus-src' },
-			alpha: { srcFactor: 'zero', dstFactor: 'one-minus-src' },
-		},
-	},
-	{ format: HDR_FORMAT, blend: ADDITIVE },
-	{ format: 'r16float', blend: ADDITIVE },
+	{ format: HDR_FORMAT, blend: { color: PREMULTIPLIED_OVER, alpha: KEEP } },
 ];
 
 /** what a main-pass pipeline needs to know of the targets */
@@ -97,18 +84,7 @@ export interface SceneTextures {
 	reflectionSurface: GPUTextureView;
 	/** the depth aspect alone, for sampling */
 	depth: GPUTextureView;
-	/** the transparent pass's weighted colour sum ({@link TRANSPARENT_TARGETS}) */
-	transparent: GPUTextureView;
-	/** the transparent pass's revealage: 1 where nothing transparent was drawn */
-	revealage: GPUTextureView;
-	/** the transparent pass's additive light ({@link TRANSPARENT_TARGETS}) */
-	glow: GPUTextureView;
-	/** the transparent layers' weighted, compressed distances ({@link TRANSPARENT_TARGETS}) */
-	layerDistance: GPUTextureView;
-	/**
-	 * the nearest water surface's depth in front of the scene, {@link WATER_DEPTH_FORMAT}; 0 where there's
-	 * none. drawn before the composite, which leaves the transparent layers over water to the water pass
-	 */
+	/** the nearest water surface's depth in front of the scene, {@link WATER_DEPTH_FORMAT}; 0 where there's none */
 	waterDepth: GPUTextureView;
 	/** bumped whenever the views or the output size change (resize, render scale) */
 	version: number;
@@ -138,12 +114,11 @@ export class RenderTargets {
 	#textures: GPUTexture[] = [];
 	#depth: GPUTexture | null = null;
 	#colors: GPUTexture[] | null = null;
-	#transparent: GPUTexture[] | null = null;
 	#waterDepth: GPUTexture | null = null;
 	#scene: SceneTextures | null = null;
 	/** the passes' attachments, built on first use after each resize */
 	#mainAttachments: PassAttachments | null = null;
-	#transparentAttachments: PassAttachments | null = null;
+	#transparentDepth: GPURenderPassDepthStencilAttachment | null = null;
 	#readOnlyDepth: GPURenderPassDepthStencilAttachment | null = null;
 	#version = 0;
 
@@ -241,12 +216,6 @@ export class RenderTargets {
 				usage,
 			}),
 		];
-		this.#transparent = [
-			create({ label: 'transparent', size: [width, height], format: HDR_FORMAT, usage }),
-			create({ label: 'revealage', size: [width, height], format: 'r8unorm', usage }),
-			create({ label: 'glow', size: [width, height], format: HDR_FORMAT, usage }),
-			create({ label: 'layer distance', size: [width, height], format: 'r16float', usage }),
-		];
 		this.#waterDepth = create({
 			label: 'water depth',
 			size: [width, height],
@@ -255,7 +224,7 @@ export class RenderTargets {
 		});
 		this.#version++;
 		this.#mainAttachments = null;
-		this.#transparentAttachments = null;
+		this.#transparentDepth = null;
 		this.#readOnlyDepth = null;
 		this.#scene = {
 			radiance: this.#colors[0].createView(),
@@ -264,10 +233,6 @@ export class RenderTargets {
 			reflection: this.#colors[2].createView(),
 			reflectionSurface: this.#colors[3].createView(),
 			depth: this.#depth.createView({ aspect: 'depth-only' }),
-			transparent: this.#transparent[0].createView(),
-			revealage: this.#transparent[1].createView(),
-			glow: this.#transparent[2].createView(),
-			layerDistance: this.#transparent[3].createView(),
 			waterDepth: this.#waterDepth.createView(),
 			version: this.#version,
 		};
@@ -278,10 +243,7 @@ export class RenderTargets {
 	get bytes(): number {
 		// depth with stencil is commonly stored as 8 bytes
 		const depth = this.format.stencil ? 8 : 4;
-		return (
-			this.width * this.height * (depth + 8 * 4 + 8 + 1 + 8 + 2 + 4) +
-			this.outputWidth * this.outputHeight * 4 * 2
-		);
+		return this.width * this.height * (depth + 8 * 4 + 4) + this.outputWidth * this.outputHeight * 4 * 2;
 	}
 
 	/** @returns the main pass's outputs */
@@ -323,18 +285,17 @@ export class RenderTargets {
 	}
 
 	/**
-	 * @returns attachments for this frame's transparent pass: its targets cleared to nothing drawn, and the
-	 *   main pass's depth, tested but not written. the stencil stays writable, since some effects mask the ones
-	 *   drawn after them. the same objects until the next resize
+	 * @returns the depth attachment of this frame's transparent pass, which draws over the composited scene
+	 *   ({@link TRANSPARENT_TARGETS}): the main pass's depth, tested but not written. the stencil stays
+	 *   writable, since some effects mask the ones drawn after them. the same object until the next resize
 	 */
-	transparentPassAttachments(): PassAttachments {
-		if (this.#depth === null || this.#transparent === null) {
+	transparentDepthAttachment(): Readonly<GPURenderPassDepthStencilAttachment> {
+		if (this.#depth === null) {
 			throw new Error('render targets used before update()');
 		}
-		if (this.#transparentAttachments !== null) {
-			return this.#transparentAttachments;
+		if (this.#transparentDepth !== null) {
+			return this.#transparentDepth;
 		}
-		const [sum, revealage, glow, layerDistance] = this.#transparent;
 		const depth: GPURenderPassDepthStencilAttachment = {
 			view: this.#depth.createView(),
 			depthReadOnly: true,
@@ -343,31 +304,8 @@ export class RenderTargets {
 			depth.stencilLoadOp = 'load';
 			depth.stencilStoreOp = 'discard';
 		}
-		this.#transparentAttachments = {
-			colors: [
-				{ view: sum.createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' },
-				{
-					view: revealage.createView(),
-					clearValue: { r: 1, g: 1, b: 1, a: 1 },
-					loadOp: 'clear',
-					storeOp: 'store',
-				},
-				{
-					view: glow.createView(),
-					clearValue: { r: 0, g: 0, b: 0, a: 0 },
-					loadOp: 'clear',
-					storeOp: 'store',
-				},
-				{
-					view: layerDistance.createView(),
-					clearValue: { r: 0, g: 0, b: 0, a: 0 },
-					loadOp: 'clear',
-					storeOp: 'store',
-				},
-			],
-			depth,
-		};
-		return this.#transparentAttachments;
+		this.#transparentDepth = depth;
+		return depth;
 	}
 
 	/**

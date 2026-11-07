@@ -23,9 +23,9 @@ what's left out is in [status](../status.md).
   white, when the shader's default is white; with another default it's left out.
 - each slot's share of the distortion (`*UseDisturb`) rides in its slot bits above the low byte, in
   1/1024ths (`slotDisturb`).
-- [`_BlendMode` 1](../game-data/effects.md#vfxbasev2) materials draw into the transparent pass's
-  glow, unfogged, as additive mist does; drawn over, the glare at the corroded planet's centre (seen
-  from Dijiang's deck) was a dark square.
+- [`_BlendMode` 1](../game-data/effects.md#vfxbasev2) materials add their light, unfogged, as
+  additive mist does; drawn over, the glare at the corroded planet's centre (seen from Dijiang's
+  deck) was a dark square.
 - [opaque](../game-data/effects.md#vfxbasev2) VFXBaseV2 materials shade in the main pass after the
   meshes (`effectOpaque` queue, `fs_effect_opaque`), writing depth, the colour times the alpha as
   their radiance, and nothing for the screen-space reflections, the AO or the decals. the effect
@@ -121,7 +121,7 @@ alone doesn't bring a material onto the stack, and those stay unsupported.
 
 VFXWater sheets are drawn by `fs_effect` (`water_sheet` in `effect.wgsl`; `waterSheetLook` in
 [`water-sheet.ts`](../../packages/viewer/src/looks/effects/water-sheet.ts)). `_BlendMode` 1 sheets
-draw into the glow. the [post-exposure division](../game-data/effects.md#waterfalls) applies to the
+add their light. the [post-exposure division](../game-data/effects.md#waterfalls) applies to the
 unlit share only, since on the lit share it darkens sheets in dark places, such as Jingyu's cave
 falls, far below the game's. the normal map's frame comes from the UVs' screen derivatives rather
 than mesh tangents. `VFX_WATER_SIMPLE_LIGHT` sheets are lit the full way, and textures on UV sets
@@ -148,9 +148,8 @@ back faces without a depth test, like the decals, and take the thickness from th
 surface behind and the back face; only additive boxes are drawn, without their depth prepass or
 vertex colour. a box's 3D noise is the look's `volumeTexture`, streamed whole and bound beside the
 slots (a zeroed placeholder leaves boxes without it unchanged); the box waits for it like an
-effect's other textures. additive cards and boxes draw into the transparent pass's glow, which the
-composite adds unfogged after the fog ([frame](frame.md)); premultiplied cards join the weighted
-blend.
+effect's other textures. additive cards and boxes add their light unfogged; premultiplied cards
+blend over and fog themselves ([blending](#blending)).
 
 ## light beams
 
@@ -158,15 +157,17 @@ blend.
 `light_beam` (`lightBeamLook` in
 [`light-beam.ts`](../../packages/viewer/src/looks/effects/light-beam.ts)). `vs_effect` shapes the
 cone first (`beam_vertex`); the fragment stage takes the beam's own frame and the camera's from the
-instance's inverse transform rather than extra varyings. additive beams draw into the glow,
-unfogged; alpha-blended ones join the weighted blend, fogged by the composite under `VLB_USE_FOG`.
-the 3D noise, the per-renderer scale and the global tint are left out, and the colour isn't scaled
-by exposure, which the game's shader doesn't do either (unverified against an in-game shot).
+instance's inverse transform rather than extra varyings. additive beams add their light, unfogged;
+alpha-blended ones blend over, fogging themselves under `VLB_USE_FOG`. the 3D noise, the
+per-renderer scale and the global tint are left out, and the colour isn't scaled by exposure, which
+the game's shader doesn't do either (unverified against an in-game shot).
 
 ## blending
 
-effects join the transparent pass's weighted blend ([glass](materials.md#glass)). those the game
-[fogs](../game-data/effects.md#blending) the composite fogs like glass, at the layers' weighted mean
-distance. the rest add their weight to the glow target's alpha too, which nothing else writes, and
-the composite keeps that share of the layers' mean colour out of the fog. effects cast no shadows
-and wait until all their textures are resident.
+effects draw in the [transparent pass](frame.md) with the glass, far to near by instance, as the
+game's transparent queue does
+([transparent draw order](../game-data/materials.md#transparent-draw-order)): each writes
+premultiplied colour and its opacity, blended over the scene behind (`fx_accumulate` in
+`effect.wgsl`). those the game [fogs](../game-data/effects.md#blending) fog their colour at their
+own distance first, as glass does; additive light (`fx_additive`) adds with an opacity of 0 and
+stays out of the fog. effects cast no shadows and wait until all their textures are resident.

@@ -90,17 +90,13 @@ swaying material on an animated mesh keeps still, and `_GPU_CLOTH` materials kee
 [glass](../game-data/materials.md#glass) is shaded like Lit, with the opacity taken from the alpha
 `_AlphaMaskChannel` picks, times `_BaseColor.a`; with the map still streaming, the tint's alpha
 alone. glass casts no shadows. premultiplied glass (source factor one) adds its whole radiance and
-lets the opacity only dim what lies behind: the alpha-weighted share goes into the layers below, the
-rest into the pass's glow, which the fog doesn't reach.
+lets the opacity only dim what lies behind.
 
-the transparent pass draws it after the main pass, tested against its depth, with weighted blended
-order-independent transparency (McGuire and Bavoil 2013): one target sums each layer's premultiplied
-radiance and alpha, both times a weight that falls off gently with distance so nearer panes show
-more, and another multiplies `1 − alpha` into the revealage. a fourth sums each layer's distance,
-compressed to `d / (d + 1 km)` and weighted like its colour. the composite fogs the opaque scene,
-then lays the layers' mean colour over it by `1 − revealage`, fogged at their weighted mean
-distance, in front of the sky too. a single layer resolves exactly; overlapping panes blend without
-sorting, and layers far apart in depth share one fog distance.
+the [transparent pass](frame.md) draws it with the effects, far to near by instance, over the
+composited scene: its radiance fogged at its own distance, as the game's shader fogs itself, then
+blended over by its opacity. so an effect kilometres behind a pane shows through it, dimmed by the
+pane; the weighted blend the viewer used before let a pane 10 m away swamp it (Dijiang's deck glass
+hid the corroded planet's plume).
 
 ## decals
 

@@ -431,23 +431,11 @@ fn fs_opaque(in: VertexOut) -> Shaded {
 	return out;
 }
 
-// the transparent pass's outputs (`TRANSPARENT_TARGETS` in render-targets.ts)
-struct Accumulated {
-	// the premultiplied radiance times the layer's weight; a: alpha times the weight
-	@location(0) sum: vec4f,
-	// alpha, which the blend turns into the product of 1 − alpha
-	@location(1) revealage: vec4f,
-	// additive light, none for glass
-	@location(2) glow: vec4f,
-	// the layer's `layer_distance_code` times its weight in the sum
-	@location(3) distance: vec4f,
-}
-
-// alpha-blended materials (`transparent` in look.ts), shaded like opaque ones. the opacity is the alpha
-// the alpha test would read, times `_BaseColor.a`. the weight favours nearer layers a little, so the front
-// pane of overlapping glass shows more; it stays at most 1 so the half-float sum can't overflow
+// alpha-blended materials (`transparent` in look.ts), shaded like opaque ones and fogged at their own depth,
+// drawn far to near over the composited scene (`TRANSPARENT_TARGETS` in render-targets.ts): premultiplied
+// colour and the opacity, the alpha the alpha test would read times `_BaseColor.a`
 @fragment
-fn fs_transparent(in: VertexOut) -> Accumulated {
+fn fs_transparent(in: VertexOut) -> @location(0) vec4f {
 	let draw = draws[in.draw];
 	let flags = bitcast<u32>(draw.offset.w);
 	let bias = frame.params.y;
@@ -461,16 +449,10 @@ fn fs_transparent(in: VertexOut) -> Accumulated {
 		alpha = 1.0;
 	}
 	alpha = saturate(alpha * draw.emissive2.w);
-	let distance = length(in.rel) / 20.0;
-	let weight = alpha * max(0.01, 1.0 / (1.0 + distance * distance));
-	var out: Accumulated;
-	out.sum = vec4f(shaded.radiance.rgb * weight, weight);
-	out.revealage = vec4f(alpha);
-	// premultiplied glass (detail2.z) adds its whole radiance: the alpha-weighted share above, the rest as glow
-	let premultiplied = select(0.0, 1.0, draw.detail2.z > 0.5);
-	out.glow = vec4f(shaded.radiance.rgb * (1.0 - alpha) * premultiplied, 0.0);
-	out.distance = vec4f(layer_distance_code(length(in.rel)) * weight);
-	return out;
+	// premultiplied glass (detail2.z) adds its whole radiance and lets its opacity only dim what's behind
+	let color = shaded.radiance.rgb * select(alpha, 1.0, draw.detail2.z > 0.5);
+	let uv = in.position.xy / frame.render_size.xy;
+	return vec4f(fog_premultiplied(color, alpha, in.rel, uv), alpha);
 }
 
 fn shade(in: VertexOut, wet: bool) -> Shaded {

@@ -6,14 +6,18 @@ import commonWgsl from './post-common.wgsl?raw';
 const UNIFORMS_BINDING = '@group(0) @binding(0) var<uniform> post';
 
 /**
- * @param uniformsGroup the bind group the `Post` uniforms sit at, binding 0
+ * @param uniformsGroup the bind group the `Post` uniforms sit at
+ * @param uniformsBinding their binding in it
  * @returns post-common.wgsl with its uniforms there
  */
-export const postCommonSource = (uniformsGroup: number): string => {
+export const postCommonSource = (uniformsGroup: number, uniformsBinding = 0): string => {
 	if (!commonWgsl.includes(UNIFORMS_BINDING)) {
 		throw new Error(`post-common.wgsl no longer declares \`${UNIFORMS_BINDING}\``);
 	}
-	return commonWgsl.replace(UNIFORMS_BINDING, `@group(${uniformsGroup}) @binding(0) var<uniform> post`);
+	return commonWgsl.replace(
+		UNIFORMS_BINDING,
+		`@group(${uniformsGroup}) @binding(${uniformsBinding}) var<uniform> post`,
+	);
 };
 
 /**

@@ -38,6 +38,7 @@ import {
 	withStencil,
 } from './pipeline-variants.ts';
 import { type ResidentSkin, SkinAnimator } from './skin-animation.ts';
+import { type SortedSource, mergeFarToNear } from './sorted-runs.ts';
 import { VertexBindings } from './vertex-bindings.ts';
 
 /** floats of `Draw` in mesh.wgsl: the position and UV dequantizations, then the material look */
@@ -71,6 +72,19 @@ interface PreparedDraw {
 	effect: EffectMaterial | null;
 	/** the stencil state its pipeline variant uses, or `null` for the phase's own pipeline */
 	stencil: LookStencil | null;
+	/** for a draw of the transparent pass, its instances' distances, far to near (`MeshBucket.distances`) */
+	distances: readonly number[];
+}
+
+/** what {@link MeshRenderer} last bound while encoding a pass, so it binds only what changes */
+interface EncodeState {
+	phase: DrawPhase | null;
+	keys: readonly string[];
+	variant: number;
+	stencil: LookStencil | null;
+	reference: number;
+	geometry: ResidentGeometry | null;
+	material: GPUBindGroup | null;
 }
 
 /** a range's queued buckets and where its draws landed this frame */
@@ -125,6 +139,17 @@ export class MeshRenderer {
 	/** prepared draws in {@link DRAW_RANGES} order; entries past {@link #drawCount} are reused next frame */
 	#draws: PreparedDraw[] = [];
 	#drawCount = 0;
+	/**
+	 * the transparent pass's draw order, as `[draw, first, count, phase]` quads: the draws that write the
+	 * stencil whole, so the effects testing it see the whole mask, then every other draw's instances far to
+	 * near; `first` counts from the draw's first instance and `phase` indexes the pass's phases
+	 */
+	#sortedRuns: number[] = [];
+	/** {@link mergeFarToNear}'s inputs and output, reused */
+	#sortedSources: SortedSource[] = [];
+	#sortedDraws: number[] = [];
+	#sortedPhases: number[] = [];
+	#merged: number[] = [];
 	/** whether the depth buffer has a stencil; without one, draws that use it are skipped */
 	#stencil: boolean;
 	/** each phase's pipeline descriptor by face culling and UV format, for its stencil variants */
@@ -159,19 +184,26 @@ export class MeshRenderer {
 	 * @param device the device
 	 * @param layouts shared layouts
 	 * @param pipelines pipeline cache
-	 * @param instances the owner of group 1 (instance rows, block origins and the visible list), asked for it
-	 *   on every encode since it changes when the rows grow, and of the buffers GPU culling reads and writes
-	 * @param format the main pass's targets
-	 * @param features `indirectFirstInstance` when indirect draws may start past the first instance, which GPU
-	 *   culling needs
+	 * @param context `instances`, the owner of group 1 (instance rows, block origins and the visible list),
+	 *   asked for it on every encode since it changes when the rows grow, and of the buffers GPU culling reads
+	 *   and writes; the main pass's targets; what transparent draws fog themselves with; and
+	 *   `indirectFirstInstance` when indirect draws may start past the first instance, which GPU culling needs
 	 */
 	constructor(
 		device: GPUDevice,
 		layouts: BindLayouts,
 		pipelines: PipelineCache,
-		instances: { readonly bindGroup: GPUBindGroup; readonly buffers: Omit<CullTargets, 'drawIds'> },
-		format: MainPassFormat,
-		features: { indirectFirstInstance: boolean },
+		{
+			instances,
+			format,
+			fog,
+			features,
+		}: {
+			instances: { readonly bindGroup: GPUBindGroup; readonly buffers: Omit<CullTargets, 'drawIds'> };
+			format: MainPassFormat;
+			fog: { uniforms: GPUBuffer; froxels: GPUTextureView; sampler: GPUSampler };
+			features: { indirectFirstInstance: boolean };
+		},
 	) {
 		this.#device = device;
 		this.#pipelines = pipelines;
@@ -195,6 +227,9 @@ export class MeshRenderer {
 			entries: [
 				{ binding: 0, resource: { buffer: this.#params } },
 				{ binding: 1, resource: { buffer: this.#drawIds } },
+				{ binding: 2, resource: { buffer: fog.uniforms } },
+				{ binding: 3, resource: fog.froxels },
+				{ binding: 4, resource: fog.sampler },
 			],
 		});
 		this.#culler = features.indirectFirstInstance
@@ -338,6 +373,7 @@ export class MeshRenderer {
 	/** draws nothing this frame */
 	clear(): void {
 		this.#drawCount = 0;
+		this.#sortedRuns.length = 0;
 		this.instanceCount = 0;
 		this.triangles = 0;
 		this.texturedDraws = 0;
@@ -418,6 +454,7 @@ export class MeshRenderer {
 			range.end = d;
 		}
 		this.#drawCount = d;
+		this.#prepareSorted();
 		if (d > 0) {
 			const queue = this.#device.queue;
 			queue.writeBuffer(this.#params, 0, this.#paramData, 0, d * DRAW_FLOATS);
@@ -430,6 +467,44 @@ export class MeshRenderer {
 			// as last read back, a few frames late
 			this.instanceCount += culler.instances;
 			this.triangles += culler.triangles;
+		}
+	}
+
+	/** orders the transparent pass's draws into {@link #sortedRuns} */
+	#prepareSorted(): void {
+		const runs = this.#sortedRuns;
+		const sources = this.#sortedSources;
+		const drawsOf = this.#sortedDraws;
+		const phasesOf = this.#sortedPhases;
+		runs.length = 0;
+		let s = 0;
+		for (const [p, phase] of PASS_PHASES.transparent.entries()) {
+			const range = this.#range(phase.range);
+			for (let i = range.castOnlyEnd; i < range.end; i++) {
+				const draw = this.#draws[i];
+				if (draw.stencil?.replace === true || draw.distances.length === 0) {
+					runs.push(i, 0, draw.count, p);
+					continue;
+				}
+				const source = sources[s];
+				const count = Math.min(draw.count, draw.distances.length);
+				if (source === undefined) {
+					sources.push({ distances: draw.distances, count });
+				} else {
+					source.distances = draw.distances;
+					source.count = count;
+				}
+				drawsOf[s] = i;
+				phasesOf[s] = p;
+				s++;
+			}
+		}
+		sources.length = s;
+		const merged = this.#merged;
+		mergeFarToNear(sources, merged);
+		for (let m = 0; m < merged.length; m += 3) {
+			const source = merged[m];
+			runs.push(drawsOf[source], merged[m + 1], merged[m + 2], phasesOf[source]);
 		}
 	}
 
@@ -535,6 +610,7 @@ export class MeshRenderer {
 				variant,
 				effect,
 				stencil: look.stencil,
+				distances: bucket.distances,
 			};
 		} else {
 			draw.geometry = resident;
@@ -554,6 +630,7 @@ export class MeshRenderer {
 			draw.variant = variant;
 			draw.effect = effect;
 			draw.stencil = look.stencil;
+			draw.distances = bucket.distances;
 		}
 		if (!bucket.castOnly && gpu === null) {
 			this.instanceCount += span.count;
@@ -682,23 +759,39 @@ export class MeshRenderer {
 		}
 		pass.setBindGroup(1, this.#instances.bindGroup);
 		pass.setBindGroup(2, this.#drawGroup);
-		const bindings = this.#vertexBindings;
-		bindings.reset();
+		this.#vertexBindings.reset();
+		const state: EncodeState = {
+			phase: null,
+			keys: [],
+			variant: -1,
+			stencil: null,
+			reference: -1,
+			geometry: null,
+			material: null,
+		};
 		let draws = 0;
+		if (which === 'transparent') {
+			const phases = PASS_PHASES.transparent;
+			const runs = this.#sortedRuns;
+			for (let r = 0; r < runs.length; r += 4) {
+				const draw = this.#draws[runs[r]];
+				const drawn = this.#encodeDraw(pass, state, phases[runs[r + 3]], draw, {
+					first: draw.first + runs[r + 1],
+					count: runs[r + 2],
+					layer,
+				});
+				if (drawn === null) {
+					return draws;
+				}
+				draws += drawn ? 1 : 0;
+			}
+			return draws;
+		}
 		for (const phase of PASS_PHASES[which]) {
 			const range = this.#range(phase.range);
 			// shadow passes draw the casters, cast-only ones first; the rest skip those
 			const from = phase.shadow ? range.start : range.castOnlyEnd;
 			const to = phase.shadow ? range.castersEnd : range.end;
-			if (from === to) {
-				continue;
-			}
-			const keys = this.#variantKeys(phase);
-			let variant = -1;
-			let stencil: LookStencil | null = null;
-			let reference = -1;
-			let geometry: ResidentGeometry | null = null;
-			let material: GPUBindGroup | null = null;
 			for (let i = from; i < to; i++) {
 				const draw = this.#draws[i];
 				let count = 0;
@@ -709,52 +802,83 @@ export class MeshRenderer {
 				} else {
 					count = draw.layerRooms[layer] ?? 0;
 				}
-				// only an effect drawn outside its pass would lack its group
-				if (draw.material === null || count === 0) {
-					continue;
+				const drawn = this.#encodeDraw(pass, state, phase, draw, { first: draw.first, count, layer });
+				if (drawn === null) {
+					return draws;
 				}
-				if (draw.variant !== variant || draw.stencil !== stencil) {
-					if (draw.stencil === null) {
-						const pipeline = this.#pipelines.get(keys[draw.variant]);
-						if (pipeline === undefined) {
-							return draws;
-						}
-						pass.setPipeline(pipeline);
-					} else {
-						// a variant still compiling skips its draws; the next draw picks a pipeline again
-						const pipeline = this.#stencilPipeline(phase, keys, draw.variant, draw.stencil);
-						if (pipeline === undefined) {
-							variant = -1;
-							continue;
-						}
-						pass.setPipeline(pipeline);
-						if (draw.stencil.reference !== reference) {
-							reference = draw.stencil.reference;
-							pass.setStencilReference(reference);
-						}
-					}
-					variant = draw.variant;
-					stencil = draw.stencil;
-				}
-				if ((phase.textured || material === null) && draw.material !== material) {
-					material = draw.material;
-					pass.setBindGroup(3, material);
-				}
-				if (draw.geometry !== geometry) {
-					geometry = draw.geometry;
-					bindings.bindStreams(pass, geometry, phase.streams);
-					pass.setIndexBuffer(geometry.indices, geometry.indexFormat);
-				}
-				if (draw.indirect < 0) {
-					pass.drawIndexed(draw.indexCount, count, draw.firstIndex, draw.baseVertex, draw.first);
-				} else if (this.#culler !== null) {
-					// the draw of the rows in view, then one per shadow layer, 5 words each
-					pass.drawIndexedIndirect(this.#culler.indirect, draw.indirect + (layer < 0 ? 0 : (1 + layer) * 20));
-				}
-				draws++;
+				draws += drawn ? 1 : 0;
 			}
 		}
 		return draws;
+	}
+
+	/**
+	 * encodes one draw of a phase, binding what changed since the last
+	 *
+	 * @param first the first row's list offset
+	 * @param count how many rows from it, for listed rows
+	 * @param layer the shadow layer, -1 for the rows in view
+	 * @returns whether it drew, or `null` when the phase's pipeline isn't compiled, which ends the pass
+	 */
+	#encodeDraw(
+		pass: GPURenderPassEncoder,
+		state: EncodeState,
+		phase: DrawPhase,
+		draw: PreparedDraw,
+		{ first, count, layer }: { first: number; count: number; layer: number },
+	): boolean | null {
+		// only an effect drawn outside its pass would lack its group
+		if (draw.material === null || count === 0) {
+			return false;
+		}
+		// each phase has its own pipelines and reads its own vertex streams
+		if (phase !== state.phase) {
+			state.phase = phase;
+			state.keys = this.#variantKeys(phase);
+			state.variant = -1;
+			state.stencil = null;
+			state.geometry = null;
+			state.material = null;
+		}
+		if (draw.variant !== state.variant || draw.stencil !== state.stencil) {
+			if (draw.stencil === null) {
+				const pipeline = this.#pipelines.get(state.keys[draw.variant]);
+				if (pipeline === undefined) {
+					return null;
+				}
+				pass.setPipeline(pipeline);
+			} else {
+				// a variant still compiling skips its draws; the next draw picks a pipeline again
+				const pipeline = this.#stencilPipeline(phase, state.keys, draw.variant, draw.stencil);
+				if (pipeline === undefined) {
+					state.variant = -1;
+					return false;
+				}
+				pass.setPipeline(pipeline);
+				if (draw.stencil.reference !== state.reference) {
+					state.reference = draw.stencil.reference;
+					pass.setStencilReference(state.reference);
+				}
+			}
+			state.variant = draw.variant;
+			state.stencil = draw.stencil;
+		}
+		if ((phase.textured || state.material === null) && draw.material !== state.material) {
+			state.material = draw.material;
+			pass.setBindGroup(3, draw.material);
+		}
+		if (draw.geometry !== state.geometry) {
+			state.geometry = draw.geometry;
+			this.#vertexBindings.bindStreams(pass, draw.geometry, phase.streams);
+			pass.setIndexBuffer(draw.geometry.indices, draw.geometry.indexFormat);
+		}
+		if (draw.indirect < 0) {
+			pass.drawIndexed(draw.indexCount, count, draw.firstIndex, draw.baseVertex, first);
+		} else if (this.#culler !== null) {
+			// the draw of the rows in view, then one per shadow layer, 5 words each
+			pass.drawIndexedIndirect(this.#culler.indirect, draw.indirect + (layer < 0 ? 0 : (1 + layer) * 20));
+		}
+		return true;
 	}
 
 	/**

@@ -38,13 +38,11 @@ where the game writes a G-buffer and lights it full-screen after the opaque scen
   slopes run beneath its river plane).
 - **effects over it**: the game lights its water before drawing transparent things, and its camera
   depth holds the scene without the water ([game data](../game-data/water.md#waterdecal)), so they
-  presumably show over the water even below its surface (unchecked against an in-game shot). before
-  the composite, the water's surfaces lay down the nearest one's depth (`SceneTextures.waterDepth`,
-  from `fs_water_depth`, less the fragments the shading drops behind the scene), which the shading
-  also tests against. the composite leaves the transparent layers out wherever that depth holds
-  water, and the water lays them over its own colour, fogged as the composite would. the glow
-  (additive effects such as the mist) is in the copy already, so the water takes it back out of what
-  it refracts and adds it over itself.
+  presumably show over the water even below its surface (unchecked against an in-game shot). the
+  viewer does the same: the water draws before the [transparent pass](frame.md), which tests the
+  main pass's depth, without the water. before the composite, the water's surfaces lay down the
+  nearest one's depth (`SceneTextures.waterDepth`, from `fs_water_depth`, less the fragments the
+  shading drops behind the scene), which the shading tests against so only that surface shades.
 - **lighting**: the pass binds the main pass's frame group, so water is lit like the rest of the
   scene: the sun through its shadow maps, the irradiance volume, and the level's sky reflection.
 - **reflection**: the game reflects water through its screen-space reflection pass, with water

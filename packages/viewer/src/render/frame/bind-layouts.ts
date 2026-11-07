@@ -24,7 +24,10 @@ export interface BindLayouts {
 	terrain: GPUBindGroupLayout;
 	/** group 1 of the instance families: instance rows, block origins, this frame's visible-instance list */
 	instances: GPUBindGroupLayout;
-	/** group 2 of the mesh families: per-draw parameters (dequantization, material look), per-entry draw ids */
+	/**
+	 * group 2 of the mesh families: per-draw parameters (dequantization, material look), per-entry draw ids,
+	 * and the fog's inputs
+	 */
 	draw: GPUBindGroupLayout;
 	/** group 3 of the mesh families: the material's texture slots and its base, detail and parallax samplers */
 	materials: GPUBindGroupLayout;
@@ -97,7 +100,14 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 	});
 	const draw = device.createBindGroupLayout({
 		label: 'draw',
-		entries: [storage(0, VERTEX | FRAGMENT), storage(1, VERTEX)],
+		entries: [
+			storage(0, VERTEX | FRAGMENT),
+			storage(1, VERTEX),
+			// what transparent draws fog themselves with: the post uniforms, the volumetric fog and its sampler
+			{ binding: 2, visibility: FRAGMENT, buffer: { type: 'uniform' } },
+			{ binding: 3, visibility: FRAGMENT, texture: { sampleType: 'float', viewDimension: '3d' } },
+			{ binding: 4, visibility: FRAGMENT, sampler: { type: 'filtering' } },
+		],
 	});
 	const texture = (binding: number): GPUBindGroupLayoutEntry => ({
 		binding,

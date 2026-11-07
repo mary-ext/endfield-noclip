@@ -4,6 +4,7 @@ import { LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
 import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
 import { SkyBinding } from '../sky/atmosphere-luts.ts';
 import atmosphereWgsl from '../sky/atmosphere.wgsl?raw';
+import { fogSource } from '../sky/fog-source.ts';
 import skyWgsl from '../sky/sky.wgsl?raw';
 import type { TextureBinding } from '../textures/texture-store.ts';
 
@@ -11,8 +12,8 @@ import compositeWgsl from './composite.wgsl?raw';
 import { postShaderModule } from './shader-source.ts';
 
 /**
- * the composite (composite.wgsl): resolves the main and transparent passes into the scene at the render size,
- * with the reflections, AO, sky, celestial layers and fogs
+ * the composite (composite.wgsl): resolves the main pass into the scene at the render size, with the
+ * reflections, AO, sky, celestial layers and fogs
  */
 export class Composite {
 	#device: GPUDevice;
@@ -38,7 +39,12 @@ export class Composite {
 		this.#device = device;
 		this.#pipeline = fullscreenPipeline(device, {
 			label: 'composite',
-			module: postShaderModule(device, 'composite', [atmosphereWgsl, skyWgsl, compositeWgsl]),
+			module: postShaderModule(device, 'composite', [
+				atmosphereWgsl,
+				fogSource({ group: 1, binding: SkyBinding.froxels }),
+				skyWgsl,
+				compositeWgsl,
+			]),
 			entryPoint: 'fs_composite',
 			targets: [{ format: HDR_FORMAT }],
 		});
@@ -88,9 +94,9 @@ export class Composite {
 	/**
 	 * rebinds the inputs after they were recreated.
 	 *
-	 * @param input the main and transparent passes' outputs, the blurred AO, the reflections' change to the
-	 *   radiance, and the scene the composite writes. the celestial pass draws the nebula and planets (and how
-	 *   far they cover the sky) into the main pass's sky reflection target, which the composite reads
+	 * @param input the main pass's outputs, the blurred AO, the reflections' change to the radiance, and the
+	 *   scene the composite writes. the celestial pass draws the nebula and planets (and how far they cover the
+	 *   sky) into the main pass's sky reflection target, which the composite reads
 	 */
 	resize(input: {
 		scene: SceneTextures;
@@ -107,17 +113,12 @@ export class Composite {
 				2: input.ao,
 				3: scene.depth,
 				6: input.reflections,
-				7: scene.transparent,
-				8: scene.revealage,
 				9: scene.reflection,
-				10: scene.glow,
-				11: scene.layerDistance,
-				12: scene.waterDepth,
 			}),
 		};
 	}
 
-	/** @param encoder this frame's encoder, after the reflections, celestial layers and water depth */
+	/** @param encoder this frame's encoder, after the reflections and celestial layers */
 	encode(encoder: GPUCommandEncoder): void {
 		const sized = this.#sized;
 		if (sized === null) {

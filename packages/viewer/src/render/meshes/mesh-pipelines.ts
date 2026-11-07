@@ -10,14 +10,26 @@ import {
 	TRANSPARENT_TARGETS,
 	WATER_FOAM_FORMAT,
 } from '../frame/render-targets.ts';
+import { postCommonSource } from '../post/shader-source.ts';
 import normalMapWgsl from '../shaders/common/normal-map.wgsl?raw';
 import { SHADOW_DEPTH_STATE } from '../shadows/shadow-map.ts';
+import { fogSource } from '../sky/fog-source.ts';
 
 import { type DrawPhase, PHASES, type VertexStreams } from './draw-ranges.ts';
 import effectWgsl from './effect.wgsl?raw';
 import meshWgsl from './mesh.wgsl?raw';
 import { type FaceCull, FRONT_FACE, type UvFormat, VARIANTS, pipelineKey } from './pipeline-variants.ts';
 import { NORMAL_STREAM, POSITION_STREAM } from './vertex-bindings.ts';
+
+/**
+ * the fog transparent draws apply to themselves (fog.wgsl), with its inputs in the draw group (group 2): the
+ * post uniforms at binding 2, the froxels at 3 and their sampler at 4
+ */
+const FOG_WGSL = [
+	postCommonSource(2, 2),
+	'@group(2) @binding(4) var lut_sampler: sampler;',
+	fogSource({ group: 2, binding: 3 }),
+].join('\n');
 
 /** a phase's pipeline descriptor for a face culling and UV format */
 export type PhaseDescriber = (cull: FaceCull, uvFormat: UvFormat) => GPURenderPipelineDescriptor;
@@ -123,7 +135,7 @@ export const prepareMeshPipelines = (
 	};
 
 	// #region meshes
-	const module = pipelines.module('mesh', FRAME_WGSL + normalMapWgsl + meshWgsl);
+	const module = pipelines.module('mesh', [FRAME_WGSL, FOG_WGSL, normalMapWgsl, meshWgsl].join('\n'));
 	/** describes a phase of the mesh shader */
 	const describeMesh = (
 		phase: DrawPhase,
@@ -176,7 +188,10 @@ export const prepareMeshPipelines = (
 
 	// #region scene effects
 	const effectLayout = createEffectLayout(device);
-	const effectModule = pipelines.module('mesh-effect', FRAME_WGSL + normalMapWgsl + effectWgsl);
+	const effectModule = pipelines.module(
+		'mesh-effect',
+		[FRAME_WGSL, FOG_WGSL, normalMapWgsl, effectWgsl].join('\n'),
+	);
 	const effectPipelineLayout = device.createPipelineLayout({
 		label: 'effect',
 		bindGroupLayouts: [layouts.frame, layouts.instances, layouts.draw, effectLayout],

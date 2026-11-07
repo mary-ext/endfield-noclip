@@ -28,6 +28,7 @@ import {
 	bucketIndex,
 	gpuBucketIndex,
 	slotHidden,
+	sortFarToNear,
 } from './mesh-buckets.ts';
 import type { ResidentInstances } from './resident.ts';
 import {
@@ -367,6 +368,9 @@ export class MeshSelector {
 		const texturePixels = 2 ** -view.textureBias;
 		for (const bucket of selection.buckets) {
 			const look = bucket.look;
+			if (bucket.distances.length > 0) {
+				sortFarToNear(bucket);
+			}
 			if (bucket.castOnly) {
 				// a shadow needs only the texture holding the alpha it's cut out by
 				const alpha = look.queue === 'cutout' ? alphaTextureOf(look) : -1;
@@ -820,25 +824,34 @@ export class MeshSelector {
 						for (const rows of bucket.rows) {
 							rows.length = 0;
 						}
+						bucket.distances.length = 0;
 						bucket.pixels = 0;
 						bucket.nearest = Infinity;
 						buckets.push(bucket);
 					}
 					// listed rows draw into a prefix of the layers: a static caster only from the far layer on, and a
-					// realtime one into the far layer too
+					// realtime one into the far layer too. the transparent pass's rows draw no shadows
 					let slotGroup = group;
-					if (!slot.castsShadows) {
+					if (!slot.castsShadows || slot.sorted) {
 						slotGroup = SHADOW_LAYERS;
 					} else if (!slot.castsRealtime && group < SHADOW_LAYERS) {
 						slotGroup = SHADOW_LAYERS - 1;
 					}
+					const groupRows = bucket.rows[slotGroup];
+					const listed = groupRows.length;
 					if (slot.particles === null) {
-						bucket.rows[slotGroup].push(row);
+						groupRows.push(row);
 					} else {
 						const particles = this.#particles.rows(instances, i, slot.particles, frame, view.particles);
 						this.selection.particles = true;
 						for (const particle of particles) {
-							bucket.rows[slotGroup].push(particle);
+							groupRows.push(particle);
+						}
+					}
+					if (slot.sorted) {
+						// the game sorts by renderer: a system's particles all take its distance
+						for (let k = listed; k < groupRows.length; k++) {
+							bucket.distances.push(distance);
 						}
 					}
 					if (priority > bucket.pixels) {

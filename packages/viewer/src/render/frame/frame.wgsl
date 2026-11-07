@@ -774,13 +774,6 @@ fn unlit(color: vec3f) -> Shaded {
 	return out;
 }
 
-// a transparent layer's distance (m) as the transparent pass sums it: d / (d + 1 km), which keeps the weighted
-// sum within the colour weights' range and spends the half float's precision where the fog changes. the
-// composite inverts it (`layer_distance` in composite.wgsl)
-fn layer_distance_code(distance: f32) -> f32 {
-	return distance / (distance + 1000.0);
-}
-
 fn hue(h: f32) -> vec3f {
 	let k = vec3f(0.0, 2.0 / 3.0, 1.0 / 3.0);
 	return clamp(abs(fract(vec3f(h) + k) * 6.0 - 3.0) - 1.0, vec3f(0.0), vec3f(1.0));

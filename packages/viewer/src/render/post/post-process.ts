@@ -56,6 +56,11 @@ export class PostProcess {
 	 * pass's frame group and so can't use `auto` layouts
 	 */
 	readonly skyLayouts: { uniforms: GPUBindGroupLayout; sky: GPUBindGroupLayout };
+	/**
+	 * what transparent draws fog themselves with (fog.wgsl): the post uniforms, written once a frame by
+	 * {@link encodeComposite}, the volumetric fog and the bilinear clamping sampler
+	 */
+	readonly fogInputs: { uniforms: GPUBuffer; froxels: GPUTextureView; sampler: GPUSampler };
 	#device: GPUDevice;
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(POST_BYTES / 4);
@@ -100,6 +105,7 @@ export class PostProcess {
 		this.#uniforms = createUniformBuffer(device, 'post uniforms', POST_BYTES);
 		const sampler = sharedSampler(device, LINEAR_CLAMP);
 		const postUniforms = this.#uniforms;
+		this.fogInputs = { uniforms: postUniforms, froxels: fog.view, sampler };
 		this.#autoExposure = new AutoExposure(device, pipelines);
 		this.#luts = new AtmosphereLuts(device, postUniforms, sampler);
 		this.#ao = new AmbientOcclusion(device, postUniforms);
@@ -337,9 +343,10 @@ export class PostProcess {
 	/**
 	 * encodes the chain from the main pass's outputs through the composite: the atmosphere LUTs, AO,
 	 * reflections, the celestial layers and the water's depth. the caller then draws what goes over the
-	 * composited scene (the water, screen effects) and finishes with {@link encodeAfterScene}.
+	 * composited scene (the water, the transparent pass, screen effects) and finishes with
+	 * {@link encodeAfterScene}.
 	 *
-	 * @param encoder this frame's encoder, after the main and transparent passes
+	 * @param encoder this frame's encoder, after the main pass
 	 * @param input the main pass's textures, the camera (unjittered), the render and output sizes and settings
 	 * @returns the composited scene, and what the water pass reads when water draws this frame
 	 */
@@ -409,7 +416,6 @@ export class PostProcess {
 				foam: false,
 			};
 		}
-		// the composite keeps back the transparent layers where there's water, which the water lays over itself
 		if (waterContext !== null) {
 			water.encodeDepth(encoder, waterContext);
 		} else {

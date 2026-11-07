@@ -145,8 +145,8 @@ packs or renders correctly.
   albedo tint and an `EntityRenderHelper` target aren't, nor are overrides other scripts set at
   runtime
 - glass ([glass](game-data/materials.md#glass)): refraction, Fresnel opacity, planar reflections and
-  subsurface scattering aren't drawn; overlapping layers share one fog distance; premultiplied glass
-  is read from the blend state, and whether the game lets glass cast shadows is unchecked
+  subsurface scattering aren't drawn; premultiplied glass is read from the blend state, and whether
+  the game lets glass cast shadows is unchecked
 - foliage ([foliage](game-data/materials.md#foliage), [viewer](viewer/materials.md#foliage)): wind,
   the grass's per-instance colour and terrain albedo blend (`_BLEND_TERRAIN_ALBEDO`), the card LOD's
   normal decoding (so it takes neither the bend nor the masks), trunk ramps and vertex AO (trunks
@@ -317,12 +317,11 @@ packs or renders correctly.
   the opaque scene behind ([frame](viewer/frame.md)). the game's effect variants carry
   `HG_ENABLE_MV`; how the result differs on screen is unchecked
 - Marker Stone's low mist banks over the valley are missing; their source is unknown
-- seen through glass, distant alpha-blended effects vanish: the transparent pass's
-  [weights](viewer/materials.md#glass) favour near layers so steeply (at most 100×) that a pane 10 m
-  away swamps an effect kilometres behind it, where the game sorts the two and draws the glass over
-  it. from Dijiang's exterior deck (unity 0.9, 10, −110.5) its glass hides the corroded planet's
-  plume (`P_fxmap_base01_lv001_planetcorrode_01`), which shows once the glass is hidden or from
-  outside
+- the transparent pass sorts by the distance to each instance's bounding-sphere centre, where what
+  the game measures (bounds centre, most likely) isn't traced; only instances of one draw that are
+  neighbours in the order share a call, without the game's sorting layers or renderer priority
+  ([frame](viewer/frame.md)). the corroded planet's plume through Dijiang's deck glass is unchecked
+  against the in-game shot's brightness
 
 ## scenes and conditional content
 

@@ -127,13 +127,10 @@ struct EffectOut {
 	@location(12) @interpolate(flat) custom: vec4f,
 }
 
-// the transparent pass's outputs (`TRANSPARENT_TARGETS` in render-targets.ts), as in mesh.wgsl
+// the transparent pass's output (`TRANSPARENT_TARGETS` in render-targets.ts), as in mesh.wgsl: premultiplied
+// colour and the opacity it hides the scene behind by, 0 for additive light
 struct EffectAccumulated {
-	@location(0) sum: vec4f,
-	@location(1) revealage: vec4f,
-	// additive light, which the composite adds after the fog
-	@location(2) glow: vec4f,
-	@location(3) distance: vec4f,
+	@location(0) color: vec4f,
 }
 
 fn fx_row(id: u32, r: u32) -> vec4f {
@@ -472,19 +469,26 @@ fn fx_scene_depth(px: vec2i) -> f32 {
 	return select(1e9, frame.local_lights.w / d, d > 0.0);
 }
 
-// a premultiplied layer into the weighted sum and revealage. an unfogged layer also adds its weight to the
-// glow's alpha, which nothing else writes, so the composite knows which share of the weighted sum to keep out
-// of the fog. every layer adds its weighted distance, which the composite fogs it at
-fn fx_accumulate(premultiplied: vec3f, alpha: f32, distance: f32, unfogged: f32) -> EffectAccumulated {
-	// mesh.wgsl's weighting
-	let x = distance / 20.0;
-	let weight = max(0.01, 1.0 / (1.0 + x * x));
-	var out: EffectAccumulated;
-	out.sum = vec4f(premultiplied * weight, alpha * weight);
-	out.revealage = vec4f(alpha);
-	out.glow = vec4f(0.0, 0.0, 0.0, alpha * weight * unfogged);
-	out.distance = vec4f(layer_distance_code(distance) * alpha * weight);
-	return out;
+// a premultiplied layer over the scene, fogged at its camera-relative position `rel` (drawn at `position`
+// on screen) unless `unfogged` is set, for effects without fog of their own
+fn fx_accumulate(premultiplied: vec3f, alpha: f32, rel: vec3f, position: vec2f, unfogged: f32)
+	-> EffectAccumulated {
+	if (unfogged > 0.5) {
+		return EffectAccumulated(vec4f(premultiplied, alpha));
+	}
+	let fogged = fog_premultiplied(premultiplied, alpha, rel, position / frame.render_size.xy);
+	return EffectAccumulated(vec4f(fogged, alpha));
+}
+
+// additive light over the scene, kept out of the fog: the game's additive effects fog themselves, if at all,
+// by their own settings, which aren't read
+fn fx_additive(light: vec3f) -> EffectAccumulated {
+	return EffectAccumulated(vec4f(light, 0.0));
+}
+
+// a fragment that leaves the scene as it is
+fn fx_nothing() -> EffectAccumulated {
+	return EffectAccumulated(vec4f(0.0));
 }
 
 // the UV sources of a pixel of a texture-stack layer. screen UVs: the pixel's position, centred and scaled by
@@ -526,17 +530,13 @@ fn fs_effect(in: EffectOut, @builtin(front_facing) front: bool) -> EffectAccumul
 	let color = layer.rgb;
 	let alpha = layer.a;
 	if (fx_below_water_blend(in)) {
-		return fx_accumulate(fx_unsupported_checker(in), 1.0, length(in.rel), kind.x);
+		return fx_accumulate(fx_unsupported_checker(in), 1.0, in.rel, in.position.xy, kind.x);
 	}
 	// `_BlendMode` 1 adds the layer rather than blending it over
 	if (kind.z >= 0.5) {
-		var out: EffectAccumulated;
-		out.sum = vec4f(0.0);
-		out.revealage = vec4f(0.0);
-		out.glow = vec4f(color * alpha, 0.0);
-		return out;
+		return fx_additive(color * alpha);
 	}
-	return fx_accumulate(color * alpha, alpha, length(in.rel), kind.x);
+	return fx_accumulate(color * alpha, alpha, in.rel, in.position.xy, kind.x);
 }
 
 // below its `_USE_WATER_BLEND` height the game absorbs and scatters a layer's colour, which isn't drawn
@@ -957,13 +957,9 @@ fn water_sheet(in: EffectOut, front: bool, dx: vec2f, dy: vec2f, rel_dx: vec3f, 
 
 	// `_BlendMode` 1 adds the layer rather than blending it over
 	if (ws.y >= 0.5) {
-		var out: EffectAccumulated;
-		out.sum = vec4f(0.0);
-		out.revealage = vec4f(0.0);
-		out.glow = vec4f(shaded * alpha, 0.0);
-		return out;
+		return fx_additive(shaded * alpha);
 	}
-	return fx_accumulate(shaded * alpha, alpha, length(in.rel), 0.0);
+	return fx_accumulate(shaded * alpha, alpha, in.rel, in.position.xy, 0.0);
 }
 
 // #endregion
@@ -1106,7 +1102,7 @@ fn six_way_smoke(in: EffectOut, dx: vec2f, dy: vec2f) -> EffectAccumulated {
 	let sun = frame.sun_color.rgb * (frame.sun.w / PI) * sw_absorb(through, exponent, range) *
 		sun_visibility(in.rel, n, in.position.xy);
 	let shaded = ambient + sun;
-	return fx_accumulate(shaded * alpha, alpha, length(in.rel), fx_row(id, FX_UNFOGGED).x);
+	return fx_accumulate(shaded * alpha, alpha, in.rel, in.position.xy, fx_row(id, FX_UNFOGGED).x);
 }
 
 // #endregion
@@ -1272,11 +1268,11 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 	let rel_dx = dpdx(rel);
 	let rel_dy = dpdy(rel);
 	if (any(abs(object_p) >= vec3f(0.5)) || scene_depth >= 1e9) {
-		return fx_accumulate(vec3f(0.0), 0.0, 1.0, 0.0);
+		return fx_nothing();
 	}
 	if (fx_row(id, FX_UNFOGGED).y == FX_KIND_LIT_DECAL) {
 		if (fx_keeps_lit_decals_off(px)) {
-			return fx_accumulate(vec3f(0.0), 0.0, 1.0, 0.0);
+			return fx_nothing();
 		}
 		return fx_lit_decal(in, px, rel, rel_dx, rel_dy, uv, bases.dx[0], bases.dy[0]);
 	}
@@ -1298,7 +1294,7 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 	}
 	let alpha = saturate(combined.a * fx_near_fade(id, scene_depth) * height * edge_x * edge_z) * angle;
 	// the game's decal premultiplies its colour by the alpha twice
-	return fx_accumulate(color * alpha * alpha, alpha, length(rel), fx_row(id, FX_UNFOGGED).x);
+	return fx_accumulate(color * alpha * alpha, alpha, rel, in.position.xy, fx_row(id, FX_UNFOGGED).x);
 }
 
 // #region lit decals
@@ -1482,7 +1478,7 @@ fn fx_lit_decal(in: EffectOut, px: vec2i, rel: vec3f, rel_dx: vec3f, rel_dy: vec
 	}
 	let d = ld_decal(in, rel, rel_dx, rel_dy, uv, dx, dy, n, roughness);
 	if (d.alpha <= 0.0) {
-		return fx_accumulate(vec3f(0.0), 0.0, 1.0, 0.0);
+		return fx_nothing();
 	}
 	var s = default_surface(d.albedo, d.normal);
 	s.roughness = d.roughness;
@@ -1494,7 +1490,7 @@ fn fx_lit_decal(in: EffectOut, px: vec2i, rel: vec3f, rel_dx: vec3f, rel_dy: vec
 	}
 	s.emission = d.emission;
 	let shaded = shade_surface(s, rel, in.position.xy);
-	return fx_accumulate(shaded.radiance.rgb * d.alpha, d.alpha, length(rel), 0.0);
+	return fx_accumulate(shaded.radiance.rgb * d.alpha, d.alpha, rel, in.position.xy, 0.0);
 }
 
 // lit decals that write no albedo, only the normal, roughness or occlusion of the surface beneath, between the
@@ -1559,16 +1555,13 @@ const MIST_VOLUME_NOISE = 18u;
 const MIST_VOLUME_NOISE_FLOW = 19u;
 const MIST_VOLUME_NOISE_MIX = 20u;
 
-// a mist layer into the transparent pass: additive ones into the glow, premultiplied ones like other layers
-fn mist_accumulate(id: u32, premultiplied: vec3f, alpha: f32, distance: f32) -> EffectAccumulated {
+// a mist layer over the scene at camera-relative `rel`: additive ones add, premultiplied ones blend like other
+// layers
+fn mist_accumulate(id: u32, premultiplied: vec3f, alpha: f32, rel: vec3f, position: vec2f) -> EffectAccumulated {
 	if (fx_row(id, MIST_INDIRECT).w != 0.0) {
-		var out: EffectAccumulated;
-		out.sum = vec4f(0.0);
-		out.revealage = vec4f(0.0);
-		out.glow = vec4f(premultiplied, 0.0);
-		return out;
+		return fx_additive(premultiplied);
 	}
-	return fx_accumulate(premultiplied, alpha, distance, 0.0);
+	return fx_accumulate(premultiplied, alpha, rel, position, 0.0);
 }
 
 // a fade between two view depths: in from x to y (or out, when y < x)
@@ -1624,7 +1617,7 @@ fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
 	alpha = saturate(
 		alpha * mist_fade(fade.xy, depth) * mist_fade(fade.zw, depth) * saturate(below * top.x + top.y) * soft * card.x,
 	);
-	return mist_accumulate(id, max(color, vec3f(0.0)) * alpha, alpha, length(in.rel));
+	return mist_accumulate(id, max(color, vec3f(0.0)) * alpha, alpha, in.rel, in.position.xy);
 }
 
 // `HGRP/Effect/VFXFakeVolumeFog` boxes, drawn by their back faces without a depth test like the decals: from
@@ -1679,7 +1672,7 @@ fn fs_mist_volume(in: EffectOut) -> EffectAccumulated {
 		alpha *= smoothstep(min(fade.w, 0.99), 1.0, saturate(to_point / fade.z));
 	}
 	let color = base.rgb * mix(1.0, frame.ambient.y, fx_row(id, MIST_MISC).x);
-	return mist_accumulate(id, color * alpha, alpha, to_point);
+	return mist_accumulate(id, color * alpha, alpha, rel, in.position.xy);
 }
 
 // an effect object's object → world basis (columns are its scaled axes), from its world → object rows
@@ -1820,14 +1813,10 @@ fn light_beam(in: EffectOut) -> EffectAccumulated {
 	let opacity = color.a * mix(alpha.x, alpha.y, outside);
 	// `_BlendMode` 1 adds the light
 	if (glare.w >= 0.5) {
-		var out: EffectAccumulated;
-		out.sum = vec4f(0.0);
-		out.revealage = vec4f(0.0);
-		out.glow = vec4f(color.rgb * opacity * intensity, 0.0);
-		return out;
+		return fx_additive(color.rgb * opacity * intensity);
 	}
 	let a = saturate(opacity * intensity);
-	return fx_accumulate(color.rgb * a, a, length(in.rel), fx_row(id, FX_UNFOGGED).x);
+	return fx_accumulate(color.rgb * a, a, in.rel, in.position.xy, fx_row(id, FX_UNFOGGED).x);
 }
 
 // #endregion

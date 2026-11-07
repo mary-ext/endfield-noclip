@@ -4,8 +4,8 @@
 ([`render/frame/frame-graph.ts`](../../packages/viewer/src/render/frame/frame-graph.ts)) encodes one
 command buffer per frame from a `FrameContext` (camera, sizes, frame groups, frame index, clock and
 the settings in effect, which debug views turn the lit-only passes off in once per frame). the post
-chain runs in two halves around the passes over the composited scene (`encodeComposite`, then water
-and screen effects, then `encodeAfterScene`). passes in order:
+chain runs in two halves around the passes over the composited scene (`encodeComposite`, then water,
+the transparent pass and screen effects, then `encodeAfterScene`). passes in order:
 
 | #   | pass                                                                 | when                                                                                                                                                                                                                                                      |
 | --- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -16,7 +16,6 @@ and screen effects, then `encodeAfterScene`). passes in order:
 | 3   | `volumetric fog` (compute)                                           | `heightFog` on, a package loaded, `lit`, and the environment's volumetric fog on ([`render/sky/volumetric-fog.ts`](../../packages/viewer/src/render/sky/volumetric-fog.ts))                                                                               |
 | 4   | `main`                                                               | always (empty without a package)                                                                                                                                                                                                                          |
 | 4b  | `decal relight`                                                      | a package loaded                                                                                                                                                                                                                                          |
-| 5   | `transparent`                                                        | always, so the composite reads cleared targets                                                                                                                                                                                                            |
 | 6   | `transmittance lut`, `multiple scattering lut`                       | once per environment                                                                                                                                                                                                                                      |
 | 7   | `sky view lut`                                                       | `sky` on                                                                                                                                                                                                                                                  |
 | 8   | `ao depth`, `gtao`, `gtao blur`                                      | `ao` on, `lit`, and the environment has AO settings                                                                                                                                                                                                       |
@@ -25,6 +24,7 @@ and screen effects, then `encodeAfterScene`). passes in order:
 | 10b | `water depth`                                                        | always; draws the nearest water surface's depth when the `water` pass will run, else only clears it                                                                                                                                                       |
 | 11  | `composite`                                                          | always                                                                                                                                                                                                                                                    |
 | 12  | scene copy, `water foam`, `water`                                    | `water` on, `lit`, and visible water surfaces; `water foam` only when foam effects are drawn                                                                                                                                                              |
+| 12a | `transparent`                                                        | glass or effects are drawn                                                                                                                                                                                                                                |
 | 12b | `effect multiply`, scene copy + `effect refract`                     | effects that multiply or refract the composited scene are drawn ([effects](effects.md#over-the-composited-scene))                                                                                                                                         |
 | 13  | `light shaft downsample`, `light shaft blur` ×n, `light shaft apply` | `lit`, the environment has light shafts, and the sun is in front of the camera ([`render/post/light-shafts.ts`](../../packages/viewer/src/render/post/light-shafts.ts))                                                                                   |
 | 14  | `lens flare`                                                         | `lit`, the environment has a flare, and the sun is on screen (or the flare allows it off screen) ([`render/post/lens-flare.ts`](../../packages/viewer/src/render/post/lens-flare.ts))                                                                     |
@@ -57,12 +57,19 @@ what each post pass computes is in [post-processing](post-processing.md) and
 - **decal relight pass.** lit decals that change only a surface's normal, roughness or occlusion add
   the change in its light to the radiance, reading the depth, packed surface and ambient targets
   ([decals](materials.md#decals)).
-- **transparent pass.** alpha-blended meshes draw after the main pass, testing its depth without
-  writing it (the stencil stays writable), into a weighted sum, a revealage and a weighted distance
-  that the composite resolves and fogs ([glass](materials.md#glass)). a third target, the glow, sums
-  additively blended light, which the other two can't hold; the composite adds it after the fog,
-  unfogged (and the water pass again over water, [water](water.md#shading)), and its alpha holds the
-  weight of the layers kept out of the fog ([blending](effects.md#blending)).
+- **transparent pass.** as in the game
+  ([transparent draw order](../game-data/materials.md#transparent-draw-order)), glass and
+  alpha-blended effects draw after the water, straight over the composited scene, far to near:
+  testing the main pass's depth without writing it (the stencil stays writable), each fogs its own
+  colour at its own distance
+  ([`render/sky/fog.wgsl`](../../packages/viewer/src/render/sky/fog.wgsl), whose inputs the mesh
+  draw group carries) and blends it premultiplied over what's there, additive light with an opacity
+  of 0 ([blending](effects.md#blending)). the order is by instance: the selection keeps each
+  transparent row's distance to the camera, sorts each bucket's rows far to near, and the mesh
+  renderer merges every draw of the pass into one far-to-near list of runs (`mergeFarToNear` in
+  [`render/meshes/sorted-runs.ts`](../../packages/viewer/src/render/meshes/sorted-runs.ts)),
+  neighbouring instances of one draw sharing a call. draws that write the stencil go first, whole,
+  so the effects testing it see the whole mask.
 - **antialiasing** is temporal with upsampling, as in the game, which has no MSAA. the main pass's
   projection is offset by a Halton (2, 3) subpixel jitter each frame (8 positions per cycle, more
   when upsampling), and the post passes that reconstruct view rays undo it. `taa` reconstructs each
@@ -107,7 +114,7 @@ what each post pass computes is in [post-processing](post-processing.md) and
   composite adds the screen-space reflections ([lighting](lighting.md#screen-space-reflections)),
   then applies AO, sky, atmosphere fog and height fog; `heightFog` and `atmosphereFog` change what
   composite does, not which passes run. water draws over a copy of the composited scene so it can
-  refract and reflect it
+  refract and reflect it, before anything transparent, as the game lights its water first
   ([`render/water/water-renderer.ts`](../../packages/viewer/src/render/water/water-renderer.ts),
   [water](water.md)). it's the one post pass with an explicit layout, because it also binds the main
   pass's frame group for the sun shadow, irradiance volume and sky reflection; its shader moves the

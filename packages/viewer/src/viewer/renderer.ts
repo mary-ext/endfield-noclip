@@ -132,10 +132,15 @@ export class Renderer {
 			bc: gfx.features.textureCompressionBc,
 		});
 		this.instances = new InstanceRenderer(device, layouts, this.pipelines, format, INSTANCE_ROWS);
-		this.meshes = new MeshRenderer(device, layouts, this.pipelines, this.instances, format, gfx.features);
 		this.fog = new VolumetricFog(device, this.pipelines, layouts.frame);
 		this.fog.setEnvironment(look.environment, near);
 		this.post = new PostProcess(device, this.pipelines, gfx.presentationFormat, look.environment, this.fog);
+		this.meshes = new MeshRenderer(device, layouts, this.pipelines, {
+			instances: this.instances,
+			format,
+			fog: this.post.fogInputs,
+			features: gfx.features,
+		});
 		this.water = new WaterRenderer(device, this.pipelines, { frame: layouts.frame, ...this.post.skyLayouts });
 		this.frame = {
 			targets: this.targets,

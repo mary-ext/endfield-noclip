@@ -24,8 +24,9 @@ import {
 import { NORMAL_STREAM, POSITION_STREAM } from '../meshes/vertex-bindings.ts';
 import { postCommonSource } from '../post/shader-source.ts';
 import screenSpaceWgsl from '../shaders/common/screen-space.wgsl?raw';
+import { SkyBinding } from '../sky/atmosphere-luts.ts';
 import atmosphereWgsl from '../sky/atmosphere.wgsl?raw';
-import skyWgsl from '../sky/sky.wgsl?raw';
+import { fogSource } from '../sky/fog-source.ts';
 import type { TextureBinding, TextureStore } from '../textures/texture-store.ts';
 
 import ssrTraceWgsl from './ssr-trace.wgsl?raw';
@@ -79,9 +80,15 @@ export interface WaterContext {
  *   uniforms moved to group 3
  */
 const waterShaderSource = (): string =>
-	[FRAME_WGSL, postCommonSource(3), atmosphereWgsl, skyWgsl, screenSpaceWgsl, ssrTraceWgsl, waterWgsl].join(
-		'\n',
-	);
+	[
+		FRAME_WGSL,
+		postCommonSource(3),
+		atmosphereWgsl,
+		fogSource({ group: 1, binding: SkyBinding.froxels }),
+		screenSpaceWgsl,
+		ssrTraceWgsl,
+		waterWgsl,
+	].join('\n');
 
 /** the foam the boxes leave on the water surface */
 interface FoamTargets {
@@ -177,11 +184,7 @@ export class WaterRenderer {
 				{ binding: 6, visibility: fragment, sampler: { type: 'filtering' } },
 				{ binding: 7, visibility: fragment, buffer: { type: 'uniform' } },
 				texture(8, 'float'),
-				texture(9, 'unfilterable-float'),
 				texture(10, 'float'),
-				texture(11, 'float'),
-				texture(12, 'float'),
-				texture(13, 'float'),
 				texture(14, 'depth'),
 			],
 		});
@@ -363,7 +366,6 @@ export class WaterRenderer {
 		configs: GPUBuffer,
 		foam: GPUTextureView,
 	): GPUBindGroup {
-		const scene = context.scene;
 		return this.#device.createBindGroup({
 			label: 'water',
 			layout: this.#layout,
@@ -378,11 +380,7 @@ export class WaterRenderer {
 				{ binding: 7, resource: { buffer: this.#params } },
 				// the flow map's placeholder stands in; the shader skips caustics without the map
 				{ binding: 8, resource: this.#caustics?.view ?? this.#noFlow },
-				{ binding: 9, resource: context.scene.glow },
 				{ binding: 10, resource: foam },
-				{ binding: 11, resource: scene.transparent },
-				{ binding: 12, resource: scene.revealage },
-				{ binding: 13, resource: scene.layerDistance },
 				{ binding: 14, resource: waterDepth },
 			],
 		});
@@ -452,8 +450,8 @@ export class WaterRenderer {
 	}
 
 	/**
-	 * draws this frame's surfaces into the scene, after {@link encodeDepth} and any foam, and lays the
-	 * transparent layers the composite kept back over them.
+	 * draws this frame's surfaces into the scene, after {@link encodeDepth} and any foam, and before the
+	 * transparent pass, as the game lights its water before drawing transparent things.
 	 *
 	 * @param encoder this frame's encoder
 	 * @param target the composited HDR scene, drawn over

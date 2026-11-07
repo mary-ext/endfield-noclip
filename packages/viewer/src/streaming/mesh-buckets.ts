@@ -3,6 +3,7 @@ import { type Chain, DrawRole } from '@endfield-noclip/package-format/instances'
 
 import type { MaterialLook } from '../looks/look.ts';
 import { unsupportedLook } from '../looks/material-looks.ts';
+import { SORTED_RANGES } from '../render/meshes/draw-ranges.ts';
 import { SHADOW_LAYERS } from '../render/shadows/shadow-map.ts';
 
 import type { ContentItem } from './content-item.ts';
@@ -27,6 +28,12 @@ export interface MeshBucket {
 	 * none), so each layer draws a prefix of the bucket; reset every frame
 	 */
 	rows: number[][];
+	/**
+	 * for a bucket the transparent pass draws ({@link ChainSlot.sorted}), the distance from the camera to each
+	 * row's instance, m, parallel to its rows (all in the last group), far to near once {@link sortFarToNear}
+	 * ran; empty for other buckets
+	 */
+	distances: number[];
 	/**
 	 * the highest priority of an instance this frame: its projected height, px, scaled by the caster priority
 	 * in cast-only buckets. textures stream by it
@@ -72,6 +79,11 @@ export interface ChainSlot {
 	shadowOnly: boolean;
 	/** whether the GPU can cull its rows: a mesh in the opaque or alpha-tested queue */
 	gpuCullable: boolean;
+	/**
+	 * whether the transparent pass draws it, far to near by instance (`SORTED_RANGES`): its rows keep their
+	 * distances and skip the shadow layers' grouping, which only shadow casters need
+	 */
+	sorted: boolean;
 	/** the particle system the draw plays, whose particles stand in for the instance; `null` for a mesh */
 	particles: number | null;
 	/** the slot's buckets, once they had rows, by {@link bucketIndex} */
@@ -153,6 +165,34 @@ const BUCKET_VARIANTS = 8;
  */
 export const gpuBucketIndex = (mirrored: 0 | 1, shadowOnly: boolean): number =>
 	4 + mirrored + (shadowOnly ? 2 : 0);
+
+/**
+ * orders a sorted bucket's rows far to near by their {@link MeshBucket.distances}, both in place. rows of one
+ * instance (a particle system's particles) share its distance and keep their order
+ *
+ * @param bucket a bucket of a {@link ChainSlot.sorted} slot, its rows all in the last group
+ */
+export const sortFarToNear = (bucket: MeshBucket): void => {
+	const rows = bucket.rows[SHADOW_LAYERS];
+	const distances = bucket.distances;
+	const n = distances.length;
+	let sorted = true;
+	for (let i = 1; i < n && sorted; i++) {
+		sorted = distances[i - 1] >= distances[i];
+	}
+	if (sorted) {
+		return;
+	}
+	const order = Array.from({ length: n }, (_, i) => i);
+	// stable, so a system's particles stay together in their order
+	order.sort((a, b) => distances[b] - distances[a]);
+	const oldRows = rows.slice();
+	const oldDistances = distances.slice();
+	for (let i = 0; i < n; i++) {
+		rows[i] = oldRows[order[i]];
+		distances[i] = oldDistances[order[i]];
+	}
+};
 
 /** buckets without rows for this many frames are dropped */
 export const BUCKET_LIFETIME = 600;
@@ -241,6 +281,7 @@ export class MeshBuckets {
 					hiddenBy: hiddenByOf(draw.role, look),
 					shadowOnly,
 					gpuCullable: draw.particles === null && (queue === 'opaque' || queue === 'cutout'),
+					sorted: SORTED_RANGES.has(look.queue),
 					particles: draw.particles,
 					buckets: Array.from({ length: BUCKET_VARIANTS }, () => null),
 				});
@@ -275,6 +316,7 @@ export class MeshBuckets {
 				mirrored: (index & 1) === 1,
 				castOnly: (index & 2) === 2,
 				rows: Array.from({ length: SHADOW_LAYERS + 1 }, () => []),
+				distances: [],
 				pixels: 0,
 				nearest: Infinity,
 				frame: -1,
