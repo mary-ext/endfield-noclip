@@ -154,6 +154,7 @@ const BASE_KEYWORDS = new Set([
 	'_USE_SOFTBLEND',
 	'_USE_FRESNEL',
 	'_USE_POLARUV',
+	'_USE_SCREENUV',
 	'_USE_ANIM_BREATHING',
 	'_USE_EDGECOLOR',
 	// a material toggle no compiled variant reads, so the game draws the variant without it
@@ -256,10 +257,6 @@ const baseKeywordDrawn = (keyword: string, reader: MaterialReader): boolean => {
 			// the radial glow and distortion around the player (no `_BrightCenter`) reach `_OuterRadius` metres,
 			// and the viewer has no player
 			return float('_BrightType', 0) === 0 && (color('_BrightCenter')?.[3] ?? 0) === 0;
-		}
-		case '_USE_SCREENUV': {
-			// screen UVs relative to the object's pivot aren't drawn
-			return float('_LocalPivortSpace', 0) === 0;
 		}
 		case '_SAMPLE_TEX5': {
 			// the sixth sample texture takes the vertex offset's slot

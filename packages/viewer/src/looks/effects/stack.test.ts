@@ -74,7 +74,7 @@ const stack = (overrides: Partial<EffectStackSurface> = {}): EffectStackSurface 
 	unfogged: true,
 	blendMode: 'over',
 	opaque: false,
-	screenUv: { byDepth: true, heightAsV: false },
+	screenUv: { localPivot: false, byDepth: true, heightAsV: false },
 	stencil: null,
 	appear: null,
 	...overrides,
@@ -218,6 +218,13 @@ test('a stack decal is a box drawn by its back faces with its fades; a multiplyi
 	// opaque layers shade in the main pass, still without casting shadows
 	assert.deepEqual([opaque.queue, opaque.castsShadows], ['effectOpaque', false]);
 	assert.equal(multiply.params[EffectRow.unfogged + 2], 2);
+});
+
+test('a texture stack flags screen UVs taken about the object’s origin', () => {
+	const [pivot] = materialLooks({
+		entries: [described(stack({ screenUv: { localPivot: true, byDepth: false, heightAsV: true } }))],
+	});
+	assert.equal(pivot.params[EffectRow.unfogged + 3], 6);
 });
 
 test('a breathing stack keeps its pulse in the decal fade row, which decals don’t share with it', () => {

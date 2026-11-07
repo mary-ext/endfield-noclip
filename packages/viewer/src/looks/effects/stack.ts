@@ -203,7 +203,9 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 			stack.unfogged ? 1 : 0,
 			EffectKind.Stack,
 			BLEND_MODES[stack.blendMode],
-			(stack.screenUv.byDepth ? 1 : 0) + (stack.screenUv.heightAsV ? 2 : 0),
+			(stack.screenUv.byDepth ? 1 : 0) +
+				(stack.screenUv.heightAsV ? 2 : 0) +
+				(stack.screenUv.localPivot ? 4 : 0),
 		],
 		EffectRow.unfogged,
 	);

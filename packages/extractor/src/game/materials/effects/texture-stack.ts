@@ -70,6 +70,7 @@ export const sourceOf = (weights: readonly number[], computed: readonly boolean[
 
 /** how a stack shader's screen UVs are taken */
 export const screenUvOf = ({ float }: MaterialReader): EffectStackSurface['screenUv'] => ({
+	localPivot: float('_LocalPivortSpace', 0) !== 0,
 	byDepth: float('_ScreenUVUseDepth', 1) !== 0,
 	heightAsV: float('_UsePosYAsScreenV', 0) !== 0,
 });

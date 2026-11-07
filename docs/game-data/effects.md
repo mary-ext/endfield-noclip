@@ -51,9 +51,11 @@ one).
 UV0's centre, the angle from +v as a fraction of a turn and twice the distance. screen UVs, with
 `_USE_SCREENUV` and `_UseScreenUV`, are the pixel's position, centred and divided by half the width,
 v optionally the world height (`_UsePosYAsScreenV`), times the object origin's view depth past the
-near plane (`_ScreenUVUseDepth`, on by default); `_LocalPivortSpace` makes them relative to the
-object. a source that isn't computed is zero, so a texture weighted to it only scrolls. the sixth
-sample texture's UVs come from UV0 or UV1 alone and scroll by the first's `_SampleTex0UVSpeed`. on
+near plane (`_ScreenUVUseDepth`, on by default). `_LocalPivortSpace` replaces the pixel's position
+with the fragment's offset from the object's origin along the camera's right and up, in metres,
+before the height and depth steps, so the pattern is anchored to the object rather than the screen.
+a source that isn't computed is zero, so a texture weighted to it only scrolls. the sixth sample
+texture's UVs come from UV0 or UV1 alone and scroll by the first's `_SampleTex0UVSpeed`. on
 particles (`_InParticle`) UV1 is the first texture coordinate set's zw (the UV2 stream); the second
 set is the particle's [custom data](#particle-custom-data).
 

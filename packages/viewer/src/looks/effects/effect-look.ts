@@ -114,7 +114,8 @@ export const EffectRow = {
 	 * 1 when the layer goes unfogged (its material lacks `_USE_FOG`, and the game draws effects after the fog),
 	 * the {@link EffectKind}, 1 when a VFXBaseV2 layer adds its light rather than blending over (`_BlendMode`
 	 * 1), then VFXBaseV2's screen UV options: 1 to scale by the object's view depth (`_ScreenUVUseDepth`), plus
-	 * 2 to take v from the world height (`_UsePosYAsScreenV`)
+	 * 2 to take v from the world height (`_UsePosYAsScreenV`), plus 4 for the offset from the object's origin
+	 * (`_LocalPivortSpace`)
 	 */
 	unfogged: 124,
 	/** rows past the mesh looks' 32. the texture stack's edge colour (`_USE_EDGECOLOR`): rgb (HDR), strength */

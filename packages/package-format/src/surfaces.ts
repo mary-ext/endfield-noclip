@@ -847,8 +847,11 @@ export interface EffectStackSurface {
 	 * the layer writes depth. never with a stencil, a soft blend or an edge colour
 	 */
 	opaque: boolean;
-	/** screen UVs scale by the object's view depth, and take v from the world height */
-	screenUv: { byDepth: boolean; heightAsV: boolean };
+	/**
+	 * screen UVs are the view-space offset from the object's origin in metres (`localPivot`) rather than the
+	 * pixel's position, scale by the object's view depth, and take v from the world height
+	 */
+	screenUv: { localPivot: boolean; byDepth: boolean; heightAsV: boolean };
 	stencil: EffectStencil | null;
 	/** the reveal around the player; `null` without one */
 	appear: EffectAppear | null;

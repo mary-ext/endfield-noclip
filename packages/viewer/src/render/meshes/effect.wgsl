@@ -128,8 +128,8 @@ struct EffectOut {
 	@location(7) @interpolate(flat) to_object2: vec4f,
 	// the object's unit y axis in world space: the decal's projection direction, reversed
 	@location(8) @interpolate(flat) up: vec3f,
-	// the object origin's view depth, which scales VFXBaseV2's screen UVs
-	@location(9) @interpolate(flat) origin_depth: f32,
+	// the object origin, camera-relative, and its view depth (w), which scales VFXBaseV2's screen UVs
+	@location(9) @interpolate(flat) origin: vec4f,
 	// a rect decal row's placement: its colour, and its UV scale and offset; white and the identity elsewhere
 	@location(10) @interpolate(flat) placement_color: vec4f,
 	@location(11) @interpolate(flat) placement_uv: vec4f,
@@ -281,7 +281,7 @@ fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 	out.to_object1 = vec4f(inverse[1], -dot(inverse[1], origin));
 	out.to_object2 = vec4f(inverse[2], -dot(inverse[2], origin));
 	out.up = normalize(m[1]);
-	out.origin_depth = dot(origin, frame.view_forward.xyz);
+	out.origin = vec4f(origin, dot(origin, frame.view_forward.xyz));
 	out.placement_color = vec4f(1.0);
 	out.placement_uv = vec4f(1.0, 1.0, 0.0, 0.0);
 	out.custom = row_custom(row);
@@ -510,16 +510,20 @@ fn fx_nothing() -> EffectAccumulated {
 }
 
 // the UV sources of a pixel of a texture-stack layer. screen UVs: the pixel's position, centred and scaled by
-// the width, optionally v by the world height, then times the object's view depth past the near plane. call in
-// uniform control flow
+// the width, or (`_LocalPivortSpace`) its view-space offset from the object's origin in metres, optionally v
+// by the world height, then times the object's view depth past the near plane. call in uniform control flow
 fn fx_layer_bases(in: EffectOut) -> FxBases {
 	let kind = fx_row(in.look, FX_UNFOGGED);
 	let size = frame.render_size.xy;
 	let q = floor(in.position.xy);
 	let screen_flags = u32(kind.w);
 	var screen = vec2f(2.0 * q.x / size.x - 1.0, (2.0 * q.y / size.y - 1.0) * size.y / size.x);
+	if ((screen_flags & 4u) != 0u) {
+		let from_origin = in.rel - in.origin.xyz;
+		screen = vec2f(dot(from_origin, frame.view_right.xyz), dot(from_origin, frame.view_up.xyz));
+	}
 	screen.y = select(screen.y, frame.eye.y + in.rel.y, (screen_flags & 2u) != 0u);
-	screen *= select(1.0, max(1.0, in.origin_depth - frame.local_lights.w), (screen_flags & 1u) != 0u);
+	screen *= select(1.0, max(1.0, in.origin.w - frame.local_lights.w), (screen_flags & 1u) != 0u);
 	return fx_bases(in.uv.xy, in.uv.zw, fx_polar(in.uv.xy - 0.5), screen);
 }
 

@@ -576,6 +576,19 @@ describe('VFXBaseV2', () => {
 		assert.deepEqual([polar.layers[0]?.source, polar.layers[1]?.source], [null, 'polar']);
 	});
 
+	it('takes screen UVs about the object’s origin under _LocalPivortSpace', () => {
+		const pivot = ofKind(
+			stackOf({
+				keywords: ['_USE_SCREENUV'],
+				floats: { _UseScreenUV: 1, _LocalPivortSpace: 1, _ScreenUVUseDepth: 0 },
+				vectors: { _MainTexUVWeights: [0, 0, 0, 1] },
+			}),
+			'effectStack',
+		);
+		assert.equal(pivot.layers[0]?.source, 'screen');
+		assert.deepEqual(pivot.screenUv, { localPivot: true, byDepth: false, heightAsV: false });
+	});
+
 	it('puts the sixth sample texture in the last slot, scrolled by the first sample texture', () => {
 		const stack = ofKind(
 			stackOf({

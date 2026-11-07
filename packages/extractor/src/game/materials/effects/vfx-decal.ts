@@ -226,7 +226,7 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		unfogged: !has('_USE_FOG'),
 		blendMode: 'over',
 		opaque: false,
-		screenUv: { byDepth: false, heightAsV: false },
+		screenUv: { localPivot: false, byDepth: false, heightAsV: false },
 		stencil: null,
 		appear: null,
 	};
