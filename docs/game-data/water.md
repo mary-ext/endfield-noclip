@@ -388,5 +388,35 @@ tessellated displacement), `enableMovement`, `renderType`, `heightLayer`, `sorti
 a white tint; only `displacement` and `enableMovement` vary.
 
 map02's prefab WaterDecal materials use `_BLEND_BASECOLOR` with `_USE_DISTURB` and `_USE_MASK`, plus
-`_USE_SOFTBLEND` or `_USE_DISSOLVE`; the shader also has `_USE_SEQUENCE_FRAME`,
-`_USE_TWO_LAYER_FLOATING_MAP`, `_BLEND_BASECOLOR2`, `_USE_WATER_EROSION` and `_USE_BUBBLE` variants.
+`_USE_SOFTBLEND`, `_USE_DISSOLVE` or `_USE_WATER_EROSION`; the shader also has
+`_USE_SEQUENCE_FRAME`, `_USE_TWO_LAYER_FLOATING_MAP`, `_BLEND_BASECOLOR2` and `_USE_BUBBLE`
+variants.
+
+#### water erosion
+
+`_USE_WATER_EROSION` draws the red tide's flowing front over the foam. Wuling City's
+(`M_fxmap_waterdecal_03` on an 810 × 360 m sheet, `S_fx_chichao_2102_1`, in
+`p_fxmap_map02_lv002_shuiqingshi_03`, shown once The Breach (`e9m3`) is completed) is the only
+material with it. every texture reads the mesh's UV0 (`uv` below), and `t` is `_Time.y`:
+
+- **noise.**
+  `n = _FlowmapNoiseTex.r(uv · _ST + _FlowmapNoiseMovement.xy · t) · _FlowmapNoiseStrength`.
+- **flowmap.** `F = _FlowmapTex(uv · _ST, its u plus n · _FlowmapUVNoiseStrength)`, and the front
+  `E = saturate(F · _FlowDistance + n + _FlowOffset)`.
+- **gradient.** `G = _FlowGradienteTex` at u
+  `saturate(saturate(uv.x · _FlowDistance + n + _FlowOffset) · _ST.x + _ST.z)`, v `uv.y · _ST.y` (no
+  v offset). the flowmap and the gradient are sampled with the pipeline's linear clamping sampler,
+  whatever their textures' wrap modes; the other textures with its linear repeating one.
+- **edge colours.** three layers, `L = _EdgeSharpColor · saturate(E.y − _EdgeSharp) · N · G.a` (and
+  `…2` from `E.z`, `…3` from `E.w`), where `N` is `saturate(_FlowGradientNoiseTex.rgb)` (`…2`, `…3`)
+  at `uv · _FlowGradientMovement.zw + _FlowGradientMovement.xy · t`, read three mip levels finer and
+  without the texture's `_ST`.
+- **colour.** the foam colour (after the mask) times `1 − |F.rgb|`, covered by the second layer by
+  `saturate(|L₂|)`, then the third, then the first, plus `G.rgb · _EdgeColor · F.r`; the output
+  takes `1 + a'`, the edge fade and the opacities as without the keyword. the variant has no
+  dissolve.
+
+the material's distortion strengths are 0 and its mask is unset, so neither changes it. its flowmap
+`_ST` (15 × 1.29, offset −11.75) and gradient `_ST` (300 × 1, offset −297.4) put a single front
+across the sheet between about 0.78 and 0.85 of UV0's u; elsewhere the clamped textures hold their
+edge texels.

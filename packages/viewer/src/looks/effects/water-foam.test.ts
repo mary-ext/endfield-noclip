@@ -7,7 +7,7 @@ import type { EffectTexture, WaterFoamSurface } from '@endfield-noclip/package-f
 import { materialLooks } from '../material-looks.ts';
 
 import { EffectKind, EffectRow } from './effect-look.ts';
-import { WaterFoamFlags, WaterFoamRow } from './water-foam.ts';
+import { EROSION_SLOTS, WaterFoamFlags, WaterFoamRow } from './water-foam.ts';
 
 /** a ready material drawing `surface` */
 const described = (
@@ -51,6 +51,7 @@ test('a water foam box draws into the water’s foam, by the depth test its mate
 		opacity: 0.5,
 		soft: { distance: 0.001, bias: 0.6 },
 		dissolve: null,
+		erosion: null,
 	};
 	const [front, behind, through] = materialLooks({
 		entries: [
@@ -77,4 +78,58 @@ test('a water foam box draws into the water’s foam, by the depth test its mate
 	assert.equal(front.params[WaterFoamRow.disturb + 3], 1);
 	assert.ok(Math.abs(front.params[WaterFoamRow.fade + 2] - 0.6) < 1e-6);
 	assert.equal(front.params[EffectRow.anim + 1], Math.fround(-1.3));
+});
+
+test('a red tide’s erosion takes the slots after the base colour map, with its layers’ colours', () => {
+	const layer = (id: number, threshold: number) => ({
+		noise: texture(id, { scale: [20, 20], scroll: [-0.1, 0] }),
+		color: [36, 2, 0] as [number, number, number],
+		threshold,
+	});
+	const tide: WaterFoamSurface = {
+		kind: 'waterFoam',
+		textures: { base: texture(1), disturb: null, mask: null },
+		sources: { base: 3, disturb: 2, mask: 3, dissolve: 0 },
+		maskMatrix: [0, 1, -1, 0],
+		boxUv: [1, 1, 0, 0],
+		baseColor: [0, 0, 0],
+		tint: [1, 0.06, 0.94],
+		baseAlpha: 0,
+		maskAsAlpha: 1,
+		disturbBias: 1,
+		disturb: [0, 0],
+		disturbUse: [1, 1, 0],
+		edgeFade: null,
+		clipToBox: false,
+		depthTest: 'less-equal',
+		mipBias: { base: -16, mask: -16, dissolve: -16 },
+		blendMode: 1,
+		opacity: 1,
+		soft: null,
+		dissolve: null,
+		erosion: {
+			flow: texture(3, { scale: [15, 1.29], offset: [-11.75, 0] }),
+			flowNoise: texture(4),
+			gradient: texture(5),
+			layers: [layer(2, 0.15), layer(6, 0.14), layer(7, 0.34)],
+			noiseStrength: 0.02,
+			flowShift: 7,
+			distance: 1.01,
+			offset: 0.14,
+			edgeColor: [0.4, 0.4, 0.4],
+		},
+	};
+	const [look] = materialLooks({ entries: [described(tide)] });
+	assert.deepEqual(look.textures, [1, 3, 4, 5, 2, 6, 7]);
+	assert.equal(look.params[WaterFoamRow.tint + 3], WaterFoamFlags.Erosion);
+	assert.deepEqual(
+		[...look.params.subarray(WaterFoamRow.erosion, WaterFoamRow.erosion + 4)],
+		[0.02, 7, 1.01, 0.14].map(Math.fround),
+	);
+	assert.deepEqual(
+		[...look.params.subarray(WaterFoamRow.erosionLayers + 8, WaterFoamRow.erosionLayers + 12)],
+		[36, 2, 0, 0.34].map(Math.fround),
+	);
+	// the layers' noises scroll as their slots do
+	assert.equal(look.params[EffectRow.anim + (EROSION_SLOTS.layers + 1) * 4], Math.fround(-0.1));
 });

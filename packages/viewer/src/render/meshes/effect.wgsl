@@ -1242,6 +1242,9 @@ const WF_DISSOLVE_COLOR = 23u;
 const WF_BOX_UV = 24u;
 const WF_FADE = 25u;
 const WF_MIP = 26u;
+const WF_EROSION = 27u;
+const WF_EROSION_EDGE = 28u;
+const WF_EROSION_LAYERS = 32u;
 
 // `WaterFoamFlags`
 const WF_DISTURB_ON = 1u;
@@ -1250,6 +1253,70 @@ const WF_DISSOLVE_ON = 4u;
 const WF_EDGE_FADE = 8u;
 const WF_CLIP_TO_BOX = 16u;
 const WF_SOFT = 32u;
+const WF_EROSION_ON = 64u;
+
+// `EROSION_SLOTS` in water-foam.ts
+const WF_SLOT_FLOW = 1u;
+const WF_SLOT_FLOW_NOISE = 2u;
+const WF_SLOT_GRADIENT = 3u;
+const WF_SLOT_LAYERS = 4u;
+
+// the layers' noises are read three mip levels finer, as the game's bias of −3
+const WF_LAYER_GRADIENT_SCALE = 0.125;
+
+// the flowmap and the gradient through the game's clamping sampler: the slots' samplers repeat, so the UVs stop
+// half a texel inside the edges
+fn wf_sample_clamped(slot: u32, uv: vec2f, dx: vec2f, dy: vec2f) -> vec4f {
+	var size: vec2u;
+	if (slot == WF_SLOT_FLOW) {
+		size = textureDimensions(fx_tex1);
+	} else {
+		size = textureDimensions(fx_tex3);
+	}
+	let half_texel = 0.5 / vec2f(size);
+	return fx_sample(slot, clamp(uv, half_texel, 1.0 - half_texel), dx, dy);
+}
+
+// `_USE_WATER_EROSION`, the red tide's flowing front (docs/game-data/water.md#water-erosion), over the foam's
+// colour, from the mesh's UV0 and its gradients
+fn wf_erosion(id: u32, color: vec3f, uv: vec2f, dx: vec2f, dy: vec2f, t: f32) -> vec3f {
+	let row = fx_row(id, WF_EROSION);
+	// the noise: its `_ST`, then its scroll
+	let noise_st = fx_row(id, FX_UV + WF_SLOT_FLOW_NOISE);
+	let noise_uv = uv * noise_st.xy + noise_st.zw + fx_row(id, FX_ANIM + WF_SLOT_FLOW_NOISE).xy * t;
+	let noise = fx_sample(WF_SLOT_FLOW_NOISE, noise_uv, dx * noise_st.xy, dy * noise_st.xy).r * row.x;
+	// the flowmap: its `_ST`, its u shifted by the noise
+	let flow_st = fx_row(id, FX_UV + WF_SLOT_FLOW);
+	var flow_uv = uv * flow_st.xy + flow_st.zw;
+	flow_uv.x += noise * row.y;
+	let flow = wf_sample_clamped(WF_SLOT_FLOW, flow_uv, dx * flow_st.xy, dy * flow_st.xy);
+	let front = saturate(flow * row.z + noise + row.w);
+	// the gradient: u from the front's position along UV0's u, v from UV0's v. its gradients leave out the noise's
+	// and the clamps' share
+	let gradient_st = fx_row(id, FX_UV + WF_SLOT_GRADIENT);
+	let along = saturate(uv.x * row.z + noise + row.w);
+	let gradient_uv = vec2f(saturate(along * gradient_st.x + gradient_st.z), uv.y * gradient_st.y);
+	let gradient_scale = vec2f(gradient_st.x * row.z, gradient_st.y);
+	let gradient = wf_sample_clamped(WF_SLOT_GRADIENT, gradient_uv, dx * gradient_scale, dy * gradient_scale);
+	// each layer's colour where its flow channel passes its threshold, broken up by its noise and kept to the
+	// gradient's alpha
+	var layers: array<vec3f, 3>;
+	for (var i = 0u; i < 3u; i++) {
+		let slot = WF_SLOT_LAYERS + i;
+		let st = fx_row(id, FX_UV + slot);
+		let layer_uv = uv * st.xy + st.zw + fx_row(id, FX_ANIM + slot).xy * t;
+		let scale = st.xy * WF_LAYER_GRADIENT_SCALE;
+		let layer_noise = saturate(fx_sample(slot, layer_uv, dx * scale, dy * scale).rgb);
+		let layer = fx_row(id, WF_EROSION_LAYERS + i);
+		layers[i] = layer.rgb * saturate(front[i + 1u] - layer.w) * layer_noise * gradient.a;
+	}
+	// the flowmap's colour darkens the foam, the second and third layers cover it, then the first
+	var c = color * (1.0 - length(flow.rgb));
+	c = mix(c, layers[1], saturate(length(layers[1])));
+	c = mix(c, layers[2], saturate(length(layers[2])));
+	c = mix(c, layers[0], saturate(length(layers[0])));
+	return c + gradient.rgb * fx_row(id, WF_EROSION_EDGE).rgb * flow.r;
+}
 
 // a UV source picked by the game's switch value (`WaterFoamSource` in package-format): the box, polar, the world
 // over 10 m, UV set 0, with fractional values blending between neighbours
@@ -1351,6 +1418,9 @@ fn fs_water_foam(in: EffectOut) -> @location(0) vec4f {
 		let mask = fx_sample(2u, uv, (turn * mask_dx) * st.xy, (turn * mask_dy) * st.xy);
 		color *= mask.rgb;
 		color = mix(color, color * mask.a, fx_row(id, WF_DISSOLVE).w);
+	}
+	if ((flags & WF_EROSION_ON) != 0u) {
+		color = wf_erosion(id, color, mesh, mesh_dx * bias, mesh_dy * bias, t);
 	}
 	let fade = fx_row(id, WF_FADE);
 	var edge_fade = 1.0;

@@ -1,11 +1,14 @@
 import type {
 	EffectTexture,
 	UnsupportedSurface,
+	WaterErosion,
+	WaterErosionLayer,
 	WaterFoamSurface,
 } from '@endfield-noclip/package-format/surfaces';
+import type { Rgb } from '@endfield-noclip/package-format/values';
 
 import { undrawnKeywords } from '../describe-steps.ts';
-import { type MaterialReader, unsupported } from '../material-values.ts';
+import { isUnsupported, type MaterialReader, unsupported } from '../material-values.ts';
 
 import { dissolveOf, disturbIntensityOf, effectTexture, speedOf, UNSET_WHITE } from './effect-steps.ts';
 
@@ -16,7 +19,64 @@ const WATER_FOAM_KEYWORDS = new Set([
 	'_USE_MASK',
 	'_USE_SOFTBLEND',
 	'_USE_DISSOLVE',
+	'_USE_WATER_EROSION',
 ]);
+
+/**
+ * a texture an erosion layer reads by UV0 times a `*Movement` vector's zw, scrolled by its xy, without its
+ * `_ST`
+ */
+const movedTexture = (reader: MaterialReader, name: string, movement: string): EffectTexture => {
+	const moved = reader.colorOrVector(movement) ?? [0, 0, 1, 1];
+	return {
+		...effectTexture(reader.slot(name) ?? UNSET_WHITE),
+		scale: [moved[2], moved[3]],
+		offset: [0, 0],
+		scroll: [moved[0], moved[1]],
+	};
+};
+
+/**
+ * @returns `_USE_WATER_EROSION`'s red tide, `null` without it, or `unsupported` when the textures it takes
+ *   would exceed the look's slots (`WaterFoamSurface.erosion`)
+ */
+const erosionOf = (reader: MaterialReader): WaterErosion | null | UnsupportedSurface => {
+	const { float, colorOrVector: color, has } = reader;
+	if (!has('_USE_WATER_EROSION')) {
+		return null;
+	}
+	// a distortion of zero moves nothing and an unset mask is white, so their slots are free for the erosion's
+	if (has('_USE_DISSOLVE')) {
+		return unsupported('_USE_WATER_EROSION with a dissolve');
+	}
+	if (has('_USE_DISTURB') && disturbIntensityOf(reader, 1).some((v) => v !== 0)) {
+		return unsupported('_USE_WATER_EROSION with a distortion');
+	}
+	if (has('_USE_MASK') && reader.slot('_MaskTex') !== undefined) {
+		return unsupported('_USE_WATER_EROSION with a mask texture');
+	}
+	const rgb = (name: string): Rgb => {
+		const c = color(name) ?? [0, 0, 0, 0];
+		return [c[0], c[1], c[2]];
+	};
+	const layer = (suffix: string): WaterErosionLayer => ({
+		noise: movedTexture(reader, `_FlowGradientNoiseTex${suffix}`, `_FlowGradientMovement${suffix}`),
+		color: rgb(`_EdgeSharpColor${suffix}`),
+		threshold: float(`_EdgeSharp${suffix}`, 0),
+	});
+	const noiseMovement = color('_FlowmapNoiseMovement') ?? [0, 0, 0, 0];
+	return {
+		flow: effectTexture(reader.slot('_FlowmapTex') ?? UNSET_WHITE),
+		flowNoise: effectTexture(reader.slot('_FlowmapNoiseTex') ?? UNSET_WHITE, noiseMovement.slice(0, 2)),
+		gradient: effectTexture(reader.slot('_FlowGradienteTex') ?? UNSET_WHITE),
+		layers: [layer(''), layer('2'), layer('3')],
+		noiseStrength: float('_FlowmapNoiseStrength', 0),
+		flowShift: float('_FlowmapUVNoiseStrength', 0),
+		distance: float('_FlowDistance', 1),
+		offset: float('_FlowOffset', 0),
+		edgeColor: rgb('_EdgeColor'),
+	};
+};
 
 /**
  * `HGRP/WaterDecal`: foam projected onto the water surface inside a box, written into the water's foam colour
@@ -66,14 +126,19 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 		// the edge colour is used as stored
 		dissolve = { texture: textureOf('_DissolveTex', '_DissolveUVSpeed'), ...dissolveOf(reader, 1) };
 	}
+	const erosion = erosionOf(reader);
+	if (isUnsupported(erosion)) {
+		return erosion;
+	}
 	const base = color('_BaseColor') ?? [0, 0, 0, 0];
 	const tint = color('_BaseColorTint') ?? [1, 1, 1, 1];
 	return {
 		kind: 'waterFoam',
 		textures: {
 			base: textureOf('_BaseColorMap', '_BaseColorSpeed'),
-			disturb: has('_USE_DISTURB') ? textureOf('_DisturbTex1', '_DisturbUVSpeed1') : null,
-			mask: has('_USE_MASK') ? textureOf('_MaskTex', '_MaskTexUVSpeed') : null,
+			// with the erosion they change nothing (`erosionOf`)
+			disturb: has('_USE_DISTURB') && erosion === null ? textureOf('_DisturbTex1', '_DisturbUVSpeed1') : null,
+			mask: has('_USE_MASK') && erosion === null ? textureOf('_MaskTex', '_MaskTexUVSpeed') : null,
 		},
 		sources: {
 			base: float('_BaseColorSwitchUV', 0),
@@ -104,5 +169,6 @@ export const describeWaterFoam = (reader: MaterialReader): WaterFoamSurface | Un
 			? { distance: Math.max(float('_SoftDistance', 1), 1e-6), bias: float('_SoftBias', 0) }
 			: null,
 		dissolve,
+		erosion,
 	};
 };

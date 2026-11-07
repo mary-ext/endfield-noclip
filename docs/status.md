@@ -215,10 +215,12 @@ packs or renders correctly.
 - [foam boxes](viewer/water.md#foam-boxes) (`HGRP/WaterDecal`) ignore their per-placement
   `HGWaterDecalRenderer` values (neutral on every map02 prefab), their displacement and the
   distortion texture's mip bias (an unnamed material value); which depth the game tests them against
-  is unconfirmed, their variants beyond `_USE_DISTURB`, `_USE_MASK`, `_USE_SOFTBLEND` and
-  `_USE_DISSOLVE`, and those with a `_ZTest` other than 4, 5 or 8, show as
-  [unsupported](viewer/materials.md#unsupported-materials) (1 of map02's 22, `_USE_WATER_EROSION`),
-  and the Wuling falls' foam is unchecked against an in-game shot; map02's 248 static boxes
+  is unconfirmed, their variants beyond `_USE_DISTURB`, `_USE_MASK`, `_USE_SOFTBLEND`,
+  `_USE_DISSOLVE` and `_USE_WATER_EROSION`, those with a `_ZTest` other than 4, 5 or 8, and erosion
+  alongside a dissolve, a distortion or a mask texture, show as
+  [unsupported](viewer/materials.md#unsupported-materials) (none of map02's 22), and the Wuling
+  falls' foam and Wuling City's red tide ([erosion](game-data/water.md#water-erosion), its clamped
+  samplers approximated) are unchecked against an in-game shot; map02's 248 static boxes
   (InitChunkData component 31, [world](game-data/world.md#initchunkdata-layout)) aren't packed,
   counted in `debug/skipped-entities.json`; other fluid types are unverified
 - water volumes ([viewer](viewer/water.md#water-volumes)): volumes without a `WaterConfig` of their

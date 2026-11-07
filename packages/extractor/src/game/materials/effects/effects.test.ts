@@ -1389,6 +1389,92 @@ describe('WaterDecal', () => {
 		assert.deepEqual(foam.disturbUse, [1, 1, 0]);
 	});
 
+	it('draws the red tide’s erosion in the slots its zero distortion and unset mask leave free', () => {
+		// the red tide over Wuling City's water (`M_fxmap_waterdecal_03`)
+		const tide = (floats: Record<string, number>, slots: Record<string, ReturnType<typeof slot>> = {}) =>
+			describeMaterial(
+				material({
+					keywords: ['_BLEND_BASECOLOR', '_USE_DISTURB', '_USE_MASK', '_USE_WATER_EROSION'],
+					slots: {
+						_BaseColorMap: slot(1, [5, 5]),
+						_DisturbTex1: slot(2),
+						_FlowmapTex: { ...slot(3, [15, 1.29]), offset: [-11.75, 0] },
+						_FlowmapNoiseTex: slot(4, [17.35, 10]),
+						_FlowGradienteTex: { ...slot(5, [300, 1]), offset: [-297.4, 0] },
+						_FlowGradientNoiseTex: slot(2, [1, 1]),
+						_FlowGradientNoiseTex2: slot(6),
+						_FlowGradientNoiseTex3: slot(7, [2, 3]),
+						...slots,
+					},
+					floats: {
+						_DisturbUIntensity1: 0,
+						_DisturbVIntensity1: 0,
+						_EdgeSharp: 0.152,
+						_EdgeSharp2: 0.14,
+						_EdgeSharp3: 0.337,
+						_FlowmapNoiseStrength: 0.02,
+						_FlowmapUVNoiseStrength: 7,
+						_FlowDistance: 1.01,
+						_FlowOffset: 0.141,
+						...floats,
+					},
+					colors: {
+						_EdgeColor: [0.4, 0.4, 0.4, 1],
+						_EdgeSharpColor: [0, 2.78, 14.75, 1],
+						_EdgeSharpColor2: [36.33, 2.28, 0, 1],
+						_EdgeSharpColor3: [2.43, 0.37, 0, 1],
+					},
+					vectors: {
+						_FlowmapNoiseMovement: [-0.07, 0.001, 1, 1],
+						_FlowGradientMovement: [-0.01, 0, 0.5, 20],
+						_FlowGradientMovement2: [-0.1, 0, 20, 20],
+						_FlowGradientMovement3: [-0.02, 0, 15, 15],
+					},
+				}),
+				waterDecal,
+			);
+		const foam = ofKind(tide({}), 'waterFoam');
+		assert.deepEqual([foam.textures.disturb, foam.textures.mask], [null, null]);
+		assert.ok(foam.erosion !== null);
+		const { erosion } = foam;
+		assert.deepEqual(
+			[erosion.flow.texture, erosion.flow.scale, erosion.flow.offset],
+			[3, [15, 1.29], [-11.75, 0]],
+		);
+		assert.deepEqual([erosion.flowNoise.texture, erosion.flowNoise.scroll], [4, [-0.07, 0.001]]);
+		assert.deepEqual(
+			[erosion.gradient.scale, erosion.gradient.offset],
+			[
+				[300, 1],
+				[-297.4, 0],
+			],
+		);
+		// the noises take their scale and scroll from the movement vectors, not their `_ST`
+		assert.deepEqual(
+			erosion.layers.map(({ noise }) => [noise.texture, noise.scale, noise.offset, noise.scroll]),
+			[
+				[2, [0.5, 20], [0, 0], [-0.01, 0]],
+				[6, [20, 20], [0, 0], [-0.1, 0]],
+				[7, [15, 15], [0, 0], [-0.02, 0]],
+			],
+		);
+		assert.deepEqual(
+			erosion.layers.map(({ color, threshold }) => [color, threshold]),
+			[
+				[[0, 2.78, 14.75], 0.152],
+				[[36.33, 2.28, 0], 0.14],
+				[[2.43, 0.37, 0], 0.337],
+			],
+		);
+		assert.deepEqual(
+			[erosion.noiseStrength, erosion.flowShift, erosion.distance, erosion.offset, erosion.edgeColor],
+			[0.02, 7, 1.01, 0.141, [0.4, 0.4, 0.4]],
+		);
+		// past the look's seven slots
+		assert.equal(tide({ _DisturbUIntensity1: 0.1 }).kind, 'unsupported');
+		assert.equal(tide({}, { _MaskTex: slot(8) }).kind, 'unsupported');
+	});
+
 	it('dissolves with its edge colour as stored, and tests behind the scene under _ZTest 5', () => {
 		const foam = ofKind(
 			describeMaterial(

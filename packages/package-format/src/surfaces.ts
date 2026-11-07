@@ -1181,6 +1181,46 @@ export interface WaterFoamSurface {
 	soft: SoftBlend | null;
 	/** `_USE_DISSOLVE` with its texture, its edge colour `[HDR]` as stored; `null` without */
 	dissolve: TexturedDissolve | null;
+	/**
+	 * `_USE_WATER_EROSION`, the red tide's flowing front (`docs/game-data/water.md#water-erosion`); `null`
+	 * without. a surface with it has no distortion, mask or dissolve, which leaves their texture slots to it
+	 */
+	erosion: WaterErosion | null;
+}
+
+/** one of {@link WaterErosion}'s three edge colours */
+export interface WaterErosionLayer {
+	/** `_FlowGradientNoiseTex*`: UV0 scaled by `_FlowGradientMovement*.zw`, scrolled by its xy */
+	noise: EffectTexture;
+	/** `_EdgeSharpColor*` `[HDR]`, as stored */
+	color: Rgb;
+	/** `_EdgeSharp*`, subtracted from the flow channel the layer reads */
+	threshold: number;
+}
+
+/**
+ * a WaterDecal's `_USE_WATER_EROSION`. every texture reads the mesh's UV set 0; the flowmap and the gradient
+ * are clamped to their edges, as the game's sampler does
+ */
+export interface WaterErosion {
+	/** `_FlowmapTex` through its `_ST`; its rgb darken the foam, and its gba feed the edge colours */
+	flow: EffectTexture;
+	/** `_FlowmapNoiseTex`'s red through its `_ST`, scrolled by `_FlowmapNoiseMovement.xy` */
+	flowNoise: EffectTexture;
+	/** `_FlowGradienteTex`: u from the front's position, v from UV0's v times its `_ST` y */
+	gradient: EffectTexture;
+	/** the edge colours read from the flowmap's green, blue and alpha */
+	layers: [WaterErosionLayer, WaterErosionLayer, WaterErosionLayer];
+	/** `_FlowmapNoiseStrength`, the noise's scale */
+	noiseStrength: number;
+	/** `_FlowmapUVNoiseStrength`, how far the noise shifts the flowmap's u */
+	flowShift: number;
+	/** `_FlowDistance`, the flowmap's and UV0's u scale towards the front */
+	distance: number;
+	/** `_FlowOffset`, added to them */
+	offset: number;
+	/** `_EdgeColor` `[HDR]` as stored, the gradient's tint along the flowmap's red */
+	edgeColor: Rgb;
 }
 
 // #endregion

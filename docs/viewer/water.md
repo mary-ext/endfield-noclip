@@ -130,8 +130,16 @@ frame has any:
 3. **shading.** the water reads the target at its pixel: foam colour `= rgb + saturate(own) · a`,
    saturated, the game's 8-bit clamp. the water's own foam is saturated too, with boxes or without.
 
-materials with keywords beyond `_BLEND_BASECOLOR`, `_USE_DISTURB`, `_USE_MASK`, `_USE_SOFTBLEND` and
-`_USE_DISSOLVE`, or a `_ZTest` other than 4, 5 or 8, show as
+the [erosion](../game-data/water.md#water-erosion) (`wf_erosion`) needs six textures, which take the
+slots of the distortion, mask and dissolve (`EROSION_SLOTS` in
+[water-foam.ts](../../packages/viewer/src/looks/effects/water-foam.ts)), so it's drawn only where
+those change nothing: no dissolve, distortion strengths of 0 and no mask texture. the slots'
+samplers follow the textures' wrap modes, so the flowmap and the gradient have their UVs clamped
+half a texel inside their edges in place of the game's clamping sampler, and the gradient's mip
+level leaves out the noise's share of its u.
+
+materials with keywords beyond `_BLEND_BASECOLOR`, `_USE_DISTURB`, `_USE_MASK`, `_USE_SOFTBLEND`,
+`_USE_DISSOLVE` and `_USE_WATER_EROSION`, or a `_ZTest` other than 4, 5 or 8, show as
 [unsupported](materials.md#unsupported-materials). it differs from the game in that the
 per-placement `HGWaterDecalRenderer` values (and so the displacement pass) aren't packed (every
 map02 prefab has the neutral ones), the static boxes of InitChunkData component 31 aren't packed

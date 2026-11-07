@@ -30,7 +30,19 @@ export const WaterFoamRow = {
 	fade: 100,
 	/** mip levels added to the base colour map's and the mask's, then the dissolve texture's level */
 	mip: 104,
+	/** the erosion's noise strength, flowmap u shift, distance and offset (`WaterErosion`) */
+	erosion: 108,
+	/** the erosion's edge colour rgb (HDR), 0 */
+	erosionEdge: 112,
+	/** each erosion layer's colour rgb (HDR) and threshold, three rows past the vertex stage's rows 30–31 */
+	erosionLayers: 128,
 } as const;
+
+/**
+ * the slots of a look with `_USE_WATER_EROSION`, after the base colour map's 0: the flowmap, its noise, the
+ * gradient and the three layers' noises, in the slots the distortion, mask and dissolve leave free
+ */
+export const EROSION_SLOTS = { flow: 1, flowNoise: 2, gradient: 3, layers: 4 } as const;
 
 /** {@link WaterFoamRow.tint}'s w bits, matching `effect.wgsl` */
 export const WaterFoamFlags = {
@@ -40,6 +52,7 @@ export const WaterFoamFlags = {
 	EdgeFade: 1 << 3,
 	ClipToBox: 1 << 4,
 	Soft: 1 << 5,
+	Erosion: 1 << 6,
 } as const;
 
 /**
@@ -51,19 +64,35 @@ export const WaterFoamFlags = {
 export const waterFoamLook = (foam: WaterFoamSurface): EffectLook => {
 	const look = emptyEffect();
 	const params = look.params;
-	const { textures, dissolve } = foam;
+	const { textures, dissolve, erosion } = foam;
 	[textures.base, textures.disturb, textures.mask, dissolve?.texture ?? null].forEach((texture, i) => {
 		if (texture !== null) {
 			setSlot(look, i, texture, EffectRole.Main);
 		}
 	});
+	if (erosion !== null) {
+		// the package leaves these slots empty with an erosion (`WaterFoamSurface.erosion`)
+		setSlot(look, EROSION_SLOTS.flow, erosion.flow, EffectRole.Main);
+		setSlot(look, EROSION_SLOTS.flowNoise, erosion.flowNoise, EffectRole.Main);
+		setSlot(look, EROSION_SLOTS.gradient, erosion.gradient, EffectRole.Main);
+		erosion.layers.forEach((layer, i) => {
+			setSlot(look, EROSION_SLOTS.layers + i, layer.noise, EffectRole.Main);
+			params.set([...layer.color, layer.threshold], WaterFoamRow.erosionLayers + i * 4);
+		});
+		params.set(
+			[erosion.noiseStrength, erosion.flowShift, erosion.distance, erosion.offset],
+			WaterFoamRow.erosion,
+		);
+		params.set([...erosion.edgeColor, 0], WaterFoamRow.erosionEdge);
+	}
 	const flags =
 		(textures.disturb === null ? 0 : WaterFoamFlags.Disturb) |
 		(textures.mask === null ? 0 : WaterFoamFlags.Mask) |
 		(dissolve === null ? 0 : WaterFoamFlags.Dissolve) |
 		(foam.edgeFade === null ? 0 : WaterFoamFlags.EdgeFade) |
 		(foam.clipToBox ? WaterFoamFlags.ClipToBox : 0) |
-		(foam.soft === null ? 0 : WaterFoamFlags.Soft);
+		(foam.soft === null ? 0 : WaterFoamFlags.Soft) |
+		(erosion === null ? 0 : WaterFoamFlags.Erosion);
 	params.set([...foam.baseColor, foam.opacity], WaterFoamRow.base);
 	params.set([...foam.tint, flags], WaterFoamRow.tint);
 	params.set([foam.disturbBias, ...foam.disturb, foam.blendMode], WaterFoamRow.disturb);
