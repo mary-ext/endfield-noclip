@@ -63,11 +63,6 @@ export interface DrawPhase {
 	 */
 	shadow: boolean;
 	streams: VertexStreams;
-	/**
-	 * whether it writes the depth the camera's later draws test, so a range sorted nearest first draws in that
-	 * order; the other phases over such a range (depth-equal shading, shadows) draw in binding order
-	 */
-	nearestFirst: boolean;
 }
 
 /** a phase that shades a range in view, reading every stream */
@@ -77,7 +72,6 @@ const shading = (key: string, range: DrawRange): DrawPhase => ({
 	textured: true,
 	shadow: false,
 	streams: 'all',
-	nearestFirst: false,
 });
 
 /** every phase, by name */
@@ -86,23 +80,9 @@ export const PHASES = {
 	 * the opaque meshes' depth, laid down before the terrain and the shading so each pixel is shaded once: the
 	 * opaque phase then shades only where its depth equals this
 	 */
-	prepass: {
-		key: 'mesh/prepass',
-		range: 'opaque',
-		textured: false,
-		shadow: false,
-		streams: 'position',
-		nearestFirst: true,
-	},
+	prepass: { key: 'mesh/prepass', range: 'opaque', textured: false, shadow: false, streams: 'position' },
 	opaque: shading('mesh/opaque', 'opaque'),
-	cutoutDepth: {
-		key: 'mesh/cutout-depth',
-		range: 'cutout',
-		textured: true,
-		shadow: false,
-		streams: 'uv',
-		nearestFirst: true,
-	},
+	cutoutDepth: { key: 'mesh/cutout-depth', range: 'cutout', textured: true, shadow: false, streams: 'uv' },
 	cutoutShade: shading('mesh/cutout-shade', 'cutout'),
 	stencilMask: {
 		key: 'mesh/stencil-mask',
@@ -110,7 +90,6 @@ export const PHASES = {
 		textured: false,
 		shadow: false,
 		streams: 'position',
-		nearestFirst: false,
 	},
 	transparent: shading('mesh/transparent', 'transparent'),
 	effectOpaque: shading('mesh/effect-opaque', 'effectOpaque'),
@@ -129,16 +108,8 @@ export const PHASES = {
 		textured: false,
 		shadow: true,
 		streams: 'position',
-		nearestFirst: false,
 	},
-	shadowCutout: {
-		key: 'mesh/shadow/cutout',
-		range: 'cutout',
-		textured: true,
-		shadow: true,
-		streams: 'uv',
-		nearestFirst: false,
-	},
+	shadowCutout: { key: 'mesh/shadow/cutout', range: 'cutout', textured: true, shadow: true, streams: 'uv' },
 } as const satisfies Record<string, DrawPhase>;
 
 /** the passes that draw meshes */
