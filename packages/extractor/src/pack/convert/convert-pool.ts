@@ -2,6 +2,8 @@ import { Worker } from 'node:worker_threads';
 
 import type { ReadyGeometry } from '@endfield-noclip/package-format/geometry';
 
+import { Queue } from '@mary-ext/ds-queue';
+
 import type { Keys } from '../../config.ts';
 import type { AssetRef, ObjectLocator } from '../../game/assets/assets.ts';
 import type { BlobMeta } from '../store/blob-file.ts';
@@ -89,19 +91,33 @@ export type WorkerReply = { id: number; result: ConvertResult } | { id: number; 
 
 // #endregion
 
+interface QueuedJob {
+	id: number;
+	job: ConvertJob;
+	resolve: (result: ConvertResult) => void;
+	reject: (error: Error) => void;
+}
+
 interface PoolWorker {
 	worker: Worker;
-	pending: Map<number, { resolve: (result: ConvertResult) => void; reject: (error: Error) => void }>;
+	pending: Map<number, QueuedJob>;
 }
 
 /**
+ * jobs a worker holds at once. conversion is synchronous CPU work, so a second job only overlaps the first's
+ * reads; more would hold more decoded textures without converting faster
+ */
+const JOBS_PER_WORKER = 2;
+
+/**
  * up to a fixed number of conversion workers, started as jobs need them (a pack that finds everything in its
- * cache starts none); jobs go to the least busy one
+ * cache starts none); jobs wait here until a worker has room, then go to the least busy one
  */
 export class ConvertPool {
 	readonly size: number;
 	readonly #data: ConvertWorkerData;
 	readonly #workers: PoolWorker[] = [];
+	readonly #queue = new Queue<QueuedJob>();
 	#nextId = 0;
 
 	/**
@@ -119,23 +135,32 @@ export class ConvertPool {
 	 * @throws {Error} with the worker's message if conversion fails
 	 */
 	run(job: ConvertJob): Promise<ConvertResult> {
-		let target: PoolWorker | undefined;
-		for (const entry of this.#workers) {
-			if (target === undefined || entry.pending.size < target.pending.size) {
-				target = entry;
+		const { promise, resolve, reject } = Promise.withResolvers<ConvertResult>();
+		this.#queue.enqueue({ id: this.#nextId++, job, resolve, reject });
+		this.#dispatch();
+		return promise;
+	}
+
+	/** hands queued jobs to workers with room, starting workers while the pool isn't full */
+	#dispatch(): void {
+		while (this.#queue.size > 0) {
+			let target: PoolWorker | undefined;
+			for (const entry of this.#workers) {
+				if (target === undefined || entry.pending.size < target.pending.size) {
+					target = entry;
+				}
 			}
-		}
-		if (target === undefined || (target.pending.size > 0 && this.#workers.length < this.size)) {
-			target = this.#start();
-			this.#workers.push(target);
-		}
-		const chosen = target;
-		const id = this.#nextId++;
-		return new Promise((resolve, reject) => {
-			chosen.pending.set(id, { resolve, reject });
+			if (target === undefined || (target.pending.size > 0 && this.#workers.length < this.size)) {
+				target = this.#start();
+				this.#workers.push(target);
+			} else if (target.pending.size >= JOBS_PER_WORKER) {
+				return;
+			}
+			const queued = this.#queue.dequeue()!;
+			target.pending.set(queued.id, queued);
 			// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a node worker, not a window
-			chosen.worker.postMessage({ type: 'job', id, job } satisfies WorkerRequest);
-		});
+			target.worker.postMessage({ type: 'job', id: queued.id, job: queued.job } satisfies WorkerRequest);
+		}
 	}
 
 	/** lets every worker close its files and exit */
@@ -163,13 +188,20 @@ export class ConvertPool {
 			} else {
 				job?.resolve(reply.result);
 			}
+			this.#dispatch();
 		});
-		// a crashed worker fails its jobs rather than hanging the pack
+		// a crashed worker fails its jobs rather than hanging the pack, and leaves the pool so queued jobs go
+		// to the others or a replacement
 		const fail = (error: Error) => {
 			for (const job of entry.pending.values()) {
 				job.reject(error);
 			}
 			entry.pending.clear();
+			const index = this.#workers.indexOf(entry);
+			if (index !== -1) {
+				this.#workers.splice(index, 1);
+				this.#dispatch();
+			}
 		};
 		entry.worker.on('error', fail);
 		entry.worker.on('exit', (code) => fail(new Error(`conversion worker exited with code ${code}`)));

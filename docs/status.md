@@ -513,8 +513,8 @@ packs or renders correctly.
   reference point, and without its fade or the game's LOD bias
 - a max-texture-size option for a lite package (textures dominate package size)
 - place global scenery by its own bounds instead of pulling it all into `assets/common`
-- port the game's path hash so lookups stop reverse-scanning the path-hash table (about a second
-  each; [asset resolution](extraction.md#asset-resolution))
+- port the game's path hash so lookups stop reverse-scanning the path-hash table
+  ([asset resolution](extraction.md#asset-resolution))
 - meshes: collision-only meshes and vertices in `m_CompressedMesh` are rejected; PPtrs into Unity's
   built-in resources resolve only for the Quad and Cube; prefabs failing with a `FormatError` are
   stand-in cubes ([mesh](extraction.md#asset-classes))

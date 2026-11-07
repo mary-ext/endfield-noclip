@@ -169,8 +169,9 @@ reads little. the descrambling is ported from AnimeStudio.
 world data references assets by 64-bit path hash; the StringPathHash tables map hashes to paths and
 the bundle manifest maps asset paths to bundles and their dependency closures
 ([lookup tables](game-data/assets.md#lookup-tables)). StringPathHash lookups try the main table,
-then the initial one. path → hash (`WorldIndex.hashesOf`) scans both tables, about a second per
-lookup, because the [path hash function](game-data/assets.md#open) isn't ported.
+then the initial one. path → hash (`WorldIndex.hashesOf`) decodes the paths of the same length in
+both tables, because the [path hash function](game-data/assets.md#open) isn't ported: the first
+lookup indexes the tables by length (~0.2 s), later ones take about a millisecond.
 `world resolve <path|hash>` prints both directions plus the holding bundle and its dependencies.
 code: [string-path-hash.ts](../packages/formats/src/hg/string-path-hash.ts),
 [bundle-manifest.ts](../packages/formats/src/hg/bundle-manifest.ts),
@@ -582,8 +583,11 @@ tangents and which textures are used. meshes and textures then convert on worker
 ([pack/convert/convert-pool.ts](../packages/extractor/src/pack/convert/convert-pool.ts),
 [pack/convert/convert-worker.ts](../packages/extractor/src/pack/convert/convert-worker.ts)):
 conversion is CPU-bound (LZ4, meshopt, zstd, hashing), so each worker opens the install itself,
-writes its blobs straight into the blob directory, and returns only small results. workers start as
-jobs need them, so a pack whose conversions all come from the cache starts none. texture objects
+writes its blobs straight into the blob directory, and returns only small results. the bundle
+manifest is the exception: the packer decompresses it once into shared memory and every worker reads
+that copy. workers start as jobs need them, so a pack whose conversions all come from the cache
+starts none, and each holds at most two jobs, the rest waiting in the pool, since a third would
+only hold more decoded textures. texture objects
 with identical content are merged into one table entry after conversion (the report counts them).
 
 an asset reached both by path hash (static entities) and by object (prefabs) is interned under each
