@@ -484,6 +484,26 @@ preset, which is assumed):
 - the renderer's screen-size cull is off on PC. the LOD bias is 2 at preset 1000, 1.5 at 2000 and 1
   from 3000 up.
 
+### texture streaming
+
+the PC settings turn on Unity's texture streaming (`TextureStreaming`: 256 renderers a frame, 512
+from preset 3500; 32 file reads in flight, 36 from 2000, 48 from 3500). its budget is for textures
+alone and comes from the GPU's memory, not the preset (`TextureQuality_<n>GB`, read as MB, the unit
+of Unity's `streamingMipmapsMemoryBudget`):
+
+| VRAM  | preset 1000 | 2000 | 3000+ |
+| ----- | ----------- | ---- | ----- |
+| 6 GB  | 1000        | 1300 | 1500  |
+| 8 GB  | 2000        | 2300 | 2500  |
+| 10 GB | 2500        | 3000 | 3500  |
+| 12 GB | 3000        | 3500 | 4500  |
+| 16 GB | 3500        | 4500 | 5500  |
+
+the budget is capped at 5500 MB, and 5500 MB is reserved for meshes and render targets. effect
+textures skip one mip on 6 GB cards. Unity's streaming picks each texture's mip from the renderers
+using it and, when the wanted mips don't fit the budget, drops mips (Unity's documented behaviour;
+the game's `streamingMipmapsMaxLevelReduction` isn't found in its settings).
+
 ## open
 
 - terrain: the distance where the close-up layers give way to the baked pages and how they fade; how

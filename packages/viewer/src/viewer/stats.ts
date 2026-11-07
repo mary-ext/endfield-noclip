@@ -40,6 +40,8 @@ export interface ViewerStats {
 	texturedDraws: number;
 	/** GPU bytes of integrated texture levels */
 	textureBytes: number;
+	/** mip levels material textures are lowered by to fit the stream budget */
+	textureReduction: number;
 	terrainPatches: number;
 	nodesVisited: number;
 	residentBytes: number;
@@ -79,6 +81,7 @@ export const emptyStats = (gfx: GfxDevice): ViewerStats => ({
 	meshInstances: 0,
 	texturedDraws: 0,
 	textureBytes: 0,
+	textureReduction: 0,
 	terrainPatches: 0,
 	nodesVisited: 0,
 	residentBytes: 0,
@@ -169,6 +172,8 @@ export interface StatsSources {
 	draws: number;
 	/** tree nodes the last traversal visited */
 	visited: number;
+	/** mip levels material textures are lowered by to fit the stream budget */
+	textureReduction: number;
 	/** the loaded package's streaming, textures and geometry counts, `null` without one */
 	scene: {
 		stream: StreamManager;
@@ -211,6 +216,7 @@ export const collectStats = (previous: ViewerStats, sources: StatsSources): View
 		meshInstances: meshes.instanceCount,
 		texturedDraws: meshes.texturedDraws,
 		textureBytes: scene?.textures.bytes ?? 0,
+		textureReduction: sources.textureReduction,
 		terrainPatches: terrain.patchCount,
 		nodesVisited: scene === null ? 0 : sources.visited,
 		residentBytes: stream?.residentBytes ?? 0,

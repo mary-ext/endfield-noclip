@@ -18,7 +18,12 @@ export const StatsPanel = ({ viewer }: { viewer: Viewer }) => {
 		['terrain patches', String(s.terrainPatches)],
 		['nodes visited', String(s.nodesVisited)],
 		['resident', `${formatBytes(s.residentBytes)} (pinned ${formatBytes(s.pinnedBytes)})`],
-		['textures', formatBytes(s.textureBytes)],
+		[
+			'textures',
+			s.textureReduction === 0
+				? formatBytes(s.textureBytes)
+				: `${formatBytes(s.textureBytes)} (−${s.textureReduction} mips)`,
+		],
 		['gpu pools', formatBytes(s.poolBytes)],
 		['queued / in flight', `${s.queued} / ${s.requestsInFlight}`],
 		['decoding / uploading', `${s.decoding} / ${s.uploading}`],

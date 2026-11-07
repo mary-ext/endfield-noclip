@@ -500,6 +500,10 @@ packs or renders correctly.
 - shadow layers redraw whole on every new selection; caching them per layer across selections, and
   the game's cached, tiled far map, are open ([frame](viewer/frame.md))
 - terrain pass cost, budget churn in dense areas
+- texture mips are picked from an instance's screen size as if its texture spanned it once; Unity's
+  streaming uses each mesh's UV density, which the packer doesn't store. the viewer's one budget
+  holds textures and meshes together, where the game budgets textures alone, so dense views fall
+  back on the [texture reduction](viewer/streaming.md#residency-and-budgets)
 - temporal antialiasing sharpening
 
 ## packaging

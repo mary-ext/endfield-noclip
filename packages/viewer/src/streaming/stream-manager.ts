@@ -286,6 +286,35 @@ export class StreamManager {
 	}
 
 	/**
+	 * whether the budget is full of content in use, so unpinned fetches and uploads are paused until something
+	 * falls out of use
+	 */
+	get saturated(): boolean {
+		return this.#saturated;
+	}
+
+	/**
+	 * sums the resident blobs used this frame, pinned ones included; walks every evictable item
+	 *
+	 * @param kind the residency kind to sum separately
+	 * @returns bytes used in all, and of `kind`
+	 */
+	usedBytes(kind: Resident['kind']): { all: number; kind: number } {
+		const used = { all: this.stats.pinnedBytes, kind: 0 };
+		for (const item of this.#evictable) {
+			const resident = item.resident;
+			if (item.usedFrame !== this.#frame || resident === null) {
+				continue;
+			}
+			used.all += resident.bytes;
+			if (resident.kind === kind) {
+				used.kind += resident.bytes;
+			}
+		}
+		return used;
+	}
+
+	/**
 	 * sums every resident blob, for inspection; walks every item, so don't call it per frame
 	 *
 	 * @returns {@link StreamStats.residentBytes} split by residency kind

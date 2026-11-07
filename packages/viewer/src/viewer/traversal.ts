@@ -5,6 +5,7 @@ import type { Camera, Plane } from '../scene/camera.ts';
 import type { MeshSelection } from '../streaming/mesh-selection.ts';
 import type { ResidentInstances } from '../streaming/resident.ts';
 import type { InstanceRange } from '../streaming/selection.ts';
+import { TextureReduction } from '../streaming/texture-reduction.ts';
 
 import type { EnvironmentLook } from './environment-state.ts';
 import type { ViewerOptions } from './options.ts';
@@ -46,6 +47,8 @@ export class Traversal {
 	particlesShown = false;
 	/** whether the last selection held spinning rows, which turn by the clock while the view holds still */
 	spinsShown = false;
+	/** lowers material texture resolution while the stream budget is full */
+	readonly textureReduction = new TextureReduction();
 	/** the frustum planes, rewritten each traversal */
 	readonly #planes: Plane[] = [];
 	/** the clock each resident block's spinning rows were last turned to */
@@ -102,7 +105,7 @@ export class Traversal {
 				pixelFactor: view.pixelFactor,
 				viewportHeight: targets.outputHeight,
 				minPixels: options.minBoxPixels,
-				textureBias: options.textureBias,
+				textureBias: options.textureBias + this.textureReduction.levels,
 				unsupportedMaterials: options.unsupportedMaterials,
 				missingContent: options.missingContent,
 				gpuCulling: options.gpuCulling && meshes.gpuCulling,
@@ -142,6 +145,7 @@ export class Traversal {
 		times.span('sky, water');
 		renderer.irradiance.prepare(stream, camera.position);
 		stream.update();
+		this.textureReduction.update(stream, input.index, stream.options.budgetBytes);
 		scene.textures.commit();
 		times.span('stream');
 		if (!input.prepare) {

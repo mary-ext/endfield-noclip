@@ -265,4 +265,17 @@ the renderers and stores that own the GPU side; their residency shapes are in
   use, the manager is _saturated_: unpinned fetches and uploads pause (queued blobs return to idle
   and decoded ones are dropped) until something falls out of use, because evicting fresh uploads
   only to refetch them would thrash.
+- **texture reduction.** textures were most of what saturated it: flying from Test Area over
+  Yinglung Pass into North Wuling, the view at (-508, 235, 1018) wanted 611 MiB of textures, so the
+  stream paused with meshes still to load and they stayed boxes. while the manager is saturated and
+  textures in use are at least a quarter of the budget,
+  [`TextureReduction`](../../packages/viewer/src/streaming/texture-reduction.ts) adds half a mip
+  level to every material texture request (on top of `textureBias`, up to 3), every 4 frames. the
+  levels it lets go fall out of use and are evicted, and the paused loads resume. every 30
+  traversals it lowers the reduction by half a level if the content in use, with its textures
+  doubled, would fit in 85% of the budget. at that view one level took textures in use from 611 to
+  259 MiB. the frame loop keeps traversing a still view while a raise may help, since a saturated
+  stream is otherwise idle. the stats panel shows the reduction next to the texture bytes. the game
+  does the same with Unity's texture streaming
+  ([textures](../game-data/world.md#texture-streaming)), though with a budget for textures alone.
 - `version` is bumped on every upload and eviction; the frame loop redraws on a change.

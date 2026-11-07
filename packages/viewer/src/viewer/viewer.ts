@@ -602,6 +602,7 @@ export class Viewer {
 			terrainShown: this.options.terrain,
 			draws: this.#lastDraws,
 			visited: this.#traversal.visited,
+			textureReduction: this.#traversal.textureReduction.levels,
 			scene: this.scene,
 			pools: renderer.pools,
 			camera: this.camera,
@@ -674,7 +675,9 @@ export class Viewer {
 		// the clock like the effects' scrolling textures, while the clock runs. with nothing rendering and nothing
 		// loading, the traversal would repeat the last frame's
 		const moving = options.animate && (traversal.particlesShown || traversal.spinsShown);
-		const traverse = scene !== null && ((render && (changed || moving)) || !scene.stream.idle);
+		const traverse =
+			scene !== null &&
+			((render && (changed || moving)) || !scene.stream.idle || traversal.textureReduction.raising);
 		if (settings.shadows && (traverse || render)) {
 			// once a frame, for both the mesh selection, which groups instances by the layers they reach, and the
 			// shadow passes
