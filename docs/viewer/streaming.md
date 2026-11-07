@@ -183,11 +183,11 @@ per-draw transforms, so the fragment shader sees one kind of UV.
 materials the game draws nothing visible with are dropped from the chain once, when it's first used
 (the rest draw, the ones the viewer can't as [unsupported](materials.md#unsupported-materials)), as
 are shadow-only draws whose material casts no shadow; the other shadow-only draws go to cast-only
-buckets even for instances in view. textures are then requested per bucket, every piece at once, down
-to the mip that gives about one texel per pixel across the largest on-screen use, scaled by the UV
-tiling, then `textureBias` levels coarser (0 by default; each level quarters the textures' memory).
-sky, reflection and water textures are streamed whole (`streamWholeTexture`; both ways are in
-[`texture-requests.ts`](../../packages/viewer/src/streaming/texture-requests.ts)).
+buckets even for instances in view. textures are then requested per bucket, every piece at once,
+down to the mip that gives about one texel per pixel across the largest on-screen use, scaled by the
+UV tiling, then `textureBias` levels coarser (0 by default; each level quarters the textures'
+memory). sky, reflection and water textures are streamed whole (`streamWholeTexture`; both ways are
+in [`texture-requests.ts`](../../packages/viewer/src/streaming/texture-requests.ts)).
 
 the output (a visible row list plus per-bucket ranges) has the shape a GPU cull pass would write
 next to indirect draw arguments ([optimization candidates](performance.md#optimization-candidates)).
@@ -202,7 +202,8 @@ are requested at 0.1× where the traversal still reaches them: terrain children 
 volume, whose instances' geometry is requested at 0.1× of its pixel height. a texture's pieces are
 requested in the same frame, at the bucket's priority divided by one plus the piece's index, so
 coarse levels come first but a sharp texture takes one round trip rather than one per piece (a
-texture's pieces mostly sit side by side in one archive, so they're usually read together). irradiance cells and whole-streamed textures (sky, reflection) use fixed priorities above all
+texture's pieces mostly sit side by side in one archive, so they're usually read together).
+irradiance cells and whole-streamed textures (sky, reflection) use fixed priorities above all
 scenery.
 
 ## residency and budgets
@@ -242,10 +243,10 @@ the renderers and stores that own the GPU side; their residency shapes are in
   ([`streaming/coalesce.ts`](../../packages/viewer/src/streaming/coalesce.ts)). every blob's place
   in byte order is sorted once when the stream opens (about 20 ms for map02's 113k blobs), so a
   dispatch heapifies the queue and walks neighbours instead of sorting it twice, which took 1.5 ms
-  at 5k queued blobs and 7 ms at 20k. core blobs are read
-  from memory without a request slot. requests whose blobs nobody wanted for more than 2 frames are
-  aborted; queued blobs not wanted this frame return to idle. no new reads start while 384 blobs
-  (`MAX_UNDECODED`) are fetched or being read and not yet decoding.
+  at 5k queued blobs and 7 ms at 20k. core blobs are read from memory without a request slot.
+  requests whose blobs nobody wanted for more than 2 frames are aborted; queued blobs not wanted
+  this frame return to idle. no new reads start while 384 blobs (`MAX_UNDECODED`) are fetched or
+  being read and not yet decoding.
 - **decoding.** fetched blobs wait in the stream manager, not in the decode pool, and each slot that
   frees on a worker (4 per worker, since a worker's answer waits for a busy main thread) takes the
   most wanted one; blobs nobody has wanted for 30 frames are dropped first. the pool once queued
@@ -255,10 +256,9 @@ the renderers and stores that own the GPU side; their residency shapes are in
   on unpinned uploads (at least one a frame). the cost is per upload more than per byte: a frame
   fits ~750 average geometry blobs in 24 MiB, and flying over map02 bursts of 40–120 uploads landed
   on the worst frames. the game spends 1.5 ms a frame loading
-  ([streaming layers](../game-data/world.md#streaming-layers)). decoded
-  content nobody has wanted for 30 frames is dropped instead. a full pool evicts up to 16 resident,
-  unpinned blobs of the same kind that weren't used this frame and have no higher priority, oldest
-  first, and retries.
+  ([streaming layers](../game-data/world.md#streaming-layers)). decoded content nobody has wanted
+  for 30 frames is dropped instead. a full pool evicts up to 16 resident, unpinned blobs of the same
+  kind that weren't used this frame and have no higher priority, oldest first, and retries.
 - **budget.** resident bytes of all kinds count against `budgetMiB` (default 768, since the densest
   views, such as Wuling City at street level, want 550–700 MiB). over budget, the least recently
   used unpinned blobs not used this frame are evicted. if the budget is still exceeded by content in

@@ -87,8 +87,8 @@
   holds a contiguous run of levels from the finest integrated piece down to 1×1. integrating finer
   pieces creates a texture large enough for all that can integrate at once and copies the coarser
   levels over; releasing a piece shrinks it the same way at the next `commit`. a piece that arrives
-  before its coarser neighbour waits. BC blocks upload as stored, without transcoding. replaced textures are destroyed one commit
-  later, because bindings from before the swap are still in that frame's command buffer; bind groups
-  rebuild when a binding's `version` changes
+  before its coarser neighbour waits. BC blocks upload as stored, without transcoding. replaced
+  textures are destroyed one commit later, because bindings from before the swap are still in that
+  frame's command buffer; bind groups rebuild when a binding's `version` changes
   ([`gfx/bind-group-cache.ts`](../../packages/viewer/src/gfx/bind-group-cache.ts) keeps the
   material, effect and water groups by the versions and views they were built from).

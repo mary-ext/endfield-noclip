@@ -141,8 +141,8 @@ export class TextureStore {
 	/**
 	 * @param id texture id
 	 * @param version a {@link version} the caller derived something from the binding at
-	 * @returns whether the texture's binding is still the one it had at `version`. a binding about to shrink
-	 *   (a piece released since the last {@link commit}) counts as unchanged until it does
+	 * @returns whether the texture's binding is still the one it had at `version`. a binding about to shrink (a
+	 *   piece released since the last {@link commit}) counts as unchanged until it does
 	 */
 	unchangedSince(id: number, version: number): boolean {
 		return (this.#changed.get(id) ?? -1) <= version;

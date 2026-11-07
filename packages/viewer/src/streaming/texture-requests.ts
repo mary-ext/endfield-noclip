@@ -13,8 +13,8 @@ export type TextureKind = '2d' | 'cube' | '2d-array' | '3d';
 /**
  * requests a texture's pieces down to the piece holding `level`, all at once and coarse first, and keeps the
  * integrated ones in use. a piece that arrives before a coarser one waits in the store, so the levels the
- * view needs take one round trip rather than one per piece; a texture's pieces mostly sit side by side in
- * one archive, so they're usually read together too
+ * view needs take one round trip rather than one per piece; a texture's pieces mostly sit side by side in one
+ * archive, so they're usually read together too
  */
 const requestPieces = (
 	stream: TextureStream,

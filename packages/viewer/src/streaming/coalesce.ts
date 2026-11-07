@@ -24,8 +24,8 @@ export interface CoalescedRead {
 }
 
 /**
- * groups queued blobs into range reads. every blob's place in byte order is sorted once, so a call costs
- * the reads it returns (plus heapifying the queue) rather than sorting the queue
+ * groups queued blobs into range reads. every blob's place in byte order is sorted once, so a call costs the
+ * reads it returns (plus heapifying the queue) rather than sorting the queue
  */
 export class BlobCoalescer {
 	#archive: Int32Array;
