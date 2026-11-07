@@ -33,7 +33,7 @@ const script = (id: string, actions: MemoryPackValue[], headers: MemoryPackValue
 	return result;
 };
 
-const setInt = (ID: number, target: bigint, value: number): MemoryPackValue =>
+const setInt = (ID: number, target: string, value: number): MemoryPackValue =>
 	node('SetDecorationAnimatorInt', {
 		ID,
 		nextID: -1,
@@ -49,14 +49,14 @@ test('reads the Animator values a script sets on its groups as it starts, split 
 		[
 			node('Split', { ID: 68, nextID: -1, idList: [84, 90] }),
 			node('IfElseAction', { ID: 84, nextID: 87, condition: saved('state_1'), onTrueID: 85, onFalseID: 86 }),
-			setInt(85, 3500030000n, 3),
-			setInt(86, 3500030000n, 1),
+			setInt(85, '3500030000', 3),
+			setInt(86, '3500030000', 1),
 			node('IfElseAction', { ID: 87, nextID: -1, condition: saved('state_2'), onTrueID: 88, onFalseID: 89 }),
-			setInt(88, 3500030001n, 4),
-			setInt(89, 3500030001n, 2),
-			setInt(90, 3500030002n, 5),
+			setInt(88, '3500030001', 4),
+			setInt(89, '3500030001', 2),
+			setInt(90, '3500030002', 5),
 			// a quest event plays the open animation; it isn't a start value
-			setInt(11, 3500030003n, 7),
+			setInt(11, '3500030003', 7),
 		],
 		[
 			node('ScriptEvent_OnScriptActive', { ID: 67, nextID: 68, validate: constant(true) }),
@@ -94,7 +94,7 @@ test('leaves a group as saved when its start path branches some other way', () =
 				onTrueID: 3,
 				onFalseID: -1,
 			}),
-			setInt(3, 9n, 1),
+			setInt(3, '9', 1),
 		],
 		[node('ScriptEvent_OnScriptActive', { ID: 1, nextID: 2 })],
 	);
