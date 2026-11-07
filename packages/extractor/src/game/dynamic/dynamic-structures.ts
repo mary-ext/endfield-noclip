@@ -74,6 +74,8 @@ export interface StructureModel {
 	source: string;
 	/** the level logic id of the interactive it draws, absent for other placements */
 	logicId?: string;
+	/** the global id level scripts address its dynamic structure by, absent for other placements */
+	owner?: string;
 	visibility: Visibility;
 	/** the pose to draw the prefab in, `null` for the saved one */
 	pose: PrefabPose | null;
@@ -579,7 +581,7 @@ class OwnerPass {
 				case 5:
 				case 6: {
 					// oxlint-disable-next-line no-await-in-loop -- rows in order; poses are cached
-					await this.#placeModels(entity, { ref, grid, tag, alternatives });
+					await this.#placeModels(entity, { ref, grid, tag, alternatives, owned });
 					break;
 				}
 				case 7: {
@@ -708,9 +710,11 @@ class OwnerPass {
 			grid: DynamicResourceGrid;
 			tag: number;
 			alternatives: Alternatives;
+			/** the owner's global id */
+			owned: string;
 		},
 	): Promise<void> {
-		const { ref, grid, tag, alternatives } = rows;
+		const { ref, grid, tag, alternatives, owned } = rows;
 		const { game } = this.#scene;
 		const effect = ref.type === 6;
 		const models = dynamicResourceSlice(effect ? grid.effects : grid.models, ref);
@@ -749,6 +753,7 @@ class OwnerPass {
 						model,
 						levelTag: tag,
 						source: key,
+						owner: owned,
 						visibility: { alternatives: [] },
 						pose,
 						grid: ref.grid,

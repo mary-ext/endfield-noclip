@@ -110,6 +110,30 @@ set its model's parameters as it loads
   clip sets a value on two water-sheet MonoBehaviours, switches three GameObjects and sets renderer
   material properties.
 
+### decoration animators
+
+level scripts drive the Animators of a script-controlled group's prefabs
+([script groups](scene-states.md#script-groups)): `SetDecorationAnimatorInt` and
+`SetDecorationAnimatorBool` set `animatorParamName` to `targetValue`, and `PlayDecorationAnimation`
+plays the state `animationName`, each naming the group by `targetDynamicEntity` (with its
+`groupName` and `sceneName`). until a script sets a value the controller rests under its saved
+parameters, as for any scenery animator.
+
+Origin Lodespring's two luffing cranes (map01_lv006) are such groups. group `3500030000` places
+`p_igroup_gtmachine+1_001_01` as a model row at the origin; its hierarchy is authored in world
+space: a skinned jib on `Bone_Prop_Crane_*` bones over the mast at 646.2, 49.3, 412.0, and a
+container on `Bone_box_001`. the Animator's controller `AC_interactive_gtmachine+1_001_01_004` has
+one int, `state`, saved as 0, which rests in `empty`, a state without a clip, so the saved pose
+shows: the jib raised, the hook at 628.2, 45.1, 406.1 and the container 7 m below it and 4.5 m to
+the side, floating over the gap. `state` 1 to 4 lead to `close_idle`, `close_idle_2`, `open_idle`
+and `open_idle_2`. level script `3500030021` (start shape 240 m around 535.5, 38.6, 428.7) sets it
+on activation: 3 when its saved property `state_1` holds, else 1; the second crane (group
+`3500030001`, `p_igroup_gtmachine+1_001_02`, near 420, 85, 350) gets 4 or 2 by `state_2`.
+`open_idle` swings the jib out over the gap with the container hanging under the hook; `close_idle`
+draws the jib in and holds the container level at 641.4, 46.3, 390.7. mission e2m7's custom events
+(`action_e2m7_1`, `action_e2m7_2`) play `open` and `open_2` and then call the server; no client data
+sets `state_1` or `state_2`, so that the server saves them then is inferred, not read.
+
 ## spinning scenery
 
 Qingbo Stockade's other waterwheels (map02_lv003) turn without a clip. each is a dynamic structure:

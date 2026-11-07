@@ -1,4 +1,5 @@
 import type { Context } from '../../context.ts';
+import { poseDecorationModels } from '../../game/dynamic/decoration-animators.ts';
 import { type DynamicStructures, loadDynamicStructures } from '../../game/dynamic/dynamic-structures.ts';
 import type { SceneEnvironmentVolume } from '../../game/environment.ts';
 import { loadPlacedVolumes, type PlacedPrefab } from '../../game/prefabs/prefab-environment.ts';
@@ -71,7 +72,7 @@ export const collectEntities = async (
 		}
 	}
 
-	const roots = new PrefabRoots(await context.resolver());
+	const { roots } = sources;
 	await placePrefabs(context.world, roots, content, sources.placements, floaterVolume);
 	const placedVolumes = await collectPlacedVolumes(roots, content, sources.placements, progressions);
 	content.count('unsupportedPrefabs', content.unsupportedPrefabs.length);
@@ -97,8 +98,12 @@ export const collectEntities = async (
 export interface ScenePlacementSources {
 	dynamic: DynamicStructures;
 	interactives: SceneInteractives;
+	/** the dynamic structures' placed prefabs, posed by what their level scripts set as they start */
+	structureModels: DynamicStructures['models'];
 	/** every placed prefab, whatever placed it: dynamic structures', then facilities', then cabins' */
 	placements: DynamicStructures['models'];
+	/** the placed prefabs' roots, for the readers after the sources */
+	roots: PrefabRoots;
 }
 
 /**
@@ -123,10 +128,18 @@ export const collectPlacementSources = async (
 	controls.require(dynamic);
 	placeDynamicEntities(content, dynamic);
 	const interactives = await collectInteractives(context, content, dynamic);
+	const roots = new PrefabRoots(await context.resolver());
+	// level scripts are read with the interactives, after the dynamic structures, so the Animator values they
+	// set as they start pose the structures' prefabs here
+	const decorated = await poseDecorationModels(roots, dynamic.models, interactives.decorationAnimators);
+	content.count('decorationAnimatorModels', decorated.posed);
+	controls.add(...decorated.controls);
 	return {
 		dynamic,
 		interactives,
-		placements: [...dynamic.models, ...interactives.facilityModels, ...interactives.cabinModels],
+		structureModels: decorated.models,
+		placements: [...decorated.models, ...interactives.facilityModels, ...interactives.cabinModels],
+		roots,
 	};
 };
 

@@ -266,6 +266,21 @@ by `animatorPose` with those values on every Animator in the prefab (which Anima
 component reaches isn't checked). one bool read from a saved property places the model once per
 value under an `activation:<row id>` control, set by default, as in a finished save.
 
+a dynamic structure's model whose group a level script sets
+[decoration animator](../game-data/animation.md#decoration-animators) values on as it starts is
+posed by `animatorPose` with those values instead
+([decoration-animators.ts](../../packages/extractor/src/game/dynamic/decoration-animators.ts)).
+`decorationAnimatorStarts` follows each of the scene's own scripts from its
+`ScriptEvent_OnScriptActive` headers through `nextID`, branch lists and if/else nodes on a saved
+property, and keeps a group's `SetDecorationAnimatorInt`/`Bool` values when they're constant or
+split on one saved property; a group set past another condition, by two scripts, or with two values
+on one path is left as saved (`decorationAnimatorGroupsUntraced`). values set by other events and
+`PlayDecorationAnimation` aren't read. a split places the model once per value under an
+`activation:<script>:<property>` control, set by default as in a finished save.
+`collectPlacementSources` poses them once the level scripts are read, since those load with the
+interactives after the dynamic structures; models already posed by view states and effect rows keep
+their look.
+
 ### ACL clips
 
 `readClipMotion` plays an [ACL-compressed clip](../game-data/animation.md#acl-compressed-clips)

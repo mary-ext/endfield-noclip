@@ -451,8 +451,11 @@ packs or renders correctly.
   play: float tracks and root motion aren't decoded, and buffers with a database, non-trivial
   default values or Euler bindings hold their end pose. blend-tree states, additive or
   partial-weight layers, override controllers and the Animators of models with view states hold
-  their saved pose. vertex-animation-texture meshes (`_vat`, e.g. floating rocks) draw their rest
-  pose
+  their saved pose. of the [decoration animator](game-data/animation.md#decoration-animators) values
+  level scripts set, only those set on script start (constant or by one saved property) are read;
+  `PlayDecorationAnimation` and values set by quest, custom or volume events aren't, and a saved
+  property's default (set, as in a finished save) is assumed. vertex-animation-texture meshes
+  (`_vat`, e.g. floating rocks) draw their rest pose
 - [spinning scenery](game-data/animation.md#spinning-scenery) (Qingbo's other waterwheels, the
   originium hub frames) turns from its stored pose at the viewer clock's zero rather than at the
   game's clock phase, and how the native systems turn it is inferred from the data, not read.

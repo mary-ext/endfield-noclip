@@ -6,6 +6,10 @@ import { mapDefined } from '@mary-ext/array-fns';
 
 import type { Context } from '../../context.ts';
 import { cabinDoors, type CabinRoom, loadCabins } from '../../game/dynamic/cabins.ts';
+import {
+	type DecorationAnimatorStart,
+	decorationAnimatorStarts,
+} from '../../game/dynamic/decoration-animators.ts';
 import type { DynamicStructures, StructureModel } from '../../game/dynamic/dynamic-structures.ts';
 import {
 	fireSeedActionTarget,
@@ -44,6 +48,8 @@ export interface SceneInteractives {
 	cabinModels: StructureModel[];
 	/** facilities placed without a model the reader found, which stand-in cubes mark */
 	standIns: InteractiveStandIn[];
+	/** by script-controlled group id, the Animator values its level script sets as it starts */
+	decorationAnimators: Map<string, DecorationAnimatorStart>;
 	/** Dijiang's cabin slots, with the control that builds each */
 	cabinRooms: CabinRoom[];
 	/** the constant water fills the scene's level scripts set, and how many they compute */
@@ -88,6 +94,9 @@ export const collectInteractives = async (
 	content.count('waterScriptActionsComputed', scriptWater.computed);
 	const fireSeedLevels = scriptFireSeedLevels(levelScripts);
 	content.count('fireSeedScriptActions', fireSeedLevels.length);
+	const decorationAnimators = decorationAnimatorStarts(levelScripts);
+	content.count('decorationAnimatorGroups', decorationAnimators.starts.size);
+	content.count('decorationAnimatorGroupsUntraced', decorationAnimators.untraced);
 
 	const facilities = await loadInteractiveFacilities(context, {
 		scene: scene.id,
@@ -244,6 +253,7 @@ export const collectInteractives = async (
 		facilityModels: facilities.models,
 		cabinModels: cabins.models,
 		standIns: facilities.standIns,
+		decorationAnimators: decorationAnimators.starts,
 		cabinRooms: cabins.rooms,
 		scriptWater,
 		waterDrivers,

@@ -494,7 +494,7 @@ function* surveyCandidates(
 	kinds: ReadonlySet<PlacementKind>,
 	lookups: FindLookups,
 ): Generator<FoundCandidate> {
-	const { dynamic, interactives } = survey;
+	const { dynamic, interactives, structureModels } = survey;
 	const { names, standIns, levelOf } = lookups;
 	if (kinds.has('dynamic')) {
 		for (const { entity, visibility: gates } of dynamic.entities) {
@@ -535,7 +535,7 @@ function* surveyCandidates(
 	}
 	const prefabs = [
 		// effect rows are keyed `effect:<grid>/<index>`, model rows `<grid>/<index>`
-		...dynamic.models.map((model) => prefab(model.source.startsWith('effect:') ? 'effect' : 'model', model)),
+		...structureModels.map((model) => prefab(model.source.startsWith('effect:') ? 'effect' : 'model', model)),
 		...interactives.facilityModels.map((model) => prefab('facility', model)),
 		...interactives.cabinModels.map((model) => prefab('cabin', model)),
 	];

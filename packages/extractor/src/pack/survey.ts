@@ -1,6 +1,5 @@
 import type { Context } from '../context.ts';
 import type { SceneEnvironmentVolume } from '../game/environment.ts';
-import { PrefabRoots } from '../game/prefabs/prefab-root.ts';
 
 import {
 	collectPlacedVolumes,
@@ -43,7 +42,7 @@ export const surveyPlacedVolumes = async (
 	survey: ScenePlacementSurvey,
 ): Promise<SceneEnvironmentVolume[]> =>
 	collectPlacedVolumes(
-		new PrefabRoots(await context.resolver()),
+		survey.roots,
 		survey.content,
 		survey.placements,
 		await progressionControls(context.world, survey.scene.id),
