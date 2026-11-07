@@ -198,6 +198,8 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			content.count(`lightsSkipped ${reason}`, count);
 		}
 		addSceneStateControls(controls, scene);
+		// every hash has its path by now; the tables are the largest thing the later phases would carry
+		context.world.releasePathTables();
 		// #endregion
 
 		// #region irradiance

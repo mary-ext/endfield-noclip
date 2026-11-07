@@ -91,6 +91,8 @@ export class WorldIndex {
 	readonly vfs: Vfs;
 	#pathHash: Promise<StringPathHashTable> | undefined;
 	#initPathHash: Promise<StringPathHashTable> | undefined;
+	/** both tables once {@link pathLookup} has loaded them, for its synchronous lookups */
+	#loadedPathTables: [StringPathHashTable, StringPathHashTable] | undefined;
 	/** {@link hashesOf} by normalized path */
 	readonly #hashes = new Map<string, Promise<bigint[]>>();
 	#manifest: Promise<BundleManifest> | undefined;
@@ -141,10 +143,30 @@ export class WorldIndex {
 		return (await this.pathLookup())(hash);
 	}
 
-	/** @returns {@link pathOf} as a synchronous function, once both tables are loaded */
+	/**
+	 * @returns {@link pathOf} as a synchronous function, once both tables are loaded; it reads them through
+	 *   this index rather than holding them, so {@link releasePathTables} frees them
+	 */
 	async pathLookup(): Promise<(hash: bigint) => string | undefined> {
 		const [main, initial] = await Promise.all([this.pathHash(), this.initPathHash()]);
-		return (hash) => main.lookup(hash) ?? initial.lookup(hash);
+		this.#loadedPathTables = [main, initial];
+		return (hash) => {
+			if (this.#loadedPathTables === undefined) {
+				throw new Error('the StringPathHash tables were released; call pathLookup again');
+			}
+			const [loadedMain, loadedInitial] = this.#loadedPathTables;
+			return loadedMain.lookup(hash) ?? loadedInitial.lookup(hash);
+		};
+	}
+
+	/**
+	 * drops the StringPathHash tables (≈170 MB); {@link hashesOf} keeps its results and later calls read the
+	 * tables again, while lookups from an earlier {@link pathLookup} throw
+	 */
+	releasePathTables(): void {
+		this.#pathHash = undefined;
+		this.#initPathHash = undefined;
+		this.#loadedPathTables = undefined;
 	}
 
 	/**
