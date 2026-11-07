@@ -93,10 +93,7 @@ export class WaterLevels {
 		this.#current = Float64Array.from(volumes, (volume) => volume.initial);
 		this.#target = Float64Array.from(this.#current);
 		this.#speed = Float64Array.from(volumes, (volume) => volume.fillSpeed);
-		const indices = new Map(volumes.map((volume, i) => [volume.id, i]));
-		this.#parents = Int32Array.from(volumes, (volume) =>
-			volume.parent === null ? -1 : (indices.get(volume.parent) ?? -1),
-		);
+		this.#parents = Int32Array.from(volumes, (volume) => volume.parent ?? -1);
 		this.#offsets = new Float32Array(volumes.length);
 		this.#floaters.clear();
 		for (const [i, volume] of volumes.entries()) {

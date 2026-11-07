@@ -159,8 +159,8 @@ describe('volumeEntry', () => {
 			],
 		);
 		// a basin following it gets no fills of its own
-		const basin = volumeEntry({ ...pond, id: '22800060019', parent: '22800060004' }, []).entry;
-		assert.equal(basin.control, null);
+		const basin = volumeEntry({ ...pond, id: '22800060019', parent: '22800060004' }, []);
+		assert.equal(basin.entry.control, null);
 		assert.equal(basin.parent, '22800060004');
 	});
 

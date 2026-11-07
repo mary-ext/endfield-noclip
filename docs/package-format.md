@@ -592,11 +592,11 @@ packing rules:
   drained (an objective's `CheckFluidVolume` at or under a twentieth of the pool), to empty, as in a
   finished story; its drivers say what runs each script action setting a fill, and the quests
   needing it drained, with that fill as their `value`. it gates no content, so it's kept as a
-  consumer of the volume, with the volume's level tag. `parent` names the volume whose surface a
-  basin follows; a following volume has no control. `floaters` are the stored instance rows, as
-  (block blob, row index), of the renderers of every interactive placement whose component 39 names
-  the volume; the packer finds them by entity id once the blocks are stored, and lists a floater
-  with no stored row in `debug/water.json`.
+  consumer of the volume, with the volume's level tag. `parent` indexes the volume whose surface a
+  basin follows (`null` when that volume isn't packed); a following volume has no control.
+  `floaters` are the stored instance rows, as (block blob, row index), of the renderers of every
+  interactive placement whose component 39 names the volume; the packer finds them by entity id once
+  the blocks are stored, and lists a floater with no stored row in `debug/water.json`.
 
 ### particles
 

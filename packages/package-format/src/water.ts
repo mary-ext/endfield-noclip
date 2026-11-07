@@ -43,11 +43,11 @@ export interface WaterVolumeEntry {
 	 */
 	control: string | null;
 	/**
-	 * the {@link id} of the volume whose surface this one follows, clamped to its own depth: the surface sits at
-	 * the parent's height, but no lower than {@link base} and no higher than full. `null` for a volume of its
-	 * own; a following volume has no control
+	 * index into {@link WaterTable.volumes} of the volume whose surface this one follows, clamped to its own
+	 * depth: the surface sits at the parent's height, but no lower than {@link base} and no higher than full.
+	 * `null` for a volume of its own; a following volume has no control
 	 */
-	parent: string | null;
+	parent: number | null;
 	/** instance rows of the interactives that float on the volume: they follow its surface up and down */
 	floaters: WaterFloater[];
 }

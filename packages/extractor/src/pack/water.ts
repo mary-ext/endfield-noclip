@@ -266,6 +266,8 @@ export const planWater = async (
 		});
 	}
 	plan.debug.surfaces.packed = plan.table.surfaces.length;
+	/** per table volume, the game id of the volume it follows */
+	const parents: (string | null)[] = [];
 	for (const volume of volumes) {
 		const config = configIndex.get(volume.configHash ?? volume.itemType);
 		if (config === undefined) {
@@ -279,8 +281,9 @@ export const planWater = async (
 			continue;
 		}
 		const index = plan.table.volumes.length;
-		const { entry, sources } = volumeEntry(volume, options.scriptLevels);
+		const { entry, sources, parent } = volumeEntry(volume, options.scriptLevels);
 		plan.table.volumes.push(entry);
+		parents.push(parent);
 		plan.levelSources.push(sources);
 		plan.floaterIds.push(options.volumes.floaterRows.get(volume.id) ?? []);
 		plan.table.surfaces.push(volumeSurface(volume, geometry, config, index));
@@ -297,6 +300,11 @@ export const planWater = async (
 			renderTypeMask: null,
 			param1: null,
 		});
+	}
+	// a parent left out of the package (its config failed, or the subset dropped it) leaves the volume its own
+	const indexOfVolume = new Map(plan.table.volumes.map((volume, i) => [volume.id, i]));
+	for (const [i, parent] of parents.entries()) {
+		plan.table.volumes[i].parent = parent === null ? null : (indexOfVolume.get(parent) ?? null);
 	}
 	plan.debug.volumes.packed = plan.table.volumes.length;
 	if (plan.table.surfaces.length === 0) {
@@ -577,12 +585,13 @@ const FRACTION_EPSILON = 1e-4;
  * @param volume a volume
  * @param scripts every constant fill the scene's scripts set
  * @returns the volume's table entry, with its authored fill and the fills scripts set it to (its floaters are
- *   left for {@link finishWater}), and per level where it comes from
+ *   left for {@link finishWater}, its parent for {@link planWater}), per level where it comes from, and the
+ *   game id of the volume it follows, or `null`
  */
 export const volumeEntry = (
 	volume: LevelWaterVolume,
 	scripts: readonly ScriptWaterLevel[],
-): { entry: WaterVolumeEntry; sources: WaterLevelSource[] } => {
+): { entry: WaterVolumeEntry; sources: WaterLevelSource[]; parent: string | null } => {
 	const found: { fraction: number; speed: number | null; source: WaterLevelSource }[] = [
 		{ fraction: volume.fraction, speed: null, source: { authored: true, actions: [], pumped: false } },
 	];
@@ -630,10 +639,12 @@ export const volumeEntry = (
 			fillSpeed,
 			levels,
 			control: levels.length > 1 ? waterLevelControl(volume.id) : null,
-			parent: volume.parent,
+			// the table index of the parent is known once every volume is in (see `parent` below)
+			parent: null,
 			floaters: [],
 		},
 		sources: sorted.map(({ source }) => source),
+		parent: volume.parent,
 	};
 };
 
