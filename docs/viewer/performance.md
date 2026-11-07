@@ -16,7 +16,9 @@
   jumping by the time the view idled. frames that only settle or adapt reuse the last selection,
   unless it drew particles or spinning rows and `animate` is on, which are re-evaluated so they keep
   moving until the view idles. it traverses without rendering while streaming is in progress
-  (`!stream.idle`), and does nothing at all when the view is still and streaming is idle. the
+  (`!stream.idle`), and does nothing at all when the view is still and streaming is idle. replaying
+  the last traversal's requests on frames where nothing was uploaded or evicted would save nothing:
+  over four map02 teleports, every one of 1,523 loading frames had something new resident. the
   environment re-blends only when the eye, its settings or a fade changed.
 - **stats** publish every 250 ms and notify subscribers only when the JSON differs, so the React
   panels don't re-render on a still view. the environment at the camera has its own revision, bumped
