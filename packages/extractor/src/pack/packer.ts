@@ -37,7 +37,6 @@ import {
 	encodeInstanceBlock,
 	type ChainDraw,
 	DrawRole,
-	type InstanceBlock,
 } from '@endfield-noclip/package-format/instances';
 import {
 	encodeIrradianceTable,
@@ -2034,11 +2033,11 @@ const packInstances = async (
 }> => {
 	const { store, builder, scene } = pack;
 	const rowsOf = new Map<number, WaterFloater[]>();
-	const track = (blob: number, block: InstanceBlock): void => {
+	const track = (blob: number, group: Group, order: Uint32Array): void => {
 		if (tracked.size === 0) {
 			return;
 		}
-		for (const [row, id] of block.entityIds.entries()) {
+		for (const [row, id] of group.rows.entityIdsInOrder(order).entries()) {
 			if (tracked.has(id)) {
 				rowsOf.getOrInsertComputed(id, () => []).push({ blob, row });
 			}
@@ -2067,7 +2066,7 @@ const packInstances = async (
 				options: placement(BlobKind.Instances, archiveForTile(pack, group.key)),
 			})),
 		);
-		for (const [i, { group, block, order }] of encoded.entries()) {
+		for (const [i, { group, order }] of encoded.entries()) {
 			builder.addRef(group.key, {
 				kind: group.conditional ? ContentKind.Conditional : ContentKind.Detail,
 				tier: 0,
@@ -2078,9 +2077,9 @@ const packInstances = async (
 				reach: group.grid === null ? null : builder.reach(dynamicGridReach(decodeDynamicGrid(group.grid))),
 			});
 			builder.extend(group.key, group.bounds!);
-			track(blobs[i], block);
+			track(blobs[i], group, order);
 			// oxlint-disable-next-line no-await-in-loop -- lines go out in block order
-			await debugLog.block(store.hashOf(blobs[i]), group, block, order);
+			await debugLog.block(store.hashOf(blobs[i]), group, order);
 		}
 	}
 
@@ -2098,10 +2097,10 @@ const packInstances = async (
 				options: placement(BlobKind.Instances, CORE_ARCHIVE),
 			})),
 		);
-		for (const [i, { group, block, order }] of encoded.entries()) {
-			track(blobs[i], block);
+		for (const [i, { group, order }] of encoded.entries()) {
+			track(blobs[i], group, order);
 			// oxlint-disable-next-line no-await-in-loop -- lines go out in block order
-			await debugLog.block(store.hashOf(blobs[i]), group, block, order);
+			await debugLog.block(store.hashOf(blobs[i]), group, order);
 		}
 		return encoded.map(({ visibility, group, order }, i) => ({ visibility, group, order, blob: blobs[i] }));
 	};
@@ -2860,12 +2859,12 @@ class DebugLog {
 	 *
 	 * @param blob the block's blob hash
 	 * @param group the rows it was encoded from
-	 * @param block the encoded block
 	 * @param order per block row, its insertion index in `group`
 	 */
-	async block(blob: string, group: Group, block: InstanceBlock, order: Uint32Array): Promise<void> {
+	async block(blob: string, group: Group, order: Uint32Array): Promise<void> {
+		const ids = group.rows.entityIdsInOrder(order);
 		const rows = Array.from(order, (i, out): [number, string, number] => [
-			block.entityIds[out],
+			ids[out],
 			group.names[i],
 			group.files[i],
 		]);

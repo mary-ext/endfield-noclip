@@ -315,22 +315,24 @@ exactly while the cabin shows.
 
 ### instance block (`.inst`, `EFIN`)
 
-32-byte header:
-`u32 magic, u16 version, u16 flags, u32 count, f32×3 origin, u32 placementCount, u32 spinCount`.
-then struct-of-arrays sections of `count` elements: `u32 chain`, `f32×12 transform` (rows3x4,
-translation relative to origin), `f32×6 bounds` (world AABB centre relative to origin, then
-half-extents, as the game stores them), `u32 entity id`. then the rect decal placements:
-`placementCount` ascending `u32 row`s and their `f32×8` placements (the RGBA8 colour, used as
-stored, with RGB times the intensity, then the UV scale and offset of the box's `local.xz + 0.5`).
-then the spinning rows ([spinning scenery](game-data/animation.md#spinning-scenery)): `spinCount`
-ascending `u32 row`s and their `f32×7` spins (pivot relative to origin, unit axis, radians per
-second). at time `t` a spinning row's transform and bounds centre are its stored ones turned
-`speed · t` about the axis through the pivot, as Unity's `Quaternion.AngleAxis` turns; the stored
-half-extents still bound it by sphere. the tile tree's bounds hold the cylinder each spinning row's
-box sweeps. origin is the leaf's minimum corner (y 0) for detail blocks and the tree origin for core
-blocks. rows are sorted by (HLOD node, chain) (`SortedByChain`), so equal chains form instanced
-ranges. the entity id traces a row through the debug index (prefab renderers get made-up ids); who
-owns a row and when it loads is the block's group, not the id.
+32-byte header: `u32 magic, u16 version, u16 0, u32 count, f32×3 origin`, then a `u32` row count per
+row section (decals, spins). then struct-of-arrays sections of `count` elements: `u32 chain`,
+`f32×12 transform` (rows3x4, translation relative to origin), `f32×6 bounds` (world AABB centre
+relative to origin, then half-extents, as the game stores them). then each **row section**, values
+only some rows carry: its ascending `u32 row`s, then a fixed number of floats per row (`RowSection`,
+one codec for all of them):
+
+- **decals**: `f32×8` rect decal placements (the RGBA8 colour, used as stored, with RGB times the
+  intensity, then the UV scale and offset of the box's `local.xz + 0.5`).
+- **spins** ([spinning scenery](game-data/animation.md#spinning-scenery)): `f32×7` (pivot relative
+  to origin, unit axis, radians per second). at time `t` a spinning row's transform and bounds
+  centre are its stored ones turned `speed · t` about the axis through the pivot, as Unity's
+  `Quaternion.AngleAxis` turns; the stored half-extents still bound it by sphere. the tile tree's
+  bounds hold the cylinder each spinning row's box sweeps.
+
+origin is the leaf's minimum corner (y 0) for detail blocks and the tree origin for core blocks.
+rows are sorted by (HLOD node, chain), so equal chains form instanced ranges. who owns a row and
+when it loads is the block's group; `debug/instances.jsonl` traces each row to its entity.
 
 full 3×4 matrices are kept rather than quantized TRS because Unity hierarchies bake shear and
 non-uniform scale into them.

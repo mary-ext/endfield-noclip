@@ -3,7 +3,6 @@ import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import {
 	DECAL_PLACEMENT_FLOATS,
 	type InstanceBlock,
-	InstanceBlockFlags,
 	SPIN_FLOATS,
 } from '@endfield-noclip/package-format/instances';
 
@@ -90,7 +89,6 @@ export class InstanceBlockBuilder {
 		const chains = new Uint32Array(count);
 		const transforms = new Float32Array(count * 12);
 		const bounds = new Float32Array(count * 6);
-		const entityIds = new Uint32Array(count);
 		const decalRows = new Uint32Array(this.#placements.size);
 		const placements = new Float32Array(this.#placements.size * DECAL_PLACEMENT_FLOATS);
 		const spinRows = new Uint32Array(this.#spins.size);
@@ -100,7 +98,6 @@ export class InstanceBlockBuilder {
 		for (let out = 0; out < count; out++) {
 			const i = order[out];
 			chains[out] = this.#chains[i];
-			entityIds[out] = this.#entityIds[i];
 			for (let k = 0; k < 12; k++) {
 				transforms[out * 12 + k] = this.#matrices[i * 12 + k];
 			}
@@ -132,13 +129,11 @@ export class InstanceBlockBuilder {
 		}
 		return {
 			block: {
-				flags: InstanceBlockFlags.SortedByChain,
 				origin,
 				chains,
 				transforms,
 				bounds,
-				entityIds,
-				decalPlacements: { rows: decalRows, values: placements },
+				decals: { rows: decalRows, values: placements },
 				spins: { rows: spinRows, values: spins },
 			},
 			order,
@@ -151,5 +146,13 @@ export class InstanceBlockBuilder {
 	 */
 	groupsInOrder(order: Uint32Array): number[] {
 		return Array.from(order, (i) => this.#groups[i]);
+	}
+
+	/**
+	 * @param order output order from {@link InstanceBlockBuilder.toBlock}
+	 * @returns the entity id of each output row
+	 */
+	entityIdsInOrder(order: Uint32Array): number[] {
+		return Array.from(order, (i) => this.#entityIds[i]);
 	}
 }

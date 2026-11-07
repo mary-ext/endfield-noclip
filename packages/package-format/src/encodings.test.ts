@@ -233,14 +233,12 @@ describe('irradiance table', () => {
 
 describe('instance blocks', () => {
 	const block = (count: number): InstanceBlock => ({
-		flags: 1,
 		origin: [-1024, 0, 512],
 		chains: Uint32Array.from({ length: count }, (_, i) => i * 3),
 		transforms: Float32Array.from({ length: count * 12 }, (_, i) => i / 4),
 		bounds: Float32Array.from({ length: count * 6 }, (_, i) => -i),
-		entityIds: Uint32Array.from({ length: count }, (_, i) => 0xf000_0000 + i),
 		// every other row a decal
-		decalPlacements: {
+		decals: {
 			rows: Uint32Array.from({ length: Math.ceil(count / 2) }, (_, i) => i * 2),
 			values: Float32Array.from({ length: Math.ceil(count / 2) * 8 }, (_, i) => i / 8),
 		},
@@ -263,16 +261,13 @@ describe('instance blocks', () => {
 	});
 
 	it('rejects mismatched sections, and decal or spinning rows out of order or past the block', () => {
-		assert.throws(() => encodeInstanceBlock({ ...block(2), entityIds: new Uint32Array(1) }), RangeError);
+		assert.throws(() => encodeInstanceBlock({ ...block(2), bounds: new Float32Array(6) }), RangeError);
 		const placements = (rows: number[]) => ({
 			rows: Uint32Array.from(rows),
 			values: new Float32Array(rows.length * 8),
 		});
-		assert.throws(
-			() => encodeInstanceBlock({ ...block(3), decalPlacements: placements([2, 0]) }),
-			RangeError,
-		);
-		assert.throws(() => encodeInstanceBlock({ ...block(3), decalPlacements: placements([3]) }), RangeError);
+		assert.throws(() => encodeInstanceBlock({ ...block(3), decals: placements([2, 0]) }), RangeError);
+		assert.throws(() => encodeInstanceBlock({ ...block(3), decals: placements([3]) }), RangeError);
 		const spins = (rows: number[]) => ({
 			rows: Uint32Array.from(rows),
 			values: new Float32Array(rows.length * 7),

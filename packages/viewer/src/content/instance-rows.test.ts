@@ -15,13 +15,11 @@ import {
 } from './instance-rows.ts';
 
 const block = (chains: number[], decalRows: number[] = []): InstanceBlock => ({
-	flags: 0,
 	origin: [0, 0, 0],
 	chains: Uint32Array.from(chains),
 	transforms: new Float32Array(chains.length * 12),
 	bounds: new Float32Array(chains.length * 6),
-	entityIds: new Uint32Array(chains.length),
-	decalPlacements: {
+	decals: {
 		rows: Uint32Array.from(decalRows),
 		values: Float32Array.from({ length: decalRows.length * 8 }, (_, i) => i),
 	},

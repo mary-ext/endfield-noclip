@@ -249,7 +249,7 @@ export const buildInstanceRows = (block: InstanceBlock, kinds: RowKinds): Instan
 		cull[i * CULL_FLOATS] = Math.sqrt(fx * fx + fy * fy + fz * fz);
 		cull[i * CULL_FLOATS + 1] = Math.max(fx, fy, fz);
 	}
-	const { rows: decalRows, values } = block.decalPlacements;
+	const { rows: decalRows, values } = block.decals;
 	if (decalRows.length >= 2 ** (32 - BLOCK_SLOT_BITS)) {
 		throw new RangeError(
 			`an instance block has ${decalRows.length} decal placements, more than rows can index`,
