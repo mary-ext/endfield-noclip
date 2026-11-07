@@ -253,13 +253,7 @@ export const loadDynamicStructures = async (
 	const names = [...(await vfs.group(VfsGroup.DynamicStreaming)).files.keys()]
 		.filter((name) => name.startsWith(`${prefix}fb_main_`))
 		.toSorted();
-	const read = async (name: string): Promise<Uint8Array> => {
-		const file = await vfs.find(VfsGroup.DynamicStreaming, name);
-		if (file === undefined) {
-			throw new FormatError(`missing dynamic resource ${name}`);
-		}
-		return vfs.readVerified(file);
-	};
+	const read = (name: string): Promise<Uint8Array> => vfs.readFile(VfsGroup.DynamicStreaming, name);
 	const grids = new Map<number, DynamicResourceGrid>();
 	const owners: DynamicResourceEntity[] = [];
 	for (const name of names) {

@@ -1,5 +1,5 @@
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
-import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
+import { isMemoryPackObject, type MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 import {
 	type ClipMotion,
 	readClipEndPose,
@@ -41,15 +41,12 @@ export interface ModelViews {
 /** the values a model's state machines test, by key; keys left out are false or 0 */
 export type Blackboard = ReadonlyMap<string, boolean | number>;
 
-const isRecord = (value: MemoryPackValue | undefined): value is ViewStateRecord =>
-	value !== null && typeof value === 'object' && !Array.isArray(value);
-
 /**
  * @param value a decoded list
  * @returns its records
  */
 export const records = (value: MemoryPackValue | undefined): ViewStateRecord[] =>
-	Array.isArray(value) ? value.filter(isRecord) : [];
+	Array.isArray(value) ? value.filter(isMemoryPackObject) : [];
 
 /**
  * @param value a decoded value
@@ -74,7 +71,7 @@ export const readViewStates = async (
 		return null;
 	}
 	const data = (await context.memoryPack()).decode(await context.vfs.readVerified(file), ROOT);
-	if (!isRecord(data)) {
+	if (!isMemoryPackObject(data)) {
 		throw new FormatError(`${path} isn't a view state controller`);
 	}
 	return { model, path, data };
@@ -110,8 +107,8 @@ const compare = (value: number, comparison: number, target: number): boolean => 
  */
 const holds = (condition: ViewStateRecord, blackboard: Blackboard): boolean => {
 	const key = text(condition.key) ?? '';
-	const wrapper = isRecord(condition.conditionValue) ? condition.conditionValue : {};
-	const union = isRecord(wrapper.conditionValue) ? wrapper.conditionValue : {};
+	const wrapper = isMemoryPackObject(condition.conditionValue) ? condition.conditionValue : {};
+	const union = isMemoryPackObject(wrapper.conditionValue) ? wrapper.conditionValue : {};
 	const comparison = typeof condition.comparison === 'number' ? condition.comparison : 0;
 	const value = blackboard.get(key);
 	let result: boolean;
@@ -166,9 +163,9 @@ export const settledPath = (layer: ViewStateRecord, blackboard: Blackboard): Vie
 		}
 		path.push(state);
 		const next: ViewStateRecord | undefined = records(state.transitions).find((transition) =>
-			records(isRecord(transition.conditionGroup) ? transition.conditionGroup.conditions : []).every(
-				(condition) => holds(condition, blackboard),
-			),
+			records(
+				isMemoryPackObject(transition.conditionGroup) ? transition.conditionGroup.conditions : [],
+			).every((condition) => holds(condition, blackboard)),
 		);
 		const target: ViewStateRecord | undefined =
 			next === undefined ? undefined : states.get(text(next.targetStateName) ?? '');
@@ -190,10 +187,12 @@ export const testedValues = (states: ViewStates, key: string): number[] => {
 		for (const layer of records(animator.layerFsmDatas)) {
 			for (const state of records(layer.stateDatas)) {
 				for (const transition of records(state.transitions)) {
-					const group = isRecord(transition.conditionGroup) ? transition.conditionGroup.conditions : [];
+					const group = isMemoryPackObject(transition.conditionGroup)
+						? transition.conditionGroup.conditions
+						: [];
 					for (const condition of records(group)) {
-						const wrapper = isRecord(condition.conditionValue) ? condition.conditionValue : {};
-						const union = isRecord(wrapper.conditionValue) ? wrapper.conditionValue : {};
+						const wrapper = isMemoryPackObject(condition.conditionValue) ? condition.conditionValue : {};
+						const union = isMemoryPackObject(wrapper.conditionValue) ? wrapper.conditionValue : {};
 						if (text(condition.key) === key && wrapper.type === 2 && typeof union.intValue === 'number') {
 							values.add(union.intValue);
 						}

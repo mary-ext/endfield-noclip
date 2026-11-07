@@ -3,7 +3,7 @@ import {
 	type LevelInteractive,
 	interactiveParamFromValue,
 } from '@endfield-noclip/formats/endfield/level-interactives';
-import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
+import { isMemoryPackObject, type MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
 /** how one interactive component is named in a template, its variants and LevelData */
 export interface ComponentKeys {
@@ -15,9 +15,6 @@ export interface ComponentKeys {
 	type: number;
 }
 
-const isRecord = (value: MemoryPackValue | undefined): value is { [key: string]: MemoryPackValue } =>
-	value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
-
 /**
  * @param template a decoded interactive template
  * @param suffix the suffix of the component's `$type`
@@ -27,11 +24,15 @@ export const componentOf = (
 	template: MemoryPackValue,
 	suffix: string,
 ): { [key: string]: MemoryPackValue } | null => {
-	if (!isRecord(template) || !Array.isArray(template.componentList)) {
+	if (!isMemoryPackObject(template) || !Array.isArray(template.componentList)) {
 		return null;
 	}
 	for (const component of template.componentList) {
-		if (isRecord(component) && typeof component.$type === 'string' && component.$type.endsWith(suffix)) {
+		if (
+			isMemoryPackObject(component) &&
+			typeof component.$type === 'string' &&
+			component.$type.endsWith(suffix)
+		) {
 			return component;
 		}
 	}
@@ -53,7 +54,7 @@ export const componentParams = (
 	keys: ComponentKeys,
 ): Map<string, InteractiveParam> | null => {
 	const component = componentOf(template, keys.suffix);
-	if (component === null || !isRecord(template)) {
+	if (component === null || !isMemoryPackObject(template)) {
 		return null;
 	}
 	const params = new Map<string, InteractiveParam>();
@@ -65,13 +66,13 @@ export const componentParams = (
 	};
 	add(component.propertyList);
 	for (const pair of Array.isArray(template.templateVariant) ? template.templateVariant : []) {
-		if (!Array.isArray(pair) || pair[0] !== row.template || !isRecord(pair[1])) {
+		if (!Array.isArray(pair) || pair[0] !== row.template || !isMemoryPackObject(pair[1])) {
 			continue;
 		}
 		for (const diff of Array.isArray(pair[1].componentDiffProperties)
 			? pair[1].componentDiffProperties
 			: []) {
-			if (Array.isArray(diff) && diff[0] === keys.diffKey && isRecord(diff[1])) {
+			if (Array.isArray(diff) && diff[0] === keys.diffKey && isMemoryPackObject(diff[1])) {
 				add(diff[1].value);
 			}
 		}

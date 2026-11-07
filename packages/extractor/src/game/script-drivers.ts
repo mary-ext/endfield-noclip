@@ -723,8 +723,7 @@ export const loadLevelScripts = async (
 	const ownLevels = new Set(
 		mapDefined([...configs.values()], (config) => (config.mapId === scene ? config.id : undefined)),
 	);
-	const read = async (name: string): Promise<Uint8Array> =>
-		vfs.readVerified((await vfs.find(VfsGroup.JsonData, name))!);
+	const read = (name: string): Promise<Uint8Array> => vfs.readFile(VfsGroup.JsonData, name);
 	const wanted = new Set([...entities].map((id) => BigInt(id)));
 	const scripts = new Map<string, Script>();
 	let undecoded = 0;
@@ -774,8 +773,7 @@ export const loadScriptDrivers = async (
 ): Promise<ScriptDrivers> => {
 	const { vfs, world } = context;
 	const { scripts, ownLevels, undecoded } = levelScripts;
-	const read = async (name: string): Promise<Uint8Array> =>
-		vfs.readVerified((await vfs.find(VfsGroup.JsonData, name))!);
+	const read = (name: string): Promise<Uint8Array> => vfs.readFile(VfsGroup.JsonData, name);
 
 	// #region where things are: LevelData placements for interactives named by logic id
 	const placements = new Map<string, { template: string; position: Vec3 }>();
@@ -1144,7 +1142,7 @@ const missionScriptReferences = async (context: Pick<Context, 'vfs'>): Promise<M
 			continue;
 		}
 		// oxlint-disable-next-line no-await-in-loop -- mission files are small
-		const text = new TextDecoder().decode(await vfs.readVerified((await vfs.find(VfsGroup.JsonData, name))!));
+		const text = new TextDecoder().decode(await vfs.readFile(VfsGroup.JsonData, name));
 		for (const reference of text.matchAll(/"scriptId":\s*"?(\d+)/g)) {
 			references.getOrInsertComputed(reference[1], () => new Set()).add(match[1]);
 		}

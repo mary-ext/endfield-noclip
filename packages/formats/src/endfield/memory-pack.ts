@@ -29,6 +29,16 @@ export type MemoryPackValue =
 	| MemoryPackValue[]
 	| { [key: string]: MemoryPackValue };
 
+/** a decoded object: a wrapper's members by name, and its `$type` */
+export type MemoryPackObject = { [key: string]: MemoryPackValue };
+
+/**
+ * @param value a decoded value, or a missing member
+ * @returns whether it's an object
+ */
+export const isMemoryPackObject = (value: MemoryPackValue | undefined): value is MemoryPackObject =>
+	value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
+
 /** a generated wrapper class */
 interface Wrapper {
 	name: string;

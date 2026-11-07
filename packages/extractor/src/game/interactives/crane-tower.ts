@@ -7,7 +7,7 @@ import {
 	type LevelInteractive,
 	interactiveParamFromValue,
 } from '@endfield-noclip/formats/endfield/level-interactives';
-import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
+import { isMemoryPackObject, type MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 import { isTransformClass, UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import {
 	multiplyMatrices,
@@ -40,9 +40,6 @@ export const CRANE_TOWER_COMPONENTS = ['_CraneTowerComponentDataForMemoryPack'];
 /** the height a container hangs below the hook when its entity has no `height` property */
 export const DEFAULT_CONTAINER_HEIGHT = 4;
 
-const isRecord = (value: MemoryPackValue | undefined): value is { [key: string]: MemoryPackValue } =>
-	value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
-
 const toFloat = (bits: bigint): number => {
 	const view = new DataView(new ArrayBuffer(4));
 	view.setUint32(0, Number(BigInt.asUintN(32, bits)));
@@ -70,13 +67,13 @@ export interface CraneTower {
  */
 export const craneTowerOf = (template: MemoryPackValue, row: LevelInteractive): CraneTower | null => {
 	const component =
-		isRecord(template) && Array.isArray(template.componentList)
+		isMemoryPackObject(template) && Array.isArray(template.componentList)
 			? template.componentList.find((entry) => {
-					const type = isRecord(entry) ? entry.$type : null;
+					const type = isMemoryPackObject(entry) ? entry.$type : null;
 					return typeof type === 'string' && CRANE_TOWER_COMPONENTS.some((suffix) => type.endsWith(suffix));
 				})
 			: undefined;
-	if (!isRecord(component)) {
+	if (!isMemoryPackObject(component)) {
 		return null;
 	}
 	const params = new Map<string, InteractiveParam>();

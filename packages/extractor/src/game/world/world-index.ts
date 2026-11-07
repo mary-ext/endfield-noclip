@@ -522,12 +522,8 @@ export class WorldIndex {
 		});
 	}
 
-	async #read(group: string, name: string): Promise<Uint8Array> {
-		const file = await this.vfs.find(group, name);
-		if (file === undefined) {
-			throw new Error(`${name} not found in vfs group ${group}`);
-		}
-		return this.vfs.readVerified(file);
+	#read(group: string, name: string): Promise<Uint8Array> {
+		return this.vfs.readFile(group, name);
 	}
 }
 

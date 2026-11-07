@@ -132,13 +132,7 @@ export const loadCabins = async (
 		return { controls: [], models: [], rooms: [] };
 	}
 	const { vfs } = context;
-	const read = async (group: string, name: string): Promise<Uint8Array> => {
-		const file = await vfs.find(group, name);
-		if (file === undefined) {
-			throw new FormatError(`missing ${name}`);
-		}
-		return vfs.readVerified(file);
-	};
+	const read = (group: string, name: string): Promise<Uint8Array> => vfs.readFile(group, name);
 	const data: unknown = JSON.parse(new TextDecoder().decode(await read(VfsGroup.JsonData, CABIN_DATA)));
 	const infos = isObject(data) && isObject(data.cabinSpawnInfos) ? data.cabinSpawnInfos : {};
 	const names = [...(await vfs.group(VfsGroup.DynamicStreaming)).files.keys()];

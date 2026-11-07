@@ -1,6 +1,6 @@
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
-import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
+import { isMemoryPackObject, type MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
 import type { Context } from '../../context.ts';
 import { VfsGroup } from '../../hg/vfs.ts';
@@ -131,11 +131,8 @@ export const readWaterVolumes = async (
 
 type Record_ = { [key: string]: MemoryPackValue };
 
-const isRecord = (value: MemoryPackValue | undefined): value is Record_ =>
-	value !== null && value !== undefined && typeof value === 'object' && !Array.isArray(value);
-
 const listField = (value: MemoryPackValue, key: string): MemoryPackValue[] => {
-	const field = isRecord(value) ? value[key] : undefined;
+	const field = isMemoryPackObject(value) ? value[key] : undefined;
 	return Array.isArray(field) ? field : [];
 };
 
@@ -166,7 +163,7 @@ const toVolume = (
 	row: MemoryPackValue,
 	owner: { levelId: string; levelTag: number; path: string },
 ): LevelWaterVolume => {
-	if (!isRecord(row)) {
+	if (!isMemoryPackObject(row)) {
 		throw new FormatError(`${owner.path}: water volume is ${JSON.stringify(row)}`);
 	}
 	const id = idOf(row, 'id');
@@ -204,7 +201,7 @@ const booleanOf = (row: Record_, key: string): boolean => {
 };
 
 const toFloater = (row: MemoryPackValue): WaterVolumeFloater | null => {
-	if (!isRecord(row) || !Array.isArray(row.componentProperties)) {
+	if (!isMemoryPackObject(row) || !Array.isArray(row.componentProperties)) {
 		return null;
 	}
 	for (const entry of row.componentProperties) {
@@ -212,11 +209,14 @@ const toFloater = (row: MemoryPackValue): WaterVolumeFloater | null => {
 			continue;
 		}
 		for (const param of entry[1]) {
-			if (!isRecord(param) || param.key !== 'water_volume' || !isRecord(param.value)) {
+			if (!isMemoryPackObject(param) || param.key !== 'water_volume' || !isMemoryPackObject(param.value)) {
 				continue;
 			}
 			const [atom] = listField(param.value, 'valueArray');
-			if (isRecord(atom) && (typeof atom.valueBit64 === 'string' || typeof atom.valueBit64 === 'number')) {
+			if (
+				isMemoryPackObject(atom) &&
+				(typeof atom.valueBit64 === 'string' || typeof atom.valueBit64 === 'number')
+			) {
 				const volume = String(atom.valueBit64);
 				if (volume !== '0') {
 					return { id: idOf(row, 'levelLogicId'), volume };

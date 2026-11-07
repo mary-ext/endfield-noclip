@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { open, readdir, readFile, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import {
 	decryptVfsFileSliceInPlace,
 	parseVfsCatalog,
@@ -175,6 +176,20 @@ export class Vfs {
 			throw new Error(`md5 mismatch for ${file.entry.name}: ${md5} != ${file.entry.dataMd5}`);
 		}
 		return data;
+	}
+
+	/**
+	 * @param hash group hash
+	 * @param name logical file name
+	 * @returns the file's bytes, MD5-checked
+	 * @throws {FormatError} if the group has no such file
+	 */
+	async readFile(hash: string, name: string): Promise<Uint8Array> {
+		const file = await this.find(hash, name);
+		if (file === undefined) {
+			throw new FormatError(`missing ${name}`);
+		}
+		return this.readVerified(file);
 	}
 
 	/** closes cached chunk handles */

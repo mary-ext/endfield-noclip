@@ -13,7 +13,7 @@ import {
 import { InteractiveUnlockType, readLevelLocks } from '@endfield-noclip/formats/endfield/level-locks';
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import { type LevelSpline, readLevelSplines } from '@endfield-noclip/formats/endfield/level-splines';
-import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
+import { isMemoryPackObject, type MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 import { parseSparkTable } from '@endfield-noclip/formats/hg/spark-buffer';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import {
@@ -461,7 +461,7 @@ export interface StartState {
  *   one on
  */
 export const startState = (template: MemoryPackValue): StartState | null => {
-	if (!isRecord(template) || !hasComponent(template, COMMON_PERFORM_COMPONENTS)) {
+	if (!isMemoryPackObject(template) || !hasComponent(template, COMMON_PERFORM_COMPONENTS)) {
 		return null;
 	}
 	const state =
@@ -475,7 +475,7 @@ export const startState = (template: MemoryPackValue): StartState | null => {
 			continue;
 		}
 		const [id, variant] = pair;
-		const value = isRecord(variant) ? intProperty(variant.diffProperties, STATE_KEY) : null;
+		const value = isMemoryPackObject(variant) ? intProperty(variant.diffProperties, STATE_KEY) : null;
 		if (typeof id === 'string' && value !== null) {
 			variants.set(id, value);
 		}
@@ -499,12 +499,12 @@ export interface EntityProperties {
  * @returns its entity property lists, or `null` when it isn't a record
  */
 export const entityProperties = (template: MemoryPackValue): EntityProperties | null => {
-	if (!isRecord(template)) {
+	if (!isMemoryPackObject(template)) {
 		return null;
 	}
 	const variants = new Map<string, MemoryPackValue>();
 	for (const pair of Array.isArray(template.templateVariant) ? template.templateVariant : []) {
-		if (Array.isArray(pair) && typeof pair[0] === 'string' && isRecord(pair[1])) {
+		if (Array.isArray(pair) && typeof pair[0] === 'string' && isMemoryPackObject(pair[1])) {
 			variants.set(pair[0], pair[1].diffProperties);
 		}
 	}
@@ -521,11 +521,11 @@ export const entityProperties = (template: MemoryPackValue): EntityProperties | 
  */
 const templateAtoms = (properties: MemoryPackValue | undefined, key: string): PropertyAtoms | null => {
 	for (const property of Array.isArray(properties) ? properties : []) {
-		if (!isRecord(property) || property.key !== key || !isRecord(property.value)) {
+		if (!isMemoryPackObject(property) || property.key !== key || !isMemoryPackObject(property.value)) {
 			continue;
 		}
 		const atoms = Array.isArray(property.value.valueArray) ? property.value.valueArray : [];
-		return atoms.filter(isRecord).map((atom) => ({
+		return atoms.filter(isMemoryPackObject).map((atom) => ({
 			bits:
 				typeof atom.valueBit64 === 'string' || typeof atom.valueBit64 === 'number'
 					? BigInt(atom.valueBit64)
@@ -626,9 +626,6 @@ export const stateOf = (row: LevelInteractive): number | null => {
 	return null;
 };
 
-const isRecord = (value: MemoryPackValue): value is { [key: string]: MemoryPackValue } =>
-	value !== null && typeof value === 'object' && !Array.isArray(value);
-
 /**
  * @param template a decoded interactive template
  * @returns the Animator bools its simple-animator component gets from the template's on-load action chain, or
@@ -647,9 +644,9 @@ const animatorStart = (template: MemoryPackValue): AnimatorStart | null => {
 	if (map === null || typeof map !== 'object' || Array.isArray(map)) {
 		return null;
 	}
-	const headers = Array.isArray(map.headerList) ? map.headerList.filter(isRecord) : [];
+	const headers = Array.isArray(map.headerList) ? map.headerList.filter(isMemoryPackObject) : [];
 	const actions = new Map(
-		(Array.isArray(map.actionList) ? map.actionList.filter(isRecord) : []).map((action) => [
+		(Array.isArray(map.actionList) ? map.actionList.filter(isMemoryPackObject) : []).map((action) => [
 			action.ID,
 			action,
 		]),
@@ -673,8 +670,8 @@ const animatorStart = (template: MemoryPackValue): AnimatorStart | null => {
 		if (typeof action.$type !== 'string' || !action.$type.endsWith('_SetAnimatorBoolForMemoryPack')) {
 			continue;
 		}
-		const parameter = isRecord(action.key) ? action.key.constValue : null;
-		const value = isRecord(action.value) ? action.value : null;
+		const parameter = isMemoryPackObject(action.key) ? action.key.constValue : null;
+		const value = isMemoryPackObject(action.value) ? action.value : null;
 		if (typeof parameter !== 'string' || value === null) {
 			continue;
 		}
@@ -886,14 +883,7 @@ export const loadInteractiveFacilities = async (
 }> => {
 	const { vfs, world } = context;
 	const reader = await context.memoryPack();
-	const find = (name: string) => vfs.find(VfsGroup.JsonData, name);
-	const read = async (name: string): Promise<Uint8Array> => {
-		const file = await find(name);
-		if (!file) {
-			throw new FormatError(`missing interactive data ${name}`);
-		}
-		return vfs.readVerified(file);
-	};
+	const read = (name: string): Promise<Uint8Array> => vfs.readFile(VfsGroup.JsonData, name);
 	const pool = await world.stringPool();
 	const string = (id: number): string | null => pool.get(id);
 	const table: unknown = JSON.parse(
