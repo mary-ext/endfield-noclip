@@ -302,7 +302,7 @@ export const planWater = async (
 		});
 	}
 	// a parent left out of the package (its config failed, or the subset dropped it) leaves the volume its own
-	const indexOfVolume = new Map(plan.table.volumes.map((volume, i) => [volume.id, i]));
+	const indexOfVolume = new Map(plan.table.volumes.map((volume, i) => [volume.entityId, i]));
 	for (const [i, parent] of parents.entries()) {
 		plan.table.volumes[i].parent = parent === null ? null : (indexOfVolume.get(parent) ?? null);
 	}
@@ -360,7 +360,7 @@ export const finishWater = (
 		}
 		if (missing.length > 0) {
 			plan.debug.errors.push(
-				`water volume ${volume.id}: no stored row for floater entities ${missing.join(', ')}`,
+				`water volume ${volume.entityId}: no stored row for floater entities ${missing.join(', ')}`,
 			);
 		}
 	}
@@ -632,7 +632,7 @@ export const volumeEntry = (
 	}));
 	return {
 		entry: {
-			id: volume.id,
+			entityId: volume.id,
 			base: volume.pivot[1],
 			heightMax: volume.heightMax,
 			initial: volume.fraction,
@@ -660,7 +660,7 @@ const volumeSurface = (
 	const zs = volume.points.map(([, z]) => z);
 	return {
 		kind: 'volume',
-		id: Number(volume.id),
+		entityId: Number(volume.id),
 		group: 0,
 		geometry,
 		transform: [1, 0, 0, 0, 0, 1, 0, y, 0, 0, 1, 0],
@@ -680,7 +680,7 @@ const surfaceEntry = (surface: SourcedWaterSurface, geometry: number, config: nu
 	const m = surface.matrix;
 	return {
 		kind: 'placed',
-		id: surface.id,
+		entityId: surface.id,
 		// interned once every surface's owner is known
 		group: 0,
 		geometry,

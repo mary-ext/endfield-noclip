@@ -1813,7 +1813,7 @@ const gateByScene = (
 			const { min, max } = surface.bounds;
 			const control = waterLevelControlOf(entry, water.levelSources[surface.volume], {
 				drivers: waterDrivers,
-				drains: waterDrains.get(entry.id) ?? [],
+				drains: waterDrains.get(entry.entityId) ?? [],
 				position: [(min[0] + max[0]) / 2, entry.base, (min[2] + max[2]) / 2],
 			});
 			if (control !== null) {
@@ -1910,7 +1910,7 @@ const waterLevelControlOf = (
 	return sceneControl({
 		kind: 'waterLevel',
 		id: volume.control,
-		name: `${pumped ? 'Pool' : 'Water volume'} ${volume.id}`,
+		name: `${pumped ? 'Pool' : 'Water volume'} ${volume.entityId}`,
 		values: volume.levels.map(({ fraction }, value) => {
 			const tags = definite([
 				sources[value]?.authored && 'authored',

@@ -532,10 +532,11 @@ with field-level JSDoc, are `WaterTable`, `WaterGlobal`, `WaterSector`, `WaterCo
 WaterTable
   global     WaterGlobal | null   null without water, or when the package holds no surface
   configs    WaterConfigEntry[]   { name, values } deduplicated by asset key
-  surfaces   WaterSurfaceEntry[]  { kind: 'placed' | 'volume', id, group, geometry, transform,
-                                    bounds, config, meshNormals, volume (kind 'volume') }
-  volumes    WaterVolumeEntry[]   { id, base, heightMax, initial, fillSpeed,
-                                    levels: { fraction, speed }[], control,
+  surfaces   WaterSurfaceEntry[]  { kind: 'placed' | 'volume', entityId, group, geometry,
+                                    transform, bounds, config, meshNormals,
+                                    volume (kind 'volume') }
+  volumes    WaterVolumeEntry[]   { entityId, base, heightMax, initial, fillSpeed,
+                                    levels: { fraction, speed }[], control, parent,
                                     floaters: { blob, row }[] }
 WaterGlobal  { mapSize, sectorSize, center, flowmapPrecision,
                flowMap, causticMap, normalMaps, rainMap, sectors: { x, z, texture }[] }

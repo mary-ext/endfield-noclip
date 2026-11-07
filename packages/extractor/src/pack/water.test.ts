@@ -300,7 +300,7 @@ describe('finishWater', () => {
 
 	it("turns floater entity ids into their stored rows, reporting ids that weren't stored", () => {
 		const volume = (id: string): WaterVolumeEntry => ({
-			id,
+			entityId: id,
 			base: 0,
 			heightMax: 1,
 			initial: 0,

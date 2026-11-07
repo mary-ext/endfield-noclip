@@ -25,8 +25,8 @@ export interface WaterTable {
  * {@link initial}, and a viewer moves it and the volume's {@link floaters} vertically by the difference
  */
 export interface WaterVolumeEntry {
-	/** the game's id, decimal */
-	id: string;
+	/** the game's id, decimal, for tracing the volume back */
+	entityId: string;
 	/** the volume's floor, world y */
 	base: number;
 	/** metres from {@link base} to a full volume */
@@ -208,8 +208,8 @@ export interface WaterVolumeSurface extends WaterSurfaceBase {
 
 /** what every water surface has */
 export interface WaterSurfaceBase {
-	/** the game's entity id */
-	id: number;
+	/** the game's entity id, for tracing the surface back */
+	entityId: number;
 	/**
 	 * index into `StatesInfo.groups`: the owning level and the scene states that load the surface (map02's
 	 * paddy-field pools load with some)

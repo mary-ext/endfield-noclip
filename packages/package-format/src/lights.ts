@@ -21,8 +21,11 @@ export type LightKind = (typeof LightKind)[keyof typeof LightKind];
 /** one local light, with the fields the game's shading reads */
 export interface LightEntry {
 	kind: LightKind;
-	/** the game's entity id; a light inside a placed prefab has a synthetic one, like the prefab's renderers */
-	id: number;
+	/**
+	 * the game's entity id, for tracing the light back; a light inside a placed prefab has a synthetic one,
+	 * like the prefab's renderers. ownership and loading come from {@link group}
+	 */
+	entityId: number;
 	/** index into `StatesInfo.groups`: the owning level and the scene states that load the light */
 	group: number;
 	position: Vec3;

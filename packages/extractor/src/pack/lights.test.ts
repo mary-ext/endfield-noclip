@@ -84,7 +84,7 @@ test('lights carry every file holding them, for gating like instances', () => {
 		() => assert.fail('no conditional lights'),
 	);
 	assert.deepEqual(
-		table.lights.map((entry) => [entry.id, entry.group]),
+		table.lights.map((entry) => [entry.entityId, entry.group]),
 		[
 			[1, 1],
 			[2, 2],
@@ -126,7 +126,7 @@ test('dynamic structure lights merge their visibilities, and chunk files win ove
 		},
 	);
 	assert.deepEqual(
-		table.lights.map((entry) => [entry.id, entry.group]),
+		table.lights.map((entry) => [entry.entityId, entry.group]),
 		[
 			[1, 10],
 			[2, 20],

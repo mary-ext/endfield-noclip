@@ -109,7 +109,7 @@ export const lightEntry = (light: ChunkLight, group: number): LightEntry => {
 	const box = light.cullingBox;
 	return {
 		kind: spot ? LightKind.Spot : LightKind.Point,
-		id: light.id,
+		entityId: light.id,
 		group,
 		position: light.position,
 		direction: light.direction,
