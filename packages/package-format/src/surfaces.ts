@@ -481,7 +481,8 @@ export type FadeRange = [start: number, end: number];
 export interface MistCardSurface {
 	kind: 'mistCard';
 	main: TextureSlot;
-	noise: TextureSlot;
+	/** `null` when unbound: the shader's default, white */
+	noise: TextureSlot | null;
 	/** HDR, as stored, with its alpha */
 	color: Color;
 	baseAlphaIntensity: number;
@@ -508,6 +509,11 @@ export interface MistCardSurface {
 	topFade: { contrast: number; offset: number };
 	/** the soft blend's distance, 0 without `_USE_SOFTBLEND` */
 	softDistance: number;
+	/**
+	 * `_UseFresnel`: colour and alpha scale by `lerp(1, f^contrast, intensity)`, f the facing `N·V`, or `1 −
+	 * N·V` unless flipped; `null` without
+	 */
+	fresnel: { intensity: number; contrast: number; flip: number } | null;
 }
 
 /** `HGRP/Effect/VFXFakeVolumeFog`, an additive mist box (`docs/game-data/effects.md#mist`) */

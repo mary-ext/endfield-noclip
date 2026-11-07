@@ -25,6 +25,8 @@ export const MistRow = {
 	top: 52,
 	/** volumes: `_FogExponent`, `_FogDensity`, `_CubEdgeFade`, `_NearFadeDistance` (0 when walk-in) */
 	volume: 56,
+	/** cards, in the volumes' row: 1 with a Fresnel term, its intensity, contrast and flip */
+	fresnel: 56,
 	/** volumes: `_HeightOffset`, `_HeightFalloff`, vertical falloff min, max (equal: none) */
 	volumeHeight: 60,
 	/** volumes: `_FogIntensityFadeDistance`, 1 to measure it from the centre, `_FogDepthStart`, `_FogDepthEnd` */
@@ -63,7 +65,9 @@ export const mistCardLook = (card: MistCardSurface): EffectLook => {
 	setSlot(
 		look,
 		MIST_NOISE_SLOT,
-		{ ...still(card.noise.texture), scale: card.noise.scale, offset: card.noise.offset },
+		card.noise === null
+			? still(null)
+			: { ...still(card.noise.texture), scale: card.noise.scale, offset: card.noise.offset },
 		ROLE_NONE,
 	);
 	const { wind } = card;
@@ -74,6 +78,10 @@ export const mistCardLook = (card: MistCardSurface): EffectLook => {
 	params.set([...card.indirectColor, card.additive ? 1 : 0], MistRow.indirect);
 	params.set([...card.distanceFade, ...card.nearFade], MistRow.fade);
 	params.set([card.topFade.contrast, card.topFade.offset, card.softDistance], MistRow.top);
+	if (card.fresnel !== null) {
+		const { fresnel } = card;
+		params.set([1, fresnel.intensity, fresnel.contrast, fresnel.flip], MistRow.fresnel);
+	}
 	return look;
 };
 

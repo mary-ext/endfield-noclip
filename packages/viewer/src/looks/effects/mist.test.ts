@@ -33,6 +33,7 @@ test('mist: cards and boxes draw in the mist rows; boxes by their back faces, wi
 		nearFade: [3000, 2500],
 		topFade: { contrast: 1, offset: 0 },
 		softDistance: 12,
+		fresnel: { intensity: 0.25, contrast: 2, flip: 1 },
 	};
 	const box: MistVolumeSurface = {
 		kind: 'mistVolume',
@@ -72,6 +73,7 @@ test('mist: cards and boxes draw in the mist rows; boxes by their back faces, wi
 		[0.001, 0.0011, 3000, 2500],
 	);
 	assert.equal(cardLook.params[MistRow.top + 2], 12);
+	assert.deepEqual([...cardLook.params.subarray(MistRow.fresnel, MistRow.fresnel + 4)], [1, 0.25, 2, 1]);
 	assert.deepEqual([boxLook.flags, boxLook.queue], [LookFlags.Effect, 'mistVolume']);
 	assert.equal(boxLook.cull, 'front');
 	assert.deepEqual([boxLook.params[MistRow.volume + 1], boxLook.params[MistRow.volume + 3]], [4, 0]);

@@ -577,7 +577,13 @@ the drifting mist banks are effects too: `HGRP/FogSimple` cards (841 on map02, `
   (`saturate(h · _TopFadeContract + _TopFadeOffset)`, where `h` is the world height below the card's
   origin divided by the length of its y axis, so a card placed upside down, like the 77 m one at
   Suiming's cave exit, still fades towards the sky rather than the ground), with `_USE_SOFTBLEND`
-  within `_SoftDistance` metres of what lies behind, and is scaled by `_BaseAlphaIntensity`.
+  within `_SoftDistance` metres of what lies behind, and is scaled by `_BaseAlphaIntensity`. the
+  `_UseFresnel` switch (a float, not a keyword) scales colour and alpha after the wind by
+  `lerp(1, f^_FresnelContract, _FresnelIntensity)`, f being `1 − N·V` (`N·V` with `_FlipFresnel`), N
+  the card's normal facing the camera. `_NoiseTex` defaults to white: Marker Stone Interiors'
+  `M_fog_indie_dg007_001` (5 always-shown 50 m cards, additive at `_BaseColor` 311 with
+  `_BaseAlphaIntensity` 0.02) binds none, so its noise and wind change nothing, and its flipped
+  Fresnel at intensity 0.28 dims it slightly where the card is seen edge-on.
 - **light through openings.** some cards fake daylight falling into a cave rather than mist. at
   Suiming's cave exit (near unity −145, 149, −188) a 77 m card, flipped so its mask
   (`T_fog_smoothradial_grad_01_M`, a half-radial glow brightest along v = 0) lights its top edge,

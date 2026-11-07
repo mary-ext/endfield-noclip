@@ -1820,6 +1820,8 @@ const MIST_INDIRECT = 11u;
 const MIST_FADE = 12u;
 const MIST_TOP = 13u;
 const MIST_VOLUME = 14u;
+// cards' Fresnel term, in the volumes' row
+const MIST_FRESNEL = 14u;
 const MIST_VOLUME_HEIGHT = 15u;
 const MIST_VOLUME_FADE = 16u;
 const MIST_MISC = 17u;
@@ -1842,8 +1844,8 @@ fn mist_fade(range: vec2f, depth: f32) -> f32 {
 }
 
 // `HGRP/FogSimple` mist cards: the main texture's red broken up by the noise texture, times a scrolling wind
-// sample of it (on colour and opacity both, as the game's), in the flat colour or lit by the sun; faded by view
-// depth, towards the card's top (object y) and where it nears what lies behind it
+// sample of it and a Fresnel term (on colour and opacity both, as the game's), in the flat colour or lit by the
+// sun; faded by view depth, towards the card's top (object y) and where it nears what lies behind it
 @fragment
 fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
 	let id = in.look;
@@ -1873,6 +1875,13 @@ fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
 	let windy = (1.0 - card.z) + ((1.0 - card.w) + saturate(mix(-wind.x, wind.x + 1.0, gust)) * card.w) * card.z;
 	color *= windy;
 	alpha *= windy;
+	let fresnel = fx_row(id, MIST_FRESNEL);
+	if (fresnel.x != 0.0) {
+		let facing = saturate(abs(dot(normalize(-in.rel), normalize(in.normal))));
+		let f = mix(1.0, pow(max(abs(mix(1.0 - facing, facing, fresnel.w)), 0.00048828125), fresnel.z), fresnel.y);
+		color *= f;
+		alpha *= f;
+	}
 
 	let depth = dot(in.rel, frame.view_forward.xyz);
 	let fade = fx_row(id, MIST_FADE);

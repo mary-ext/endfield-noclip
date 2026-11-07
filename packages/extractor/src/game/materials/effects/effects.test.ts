@@ -93,6 +93,28 @@ describe('mist', () => {
 		assert.deepEqual(other, { kind: 'unsupported', reason: 'keywords _USE_SOMETHING_ELSE' });
 	});
 
+	it('samples an unbound noise texture as white, and fades by its Fresnel term', () => {
+		// Marker Stone Interiors' `M_fog_indie_dg007_001`, which binds no noise texture
+		const fog = shader('HGRP/FogSimple', 'fogSimple', {
+			textures: { _MainTex: 'white', _NoiseTex: 'white' },
+		});
+		const card = ofKind(
+			describeMaterial(
+				material({
+					blend: 'additive',
+					slots: { _MainTex: slot(1) },
+					floats: { _UseFresnel: 1, _FresnelIntensity: 0.282, _FresnelContract: 1, _FlipFresnel: 1 },
+				}),
+				fog,
+			),
+			'mistCard',
+		);
+		assert.equal(card.noise, null);
+		assert.deepEqual(card.fresnel, { intensity: 0.282, contrast: 1, flip: 1 });
+		const grey = shader('HGRP/FogSimple', 'fogSimple', { textures: { _NoiseTex: 'grey' } });
+		assert.equal(describeMaterial(material({ slots: { _MainTex: slot(1) } }), grey).kind, 'unsupported');
+	});
+
 	it('draws walk-in boxes without the close-up fade, and their 3D noise only with its keyword', () => {
 		const box = (overrides: Partial<MaterialValues>) =>
 			ofKind(

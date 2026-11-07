@@ -25,11 +25,15 @@ export const describeMistCard = (reader: MaterialReader): MistCardSurface | Unsu
 		return undrawn;
 	}
 	const main = reader.slot('_MainTex');
-	const noise = reader.slot('_NoiseTex');
-	if (main === undefined || noise === undefined) {
-		return unsupported('no main or noise texture');
+	// an unbound noise texture samples the shader's default, white
+	const noise = reader.slot('_NoiseTex') ?? null;
+	if (main === undefined) {
+		return unsupported('no main texture');
 	}
-	if (main.uv > 1 || noise.uv > 1) {
+	if (noise === null && reader.shader.textures['_NoiseTex'] !== 'white') {
+		return unsupported('no noise texture and a non-white default');
+	}
+	if (main.uv > 1 || (noise?.uv ?? 0) > 1) {
 		return unsupported('a texture on a UV set past 1');
 	}
 	const separate = float('_UseSeparateScale', 0) !== 0;
@@ -62,5 +66,13 @@ export const describeMistCard = (reader: MaterialReader): MistCardSurface | Unsu
 		nearFade: fadeRange(float('_NearCameraFadeDistanceStart', 0), float('_NearCameraFadeDistanceEnd', 0)),
 		topFade: { contrast: float('_TopFadeContract', 1), offset: float('_TopFadeOffset', 0) },
 		softDistance: softBlendOf(reader)?.distance ?? 0,
+		fresnel:
+			float('_UseFresnel', 0) !== 0
+				? {
+						intensity: float('_FresnelIntensity', 0),
+						contrast: float('_FresnelContract', 1),
+						flip: float('_FlipFresnel', 0),
+					}
+				: null,
 	};
 };
