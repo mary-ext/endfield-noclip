@@ -459,6 +459,43 @@ the phases run in this order, and the report times each one:
 | debug                  | write `debug/`; the staged package is then renamed into place                                                                                                                                                                                 |
 | cache sweep            | with a cache: record the package and delete what no package uses                                                                                                                                                                              |
 
+### code layout
+
+`packScene` in [packer.ts](../packages/extractor/src/pack/packer.ts) runs the phases in order and
+does little else; each phase lives in its own module under [pack/](../packages/extractor/src/pack/):
+
+| module                                                                                                                                                                                                                                                                                                | does                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| [scene-index.ts](../packages/extractor/src/pack/scene-index.ts)                                                                                                                                                                                                                                       | setup: the partition, terrain, tile grid, HLOD grid fit, chunk file order and the `--level`/`--bounds` subset              |
+| [content/](../packages/extractor/src/pack/content/)                                                                                                                                                                                                                                                   | the entities phase: one module per content source, run in order by `collectEntities` (`entities.ts`)                       |
+| [environments.ts](../packages/extractor/src/pack/environments.ts), [water.ts](../packages/extractor/src/pack/water.ts), [lights.ts](../packages/extractor/src/pack/lights.ts), [terrain.ts](../packages/extractor/src/pack/terrain.ts), [irradiance.ts](../packages/extractor/src/pack/irradiance.ts) | one core table each: planned, gated (visibility groups and controls), then finished once texture and control ids are known |
+| [instance-blocks.ts](../packages/extractor/src/pack/instance-blocks.ts)                                                                                                                                                                                                                               | encodes and stores the collected instance rows ([collector.ts](../packages/extractor/src/pack/collector.ts))               |
+| [states.ts](../packages/extractor/src/pack/states.ts)                                                                                                                                                                                                                                                 | the scene's own controls (quests, progressions, stream areas, scene states), finished and indexed                          |
+| [write.ts](../packages/extractor/src/pack/write.ts), [debug.ts](../packages/extractor/src/pack/debug.ts), [report.ts](../packages/extractor/src/pack/report.ts)                                                                                                                                       | the core archive from a list of members, `debug/` from a list of files, and the report                                     |
+
+every content source writes through one `PackContent`
+([pack-content.ts](../packages/extractor/src/pack/content/pack-content.ts)): it interns draws into
+the chain, geometry, material and particle tables, files rows (`addStructure`, `addStandInCube`),
+registers controls and lights, counts what it read for the report and records what it skipped or
+couldn't read. so:
+
+- **a new kind of placed prefab** (a game system that places models) returns its placements as
+  `StructureModel`s and joins the placement list in `collectEntities`; its renderers, lights,
+  environment volumes and stand-ins follow from
+  [prefab-placements.ts](../packages/extractor/src/pack/content/prefab-placements.ts), which reads
+  each prefab's root once for all of them.
+- **a new kind of content** is a module in `content/` called from `collectEntities` at a fixed point
+  in the order.
+- **a new table** adds its type and `CORE_PATHS` entry to package-format, a module here that plans
+  and gates it, and one entry in `packScene`'s core member list; a new debug output is one entry in
+  its debug file list, and new counts go through `PackContent.count`, which the report prints
+  without further code.
+
+the order of the sources matters, and is why they're called explicitly rather than registered:
+geometry and material ids follow first reference, synthetic entity ids (prefab renderers, lights and
+stand-ins, `PackContent.nextSyntheticId`) follow call order, and a chunk entity keeps its files'
+gating over a dynamic structure's copy because chunk files are read first.
+
 ids for geometries and materials are handed out in first-reference order and every parallel step
 commits its results in id order, so the same install and options produce byte-identical archives
 whether the pack is cold, warm or uncached. keep any new parallel work committing in a fixed order
@@ -476,8 +513,8 @@ order.
 
 ### how the packer files instances
 
-the entity pass ([packer.ts](../packages/extractor/src/pack/packer.ts), `collectEntities`) reads the
-scene's chunk files in a fixed order (always-loaded before scene-state files, the default area
+the entity pass ([static-chunks.ts](../packages/extractor/src/pack/content/static-chunks.ts)) reads
+the scene's chunk files in a fixed order (always-loaded before scene-state files, the default area
 before stream areas, then by name). an entity first met in an always-loaded file of the default area
 stays unconditional; any other entity collects every file holding it and loads while any of them
 does: the file's scene state and stream area both on. DynamicStreaming entities' area lists

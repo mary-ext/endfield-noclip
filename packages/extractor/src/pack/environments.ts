@@ -26,6 +26,7 @@ import type {
 import type { LevelEnvironment } from '@endfield-noclip/package-format/manifest';
 
 import type { Context } from '../context.ts';
+import { errorText } from '../errors.ts';
 import { type AssetResolver, objectKey, type ObjectRef } from '../game/assets.ts';
 import {
 	environmentBlend,
@@ -44,8 +45,11 @@ import {
 	type SceneVolumes,
 	type SectionSource,
 } from '../game/environment.ts';
+import { allOf } from '../game/game-state.ts';
 import { type LoadedMaterial, loadMaterial } from '../game/material-load.ts';
-import type { Visibility } from '../game/scene-control.ts';
+import { type DraftControl, sceneControl, SWITCH_VALUES, type Visibility } from '../game/scene-control.ts';
+
+import type { ControlRegistry } from './control-registry.ts';
 
 // the environment table: every volume with its phase, each level's base volume and its post-processing
 // profile. textures the phases reference are converted with the other assets, so planning happens before
@@ -155,11 +159,9 @@ const findFlowNoise = async (
 	try {
 		return await resolver.findUnique({ hash, path: FLOW_NOISE_PATH }, UnityClass.Texture3D);
 	} catch (error) {
-		return errorMessage(error);
+		return errorText(error);
 	}
 };
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** records an environment problem */
 type ReportProblem = (problem: EnvironmentProblem) => void;
@@ -268,7 +270,7 @@ export const planEnvironments = async (
 				const loadedPhase = await load;
 				return { loaded: loadedPhase, textures: await resolvePhaseTextures(resolver, loadedPhase, report) };
 			} catch (error) {
-				return errorMessage(error);
+				return errorText(error);
 			}
 		}),
 	);
@@ -402,7 +404,7 @@ const resolvePhaseTextures = async (
 					phase: loaded.phase.name,
 					section: name,
 					path,
-					reason: errorMessage(error),
+					reason: errorText(error),
 				});
 			return [name, await resolveSection(resolver, loaded.ref, loaded.phase.sections[name], fail)] as const;
 		}),
@@ -829,3 +831,82 @@ const objectAt = (root: PlainObject, path: readonly string[]): PlainObject => {
 	}
 	return current;
 };
+
+// #region controls
+
+/**
+ * gives each environment volume its visibility group (its level, and the scene states of the files holding
+ * it, or its placement's condition) and registers the control switching each volume with a phase. the plan's
+ * volumes are modified in place
+ *
+ * @param plan the planned environments
+ * @param controls the package's controls; extended
+ */
+export const gateEnvironments = (plan: EnvironmentPlan, controls: ControlRegistry): void => {
+	for (const [i, volume] of plan.volumes.entries()) {
+		const { levelTag, sceneStates, condition } = plan.volumeOwners[i];
+		// a prefab volume loads with its placement; chunk volumes with the scene states of their files
+		const loads = condition ?? (sceneStates.length === 0 ? null : controls.stateVisibility(sceneStates));
+		if (volume.phase === null) {
+			volume.group = controls.groupOf(levelTag, loads);
+			continue;
+		}
+		// the volume's control index is known once the package's controls are (see `indexEnvironmentControls`)
+		const control = environmentVolumeControl(i, volume);
+		controls.add(control);
+		const on = [[{ control: control.id, mask: 2 }]];
+		volume.group = controls.groupOf(levelTag, {
+			alternatives: loads === null ? on : allOf(loads.alternatives, on),
+		});
+	}
+};
+
+/**
+ * @param index the volume's index in the environment table
+ * @returns the id of the control switching it
+ */
+const environmentVolumeControlId = (index: number): string => `environmentVolume:${index}`;
+
+/**
+ * points each environment volume with a phase at the control switching it; the volumes are modified in place
+ *
+ * @param environment the environment table
+ * @param controlIndex by control id, the package's index of each control
+ * @throws {Error} if a volume's control isn't among the package's
+ */
+export const indexEnvironmentControls = (
+	environment: EnvironmentTable,
+	controlIndex: ReadonlyMap<string, number>,
+): void => {
+	for (const [i, volume] of environment.volumes.entries()) {
+		if (volume.phase !== null) {
+			const id = environmentVolumeControlId(i);
+			const index = controlIndex.get(id);
+			if (index === undefined) {
+				throw new Error(`environment volume control ${id} isn't among the package's controls`);
+			}
+			volume.control = index;
+		}
+	}
+};
+
+/**
+ * @param index the volume's index in the environment table
+ * @param volume an environment volume with a phase
+ * @returns the control that switches it: on by default, except a scripted (mode 3) volume, whose script isn't
+ *   followed
+ */
+const environmentVolumeControl = (index: number, volume: EnvironmentVolumeInfo): DraftControl =>
+	sceneControl({
+		kind: 'environmentVolume',
+		id: environmentVolumeControlId(index),
+		name: volume.name,
+		values: SWITCH_VALUES,
+		default: volume.blend.kind === 'scripted' ? 0 : 1,
+		assumption:
+			volume.blend.kind === 'scripted'
+				? 'off: a level script fades it in, which isn’t followed; on previews it at full strength'
+				: 'on: it applies wherever it holds the camera',
+	});
+
+// #endregion

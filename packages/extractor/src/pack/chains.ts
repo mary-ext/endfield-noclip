@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { DrawFlags } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import {
@@ -7,6 +9,10 @@ import {
 	ChainFlags,
 	type ChainDraw,
 } from '@endfield-noclip/package-format/instances';
+
+import { ignoreMissing } from '../errors.ts';
+
+import { DEBUG_DIR } from './debug.ts';
 
 // float bits make the dedupe key exact: two thresholds are the same only if their f32 bits are
 const f32 = new Float32Array(1);
@@ -145,3 +151,22 @@ export class ChainTable {
 		};
 	}
 }
+
+/**
+ * the debug file a package records its chains' keys in, which the next pack into its directory keeps the ids
+ * of
+ */
+export const CHAIN_KEYS_FILE = 'chains.json';
+
+/**
+ * @param packageDir a package the pack replaces
+ * @returns its chains' keys by id ({@link ChainTable.stableOrder}), or empty when it has none
+ */
+export const readChainKeys = async (packageDir: string): Promise<string[]> => {
+	const text = await ignoreMissing(readFile(join(packageDir, DEBUG_DIR, CHAIN_KEYS_FILE), 'utf8'), null);
+	if (text === null) {
+		return [];
+	}
+	const value: unknown = JSON.parse(text);
+	return Array.isArray(value) && value.every((key) => typeof key === 'string') ? value : [];
+};

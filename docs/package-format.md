@@ -619,8 +619,8 @@ packing rules:
   ([how surfaces are drawn](game-data/water.md#how-surfaces-are-drawn)). the raw mask and `param1`
   (nothing reads them) stay in `debug/water.json`'s rows.
 - **visibility groups**: each surface's `group` indexes `StatesInfo.groups`, the owning level and
-  the scene states of the files holding it (`gateByScene` in
-  [packer.ts](../packages/extractor/src/pack/packer.ts)), shared with instances, lights and
+  the scene states of the files holding it (`gateWater` in
+  [water.ts](../packages/extractor/src/pack/water.ts)), shared with instances, lights and
   environment volumes.
 - **global maps** go to the common archive. **sector tiles** go to the asset archive of the
   shard-level tile under the sector's centre, so a region import carries the tiles it needs. full

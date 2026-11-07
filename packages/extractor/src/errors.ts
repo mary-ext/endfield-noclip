@@ -1,8 +1,24 @@
+import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
+
 /**
  * @param error anything thrown
  * @returns its message
  */
 export const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/**
+ * for `.catch()` on reads whose malformed input is reported rather than fatal
+ *
+ * @param error anything thrown
+ * @returns the error, if it's a `FormatError`
+ * @throws the error, if it's anything else
+ */
+export const formatErrorOnly = (error: unknown): FormatError => {
+	if (error instanceof FormatError) {
+		return error;
+	}
+	throw error;
+};
 
 /**
  * @param error anything thrown

@@ -48,6 +48,7 @@ import {
 	type Visibility,
 	type DraftControl,
 	sceneControl,
+	scriptControl,
 	switchValues,
 	SWITCH_VALUES,
 } from './scene-control.ts';
@@ -840,11 +841,11 @@ export interface InteractiveStandIn {
  * platform that starts with its level rides its spline
  *
  * @param context install readers and the bundle resolver
- * @param scene owning map
- * @param level restricts decoding to one level, or null for the map
- * @param partition numeric level tags
- * @param scripted logic ids of the interactives level scripts show and hide
- * @param erosionCores by logic id, the conditions a blight core's erosion root loads under
+ * @param options.scene owning map
+ * @param options.level restricts decoding to one level, or null for the map
+ * @param options.partition numeric level tags
+ * @param options.scripted logic ids of the interactives level scripts show and hide
+ * @param options.erosionCores by logic id, the conditions a blight core's erosion root loads under
  * @returns placements, controls, explicit unsupported-file diagnostics and the placements of interactives
  *   whose model wasn't found (a template that's missing or can't be read, or a model id the model table
  *   lacks); no partial file is used
@@ -852,11 +853,19 @@ export interface InteractiveStandIn {
  */
 export const loadInteractiveFacilities = async (
 	context: Pick<Context, 'vfs' | 'world' | 'resolver' | 'memoryPack'>,
-	scene: string,
-	level: string | null,
-	partition: LevelPartition | undefined,
-	scripted: ReadonlySet<string>,
-	erosionCores: ReadonlyMap<string, Alternatives>,
+	{
+		scene,
+		level,
+		partition,
+		scripted,
+		erosionCores,
+	}: {
+		scene: string;
+		level: string | null;
+		partition: LevelPartition | undefined;
+		scripted: ReadonlySet<string>;
+		erosionCores: ReadonlyMap<string, Alternatives>;
+	},
 ): Promise<{
 	models: StructureModel[];
 	progressions: DraftControl[];
@@ -1639,7 +1648,7 @@ export const loadInteractiveFacilities = async (
 				(type) => type === InteractiveUnlockType.MiniGame || type === InteractiveUnlockType.Submit,
 			) ?? false;
 		if (scripted.has(logicId)) {
-			const control = `script:${logicId}`;
+			const control = scriptControl(logicId);
 			switches.push(control);
 			scriptControls.getOrInsertComputed(logicId, () =>
 				sceneControl({
@@ -1717,6 +1726,7 @@ export const loadInteractiveFacilities = async (
 				},
 				levelTag,
 				source,
+				logicId,
 				visibility,
 				pose: posed,
 				locked,

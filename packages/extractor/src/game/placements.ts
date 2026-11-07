@@ -212,14 +212,13 @@ export const loadDynamicPlacements = async (
 	if (kinds.has('facility')) {
 		try {
 			// placements as authored: level scripts' show and hide actions aren't followed here
-			const facilities = await loadInteractiveFacilities(
-				context,
+			const facilities = await loadInteractiveFacilities(context, {
 				scene,
-				null,
+				level: null,
 				partition,
-				new Set(),
-				structures?.erosionCores ?? new Map(),
-			);
+				scripted: new Set(),
+				erosionCores: structures?.erosionCores ?? new Map(),
+			});
 			for (const model of facilities.models) {
 				result.prefabs.push({
 					kind: 'facility',

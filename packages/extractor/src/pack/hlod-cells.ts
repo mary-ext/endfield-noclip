@@ -33,6 +33,9 @@ const MAX_CELL_DOUBLINGS = 3;
 const SNAP_TOLERANCE = 8;
 
 /** an HLOD cluster as the grid sees it */
+/** HLOD cluster entity names: `HLOD<tier>_<i>_<j>_Cluster_<hash>_<n>…`, `i`/`j` being the tier's grid cell */
+export const HLOD_NAME = /^HLOD(\d)_(-?\d+)_(-?\d+)_Cluster_/;
+
 export interface HlodSample {
 	tier: number;
 	/** the cell in its name */

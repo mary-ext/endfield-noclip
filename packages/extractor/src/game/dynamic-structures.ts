@@ -38,6 +38,7 @@ import {
 	type Visibility,
 	type DraftControl,
 	sceneControl,
+	scriptControl,
 	streamAreaControl,
 	switchValues,
 	SWITCH_VALUES,
@@ -177,6 +178,8 @@ export interface StructureModel {
 	model: DynamicModel;
 	levelTag: number;
 	source: string;
+	/** the level logic id of the interactive it draws, absent for other placements */
+	logicId?: string;
 	visibility: Visibility;
 	/** the pose to draw the prefab in, `null` for the saved one */
 	pose: PrefabPose | null;
@@ -391,8 +394,8 @@ export const loadDynamicStructures = async (
 			const tag = partition?.levels.find((level) => level.idNum === group.levelNum)?.tag ?? 0;
 			let alternatives = gates;
 			if (owner.scriptDefaultLoad !== null) {
-				addSwitch('script', `script:${owned}`, owner.scriptDefaultLoad);
-				alternatives = allOf(alternatives, [[{ control: `script:${owned}`, mask: 2 }]]);
+				addSwitch('script', scriptControl(owned), owner.scriptDefaultLoad);
+				alternatives = allOf(alternatives, [[{ control: scriptControl(owned), mask: 2 }]]);
 			}
 			if (group.logicState !== 0) {
 				if (controller) {

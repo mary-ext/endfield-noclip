@@ -8,7 +8,7 @@ import type {
 	StatesInfo,
 	VisibilityGroup,
 } from '@endfield-noclip/package-format/states';
-import type { Bounds, Vec3 } from '@endfield-noclip/package-format/values';
+import { type Bounds, unionBounds, type Vec3 } from '@endfield-noclip/package-format/values';
 
 import { sceneStateControl } from '../game/scene-conditions.ts';
 import {
@@ -32,12 +32,14 @@ import { sourceVisibility } from './chunk-sources.ts';
  */
 const LOCAL_EXTENT = 1024;
 
-const unionBounds = (a: Bounds, b: Bounds): Bounds => ({
-	min: [Math.min(a.min[0], b.min[0]), Math.min(a.min[1], b.min[1]), Math.min(a.min[2], b.min[2])],
-	max: [Math.max(a.max[0], b.max[0]), Math.max(a.max[1], b.max[1]), Math.max(a.max[2], b.max[2])],
-});
+/**
+ * the visibility group of content every level shows and that always loads; the registry interns it first.
+ * terrain uses it
+ */
+export const SHARED_GROUP = 0;
 
-const centre = ({ min, max }: Bounds): Vec3 => [
+/** @returns the centre of a box */
+export const centre = ({ min, max }: Bounds): Vec3 => [
 	(min[0] + max[0]) / 2,
 	(min[1] + max[1]) / 2,
 	(min[2] + max[2]) / 2,
@@ -112,9 +114,8 @@ export class ControlRegistry {
 	readonly #conditionIds = new Map<string, number>();
 	readonly #groupIds = new Map<string, number>();
 
-	/** group 0 is the shared, always-loaded one */
 	constructor() {
-		this.group(0, null);
+		this.group(SHARED_GROUP, null);
 	}
 
 	// #region controls
@@ -130,6 +131,21 @@ export class ControlRegistry {
 				throw new Error(`duplicate scene control ${control.id}`);
 			}
 			this.#controls.set(control.id, control);
+		}
+	}
+
+	/**
+	 * notes scene states and stream areas that content requires outside a visibility expression the registry
+	 * interned, so their controls are built
+	 *
+	 * @param required MapConfig scene state indices and stream area ids
+	 */
+	require({ sceneStates, areas }: { sceneStates: Iterable<number>; areas: Iterable<number> }): void {
+		for (const index of sceneStates) {
+			this.sceneStates.add(index);
+		}
+		for (const area of areas) {
+			this.areas.add(area);
 		}
 	}
 

@@ -124,6 +124,18 @@ const CATEGORY_OF_KIND: Readonly<Record<string, string>> = {
  */
 export const streamAreaControl = (area: number): string => `area:${area}`;
 
+/**
+ * @param logicId the global id of what level scripts show and hide: a script group or an interactive
+ * @returns the id of its `script` control
+ */
+export const scriptControl = (logicId: string): string => `script:${logicId}`;
+
+/**
+ * @param control a `script` control
+ * @returns the global id it switches
+ */
+export const scriptControlTarget = (control: DraftControl): string => control.id.slice('script:'.length);
+
 /** the values of an on/off control */
 export const SWITCH_VALUES: readonly SceneControlValue[] = [
 	{ value: 0, label: 'off' },

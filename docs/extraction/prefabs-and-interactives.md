@@ -54,7 +54,9 @@ truncating. it checks an effect row's repeated position (+116) to confirm the st
 decoder.
 
 for a model or effect row ([payloads](../game-data/assets.md#payloads)), the packer resolves the
-prefab, reads its renderers and places each one under the row's TRS.
+prefab, reads its renderers and places each one under the row's TRS. prefab renderers, prefab lights
+and stand-ins have no game entity id, so the packer gives each a synthetic one: the level tag over
+an index counted down from the top of the 27-bit id space, away from the game's ids.
 
 `loadDynamicStructures`
 ([dynamic-structures.ts](../../packages/extractor/src/game/dynamic-structures.ts)):
@@ -62,8 +64,6 @@ prefab, reads its renderers and places each one under the row's TRS.
 - deduplicates models and ECS entities by their stored reference, merging the visibility
   alternatives of every group that shows them
 - gives each structure the level tag of its resource group's `levelNum`
-- gives prefab renderers, which have no game entity id, a synthetic one: the level tag over an index
-  counted down from the top of the 27-bit id space, away from the game's ids
 - keeps the static copy of an ECS entity already present in static chunks, and keeps the local
   lights of the selected ECS groups the same way ([lights](../package-format.md#lights))
 - takes a rect decal's material from the chunk's `fb_streaming` payload; it draws the decal cube as

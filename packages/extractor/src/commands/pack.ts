@@ -7,7 +7,8 @@ import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
 import { parseBounds, parseInteger, parseZstdLevel } from '../cli-args.ts';
 import { withContext } from '../context.ts';
-import { packScene, type PackReport } from '../pack/packer.ts';
+import { packScene } from '../pack/packer.ts';
+import type { PackReport } from '../pack/report.ts';
 
 export const summary = 'build a viewer package for a scene, level or world rectangle';
 
