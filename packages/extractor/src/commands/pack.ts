@@ -220,7 +220,8 @@ const formatReport = (report: PackReport): string => {
 	if (report.cache !== null) {
 		const { hits, swept } = report.cache;
 		lines.push(
-			`cache ${report.cache.dir}: ${hits.geometries} geometries and ${hits.textures} textures reused; ` +
+			`cache ${report.cache.dir}: ${hits.materials} materials, ${hits.geometries} geometries and ` +
+				`${hits.textures} textures reused; ` +
 				`swept ${swept.blobs} blobs and ${swept.memos} conversions (${mb(swept.bytes)})`,
 		);
 	}

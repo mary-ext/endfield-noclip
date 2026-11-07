@@ -1,5 +1,4 @@
-import type { MaterialRecord } from '@endfield-noclip/formats/unity/material';
-import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
+import type { MaterialRecord, ShaderSummary } from '@endfield-noclip/formats/unity/material';
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
 import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
 import type { Chain } from '@endfield-noclip/package-format/instances';
@@ -15,13 +14,17 @@ import { failureReason } from '../../errors.ts';
 import {
 	type AssetRef,
 	type AssetResolver,
-	locateObject,
 	type ObjectLocator,
-	objectKey,
 	type ObjectRef,
+	recordBundleReads,
 } from '../../game/assets/assets.ts';
 import { describeMaterial, materialSway } from '../../game/materials/material-describe.ts';
-import { type LoadedMaterial, loadMaterial } from '../../game/materials/material-load.ts';
+import {
+	type LocatedMaterial,
+	type LocatedObject,
+	locatedObject,
+	locateMaterial,
+} from '../../game/materials/material-load.ts';
 import type { MaterialValues as ConvertedMaterial } from '../../game/materials/material-values.ts';
 import { keywordsNotDrawn } from '../../game/materials/surfaces/surface-keywords.ts';
 import type { MaterialValues } from '../../game/prefabs/prefab.ts';
@@ -249,6 +252,8 @@ export const pendingAssets = (
 class ConvertJobs {
 	readonly failures: Record<string, number> = {};
 	readonly #input: Pick<AssetConversionInput, 'resolver' | 'pool' | 'cache'>;
+	/** shader summaries by shader object, recalled or loaded this pack; `undefined` where the cache had none */
+	readonly #shaders = new Map<string, Promise<ShaderSummary | undefined>>();
 
 	constructor(input: Pick<AssetConversionInput, 'resolver' | 'pool' | 'cache'>) {
 		this.#input = input;
@@ -274,6 +279,50 @@ class ConvertJobs {
 		const result = await pool.run(job);
 		await cache.remember(key, result);
 		return ofJob(result);
+	}
+
+	/**
+	 * @returns the material located on the main thread, or from the cache when every bundle it read is
+	 *   unchanged
+	 */
+	async material(asset: AssetRef): Promise<LocatedMaterial> {
+		const { resolver, cache } = this.#input;
+		if (cache === null) {
+			return locateMaterial(resolver, asset);
+		}
+		const key = await cache.stepKey(MATERIAL_LOAD_ENTRY, { asset });
+		const recalled = await cache.recallValue<MaterialMemo>(key);
+		if (recalled !== undefined && (await this.#sourcesCurrent(recalled.sources))) {
+			const shader = await this.#shaders.getOrInsertComputed(recalled.material.shaderObject.key, async () =>
+				cache.recallValue<ShaderSummary>(await this.#shaderKey(cache, recalled.material.shaderObject)),
+			);
+			if (shader !== undefined) {
+				cache.hits.materials++;
+				return { ...recalled.material, shader };
+			}
+		}
+		const { result, bundles } = await recordBundleReads(() => locateMaterial(resolver, asset));
+		const sources = await Promise.all(
+			bundles.map(async (index) => ({
+				bundle: resolver.manifest.bundleName(index),
+				md5: await resolver.bundleMd5(index),
+			})),
+		);
+		// a shader's summary is most of a material's load and shared by thousands of them, so it's stored once
+		const { shader, ...material } = result;
+		// stored by the first fresh load of each shader, including one whose summary the cache didn't have
+		if ((await this.#shaders.get(result.shaderObject.key)) === undefined) {
+			this.#shaders.set(result.shaderObject.key, Promise.resolve(shader));
+			await cache.rememberValue(await this.#shaderKey(cache, result.shaderObject), shader);
+		}
+		await cache.rememberValue(key, { sources, material } satisfies MaterialMemo);
+		return result;
+	}
+
+	/** @returns the cache key of a shader's summary, which its bundle's md5 keeps current */
+	async #shaderKey(cache: PackCache, { key, locator }: LocatedObject): Promise<string> {
+		const md5 = await this.#input.resolver.bundleMd5(locator.bundleIndex);
+		return cache.stepKey(MATERIAL_LOAD_ENTRY, { shader: key, md5 });
 	}
 
 	/** counts a failure by kind and reason; @returns the error's message, for the debug index */
@@ -319,40 +368,14 @@ class TextureUses {
 
 // #region materials
 
-/** an object by key and locator, which, unlike an {@link ObjectRef}, doesn't keep its bundle loaded */
-interface LocatedObject {
-	key: string;
-	locator: ObjectLocator;
+/** the module whose import graph decides a material load; changing any of it misses the cached loads */
+const MATERIAL_LOAD_ENTRY = new URL('../../game/materials/material-load.ts', import.meta.url);
+
+/** a cached material load, its shader summary stored on its own, and the bundles it read */
+interface MaterialMemo {
+	sources: BundleSource[];
+	material: Omit<LocatedMaterial, 'shader'>;
 }
-
-const locatedObject = (ref: ObjectRef): LocatedObject => ({
-	key: objectKey(ref),
-	locator: locateObject(ref),
-});
-
-/**
- * a {@link LoadedMaterial} with its object and textures located rather than referenced: every material's load
- * is kept until the phase ends, and holding their refs kept ~12k bundles' files and blocks (2.7 GB on map02)
- */
-interface MaterialLoad extends Omit<LoadedMaterial, 'textures'> {
-	object: string;
-	textures: Record<string, { texture: LocatedObject | null; error?: string }>;
-}
-
-/** @returns the material loaded and detached from its bundle */
-const loadMaterialDetached = async (resolver: AssetResolver, ref: ObjectRef): Promise<MaterialLoad> => {
-	const { textures, ...loaded } = await loadMaterial(resolver, ref);
-	return {
-		...loaded,
-		object: objectKey(ref),
-		textures: Object.fromEntries(
-			Object.entries(textures).map(([slot, { ref: texture, error }]) => [
-				slot,
-				{ texture: texture === null ? null : locatedObject(texture), error },
-			]),
-		),
-	};
-};
 
 /** the materials loaded and converted, by material id */
 interface LoadedMaterials {
@@ -372,7 +395,6 @@ const loadMaterials = async (
 	jobs: ConvertJobs,
 	textures: TextureUses,
 ): Promise<LoadedMaterials> => {
-	const { resolver } = input;
 	const out: LoadedMaterials = {
 		shaders: new ShaderTable(),
 		converted: [],
@@ -381,14 +403,11 @@ const loadMaterials = async (
 		normalMapUv: [],
 	};
 	// variants of one material share its load
-	const loads = new Map<bigint, Promise<MaterialLoad>>();
+	const loads = new Map<bigint, Promise<LocatedMaterial>>();
 	await orderedPool(
 		input.materials,
 		input.materialConcurrency,
-		(asset) =>
-			loads.getOrInsertComputed(asset.hash, async () =>
-				loadMaterialDetached(resolver, await resolver.findUnique(asset, UnityClass.Material)),
-			),
+		(asset) => loads.getOrInsertComputed(asset.hash, () => jobs.material(asset)),
 		(result, _asset, id) => {
 			if (result instanceof Error) {
 				out.converted.push(null);

@@ -8,7 +8,14 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 
 import { errorText } from '../../errors.ts';
 import { loadShaderSummary } from '../assets/asset-decode.ts';
-import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
+import {
+	type AssetRef,
+	type AssetResolver,
+	locateObject,
+	type ObjectLocator,
+	objectKey,
+	type ObjectRef,
+} from '../assets/assets.ts';
 
 import { classifyHgrpMaterial, type MaterialClassification } from './material-classify.ts';
 
@@ -27,9 +34,55 @@ export interface ResolvedTextureSlot {
 export interface LoadedMaterial {
 	record: MaterialRecord;
 	shader: ShaderSummary;
+	/** the shader object; materials of one shader share its summary */
+	shaderObject: LocatedObject;
 	classification: MaterialClassification;
 	textures: Record<string, ResolvedTextureSlot>;
 }
+
+/** an object by key and locator, which, unlike an {@link ObjectRef}, doesn't keep its bundle loaded */
+export interface LocatedObject {
+	key: string;
+	locator: ObjectLocator;
+}
+
+/** a {@link LoadedMaterial} with its object and textures located rather than referenced */
+export interface LocatedMaterial extends Omit<LoadedMaterial, 'textures'> {
+	/** the Material's {@link objectKey} */
+	object: string;
+	textures: Record<string, { texture: LocatedObject | null; error?: string }>;
+}
+
+/** @returns the object's key and locator */
+export const locatedObject = (ref: ObjectRef): LocatedObject => ({
+	key: objectKey(ref),
+	locator: locateObject(ref),
+});
+
+/**
+ * {@link loadMaterial} by asset, keeping nothing that holds its bundles: a pack keeps every material's load
+ * until its textures are listed, and holding refs kept ~12k bundles' files and blocks (2.7 GB on map02). the
+ * pack cache stores the result, so it must depend on nothing but the bundles read and this module's code
+ *
+ * @param resolver asset resolver
+ * @param asset the material
+ * @returns the material, its shader summary, classification and located textures
+ * @throws {Error} if the material or its shader can't be read
+ */
+export const locateMaterial = async (resolver: AssetResolver, asset: AssetRef): Promise<LocatedMaterial> => {
+	const ref = await resolver.findUnique(asset, UnityClass.Material);
+	const { textures, ...loaded } = await loadMaterial(resolver, ref);
+	return {
+		...loaded,
+		object: objectKey(ref),
+		textures: Object.fromEntries(
+			Object.entries(textures).map(([slot, { ref: texture, error }]) => [
+				slot,
+				{ texture: texture === null ? null : locatedObject(texture), error },
+			]),
+		),
+	};
+};
 
 /**
  * @param resolver asset resolver
@@ -64,5 +117,11 @@ export const loadMaterial = async (resolver: AssetResolver, ref: ObjectRef): Pro
 			),
 		),
 	);
-	return { record, shader, classification: classifyHgrpMaterial(record, shader), textures };
+	return {
+		record,
+		shader,
+		shaderObject: locatedObject(shaderRef),
+		classification: classifyHgrpMaterial(record, shader),
+		textures,
+	};
 };

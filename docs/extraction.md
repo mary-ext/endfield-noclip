@@ -586,20 +586,20 @@ conversion is CPU-bound (LZ4, meshopt, zstd, hashing), so each worker opens the 
 writes its blobs straight into the blob directory, and returns only small results. the bundle
 manifest is the exception: the packer decompresses it once into shared memory and every worker reads
 that copy. workers start as jobs need them, so a pack whose conversions all come from the cache
-starts none, and each holds at most two jobs, the rest waiting in the pool, since a third would
-only hold more decoded textures. texture objects
-with identical content are merged into one table entry after conversion (the report counts them).
+starts none, and each holds at most two jobs, the rest waiting in the pool, since a third would only
+hold more decoded textures. texture objects with identical content are merged into one table entry
+after conversion (the report counts them).
 
 an asset reached both by path hash (static entities) and by object (prefabs) is interned under each
 key, so it gets two table entries and converts twice (`AssetIds` in pack/convert/asset-ids.ts).
 
 `--jobs` defaults to one worker per core but one, capped at 8, since each worker holds its own
-catalogs and block caches (about 150 MB); a cold map02 pack peaks at about 6 GB RSS. `--zstd-level` (default 19) applies to
-geometry, instance blocks and terrain height and splat pages; `--texture-zstd-level` (default 9)
-applies to textures, terrain surface pages and layer textures, and is the main lever on cold pack
-time while barely changing size or decode speed. irradiance cells and the core's JSON tables always
-use level 9. a blob keeps its zstd frame only when compression pays
-([codec](package-format.md#containers-and-blobs)).
+catalogs and block caches (about 150 MB); a cold map02 pack peaks at about 6 GB RSS. `--zstd-level`
+(default 19) applies to geometry, instance blocks and terrain height and splat pages;
+`--texture-zstd-level` (default 9) applies to textures, terrain surface pages and layer textures,
+and is the main lever on cold pack time while barely changing size or decode speed. irradiance cells
+and the core's JSON tables always use level 9. a blob keeps its zstd frame only when compression
+pays ([codec](package-format.md#containers-and-blobs)).
 
 ### pack cache
 
@@ -617,6 +617,13 @@ it), implemented in [pack/store/pack-cache.ts](../packages/extractor/src/pack/st
   reconverts exactly what it affects, without reading bundle bytes to find out. code outside the
   worker's import graph doesn't invalidate conversions, which is why anything that changes
   conversion output belongs in that graph.
+- `memo/` also holds each material's load (its record, classification, shader and located textures),
+  keyed by the material and the import graph of
+  [material-load.ts](../packages/extractor/src/game/materials/material-load.ts), and used while the
+  bundles it read keep their MD5s, like a conversion. shader summaries, most of a load's size and
+  shared by thousands of materials, are stored once per shader object and bundle MD5. these memos
+  are V8-serialized rather than JSON, since records hold bigints and non-finite numbers (map02's
+  materials phase: 12.4 s → 1.6 s warm).
 - `memo/` also holds whole steps whose output depends only on VFS files: terrain
   ([pack/tables/terrain.ts](../packages/extractor/src/pack/tables/terrain.ts)) and irradiance
   ([pack/tables/irradiance.ts](../packages/extractor/src/pack/tables/irradiance.ts)). a step's key
@@ -635,9 +642,9 @@ it), implemented in [pack/store/pack-cache.ts](../packages/extractor/src/pack/st
 - `lock` holds the packing process's pid; one pack uses a cache at a time, and a lock left by a dead
   process is taken over.
 
-not cached: material conversion, the entities phase (which re-reads every chunk file, ~7 s on
-map02), and failed mesh and texture conversions, which are retried on every pack, so a warm pack can
-still start workers.
+not cached: turning loaded materials into table entries (fast), the entities phase (which re-reads
+every chunk file and places every prefab, ~19 s on map02), and failed conversions and material
+loads, which are retried on every pack, so a warm pack can still start workers.
 
 ### report and debug outputs
 
@@ -666,8 +673,8 @@ to entities and chunk files, and `assets.json` says why an asset didn't convert.
 ## open
 
 - path → hash lookups reverse-scan StringPathHash ([asset resolution](#asset-resolution)).
-- not cached: material conversion, the entities phase and failed conversions
-  ([pack cache](#pack-cache)); duplicate textures are compressed before they're merged.
+- not cached: the entities phase and failed conversions ([pack cache](#pack-cache)); duplicate
+  textures are compressed before they're merged.
 - assets reached both by path hash and by object convert twice
   ([asset conversion](#asset-conversion-and-workers)).
 - LevelData with populated blackbox settings isn't read ([MemoryPack data](#memorypack-data)).

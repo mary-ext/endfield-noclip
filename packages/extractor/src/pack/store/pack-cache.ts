@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deserialize, serialize } from 'node:v8';
 
 import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 
@@ -27,7 +28,7 @@ const IMPORT_SPECIFIER = /^(?:import|export)\s+(?!type\s)(?:[^'";]*?\sfrom\s+)?'
 export interface CacheReport {
 	dir: string;
 	/** conversions taken from the cache, by kind */
-	hits: { geometries: number; textures: number };
+	hits: { geometries: number; materials: number; textures: number };
 	/** what the sweep after the pack deleted */
 	swept: { blobs: number; memos: number; bytes: number };
 }
@@ -53,7 +54,7 @@ export class PackCache {
 	readonly root: string;
 	/** where the pack's blob store writes */
 	readonly blobs: BlobDir;
-	readonly hits = { geometries: 0, textures: 0 };
+	readonly hits = { geometries: 0, materials: 0, textures: 0 };
 	/** conversion results as JSON, by key */
 	readonly #memos: BlobDir;
 	readonly #fingerprint: string;
@@ -185,6 +186,32 @@ export class PackCache {
 	 */
 	async rememberStep<T>(key: string, memo: StepMemo<T>): Promise<void> {
 		await this.#memos.replace(key, JSON.stringify(memo));
+		this.#used.add(key);
+	}
+
+	/**
+	 * @param key from {@link PackCache.stepKey}
+	 * @returns the value {@link rememberValue} stored under the key, or `undefined` if there's none
+	 */
+	async recallValue<T>(key: string): Promise<T | undefined> {
+		const bytes = await ignoreMissing(readFile(this.#memos.path(key)), undefined);
+		if (bytes === undefined) {
+			return undefined;
+		}
+		this.#used.add(key);
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by rememberValue() under this key
+		return deserialize(bytes) as T;
+	}
+
+	/**
+	 * remembers a value with no blobs. it's stored in V8's serialization format rather than JSON, so bigints,
+	 * non-finite numbers, `undefined` and typed arrays come back as they went in
+	 *
+	 * @param key from {@link PackCache.stepKey}
+	 * @param value what to remember
+	 */
+	async rememberValue(key: string, value: unknown): Promise<void> {
+		await this.#memos.replace(key, serialize(value));
 		this.#used.add(key);
 	}
 
