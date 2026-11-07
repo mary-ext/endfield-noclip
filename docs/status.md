@@ -471,7 +471,9 @@ packs or renders correctly.
 - global variables gates number and MapConfig names stay separate controls (no name table is known);
   map variables that aren't an interactive's property show as their MapConfig names or numbers;
   Yinglung Pass's server-set outpost tier variables are separate controls, so all four tiers show by
-  default ([outpost tiers](game-data/scene-states.md#outpost-tiers)). variable-driven view states on
+  default ([outpost tiers](game-data/scene-states.md#outpost-tiers)), and the server-set gateway
+  blockers (`007to009`, `008go010deco_v1d6`) show by default, at their highest compared value
+  ([variables](game-data/scene-states.md#variables)). variable-driven view states on
   DynamicStreaming entities
   ([view states on dynamic entities](game-data/scene-states.md#view-states-on-dynamic-entities))
   pose only by their first variable, and draw as saved for values their state machine doesn't test

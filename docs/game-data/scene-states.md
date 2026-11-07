@@ -131,6 +131,12 @@ map variables are of two kinds:
   keys). the client ships no values for them (map02's `mapVarClientDefaultValues` is empty), so
   their states have no offline value. global variables have no name table in client data
 
+two of map02's named variables only block gateways out of a level while they equal 2: `007to009`
+(#201) loads 39 rocks and props that fill Yinglung Pass's gateway to Snowy Forest near (-402, 258,
+570), and `008go010deco_v1d6` (#388) loads 33 crystal spikes over a North Wuling Exclusion Zone gate
+near (150, 275, 1205). no other content tests either variable, and no client table, level script or
+Lua file names them besides MapConfig, so whether a world has them at 2 is up to the server.
+
 at Origin Lodespring (map01_lv006) the crater's light column takes one effect prefab per value of a
 global variable (0, 2, 3, 4), and an in-game shot matches 2. the red-ringed spires there are gated
 on another variable equalling 9999, a value that reads as a sentinel; the game doesn't show them.
