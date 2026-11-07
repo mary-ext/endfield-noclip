@@ -8,8 +8,8 @@ import {
 import { type TileKey, tileAncestor } from '@endfield-noclip/package-format/tiles';
 import type { TreeInfo } from '@endfield-noclip/package-format/tree';
 
-import { AssetArchives } from './asset-placement.ts';
-import type { PutOptions } from './blob-store.ts';
+import { AssetArchives } from './convert/asset-placement.ts';
+import type { PutOptions } from './store/blob-store.ts';
 
 /**
  * an archive group whose blobs pass this size is split into parts by blob hash. parts land around 0.5–1× the

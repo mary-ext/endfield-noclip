@@ -22,15 +22,15 @@ import {
 } from '../cli-args.ts';
 import { type Context, withContext } from '../context.ts';
 import { errorText } from '../errors.ts';
-import { loadMesh, loadTexture } from '../game/asset-decode.ts';
-import { type AssetResolver, objectKey, type ObjectRef } from '../game/assets.ts';
+import { loadMesh, loadTexture } from '../game/assets/asset-decode.ts';
+import { type AssetResolver, objectKey, type ObjectRef } from '../game/assets/assets.ts';
 import {
 	loadSectorTexture,
 	loadWaterSurfaceConfig,
 	readSceneWater,
 	type SourcedWaterSurface,
-} from '../game/water-source.ts';
-import type { WorldIndex } from '../game/world-index.ts';
+} from '../game/water/water-source.ts';
+import type { WorldIndex } from '../game/world/world-index.ts';
 import { mapPool } from '../pool.ts';
 
 /** assets decoded at once by `--resolve` */

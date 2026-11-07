@@ -12,8 +12,8 @@ import { mapDefined, unique } from '@mary-ext/array-fns';
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';
 
-import type { GameCondition } from './game-state.ts';
-import { questRef } from './story.ts';
+import type { GameCondition } from './state/game-state.ts';
+import { questRef } from './state/story.ts';
 
 // what sets each script-controlled entity group in game: every path from a level script's event header to a
 // `ShowSceneDecoration*` action naming the group, followed back across custom events and script starts to a

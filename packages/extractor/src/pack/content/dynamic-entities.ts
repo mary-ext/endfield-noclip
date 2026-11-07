@@ -1,6 +1,6 @@
 import { transformBounds } from '@endfield-noclip/formats/unity/transform';
 
-import type { DynamicStructures } from '../../game/dynamic-structures.ts';
+import type { DynamicStructures } from '../../game/dynamic/dynamic-structures.ts';
 
 import { decalPlacement, type PackContent, UNIT_CUBE_BOUNDS } from './pack-content.ts';
 import { decalSkipReason } from './static-chunks.ts';

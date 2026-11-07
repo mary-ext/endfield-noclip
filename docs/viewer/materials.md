@@ -3,8 +3,8 @@
 how the viewer draws the surface shaders [game-data/materials.md](../game-data/materials.md)
 describes. the extractor reads each material's properties and keywords into a
 [surface](../package-format.md#materials)
-([game/material-surfaces.ts](../../packages/extractor/src/game/material-surfaces.ts)), which the
-viewer packs into a look
+([game/materials/material-surfaces.ts](../../packages/extractor/src/game/materials/material-surfaces.ts)),
+which the viewer packs into a look
 ([`looks/material-looks.ts`](../../packages/viewer/src/looks/material-looks.ts) picks the builder by
 surface kind: Lit in [`lit-look.ts`](../../packages/viewer/src/looks/lit-look.ts), erosion, dithered
 surfaces and matte paintings in
@@ -65,9 +65,9 @@ uses its material's `_EmissiveColor`.
 the viewer evaluates the game's [foliage model](../game-data/materials.md#foliage) per pixel
 (`foliage_sun` in [`frame.wgsl`](../../packages/viewer/src/render/frame/frame.wgsl)).
 `HGRP/Foliage/Leaf`'s and the grass shaders' inputs are their surfaces' `foliage`
-([game/material-surfaces.ts](../../packages/extractor/src/game/material-surfaces.ts)), packed by
-`leafParams` and `grassParams`; the grass takes `h` as the vertex's object-space height. the grass
-card LOD takes neither the bend nor the masks, since its normal decoding isn't read.
+([game/materials/material-surfaces.ts](../../packages/extractor/src/game/materials/material-surfaces.ts)),
+packed by `leafParams` and `grassParams`; the grass takes `h` as the vertex's object-space height.
+the grass card LOD takes neither the bend nor the masks, since its normal decoding isn't read.
 `HGRP/Foliage/Trunk` takes only Lit's texture layout, and `HGRP/Foliage/TreeFoliageCardMeshLod`
 draws as plain alpha-tested foliage.
 
@@ -178,8 +178,8 @@ the extractor decides which materials are unsupported when it
 reason. its `debug/assets.json` lists per material why it's unsupported (`unsupported`, such as the
 keywords or texture combination an effect's look rejects), the surface keywords the viewer doesn't
 draw (`keywordsNotDrawn`, from
-[game/material-surfaces.ts](../../packages/extractor/src/game/material-surfaces.ts), beside the
-describers that read them) and the texture slots whose reference couldn't be followed
+[game/materials/material-surfaces.ts](../../packages/extractor/src/game/materials/material-surfaces.ts),
+beside the describers that read them) and the texture slots whose reference couldn't be followed
 (`slotErrors`). a surface shader draws without the keywords it doesn't read rather than showing the
 checker.
 

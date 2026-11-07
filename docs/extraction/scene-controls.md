@@ -41,9 +41,9 @@ the package side of [the selectors](../game-data/scene-states.md#the-selectors-a
 | water volume fill          | `waterLevel:<id>`                                  | the authored fill; drained for a pool a quest needs drained       |
 
 the control's kind is the selector's name in its id (`door`, `script`, …). every control is built by
-`sceneControl` in [scene-control.ts](../../packages/extractor/src/game/scene-control.ts), which
-files it under its kind's category (the panel section); a new mechanism adds its kind there, and
-registers its controls with the packer's
+`sceneControl` in [scene-control.ts](../../packages/extractor/src/game/state/scene-control.ts),
+which files it under its kind's category (the panel section); a new mechanism adds its kind there,
+and registers its controls with the packer's
 [control registry](../../packages/extractor/src/pack/control-registry.ts) in any order.
 
 the interactive controls' poses come from
@@ -55,8 +55,8 @@ environment volume and water level controls are described with their tables
 
 [MapConfig scene states](../game-data/scene-states.md#mapconfig-scene-states) are implemented by
 [map-config.ts](../../packages/formats/src/endfield/map-config.ts) (parsing),
-[scene-conditions.ts](../../packages/extractor/src/game/scene-conditions.ts) (controls) and
-[game-state.ts](../../packages/extractor/src/game/game-state.ts) (the quests and variables
+[scene-conditions.ts](../../packages/extractor/src/game/state/scene-conditions.ts) (controls) and
+[game-state.ts](../../packages/extractor/src/game/state/game-state.ts) (the quests and variables
 conditions read, and turning conditions into required control values).
 
 the condition classes map to `SceneCondition.kind` as: `SimpleConditionCheckQuestState` → `quest`,
@@ -80,7 +80,7 @@ scene state; an appearance in an always-loaded file makes the content unconditio
 - **environment and post volumes** ([volumes](environments.md#volumes)); each level's base
   environment is chosen among the volumes loaded under the default states
   ([the level's base environment](environments.md#the-levels-base-environment))
-- **water surfaces** ([water-source.ts](../../packages/extractor/src/game/water-source.ts),
+- **water surfaces** ([water-source.ts](../../packages/extractor/src/game/water/water-source.ts),
   [water table](../package-format.md#water)) and **local lights**
   ([lights](../package-format.md#lights))
 
@@ -124,14 +124,15 @@ ones and gates' numbered ones stay apart.
 
 a map variable that is an interactive's saved property
 ([variables](../game-data/scene-states.md#variables)) is named after that interactive and placed at
-it ([interactive-variables.ts](../../packages/extractor/src/game/interactive-variables.ts)): what
-its template is ("Sludge core", "Outfall", "Wuling bridge", from a short list by template id, else
-the template id), plus the property when it isn't `state`. its assumption says which interactive and
-property it is and the value a fresh world starts at; its default stays as for other variables.
+it ([interactive-variables.ts](../../packages/extractor/src/game/state/interactive-variables.ts)):
+what its template is ("Sludge core", "Outfall", "Wuling bridge", from a short list by template id,
+else the template id), plus the property when it isn't `state`. its assumption says which
+interactive and property it is and the value a fresh world starts at; its default stays as for other
+variables.
 
 a blight's variable ([blight and its cores](../game-data/scene-states.md#dynamic-load-gates)),
 map01's erosion and map02's sludge alike, gets a control described for it instead, from
-[dynamic-structures.ts](../../packages/extractor/src/game/dynamic-structures.ts): still
+[dynamic-structures.ts](../../packages/extractor/src/game/dynamic/dynamic-structures.ts): still
 `mapVar:<map>:#<id>`, named `Blight (x, z)` after the erosion root's core position or the sludge
 patch's position, with two values, present (the core alive: an erosion variable other than 2, a
 sludge variable of 0) and cleansed (destroyed, the default, as in a finished world). its patches and
@@ -143,7 +144,7 @@ condition reads it; otherwise the patches keep the generic control and the core 
 [dynamic load gates](../game-data/scene-states.md#dynamic-load-gates) are decoded by
 [dynamic-scene.ts](../../packages/formats/src/endfield/dynamic-scene.ts) into `DynamicEntity.gates`
 and turned into requirements on quest, mission and variable controls by
-[game-state.ts](../../packages/extractor/src/game/game-state.ts). a mission gate is a combined
+[game-state.ts](../../packages/extractor/src/game/state/game-state.ts). a mission gate is a combined
 condition (`all`/`any`, `reverse = !loadWhen`) over the quest and mission controls; a gate's
 variable is a variable control like a MapConfig one. variables with `controlLoad` 0 aren't listed as
 gates.
@@ -156,8 +157,8 @@ compared value, so all four tiers show until the user turns some off.
 **outpost upgrade missions.**
 [upgrade missions](../game-data/scene-states.md#outpost-upgrade-missions) are read from
 `SettlementBasicDataTable` by
-[settlement-upgrades.ts](../../packages/extractor/src/game/settlement-upgrades.ts) and passed to
-`GameState`, which reads a test of one completing (`= completed`, `≠ completed`) as the outpost's
+[settlement-upgrades.ts](../../packages/extractor/src/game/state/settlement-upgrades.ts) and passed
+to `GameState`, which reads a test of one completing (`= completed`, `≠ completed`) as the outpost's
 level control instead of a mission control: complete above the level that names the mission. a test
 that tells the mission's unfinished states apart keeps the mission control, and so does a mission
 whose outpost isn't in the scene or has no authored level above that one. an outpost defaults to its
@@ -169,8 +170,8 @@ these outposts; their own level control does.
 ## progressions
 
 [progressions](../game-data/scene-states.md#progressions) are implemented in
-[scenery-variants.ts](../../packages/extractor/src/game/scenery-variants.ts); `variants <scene>`
-prints them with the scene's stream areas.
+[scenery-variants.ts](../../packages/extractor/src/game/state/scenery-variants.ts);
+`variants <scene>` prints them with the scene's stream areas.
 
 a progression is keyed `<kind>:<key>` (settlement id, POI id, or region level id); a settlement's
 main and secondary controlling entity share one progression. its selectable levels are the bits any
@@ -191,47 +192,48 @@ default, since the player fells each tree at runtime.
 ## facility visual forms
 
 [facility visual forms](../game-data/scene-states.md#facility-visual-forms) are implemented in
-[interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts), with the
-templates decoded as [MemoryPack](../extraction.md#memorypack-data) (`InteractiveTemplateData`).
-placements are deduplicated by id, a row created with its level (`createState` 0) winning over one
-created later. a row created later (any other `createState`) is placed like the rest and also
-requires its level's `created:<level id>` control, one per level, off by default, since the server
-or a level script creates those rows during play. every facility placement becomes a `facility:<id>`
-progression whose levels are the list indices and whose default is the last form, fully upgraded as
-in a finished world (the template's base model, form 1 for a recycling station, is still
-selectable). form numbers aren't gameplay levels, so the viewer labels them "Visual form", not
-"Level".
+[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts),
+with the templates decoded as [MemoryPack](../extraction.md#memorypack-data)
+(`InteractiveTemplateData`). placements are deduplicated by id, a row created with its level
+(`createState` 0) winning over one created later. a row created later (any other `createState`) is
+placed like the rest and also requires its level's `created:<level id>` control, one per level, off
+by default, since the server or a level script creates those rows during play. every facility
+placement becomes a `facility:<id>` progression whose levels are the list indices and whose default
+is the last form, fully upgraded as in a finished world (the template's base model, form 1 for a
+recycling station, is still selectable). form numbers aren't gameplay levels, so the viewer labels
+them "Visual form", not "Level".
 
 ## Dijiang cabins and region walls
 
 [Dijiang cabins](../game-data/scene-states.md#dijiang-cabins) are implemented in
-[cabins.ts](../../packages/extractor/src/game/cabins.ts). the packer gives a slot the largest cabin
-whose row pivots fit its box, else the smallest, which puts the growth chamber in the medium slot
-and manufacturing cabins in the small ones. that rule is ours: no client data assigning a cabin type
-to a slot was found, so a slot shows the type that fits, not necessarily the one the game builds
-there. the small slot with no door and no room-table row is offered like the others. the cabin
-types' room type ids (which name their rooms' bakes) are matched to `SpaceshipRoomTypeTable` rows by
-hand, by the rows' icon names (`…_icon_manufacturing_station` is 1, `…_icon_grow_cabin` 2): the
-table names no cabin types. each slot is a `cabin:<id>` control, empty by default. a slot's region
-bake goes with the built cabin ([irradiance cells](../package-format.md#irradiance-cells)).
+[cabins.ts](../../packages/extractor/src/game/dynamic/cabins.ts). the packer gives a slot the
+largest cabin whose row pivots fit its box, else the smallest, which puts the growth chamber in the
+medium slot and manufacturing cabins in the small ones. that rule is ours: no client data assigning
+a cabin type to a slot was found, so a slot shows the type that fits, not necessarily the one the
+game builds there. the small slot with no door and no room-table row is offered like the others. the
+cabin types' room type ids (which name their rooms' bakes) are matched to `SpaceshipRoomTypeTable`
+rows by hand, by the rows' icon names (`…_icon_manufacturing_station` is 1, `…_icon_grow_cabin` 2):
+the table names no cabin types. each slot is a `cabin:<id>` control, empty by default. a slot's
+region bake goes with the built cabin ([irradiance cells](../package-format.md#irradiance-cells)).
 
 the packer numbers a growth chamber's planting boxes in the order the cabin scene's entity lists
-them in its resource groups ([grow-boxes.ts](../../packages/extractor/src/game/grow-boxes.ts)). a
-growth chamber slot gets a `cabinLevel:<id>` control with the table's levels, level 1 by default,
-and each box gets two rows: the prefab as saved below its field's level, and with the shutter hidden
-from it on. a planted crop and the box's status bar aren't drawn.
+them in its resource groups
+([grow-boxes.ts](../../packages/extractor/src/game/dynamic/grow-boxes.ts)). a growth chamber slot
+gets a `cabinLevel:<id>` control with the table's levels, level 1 by default, and each box gets two
+rows: the prefab as saved below its field's level, and with the shutter hidden from it on. a planted
+crop and the box's status bar aren't drawn.
 
 [region walls](../game-data/scene-states.md#dijiang-region-walls) are implemented in
-[interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts): one
-`controlNexus:<level id>` control, level 1 by default, offering level 1 and each level that unlocks
-an area (levels between them change no wall). each wall shows at the offered levels below its area's
-unlock level. the cabin slot behind a locked wall stays selectable.
+[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts):
+one `controlNexus:<level id>` control, level 1 by default, offering level 1 and each level that
+unlocks an area (levels between them change no wall). each wall shows at the offered levels below
+its area's unlock level. the cabin slot behind a locked wall stays selectable.
 
 ## doors
 
 [doors](../game-data/scene-states.md#doors) are implemented in
-[interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts) and
-[cabins.ts](../../packages/extractor/src/game/cabins.ts), with the
+[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts)
+and [cabins.ts](../../packages/extractor/src/game/dynamic/cabins.ts), with the
 [door poses](prefabs-and-interactives.md#view-state-poses). each placed interactive whose model has
 door poses gets a `door:<interactive id>` control, closed (0) or open (1), with its closed and open
 poses placed under it. what opens doors in game isn't in client data, so:
@@ -245,48 +247,48 @@ poses placed under it. what opens doors in game isn't in client data, so:
 ## bridges
 
 [telescopic bridges](../game-data/scene-states.md#telescopic-bridges) are implemented in
-[interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts). each
-placed bridge gets a `bridge:<interactive id>` control, retracted (0, the default and the template's
-initial state) or extended (1), with its [poses](prefabs-and-interactives.md#view-state-poses)
-placed under it. a bridge whose prefab can't be read as one is reported in
-`unsupported-interactives.json` and drawn as saved.
+[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts).
+each placed bridge gets a `bridge:<interactive id>` control, retracted (0, the default and the
+template's initial state) or extended (1), with its
+[poses](prefabs-and-interactives.md#view-state-poses) placed under it. a bridge whose prefab can't
+be read as one is reported in `unsupported-interactives.json` and drawn as saved.
 
 ## variable-driven view states
 
 a DynamicStreaming entity whose view-state controller (current version) a variable drives
 ([view states on dynamic entities](../game-data/scene-states.md#view-states-on-dynamic-entities)) is
 posed by that variable's control
-([dynamic-structures.ts](../../packages/extractor/src/game/dynamic-structures.ts)): the values its
-state machine compares `state` against (`testedValues`) are noted as tests of the variable, so its
-control tells them apart, and the entity's model is placed once per value, posed as the machine
-settles with `state` at that value (`settledPose`), and once as saved for every other value and
-while unset. the variable's default, the highest value tested, gives the finished-world look: The
-Hub → Valley Pass bridge lowered, the magic Wuling bridges extended. an entity with several
-variables follows its first. the same variable sets a controller-less entity's level: a resource
-group with logic-state bits loads while the variable equals one of them (or, for a mask of more than
-16 levels, none of the others), replacing the off `logic:` toggle such groups got before.
+([dynamic-structures.ts](../../packages/extractor/src/game/dynamic/dynamic-structures.ts)): the
+values its state machine compares `state` against (`testedValues`) are noted as tests of the
+variable, so its control tells them apart, and the entity's model is placed once per value, posed as
+the machine settles with `state` at that value (`settledPose`), and once as saved for every other
+value and while unset. the variable's default, the highest value tested, gives the finished-world
+look: The Hub → Valley Pass bridge lowered, the magic Wuling bridges extended. an entity with
+several variables follows its first. the same variable sets a controller-less entity's level: a
+resource group with logic-state bits loads while the variable equals one of them (or, for a mask of
+more than 16 levels, none of the others), replacing the off `logic:` toggle such groups got before.
 
 ## doodad groups
 
 [doodad groups](../game-data/scene-states.md#doodad-groups) are implemented in
-[doodad-shell.ts](../../packages/extractor/src/game/doodad-shell.ts) and
-[interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts). a shell
-without identity slots is reported and keeps only its own renderers. every level with doodad groups
-gets one `doodadGroups:<level id>` progression ("Resource nodes") over the group levels its shells
-name, defaulting to the highest. each form is placed at the interactive's transform and shown under
-`1 << level`.
+[doodad-shell.ts](../../packages/extractor/src/game/interactives/doodad-shell.ts) and
+[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts).
+a shell without identity slots is reported and keeps only its own renderers. every level with doodad
+groups gets one `doodadGroups:<level id>` progression ("Resource nodes") over the group levels its
+shells name, defaulting to the highest. each form is placed at the interactive's transform and shown
+under `1 << level`.
 
 ## script groups
 
 each [script-control entity](../game-data/scene-states.md#script-groups) gets a `script:<entity id>`
 control defaulting to its default-load flag
-([dynamic-structures.ts](../../packages/extractor/src/game/dynamic-structures.ts)), unless its
-scripts' quest checks settle it ([below](#following-quest-checks-on-activation)). event content such
-as a limited-time race course lands here, typically off. a level interactive that one of the scene's
-own scripts shows or hides by a constant entity pointer gets a `script:<logic id>` control too,
-shown by default (as placed), and its placements also require it
-([interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts)). the
-packer reads the scene's level scripts once, collects those targets before placing interactives,
+([dynamic-structures.ts](../../packages/extractor/src/game/dynamic/dynamic-structures.ts)), unless
+its scripts' quest checks settle it ([below](#following-quest-checks-on-activation)). event content
+such as a limited-time race course lands here, typically off. a level interactive that one of the
+scene's own scripts shows or hides by a constant entity pointer gets a `script:<logic id>` control
+too, shown by default (as placed), and its placements also require it
+([interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts)).
+the packer reads the scene's level scripts once, collects those targets before placing interactives,
 then finds drivers for both kinds. pointers to a script's own slots and computed targets aren't
 followed; the pack report counts them (`scriptVisibilityUntraced`).
 
@@ -336,7 +338,7 @@ are shown, and both follow "Main story progress".
 
 [quest and mission labels](../game-data/scene-states.md#quest-and-mission-labels) are implemented by
 [mission-runtime.ts](../../packages/formats/src/endfield/mission-runtime.ts) (parsing) and
-[story.ts](../../packages/extractor/src/game/story.ts) (labels), and land in the package as
+[story.ts](../../packages/extractor/src/game/state/story.ts) (labels), and land in the package as
 [story places](../package-format.md#controls). rich-text tags (`<@…>…</>`) are stripped. a quest's
 label is its first objective's text, else the mission description it shows while running
 (`descriptionOverride`). a quest off the main flow sits half a step after its predecessors. hidden
@@ -353,8 +355,8 @@ than 1024 m counts as spread over the scene and gets no place, unless the mechan
 lights, water surfaces and environment volumes don't add to the box yet.
 
 the label names the position in the game's words
-([map-labels.ts](../../packages/extractor/src/game/map-labels.ts)): the display name of the level
-owning its cell, and the nearest of that level's
+([map-labels.ts](../../packages/extractor/src/game/world/map-labels.ts)): the display name of the
+level owning its cell, and the nearest of that level's
 [map place names](../game-data/world.md#map-place-names) within 150 m ("The Hub · Bridge Approach",
 "Wuling City · Tianjing Courtyard"). since the place says where, control names say what: "Door
 (int_door_common_v2)", "Campfire", "Blight core", rather than coordinates.

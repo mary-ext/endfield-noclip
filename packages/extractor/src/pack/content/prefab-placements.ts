@@ -13,14 +13,14 @@ import { type ChainDraw, DrawRole } from '@endfield-noclip/package-format/instan
 import { mapDefined, unique } from '@mary-ext/array-fns';
 
 import { formatErrorOnly } from '../../errors.ts';
-import type { AssetResolver, ObjectRef } from '../../game/assets.ts';
-import { billboardPlacement } from '../../game/billboard.ts';
-import { RENDER_PIPELINE_QUAD_PATH } from '../../game/builtin-resources.ts';
-import type { StructureModel } from '../../game/dynamic-structures.ts';
-import { axisLengths, withAxisLengths } from '../../game/particle-mesh.ts';
-import { placePrefabLight, readPrefabLights, type PrefabLight } from '../../game/prefab-lights.ts';
-import { readPrefabRenderers, type PrefabRenderer } from '../../game/prefab.ts';
-import type { WorldIndex } from '../../game/world-index.ts';
+import type { AssetResolver, ObjectRef } from '../../game/assets/assets.ts';
+import { RENDER_PIPELINE_QUAD_PATH } from '../../game/assets/builtin-resources.ts';
+import type { StructureModel } from '../../game/dynamic/dynamic-structures.ts';
+import { axisLengths, withAxisLengths } from '../../game/effects/particle-mesh.ts';
+import { billboardPlacement } from '../../game/prefabs/billboard.ts';
+import { placePrefabLight, readPrefabLights, type PrefabLight } from '../../game/prefabs/prefab-lights.ts';
+import { readPrefabRenderers, type PrefabRenderer } from '../../game/prefabs/prefab.ts';
+import type { WorldIndex } from '../../game/world/world-index.ts';
 
 import { onPivot } from './interactives.ts';
 import { chainDraw, FLT_MAX, type PackContent } from './pack-content.ts';

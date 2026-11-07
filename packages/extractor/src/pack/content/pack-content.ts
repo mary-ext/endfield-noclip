@@ -9,19 +9,19 @@ import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import { type ChainDraw, DrawRole } from '@endfield-noclip/package-format/instances';
 import { tileAt } from '@endfield-noclip/package-format/tiles';
 
-import type { Visibility } from '../../game/scene-control.ts';
-import type { WorldIndex } from '../../game/world-index.ts';
-import { AssetPlacement } from '../asset-placement.ts';
-import { AssetIds, type MaterialOverrides } from '../assets.ts';
-import { CASTS_EVERYWHERE, ChainTable, chainDrawFlagsOf } from '../chains.ts';
-import { Collector } from '../collector.ts';
+import type { Visibility } from '../../game/state/scene-control.ts';
+import type { WorldIndex } from '../../game/world/world-index.ts';
 import { ControlRegistry } from '../control-registry.ts';
+import { AssetPlacement } from '../convert/asset-placement.ts';
+import { AssetIds, type MaterialOverrides } from '../convert/assets.ts';
 import type { StandInReport, UnsupportedInput } from '../debug.ts';
-import { type InstanceInput, rowReach } from '../instances.ts';
-import { LightCollector } from '../lights.ts';
-import { ParticleTable } from '../particles.ts';
+import { CASTS_EVERYWHERE, ChainTable, chainDrawFlagsOf } from '../instances/chains.ts';
+import { Collector } from '../instances/collector.ts';
+import { type InstanceInput, rowReach } from '../instances/instances.ts';
 import type { SceneIndex } from '../scene-index.ts';
 import { SkippedEntities } from '../skipped-entities.ts';
+import { LightCollector } from '../tables/lights.ts';
+import { ParticleTable } from '../tables/particles.ts';
 
 // what the entity phase builds up. every content source (static chunks, dynamic structures, interactives,
 // cabins, placed prefabs) writes through this one object, so a new source needs no plumbing of its own: it

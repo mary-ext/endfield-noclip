@@ -4,21 +4,26 @@ import type { StatesInfo } from '@endfield-noclip/package-format/states';
 import type { StreamAreasInfo } from '@endfield-noclip/package-format/stream-areas';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { loadInteractiveVariables, nameInteractiveVariable } from '../game/interactive-variables.ts';
-import { Locator } from '../game/map-labels.ts';
+import { loadInteractiveVariables, nameInteractiveVariable } from '../game/state/interactive-variables.ts';
 import {
 	defaultSceneStates,
 	sceneStateControl,
 	sceneStateControls,
 	unnamedSceneStateControl,
-} from '../game/scene-conditions.ts';
-import { type DraftControl, sceneControl, streamAreaControl, switchValues } from '../game/scene-control.ts';
-import { loadProgressions, progressionControl, progressionId } from '../game/scenery-variants.ts';
-import { labelStory, mainStoryOrder } from '../game/story.ts';
-import type { WorldIndex } from '../game/world-index.ts';
+} from '../game/state/scene-conditions.ts';
+import {
+	type DraftControl,
+	sceneControl,
+	streamAreaControl,
+	switchValues,
+} from '../game/state/scene-control.ts';
+import { loadProgressions, progressionControl, progressionId } from '../game/state/scenery-variants.ts';
+import { labelStory, mainStoryOrder } from '../game/state/story.ts';
+import { Locator } from '../game/world/map-labels.ts';
+import type { WorldIndex } from '../game/world/world-index.ts';
 
-import type { Collector } from './collector.ts';
 import type { ControlRegistry } from './control-registry.ts';
+import type { Collector } from './instances/collector.ts';
 import { cellTile, type SceneIndex } from './scene-index.ts';
 
 // the manifest's levels and scene controls: the controls every mechanism registered, plus the ones the scene

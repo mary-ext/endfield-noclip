@@ -30,9 +30,9 @@ import { mapDefined } from '@mary-ext/array-fns';
 
 import { mapPool } from '../pool.ts';
 
-import type { AssetResolver, ObjectRef } from './assets.ts';
-import type { Visibility } from './scene-control.ts';
-import type { WorldIndex } from './world-index.ts';
+import type { AssetResolver, ObjectRef } from './assets/assets.ts';
+import type { Visibility } from './state/scene-control.ts';
+import type { WorldIndex } from './world/world-index.ts';
 
 // which environment a level is lit by. the game has no per-level setting, only environment volumes blended by
 // priority at the camera, so a level's base environment is the volume that wins over most of the level's

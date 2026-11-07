@@ -11,8 +11,8 @@ import {
 import { zstd } from '../zstd.ts';
 
 import type { ArchiveLayout } from './archives.ts';
-import type { BlobStore } from './blob-store.ts';
 import { json } from './debug.ts';
+import type { BlobStore } from './store/blob-store.ts';
 
 /** a member of the core archive besides the manifest and blob index: a table, the tree, the chains */
 export interface CoreMember {

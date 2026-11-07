@@ -24,9 +24,13 @@ import {
 	type HeightMosaic,
 	type HeightTile,
 } from '../export/terrain-mosaic.ts';
-import { indexTerrain, loadTerrainSurfacesData, type TerrainSceneIndex } from '../game/terrain-source.ts';
+import {
+	indexTerrain,
+	loadTerrainSurfacesData,
+	type TerrainSceneIndex,
+} from '../game/world/terrain-source.ts';
 import type { Vfs, VfsFile } from '../hg/vfs.ts';
-import { squareOverlapsRect } from '../pack/bounds.ts';
+import { squareOverlapsRect } from '../pack/instances/bounds.ts';
 
 export const summary = 'inspect terrain scenes and tiles; export heightmaps';
 

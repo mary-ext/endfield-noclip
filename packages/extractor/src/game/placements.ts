@@ -3,14 +3,14 @@ import type { Aabb } from '@endfield-noclip/formats/unity/values';
 
 import type { Context } from '../context.ts';
 
-import { loadCabins } from './cabins.ts';
-import { loadDynamicStructures, type StructureModel } from './dynamic-structures.ts';
-import { GameState, type Alternatives } from './game-state.ts';
-import { loadInteractiveFacilities, type InteractiveStandIn } from './interactive-facilities.ts';
-import { loadMapVariables } from './scene-conditions.ts';
-import type { Requirement } from './scene-control.ts';
-import { loadUpgradeLinks } from './settlement-upgrades.ts';
-import { pivotOf, type IndexedEntity } from './world-index.ts';
+import { loadCabins } from './dynamic/cabins.ts';
+import { loadDynamicStructures, type StructureModel } from './dynamic/dynamic-structures.ts';
+import { loadInteractiveFacilities, type InteractiveStandIn } from './interactives/interactive-facilities.ts';
+import { GameState, type Alternatives } from './state/game-state.ts';
+import { loadMapVariables } from './state/scene-conditions.ts';
+import type { Requirement } from './state/scene-control.ts';
+import { loadUpgradeLinks } from './state/settlement-upgrades.ts';
+import { pivotOf, type IndexedEntity } from './world/world-index.ts';
 
 // #region kinds
 

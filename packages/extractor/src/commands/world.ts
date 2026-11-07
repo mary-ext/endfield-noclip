@@ -25,7 +25,6 @@ import {
 	separatePositionals,
 } from '../cli-args.ts';
 import { type Context, withContext } from '../context.ts';
-import { loadDungeonUses, readOperatorNames } from '../game/dungeons.ts';
 import {
 	type LoadedPhase,
 	loadEnvironmentPhase,
@@ -34,7 +33,6 @@ import {
 	resolveLevelEnvironment,
 	resolveLevelPost,
 } from '../game/environment.ts';
-import { GameState } from '../game/game-state.ts';
 import {
 	boxDistance,
 	describeAlternatives,
@@ -43,15 +41,17 @@ import {
 	PLACEMENT_KINDS,
 	type PlacementKind,
 } from '../game/placements.ts';
+import { GameState } from '../game/state/game-state.ts';
 import {
 	defaultSceneStates,
 	loadMapVariables,
 	loadSceneStates,
 	sceneStateControl,
-} from '../game/scene-conditions.ts';
-import { streamAreaControl } from '../game/scene-control.ts';
-import { stripMarkup } from '../game/story.ts';
-import type { IndexedEntity, WorldIndex } from '../game/world-index.ts';
+} from '../game/state/scene-conditions.ts';
+import { streamAreaControl } from '../game/state/scene-control.ts';
+import { stripMarkup } from '../game/state/story.ts';
+import { loadDungeonUses, readOperatorNames } from '../game/world/dungeons.ts';
+import type { IndexedEntity, WorldIndex } from '../game/world/world-index.ts';
 
 export const summary = 'browse scenes and levels; search asset paths and everything placed in a scene';
 

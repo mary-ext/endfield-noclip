@@ -8,9 +8,9 @@ import { PeImage } from '@endfield-noclip/formats/il2cpp/pe';
 import { Il2CppRuntime } from '@endfield-noclip/formats/il2cpp/registration';
 
 import { decodeKeys, DEFAULT_CONFIG_PATH, loadConfig, type Keys, type LocalConfig } from './config.ts';
-import { AssetResolver } from './game/assets.ts';
-import { builtinResources } from './game/builtin-resources.ts';
-import { WorldIndex } from './game/world-index.ts';
+import { AssetResolver } from './game/assets/assets.ts';
+import { builtinResources } from './game/assets/builtin-resources.ts';
+import { WorldIndex } from './game/world/world-index.ts';
 import { Vfs } from './hg/vfs.ts';
 
 /** shared state for commands that read the install */

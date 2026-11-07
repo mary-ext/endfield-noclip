@@ -1,6 +1,6 @@
-import { sceneStateControl } from '../game/scene-conditions.ts';
-import { type Visibility, type Requirement, streamAreaControl } from '../game/scene-control.ts';
-import type { ChunkSource } from '../game/world-index.ts';
+import { sceneStateControl } from '../game/state/scene-conditions.ts';
+import { type Visibility, type Requirement, streamAreaControl } from '../game/state/scene-control.ts';
+import type { ChunkSource } from '../game/world/world-index.ts';
 
 /**
  * @param sources the chunk files holding a piece of content (repeats are fine)

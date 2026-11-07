@@ -16,14 +16,22 @@ import { type Rect, rectContains } from '@endfield-noclip/package-format/values'
 import { mapDefined } from '@mary-ext/array-fns';
 
 import type { Context } from '../context.ts';
-import { GameState, type MapVariables } from '../game/game-state.ts';
-import { loadMapVariables, loadSceneStates, type SceneStateDefinition } from '../game/scene-conditions.ts';
-import { loadUpgradeLinks } from '../game/settlement-upgrades.ts';
-import { indexTerrain, loadTerrainSurfacesData, type TerrainSceneIndex } from '../game/terrain-source.ts';
-import type { ChunkFile, WorldIndex } from '../game/world-index.ts';
+import { GameState, type MapVariables } from '../game/state/game-state.ts';
+import {
+	loadMapVariables,
+	loadSceneStates,
+	type SceneStateDefinition,
+} from '../game/state/scene-conditions.ts';
+import { loadUpgradeLinks } from '../game/state/settlement-upgrades.ts';
+import {
+	indexTerrain,
+	loadTerrainSurfacesData,
+	type TerrainSceneIndex,
+} from '../game/world/terrain-source.ts';
+import type { ChunkFile, WorldIndex } from '../game/world/world-index.ts';
 
-import { squareOverlapsRect } from './bounds.ts';
-import { HLOD_NAME, type HlodLayout, type HlodSample, layoutHlodGrid } from './hlod-cells.ts';
+import { squareOverlapsRect } from './instances/bounds.ts';
+import { HLOD_NAME, type HlodLayout, type HlodSample, layoutHlodGrid } from './instances/hlod-cells.ts';
 
 /** what to pack; the packer's options that decide the package's content */
 export interface SceneSelection {

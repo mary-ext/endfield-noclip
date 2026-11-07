@@ -2,12 +2,12 @@ import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import type { ChainDraw } from '@endfield-noclip/package-format/instances';
 import { type TileKey, tileAt, tileId } from '@endfield-noclip/package-format/tiles';
 
-import type { Visibility } from '../../game/scene-control.ts';
-import type { ChunkSource, WorldIndex } from '../../game/world-index.ts';
+import type { Visibility } from '../../game/state/scene-control.ts';
+import type { ChunkSource, WorldIndex } from '../../game/world/world-index.ts';
 import { orderedPool } from '../../pool.ts';
-import type { CollectedRow } from '../collector.ts';
-import { HLOD_NAME, type HlodCandidates, hlodCandidates, pickHlodTile } from '../hlod-cells.ts';
-import { type InstanceInput, rowReach } from '../instances.ts';
+import type { CollectedRow } from '../instances/collector.ts';
+import { HLOD_NAME, type HlodCandidates, hlodCandidates, pickHlodTile } from '../instances/hlod-cells.ts';
+import { type InstanceInput, rowReach } from '../instances/instances.ts';
 
 import { decalPlacement, type PackContent } from './pack-content.ts';
 

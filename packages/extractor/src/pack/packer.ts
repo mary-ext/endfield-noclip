@@ -16,36 +16,36 @@ import { tileAt } from '@endfield-noclip/package-format/tiles';
 import { ContentKind, encodeTree } from '@endfield-noclip/package-format/tree';
 
 import type { Context } from '../context.ts';
-import { defaultSceneStates } from '../game/scene-conditions.ts';
-import { loadWaterDrains } from '../game/water-drains.ts';
+import { defaultSceneStates } from '../game/state/scene-conditions.ts';
+import { loadWaterDrains } from '../game/water/water-drains.ts';
 
 import { ARCHIVE_CAP, ArchiveLayout, TERRAIN_LAYER_STEM } from './archives.ts';
-import { type AssetConversion, convertAssets, pendingAssets, type PlacedTexture } from './assets.ts';
-import { BlobDir } from './blob-file.ts';
-import { BlobStore } from './blob-store.ts';
-import { CHAIN_KEYS_FILE, readChainKeys } from './chains.ts';
 import { collectEntities } from './content/entities.ts';
 import { PackContent } from './content/pack-content.ts';
 import { SHARED_GROUP } from './control-registry.ts';
-import { ConvertPool } from './convert-pool.ts';
+import { type AssetConversion, convertAssets, pendingAssets, type PlacedTexture } from './convert/assets.ts';
+import { ConvertPool } from './convert/convert-pool.ts';
 import { assetRows, DebugLog, type DebugFile, STAND_INS_FILE, writeDebug } from './debug.ts';
+import { CHAIN_KEYS_FILE, readChainKeys } from './instances/chains.ts';
+import { packInstances } from './instances/instance-blocks.ts';
+import { TileTreeBuilder } from './instances/tile-tree.ts';
+import { checkOutDir, siblingDir, swapIn } from './output-dir.ts';
+import { PhaseTimer } from './phase-timer.ts';
+import { blobTotals, type PackReport, ready, treeTotals } from './report.ts';
+import { indexScene, type SceneSelection } from './scene-index.ts';
+import { addSceneStateControls, buildSceneStates, progressionControls } from './states.ts';
+import { BlobDir } from './store/blob-file.ts';
+import { BlobStore } from './store/blob-store.ts';
+import { PackCache } from './store/pack-cache.ts';
 import {
 	finishEnvironments,
 	gateEnvironments,
 	indexEnvironmentControls,
 	planEnvironments,
-} from './environments.ts';
-import { packInstances } from './instance-blocks.ts';
-import { packIrradiance, packIrradianceRegions, sceneStateBakeCondition } from './irradiance.ts';
-import { checkOutDir, siblingDir, swapIn } from './output-dir.ts';
-import { PackCache } from './pack-cache.ts';
-import { PhaseTimer } from './phase-timer.ts';
-import { blobTotals, type PackReport, ready, treeTotals } from './report.ts';
-import { indexScene, type SceneSelection } from './scene-index.ts';
-import { addSceneStateControls, buildSceneStates, progressionControls } from './states.ts';
-import { packTerrain } from './terrain.ts';
-import { TileTreeBuilder } from './tile-tree.ts';
-import { finishWater, gateWater, indexWaterControls, planWater } from './water.ts';
+} from './tables/environments.ts';
+import { packIrradiance, packIrradianceRegions, sceneStateBakeCondition } from './tables/irradiance.ts';
+import { packTerrain } from './tables/terrain.ts';
+import { finishWater, gateWater, indexWaterControls, planWater } from './tables/water.ts';
 import { binaryTable, type CoreMember, jsonTable, writePackage } from './write.ts';
 
 /** what to pack and how */

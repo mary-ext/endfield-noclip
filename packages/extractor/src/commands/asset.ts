@@ -22,10 +22,10 @@ import {
 import { withContext } from '../context.ts';
 import { errorText, failureReason } from '../errors.ts';
 import { type GlbScene, writeGlb } from '../export/glb.ts';
-import { loadMesh, loadTexture } from '../game/asset-decode.ts';
-import { type AssetResolver, objectKey, type ObjectRef } from '../game/assets.ts';
-import { loadMaterial, type LoadedMaterial } from '../game/material-load.ts';
-import type { IndexedEntity, WorldIndex } from '../game/world-index.ts';
+import { loadMesh, loadTexture } from '../game/assets/asset-decode.ts';
+import { type AssetResolver, objectKey, type ObjectRef } from '../game/assets/assets.ts';
+import { loadMaterial, type LoadedMaterial } from '../game/materials/material-load.ts';
+import type { IndexedEntity, WorldIndex } from '../game/world/world-index.ts';
 import { zstdSync } from '../zstd.ts';
 
 export const summary = 'decode meshes, textures and materials; trace entity draws or export glTF';

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { type DraftControl, derivedSource, sceneControl, SWITCH_VALUES } from '../game/scene-control.ts';
+import {
+	type DraftControl,
+	derivedSource,
+	sceneControl,
+	SWITCH_VALUES,
+} from '../game/state/scene-control.ts';
 
 import { ControlRegistry } from './control-registry.ts';
 

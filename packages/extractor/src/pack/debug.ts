@@ -2,8 +2,8 @@ import { createWriteStream, type WriteStream } from 'node:fs';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import type { AssetDebug } from './assets.ts';
-import type { Group } from './collector.ts';
+import type { AssetDebug } from './convert/assets.ts';
+import type { Group } from './instances/collector.ts';
 
 /** the directory of a package that holds its debug outputs, which the viewer ignores */
 export const DEBUG_DIR = 'debug';

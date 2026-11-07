@@ -3,7 +3,6 @@ import { test } from 'node:test';
 
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
-import type { GameCondition } from './game-state.ts';
 import {
 	activationCondition,
 	entityVisibilityTargets,
@@ -11,6 +10,7 @@ import {
 	toScript,
 	type Script,
 } from './script-drivers.ts';
+import type { GameCondition } from './state/game-state.ts';
 
 const node = (type: string, fields: Record<string, MemoryPackValue>): MemoryPackValue => ({
 	$type: `Beyond_Gameplay_Actions_${type}ForMemoryPack`,

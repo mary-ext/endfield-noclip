@@ -229,8 +229,8 @@ level over the playable rectangle, falling back to the spawn height while coarse
 ### environments
 
 `tables/environment.json.zst` (`EnvironmentTable`,
-[pack/environments.ts](../packages/extractor/src/pack/environments.ts); how the extractor reads it
-is in [packing environments](extraction/environments.md)):
+[pack/tables/environments.ts](../packages/extractor/src/pack/tables/environments.ts); how the
+extractor reads it is in [packing environments](extraction/environments.md)):
 
 - `posts`: the levels' post-processing profiles, deduplicated by name.
 - `schema`: per section field, whether it lerps, lerps and rounds, or switches at ½
@@ -284,36 +284,37 @@ nodes are ordered coarse to fine (level, then z, then x); a node's children are 
 included.
 
 **chains** are LOD-chain templates deduplicated across the scene by their ordered draws, thresholds
-compared by f32 bit pattern ([chains.ts](../packages/extractor/src/pack/chains.ts)), with ids that
-carry over between packs ([chain ids](extraction.md#phases)); a chain without draws is a free id. a
-draw shows while `minSquared < s² ≤ maxSquared`, `s` being Unity's LODGroup screen-relative height;
-a negative `minSquared` never culls by size. the viewer measures `s` as twice the largest
-half-extent of the instance's world bounds over its distance, relative to the screen height; which
-size the game's thresholds were authored against is unverified, and rotated objects' bounds
-overstate it. roles: `Lit`, `ShadowOnly` (shadow proxies, from the game's flag bit 10 or a prefab
-renderer's shadow casting mode) and `Unsupported` (a [stand-in](#stand-ins) for content the viewer
-can't draw, drawn with its unsupported look); an HLOD cluster's draws are `Lit`, the tree ref
-holding them (`Hlod`) says what they are. a draw's flags (`ChainDrawFlags`) say which shadow maps it
-casts into when its material casts: `CastsCascades` for the sharp cascades, `CastsStatic` for the
-cached far map. the packer reads them from a static draw's renderer flag word, as the
-[game](game-data/lighting.md) does, and sets both on prefab, decal and stand-in draws, which have
-none. `material` is `0xffffffff` for a stand-in whose material isn't known, and `particles` indexes
-the [particles table](#particles) when the draw is a particle system's mesh, else it's `0xffffffff`;
-both decode to `null`. `sortingLayer` and `sortingOrder` are a prefab renderer's `m_SortingLayer`
-and `m_SortingOrder`, which the transparent pass sorts by before distance; static draws store 0.
-prefab renderers under an enabled `LODGroup` get one draw per span of its `screenRelativeHeight`
-thresholds they show at, measured on the row's own bounds rather than the LODGroup's size. the chain
-flags say whether its instances are billboards (`BillboardFacing`, `BillboardUpright`): their
-transform's rotation is then relative to the camera's, and their bounds hold every orientation
-([billboards](game-data/assets.md#billboards)). `CameraDistance` makes the chain's thresholds
-squared camera distances, in m², instead of screen-relative sizes, measured from the chain's
-distance origin: a point in the instance's frame, which the instance's transform takes to the world.
-the packer sets it on prefab renderers an [effect LOD table](game-data/effects.md#effect-lod-tables)
-switches by distance, with one draw per span of distances they show at, and puts the origin on the
-effect's own GameObject as the game measures it (to the millimetre, so placements of a prefab share
-chains); under a billboard the stored rotation turns the offset, not the one the camera gives. it
-switches without the game's fade. the nearest billboard up the hierarchy turns a mesh renderer
-([billboard.ts](../packages/extractor/src/game/billboard.ts)): mode 0 flags the chain
+compared by f32 bit pattern ([chains.ts](../packages/extractor/src/pack/instances/chains.ts)), with
+ids that carry over between packs ([chain ids](extraction.md#phases)); a chain without draws is a
+free id. a draw shows while `minSquared < s² ≤ maxSquared`, `s` being Unity's LODGroup
+screen-relative height; a negative `minSquared` never culls by size. the viewer measures `s` as
+twice the largest half-extent of the instance's world bounds over its distance, relative to the
+screen height; which size the game's thresholds were authored against is unverified, and rotated
+objects' bounds overstate it. roles: `Lit`, `ShadowOnly` (shadow proxies, from the game's flag bit
+10 or a prefab renderer's shadow casting mode) and `Unsupported` (a [stand-in](#stand-ins) for
+content the viewer can't draw, drawn with its unsupported look); an HLOD cluster's draws are `Lit`,
+the tree ref holding them (`Hlod`) says what they are. a draw's flags (`ChainDrawFlags`) say which
+shadow maps it casts into when its material casts: `CastsCascades` for the sharp cascades,
+`CastsStatic` for the cached far map. the packer reads them from a static draw's renderer flag word,
+as the [game](game-data/lighting.md) does, and sets both on prefab, decal and stand-in draws, which
+have none. `material` is `0xffffffff` for a stand-in whose material isn't known, and `particles`
+indexes the [particles table](#particles) when the draw is a particle system's mesh, else it's
+`0xffffffff`; both decode to `null`. `sortingLayer` and `sortingOrder` are a prefab renderer's
+`m_SortingLayer` and `m_SortingOrder`, which the transparent pass sorts by before distance; static
+draws store 0. prefab renderers under an enabled `LODGroup` get one draw per span of its
+`screenRelativeHeight` thresholds they show at, measured on the row's own bounds rather than the
+LODGroup's size. the chain flags say whether its instances are billboards (`BillboardFacing`,
+`BillboardUpright`): their transform's rotation is then relative to the camera's, and their bounds
+hold every orientation ([billboards](game-data/assets.md#billboards)). `CameraDistance` makes the
+chain's thresholds squared camera distances, in m², instead of screen-relative sizes, measured from
+the chain's distance origin: a point in the instance's frame, which the instance's transform takes
+to the world. the packer sets it on prefab renderers an
+[effect LOD table](game-data/effects.md#effect-lod-tables) switches by distance, with one draw per
+span of distances they show at, and puts the origin on the effect's own GameObject as the game
+measures it (to the millimetre, so placements of a prefab share chains); under a billboard the
+stored rotation turns the offset, not the one the camera gives. it switches without the game's fade.
+the nearest billboard up the hierarchy turns a mesh renderer
+([billboard.ts](../packages/extractor/src/game/prefabs/billboard.ts)): mode 0 flags the chain
 `BillboardFacing`, the others `BillboardUpright` (about the world's vertical, which is their axis on
 upright placements). the packer stores the offset times the renderer's rotation relative to the
 billboard, at the renderer's own position, so a renderer away from the billboard's origin turns in
@@ -348,9 +349,9 @@ the codecs live in their own modules rather than in `geometry` and `textures`, w
 
 ### irradiance cells
 
-[pack/irradiance.ts](../packages/extractor/src/pack/irradiance.ts) stores every cell whose centre
-the package covers, of the base bake and of each scene-state bake whose states the scene's MapConfig
-names, as one decompressed `Irradiance` blob
+[pack/tables/irradiance.ts](../packages/extractor/src/pack/tables/irradiance.ts) stores every cell
+whose centre the package covers, of the base bake and of each scene-state bake whose states the
+scene's MapConfig names, as one decompressed `Irradiance` blob
 ([cells and probes](game-data/irradiance.md#cells-and-probes)), zstd-compressed, in the 512 m
 archive `irradiance/<x>_<z>-<id>.czar` over it. `tables/irradiance.bin` lists one entry per stored
 cell: its key, in the game's layout moved to one origin ([parser](extraction.md#irradiance)), its
@@ -456,7 +457,7 @@ submesh records
 stream payloads, the index payload and the animation, if any. payloads are meshopt-encoded (codec
 v1, no filters), so the decoded bytes are the GPU buffers as they are; `package-format` treats them
 as opaque and the viewer decodes with `meshoptimizer/decoder`. conversion is in
-[geometry.ts](../packages/extractor/src/pack/geometry.ts).
+[geometry.ts](../packages/extractor/src/pack/convert/geometry.ts).
 
 an **animated geometry** (`SkinAnimation`) plays a looping clip: its streams hold the bind pose,
 with bone weights and indices (a rigid renderer's mesh is its own bind pose, every vertex on bone 0
@@ -524,13 +525,13 @@ each material is its cull mode and its `surface`: the extractor's interpretation
 state ([material and shader](game-data/assets.md#material-and-shader), decoded as
 [extraction.md](extraction.md#asset-classes) describes) into what it draws
 ([surfaces.ts](../packages/package-format/src/surfaces.ts),
-[game/material-describe.ts](../packages/extractor/src/game/material-describe.ts)). a surface is one
-model with its inputs resolved (the Lit model, a matte painting, erosion rock, a dithered effect, a
-texture stack, a lit decal, a water sheet, refraction, mist, a light beam, a portal's stencil mask),
-with Unity property names, keyword rules, colour spaces and the shaders' formulas already applied;
-`undrawn` for materials the game draws nothing visible with; or `unsupported` with the reason the
-viewer can't draw it. the viewer packs a surface into its draw parameters without reading Unity
-properties.
+[game/materials/material-describe.ts](../packages/extractor/src/game/materials/material-describe.ts)).
+a surface is one model with its inputs resolved (the Lit model, a matte painting, erosion rock, a
+dithered effect, a texture stack, a lit decal, a water sheet, refraction, mist, a light beam, a
+portal's stencil mask), with Unity property names, keyword rules, colour spaces and the shaders'
+formulas already applied; `undrawn` for materials the game draws nothing visible with; or
+`unsupported` with the reason the viewer can't draw it. the viewer packs a surface into its draw
+parameters without reading Unity properties.
 
 a texture is a `TextureSlot` (a bound texture-table id with its UV set and `_ST`, which the
 extractor has already replaced where a shader tiles by a property of its own), an `EffectTexture`
@@ -559,13 +560,14 @@ draws a copy of its material with those values in place of the saved ones.
 ### lights
 
 the packer keeps the spot and point lights (a point with a positive length is a tube along its
-direction) in `tables/lights.json.zst` ([pack/lights.ts](../packages/extractor/src/pack/lights.ts)),
-with conditions from the scene states of the files holding them, like instances. lights in dynamic
-structures' ECS groups load under their structure's visibility; a light the chunk files also hold
-keeps its files' conditions. the packer reads the lights of every placed prefab with the same
-settings ([game/prefab-lights.ts](../packages/extractor/src/game/prefab-lights.ts)), deriving the
-colour the chunk files store precomputed (the sRGB colour made linear, times intensity and, when the
-light uses one, the colour temperature's tint; see
+direction) in `tables/lights.json.zst`
+([pack/tables/lights.ts](../packages/extractor/src/pack/tables/lights.ts)), with conditions from the
+scene states of the files holding them, like instances. lights in dynamic structures' ECS groups
+load under their structure's visibility; a light the chunk files also hold keeps its files'
+conditions. the packer reads the lights of every placed prefab with the same settings
+([game/prefabs/prefab-lights.ts](../packages/extractor/src/game/prefabs/prefab-lights.ts)), deriving
+the colour the chunk files store precomputed (the sRGB colour made linear, times intensity and, when
+the light uses one, the colour temperature's tint; see
 [local lights](game-data/lighting.md#local-lights)). they load with their placement's visibility,
 and their culling boxes, authored in the prefab's axes, turn with the placement (unchecked against
 the game for turned cabins). directional, shadow-only and character-only lights aren't packed.
@@ -573,8 +575,8 @@ the game for turned cabins). directional, shadow-only and character-only lights 
 ### water
 
 `tables/water.json.zst` holds the [water](game-data/water.md) surfaces and the scene's global water
-data. [pack/water.ts](../packages/extractor/src/pack/water.ts) plans the table before asset
-conversion and fills in texture ids after it (`planWater` → `finishWater`, the same split as
+data. [pack/tables/water.ts](../packages/extractor/src/pack/tables/water.ts) plans the table before
+asset conversion and fills in texture ids after it (`planWater` → `finishWater`, the same split as
 environments); the decoders it reads through are in [extraction.md](extraction.md#water). the types,
 with field-level JSDoc, are `WaterTable`, `WaterGlobal`, `WaterSector`, `WaterConfigEntry`,
 `WaterConfig` and `WaterSurfaceEntry` in [water.ts](../packages/package-format/src/water.ts).
@@ -620,7 +622,7 @@ packing rules:
   (nothing reads them) stay in `debug/water.json`'s rows.
 - **visibility groups**: each surface's `group` indexes `StatesInfo.groups`, the owning level and
   the scene states of the files holding it (`gateWater` in
-  [water.ts](../packages/extractor/src/pack/water.ts)), shared with instances, lights and
+  [water.ts](../packages/extractor/src/pack/tables/water.ts)), shared with instances, lights and
   environment volumes.
 - **global maps** go to the common archive. **sector tiles** go to the asset archive of the
   shard-level tile under the sector's centre, so a region import carries the tiles it needs. full
@@ -676,11 +678,12 @@ Limit Velocity module's drag or speed limit) or a `spline` its particles follow 
 instead.
 
 a [spline mover](game-data/effects.md#spline-movers) packs as such a system
-([spline-movers.ts](../packages/extractor/src/game/spline-movers.ts)): one entry per renderer of
-each LOD group's first LOD, the mesh index naming the group, all at the mover's GameObject. its
-start lifetime becomes seconds: the clamped fraction times the spline's length over the speed. a
-mover with noise, rotation over lifetime, an alpha fade, another emission type, a lifetime or speed
-curve, or more than four groups draws its first group once at its origin as a stand-in.
+([spline-movers.ts](../packages/extractor/src/game/effects/spline-movers.ts)): one entry per
+renderer of each LOD group's first LOD, the mesh index naming the group, all at the mover's
+GameObject. its start lifetime becomes seconds: the clamped fraction times the spline's length over
+the speed. a mover with noise, rotation over lifetime, an alpha fade, another emission type, a
+lifetime or speed curve, or more than four groups draws its first group once at its origin as a
+stand-in.
 
 a `ParticleSystemRenderer` ([particle systems](game-data/effects.md#particle-systems)) whose
 `ParticleSystem` plays on awake is packed one of three ways. mesh-mode renderers draw their meshes;
@@ -689,7 +692,7 @@ the others (billboard, stretched, horizontal, vertical) draw the render pipeline
 looks up once per scene.
 
 **a frozen particle**, read as a plain mesh
-([particle-mesh.ts](../packages/extractor/src/game/particle-mesh.ts)): the system allows one
+([particle-mesh.ts](../packages/extractor/src/game/effects/particle-mesh.ts)): the system allows one
 particle and keeps it past its lifetime (`ringBufferMode` not 0), without a texture sheet. the
 particle takes the renderer's `m_Mesh` and materials at the shape's centre, oriented by world, local
 or (for a box shape, which emits along the emitter's forward axis) velocity alignment, then its
@@ -699,11 +702,11 @@ moves played particles (below). random ranges between two constants take their m
 game's draws can't be reproduced; curves and camera-facing alignments disqualify a system.
 
 **a played system**, mesh or quad, when a viewer can play it from the package alone
-([particle-system.ts](../packages/extractor/src/game/particle-system.ts)): the renderer becomes an
-emitter whose draw names a particles-table entry, its matrix the emitter's world transform (with
-only its own scale, not its parents', when `scalingMode` is Local) and its bounds a box around
-everywhere a particle can reach. the matrix's scale moves the particles in every mode and sizes them
-unless the mode is Shape. the entry keeps:
+([particle-system.ts](../packages/extractor/src/game/effects/particle-system.ts)): the renderer
+becomes an emitter whose draw names a particles-table entry, its matrix the emitter's world
+transform (with only its own scale, not its parents', when `scalingMode` is Local) and its bounds a
+box around everywhere a particle can reach. the matrix's scale moves the particles in every mode and
+sizes them unless the mode is Shape. the entry keeps:
 
 - the render mode, a stretched quad's length scale and velocity scale, a quad's on-screen size
   limits (`screenSize`, fractions of the viewport's width at its depth), and whether the matrix's
@@ -790,7 +793,7 @@ instance transform scales.
 
 texel data is the game's BC or float blocks unchanged: no transcoding, no container (no KTX2 at
 runtime), sRGB taken from the texture itself rather than from the material. each texture is cut into
-pieces ([textures.ts](../packages/extractor/src/pack/textures.ts)):
+pieces ([textures.ts](../packages/extractor/src/pack/convert/textures.ts)):
 
 - the **tail**: the longest run of smallest levels totalling at most `TEXTURE_TAIL_BYTES` (64 KiB),
   as one blob. for BC7 that's up to 128², and the next level (256²) is itself 64 KiB, so no streamed
@@ -808,11 +811,11 @@ format, sampler and texels share one entry.
 geometry, material textures and other textures go to the asset archive of the **lowest common
 ancestor** (at or above the shard level) of the tiles that use them, or to `common` for global uses
 or uses under different root tiles
-([asset-placement.ts](../packages/extractor/src/pack/asset-placement.ts)). everything a tile draws
-therefore lives in the asset archives of that tile and its ancestors plus common, which suits a
-region import into OPFS or CDN grouping. the viewer itself range-reads single blobs and ignores the
-grouping. textures inherit the merged placement of the materials binding them; water and environment
-textures are placed explicitly (see [water](#water)).
+([asset-placement.ts](../packages/extractor/src/pack/convert/asset-placement.ts)). everything a tile
+draws therefore lives in the asset archives of that tile and its ancestors plus common, which suits
+a region import into OPFS or CDN grouping. the viewer itself range-reads single blobs and ignores
+the grouping. textures inherit the merged placement of the materials binding them; water and
+environment textures are placed explicitly (see [water](#water)).
 
 an asset used on both sides of a quadrant border climbs to the coarse ancestor. first-use or
 majority placement would give smaller per-tile archives but lose the ancestor guarantee.

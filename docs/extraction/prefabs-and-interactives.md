@@ -8,9 +8,9 @@ with their poses. the controls these placements sit under are in
 
 ## prefabs
 
-`readPrefabRenderers` ([prefab.ts](../../packages/extractor/src/game/prefab.ts)) walks a prefab's
-GameObject hierarchy through exact PPtrs and returns its drawable renderers relative to the prefab
-root; the caller supplies the root's placement. it follows the hierarchy rules in
+`readPrefabRenderers` ([prefab.ts](../../packages/extractor/src/game/prefabs/prefab.ts)) walks a
+prefab's GameObject hierarchy through exact PPtrs and returns its drawable renderers relative to the
+prefab root; the caller supplies the root's placement. it follows the hierarchy rules in
 [prefabs](../game-data/assets.md#prefabs), walks inactive subtrees for their Transforms, and takes a
 UI node's RectTransform as its Transform (as the light, volume and effect walkers do).
 
@@ -32,12 +32,13 @@ UI node's RectTransform as its Transform (as the light, volume and effect walker
 - **emission overrides**: an enabled `AnimationProperties_Emissive` on an active GameObject folds
   its colour into `_EmissiveColor` of the renderers it lists, as the shader mixes it
   ([emission](../game-data/materials.md#emission);
-  [emissive-override.ts](../../packages/extractor/src/game/emissive-override.ts)); those renderers
-  get a material variant, like a pose's material values. its breathing and albedo tint aren't read.
+  [emissive-override.ts](../../packages/extractor/src/game/prefabs/emissive-override.ts)); those
+  renderers get a material variant, like a pose's material values. its breathing and albedo tint
+  aren't read.
 - **resolution**: the packer resolves a prefab from its StringPathHash key, which must name exactly
   one manifest path.
 - **what else a prefab holds**: its environment volumes
-  ([prefab-environment.ts](../../packages/extractor/src/game/prefab-environment.ts),
+  ([prefab-environment.ts](../../packages/extractor/src/game/prefabs/prefab-environment.ts),
   [prefab volumes](environments.md#prefab-volumes)) and lights
   ([lights](../package-format.md#lights)) are read separately. particle system renderers become
   particle draws ([particles](../package-format.md#particles)), and renderers under a billboard
@@ -59,7 +60,7 @@ and stand-ins have no game entity id, so the packer gives each a synthetic one: 
 an index counted down from the top of the 27-bit id space, away from the game's ids.
 
 `loadDynamicStructures`
-([dynamic-structures.ts](../../packages/extractor/src/game/dynamic-structures.ts)):
+([dynamic-structures.ts](../../packages/extractor/src/game/dynamic/dynamic-structures.ts)):
 
 - deduplicates models and ECS entities by their stored reference, merging the visibility
   alternatives of every group that shows them
@@ -71,19 +72,20 @@ an index counted down from the top of the 27-bit id space, away from the game's 
 - turns an entity with a spin component (column 54,
   [spinning scenery](../game-data/animation.md#spinning-scenery); static or dynamic) into a spinning
   row of its block, growing its tile and level bounds by the cylinder its box sweeps (`sweptBounds`
-  in [bounds.ts](../../packages/extractor/src/pack/bounds.ts)) so a turned row never leaves them
+  in [bounds.ts](../../packages/extractor/src/pack/instances/bounds.ts)) so a turned row never
+  leaves them
 
 ## interactives
 
 code: [level-interactives.ts](../../packages/formats/src/endfield/level-interactives.ts),
 [interactive-model.ts](../../packages/formats/src/endfield/interactive-model.ts),
 [animation-clip.ts](../../packages/formats/src/unity/animation-clip.ts),
-[interactive-facilities.ts](../../packages/extractor/src/game/interactive-facilities.ts),
-[view-state-poses.ts](../../packages/extractor/src/game/view-state-poses.ts),
-[animator-defaults.ts](../../packages/extractor/src/game/animator-defaults.ts),
-[door-poses.ts](../../packages/extractor/src/game/door-poses.ts),
-[telescopic-bridge.ts](../../packages/extractor/src/game/telescopic-bridge.ts),
-[prefab.ts](../../packages/extractor/src/game/prefab.ts).
+[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts),
+[view-state-poses.ts](../../packages/extractor/src/game/interactives/view-state-poses.ts),
+[animator-defaults.ts](../../packages/extractor/src/game/prefabs/animator-defaults.ts),
+[door-poses.ts](../../packages/extractor/src/game/interactives/door-poses.ts),
+[telescopic-bridge.ts](../../packages/extractor/src/game/interactives/telescopic-bridge.ts),
+[prefab.ts](../../packages/extractor/src/game/prefabs/prefab.ts).
 
 ### templates and models
 
@@ -233,29 +235,30 @@ mapped to bindings through the sub-track masks and constant bindings held at the
 ### moving platforms
 
 an [auto-moving platform](../game-data/interactives.md#auto-moving-platforms)
-([curve-move.ts](../../packages/extractor/src/game/curve-move.ts)) whose starting `state` is 1 and
-whose `spline_id` names a spline rides it. its level's LevelData files are decoded whole through the
-[MemoryPack schema](../extraction.md#memorypack-data) for their splines (`readLevelSplines`,
-[level-splines.ts](../../packages/formats/src/endfield/level-splines.ts)), once per level that has
-such a platform. `curvePath` builds the spline's Bézier curves in world space, measures them with a
-30-sample arc-length table per curve, and samples the platform's trip at 15 frames per second over
-one loop (the trip's length over the speed; twice that back and forth). each frame is the prefab
-root's translation in the placement's space, the pose's `path`; `poseFrames` poses the hierarchy on
-those frames, so every mesh renderer gets a `rigid` motion and skinned ones a `skinned` one, as for
-[looping clips](#looping-clips). a platform that turns along the curve, waits at knots, eases, or
-stops at its target (mode 0) is reported in `unsupported-interactives.json` and stays at its
-placement.
+([curve-move.ts](../../packages/extractor/src/game/interactives/curve-move.ts)) whose starting
+`state` is 1 and whose `spline_id` names a spline rides it. its level's LevelData files are decoded
+whole through the [MemoryPack schema](../extraction.md#memorypack-data) for their splines
+(`readLevelSplines`, [level-splines.ts](../../packages/formats/src/endfield/level-splines.ts)), once
+per level that has such a platform. `curvePath` builds the spline's Bézier curves in world space,
+measures them with a 30-sample arc-length table per curve, and samples the platform's trip at 15
+frames per second over one loop (the trip's length over the speed; twice that back and forth). each
+frame is the prefab root's translation in the placement's space, the pose's `path`; `poseFrames`
+poses the hierarchy on those frames, so every mesh renderer gets a `rigid` motion and skinned ones a
+`skinned` one, as for [looping clips](#looping-clips). a platform that turns along the curve, waits
+at knots, eases, or stops at its target (mode 0) is reported in `unsupported-interactives.json` and
+stays at its placement.
 
 ### crane towers
 
 a [crane tower](../game-data/interactives.md#crane-towers)
-([crane-tower.ts](../../packages/extractor/src/game/crane-tower.ts)) is posed from its starting
-steps before the placements are drawn. `craneTowerOf` merges the tower component's parameters with
-the placement's own (component type 172), the `state_*` entity properties pick the steps, and
-`readCraneLook` walks the prefab for the postmodel MonoBehaviour's five Transforms. the pose is one
-clip on the prefab root: the rope's scale Transform, the rope end's position, and the base and hook
-rotations, each world yaw turned into a local rotation under its parent's posed world rotation. the
-same walk gives the attach point's world position and rotation; the tower's `target` container is
-drawn there, lowered by its `height`, instead of at its own placement. a tower whose step list is
-empty or whose prefab lacks the MonoBehaviour is reported in `unsupported-interactives.json` and
-drawn as saved; one whose container isn't placed is posed and reported.
+([crane-tower.ts](../../packages/extractor/src/game/interactives/crane-tower.ts)) is posed from its
+starting steps before the placements are drawn. `craneTowerOf` merges the tower component's
+parameters with the placement's own (component type 172), the `state_*` entity properties pick the
+steps, and `readCraneLook` walks the prefab for the postmodel MonoBehaviour's five Transforms. the
+pose is one clip on the prefab root: the rope's scale Transform, the rope end's position, and the
+base and hook rotations, each world yaw turned into a local rotation under its parent's posed world
+rotation. the same walk gives the attach point's world position and rotation; the tower's `target`
+container is drawn there, lowered by its `height`, instead of at its own placement. a tower whose
+step list is empty or whose prefab lacks the MonoBehaviour is reported in
+`unsupported-interactives.json` and drawn as saved; one whose container isn't placed is posed and
+reported.

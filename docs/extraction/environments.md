@@ -5,7 +5,7 @@ manifest's environment lists ([environments](../package-format.md#environments))
 each level's base environment. code:
 [hg/environment-phase.ts](../../packages/formats/src/hg/environment-phase.ts),
 [game/environment.ts](../../packages/extractor/src/game/environment.ts),
-[pack/environments.ts](../../packages/extractor/src/pack/environments.ts).
+[pack/tables/environments.ts](../../packages/extractor/src/pack/tables/environments.ts).
 
 ## sections
 
@@ -37,8 +37,9 @@ the precomputed intensities, `forwardDirect`, `localToWorld` and the effects' `r
 quaternions), which some phases carry stale ([sun](../game-data/lighting.md#sun)).
 
 to extract another section (`snowConfig`, `volumetricCloudConfig`, …), extend `ENVIRONMENT_SECTIONS`
-and `mapSections` in environment-phase.ts, `SECTION_KEYS` in pack/environments.ts, and the matching
-interface in [package-format/src/environment.ts](../../packages/package-format/src/environment.ts).
+and `mapSections` in environment-phase.ts, `SECTION_KEYS` in pack/tables/environments.ts, and the
+matching interface in
+[package-format/src/environment.ts](../../packages/package-format/src/environment.ts).
 
 ### values
 

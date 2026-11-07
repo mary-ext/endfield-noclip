@@ -142,11 +142,11 @@ each run, in under a second, and never written out.
 the install is read through three nested layers. each is decoded by a `formats` module; the
 extractor adds file handles, caching and cross-file lookups on top.
 
-| layer          | what it is                                                                                                                                                                                                    | decoder                                                         | extractor side                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------ |
-| VFS            | `VFS/<group hash>/` directories per data group, each with a ChaCha20-encrypted `.blc` catalog listing logical files and the `.chk` chunk files that store them; some logical files are encrypted individually | `formats/src/hg/vfs-catalog.ts`                                 | `extractor/src/hg/vfs.ts`      |
-| HG bundle      | Unity's UnityFS bundle with the signature, header, block table and directory scrambled, blocks passed through a keyed XOR pad, and data compressed with a nibble-interleaved ("inverted") LZ4                 | `formats/src/hg/bundle.ts`, `bundle-cipher.ts`, `binary/lz4.ts` | `extractor/src/hg/bundles.ts`  |
-| SerializedFile | Unity 2021.3 assets files (format 22) with embedded TypeTrees, inside bundles                                                                                                                                 | `formats/src/unity/serialized-file.ts`, `type-tree.ts`          | `extractor/src/game/assets.ts` |
+| layer          | what it is                                                                                                                                                                                                    | decoder                                                         | extractor side                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------- |
+| VFS            | `VFS/<group hash>/` directories per data group, each with a ChaCha20-encrypted `.blc` catalog listing logical files and the `.chk` chunk files that store them; some logical files are encrypted individually | `formats/src/hg/vfs-catalog.ts`                                 | `extractor/src/hg/vfs.ts`             |
+| HG bundle      | Unity's UnityFS bundle with the signature, header, block table and directory scrambled, blocks passed through a keyed XOR pad, and data compressed with a nibble-interleaved ("inverted") LZ4                 | `formats/src/hg/bundle.ts`, `bundle-cipher.ts`, `binary/lz4.ts` | `extractor/src/hg/bundles.ts`         |
+| SerializedFile | Unity 2021.3 assets files (format 22) with embedded TypeTrees, inside bundles                                                                                                                                 | `formats/src/unity/serialized-file.ts`, `type-tree.ts`          | `extractor/src/game/assets/assets.ts` |
 
 **VFS.** the install has two layers, `Persistent/VFS` (patches) and `StreamingAssets/VFS`. a group's
 Persistent catalog is complete and supersedes the StreamingAssets one, while its chunks may live in
@@ -172,10 +172,10 @@ lookup, because the [path hash function](game-data/assets.md#open) isn't ported.
 `world resolve <path|hash>` prints both directions plus the holding bundle and its dependencies.
 code: [string-path-hash.ts](../packages/formats/src/hg/string-path-hash.ts),
 [bundle-manifest.ts](../packages/formats/src/hg/bundle-manifest.ts),
-[world-index.ts](../packages/extractor/src/game/world-index.ts).
+[world-index.ts](../packages/extractor/src/game/world/world-index.ts).
 
-`AssetResolver` ([assets.ts](../packages/extractor/src/game/assets.ts)) turns a hash or a PPtr into
-an `ObjectRef` (bundle index, SerializedFile, object info), relying on
+`AssetResolver` ([assets.ts](../packages/extractor/src/game/assets/assets.ts)) turns a hash or a
+PPtr into an `ObjectRef` (bundle index, SerializedFile, object info), relying on
 [how a reference reaches an object](game-data/assets.md#how-a-reference-reaches-an-object):
 
 - it opens dependency directories in batches and caches each CAB location.
@@ -184,8 +184,8 @@ an `ObjectRef` (bundle index, SerializedFile, object info), relying on
   sub-assets and invalid preload ranges fail, and the pack's debug index keeps the errors.
 - a PPtr into Unity's built-in files resolves to the bundled copy of a
   [built-in mesh](game-data/assets.md#built-in-meshes) (the Cube and Quad;
-  [builtin-resources.ts](../packages/extractor/src/game/builtin-resources.ts)), looked up on first
-  use; any other throws a `FormatError` naming its path id.
+  [builtin-resources.ts](../packages/extractor/src/game/assets/builtin-resources.ts)), looked up on
+  first use; any other throws a `FormatError` naming its path id.
 - an `AssetRef` reached through a prefab carries an `ObjectLocator` (bundle, CAB, path id),
   bypassing path lookup. `objectKey` (`CAB-<hex>:<pathId>`) identifies objects for deduplication and
   caching.
@@ -216,8 +216,8 @@ sections describe each format.
 
 ### asset classes
 
-the loaders in [asset-decode.ts](../packages/extractor/src/game/asset-decode.ts) bind each decoder
-to the resolver so stream data and PPtrs are followed across bundles.
+the loaders in [asset-decode.ts](../packages/extractor/src/game/assets/asset-decode.ts) bind each
+decoder to the resolver so stream data and PPtrs are followed across bundles.
 
 **mesh.** [mesh.ts](../packages/formats/src/unity/mesh.ts) decodes `Mesh` (class 43) vertex channels
 and streams, the index buffer and submeshes into typed arrays, reading vertex data from
@@ -259,24 +259,26 @@ with the Lit shader's UV-set floats where it declares them
 ([lit layers](game-data/materials.md#lit-layers)). `summarizeShader` reads a shader's name,
 first-subshader tags and declared properties from `m_ParsedForm`. then, in the extractor:
 
-- `loadMaterial` ([material-load.ts](../packages/extractor/src/game/material-load.ts)) locates a
-  material's shader and textures and classifies it. a texture slot whose PPtr can't be followed is
-  left empty and the material still converts; `pack` counts it as a `texture slot` failure and lists
-  it in the material's debug row.
+- `loadMaterial` ([material-load.ts](../packages/extractor/src/game/materials/material-load.ts))
+  locates a material's shader and textures and classifies it. a texture slot whose PPtr can't be
+  followed is left empty and the material still converts; `pack` counts it as a `texture slot`
+  failure and lists it in the material's debug row.
 - `classifyHgrpMaterial`
-  ([material-classify.ts](../packages/extractor/src/game/material-classify.ts)) derives the shader
-  family (from the shader name), blend kind, queue, alpha-test threshold, cull mode and the Lit
-  normal/MRO layout. Unity's queue boundaries (≥2450 alpha test, ≥3000 transparent) are refined by
-  HGRP's own surface, blend, alpha-test and cull properties. it reads only properties the shader
-  declares, falling back to the shader's defaults, because materials keep the properties of shaders
-  they used before: map02's Lit materials carrying LitTransparent's `_SurfaceType` and blend factors
-  would otherwise classify as glass.
-- `describeMaterial` ([material-describe.ts](../packages/extractor/src/game/material-describe.ts))
-  interprets the converted material into its [surface](package-format.md#materials): the surface
-  shaders in [material-surfaces.ts](../packages/extractor/src/game/material-surfaces.ts), the
-  effects in [material-effects.ts](../packages/extractor/src/game/material-effects.ts), each reading
-  its properties through [material-values.ts](../packages/extractor/src/game/material-values.ts),
-  which falls back to the shader's declared defaults.
+  ([material-classify.ts](../packages/extractor/src/game/materials/material-classify.ts)) derives
+  the shader family (from the shader name), blend kind, queue, alpha-test threshold, cull mode and
+  the Lit normal/MRO layout. Unity's queue boundaries (≥2450 alpha test, ≥3000 transparent) are
+  refined by HGRP's own surface, blend, alpha-test and cull properties. it reads only properties the
+  shader declares, falling back to the shader's defaults, because materials keep the properties of
+  shaders they used before: map02's Lit materials carrying LitTransparent's `_SurfaceType` and blend
+  factors would otherwise classify as glass.
+- `describeMaterial`
+  ([material-describe.ts](../packages/extractor/src/game/materials/material-describe.ts)) interprets
+  the converted material into its [surface](package-format.md#materials): the surface shaders in
+  [material-surfaces.ts](../packages/extractor/src/game/materials/material-surfaces.ts), the effects
+  in [material-effects.ts](../packages/extractor/src/game/materials/material-effects.ts), each
+  reading its properties through
+  [material-values.ts](../packages/extractor/src/game/materials/material-values.ts), which falls
+  back to the shader's declared defaults.
 
 all of these live apart from asset-decode.ts, outside the conversion worker's imports, so changing
 them keeps the [pack cache](#pack-cache)'s conversions.
@@ -320,8 +322,8 @@ field names, curves as keys and gradients as colour and alpha keys.
   [stream-area.ts](../packages/formats/src/endfield/stream-area.ts)).
 - **terrain** ([terrain](game-data/world.md#terrain),
   [terrain.ts](../packages/formats/src/hg/terrain.ts),
-  [terrain-source.ts](../packages/extractor/src/game/terrain-source.ts)): the parser checks the mip
-  chain fills the payload exactly. `terrain scenes|tiles|export-heights`
+  [terrain-source.ts](../packages/extractor/src/game/world/terrain-source.ts)): the parser checks
+  the mip chain fills the payload exactly. `terrain scenes|tiles|export-heights`
   ([commands/terrain.ts](../packages/extractor/src/commands/terrain.ts)) inspects and exports the
   data.
 
@@ -352,9 +354,9 @@ decoders for the [water data](game-data/water.md):
 | InitChunkData component 30                           | `readWaterSurfaces` in [water.ts](../packages/formats/src/endfield/water.ts)                               |
 | StreamingChunkData property tables                   | [streaming-chunk-data.ts](../packages/formats/src/endfield/streaming-chunk-data.ts)                        |
 | `WaterConfig` / `Global_Water_Config` MonoBehaviours | `readWaterSurfaceConfig`, `readWaterGlobalConfig` in [water.ts](../packages/formats/src/endfield/water.ts) |
-| scene-wide join over chunk files, asset loading      | [water-source.ts](../packages/extractor/src/game/water-source.ts)                                          |
-| LevelData water volumes and their floaters           | [water-volumes.ts](../packages/extractor/src/game/water-volumes.ts)                                        |
-| fills the level scripts set                          | [water-volume-scripts.ts](../packages/extractor/src/game/water-volume-scripts.ts)                          |
+| scene-wide join over chunk files, asset loading      | [water-source.ts](../packages/extractor/src/game/water/water-source.ts)                                    |
+| LevelData water volumes and their floaters           | [water-volumes.ts](../packages/extractor/src/game/water/water-volumes.ts)                                  |
+| fills the level scripts set                          | [water-volume-scripts.ts](../packages/extractor/src/game/water/water-volume-scripts.ts)                    |
 
 - **surfaces**: the component layout follows An1X3R/Endfield-map-extractor (MIT,
   `extractor_core/water.py`). `readWaterSurfaces` rejects a row with a zero mask, a non-finite value
@@ -420,12 +422,13 @@ LevelData files with populated blackbox settings (factory puzzle scenes) are lis
 
 a package holds one scene ([scenes, maps and levels](game-data/world.md#scenes-maps-and-levels));
 `world scenes` lists the scenes the client ships. `world dungeons`
-([game/dungeons.ts](../packages/extractor/src/game/dungeons.ts)) lists every DungeonTable entry with
-its level, the scene that level streams (`=` for its own; pack that scene), its operator, and the
-missions whose definition names the level. an entry no mission names is entered from a menu
-(training, challenges), an NPC or interaction, or not at all yet. `--level` takes only levels of the
-scene's own map, so a level streaming another map's scene, such as `dung02_rdg012` on
-`dung02_rdg008`'s, can't be selected ([status](status.md#scene-states-and-controls)).
+([game/world/dungeons.ts](../packages/extractor/src/game/world/dungeons.ts)) lists every
+DungeonTable entry with its level, the scene that level streams (`=` for its own; pack that scene),
+its operator, and the missions whose definition names the level. an entry no mission names is
+entered from a menu (training, challenges), an NPC or interaction, or not at all yet. `--level`
+takes only levels of the scene's own map, so a level streaming another map's scene, such as
+`dung02_rdg012` on `dung02_rdg008`'s, can't be selected
+([status](status.md#scene-states-and-controls)).
 
 `pack <scene>` ([pack/packer.ts](../packages/extractor/src/pack/packer.ts), `packScene`) writes one
 streaming scene to `out/<scene>` or `out/<scene>-<level>` at the repo root by default, or to
@@ -464,14 +467,14 @@ the phases run in this order, and the report times each one:
 `packScene` in [packer.ts](../packages/extractor/src/pack/packer.ts) runs the phases in order and
 does little else; each phase lives in its own module under [pack/](../packages/extractor/src/pack/):
 
-| module                                                                                                                                                                                                                                                                                                | does                                                                                                                       |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| [scene-index.ts](../packages/extractor/src/pack/scene-index.ts)                                                                                                                                                                                                                                       | setup: the partition, terrain, tile grid, HLOD grid fit, chunk file order and the `--level`/`--bounds` subset              |
-| [content/](../packages/extractor/src/pack/content/)                                                                                                                                                                                                                                                   | the entities phase: one module per content source, run in order by `collectEntities` (`entities.ts`)                       |
-| [environments.ts](../packages/extractor/src/pack/environments.ts), [water.ts](../packages/extractor/src/pack/water.ts), [lights.ts](../packages/extractor/src/pack/lights.ts), [terrain.ts](../packages/extractor/src/pack/terrain.ts), [irradiance.ts](../packages/extractor/src/pack/irradiance.ts) | one core table each: planned, gated (visibility groups and controls), then finished once texture and control ids are known |
-| [instance-blocks.ts](../packages/extractor/src/pack/instance-blocks.ts)                                                                                                                                                                                                                               | encodes and stores the collected instance rows ([collector.ts](../packages/extractor/src/pack/collector.ts))               |
-| [states.ts](../packages/extractor/src/pack/states.ts)                                                                                                                                                                                                                                                 | the scene's own controls (quests, progressions, stream areas, scene states), finished and indexed                          |
-| [write.ts](../packages/extractor/src/pack/write.ts), [debug.ts](../packages/extractor/src/pack/debug.ts), [report.ts](../packages/extractor/src/pack/report.ts)                                                                                                                                       | the core archive from a list of members, `debug/` from a list of files, and the report                                     |
+| module                                                                                                                                                                                                                                                                                                                                   | does                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| [scene-index.ts](../packages/extractor/src/pack/scene-index.ts)                                                                                                                                                                                                                                                                          | setup: the partition, terrain, tile grid, HLOD grid fit, chunk file order and the `--level`/`--bounds` subset              |
+| [content/](../packages/extractor/src/pack/content/)                                                                                                                                                                                                                                                                                      | the entities phase: one module per content source, run in order by `collectEntities` (`entities.ts`)                       |
+| [environments.ts](../packages/extractor/src/pack/tables/environments.ts), [water.ts](../packages/extractor/src/pack/tables/water.ts), [lights.ts](../packages/extractor/src/pack/tables/lights.ts), [terrain.ts](../packages/extractor/src/pack/tables/terrain.ts), [irradiance.ts](../packages/extractor/src/pack/tables/irradiance.ts) | one core table each: planned, gated (visibility groups and controls), then finished once texture and control ids are known |
+| [instance-blocks.ts](../packages/extractor/src/pack/instances/instance-blocks.ts)                                                                                                                                                                                                                                                        | encodes and stores the collected instance rows ([collector.ts](../packages/extractor/src/pack/instances/collector.ts))     |
+| [states.ts](../packages/extractor/src/pack/states.ts)                                                                                                                                                                                                                                                                                    | the scene's own controls (quests, progressions, stream areas, scene states), finished and indexed                          |
+| [write.ts](../packages/extractor/src/pack/write.ts), [debug.ts](../packages/extractor/src/pack/debug.ts), [report.ts](../packages/extractor/src/pack/report.ts)                                                                                                                                                                          | the core archive from a list of members, `debug/` from a list of files, and the report                                     |
 
 every content source writes through one `PackContent`
 ([pack-content.ts](../packages/extractor/src/pack/content/pack-content.ts)): it interns draws into
@@ -502,14 +505,14 @@ whether the pack is cold, warm or uncached. keep any new parallel work committin
 for the same reason.
 
 chains keep the ids of the package the pack replaces (`ChainTable.stableOrder` in
-[pack/chains.ts](../packages/extractor/src/pack/chains.ts)): every instance row names its chain, so
-a chain whose id shifted would change every shard's blocks and rename every shard archive. each
-chain is keyed by a hash of what its draws are (asset identities, not table ids, which shift), and
-`debug/chains.json` lists the keys by id. a chain with a known key keeps its id, new chains take the
-ids of chains that are gone and then follow at the end, both in key order, and an id left free holds
-an empty chain. so the pack after a change reuses every archive whose blocks didn't change, and
-packing the same install twice gives the same bytes; a pack into a fresh directory starts from key
-order.
+[pack/instances/chains.ts](../packages/extractor/src/pack/instances/chains.ts)): every instance row
+names its chain, so a chain whose id shifted would change every shard's blocks and rename every
+shard archive. each chain is keyed by a hash of what its draws are (asset identities, not table ids,
+which shift), and `debug/chains.json` lists the keys by id. a chain with a known key keeps its id,
+new chains take the ids of chains that are gone and then follow at the end, both in key order, and
+an id left free holds an empty chain. so the pack after a change reuses every archive whose blocks
+didn't change, and packing the same install twice gives the same bytes; a pack into a fresh
+directory starts from key order.
 
 ### how the packer files instances
 
@@ -548,7 +551,7 @@ tiles touching its cells. the packer keeps the game's
   names; the pack report gives the grid, how many names it explains, and how many clusters' bounds
   centres lie in the tile they're filed under. a cluster whose name leaves several tiles (a clamped
   coordinate, or a cell straddling tiles) is filed under the one whose detail instances it contains
-  most often ([hlod-cells.ts](../packages/extractor/src/pack/hlod-cells.ts),
+  most often ([hlod-cells.ts](../packages/extractor/src/pack/instances/hlod-cells.ts),
   [tile tree](package-format.md#tile-tree)).
 - [foliage grids](game-data/world.md#foliage-grids): each grass and tree instance is an ordinary row
   with its cluster's bounds, so a cluster culls and changes LOD as a whole.
@@ -558,18 +561,18 @@ prefabs, dynamic structures and interactives are placed as
 
 ### asset conversion and workers
 
-[pack/assets.ts](../packages/extractor/src/pack/assets.ts) converts materials first, on the main
-thread with bounded concurrency, because materials decide which meshes need generated tangents and
-which textures are used. meshes and textures then convert on worker threads
-([pack/convert-pool.ts](../packages/extractor/src/pack/convert-pool.ts),
-[pack/convert-worker.ts](../packages/extractor/src/pack/convert-worker.ts)): conversion is CPU-bound
-(LZ4, meshopt, zstd, hashing), so each worker opens the install itself, writes its blobs straight
-into the blob directory, and returns only small results. workers start as jobs need them, so a pack
-whose conversions all come from the cache starts none. texture objects with identical content are
-merged into one table entry after conversion (the report counts them).
+[pack/convert/assets.ts](../packages/extractor/src/pack/convert/assets.ts) converts materials first,
+on the main thread with bounded concurrency, because materials decide which meshes need generated
+tangents and which textures are used. meshes and textures then convert on worker threads
+([pack/convert/convert-pool.ts](../packages/extractor/src/pack/convert/convert-pool.ts),
+[pack/convert/convert-worker.ts](../packages/extractor/src/pack/convert/convert-worker.ts)):
+conversion is CPU-bound (LZ4, meshopt, zstd, hashing), so each worker opens the install itself,
+writes its blobs straight into the blob directory, and returns only small results. workers start as
+jobs need them, so a pack whose conversions all come from the cache starts none. texture objects
+with identical content are merged into one table entry after conversion (the report counts them).
 
 an asset reached both by path hash (static entities) and by object (prefabs) is interned under each
-key, so it gets two table entries and converts twice (`AssetIds` in pack/assets.ts).
+key, so it gets two table entries and converts twice (`AssetIds` in pack/convert/assets.ts).
 
 `--jobs` defaults to one worker per core but one, capped at 8, since each worker holds its own
 catalogs, manifest and block caches (a few hundred MB). `--zstd-level` (default 19) applies to
@@ -582,7 +585,7 @@ use level 9. a blob keeps its zstd frame only when compression pays
 ### pack cache
 
 unless `--no-cache` is given, packs share a cache (default `out/.cache`, `--cache <dir>` to move
-it), implemented in [pack/pack-cache.ts](../packages/extractor/src/pack/pack-cache.ts):
+it), implemented in [pack/store/pack-cache.ts](../packages/extractor/src/pack/store/pack-cache.ts):
 
 - `blobs/` is the pack's blob store: every blob is written there once and archives are streamed from
   it. without a cache the same store lives in the staging package's `.spool` and is deleted after
@@ -596,12 +599,12 @@ it), implemented in [pack/pack-cache.ts](../packages/extractor/src/pack/pack-cac
   worker's import graph doesn't invalidate conversions, which is why anything that changes
   conversion output belongs in that graph.
 - `memo/` also holds whole steps whose output depends only on VFS files: terrain
-  ([pack/terrain.ts](../packages/extractor/src/pack/terrain.ts)) and irradiance
-  ([pack/irradiance.ts](../packages/extractor/src/pack/irradiance.ts)). a step's key covers its own
-  module's import graph, its options, the tiles or cells the subset keeps and the catalog data MD5
-  of every file it reads; the memo lists its blobs in commit order plus what else the step returns,
-  so a hit commits the cached blobs without reading the terrain or the irradiance payloads (map02:
-  12 s → 0.3 s and 7 s → 0.1 s).
+  ([pack/tables/terrain.ts](../packages/extractor/src/pack/tables/terrain.ts)) and irradiance
+  ([pack/tables/irradiance.ts](../packages/extractor/src/pack/tables/irradiance.ts)). a step's key
+  covers its own module's import graph, its options, the tiles or cells the subset keeps and the
+  catalog data MD5 of every file it reads; the memo lists its blobs in commit order plus what else
+  the step returns, so a hit commits the cached blobs without reading the terrain or the irradiance
+  payloads (map02: 12 s → 0.3 s and 7 s → 0.1 s).
 - `memo/` also holds the stored form of every blob the packer compresses itself (instance blocks
   above all), keyed by a hash of its raw bytes, the zstd level and node's zstd version: a block that
   encodes to the same bytes as in an earlier pack takes its stored blob without compressing again,

@@ -19,12 +19,12 @@ import { ContentKind } from '@endfield-noclip/package-format/tree';
 import { openArchive } from '@mary-ext/czar';
 import { fromFileHandle } from '@mary-ext/czar/node';
 
-import { BlobDir } from './blob-file.ts';
-import { BlobStore, tileLocality } from './blob-store.ts';
-import { ChainTable } from './chains.ts';
-import { type HlodSample, hlodCandidates, layoutHlodGrid, pickHlodTile } from './hlod-cells.ts';
-import { InstanceBlockBuilder } from './instances.ts';
-import { TileTreeBuilder } from './tile-tree.ts';
+import { ChainTable } from './instances/chains.ts';
+import { type HlodSample, hlodCandidates, layoutHlodGrid, pickHlodTile } from './instances/hlod-cells.ts';
+import { InstanceBlockBuilder } from './instances/instances.ts';
+import { TileTreeBuilder } from './instances/tile-tree.ts';
+import { BlobDir } from './store/blob-file.ts';
+import { BlobStore, tileLocality } from './store/blob-store.ts';
 
 const draw = (overrides: Partial<ChainDraw>): ChainDraw => ({
 	geometry: 0,

@@ -1,14 +1,14 @@
 import { BLOB_KIND_NAMES } from '@endfield-noclip/package-format/blobs';
 import { CONTENT_KIND_NAMES, type Tree } from '@endfield-noclip/package-format/tree';
 
-import type { AssetConversion } from './assets.ts';
-import type { BlobStore } from './blob-store.ts';
-import type { LevelEnvironmentDebug } from './environments.ts';
-import type { HlodLayout } from './hlod-cells.ts';
-import type { InstanceCounts } from './instance-blocks.ts';
-import type { IrradianceReport } from './irradiance.ts';
-import type { CacheReport } from './pack-cache.ts';
-import type { WaterDebug } from './water.ts';
+import type { AssetConversion } from './convert/assets.ts';
+import type { HlodLayout } from './instances/hlod-cells.ts';
+import type { InstanceCounts } from './instances/instance-blocks.ts';
+import type { BlobStore } from './store/blob-store.ts';
+import type { CacheReport } from './store/pack-cache.ts';
+import type { LevelEnvironmentDebug } from './tables/environments.ts';
+import type { IrradianceReport } from './tables/irradiance.ts';
+import type { WaterDebug } from './tables/water.ts';
 import type { WrittenArchive } from './write.ts';
 
 /** numbers about a written package */

@@ -6,7 +6,7 @@ import {
 	resolveChunkFiles,
 	selectedAreas,
 	type AreaSelection,
-} from '../game/scenery-variants.ts';
+} from '../game/state/scenery-variants.ts';
 
 export const summary = 'inspect stream areas, progressions and selected chunk files';
 

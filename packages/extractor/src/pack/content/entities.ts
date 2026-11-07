@@ -1,12 +1,12 @@
 import type { Context } from '../../context.ts';
-import { loadDynamicStructures } from '../../game/dynamic-structures.ts';
+import { loadDynamicStructures } from '../../game/dynamic/dynamic-structures.ts';
 import type { SceneEnvironmentVolume } from '../../game/environment.ts';
-import { loadPlacedVolumes } from '../../game/prefab-environment.ts';
-import type { DraftControl } from '../../game/scene-control.ts';
-import { readWaterVolumes } from '../../game/water-volumes.ts';
-import type { CabinRoomGroup } from '../irradiance.ts';
+import { loadPlacedVolumes } from '../../game/prefabs/prefab-environment.ts';
+import type { DraftControl } from '../../game/state/scene-control.ts';
+import { readWaterVolumes } from '../../game/water/water-volumes.ts';
 import { defaultValues } from '../states.ts';
-import type { WaterVolumeInput } from '../water.ts';
+import type { CabinRoomGroup } from '../tables/irradiance.ts';
+import type { WaterVolumeInput } from '../tables/water.ts';
 
 import { placeDynamicEntities } from './dynamic-entities.ts';
 import { collectInteractives, type SceneInteractives } from './interactives.ts';

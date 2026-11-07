@@ -92,7 +92,7 @@ it differs from the game in that:
 
 - a volume that names no config draws with its water type's
   [surface prefab](../game-data/water.md#water-volumes) config (resolved by
-  [water-volume-surfaces.ts](../../packages/extractor/src/game/water-volume-surfaces.ts)); the
+  [water-volume-surfaces.ts](../../packages/extractor/src/game/water/water-volume-surfaces.ts)); the
   prefab's foam decal and its per-level multipliers aren't drawn, and the outline is always
   triangulated, where the game loads the volume's prebuilt `_WaterSurface` mesh of the same outline
 - moves are linear: the game's ease over the last metres, and the eased moves of scripts that don't

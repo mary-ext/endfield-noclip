@@ -10,14 +10,14 @@ import type {
 } from '@endfield-noclip/package-format/states';
 import { type Bounds, unionBounds, type Vec3 } from '@endfield-noclip/package-format/values';
 
-import { sceneStateControl } from '../game/scene-conditions.ts';
+import { sceneStateControl } from '../game/state/scene-conditions.ts';
 import {
 	CONTROL_CATEGORIES,
 	type DraftControl,
 	type DraftRuleText,
 	type Visibility,
-} from '../game/scene-control.ts';
-import type { ChunkSource } from '../game/world-index.ts';
+} from '../game/state/scene-control.ts';
+import type { ChunkSource } from '../game/world/world-index.ts';
 
 import { sourceVisibility } from './chunk-sources.ts';
 

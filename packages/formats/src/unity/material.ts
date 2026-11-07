@@ -1,6 +1,6 @@
 /**
  * Unity `Material` (class 21) records and `Shader` summaries: faithful copies of the serialized properties.
- * what they mean for drawing is the extractor's `game/material-classify.ts`.
+ * what they mean for drawing is the extractor's `game/materials/material-classify.ts`.
  */
 
 import { FormatError } from '../binary/binary-reader.ts';

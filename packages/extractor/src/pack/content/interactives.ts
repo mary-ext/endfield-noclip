@@ -5,16 +5,9 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 import { mapDefined } from '@mary-ext/array-fns';
 
 import type { Context } from '../../context.ts';
-import { cabinDoors, type CabinRoom, loadCabins } from '../../game/cabins.ts';
-import type { DynamicStructures, StructureModel } from '../../game/dynamic-structures.ts';
-import { loadInteractiveFacilities } from '../../game/interactive-facilities.ts';
-import {
-	derivedSource,
-	type DraftControl,
-	sceneControl,
-	scriptControlTarget,
-	switchValues,
-} from '../../game/scene-control.ts';
+import { cabinDoors, type CabinRoom, loadCabins } from '../../game/dynamic/cabins.ts';
+import type { DynamicStructures, StructureModel } from '../../game/dynamic/dynamic-structures.ts';
+import { loadInteractiveFacilities } from '../../game/interactives/interactive-facilities.ts';
 import {
 	activationCondition,
 	entityVisibilityTargets,
@@ -22,10 +15,17 @@ import {
 	loadScriptDrivers,
 } from '../../game/script-drivers.ts';
 import {
+	derivedSource,
+	type DraftControl,
+	sceneControl,
+	scriptControlTarget,
+	switchValues,
+} from '../../game/state/scene-control.ts';
+import {
 	scriptWaterLevels,
 	type ScriptWaterLevel,
 	waterActionTarget,
-} from '../../game/water-volume-scripts.ts';
+} from '../../game/water/water-volume-scripts.ts';
 
 import type { PackContent } from './pack-content.ts';
 
