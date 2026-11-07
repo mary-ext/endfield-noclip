@@ -157,22 +157,22 @@ the camera is outside the ring of its HLOD tier, the game's
 [HLOD rings](game-data/world.md#streaming-layers); otherwise it refines to its children, and a
 refined leaf draws its detail blocks. per-instance LOD inside detail uses the chain thresholds.
 conditional blocks have no HLOD stand-in, so they draw within the detail ring regardless of
-refinement ([instance selection](viewer/streaming.md#instance-selection)). `manifest.global` content
-(the game's Global chunk scenery) is drawn whenever its group shows and never replaced.
-`geometricError` (`edge / 16`, 64 m leaf → 4 m) now only orders requests. which entities become
-HLOD, detail, global and conditional content is in
-[extraction.md](extraction.md#how-the-packer-files-instances).
+refinement, or, with a grid in `param`, while the game would load that grid
+([instance selection](viewer/streaming.md#instance-selection)). `manifest.global` content (the
+game's Global chunk scenery) is drawn whenever its group shows and never replaced. `geometricError`
+(`edge / 16`, 64 m leaf → 4 m) now only orders requests. which entities become HLOD, detail, global
+and conditional content is in [extraction.md](extraction.md#how-the-packer-files-instances).
 
 **content refs** (`ContentRef`, `ContentKind`):
 
-| kind                 | points at                                                                      | `tier`    | `param` |
-| -------------------- | ------------------------------------------------------------------------------ | --------- | ------- |
-| `TerrainHeights` (0) | one height page                                                                | 0         | 0       |
-| `Hlod` (1)           | rows `[first, first + count)` of a group's shared HLOD block                   | HLOD tier | 0       |
-| `Detail` (2)         | a whole instance block the HLODs stand in for                                  | 0         | 0       |
-| `Conditional` (3)    | a whole instance block no HLOD stands in for (scene-state and dynamic content) | 0         | 0       |
-| `TerrainSurface` (4) | one surface page, covering the same tile as the height page                    | 0         | 0       |
-| `TerrainSplat` (5)   | a leaf's splat page                                                            | 0         | 0       |
+| kind                 | points at                                                                      | `tier`    | `param`                                                    |
+| -------------------- | ------------------------------------------------------------------------------ | --------- | ---------------------------------------------------------- |
+| `TerrainHeights` (0) | one height page                                                                | 0         | 0                                                          |
+| `Hlod` (1)           | rows `[first, first + count)` of a group's shared HLOD block                   | HLOD tier | 0                                                          |
+| `Detail` (2)         | a whole instance block the HLODs stand in for                                  | 0         | 0                                                          |
+| `Conditional` (3)    | a whole instance block no HLOD stands in for (scene-state and dynamic content) | 0         | 0, or the game's `fb_main` grid id + 1 that loads the rows |
+| `TerrainSurface` (4) | one surface page, covering the same tile as the height page                    | 0         | 0                                                          |
+| `TerrainSplat` (5)   | a leaf's splat page                                                            | 0         | 0                                                          |
 
 every ref names a [visibility group](#visibility-groups); terrain refs use group 0 (shared, always
 loaded). detail and conditional blocks are one per (leaf, group); an instance goes to the leaf under

@@ -935,7 +935,7 @@ const collectEntities = async (
 		}
 		const key = tileAt(grid, grid.leafLevel, row.bounds.center[0], row.bounds.center[2]);
 		if (stateGated && visibility !== null) {
-			collected.addConditional(tag, key, row, name, visibility, file);
+			collected.addConditional(tag, key, row, name, { visibility, file, grid: null });
 		} else {
 			collected.addDetail(tag, condition, key, row, name, file);
 			detailBounds.getOrInsertComputed(`${tileId(key)}/${tag}`, () => []).push(row.bounds);
@@ -1165,15 +1165,19 @@ const collectEntities = async (
 	for (const area of dynamic.areas) {
 		collected.states.areas.add(area);
 	}
+	/**
+	 * @param loadGrid the DynamicStreaming grid that loads the row, or `null` to draw it within the detail
+	 *   distance
+	 */
 	const addStructure = (
 		row: InstanceInput,
 		tag: number,
 		name: string,
-		visibility: ConditionalSetInfo,
+		{ visibility, loadGrid }: { visibility: ConditionalSetInfo; loadGrid: number | null },
 	): void => {
 		const [x, , z] = row.bounds.center;
 		const key = tileAt(grid, grid.leafLevel, x, z);
-		collected.addConditional(tag, key, row, name, visibility, -1);
+		collected.addConditional(tag, key, row, name, { visibility, file: -1, grid: loadGrid });
 		collected.noteOwner(tag, rowReach(row));
 		pack.uses.note(row.chain, key);
 		counts.dynamicRenderers++;
@@ -1189,7 +1193,15 @@ const collectEntities = async (
 			tag,
 			entityId,
 			visibility,
-		}: { matrix: Float32Array; tag: number; entityId: number; visibility: ConditionalSetInfo },
+			loadGrid,
+		}: {
+			matrix: Float32Array;
+			tag: number;
+			entityId: number;
+			visibility: ConditionalSetInfo;
+			/** see {@link addStructure} */
+			loadGrid: number | null;
+		},
 		report: Omit<StandInReport, 'position'>,
 	): void => {
 		const bounds = transformBounds(UNIT_CUBE_BOUNDS, matrix);
@@ -1207,12 +1219,10 @@ const collectEntities = async (
 			sourceFlags: 0,
 			particles: null,
 		};
-		addStructure(
-			{ chain: pack.chains.intern(1, [draw]), matrix, bounds, entityId },
-			tag,
-			report.name,
+		addStructure({ chain: pack.chains.intern(1, [draw]), matrix, bounds, entityId }, tag, report.name, {
 			visibility,
-		);
+			loadGrid,
+		});
 		standIns.push({ ...report, position: bounds.center.map((value) => Math.round(value)) });
 	};
 	for (const { light, visibility } of dynamic.lights) {
@@ -1220,7 +1230,7 @@ const collectEntities = async (
 			lights.addConditional(light, visibility);
 		}
 	}
-	for (const { entity, decalMaterial, visibility } of dynamic.entities) {
+	for (const { entity, decalMaterial, visibility, grid: loadGrid } of dynamic.entities) {
 		if (seen.has(entity.id)) {
 			continue;
 		}
@@ -1258,7 +1268,7 @@ const collectEntities = async (
 				},
 				entity.levelTag,
 				entity.name,
-				visibility,
+				{ visibility, loadGrid },
 			);
 			continue;
 		}
@@ -1281,7 +1291,7 @@ const collectEntities = async (
 			},
 			entity.levelTag,
 			entity.name,
-			visibility,
+			{ visibility, loadGrid },
 		);
 	}
 	const facilities = await loadInteractiveFacilities(
@@ -1401,6 +1411,7 @@ const collectEntities = async (
 				tag: standIn.levelTag,
 				entityId: syntheticEntityId(standIn.levelTag, modelId++),
 				visibility: standIn.visibility,
+				loadGrid: null,
 			},
 			{ path: standIn.source, name: standIn.template, reason: standIn.reason },
 		);
@@ -1563,6 +1574,7 @@ const collectEntities = async (
 					tag: levelTag,
 					entityId: syntheticEntityId(levelTag, modelId++),
 					visibility: placement.visibility,
+					loadGrid: placement.grid ?? null,
 				},
 				{ path: label, name: label, reason: read.message },
 			);
@@ -1654,7 +1666,7 @@ const collectEntities = async (
 				},
 				levelTag,
 				renderer.name,
-				placement.visibility,
+				{ visibility: placement.visibility, loadGrid: placement.grid ?? null },
 			);
 		}
 	}
@@ -2071,7 +2083,7 @@ const packInstances = async (
 					blob: blobs[i],
 					first: 0,
 					count: group.rows.length,
-					param: 0,
+					param: group.grid === null ? 0 : group.grid + 1,
 				},
 				NodeFlags.HasDetail,
 			);
@@ -2578,13 +2590,15 @@ const nodeSortKey = (key: TileKey): number =>
  */
 const SHARED_GROUP = 0;
 
-/** a block of detail rows: one leaf, one visibility group */
+/** a block of detail rows: one leaf, one visibility group, one game load grid */
 interface DetailGroup extends Group {
 	key: TileKey;
 	/** index into the visibility groups */
 	visibility: number;
 	/** whether HLODs don't stand in for the rows (scene-state and dynamic content) */
 	conditional: boolean;
+	/** the DynamicStreaming grid that loads the rows, or `null` for rows drawn within the detail distance */
+	grid: number | null;
 }
 
 /** gathers instances by destination while the entity pass runs, and interns visibility */
@@ -2617,36 +2631,52 @@ class Collector {
 		name: string,
 		file: number,
 	): void {
-		this.#addDetail(this.states.group(level, condition), false, key, row, name, file);
+		this.#addDetail(
+			{ visibility: this.states.group(level, condition), conditional: false, grid: null },
+			key,
+			row,
+			name,
+			file,
+		);
 		this.#countInstance(level);
 	}
 
 	#addDetail(
-		visibility: number,
-		conditional: boolean,
+		{ visibility, conditional, grid }: Pick<DetailGroup, 'visibility' | 'conditional' | 'grid'>,
 		key: TileKey,
 		row: InstanceInput,
 		name: string,
 		file: number,
 	): void {
-		const group = this.detail.getOrInsertComputed(`${tileId(key)}/${visibility}`, () => ({
+		const group = this.detail.getOrInsertComputed(`${tileId(key)}/${visibility}/${grid ?? ''}`, () => ({
 			...newGroup(),
 			key,
 			visibility,
 			conditional,
+			grid,
 		}));
 		push(group, row, 0, name, file);
 	}
 
+	/**
+	 * adds a row no HLOD stands in for
+	 *
+	 * @param grid the DynamicStreaming grid that loads the row, or `null` to draw it within the detail distance
+	 */
 	addConditional(
 		level: number,
 		key: TileKey,
 		row: InstanceInput,
 		name: string,
-		visibility: ConditionalSetInfo,
-		file: number,
+		{ visibility, file, grid }: { visibility: ConditionalSetInfo; file: number; grid: number | null },
 	): void {
-		this.#addDetail(this.states.groupOf(level, visibility), true, key, row, name, file);
+		this.#addDetail(
+			{ visibility: this.states.groupOf(level, visibility), conditional: true, grid },
+			key,
+			row,
+			name,
+			file,
+		);
 		this.#countInstance(level);
 	}
 

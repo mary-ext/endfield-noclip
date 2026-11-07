@@ -177,6 +177,8 @@ export interface StructureModel {
 	pose: PrefabPose | null;
 	/** whether the placement starts locked, drawing its model's locked look; absent for placements without locks */
 	locked?: boolean;
+	/** the `fb_main` grid storing the row, whose level sets its load distance; absent for other placements */
+	grid?: number;
 }
 
 /** an ECS entity of a dynamic structure */
@@ -185,6 +187,8 @@ export interface DynamicEntity {
 	/** a rect decal's material key, from its chunk's `fb_streaming` payload; `null` for other entities */
 	decalMaterial: bigint | null;
 	visibility: ConditionalSetInfo;
+	/** the coarsest `fb_main` grid referencing the entity's group, whose level sets its load distance */
+	grid: number;
 }
 
 /** structures and their visibility decoded from dynamic resources */
@@ -329,7 +333,8 @@ export const loadDynamicStructures = async (
 			),
 		);
 	result.counts.viewStatesUnsettled = 0;
-	const chunks = new Map<string, Map<number, ConditionalSetInfo>>();
+	/** by `fb_init` chunk key and group index, when the group loads and the coarsest grid referencing it */
+	const chunks = new Map<string, Map<number, { visibility: ConditionalSetInfo; grid: number }>>();
 	const models = new Map<string, StructureModel>();
 	const ordinals = new Map<number, number>();
 	const addSwitch = (kind: 'script' | 'logic', id: string, enabled: boolean): void => {
@@ -492,6 +497,7 @@ export const loadDynamicStructures = async (
 									source: key,
 									visibility: { alternatives: [] },
 									pose,
+									grid: ref.grid,
 								}))
 								.visibility.alternatives.push(...allOf(alternatives, when));
 						}
@@ -501,10 +507,14 @@ export const loadDynamicStructures = async (
 				case 7: {
 					for (const ecs of dynamicResourceSlice(grid.ecs, ref)) {
 						const key = `${ecs.sceneIndex.toString().padStart(2, '0')}_${ecs.chunk.toString().padStart(8, '0')}`;
-						chunks
+						const ecsGroup = chunks
 							.getOrInsertComputed(key, () => new Map())
-							.getOrInsertComputed(ecs.index, () => ({ alternatives: [] }))
-							.alternatives.push(...alternatives);
+							.getOrInsertComputed(ecs.index, () => ({ visibility: { alternatives: [] }, grid: ref.grid }));
+						ecsGroup.visibility.alternatives.push(...alternatives);
+						// the coarsest grid loads the group from farthest
+						if (ref.grid >>> 16 > ecsGroup.grid >>> 16) {
+							ecsGroup.grid = ref.grid;
+						}
 					}
 					break;
 				}
@@ -537,20 +547,23 @@ export const loadDynamicStructures = async (
 			);
 			return decalMaterials.get(id) ?? null;
 		};
-		for (const [index, visibility] of indices) {
+		for (const [index, { visibility, grid }] of indices) {
 			const group = chunk.groups[index];
 			if (!group) {
 				throw new FormatError(`missing ECS group ${key}/${index}`);
 			}
 			result.counts.ecsGroups++;
 			for (const entity of readChunkEntities({ ...chunk, groups: [group] })) {
-				entities
-					.getOrInsertComputed(entity.id, () => ({
-						entity,
-						decalMaterial: entity.decal === null ? null : decalMaterial(entity.id),
-						visibility: { alternatives: [] },
-					}))
-					.visibility.alternatives.push(...visibility.alternatives);
+				const placed = entities.getOrInsertComputed(entity.id, () => ({
+					entity,
+					decalMaterial: entity.decal === null ? null : decalMaterial(entity.id),
+					visibility: { alternatives: [] },
+					grid,
+				}));
+				placed.visibility.alternatives.push(...visibility.alternatives);
+				if (grid >>> 16 > placed.grid >>> 16) {
+					placed.grid = grid;
+				}
 			}
 			for (const id of group.ids) {
 				const light = chunkLights.get(id);

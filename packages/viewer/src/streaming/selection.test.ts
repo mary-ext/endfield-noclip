@@ -54,6 +54,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		byId: new Map(),
 		terrainLeafLevel: -1,
 		terrainRootLevel: Infinity,
+		gridded: [],
 	};
 	const wanted: number[] = [];
 	const selector = new Selector(
@@ -134,6 +135,7 @@ it('drops the HLOD of a nearby leaf with no detail instead of overlaying the sce
 		byId: new Map(),
 		terrainLeafLevel: -1,
 		terrainRootLevel: Infinity,
+		gridded: [],
 	};
 	const item = { blob: 9 } as ContentItem;
 	const selector = new Selector(
@@ -213,6 +215,7 @@ it('keeps drawing the HLOD in place of a refinement still loading, then the refi
 		byId: new Map(),
 		terrainLeafLevel: -1,
 		terrainRootLevel: Infinity,
+		gridded: [],
 	};
 	const resident = new Set([1, 2]);
 	const items = new Map([1, 2, 3].map((blob) => [blob, { blob } as ContentItem]));
@@ -278,7 +281,7 @@ it('streams what is near the camera first, then the focused cells, then the rest
 	const roots = [tile(1, 200, null), tile(2, 300, 'focus'), tile(3, 600, null)];
 	const priorities = new Map<number, number>();
 	const selector = new Selector(
-		{ nodes: roots, roots, byId: new Map(), terrainLeafLevel: -1, terrainRootLevel: Infinity },
+		{ nodes: roots, roots, byId: new Map(), terrainLeafLevel: -1, terrainRootLevel: Infinity, gridded: [] },
 		{
 			want(blob, priority) {
 				priorities.set(blob, priority);

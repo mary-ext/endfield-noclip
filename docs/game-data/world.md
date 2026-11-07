@@ -271,6 +271,32 @@ the stream-area table. it carries prefab placements, interactives, and scenery g
 quests and variables. its format and how structures are selected are in
 [assets.md](assets.md#dynamic-structures).
 
+### dynamic load grids
+
+the dynamic scene streams by its `fb_main` grids, not by the static layers above. a grid id is
+`L << 16 | z << 8 | x`: level `L`'s cells are `32 · 2^L` m on a 4096 m frame from −2048 to 2048 on x
+and z, and levels 0–5 and 7 exist (no level 6 is scanned or shipped). level 7 is one cell covering
+the frame.
+
+- **load.** per level, the grids of the 3×3 block of cells around the streaming centre's cell load,
+  the centre clamped into the frame. so a row enters within 1.5 cells of its cell's centre (XZ,
+  Chebyshev): 48 m at level 0, 96, 192, 384, 768 and 1536 m at level 5, and level-7 rows are always
+  loaded.
+- **unload.** a grid stays until the centre leaves a square of side `min(3 · cell + 20, 3.2 · cell)`
+  around its cell's centre, about 10 m of hysteresis. the scan reruns when the centre moves 0.1 m.
+- **centre.** the same streaming centre as static streaming, most likely the player.
+- **which level.** a row's level is the grid that stores it, so large or far-reaching content sits
+  in coarse grids: Dijiang's corroded planet effect, placed at its deck, is a level-4 row, the
+  satellites around the station level 7, and its props level 0. an entity's owner sits in a grid at
+  least as coarse as its rows, so a row's own grid is the binding one.
+- **per-row radius.** each row also stores a visibility record (centre, base radius, a minimum
+  distance and an importance), tested against a radius of at least 181–362 m plus a margin. the
+  shipped base radii reach the far corner of the row's own 3×3 block, so the test almost never hides
+  a row whose grid is loaded.
+- once loaded, a prefab's renderers are culled only by their own LODGroups and effect LOD tables
+  ([effects](effects.md#effect-lod-tables)); the LOD proxies the dynamic scene builds for models and
+  effects switch animator and effect LOD levels, never hide them.
+
 ## terrain
 
 terrain lives in VFS group `F84BF5E6`:
@@ -474,8 +500,11 @@ preset, which is assumed):
   there the clusters can only stand in for Global content
 - where an entity's streaming layer is stored, and what the HLOD-unload volumes
   ([stream areas](#stream-areas)) unload, and when
-- the cell size of `fb_main` grids; the levels are known from file names, the metric size is unknown
-- `farmod` far-field assets: whether they form a layer outside HLOD
+- what effect LOD level 2 turns off inside a prefab, and the dynamic rows' minimum distance, which
+  nothing reads at runtime
+- `farmod` far-field assets: ordinary entities (all in the Global chunk on map01 and base01_lv001,
+  mixed Global and cell files on map02), not a layer of their own; that they're always loaded is
+  unconfirmed
 - what dungeon levels that reuse an open-world scene add of their own: a census of map02's chunk
   files found no tags but 0, 31 and lv001–lv010's, so it can only come from LevelData and
   DynamicStreaming

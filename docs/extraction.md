@@ -480,16 +480,20 @@ every row goes to a block of one visibility group (its level tag and the conditi
 see [visibility groups](package-format.md#visibility-groups)), so a level, a scene state or a stream
 area can be shown or hidden as a whole:
 
-| destination | what goes there                                                                                                                                              | where it lives                           |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| HLOD        | scene-state-0 entities whose name matches the HLOD pattern, gated by their stream areas; attached to their named cell's tile at `hlodLevels[t]`              | one block per group, in the core archive |
-| global      | other entities of `Global` chunks, with their files' condition                                                                                               | one block per group, in the core archive |
-| detail      | other scene-state-0 entities, gated by their stream areas, filed under the 64 m leaf containing their bounds centre; HLOD clusters of the same area stand in | one block per (leaf, group)              |
-| conditional | entities of scene-state cell files, plus dynamic structures and facilities, with a visibility expression                                                     | one block per (leaf, group)              |
+| destination | what goes there                                                                                                                                                | where it lives                           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| HLOD        | scene-state-0 entities whose name matches the HLOD pattern, gated by their stream areas; attached to their named cell's tile at `hlodLevels[t]`                | one block per group, in the core archive |
+| global      | other entities of `Global` chunks, with their files' condition                                                                                                 | one block per group, in the core archive |
+| detail      | other scene-state-0 entities, gated by their stream areas, filed under the 64 m leaf containing their bounds centre; HLOD clusters of the same area stand in   | one block per (leaf, group)              |
+| conditional | entities of scene-state cell files, plus dynamic structures and facilities, with a visibility expression; dynamic rows keep the `fb_main` grid that loads them | one block per (leaf, group, grid)        |
 
-HLOD clusters stand in for instances already counted, so they're left out of a level's instance
-count. with `--level`, the subset keeps entities with that level's tag and terrain tiles touching
-its cells. the packer keeps the game's [LOD and HLOD](game-data/world.md#lod-and-hlod):
+a dynamic model or effect row keeps its own grid; an ECS entity takes the coarsest grid of the
+resource groups naming its component group, the one that loads it from farthest
+([dynamic load grids](game-data/world.md#dynamic-load-grids)). facilities and Dijiang's cabin scenes
+have no such grid. HLOD clusters stand in for instances already counted, so they're left out of a
+level's instance count. with `--level`, the subset keeps entities with that level's tag and terrain
+tiles touching its cells. the packer keeps the game's
+[LOD and HLOD](game-data/world.md#lod-and-hlod):
 
 - per-entity LOD chains are kept whole, thresholds included. foliage cards are ordinary chain draws,
   not told apart.

@@ -20,7 +20,9 @@ export const ContentKind = {
 	Detail: 2,
 	/**
 	 * instances the HLODs don't stand in for (scene-state and dynamic content): a whole instance block,
-	 * streamed by its tile's screen size regardless of refinement
+	 * streamed by its tile's screen size regardless of refinement. `param` is 0 for content drawn within the
+	 * detail distance of its tile, or a DynamicStreaming grid id plus 1 for rows drawn while their game grid
+	 * loads (`dynamicGridLoaded` in dynamic-grids.ts)
 	 */
 	Conditional: 3,
 	/** the node's baked terrain surface page (albedo and normal); covers the same tile as its height page */

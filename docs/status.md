@@ -317,6 +317,12 @@ packs or renders correctly.
   the opaque scene behind ([frame](viewer/frame.md)). the game's effect variants carry
   `HG_ENABLE_MV`; how the result differs on screen is unchecked
 - Marker Stone's low mist banks over the valley are missing; their source is unknown
+- seen through glass, distant alpha-blended effects vanish: the transparent pass's
+  [weights](viewer/materials.md#glass) favour near layers so steeply (at most 100×) that a pane 10 m
+  away swamps an effect kilometres behind it, where the game sorts the two and draws the glass over
+  it. from Dijiang's exterior deck (unity 0.9, 10, −110.5) its glass hides the corroded planet's
+  plume (`P_fxmap_base01_lv001_planetcorrode_01`), which shows once the glass is hidden or from
+  outside
 
 ## scenes and conditional content
 
@@ -328,6 +334,11 @@ packs or renders correctly.
   highest preset but measures them in 3D to the tile's bounds rather than in XZ from the player,
   keeps HLOD2 drawn past 2048 m, and doesn't apply the other layers' radii (`Tiny`, `Lighting`, …),
   since an entity's layer isn't known ([streaming layers](game-data/world.md#streaming-layers))
+- dynamic structures load by their game grid's block around the camera rather than the player,
+  without the ~10 m unload hysteresis or the per-row radius test (which the shipped radii almost
+  never fail); facilities and Dijiang's cabin scenes, which no `fb_main` grid stores, still draw
+  within `detailDistance` of their tile
+  ([dynamic load grids](game-data/world.md#dynamic-load-grids))
 - HLOD clusters never stand in for global content, which always draws, so wherever a cluster covers
   global scenery both draw until its tile refines
   ([instance selection](viewer/streaming.md#instance-selection)); in indie_dg005 every static

@@ -1,3 +1,4 @@
+import { dynamicGridLoaded } from '@endfield-noclip/package-format/dynamic-grids';
 import { TERRAIN_PAGE_SAMPLES } from '@endfield-noclip/package-format/terrain';
 import type { ContentRef } from '@endfield-noclip/package-format/tree';
 
@@ -193,6 +194,9 @@ export class Selector {
 				}
 			}
 		}
+		if (options.instances && options.detail) {
+			this.#gridded(view);
+		}
 		return selection;
 	}
 
@@ -237,6 +241,37 @@ export class Selector {
 		for (const child of node.quadrants) {
 			if (child !== null) {
 				this.#conditional(child, view, options);
+			}
+		}
+	}
+
+	/**
+	 * dynamic content draws while the game would have its DynamicStreaming grid loaded, the camera standing in
+	 * for the game's streaming centre, so a grid's level sets how far its rows reach
+	 * (`docs/viewer/streaming.md#instance-selection`)
+	 */
+	#gridded(view: SelectionView): void {
+		const eye = view.camera.position;
+		for (const { grid, refs } of this.#tree.gridded) {
+			if (!dynamicGridLoaded(grid, eye[0], eye[2])) {
+				continue;
+			}
+			for (const { node, ref } of refs) {
+				if (!this.#shows(ref)) {
+					continue;
+				}
+				const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, eye), 1);
+				const inView = this.#inView(node, view, distance);
+				if (inView === null) {
+					continue;
+				}
+				const item = this.#stream.want(
+					ref.blob,
+					this.#priority(node, view.pixelFactor / distance, inView, distance),
+				);
+				if (item !== null) {
+					this.#emitRange(item, ref);
+				}
 			}
 		}
 	}
