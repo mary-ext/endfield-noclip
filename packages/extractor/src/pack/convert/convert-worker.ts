@@ -47,7 +47,7 @@ const convert = async (job: ConvertJob): Promise<ConvertResult> => {
 	const { result, bundles } = await recordBundleReads(() => convertWith(job));
 	const sources = await Promise.all(
 		bundles.map(async (index) => ({
-			bundle: resolver.manifest.bundle(index).name,
+			bundle: resolver.manifest.bundleName(index),
 			md5: await resolver.bundleMd5(index),
 		})),
 	);

@@ -218,7 +218,7 @@ const findPaths = async (world: WorldIndex, pattern: RegExp, limit: number, json
 			}
 			seen.add(key);
 			const bundles = [
-				...new Set(manifest.findAssets(hash).map((asset) => manifest.bundle(asset.bundleIndex).name)),
+				...new Set(manifest.findAssets(hash).map((asset) => manifest.bundleName(asset.bundleIndex))),
 			];
 			rows.push({ hash: hashText(hash), path, bundles });
 			if (rows.length >= limit) {
@@ -1025,7 +1025,7 @@ const resolve = async (world: WorldIndex, query: string): Promise<void> => {
 			console.log(`  bundle #${bundle.index} ${bundle.name}`);
 			console.log(`    direct deps (${bundle.directDependencies.length}):`);
 			for (const dep of bundle.directDependencies) {
-				console.log(`      ${manifest.bundle(dep).name}`);
+				console.log(`      ${manifest.bundleName(dep)}`);
 			}
 			console.log(`    closure: ${bundle.dependencies.length} bundles`);
 		}
@@ -1052,7 +1052,7 @@ const assetNames = async (world: WorldIndex): Promise<AssetNames> => {
 	};
 	const bundleOf = (hash: bigint): string | null => {
 		const asset = manifest.findAssets(hash)[0];
-		return asset === undefined ? null : manifest.bundle(asset.bundleIndex).name;
+		return asset === undefined ? null : manifest.bundleName(asset.bundleIndex);
 	};
 	return { pathOf, assetPathOf, bundleOf };
 };

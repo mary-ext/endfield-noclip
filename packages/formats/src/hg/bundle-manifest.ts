@@ -155,6 +155,20 @@ export class BundleManifest {
 	}
 
 	/**
+	 * {@link bundle}'s name alone, without decoding its dependency lists
+	 *
+	 * @param index bundle index
+	 * @returns the logical bundle name
+	 * @throws {RangeError} if out of range
+	 */
+	bundleName(index: number): string {
+		if (!Number.isInteger(index) || index < 0 || index >= this.bundleCount) {
+			throw new RangeError(`bundle index ${index} out of range`);
+		}
+		return this.#string(this.#view.u32(this.#bundleArray + index * BUNDLE_SIZE + 4));
+	}
+
+	/**
 	 * @param name logical bundle name, e.g. `main/<24 hex>.ab`
 	 * @returns its index, or `undefined`
 	 */

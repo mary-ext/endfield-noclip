@@ -232,7 +232,7 @@ export class AssetResolver {
 	 * @returns the md5 of the bundle's file, from the VFS catalog (nothing is read)
 	 */
 	async bundleMd5(index: number): Promise<string> {
-		return (await findBundleFile(this.context.vfs, this.manifest.bundle(index).name)).entry.dataMd5;
+		return (await findBundleFile(this.context.vfs, this.manifest.bundleName(index))).entry.dataMd5;
 	}
 
 	/**
@@ -242,7 +242,7 @@ export class AssetResolver {
 	bundle(index: number): Promise<UnityBundle> {
 		bundleReads.getStore()?.add(index);
 		return this.#bundles.getOrInsertComputed(index, () => {
-			const opened = openBundle(this.context, this.manifest.bundle(index).name).then((bundle) => {
+			const opened = openBundle(this.context, this.manifest.bundleName(index)).then((bundle) => {
 				this.#register(index, bundle);
 				return bundle;
 			});
@@ -274,7 +274,7 @@ export class AssetResolver {
 				return { bundleIndex: index, file, info };
 			}
 		}
-		throw new Error(`${this.manifest.bundle(index).name} has no object with path id ${pathId}`);
+		throw new Error(`${this.manifest.bundleName(index)} has no object with path id ${pathId}`);
 	}
 
 	/**
@@ -287,7 +287,7 @@ export class AssetResolver {
 	async objectIn(index: number, fileName: string, pathId: bigint): Promise<ObjectRef> {
 		const file = (await this.assetFiles(index)).find((candidate) => candidate.node.path === fileName);
 		if (file === undefined) {
-			throw new Error(`${fileName} isn't a SerializedFile of ${this.manifest.bundle(index).name}`);
+			throw new Error(`${fileName} isn't a SerializedFile of ${this.manifest.bundleName(index)}`);
 		}
 		const info = file.file.objectsByPathId.get(pathId);
 		if (info === undefined) {
@@ -331,7 +331,7 @@ export class AssetResolver {
 			}
 		}
 		throw new Error(
-			`${key} isn't in ${this.manifest.bundle(near).name} or its ${candidates.length - 1} dependencies`,
+			`${key} isn't in ${this.manifest.bundleName(near)} or its ${candidates.length - 1} dependencies`,
 		);
 	}
 
