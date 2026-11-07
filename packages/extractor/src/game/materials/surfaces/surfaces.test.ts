@@ -120,6 +120,28 @@ describe('dithered effects', () => {
 		// the edge mode isn't drawn
 		assert.equal(edged.dither, null);
 	});
+
+	it('draw the NoLighting variant unlit, though it declares no lighting switch', () => {
+		// Si's Painting's ink plane (`M_fxmap_map02_lv010_inkpattern_huge_01_fj_03_d02`)
+		const { _UseLighting, ...floats } = shader.floats;
+		const surface = describeMaterial(
+			values({
+				blend: 'alphaTest',
+				alphaClipThreshold: 0.5,
+				cull: 'front',
+				slots: { _MainTex: { texture: 7, uv: 0, scale: [1, 1], offset: [0, 0] } },
+				floats: { _UseMainTexAsAlpha: 1, _TintColorIntensity: 2 },
+			}),
+			shaderEntry({ ...shader, name: 'HGRP/Effect/VFXDitherAlphaNoLighting', floats }),
+		);
+		assert.ok(surface.kind === 'dithered');
+		assert.equal(surface.lighting, null);
+		assert.equal(surface.baseMap, null);
+		assert.deepEqual(
+			{ ...surface.dither, texture: surface.dither?.texture.texture },
+			{ texture: 7, redAlpha: true, alphaScale: 1, exponent: 1, tiling: 1 },
+		);
+	});
 });
 
 describe('erosion', () => {

@@ -7,6 +7,8 @@ import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../materi
 /** keywords a `HGRP/Effect/VFXDitherAlpha` material can have and still be drawn as a dithered surface */
 const DITHERED_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2']);
 
+const NO_LIGHTING_SHADER = 'HGRP/Effect/VFXDitherAlphaNoLighting';
+
 /**
  * `HGRP/Effect/VFXDitherAlpha` and its variants as an opaque G-buffer surface
  * (`docs/game-data/effects.md#solid-effects`)
@@ -34,7 +36,9 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 	if ((main !== undefined && main.uv !== 0) || (normal !== undefined && normal.uv !== 0)) {
 		return unsupported('a texture on a UV set other than 0');
 	}
-	const lit = float('_UseLighting', 1) !== 0;
+	// the NoLighting variant draws only in an unlit forward pass and doesn't declare `_UseLighting`, whose
+	// default would otherwise make it lit
+	const lit = reader.shader.name !== NO_LIGHTING_SHADER && float('_UseLighting', 1) !== 0;
 	// the depth pass's dithered alpha test, which shapes meshes such as the soft dark disc at the centre of
 	// Power Plateau's sky vortex. the viewer draws it for the main texture's alpha (or red, as the alpha alone,
 	// on unlit surfaces) in the default dither mode

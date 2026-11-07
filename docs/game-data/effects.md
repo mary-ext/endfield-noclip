@@ -292,6 +292,14 @@ and metallic are `_Roughness` and `_Metallic`. the shader has no shadow caster p
 material multiplies a gold mask by a tint twelve times over, so the saturated albedo is black rock
 with gold veins.
 
+`HGRP/Effect/VFXDitherAlphaNoLighting` is the same surface drawn unlit in a forward pass instead of
+the G-buffer, and doesn't declare `_UseLighting`. its depth pass is the dithered test below; the
+forward pass then draws only where that depth survived (ZTest Equal, blend One Zero), writing
+`_TintColor · _TintColorIntensity` times `_MainTex` (the tint alone with `_UseMainTexAsAlpha`) and
+times the alpha before the dither's power. Si's Painting's ink plane
+(`M_fxmap_map02_lv010_inkpattern_huge_01_fj_03_d02`, in `p_fxmap_map02_lv010_inkpattern_huge_01`) is
+one: its shape comes from a mask texture's red alone.
+
 its depth pass keeps a pixel where the alpha beats an interleaved gradient noise of the pixel
 position times `_DitherTilling`, so a fraction of the pixels equal to the alpha survives. the alpha
 is `_TintColor.a · _TintColorAlpha` times `_MainTex`'s alpha (its red with `_UseMainTexAsAlpha`),

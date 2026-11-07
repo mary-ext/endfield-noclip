@@ -269,8 +269,11 @@ packs or renders correctly.
     Dijiang's clue board and the aisle-guide panels' edge colour are unchecked in game
   - VFXDitherAlpha's effect variants blend rather than dither and write no depth; lit ones, other
     dither modes and non-red masks stay unsupported; the plain variant's dither leaves out the
-    vertex alpha and the near-camera fade, and `_USE_MAIN2` draws only as a mask. the Very Large
-    Rift's escaping trails are unchecked in game
+    vertex alpha and the near-camera fade, and `_USE_MAIN2` draws only as a mask. the NoLighting
+    variant goes through the G-buffer path without its colour's extra factor of the alpha, so it's
+    fogged and its soft edges are brighter than the game's; its effect variants stay unsupported
+    (Si's Painting's ink sheet `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very
+    Large Rift's escaping trails are unchecked in game
   - [VFXRefract](game-data/effects.md#refraction): its saturation, Fresnel mask and trail aren't
     drawn, its scene copy includes the water and fog (unchecked against the game's), and on meshes
     it ignores the second UV set the game reads as custom data; Deep Dale Street's fog-wall haze,
