@@ -6,6 +6,7 @@ import { telescopicPieces } from './bridges.ts';
 import { CRANE_TOWER_COMPONENTS } from './crane-tower.ts';
 import { isAutoMovePlatform } from './curve-move.ts';
 import { DOOR_COMPONENTS } from './doors.ts';
+import { ELECTRIC_FENCE_COMPONENTS } from './electric-fences.ts';
 import type { FacilitySources } from './facility-sources.ts';
 import { FIXABLE_ROBOT_COMPONENTS } from './fixable-robots.ts';
 import { JUMP_MACHINE_COMPONENTS, JUMP_MACHINE_VERTICAL_COMPONENTS } from './jump-pads.ts';
@@ -37,6 +38,8 @@ export type TemplateTraits =
 			jumpPad: MemoryPackValue | null;
 			/** a vertical jump pad's decoded template, `null` for other templates */
 			verticalPad: MemoryPackValue | null;
+			/** a laser gate's decoded template, `null` for other templates */
+			electricFence: MemoryPackValue | null;
 			/** an auto-moving platform's decoded template, `null` for other templates */
 			autoMove: MemoryPackValue | null;
 			verticalRope: boolean;
@@ -58,6 +61,7 @@ const UNREADABLE: TemplateTraits = {
 	start: null,
 	jumpPad: null,
 	verticalPad: null,
+	electricFence: null,
 	autoMove: null,
 	verticalRope: false,
 	craneTower: null,
@@ -101,6 +105,7 @@ export const readTemplateTraits = (template: MemoryPackValue, path: string): Tra
 		start: startState(template),
 		jumpPad: hasComponent(template, JUMP_MACHINE_COMPONENTS) ? template : null,
 		verticalPad: hasComponent(template, JUMP_MACHINE_VERTICAL_COMPONENTS) ? template : null,
+		electricFence: hasComponent(template, ELECTRIC_FENCE_COMPONENTS) ? template : null,
 		autoMove: isAutoMovePlatform(template) ? template : null,
 		verticalRope: hasComponent(template, VERTICAL_ROPE_COMPONENTS),
 		craneTower: hasComponent(template, CRANE_TOWER_COMPONENTS) ? template : null,

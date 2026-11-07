@@ -441,3 +441,31 @@ of where their towers' starting steps hang them (3500021667 under 3500021670, 35
 3500022095); tower 3500021909 (near 479, 58, 224) starts at its shorter rope, so its container
 (3500021665) hangs 5.5 m above where it was authored, and tower 3500021686 (near 420, 59, 192) at
 its longer one, so its container (3500021691) hangs 8.8 m below, just above the ground.
+
+## laser gates
+
+a laser gate's frame (`int_electric_fence_e` and its variants, e.g. `int_electric_fence_elower`,
+model `int_electric_fence_4_postmodel`) holds no beam: its component (`ElectricFenceComponent`,
+component type 130) plays the beams as effects. when it starts, and whenever the entity's `state`
+changes, it plays each name in the `effectsOnActive` list of the fence postmodel MonoBehaviour
+(`InteractiveElectricFencePostModelMono`) on its model's root while `state` is on (1), attached to
+the entity at no offset, and recycles them at any other `state`. the 4 m gate plays
+`P_interactive_electricfence_03_Variant` and `…_04_Variant`. the template saves `state` 0, and The
+Hub's five placements set 1, so they start shut, beams on.
+
+a gate is opened through power: its placement's switch (`int_switch_electric`) names the gate in its
+`connected_node_list` (component 134), and the switch can only be used while its `has_power` is set.
+nothing in the client's data sets `has_power`, so it comes from the server's factory power network.
+the AIC buildings the world places for that network, such as The Hub's power ports
+(`map01_lv001_power_port_1_*`), are only partly in client data: LevelData's `predefinedParams` (in
+`*_lv_data_sub_factory`) give each port's parameters, including the interactive it powers
+(`powerPort.target`), and `FactorySpecialPowerPoleTable` its name and description, but no client
+file holds a port's position or building. the factory regions' `initialBuildings` are empty on the
+open-world maps, and The Hub's port targets (`2100391045`–`2100391053`, `2100040058`) aren't in any
+client LevelData, so which port powers which switch isn't known either. where the ports stand is
+held by the server.
+
+`int_electric_fence` (the older fence) is driven by a logic controller
+(`InteractiveLogicElectricFence`) instead, which recomputes its `state` from its electric node's net
+power against a threshold before playing the same kind of effect list, so its start depends on
+server power.

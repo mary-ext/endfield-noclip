@@ -10,6 +10,7 @@ import { TelescopicBridges } from './bridges.ts';
 import { CraneTowers } from './cranes.ts';
 import { DoodadGroups } from './doodad-groups.ts';
 import { type InteractiveDoor, InteractiveDoors } from './doors.ts';
+import { ElectricFences } from './electric-fences.ts';
 import { FacilityForms } from './facility-forms.ts';
 import {
 	type FacilityContext,
@@ -133,6 +134,7 @@ export const loadInteractiveFacilities = async (
 	const facilities = new FacilityForms(sources, progressions);
 	const platforms = new MovingPlatforms(sources, extras);
 	const jumpPads = new JumpPads(effects);
+	const fences = new ElectricFences(sources, prefabs, effects);
 	const bridges = new TelescopicBridges(sources, prefabs);
 	const doors = new InteractiveDoors(sources);
 	const restLooks = new RestLooks(sources, { prefabs, progressions, doodads, rows });
@@ -141,7 +143,7 @@ export const loadInteractiveFacilities = async (
 	const cranes = new CraneTowers(sources, prefabs);
 	// a row is drawn by the first of these that claims it, else as its plain model or facility forms
 	const kinds: InteractiveKind[] = [bridges, doors, restLooks, animatorStarts, regionWalls, cranes];
-	const readers: TemplateReader[] = [platforms, jumpPads, ...kinds];
+	const readers: TemplateReader[] = [platforms, jumpPads, fences, ...kinds];
 	{
 		const traits = new TemplateTraitsReader(sources, templates.traits);
 		for (const [key, template] of authored) {
@@ -205,6 +207,7 @@ export const loadInteractiveFacilities = async (
 			locked,
 		});
 		jumpPads.decorate(placer);
+		fences.decorate(placer);
 		let claimed = false;
 		for (const kind of kinds) {
 			// oxlint-disable-next-line no-await-in-loop -- each kind reads once per prefab and parameter set

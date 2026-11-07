@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import type { LevelInteractive } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
+import { fenceStartsOn } from './electric-fences.ts';
 import { fixableRobotInts } from './fixable-robots.ts';
 import { jumpPadArrow, verticalPadEffect } from './jump-pads.ts';
 import { verticalRopeFloats } from './rest-looks.ts';
@@ -199,6 +200,23 @@ test('a vertical jump pad plays its vent effect only while its state is on', () 
 	const pad = { ...row(1n, []), template: 'int_jumpmachine_vertical' };
 	assert.equal(verticalPadEffect(verticalPad, pad), 'P_interactive_cavewell+1_001_01_loop');
 	assert.equal(verticalPadEffect(verticalPad, { ...pad, properties: [] }), null);
+});
+
+// the laser gate (int_electric_fence_e): saved `state` 0; The Hub's int_electric_fence_elower placements set 1
+const laserGate: MemoryPackValue = {
+	componentList: [{ $type: 'Beyond_Gameplay_ElectricFenceComponentDataForMemoryPack' }],
+	saveProperties: [property('state', '0'), property('has_power', '0')],
+	configProperties: [],
+	tempProperties: [],
+	templateVariant: [],
+};
+
+test('a laser gate is read as one, and plays its beams only while its state is on', () => {
+	const traits = readTemplateTraits(laserGate, 'gate');
+	assert.ok('kind' in traits && traits.kind === 'other' && traits.electricFence === laserGate);
+	const gate = { ...row(1n, []), template: 'int_electric_fence_elower' };
+	assert.equal(fenceStartsOn(laserGate, gate), true);
+	assert.equal(fenceStartsOn(laserGate, { ...gate, properties: [] }), false);
 });
 
 const telescopicLogic = {

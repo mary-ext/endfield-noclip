@@ -223,7 +223,9 @@ effect that doesn't turn with its GameObject keeps the world's axes but the Game
 a jump pad's arrow ([the `state` key](../game-data/interactives.md#the-state-key)) is placed the
 same way, at the pad's position with its yaw towards the target and unit scale, under the pad's own
 visibility only. a vertical jump pad that starts on places its vent effect the same way, with the
-placement's position, rotation and scale but not its model scale.
+placement's position, rotation and scale but not its model scale, and so does a
+[laser gate](../game-data/interactives.md#laser-gates) that starts on, for each name in its model
+root's `effectsOnActive` (`ElectricFences`).
 
 ### looping clips
 

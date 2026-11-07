@@ -384,14 +384,17 @@ packs or renders correctly.
   ([effects at rest](extraction/prefabs-and-interactives.md#effects-at-rest)), but not doors',
   bridges' or facility forms'; that a non-persistent effect ends with its state is assumed, effects
   on a looping clip's GameObjects hold its end pose, and of the effects components place themselves
-  only the jump pad's arrow and the vertical jump pad's vent are drawn, unchecked against an in-game
-  shot. a settled loop clip moves skinned bones and the Transforms of mesh renderers, including ones
-  under its bones, but not billboarded renderers or particle systems; its material values and
-  GameObject switches hold their end values
-  ([looping clips](extraction/prefabs-and-interactives.md#looping-clips)). every placement plays in
-  step from the viewer's clock (the game's start per placement is unknown), the animation moves only
-  while frames render, each moving renderer stores every frame of its own, and the balloon's sway is
-  unchecked against an in-game shot
+  only the jump pad's arrow, the vertical jump pad's vent and laser gates' beams are drawn,
+  unchecked against an in-game shot; the older `int_electric_fence`, whose state its logic computes
+  from server power, draws without beams. the AIC buildings the world places for the factory power
+  network (The Hub's power ports beside its laser-gate switches) aren't drawn: no client file holds
+  their positions ([laser gates](game-data/interactives.md#laser-gates)). a settled loop clip moves
+  skinned bones and the Transforms of mesh renderers, including ones under its bones, but not
+  billboarded renderers or particle systems; its material values and GameObject switches hold their
+  end values ([looping clips](extraction/prefabs-and-interactives.md#looping-clips)). every
+  placement plays in step from the viewer's clock (the game's start per placement is unknown), the
+  animation moves only while frames render, each moving renderer stores every frame of its own, and
+  the balloon's sway is unchecked against an in-game shot
 - facility visual forms settle with every key false. looks the player's presence changes follow the
   camera ([keys the player sets](game-data/interactives.md#keys-the-player-sets)); a campfire's
   `InZone` sphere uses the template's 2.5 m radius, not the runtime radius the game swaps in once
