@@ -95,14 +95,23 @@ export const multiplyQuaternions = (
 export const multiplyMatrices = (parent: Float32Array, local: Float32Array): Float32Array => {
 	const result = new Float32Array(16);
 	for (let c = 0; c < 4; c++) {
+		const l0 = local[c * 4];
+		const l1 = local[c * 4 + 1];
+		const l2 = local[c * 4 + 2];
+		const l3 = local[c * 4 + 3];
 		for (let r = 0; r < 4; r++) {
-			for (let k = 0; k < 4; k++) {
-				result[c * 4 + r] += parent[k * 4 + r] * local[c * 4 + k];
-			}
+			// each partial sum is rounded to float32, and the first starts from +0 (so a -0 product becomes +0), as
+			// accumulating into the zeroed Float32Array did; packages keep these bits, so both are part of the output
+			result[c * 4 + r] = fround(
+				fround(fround(fround(parent[r] * l0 + 0) + parent[4 + r] * l1) + parent[8 + r] * l2) +
+					parent[12 + r] * l3,
+			);
 		}
 	}
 	return result;
 };
+
+const fround = Math.fround;
 
 /**
  * @param matrix affine column-major matrix
