@@ -12,10 +12,9 @@ import { BeamRow } from './light-beam.ts';
 
 /** a ready material drawing `surface` */
 const described = (
-	id: number,
 	surface: ReadyMaterial['surface'],
 	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 test('a light beam is a shadowless effect with its cone, falloff and colour in the beam rows', () => {
 	// dung02_dg005's `VLB_5006340546849160366`, one of the Wuling rift's two great beams
@@ -45,7 +44,7 @@ test('a light beam is a shadowless effect with its cone, falloff and colour in t
 		unfogged: true,
 	};
 	const [look, fogged] = materialLooks({
-		entries: [described(0, beam), described(1, { ...beam, additive: false, unfogged: false })],
+		entries: [described(beam), described({ ...beam, additive: false, unfogged: false })],
 	});
 	assert.deepEqual(
 		[look.unsupported, look.queue, look.castsShadows, look.cull],

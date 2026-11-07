@@ -11,10 +11,9 @@ import { WaterFoamFlags, WaterFoamRow } from './water-foam.ts';
 
 /** a ready material drawing `surface` */
 const described = (
-	id: number,
 	surface: ReadyMaterial['surface'],
 	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 const texture = (id: number, overrides: Partial<EffectTexture> = {}): EffectTexture => ({
 	texture: id,
@@ -53,7 +52,7 @@ test('a water foam box draws into the water’s foam, by the depth test its mate
 		dissolve: null,
 	};
 	const [front, behind] = materialLooks({
-		entries: [described(0, foam), described(1, { ...foam, depthTest: 'greater', clipToBox: true }, 'front')],
+		entries: [described(foam), described({ ...foam, depthTest: 'greater', clipToBox: true }, 'front')],
 	});
 	assert.deepEqual([front.queue, behind.queue], ['waterFoam', 'waterFoamBehind']);
 	assert.deepEqual([front.cull, behind.cull], ['back', 'front']);

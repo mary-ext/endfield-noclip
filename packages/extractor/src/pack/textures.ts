@@ -23,7 +23,7 @@ export interface TexturePieceData {
 /** a texture converted for the package */
 export interface ConvertedTexture {
 	/** the entry's fields except its pieces, with its sampler itself rather than its index in the table */
-	entry: Omit<ReadyTexture, 'id' | 'status' | 'pieces' | 'sampler'> & { sampler: TextureSampler };
+	entry: Omit<ReadyTexture, 'status' | 'pieces' | 'sampler'> & { sampler: TextureSampler };
 	/** coarse to fine: the mip tail first, then one piece per larger level */
 	pieces: TexturePieceData[];
 	/** equal for textures with the same shape, format, sampler and texels */

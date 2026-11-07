@@ -17,12 +17,12 @@ export type TextureKind = '2d' | 'cube' | '2d-array' | '3d';
 const requestPieces = (
 	stream: TextureStream,
 	textures: TextureStore,
-	entry: ReadyTexture,
+	texture: { id: number; entry: ReadyTexture },
 	level: number,
 	priority: number,
 ): void => {
-	const pieces = entry.pieces;
-	const integrated = textures.integrated(entry.id);
+	const pieces = texture.entry.pieces;
+	const integrated = textures.integrated(texture.id);
 	for (let i = 0; i < pieces.length; i++) {
 		const piece = pieces[i];
 		const blob = piece.blob;
@@ -79,7 +79,7 @@ export class TextureRequests {
 			entry.mipCount - 1,
 			Math.max(0, Math.floor(Math.log2(texels / Math.max(pixels, 1)))),
 		);
-		requestPieces(this.#stream, this.#textures, entry, level, pixels);
+		requestPieces(this.#stream, this.#textures, { id, entry }, level, pixels);
 	}
 
 	/**
@@ -91,9 +91,12 @@ export class TextureRequests {
 	 * @returns the texture, or `null` without a texture streamable as that kind
 	 */
 	whole(id: number | null, kind: TextureKind, priority: number): ReadyTexture | null {
-		const entry = id === null ? null : this.#textures.streamable(id, kind);
+		if (id === null) {
+			return null;
+		}
+		const entry = this.#textures.streamable(id, kind);
 		if (entry !== null) {
-			requestPieces(this.#stream, this.#textures, entry, 0, priority);
+			requestPieces(this.#stream, this.#textures, { id, entry }, 0, priority);
 		}
 		return entry;
 	}
@@ -121,10 +124,13 @@ export const streamWholeTexture = (request: {
 	priority: number;
 }): StreamedTexture | null => {
 	const { stream, textures, id, kind, priority } = request;
-	const entry = id === null ? null : textures.streamable(id, kind);
+	if (id === null) {
+		return null;
+	}
+	const entry = textures.streamable(id, kind);
 	if (entry === null) {
 		return null;
 	}
-	requestPieces(stream, textures, entry, 0, priority);
-	return { entry, binding: textures.binding(entry.id) };
+	requestPieces(stream, textures, { id, entry }, 0, priority);
+	return { entry, binding: textures.binding(id) };
 };

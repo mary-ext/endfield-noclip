@@ -8,14 +8,14 @@ import { materialLooks } from './material-looks.ts';
 import { DitherRow, ErosionRow } from './special-looks.ts';
 
 /** a ready material drawing `surface` */
-const described = (
-	id: number,
-	surface: ReadyMaterial['surface'],
-	cull: MaterialCull = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+const described = (surface: ReadyMaterial['surface'], cull: MaterialCull = 'back'): ReadyMaterial => ({
+	status: 'ready',
+	cull,
+	surface,
+});
 
 test('matte paintings are unlit, cast no shadows and test the texture alpha against their threshold', () => {
-	const entry = described(0, {
+	const entry = described({
 		kind: 'mattePainting',
 		texture: { texture: 7, uv: 0, scale: [1, 1], offset: [0, 0] },
 		color: [2, 2, 2],
@@ -36,7 +36,6 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 	const [rock, spot, mask] = materialLooks({
 		entries: [
 			described(
-				0,
 				{
 					kind: 'dithered',
 					baseMap: { ...main, texture: 3, scale: [4, 4] },
@@ -48,7 +47,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 				},
 				'none',
 			),
-			described(1, {
+			described({
 				kind: 'dithered',
 				baseMap: main,
 				normalMap: null,
@@ -57,7 +56,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 				lighting: null,
 				ignorePostExposure: 1,
 			}),
-			described(2, {
+			described({
 				kind: 'dithered',
 				baseMap: null,
 				normalMap: null,
@@ -95,7 +94,7 @@ test('erosion rock: its maps tile by their own scales on UV set 0, the ramp stre
 		scale: [tiling, tiling],
 		offset: [0, 0],
 	});
-	const entry = described(0, {
+	const entry = described({
 		kind: 'erosion',
 		textures: {
 			baseNormal: tiled(1, 1),

@@ -24,6 +24,8 @@ export interface TextureBinding {
 }
 
 interface TextureState {
+	/** texture id */
+	id: number;
 	entry: ReadyTexture;
 	/** the GPU texture, or `null` before the tail arrives */
 	gpu: GPUTexture | null;
@@ -97,14 +99,14 @@ export class TextureStore {
 		this.#device = device;
 		this.#table = table;
 		this.#supported = formats.bc;
-		for (const entry of table.entries) {
+		table.entries.forEach((entry, texture) => {
 			if (entry.status !== 'ready') {
-				continue;
+				return;
 			}
-			entry.pieces.forEach((piece, i) => {
-				this.#pieces.getOrInsertComputed(piece.blob, () => []).push({ texture: entry.id, index: i });
+			entry.pieces.forEach((piece, index) => {
+				this.#pieces.getOrInsertComputed(piece.blob, () => []).push({ texture, index });
 			});
-		}
+		});
 	}
 
 	/**
@@ -229,6 +231,7 @@ export class TextureStore {
 				throw new Error(`texture ${id} isn't ready`);
 			}
 			return {
+				id,
 				entry,
 				gpu: null,
 				binding: null,
@@ -241,10 +244,11 @@ export class TextureStore {
 		});
 	}
 
-	#create(entry: ReadyTexture, top: number): GPUTexture {
+	#create(state: TextureState, top: number): GPUTexture {
+		const { entry } = state;
 		const layout = textureLevelLayout(entry, top);
 		return this.#device.createTexture({
-			label: `texture ${entry.id}@${top}`,
+			label: `texture ${state.id}@${top}`,
 			size: [layout.width, layout.height, layout.depthOrArrayLayers],
 			dimension: entry.kind === '3d' ? '3d' : '2d',
 			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TEXTURE_FORMATS keys are WebGPU format names
@@ -300,7 +304,7 @@ export class TextureStore {
 		if (state.top >= top) {
 			return;
 		}
-		this.#replace(state, state.integrated === 0 ? null : this.#create(state.entry, top), top);
+		this.#replace(state, state.integrated === 0 ? null : this.#create(state, top), top);
 	}
 
 	#levelBytes(entry: ReadyTexture, top: number): number {
@@ -313,7 +317,7 @@ export class TextureStore {
 
 	#integrate(state: TextureState, data: Uint8Array<ArrayBuffer>): void {
 		const piece = state.entry.pieces[state.integrated];
-		const next = this.#create(state.entry, piece.firstLevel);
+		const next = this.#create(state, piece.firstLevel);
 		this.#replace(state, next, piece.firstLevel);
 		const info = TEXTURE_FORMATS[state.entry.format];
 		let at = 0;

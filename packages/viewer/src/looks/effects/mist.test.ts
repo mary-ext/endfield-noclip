@@ -11,10 +11,9 @@ import { MistRow } from './mist.ts';
 
 /** a ready material drawing `surface` */
 const described = (
-	id: number,
 	surface: ReadyMaterial['surface'],
 	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 test('mist: cards and boxes draw in the mist rows; boxes by their back faces, with their noise as the volume texture', () => {
 	const card: MistCardSurface = {
@@ -58,7 +57,7 @@ test('mist: cards and boxes draw in the mist rows; boxes by their back faces, wi
 		},
 	};
 	const [cardLook, boxLook, plainLook] = materialLooks({
-		entries: [described(0, card), described(1, box), described(2, { ...box, noise: null })],
+		entries: [described(card), described(box), described({ ...box, noise: null })],
 	});
 	assert.deepEqual([cardLook.flags, cardLook.queue], [LookFlags.Effect, 'mist']);
 	assert.deepEqual(cardLook.textures.slice(0, 2), [1, 2]);

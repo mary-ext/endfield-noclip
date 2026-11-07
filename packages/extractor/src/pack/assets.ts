@@ -517,7 +517,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 			}),
 		(result, _asset, id) => {
 			if (result instanceof Error) {
-				geometryEntries.push({ id, status: 'failed' });
+				geometryEntries.push({ status: 'failed' });
 				geometryDebug.push({ object: null, name: null, error: fail('geometry', result) });
 				return;
 			}
@@ -531,7 +531,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				},
 				geometry,
 			);
-			geometryEntries.push({ id, status: 'ready', blob, ...result.entry });
+			geometryEntries.push({ status: 'ready', blob, ...result.entry });
 			const uvs = tangentUvs[id];
 			geometryDebug.push({
 				object: result.object,
@@ -580,7 +580,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 					error: fail('texture', result),
 					id: textureEntries.length,
 				});
-				textureEntries.push({ id: textureEntries.length, status: 'failed' });
+				textureEntries.push({ status: 'failed' });
 				return;
 			}
 			const { name, pieces } = result;
@@ -606,7 +606,6 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				() => samplers.push(result.entry.sampler) - 1,
 			);
 			textureEntries.push({
-				id,
 				status: 'ready',
 				...result.entry,
 				sampler,
@@ -643,7 +642,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	const unsupportedMaterials: Record<string, number> = {};
 	const materialEntries: MaterialEntry[] = convertedMaterials.map((material, id) => {
 		if (material === null) {
-			return { id, status: 'failed' };
+			return { status: 'failed' };
 		}
 		const shader = shaders.shaders[material.shader];
 		const surface = describeMaterial(material, shader);
@@ -652,7 +651,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 			unsupportedMaterials[key] = (unsupportedMaterials[key] ?? 0) + 1;
 			materialDebug[id].unsupported = surface.reason;
 		}
-		return { id, status: 'ready', cull: material.cull, surface };
+		return { status: 'ready', cull: material.cull, surface };
 	});
 	// #endregion
 
@@ -695,8 +694,8 @@ export const pendingAssets = (
 	materials: number,
 	extraTextures: readonly (readonly PlacedTexture[])[],
 ): Pick<AssetConversion, 'geometries' | 'materials' | 'textures' | 'extraTextureIds'> => ({
-	geometries: Array.from({ length: geometries }, (_, id) => ({ id, status: 'pending' })),
-	materials: { entries: Array.from({ length: materials }, (_, id) => ({ id, status: 'pending' })) },
+	geometries: Array.from({ length: geometries }, () => ({ status: 'pending' })),
+	materials: { entries: Array.from({ length: materials }, () => ({ status: 'pending' })) },
 	textures: { samplers: [], entries: [] },
 	extraTextureIds: extraTextures.map((group) => group.map(() => null)),
 });

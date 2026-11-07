@@ -11,7 +11,7 @@ export const TEXTURE_TAIL_BYTES = 64 * 1024;
 /** a texture-table id, or `null` when unset or not converted */
 export type TextureRef = number | null;
 
-/** `tables/textures.json`; entry `i` has id `i` */
+/** `tables/textures.json`; a texture's id is its index in `entries` */
 export interface TextureTable {
 	/** the distinct samplers entries use; {@link ReadyTexture.sampler} indexes this list */
 	samplers: TextureSampler[];
@@ -23,7 +23,6 @@ export type TextureEntry = UnconvertedEntry | ReadyTexture;
 
 /** a converted texture: the game's texel data unchanged (no transcoding), split into mip pieces */
 export interface ReadyTexture {
-	id: number;
 	status: 'ready';
 	kind: '2d' | 'cube' | '2d-array' | 'cube-array' | '3d';
 	/** a WebGPU texture format, a key of {@link TEXTURE_FORMATS} */

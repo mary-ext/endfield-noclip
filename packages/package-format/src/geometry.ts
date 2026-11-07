@@ -178,7 +178,7 @@ export interface GeometrySubmesh {
 	bounds: Bounds;
 }
 
-/** `tables/geometries.json`; entry `i` has id `i` */
+/** `tables/geometries.json`; a geometry's id is its index in `entries` */
 export interface GeometryTable {
 	entries: GeometryEntry[];
 }
@@ -188,7 +188,6 @@ export type GeometryEntry = UnconvertedEntry | ReadyGeometry;
 
 /** a converted mesh */
 export interface ReadyGeometry {
-	id: number;
 	status: 'ready';
 	/** the {@link BlobKind.Geometry} blob */
 	blob: number;

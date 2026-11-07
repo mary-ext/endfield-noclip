@@ -12,10 +12,9 @@ import { WaterSheetFlags, WaterSheetRow } from './water-sheet.ts';
 
 /** a ready material drawing `surface` */
 const described = (
-	id: number,
 	surface: ReadyMaterial['surface'],
 	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 const texture = (id: number, overrides: Partial<EffectTexture> = {}): EffectTexture => ({
 	texture: id,
@@ -73,7 +72,7 @@ test('a water sheet lays out its frames, motion vectors and normals, and keeps i
 		ignorePostExposure: 1,
 		near: null,
 	};
-	const [look] = materialLooks({ entries: [described(0, sheet)] });
+	const [look] = materialLooks({ entries: [described(sheet)] });
 	assert.equal(look.flags, LookFlags.Effect);
 	// main (white default), mask, flipbook colour and motion, normals in slot 6
 	assert.deepEqual(look.textures, [null, null, 2, null, 5, 6, 7]);

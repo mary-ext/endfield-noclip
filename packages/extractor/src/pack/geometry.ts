@@ -42,7 +42,7 @@ export interface ConvertedGeometry {
 	/** the geometry blob, before the blob codec */
 	blob: Uint8Array;
 	/** the table entry's fields that describe the blob */
-	entry: Omit<ReadyGeometry, 'id' | 'status' | 'blob'>;
+	entry: Omit<ReadyGeometry, 'status' | 'blob'>;
 	/** bytes of the decoded vertex and index buffers, for reports */
 	gpuBytes: number;
 }

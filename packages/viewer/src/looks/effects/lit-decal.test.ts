@@ -12,10 +12,9 @@ import { DecalLitRow } from './lit-decal.ts';
 
 /** a ready material drawing `surface` */
 const described = (
-	id: number,
 	surface: ReadyMaterial['surface'],
 	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 test('a lit decal draws its maps through the placement or the PBR map’s own transform, and relights without albedo', () => {
 	const decal: LitDecalSurface = {
@@ -43,8 +42,8 @@ test('a lit decal draws its maps through the placement or the PBR map’s own tr
 	};
 	const [look, water] = materialLooks({
 		entries: [
-			described(0, decal),
-			described(1, {
+			described(decal),
+			described({
 				...decal,
 				relight: true,
 				pbr: { texture: 3, ownTransform: { scale: [0.1, 0.2], offset: [0, 0] } },

@@ -9,17 +9,17 @@ import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
 import { materialLooks } from './material-looks.ts';
 
 /** a ready material drawing `surface` */
-const described = (
-	id: number,
-	surface: ReadyMaterial['surface'],
-	cull: MaterialCull = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+const described = (surface: ReadyMaterial['surface'], cull: MaterialCull = 'back'): ReadyMaterial => ({
+	status: 'ready',
+	cull,
+	surface,
+});
 
 test('glass is transparent and shadowless with its blending flag', () => {
 	const [blended, premultiplied] = materialLooks({
 		entries: [
-			described(0, litSurface({ blend: 'alphaBlend', opacity: 0.5, alphaClip: 0.5, alphaFromNormal: true })),
-			described(1, litSurface({ blend: 'premultiplied' })),
+			described(litSurface({ blend: 'alphaBlend', opacity: 0.5, alphaClip: 0.5, alphaFromNormal: true })),
+			described(litSurface({ blend: 'premultiplied' })),
 		],
 	});
 	assert.deepEqual(
@@ -65,13 +65,11 @@ test('a swaying Lit surface keeps its sway in the sway rows', () => {
 	const [look, wind] = materialLooks({
 		entries: [
 			described(
-				0,
 				litSurface({
 					sway: { intensity: 1.5, frequency: 7.4, softness: 0.12, kite: 1, tendency: 0, direction: [1, 0] },
 				}),
 			),
 			described(
-				1,
 				litSurface({
 					sway: { intensity: 1, frequency: 1, softness: 0, kite: 0, tendency: 0.5, direction: null },
 				}),
@@ -116,9 +114,9 @@ test('pulsing emission takes the free parallax rows; a surface with a glow keeps
 	const textures = { base: slot(1), normal: null, mro: null, emissive: slot(2) };
 	const [pulsing, glowing, flat] = materialLooks({
 		entries: [
-			described(0, litSurface({ textures, emission })),
-			described(1, litSurface({ textures, emission, overlay: glow })),
-			described(2, litSurface({ textures, emission, overlay: { ...glow, noise: null } })),
+			described(litSurface({ textures, emission })),
+			described(litSurface({ textures, emission, overlay: glow })),
+			described(litSurface({ textures, emission, overlay: { ...glow, noise: null } })),
 		],
 	});
 	// without a noise map only the pattern binds, and the march reads height 0
@@ -149,7 +147,6 @@ test("the emissive map's G, B and A colours take the rows effect looks keep for 
 	const [ring] = materialLooks({
 		entries: [
 			described(
-				0,
 				litSurface({
 					textures: { base: null, normal: null, mro: null, emissive: slot(1) },
 					emission: {
@@ -212,8 +209,8 @@ test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot except und
 	const textures = { base: slot(1, 1, 5), normal: slot(2), mro: null, emissive: null };
 	const [crystal, mro] = materialLooks({
 		entries: [
-			described(0, litSurface({ textures, triChannel, detail })),
-			described(1, litSurface({ layout: 'mro', textures: { ...textures, mro: slot(3) }, triChannel })),
+			described(litSurface({ textures, triChannel, detail })),
+			described(litSurface({ layout: 'mro', textures: { ...textures, mro: slot(3) }, triChannel })),
 		],
 	});
 	assert.deepEqual(crystal.textures, [1, 2, 4, null, 5, null, null]);
@@ -261,7 +258,6 @@ test('moss rock: the top layer takes the parallax slots and rows, its own tiling
 	const [look] = materialLooks({
 		entries: [
 			described(
-				0,
 				litSurface({ textures: { base: null, normal, mro: null, emissive: null }, overlay: topLayer() }),
 			),
 		],
@@ -300,12 +296,11 @@ test('moss mounds: the mask layer takes its mask map into the emissive slot, unt
 	const [mound, channel, emissiveMapped] = materialLooks({
 		entries: [
 			described(
-				0,
 				litSurface({ textures: { base, normal: null, mro: null, emissive: null }, overlay: maskLayer }),
 			),
-			described(1, litSurface({ overlay: topLayer({ coverage: { kind: 'baseAlpha' } }) })),
+			described(litSurface({ overlay: topLayer({ coverage: { kind: 'baseAlpha' } }) })),
 			// an emissive map leaves no slot for the mask map
-			described(2, litSurface({ textures: { base, normal: null, mro: null, emissive }, overlay: maskLayer })),
+			described(litSurface({ textures: { base, normal: null, mro: null, emissive }, overlay: maskLayer })),
 		],
 	});
 	assert.deepEqual(mound.textures, [0, null, null, 4, null, 2, 3]);
@@ -327,7 +322,6 @@ test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit 
 	const [leaf, grass] = materialLooks({
 		entries: [
 			described(
-				0,
 				litSurface({
 					layout: 'roughnessInB',
 					f0: 0.07,
@@ -347,7 +341,6 @@ test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit 
 				}),
 			),
 			described(
-				1,
 				litSurface({
 					layout: 'roughnessInB',
 					foliage: {

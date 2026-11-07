@@ -1,7 +1,7 @@
 import type { UnconvertedEntry } from './entries.ts';
 import type { MaterialSurface } from './surfaces.ts';
 
-/** `tables/materials.json`; entry `i` has id `i` */
+/** `tables/materials.json`; a material's id is its index in `entries` */
 export interface MaterialTable {
 	entries: MaterialEntry[];
 }
@@ -14,7 +14,6 @@ export type MaterialEntry = UnconvertedEntry | ReadyMaterial;
 
 /** a converted material */
 export interface ReadyMaterial {
-	id: number;
 	status: 'ready';
 	/** the faces the game culls */
 	cull: MaterialCull;

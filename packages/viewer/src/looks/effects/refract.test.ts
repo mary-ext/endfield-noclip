@@ -11,10 +11,9 @@ import { RefractRow } from './refract.ts';
 
 /** a ready material drawing `surface` */
 const described = (
-	id: number,
 	surface: ReadyMaterial['surface'],
 	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 const texture = (id: number, overrides: Partial<EffectTexture> = {}): EffectTexture => ({
 	texture: id,
@@ -51,7 +50,7 @@ test('a refraction draws over the composited scene, its mask red as alpha, with 
 		softDistance: 2.42,
 		near: null,
 	};
-	const [look] = materialLooks({ entries: [described(0, refract, 'none')] });
+	const [look] = materialLooks({ entries: [described(refract, 'none')] });
 	assert.equal(look.queue, 'refract');
 	assert.deepEqual(look.textures, [2, 1, 3, null, null, null, null]);
 	assert.equal(look.params[EffectRow.slotBits + 2], SlotSource.Uv0 * 32);
@@ -100,7 +99,7 @@ test('a refraction packs its blend layer in slot 3 and its spread in slot 4, off
 		softDistance: 4.16,
 		near: [0, 1, 1e5, 2e5],
 	};
-	const [look] = materialLooks({ entries: [described(0, refract, 'none')] });
+	const [look] = materialLooks({ entries: [described(refract, 'none')] });
 	assert.deepEqual(look.textures, [2, null, null, 5, 6, null, null]);
 	assert.deepEqual(
 		[...look.params.subarray(EffectRow.slotBits + 3, EffectRow.slotBits + 5)],

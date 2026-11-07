@@ -475,8 +475,8 @@ a WebGPU upload of the bytes as they are samples correctly with the game's UVs.
 
 ## JSON tables
 
-each is one zstd frame (level 9) around JSON. entry `i` has id `i`. an entry is either ready or an
-`UnconvertedEntry` (`pending` when packed with `--no-assets`, `failed` with the reason in
+each is one zstd frame (level 9) around JSON. an entry's id is its index. an entry is either ready
+or an `UnconvertedEntry` (`pending` when packed with `--no-assets`, `failed` with the reason in
 `debug/assets.json`); draws referencing an unconverted entry are skipped.
 
 | table        | contents                                                                                                                                                                                                                                                                                                              |
@@ -975,8 +975,6 @@ provenance lives there rather than in the manifest, which only identifies the bu
 - **geometricError** is a placeholder the viewer uses only for request priority; the HLOD rings
   replaced it for refinement.
 - **instance compression**: meshopt filters or quantized rows could roughly halve instance blobs.
-- **entry ids**: table entries repeat their own index as `id`, which the viewer's texture streaming
-  passes around.
 - **core tables as JSON**: the geometry and texture tables could be fixed-size binary records, read
   without parsing.
 - **detail placement by centre**: a very large object at a leaf disappears while that leaf shows its

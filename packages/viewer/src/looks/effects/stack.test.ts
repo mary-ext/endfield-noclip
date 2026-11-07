@@ -17,10 +17,9 @@ import { NO_WATER_BLEND, OFFSET_SLOT, VertexMotion } from './stack.ts';
 
 /** a ready material drawing `surface` */
 const described = (
-	id: number,
 	surface: ReadyMaterial['surface'],
 	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 const texture = (id: number, overrides: Partial<EffectTexture> = {}): EffectTexture => ({
 	texture: id,
@@ -82,7 +81,6 @@ test('a texture stack packs each layer’s role, red alpha, source and distortio
 	const [look] = materialLooks({
 		entries: [
 			described(
-				0,
 				stack({
 					layers: [
 						layer(1, 'main', { source: null }),
@@ -136,7 +134,6 @@ test('a texture stack keeps each layer’s custom data shift per slot', () => {
 	const [look] = materialLooks({
 		entries: [
 			described(
-				0,
 				stack({
 					layers: [
 						layer(1, 'main', { customScroll: [1, 1] }),
@@ -161,15 +158,14 @@ test('a stack decal is a box drawn by its back faces with its fades; a multiplyi
 	const [decal, multiply, opaque] = materialLooks({
 		entries: [
 			described(
-				0,
 				stack({
 					variant: 'decal',
 					decalFade: { edge: [0.1, 0.2], width: 0.3, height: 2, heightOffset: 0.5, angle: 5 },
 					weight: { disturb: 0.5, dissolve: 0.5, used: true },
 				}),
 			),
-			described(1, stack({ blendMode: 'multiply' })),
-			described(2, stack({ opaque: true })),
+			described(stack({ blendMode: 'multiply' })),
+			described(stack({ opaque: true })),
 		],
 	});
 	assert.deepEqual([decal.cull, decal.flags, decal.queue], ['front', LookFlags.Effect, 'effectDecal']);
@@ -190,10 +186,7 @@ test('a stack decal is a box drawn by its back faces with its fades; a multiplyi
 
 test('a breathing stack keeps its pulse in the decal fade row, which decals don’t share with it', () => {
 	const [breathing, still] = materialLooks({
-		entries: [
-			described(0, stack({ breathing: { minAlpha: 0.3, speed: 2, power: 1 } })),
-			described(1, stack()),
-		],
+		entries: [described(stack({ breathing: { minAlpha: 0.3, speed: 2, power: 1 } })), described(stack())],
 	});
 	assert.deepEqual(
 		[...breathing.params.subarray(EffectRow.decalFade, EffectRow.decalFade + 4)],
@@ -206,10 +199,9 @@ test('a stack’s edge colour fills the rows past the mesh looks’ 32, marked o
 	const [edged, plain] = materialLooks({
 		entries: [
 			described(
-				0,
 				stack({ edge: { color: [1.5, 1.5, 1.5, 1], alpha: 0.8, mode: 0, distance: 0, offset: 0.1 } }),
 			),
-			described(1, stack()),
+			described(stack()),
 		],
 	});
 	assert.equal(edged.params.length, LOOK_FLOATS);
@@ -229,7 +221,6 @@ test('a stack’s vertex offset takes the offset slot and rows, and its stencil 
 	const [moved, portal, mask] = materialLooks({
 		entries: [
 			described(
-				0,
 				stack({
 					offset: {
 						texture: texture(2, { scale: [1, 0.5], scroll: [0, 0.2] }),
@@ -246,7 +237,6 @@ test('a stack’s vertex offset takes the offset slot and rows, and its stencil 
 				}),
 			),
 			described(
-				1,
 				stack({
 					stencil: {
 						compare: 'equal',
@@ -258,7 +248,7 @@ test('a stack’s vertex offset takes the offset slot and rows, and its stencil 
 					},
 				}),
 			),
-			described(2, {
+			described({
 				kind: 'stencilMask',
 				stencil: {
 					compare: 'always',
@@ -313,8 +303,8 @@ test('a soft body takes the offset slot for its position texture, with its playb
 	} satisfies EffectSoftBody;
 	const [playing, still] = materialLooks({
 		entries: [
-			described(0, stack({ softBody: body })),
-			described(1, stack({ softBody: { ...body, fixedFrame: 49 } })),
+			described(stack({ softBody: body })),
+			described(stack({ softBody: { ...body, fixedFrame: 49 } })),
 		],
 	});
 	assert.equal(playing.textures[OFFSET_SLOT], 3);
@@ -338,7 +328,7 @@ test('a soft body takes the offset slot for its position texture, with its playb
 test('a pull towards the camera sets its most and its switch, and no pull leaves both at 0', () => {
 	// Marker Stone's tower lamp stars (`M_fxmap_map_lv004_lamp_light_05`) pull up to 50 m
 	const [pulled, still] = materialLooks({
-		entries: [described(0, stack({ cameraPull: 50 })), described(1, stack({}))],
+		entries: [described(stack({ cameraPull: 50 })), described(stack({}))],
 	});
 	assert.deepEqual([...pulled.params.subarray(EffectRow.cameraPull, EffectRow.cameraPull + 2)], [50, 1]);
 	assert.deepEqual([...still.params.subarray(EffectRow.cameraPull, EffectRow.cameraPull + 2)], [0, 0]);

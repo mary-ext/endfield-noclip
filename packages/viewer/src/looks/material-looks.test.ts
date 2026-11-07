@@ -7,17 +7,17 @@ import { LookFlags, LookRow } from './look.ts';
 import { materialLooks } from './material-looks.ts';
 
 /** a ready material drawing `surface` */
-const described = (
-	id: number,
-	surface: ReadyMaterial['surface'],
-	cull: MaterialCull = 'back',
-): ReadyMaterial => ({ id, status: 'ready', cull, surface });
+const described = (surface: ReadyMaterial['surface'], cull: MaterialCull = 'back'): ReadyMaterial => ({
+	status: 'ready',
+	cull,
+	surface,
+});
 
 test('undrawn surfaces are not drawn, and unsupported ones show an unlit, shadowless, two-sided magenta checker', () => {
 	const [undrawn, unsupported] = materialLooks({
 		entries: [
-			described(0, { kind: 'undrawn', reason: 'a water proxy' }),
-			described(1, { kind: 'unsupported', reason: 'additive' }),
+			described({ kind: 'undrawn', reason: 'a water proxy' }),
+			described({ kind: 'unsupported', reason: 'additive' }),
 		],
 	});
 	assert.deepEqual([undrawn.drawn, undrawn.unsupported], [false, false]);
@@ -30,6 +30,6 @@ test('undrawn surfaces are not drawn, and unsupported ones show an unlit, shadow
 });
 
 test('unconverted materials show as unsupported', () => {
-	const [failed] = materialLooks({ entries: [{ id: 0, status: 'failed' }] });
+	const [failed] = materialLooks({ entries: [{ status: 'failed' }] });
 	assert.equal(failed.unsupported, true);
 });

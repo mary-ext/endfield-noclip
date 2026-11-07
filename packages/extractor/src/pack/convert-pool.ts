@@ -42,7 +42,7 @@ export type ConvertOutput =
 			/** `CAB-<hex>:<path id>` of the mesh */
 			object: string;
 			name: string;
-			entry: Omit<ReadyGeometry, 'id' | 'status' | 'blob'>;
+			entry: Omit<ReadyGeometry, 'status' | 'blob'>;
 			gpuBytes: number;
 			blob: BlobMeta;
 	  }

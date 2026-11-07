@@ -1,4 +1,4 @@
-import type { MaterialCull, MaterialTable } from '@endfield-noclip/package-format/materials';
+import type { MaterialCull, MaterialEntry, MaterialTable } from '@endfield-noclip/package-format/materials';
 import type {
 	EffectStackSurface,
 	EffectStencil,
@@ -89,119 +89,101 @@ const stencilMaskLook = (mask: StencilMaskSurface, cull: MaterialCull): Material
 
 // #endregion
 
+const materialLook = (entry: MaterialEntry): MaterialLook => {
+	// a material that didn't convert (its reason is in debug/assets.json) has nothing to draw by
+	if (entry.status !== 'ready') {
+		return unsupportedLook();
+	}
+	const surface = entry.surface;
+	switch (surface.kind) {
+		case 'undrawn': {
+			return emptyLook({ drawn: false });
+		}
+		case 'unsupported': {
+			return unsupportedLook();
+		}
+		case 'mattePainting': {
+			return mattePaintingLook(surface, entry.cull);
+		}
+		case 'erosion': {
+			return erosionLook(surface, entry.cull);
+		}
+		case 'dithered': {
+			return ditheredLook(surface, entry.cull);
+		}
+		case 'lit': {
+			return litLook(surface, entry.cull);
+		}
+		case 'mistCard': {
+			return effectMaterialLook(mistCardLook(surface), {
+				queue: 'mist',
+				cull: entry.cull,
+			});
+		}
+		case 'mistVolume': {
+			return effectMaterialLook(mistVolumeLook(surface), {
+				queue: 'mistVolume',
+				box: true,
+				cull: entry.cull,
+			});
+		}
+		case 'lightBeam': {
+			return effectMaterialLook(lightBeamLook(surface), {
+				queue: 'effect',
+				cull: entry.cull,
+			});
+		}
+		case 'effectStack': {
+			return effectMaterialLook(stackLook(surface), {
+				queue: stackQueue(surface),
+				box: surface.variant === 'decal',
+				cull: entry.cull,
+				stencil: surface.stencil === null ? null : lookStencilOf(surface.stencil),
+			});
+		}
+		case 'stencilMask': {
+			return stencilMaskLook(surface, entry.cull);
+		}
+		case 'waterSheet': {
+			return effectMaterialLook(waterSheetLook(surface), {
+				queue: 'effect',
+				cull: entry.cull,
+			});
+		}
+		case 'sixWaySmoke': {
+			return effectMaterialLook(sixWaySmokeLook(surface), {
+				queue: 'effect',
+				cull: entry.cull,
+			});
+		}
+		case 'litDecal': {
+			return effectMaterialLook(litDecalLook(surface), {
+				queue: surface.relight ? 'decalRelight' : 'effectDecal',
+				box: true,
+				cull: entry.cull,
+			});
+		}
+		case 'refract': {
+			return effectMaterialLook(refractLook(surface), {
+				queue: 'refract',
+				cull: entry.cull,
+			});
+		}
+		case 'waterFoam': {
+			return effectMaterialLook(waterFoamLook(surface), {
+				queue: surface.depthTest === 'less-equal' ? 'waterFoam' : 'waterFoamBehind',
+				cull: entry.cull,
+			});
+		}
+	}
+};
+
 /**
  * @param materials the package's material table
  * @returns a look per material id
  */
-export const materialLooks = (materials: MaterialTable): MaterialLook[] => {
-	const looks: MaterialLook[] = [];
-	for (const entry of materials.entries) {
-		// a material that didn't convert (its reason is in debug/assets.json) has nothing to draw by
-		if (entry.status !== 'ready') {
-			looks[entry.id] = unsupportedLook();
-			continue;
-		}
-		const surface = entry.surface;
-		switch (surface.kind) {
-			case 'undrawn': {
-				looks[entry.id] = emptyLook({ drawn: false });
-				break;
-			}
-			case 'unsupported': {
-				looks[entry.id] = unsupportedLook();
-				break;
-			}
-			case 'mattePainting': {
-				looks[entry.id] = mattePaintingLook(surface, entry.cull);
-				break;
-			}
-			case 'erosion': {
-				looks[entry.id] = erosionLook(surface, entry.cull);
-				break;
-			}
-			case 'dithered': {
-				looks[entry.id] = ditheredLook(surface, entry.cull);
-				break;
-			}
-			case 'lit': {
-				looks[entry.id] = litLook(surface, entry.cull);
-				break;
-			}
-			case 'mistCard': {
-				looks[entry.id] = effectMaterialLook(mistCardLook(surface), {
-					queue: 'mist',
-					cull: entry.cull,
-				});
-				break;
-			}
-			case 'mistVolume': {
-				looks[entry.id] = effectMaterialLook(mistVolumeLook(surface), {
-					queue: 'mistVolume',
-					box: true,
-					cull: entry.cull,
-				});
-				break;
-			}
-			case 'lightBeam': {
-				looks[entry.id] = effectMaterialLook(lightBeamLook(surface), {
-					queue: 'effect',
-					cull: entry.cull,
-				});
-				break;
-			}
-			case 'effectStack': {
-				looks[entry.id] = effectMaterialLook(stackLook(surface), {
-					queue: stackQueue(surface),
-					box: surface.variant === 'decal',
-					cull: entry.cull,
-					stencil: surface.stencil === null ? null : lookStencilOf(surface.stencil),
-				});
-				break;
-			}
-			case 'stencilMask': {
-				looks[entry.id] = stencilMaskLook(surface, entry.cull);
-				break;
-			}
-			case 'waterSheet': {
-				looks[entry.id] = effectMaterialLook(waterSheetLook(surface), {
-					queue: 'effect',
-					cull: entry.cull,
-				});
-				break;
-			}
-			case 'sixWaySmoke': {
-				looks[entry.id] = effectMaterialLook(sixWaySmokeLook(surface), {
-					queue: 'effect',
-					cull: entry.cull,
-				});
-				break;
-			}
-			case 'litDecal': {
-				looks[entry.id] = effectMaterialLook(litDecalLook(surface), {
-					queue: surface.relight ? 'decalRelight' : 'effectDecal',
-					box: true,
-					cull: entry.cull,
-				});
-				break;
-			}
-			case 'refract': {
-				looks[entry.id] = effectMaterialLook(refractLook(surface), {
-					queue: 'refract',
-					cull: entry.cull,
-				});
-				break;
-			}
-			case 'waterFoam': {
-				looks[entry.id] = effectMaterialLook(waterFoamLook(surface), {
-					queue: surface.depthTest === 'less-equal' ? 'waterFoam' : 'waterFoamBehind',
-					cull: entry.cull,
-				});
-				break;
-			}
-		}
-	}
-	return looks;
-};
+export const materialLooks = (materials: MaterialTable): MaterialLook[] =>
+	materials.entries.map(materialLook);
 
 /**
  * the queue of a VFXBaseV2 stack: opaque ones shade in the main pass, and those that multiply the scene draw
