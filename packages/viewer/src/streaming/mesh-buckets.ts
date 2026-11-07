@@ -200,6 +200,8 @@ export class MeshBuckets {
 	#standInLook = unsupportedLook();
 	#stream: Pick<StreamManager, 'get'>;
 	#buckets = new Map<number, MeshBucket>();
+	/** the slots each bucket is remembered by, cleared when it's pruned */
+	#cachedBy = new Map<MeshBucket, ChainSlot[]>();
 	/** drawn draws per chain, built on first use */
 	#slots: (ChainSlot[] | null)[];
 	/** per chain, 1 when its instances draw their box while no LOD is resident, set with {@link #slots} */
@@ -323,6 +325,7 @@ export class MeshBuckets {
 			};
 		});
 		slot.buckets[index] = bucket;
+		this.#cachedBy.getOrInsertComputed(bucket, () => []).push(slot);
 		return bucket;
 	}
 
@@ -332,19 +335,19 @@ export class MeshBuckets {
 	 * @param frame the current frame
 	 */
 	prune(frame: number): void {
-		let pruned = false;
 		for (const [key, bucket] of this.#buckets) {
-			if (bucket.frame < frame - BUCKET_LIFETIME) {
-				this.#buckets.delete(key);
-				pruned = true;
+			if (bucket.frame >= frame - BUCKET_LIFETIME) {
+				continue;
 			}
-		}
-		if (pruned) {
-			for (const slots of this.#slots) {
-				for (const slot of slots ?? []) {
-					slot.buckets.fill(null);
+			this.#buckets.delete(key);
+			// only the slots that hold it look it up again, rather than every slot
+			const index = key % BUCKET_VARIANTS;
+			for (const slot of this.#cachedBy.get(bucket) ?? []) {
+				if (slot.buckets[index] === bucket) {
+					slot.buckets[index] = null;
 				}
 			}
+			this.#cachedBy.delete(bucket);
 		}
 	}
 }
