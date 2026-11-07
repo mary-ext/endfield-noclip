@@ -26,9 +26,12 @@ import {
 } from '@endfield-noclip/formats/unity/values';
 import { conditionVisible } from '@endfield-noclip/package-format/conditions';
 
+import { formatErrorOnly } from '../../errors.ts';
 import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 import type { SceneEnvironmentVolume } from '../environment.ts';
 import type { Visibility } from '../state/scene-control.ts';
+
+import type { PrefabRoots } from './prefab-root.ts';
 
 // reads HGEnvironmentVolume components from gated prefabs; phases are PPtrs rather than path hashes.
 // source layout: docs/game-data/environment.md#prefab-volumes.
@@ -59,44 +62,31 @@ export interface PlacedPrefab {
  * reads the environment volumes of placed prefabs. each volume belongs to its placement's level and loads
  * with its visibility
  *
- * @param resolver bundle reader
+ * @param roots the placed prefabs' roots
  * @param placements dynamic model placements
  * @param defaults every control's default value, to tell which volumes load by default
  * @returns the volumes, in placement order, and the prefabs that couldn't be read (path and reason)
  */
 export const loadPlacedVolumes = async (
-	resolver: AssetResolver,
+	roots: PrefabRoots,
 	placements: readonly PlacedPrefab[],
 	defaults: Readonly<Record<string, number>>,
 ): Promise<{ volumes: SceneEnvironmentVolume[]; unsupported: { path: string; reason: string }[] }> => {
 	const volumes: SceneEnvironmentVolume[] = [];
 	const unsupported: { path: string; reason: string }[] = [];
 	for (const { model, levelTag, visibility } of placements) {
-		const paths = [
-			...new Set(
-				resolver.manifest.findAssets(model.pathHash).map((asset) => resolver.manifest.assetPath(asset)),
-			),
-		];
-		if (paths.length !== 1) {
-			unsupported.push({
-				path: paths[0] ?? `hash ${model.pathHash}`,
-				reason: `the prefab hash names ${paths.length} asset paths, so its volumes aren't read`,
-			});
-			continue;
-		}
-		let found: PrefabEnvironmentVolume[];
-		try {
-			const root = await resolver.findUnique({ hash: model.pathHash, path: paths[0] }, UnityClass.GameObject);
-			found = await readPrefabEnvironmentVolumes(resolver, root, {
-				position: model.position,
-				rotation: unityEulerQuaternion(model.rotation),
-				scale: model.scale,
-			});
-		} catch (error) {
-			if (!(error instanceof FormatError)) {
-				throw error;
-			}
-			unsupported.push({ path: paths[0], reason: error.message });
+		// oxlint-disable-next-line no-await-in-loop -- placement order
+		const { label, root } = await roots.root(model.pathHash);
+		// oxlint-disable-next-line no-await-in-loop -- as above
+		const found = await (root instanceof FormatError
+			? root
+			: readPrefabEnvironmentVolumes(roots.resolver, root, {
+					position: model.position,
+					rotation: unityEulerQuaternion(model.rotation),
+					scale: model.scale,
+				}).catch(formatErrorOnly));
+		if (found instanceof FormatError) {
+			unsupported.push({ path: label, reason: found.message });
 			continue;
 		}
 		const loadedByDefault = conditionVisible(visibility, defaults);

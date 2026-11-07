@@ -10,7 +10,7 @@ import {
 } from '@endfield-noclip/formats/unity/transform';
 import { type ChainDraw, DrawRole } from '@endfield-noclip/package-format/instances';
 
-import { mapDefined, unique } from '@mary-ext/array-fns';
+import { mapDefined } from '@mary-ext/array-fns';
 
 import { formatErrorOnly } from '../../errors.ts';
 import type { AssetResolver, ObjectRef } from '../../game/assets/assets.ts';
@@ -19,6 +19,7 @@ import type { StructureModel } from '../../game/dynamic/dynamic-structures.ts';
 import { axisLengths, withAxisLengths } from '../../game/effects/particle-mesh.ts';
 import { billboardPlacement } from '../../game/prefabs/billboard.ts';
 import { placePrefabLight, readPrefabLights, type PrefabLight } from '../../game/prefabs/prefab-lights.ts';
+import type { PrefabRoots } from '../../game/prefabs/prefab-root.ts';
 import { readPrefabRenderers, type PrefabRenderer } from '../../game/prefabs/prefab.ts';
 import type { WorldIndex } from '../../game/world/world-index.ts';
 
@@ -29,51 +30,18 @@ import { chainDraw, FLT_MAX, type PackContent } from './pack-content.ts';
 // renderers, once per prefab and pose, then placed per placement. a prefab that can't be read stands in as a
 // box rather than failing the scene (docs/extraction/prefabs-and-interactives.md)
 
-/** a prefab's root GameObject, or why it can't be read, and how reports name it */
-type PrefabRoot = { label: string; root: ObjectRef | FormatError };
-
-/** finds each prefab's root once, however many readers and placements ask */
-class PrefabRoots {
-	readonly #resolver: AssetResolver;
-	readonly #roots = new Map<bigint, Promise<PrefabRoot>>();
-
-	constructor(resolver: AssetResolver) {
-		this.#resolver = resolver;
-	}
-
-	/**
-	 * @param hash the prefab's path hash
-	 * @returns its root, or the `FormatError` that kept it from being found: the hash names no single manifest
-	 *   path, or the path's GameObject can't be read
-	 */
-	root(hash: bigint): Promise<PrefabRoot> {
-		return this.#roots.getOrInsertComputed(hash, async () => {
-			const { manifest } = this.#resolver;
-			const paths = unique(manifest.findAssets(hash).map((asset) => manifest.assetPath(asset)));
-			const label = paths.length === 1 ? paths[0] : `0x${hash.toString(16)}`;
-			if (paths.length !== 1) {
-				return { label, root: new FormatError(`prefab has ${paths.length} manifest paths`) };
-			}
-			const root = await this.#resolver
-				.findUnique({ hash, path: paths[0] }, UnityClass.GameObject)
-				.catch(formatErrorOnly);
-			return { label, root };
-		});
-	}
-}
-
 /**
  * places the lights and renderers of every placed prefab. a prefab's lights take their synthetic ids before
  * its renderers, placement by placement, so ids follow placement order
  *
  * @param world the world index, to find the particle quad
- * @param resolver bundle reader
+ * @param roots the placed prefabs' roots, shared with the pack's other prefab readers
  * @param content the pack's content; rows, lights, stand-ins and unsupported prefabs are added
  * @param placements every placed prefab, in placement order
  */
 export const placePrefabs = async (
 	world: WorldIndex,
-	resolver: AssetResolver,
+	roots: PrefabRoots,
 	content: PackContent,
 	placements: readonly StructureModel[],
 	/** by floating interactive's level logic id, its water volume's id */
@@ -81,8 +49,8 @@ export const placePrefabs = async (
 ): Promise<void> => {
 	const { scene } = content;
 	const { subset } = scene;
+	const { resolver } = roots;
 	const particleQuad = await findParticleQuad(world, resolver);
-	const roots = new PrefabRoots(resolver);
 	/** by prefab and pose: its renderers, or why they couldn't be read, and how reports name it */
 	const prefabs = new Map<string, Promise<{ label: string; read: PrefabRenderer[] | FormatError }>>();
 	const prefabLights = new Map<bigint, Promise<PrefabLight[]>>();

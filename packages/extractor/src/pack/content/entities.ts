@@ -2,6 +2,7 @@ import type { Context } from '../../context.ts';
 import { loadDynamicStructures } from '../../game/dynamic/dynamic-structures.ts';
 import type { SceneEnvironmentVolume } from '../../game/environment.ts';
 import { loadPlacedVolumes } from '../../game/prefabs/prefab-environment.ts';
+import { PrefabRoots } from '../../game/prefabs/prefab-root.ts';
 import type { DraftControl } from '../../game/state/scene-control.ts';
 import { readWaterVolumes } from '../../game/water/water-volumes.ts';
 import { defaultValues } from '../states.ts';
@@ -74,10 +75,11 @@ export const collectEntities = async (
 		}
 	}
 
-	const resolver = await context.resolver();
+	// every placed prefab, whatever placed it; their readers share each prefab's root
 	const placements = [...dynamic.models, ...models];
-	await placePrefabs(context.world, resolver, content, placements, floaterVolume);
-	const placed = await loadPlacedVolumes(resolver, placements, defaultValues(scene, controls, progressions));
+	const roots = new PrefabRoots(await context.resolver());
+	await placePrefabs(context.world, roots, content, placements, floaterVolume);
+	const placed = await loadPlacedVolumes(roots, placements, defaultValues(scene, controls, progressions));
 	content.count('prefabEnvironmentVolumes', placed.volumes.length);
 	for (const failure of placed.unsupported) {
 		content.unsupportedPrefab(failure);
