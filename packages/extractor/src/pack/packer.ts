@@ -953,6 +953,8 @@ const collectEntities = async (
 			minSquared: draw.lodMinSquared,
 			maxSquared: draw.lodMaxSquared,
 			sourceFlags: draw.flags,
+			sortingLayer: 0,
+			sortingOrder: 0,
 			particles: null,
 		};
 	};
@@ -973,6 +975,8 @@ const collectEntities = async (
 			minSquared: 0,
 			maxSquared: DECAL_MAX_SQUARED,
 			sourceFlags: 0,
+			sortingLayer: 0,
+			sortingOrder: 0,
 			particles: null,
 		};
 	};
@@ -1217,6 +1221,8 @@ const collectEntities = async (
 			minSquared: -1,
 			maxSquared: 3.4028234663852886e38,
 			sourceFlags: 0,
+			sortingLayer: 0,
+			sortingOrder: 0,
 			particles: null,
 		};
 		addStructure({ chain: pack.chains.intern(1, [draw]), matrix, bounds, entityId }, tag, report.name, {
@@ -1643,6 +1649,8 @@ const collectEntities = async (
 					minSquared,
 					maxSquared,
 					sourceFlags: 0,
+					sortingLayer: renderer.sorting.layer,
+					sortingOrder: renderer.sorting.order,
 					particles,
 				}));
 			}).flat();

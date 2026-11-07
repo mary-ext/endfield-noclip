@@ -39,7 +39,7 @@ export class ChainTable {
 		const { billboard, distanceOrigin } = placement;
 		let key = `${lodCount},${billboard},${distanceOrigin?.map(bits).join(',')}`;
 		for (const draw of draws) {
-			key += `|${draw.geometry},${draw.material},${draw.submesh},${draw.lod},${draw.role},${bits(draw.minSquared)},${bits(draw.maxSquared)},${draw.sourceFlags},${draw.particles}`;
+			key += `|${draw.geometry},${draw.material},${draw.submesh},${draw.lod},${draw.role},${bits(draw.minSquared)},${bits(draw.maxSquared)},${draw.sourceFlags},${draw.sortingLayer},${draw.sortingOrder},${draw.particles}`;
 		}
 		return this.#ids.getOrInsertComputed(
 			key,

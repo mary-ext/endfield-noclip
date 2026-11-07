@@ -825,6 +825,7 @@ export class MeshSelector {
 							rows.length = 0;
 						}
 						bucket.distances.length = 0;
+						bucket.bands.length = 0;
 						bucket.pixels = 0;
 						bucket.nearest = Infinity;
 						buckets.push(bucket);
@@ -852,6 +853,7 @@ export class MeshSelector {
 						// the game sorts by renderer: a system's particles all take its distance
 						for (let k = listed; k < groupRows.length; k++) {
 							bucket.distances.push(distance);
+							bucket.bands.push(slot.band);
 						}
 					}
 					if (priority > bucket.pixels) {

@@ -74,6 +74,8 @@ interface PreparedDraw {
 	stencil: LookStencil | null;
 	/** for a draw of the transparent pass, its instances' distances, far to near (`MeshBucket.distances`) */
 	distances: readonly number[];
+	/** for a draw of the transparent pass, its instances' sort bands (`MeshBucket.bands`) */
+	bands: readonly number[];
 }
 
 /** what {@link MeshRenderer} last bound while encoding a pass, so it binds only what changes */
@@ -489,8 +491,9 @@ export class MeshRenderer {
 				const source = sources[s];
 				const count = Math.min(draw.count, draw.distances.length);
 				if (source === undefined) {
-					sources.push({ distances: draw.distances, count });
+					sources.push({ bands: draw.bands, distances: draw.distances, count });
 				} else {
+					source.bands = draw.bands;
 					source.distances = draw.distances;
 					source.count = count;
 				}
@@ -611,6 +614,7 @@ export class MeshRenderer {
 				effect,
 				stencil: look.stencil,
 				distances: bucket.distances,
+				bands: bucket.bands,
 			};
 		} else {
 			draw.geometry = resident;
@@ -631,6 +635,7 @@ export class MeshRenderer {
 			draw.effect = effect;
 			draw.stencil = look.stencil;
 			draw.distances = bucket.distances;
+			draw.bands = bucket.bands;
 		}
 		if (!bucket.castOnly && gpu === null) {
 			this.instanceCount += span.count;

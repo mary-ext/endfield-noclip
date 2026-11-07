@@ -80,6 +80,13 @@ export interface ChainDraw {
 	/** the game's `RendererInfo.renderFlags`, kept for bits not yet understood */
 	sourceFlags: number;
 	/**
+	 * the renderer's sorting layer (its place in the layer order) and order within it, i16 each; 0 where the
+	 * game records none (static scenery). the transparent pass draws lower layers, then lower orders, first,
+	 * and only then sorts by distance
+	 */
+	sortingLayer: number;
+	sortingOrder: number;
+	/**
 	 * index into the particles table when the draw is a particle system's mesh: the instance is the emitter,
 	 * its transform the system's frame and its bounds everywhere the particles reach. `null` for an ordinary
 	 * draw
@@ -158,7 +165,7 @@ export interface DecalPlacements {
 }
 
 const CHAIN_SIZE = 8;
-const DRAW_SIZE = 28;
+const DRAW_SIZE = 32;
 const ORIGIN_SIZE = 12;
 /** {@link ChainDraw.particles} of a draw without particles, as encoded */
 const NO_PARTICLES = 0xff_ff_ff_ff;
@@ -169,7 +176,7 @@ const INSTANCE_ROW_SIZE = 4 + 48 + 24 + 4;
 /** 'EFCH' */
 const CHAINS_HEADER: HeaderShape = {
 	magic: 0x48_43_46_45,
-	version: 5,
+	version: 6,
 	size: TABLE_HEADER_SIZE,
 	label: 'chain table',
 };
@@ -187,10 +194,10 @@ const hasDistanceOrigin = (flags: number): boolean => (flags & ChainFlags.Camera
 
 /**
  * tables/chains.bin: 16-byte header (`'EFCH'`, u16 version, u16 0, u32 chainCount, u32 drawCount), 8-byte
- * chains (u32 firstDraw, u16 drawCount, u8 lodCount, u8 flags), then 28-byte draws (u32 geometry, u32
+ * chains (u32 firstDraw, u16 drawCount, u8 lodCount, u8 flags), then 32-byte draws (u32 geometry, u32
  * material, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u32 sourceFlags, u32 particles,
- * `0xffffffff` for none), then f32×3 distance origins, one per {@link ChainFlags.CameraDistance} chain in
- * chain order.
+ * `0xffffffff` for none, i16 sortingLayer, i16 sortingOrder), then f32×3 distance origins, one per
+ * {@link ChainFlags.CameraDistance} chain in chain order.
  *
  * @param chains chain templates in id order
  * @returns the encoded table
@@ -240,6 +247,8 @@ export const encodeChains = (chains: readonly Chain[]): Uint8Array => {
 			view.setFloat32(drawAt + 16, draw.maxSquared, true);
 			view.setUint32(drawAt + 20, draw.sourceFlags, true);
 			view.setUint32(drawAt + 24, draw.particles ?? NO_PARTICLES, true);
+			view.setInt16(drawAt + 28, draw.sortingLayer, true);
+			view.setInt16(drawAt + 30, draw.sortingOrder, true);
 			drawAt += DRAW_SIZE;
 		}
 		firstDraw += chain.draws.length;
@@ -293,6 +302,8 @@ export const decodeChains = (data: Uint8Array): Chain[] => {
 				minSquared: view.getFloat32(drawAt + 12, true),
 				maxSquared: view.getFloat32(drawAt + 16, true),
 				sourceFlags: view.getUint32(drawAt + 20, true),
+				sortingLayer: view.getInt16(drawAt + 28, true),
+				sortingOrder: view.getInt16(drawAt + 30, true),
 				particles: particlesOf(view.getUint32(drawAt + 24, true)),
 			});
 		}

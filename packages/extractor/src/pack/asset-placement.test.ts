@@ -45,6 +45,8 @@ describe('AssetPlacement', () => {
 			minSquared: -1,
 			maxSquared: 1,
 			sourceFlags: 0,
+			sortingLayer: 0,
+			sortingOrder: 0,
 			particles: null,
 		});
 		const chains = [
@@ -76,6 +78,8 @@ describe('AssetPlacement', () => {
 			minSquared: -1,
 			maxSquared: 1,
 			sourceFlags: 0,
+			sortingLayer: 0,
+			sortingOrder: 0,
 			particles: null,
 		};
 		const placement = new AssetPlacement(3);

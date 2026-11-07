@@ -65,8 +65,10 @@ what each post pass computes is in [post-processing](post-processing.md) and
   ([`render/sky/fog.wgsl`](../../packages/viewer/src/render/sky/fog.wgsl), whose inputs the mesh
   draw group carries) and blends it premultiplied over what's there, additive light with an opacity
   of 0 ([blending](effects.md#blending)). the order is by instance: the selection keeps each
-  transparent row's distance to the camera, sorts each bucket's rows far to near, and the mesh
-  renderer merges every draw of the pass into one far-to-near list of runs (`mergeFarToNear` in
+  transparent row's distance to the camera and its draw's sort band (the prefab renderer's sorting
+  layer, then order; 0 for static scenery), sorts each bucket's rows by band, then far to near, and
+  the mesh renderer merges every draw of the pass into one list of runs in that order
+  (`mergeFarToNear` in
   [`render/meshes/sorted-runs.ts`](../../packages/viewer/src/render/meshes/sorted-runs.ts)),
   neighbouring instances of one draw sharing a call. draws that write the stencil go first, whole,
   so the effects testing it see the whole mask.

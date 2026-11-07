@@ -320,9 +320,10 @@ packs or renders correctly.
 - Marker Stone's low mist banks over the valley are missing; their source is unknown
 - the transparent pass sorts by the distance to each instance's bounding-sphere centre, where what
   the game measures (bounds centre, most likely) isn't traced; only instances of one draw that are
-  neighbours in the order share a call, without the game's sorting layers or renderer priority
-  ([frame](viewer/frame.md)). the corroded planet's plume through Dijiang's deck glass is unchecked
-  against the in-game shot's brightness
+  neighbours in the order share a call. prefab renderers' sorting layers and orders sort first, but
+  not the render queue (2900–3100 share the pass) or renderer priority, and static scenery takes
+  band 0, since what fills its ECS band byte isn't traced ([frame](viewer/frame.md)). the corroded
+  planet's plume through Dijiang's deck glass is unchecked against the in-game shot's brightness
 
 ## scenes and conditional content
 

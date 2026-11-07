@@ -96,6 +96,11 @@ export interface PrefabRenderer {
 	materials: (ObjectRef | null)[];
 	submeshes: number;
 	shadowOnly: boolean;
+	/**
+	 * the renderer's sorting layer (the layer's place in the layer order) and its order within it, Unity's
+	 * `m_SortingLayer` and `m_SortingOrder`: transparent draws sort by them before their distance
+	 */
+	sorting: { layer: number; order: number };
 	/** bone transforms including bind poses, when geometry must be baked into prefab space */
 	pose: Float32Array[] | null;
 	/**
@@ -1057,6 +1062,10 @@ export const readPrefabRenderers = async (
 			submeshes: arrayField(mesh, 'm_SubMeshes').length,
 			// Unity's ShadowCastingMode: 3 ShadowsOnly, 4 ShadowsOnlyTwoSided
 			shadowOnly: numberField(candidate.data, 'm_CastShadows') >= 3,
+			sorting: {
+				layer: optionalNumberField(candidate.data, 'm_SortingLayer') ?? 0,
+				order: optionalNumberField(candidate.data, 'm_SortingOrder') ?? 0,
+			},
 			particles: candidate.particles,
 			unsupported,
 			// a renderer the clip moves takes the identity matrix

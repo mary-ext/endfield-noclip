@@ -241,12 +241,12 @@ the user turns it on. a viewer therefore decides whether a volume applies from i
 all little-endian, every section 4-byte aligned. the tables share a 16-byte header:
 `u32 magic, u16 version, u16 0, u32 count, u32 count-or-0`.
 
-| member                  | magic  | layout                                                                                                                                                                                                                                                                                                                |
-| ----------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tree.bin`              | `EFTR` | header (nodes, refs); 48-byte nodes: `u8 level, u8 childMask, u16 flags, i32 x, i32 z, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs: `u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, f32 param`                                                           |
-| `tables/chains.bin`     | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 lodCount, u8 flags`; 28-byte draws: `u32 geometry, u32 material, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u32 sourceFlags, u32 particles`; then `f32×3` distance origins, one per `CameraDistance` chain in chain order |
-| `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 32-byte records: `16-byte hash, u16 archive, u8 codec, u8 kind, u32 offset, u32 length, u32 rawLength`                                                                                                                                                                                             |
-| `tables/irradiance.bin` | `EFIV` | version 2; header (entries, 0); u32 cell keys ascending (repeats allowed), then u32 blob indices, then u32 visibility groups                                                                                                                                                                                          |
+| member                  | magic  | layout                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tree.bin`              | `EFTR` | header (nodes, refs); 48-byte nodes: `u8 level, u8 childMask, u16 flags, i32 x, i32 z, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs: `u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, f32 param`                                                                                               |
+| `tables/chains.bin`     | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 lodCount, u8 flags`; 32-byte draws: `u32 geometry, u32 material, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u32 sourceFlags, u32 particles, i16 sortingLayer, i16 sortingOrder`; then `f32×3` distance origins, one per `CameraDistance` chain in chain order |
+| `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 32-byte records: `16-byte hash, u16 archive, u8 codec, u8 kind, u32 offset, u32 length, u32 rawLength`                                                                                                                                                                                                                                 |
+| `tables/irradiance.bin` | `EFIV` | version 2; header (entries, 0); u32 cell keys ascending (repeats allowed), then u32 blob indices, then u32 visibility groups                                                                                                                                                                                                                              |
 
 nodes are ordered coarse to fine (level, then z, then x); a node's `childMask` bit `dz·2 + dx` marks
 child `(2x + dx, 2z + dz)`, and its bounds cover everything it and its descendants draw, overhang
@@ -264,10 +264,12 @@ can't draw, drawn with its unsupported look); an HLOD cluster's draws are `Lit`,
 holding them (`Hlod`) says what they are. `sourceFlags` keeps a static draw's renderer flag word,
 for bits not yet understood, and is 0 on prefab draws. `particles` indexes the
 [particles table](#particles) when the draw is a particle system's mesh, else it's `0xffffffff`.
-prefab renderers under an enabled `LODGroup` get one draw per span of its `screenRelativeHeight`
-thresholds they show at, measured on the row's own bounds rather than the LODGroup's size. the chain
-flags say whether its instances are billboards (`BillboardFacing`, `BillboardUpright`): their
-transform's rotation is then relative to the camera's, and their bounds hold every orientation
+`sortingLayer` and `sortingOrder` are a prefab renderer's `m_SortingLayer` and `m_SortingOrder`,
+which the transparent pass sorts by before distance; static draws store 0. prefab renderers under an
+enabled `LODGroup` get one draw per span of its `screenRelativeHeight` thresholds they show at,
+measured on the row's own bounds rather than the LODGroup's size. the chain flags say whether its
+instances are billboards (`BillboardFacing`, `BillboardUpright`): their transform's rotation is then
+relative to the camera's, and their bounds hold every orientation
 ([billboards](game-data/assets.md#billboards)). `CameraDistance` makes the chain's thresholds
 squared camera distances, in m², instead of screen-relative sizes, measured from the chain's
 distance origin: a point in the instance's frame, which the instance's transform takes to the world.

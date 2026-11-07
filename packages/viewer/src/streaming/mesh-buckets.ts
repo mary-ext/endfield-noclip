@@ -4,6 +4,7 @@ import { type Chain, DrawRole } from '@endfield-noclip/package-format/instances'
 import type { MaterialLook } from '../looks/look.ts';
 import { unsupportedLook } from '../looks/material-looks.ts';
 import { SORTED_RANGES } from '../render/meshes/draw-ranges.ts';
+import { sortBand } from '../render/meshes/sorted-runs.ts';
 import { SHADOW_LAYERS } from '../render/shadows/shadow-map.ts';
 
 import type { ContentItem } from './content-item.ts';
@@ -30,10 +31,15 @@ export interface MeshBucket {
 	rows: number[][];
 	/**
 	 * for a bucket the transparent pass draws ({@link ChainSlot.sorted}), the distance from the camera to each
-	 * row's instance, m, parallel to its rows (all in the last group), far to near once {@link sortFarToNear}
-	 * ran; empty for other buckets
+	 * row's instance, m, parallel to its rows (all in the last group), far to near within a band once
+	 * {@link sortFarToNear} ran; empty for other buckets
 	 */
 	distances: number[];
+	/**
+	 * for a sorted bucket, each row's slot's {@link ChainSlot.band}, parallel to {@link distances}: slots sharing
+	 * a bucket can differ in it
+	 */
+	bands: number[];
 	/**
 	 * the highest priority of an instance this frame: its projected height, px, scaled by the caster priority
 	 * in cast-only buckets. textures stream by it
@@ -84,6 +90,8 @@ export interface ChainSlot {
 	 * distances and skip the shadow layers' grouping, which only shadow casters need
 	 */
 	sorted: boolean;
+	/** for a sorted slot, its draw's {@link sortBand}: lower bands draw first, whatever their distance */
+	band: number;
 	/** the particle system the draw plays, whose particles stand in for the instance; `null` for a mesh */
 	particles: number | null;
 	/** the slot's buckets, once they had rows, by {@link bucketIndex} */
@@ -167,29 +175,32 @@ export const gpuBucketIndex = (mirrored: 0 | 1, shadowOnly: boolean): number =>
 	4 + mirrored + (shadowOnly ? 2 : 0);
 
 /**
- * orders a sorted bucket's rows far to near by their {@link MeshBucket.distances}, both in place. rows of one
- * instance (a particle system's particles) share its distance and keep their order
+ * orders a sorted bucket's rows by their {@link MeshBucket.bands}, then far to near by their
+ * {@link MeshBucket.distances}, all in place. rows of one instance (a particle system's particles) share its
+ * distance and keep their order
  *
  * @param bucket a bucket of a {@link ChainSlot.sorted} slot, its rows all in the last group
  */
 export const sortFarToNear = (bucket: MeshBucket): void => {
 	const rows = bucket.rows[SHADOW_LAYERS];
-	const distances = bucket.distances;
+	const { bands, distances } = bucket;
 	const n = distances.length;
 	let sorted = true;
 	for (let i = 1; i < n && sorted; i++) {
-		sorted = distances[i - 1] >= distances[i];
+		sorted = bands[i - 1] < bands[i] || (bands[i - 1] === bands[i] && distances[i - 1] >= distances[i]);
 	}
 	if (sorted) {
 		return;
 	}
 	const order = Array.from({ length: n }, (_, i) => i);
 	// stable, so a system's particles stay together in their order
-	order.sort((a, b) => distances[b] - distances[a]);
+	order.sort((a, b) => bands[a] - bands[b] || distances[b] - distances[a]);
 	const oldRows = rows.slice();
+	const oldBands = bands.slice();
 	const oldDistances = distances.slice();
 	for (let i = 0; i < n; i++) {
 		rows[i] = oldRows[order[i]];
+		bands[i] = oldBands[order[i]];
 		distances[i] = oldDistances[order[i]];
 	}
 };
@@ -282,6 +293,7 @@ export class MeshBuckets {
 					shadowOnly,
 					gpuCullable: draw.particles === null && (queue === 'opaque' || queue === 'cutout'),
 					sorted: SORTED_RANGES.has(look.queue),
+					band: sortBand(draw.sortingLayer, draw.sortingOrder),
 					particles: draw.particles,
 					buckets: Array.from({ length: BUCKET_VARIANTS }, () => null),
 				});
@@ -317,6 +329,7 @@ export class MeshBuckets {
 				castOnly: (index & 2) === 2,
 				rows: Array.from({ length: SHADOW_LAYERS + 1 }, () => []),
 				distances: [],
+				bands: [],
 				pixels: 0,
 				nearest: Infinity,
 				frame: -1,

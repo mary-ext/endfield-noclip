@@ -116,6 +116,8 @@ describe('chains', () => {
 						minSquared: 0.25,
 						maxSquared: 3.4028234663852886e38,
 						sourceFlags: 0x0bf80000,
+						sortingLayer: 0,
+						sortingOrder: 0,
 						particles: null,
 					},
 					{
@@ -127,6 +129,8 @@ describe('chains', () => {
 						minSquared: -0.5,
 						maxSquared: 0.25,
 						sourceFlags: 1 << 10,
+						sortingLayer: -1,
+						sortingOrder: -4,
 						particles: 3,
 					},
 				],

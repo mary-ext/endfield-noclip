@@ -5,31 +5,48 @@
  * @module
  */
 
-/** a draw's instances, far to near, as the merge reads them */
+/**
+ * @param layer a renderer's sorting layer (its place in the layer order), i16
+ * @param order its sorting order within the layer, i16
+ * @returns its sort band: lower bands draw first, whatever their distance
+ */
+export const sortBand = (layer: number, order: number): number => layer * 65_536 + order;
+
+/** a draw's instances in draw order, as the merge reads them */
 export interface SortedSource {
-	/** each instance's distance from the camera, m, far to near */
+	/** each instance's {@link sortBand}, ascending */
+	bands: readonly number[];
+	/** each instance's distance from the camera, m, far to near within a band */
 	distances: readonly number[];
 	/** how many of them draw, from the first */
 	count: number;
 }
 
 /**
- * merges draws' far-to-near instances into one far-to-near order, in runs: consecutive instances of one draw
- * draw together, as the game draws neighbouring instances of one mesh and material in one call. on a tie, the
- * earlier source goes first
+ * merges draws' instances into one order, lower bands first and far to near within a band, in runs:
+ * consecutive instances of one draw draw together, as the game draws neighbouring instances of one mesh and
+ * material in one call. on a tie, the earlier source goes first
  *
- * @param sources the draws, each sorted far to near
+ * @param sources the draws, each in that order
  * @param runs filled with `[source, first, count]` triples, `first` counting from the source's first
  *   instance; cleared first
  */
 export const mergeFarToNear = (sources: readonly SortedSource[], runs: number[]): void => {
 	runs.length = 0;
-	// a binary max-heap of sources by their next instance's distance
+	// a binary heap of sources by their next instance, the one to draw first on top
 	const heap: number[] = [];
 	const next = sources.map(() => 0);
+	const band = (source: number): number => sources[source].bands[next[source]];
 	const key = (source: number): number => sources[source].distances[next[source]];
 	/** whether `a` goes before `b` */
-	const before = (a: number, b: number): boolean => key(a) > key(b) || (key(a) === key(b) && a < b);
+	const before = (a: number, b: number): boolean => {
+		const ba = band(a);
+		const bb = band(b);
+		if (ba !== bb) {
+			return ba < bb;
+		}
+		return key(a) > key(b) || (key(a) === key(b) && a < b);
+	};
 	const up = (at: number): void => {
 		let i = at;
 		while (i > 0) {

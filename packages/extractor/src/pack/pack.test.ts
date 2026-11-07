@@ -35,6 +35,8 @@ const draw = (overrides: Partial<ChainDraw>): ChainDraw => ({
 	minSquared: -1,
 	maxSquared: 3.4028234663852886e38,
 	sourceFlags: 0,
+	sortingLayer: 0,
+	sortingOrder: 0,
 	particles: null,
 	...overrides,
 });
