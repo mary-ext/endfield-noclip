@@ -247,7 +247,11 @@ the renderers and stores that own the GPU side; their residency shapes are in
   most wanted one; blobs nobody has wanted for 30 frames are dropped first. the pool once queued
   every fetched blob in arrival order: flying across map02 it held about 3,000 at once, so what came
   into view waited behind what the camera had left, while the workers sat idle 99% of the time.
-- **uploading.** pinned first, then by priority, until the frame has uploaded 24 MiB. decoded
+- **uploading.** pinned first, then by priority, until the frame has uploaded 24 MiB or spent 2 ms
+  on unpinned uploads (at least one a frame). the cost is per upload more than per byte: a frame
+  fits ~750 average geometry blobs in 24 MiB, and flying over map02 bursts of 40–120 uploads landed
+  on the worst frames. the game spends 1.5 ms a frame loading
+  ([streaming layers](../game-data/world.md#streaming-layers)). decoded
   content nobody has wanted for 30 frames is dropped instead. a full pool evicts up to 16 resident,
   unpinned blobs of the same kind that weren't used this frame and have no higher priority, oldest
   first, and retries.

@@ -54,6 +54,11 @@ export interface StreamOptions {
 const MAX_UNDECODED = 384;
 /** fetched or decoded blobs nobody has wanted for this many frames are dropped instead of decoded or uploaded */
 const STALE_FRAMES = 30;
+/**
+ * time a frame spends on unpinned uploads at most, ms. uploads cost per item more than per byte (buffer and
+ * texture creation, instance rows), so the byte budget alone let bursts of a hundred land on one frame
+ */
+const UPLOAD_MS = 2;
 
 /** a fetched blob's stored bytes: a range of its read's bytes */
 interface FetchedBytes {
@@ -618,10 +623,15 @@ export class StreamManager {
 		}
 		uploads.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.priority - a.priority);
 		const deferred = this.#deferred;
+		const deadline = performance.now() + UPLOAD_MS;
 		let uploaded = 0;
 		let next = 0;
 		for (; next < uploads.length && uploaded < this.options.uploadBytesPerFrame; next++) {
 			const item = uploads[next];
+			// pinned uploads sort first and aren't timed
+			if (!item.pinned && uploaded > 0 && performance.now() > deadline) {
+				break;
+			}
 			const decoded = item.decoded;
 			if (decoded === null) {
 				continue;
