@@ -26,6 +26,7 @@ import { isObject, numberField, objectField, stringField } from '@endfield-nocli
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import type { Context } from '../../context.ts';
+import { formatErrorOnly } from '../../errors.ts';
 import { VfsGroup } from '../../hg/vfs.ts';
 import type { StructureModel } from '../dynamic/dynamic-structures.ts';
 import { isOneShotEffect } from '../effects/view-state-effects.ts';
@@ -1478,46 +1479,51 @@ export const loadInteractiveFacilities = async (
 		on: { prefab: string; pose: PrefabPose; rest: RestingEffect } | null;
 		followRotation: boolean;
 	}[] = [];
-	/** by level id, the splines its LevelData files hold */
-	const levelSplines = new Map<string, Promise<Map<number, LevelSpline>>>();
-	const splinesOf = (levelId: string): Promise<Map<number, LevelSpline>> =>
-		levelSplines.getOrInsertComputed(levelId, async () => {
+	/**
+	 * by level id, what its LevelData files hold beyond the placements: their splines, and the unlock types of
+	 * their interactives' gameplay locks by logic id. each file is decoded whole once, for both
+	 */
+	/** runs one reader over a decoded LevelData file, recording its failure under `what` */
+	const attemptRead = (path: string, what: string, readPart: () => void): void => {
+		try {
+			readPart();
+		} catch (error) {
+			unsupported.push({ path, reason: `${what}: ${formatErrorOnly(error).message}` });
+		}
+	};
+	const levelExtras = new Map<
+		string,
+		Promise<{ splines: Map<number, LevelSpline>; locks: Map<bigint, number[]> }>
+	>();
+	const extrasOf = (levelId: string) =>
+		levelExtras.getOrInsertComputed(levelId, async () => {
 			const splines = new Map<number, LevelSpline>();
-			for (const path of levelDataPaths.get(levelId) ?? []) {
-				try {
-					// oxlint-disable-next-line no-await-in-loop -- one level's files, each released once read
-					for (const spline of readLevelSplines(reader.decode(await read(path), LEVEL_DATA_ROOT))) {
-						splines.set(spline.id, spline);
-					}
-				} catch (error) {
-					if (!(error instanceof FormatError)) {
-						throw error;
-					}
-					unsupported.push({ path, reason: `splines: ${error.message}` });
-				}
-			}
-			return splines;
-		});
-	/** by level id, the unlock types of its interactives' gameplay locks, by logic id */
-	const levelLocks = new Map<string, Promise<Map<bigint, number[]>>>();
-	const locksOf = (levelId: string): Promise<Map<bigint, number[]>> =>
-		levelLocks.getOrInsertComputed(levelId, async () => {
 			const locks = new Map<bigint, number[]>();
 			for (const path of levelDataPaths.get(levelId) ?? []) {
+				let data: MemoryPackValue;
 				try {
 					// oxlint-disable-next-line no-await-in-loop -- one level's files, each released once read
-					for (const [id, types] of readLevelLocks(reader.decode(await read(path), LEVEL_DATA_ROOT))) {
+					data = reader.decode(await read(path), LEVEL_DATA_ROOT);
+				} catch (error) {
+					unsupported.push({ path, reason: `splines and gameplay locks: ${formatErrorOnly(error).message}` });
+					continue;
+				}
+				attemptRead(path, 'splines', () => {
+					for (const spline of readLevelSplines(data)) {
+						splines.set(spline.id, spline);
+					}
+				});
+				attemptRead(path, 'gameplay locks', () => {
+					for (const [id, types] of readLevelLocks(data)) {
 						locks.set(id, types);
 					}
-				} catch (error) {
-					if (!(error instanceof FormatError)) {
-						throw error;
-					}
-					unsupported.push({ path, reason: `gameplay locks: ${error.message}` });
-				}
+				});
 			}
-			return locks;
+			return { splines, locks };
 		});
+	const splinesOf = async (levelId: string): Promise<Map<number, LevelSpline>> =>
+		(await extrasOf(levelId)).splines;
+	const locksOf = async (levelId: string): Promise<Map<bigint, number[]>> => (await extrasOf(levelId)).locks;
 	/**
 	 * @returns the spline an auto-moving platform rides and how, when it starts moving with its level (its
 	 *   `state` is 1 and it names a spline); otherwise `null`
