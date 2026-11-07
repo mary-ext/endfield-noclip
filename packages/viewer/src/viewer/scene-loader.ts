@@ -13,7 +13,7 @@ import { TextureStore } from '../render/textures/texture-store.ts';
 import type { WaterLevels } from '../scene-states/water-levels.ts';
 import type { GroundSource } from '../scene/ground.ts';
 import { type TileTree, buildTileTree } from '../scene/tile-tree.ts';
-import { coreBlobs } from '../streaming/core-blobs.ts';
+import { coreBlobs, terrainLayerBlobs } from '../streaming/core-blobs.ts';
 import { MeshSelector } from '../streaming/mesh-selection.ts';
 import { Selector } from '../streaming/selection.ts';
 import { StreamManager } from '../streaming/stream-manager.ts';
@@ -74,7 +74,8 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 	const textures = new TextureStore(deps.device, pkg.textures, { bc: deps.bc });
 	const particles = new ParticleField(pkg.particles, instances);
 	const rowKinds = instanceRowKinds(tree, pkg.tree.global);
-	const stream = new StreamManager(
+	let layersPinned = false;
+	const stream: StreamManager = new StreamManager(
 		pkg,
 		deps.pool,
 		{
@@ -87,7 +88,13 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 				release: (_blob, resident) => terrain.releaseSurface(resident),
 			},
 			splat: {
-				upload: (_blob, decoded) => terrain.uploadSplat(decoded),
+				upload: (_blob, decoded) => {
+					if (!layersPinned && terrain.surfaces) {
+						layersPinned = true;
+						stream.pin(terrainLayerBlobs(pkg));
+					}
+					return terrain.uploadSplat(decoded);
+				},
 				release: (_blob, resident) => terrain.releaseSplat(resident),
 			},
 			layer: {

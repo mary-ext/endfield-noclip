@@ -226,7 +226,9 @@ the renderers and stores that own the GPU side; their residency shapes are in
 - **pinning.** the core archive's height pages and instance blocks (coarse terrain, every HLOD
   block, global scenery) are pinned at load
   ([`streaming/core-blobs.ts`](../../packages/viewer/src/streaming/core-blobs.ts)), plus, where BC
-  textures are supported, its surface pages and the terrain layer textures. pinned blobs come first
+  textures are supported, its surface pages. the terrain layer textures are pinned when the first
+  splat page arrives, since only ground within the splat pages' reach draws from them (map02: 21 MB
+  that used to load ahead of the first view, and stay, even in overviews). pinned blobs come first
   (core ones are read from memory at once), upload first and are never evicted. pinned height pages
   keep their samples on the CPU for ground-height queries
   ([`scene/ground.ts`](../../packages/viewer/src/scene/ground.ts)), which place a level's first view

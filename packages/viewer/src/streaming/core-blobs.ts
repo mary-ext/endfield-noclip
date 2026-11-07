@@ -5,8 +5,7 @@ import type { ViewerPackage } from '../package/viewer-package.ts';
 
 /**
  * the coarse layer, pinned at load: the core archive's height pages and instance blocks (coarse terrain,
- * every HLOD block, global scenery), and where the terrain draws surfaces, its surface pages and every
- * terrain layer texture, since every splat page draws from all of them.
+ * every HLOD block, global scenery), and where the terrain draws surfaces, its surface pages.
  *
  * @param pkg the package
  * @param options `surfaces` when the terrain draws surface pages and close-up layers (BC textures)
@@ -36,9 +35,17 @@ export const coreBlobs = (
 			}
 		}
 	}
-	const splat = pkg.manifest.terrain?.splat ?? null;
-	if (splat !== null && options.surfaces) {
-		blobs.push(...new Set([...splat.diffuse, ...splat.normal]));
-	}
 	return blobs;
+};
+
+/**
+ * every terrain layer texture, which every splat page draws from all of; pinned when the first splat page
+ * arrives rather than at load, since only ground within the splat pages' reach uses them (map02: 21 MB)
+ *
+ * @param pkg the package
+ * @returns the blobs to pin, each once
+ */
+export const terrainLayerBlobs = (pkg: Pick<ViewerPackage, 'manifest'>): number[] => {
+	const splat = pkg.manifest.terrain?.splat ?? null;
+	return splat === null ? [] : [...new Set([...splat.diffuse, ...splat.normal])];
 };
