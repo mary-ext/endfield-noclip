@@ -119,7 +119,8 @@ export const loadInteractiveFacilities = async (
 		partition,
 	});
 	const rows = new Map(placed.map(({ row }) => [row.id, row]));
-	const { authored, modelless } = await resolveTemplateModels(sources, interactives, placed);
+	const templates = await resolveTemplateModels(sources, interactives, placed);
+	const { authored, modelless } = templates;
 	const prefabs = await PrefabHashes.open(context);
 	prefabs.find(authored.values().flatMap((template) => template.forms.map((form) => form.prefab)));
 	const doodads = new DoodadGroups(sources, prefabs);
@@ -142,7 +143,7 @@ export const loadInteractiveFacilities = async (
 	const kinds: InteractiveKind[] = [bridges, doors, restLooks, animatorStarts, regionWalls, cranes];
 	const readers: TemplateReader[] = [platforms, jumpPads, ...kinds];
 	{
-		const traits = new TemplateTraitsReader(sources);
+		const traits = new TemplateTraitsReader(sources, templates.traits);
 		for (const [key, template] of authored) {
 			if (template.model === null) {
 				// oxlint-disable-next-line no-await-in-loop -- one view state file and a clip per form
@@ -150,8 +151,7 @@ export const loadInteractiveFacilities = async (
 				continue;
 			}
 			const single = { ...template, model: template.model };
-			// oxlint-disable-next-line no-await-in-loop -- one decode per template
-			const traitsOf = await traits.of(template.data);
+			const traitsOf = traits.of(template.data);
 			for (const reader of readers) {
 				// oxlint-disable-next-line no-await-in-loop -- a few view state files and one-frame clips per model
 				await reader.prepare(key, single, traitsOf);

@@ -87,16 +87,17 @@ code: [level-interactives.ts](../../packages/formats/src/endfield/level-interact
 [telescopic-bridge.ts](../../packages/extractor/src/game/interactives/telescopic-bridge.ts),
 [prefab.ts](../../packages/extractor/src/game/prefabs/prefab.ts).
 
-`loadInteractiveFacilities` runs fixed steps: it reads the placed rows, resolves each placed
-template's models (`template-models.ts`), reads doodad shells, then decodes each single-model
-template once into its traits (`template-traits.ts`) and hands them to every kind's `prepare`, in
-first-placement order. after the region walls' unlock table and the crane towers' poses, each row is
-drawn by the first kind whose `place` claims it (bridges, doors, rest looks, animator starts, region
-walls, crane towers), else as its plain model with any doodad forms, else as facility forms. every
-model goes through the row's `InteractiveRow` (`interactive-row.ts`), which adds its switches,
-blight core, model scale, ride, crane hang and lock; resting effects are placed last. a new kind of
-interactive is one module implementing `InteractiveKind`, a trait it's detected by, and a place in
-that list. the order is the order models, controls and diagnostics come out in, which ids follow.
+`loadInteractiveFacilities` runs fixed steps: it reads the placed rows, reads and decodes each
+placed template file once for its models (`template-models.ts`) and its traits
+(`template-traits.ts`), reads doodad shells, then hands each single-model template's traits to every
+kind's `prepare`, in first-placement order. after the region walls' unlock table and the crane
+towers' poses, each row is drawn by the first kind whose `place` claims it (bridges, doors, rest
+looks, animator starts, region walls, crane towers), else as its plain model with any doodad forms,
+else as facility forms. every model goes through the row's `InteractiveRow` (`interactive-row.ts`),
+which adds its switches, blight core, model scale, ride, crane hang and lock; resting effects are
+placed last. a new kind of interactive is one module implementing `InteractiveKind`, a trait it's
+detected by, and a place in that list. the order is the order models, controls and diagnostics come
+out in, which ids follow.
 
 ### templates and models
 

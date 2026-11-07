@@ -7,6 +7,7 @@ import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-p
 import { jumpPadArrow, verticalPadEffect } from './jump-pads.ts';
 import { verticalRopeFloats } from './rest-looks.ts';
 import { startState, stateOf } from './template-data.ts';
+import { readTemplateTraits } from './template-traits.ts';
 
 const property = (key: string, bits: string): MemoryPackValue => ({
 	key,
@@ -160,4 +161,26 @@ test('a vertical jump pad plays its vent effect only while its state is on', () 
 	const pad = { ...row(1n, []), template: 'int_jumpmachine_vertical' };
 	assert.equal(verticalPadEffect(verticalPad, pad), 'P_interactive_cavewell+1_001_01_loop');
 	assert.equal(verticalPadEffect(verticalPad, { ...pad, properties: [] }), null);
+});
+
+const telescopicLogic = {
+	$type: 'Beyond_Gameplay_Core_InteractiveLogicControllerComponentDataForMemoryPack',
+	logicType: 8,
+};
+
+test('a door component wins over a telescopic bridge logic, which needs a piece count', () => {
+	const door = { $type: 'Beyond_Gameplay_Core_InteractiveDoorCommonComponentDataForMemoryPack' };
+	assert.deepEqual(readTemplateTraits({ componentList: [telescopicLogic, door] }, 'bridge'), {
+		kind: 'door',
+	});
+	assert.deepEqual(
+		readTemplateTraits(
+			{ componentList: [telescopicLogic], configProperties: [property('pieces', '4')] },
+			'bridge',
+		),
+		{ kind: 'telescopic', pieces: 4 },
+	);
+	assert.deepEqual(readTemplateTraits({ componentList: [telescopicLogic], configProperties: [] }, 'bridge'), {
+		failure: 'bridge is a telescopic bridge without a valid pieces count',
+	});
 });

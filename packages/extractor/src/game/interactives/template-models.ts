@@ -9,6 +9,7 @@ import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-p
 import type { FacilitySources, InteractiveForm } from './facility-sources.ts';
 import type { PlacedInteractive } from './placed-interactives.ts';
 import { findComponent, hasComponent, TEMPLATE_ROOT } from './template-data.ts';
+import { readTemplateTraits, type TraitsRead } from './template-traits.ts';
 
 /** the interactive table: template ids by interactive id, and template files */
 export const INTERACTIVE_TABLE = 'Data/Json/Interactive/InteractiveTable.json';
@@ -80,17 +81,20 @@ export interface TemplateModels {
 	authored: Map<string, AuthoredTemplate>;
 	/** by template key, why a template that may have a model has none to draw */
 	modelless: Map<string, string>;
+	/** by data file, the traits of every template without the model-upgrade component */
+	traits: Map<string, TraitsRead>;
 }
 
 /**
  * resolves what each placed template draws: the visual forms of a template with a model-upgrade component,
  * else its variant's model, else the template's; none for a variant that overrides it with an empty model.
- * templates that are missing or can't be read, and models the model table lacks, are reported
+ * templates that are missing or can't be read, and models the model table lacks, are reported. each template
+ * file is read and decoded once, for its models and its traits
  *
  * @param sources install readers, where skipped files are reported
  * @param interactives the interactive table
  * @param placed the placed rows
- * @returns the templates' models, by key
+ * @returns the templates' models by key, and their traits by file
  */
 export const resolveTemplateModels = async (
 	sources: FacilitySources,
@@ -117,6 +121,7 @@ export const resolveTemplateModels = async (
 	}
 	/** by template data file, its upgrade models, or `null` without the model-upgrade component */
 	const upgrades = new Map<string, ReturnType<typeof facilityModels> | null>();
+	const traits = new Map<string, TraitsRead>();
 	for (const key of new Set(placed.map(({ row }) => row.template))) {
 		const template = interactives.templates.get(key);
 		const data = template === undefined ? undefined : interactives.templatePaths.get(template);
@@ -125,11 +130,14 @@ export const resolveTemplateModels = async (
 			modelless.set(key, 'no template');
 			continue;
 		}
+		let bytes: Uint8Array | undefined;
 		let upgrade = upgrades.get(data);
 		if (upgrade === undefined) {
+			let decoded: MemoryPackValue | undefined;
 			try {
 				// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
-				const decoded = sources.memoryPack.decode(await sources.read(data), TEMPLATE_ROOT);
+				bytes = await sources.read(data);
+				decoded = sources.memoryPack.decode(bytes, TEMPLATE_ROOT);
 				upgrade = hasComponent(decoded, MODEL_UPGRADE_COMPONENTS) ? facilityModels(decoded, data) : null;
 			} catch (error) {
 				if (!(error instanceof FormatError)) {
@@ -138,6 +146,12 @@ export const resolveTemplateModels = async (
 				// drawn with its base model only, as read below
 				sources.report(data, `model upgrades: ${error.message}`);
 				upgrade = null;
+				if (decoded === undefined) {
+					traits.set(data, { failure: error.message });
+				}
+			}
+			if (upgrade === null && decoded !== undefined) {
+				traits.set(data, readTemplateTraits(decoded, data));
 			}
 			upgrades.set(data, upgrade);
 		}
@@ -154,10 +168,10 @@ export const resolveTemplateModels = async (
 		if (resolved === undefined) {
 			try {
 				// oxlint-disable-next-line no-await-in-loop -- small templates, read once per map
-				const bytes = await sources.read(data);
+				const file = bytes ?? (await sources.read(data));
 				resolved = {
-					base: readInteractiveBaseModel(bytes, string),
-					variants: readInteractiveVariantModels(bytes, string, variantsOf.get(template) ?? new Set()),
+					base: readInteractiveBaseModel(file, string),
+					variants: readInteractiveVariantModels(file, string, variantsOf.get(template) ?? new Set()),
 					failure: null,
 				};
 			} catch (error) {
@@ -193,5 +207,5 @@ export const resolveTemplateModels = async (
 			data,
 		});
 	}
-	return { authored, modelless };
+	return { authored, modelless, traits };
 };
