@@ -1,6 +1,7 @@
 import type { DitheredSurface, UnsupportedSurface } from '@endfield-noclip/package-format/surfaces';
 import type { Rgb } from '@endfield-noclip/package-format/values';
 
+import { undrawnKeywords } from '../describe-steps.ts';
 import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
 
 /** keywords a `HGRP/Effect/VFXDitherAlpha` material can have and still be drawn as a dithered surface */
@@ -14,10 +15,10 @@ const DITHERED_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2']);
  * @returns its surface, or `unsupported` with keywords or texture combinations the viewer doesn't draw
  */
 export const describeDithered = (reader: MaterialReader): DitheredSurface | UnsupportedSurface => {
-	const { float, color, has, material } = reader;
-	const unknown = material.keywords.filter((keyword) => !DITHERED_KEYWORDS.has(keyword));
-	if (unknown.length > 0) {
-		return unsupported(`keywords ${unknown.join(', ')}`);
+	const { float, color, has } = reader;
+	const keywords = undrawnKeywords(reader, DITHERED_KEYWORDS);
+	if (keywords !== null) {
+		return keywords;
 	}
 	let second: Rgb = [1, 1, 1];
 	if (has('_USE_MAIN2')) {
