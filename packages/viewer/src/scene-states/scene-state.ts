@@ -1,4 +1,4 @@
-import { cameraValues } from '@endfield-noclip/package-format/camera';
+import { cameraValues, NO_TRIGGER_MEMORY, type TriggerMemory } from '@endfield-noclip/package-format/camera';
 import {
 	conditionResults,
 	groupsShown,
@@ -46,6 +46,8 @@ export class SceneState {
 	#areasEye: Vec3 = [Number.NaN, 0, 0];
 	/** camera control values the conditions were last evaluated with, by control index */
 	#camera: ReadonlyMap<number, number> = new Map();
+	/** what the camera's trigger tests remember of its path, as of {@link #areasEye} */
+	#triggers: TriggerMemory = NO_TRIGGER_MEMORY;
 	#states: StatesInfo | null = null;
 	/** the package's consumers of the shown groups, the selector among them */
 	#groups: readonly GroupsConsumer[] = [];
@@ -94,6 +96,7 @@ export class SceneState {
 		this.#states = states;
 		this.#groups = groups;
 		this.#picks = new Map();
+		this.#triggers = NO_TRIGGER_MEMORY;
 		if (states === null) {
 			this.#values = [];
 		}
@@ -145,8 +148,11 @@ export class SceneState {
 		const states = this.#states;
 		this.#visibleAreas = this.#streamAreasAt(eye);
 		this.#areasEye = [...eye];
-		// camera controls follow the camera unless pinned, so the camera's values go under the picks
-		this.#camera = cameraValues(states?.controls ?? [], eye, this.#visibleAreas);
+		// camera controls follow the camera unless pinned, so the camera's values go under the picks. stepping the
+		// trigger memory again at the eye it last saw crosses nothing, so this is safe after `follow`
+		const camera = cameraValues(states?.controls ?? [], eye, this.#visibleAreas, this.#triggers);
+		this.#camera = camera.values;
+		this.#triggers = camera.memory;
 		const values = states === null ? [] : resolveSceneValues(states, this.#picks, this.#camera);
 		this.#values = values;
 		// water volumes move to the fill their `waterLevel` control picks, at the game's speed times the rate
@@ -180,8 +186,9 @@ export class SceneState {
 			visible === null || current === null
 				? visible === current
 				: visible.size === current.size && visible.isSubsetOf(current);
-		const camera = cameraValues(this.#states?.controls ?? [], eye, visible);
-		const sameCamera = camera.entries().every(([index, value]) => this.#camera.get(index) === value);
+		const camera = cameraValues(this.#states?.controls ?? [], eye, visible, this.#triggers);
+		this.#triggers = camera.memory;
+		const sameCamera = camera.values.entries().every(([index, value]) => this.#camera.get(index) === value);
 		if (same && sameCamera) {
 			return false;
 		}

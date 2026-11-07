@@ -1,3 +1,4 @@
+import type { EnvironmentVolumeShape } from './environment.ts';
 import type { StreamAreasInfo } from './stream-areas.ts';
 import type { Bounds, Vec3 } from './values.ts';
 
@@ -94,8 +95,30 @@ export type ControlSource =
  * - `area`: 1 while the stream area shows at the camera, by the game's trigger test over
  *   {@link StatesInfo.streamAreas}, 0 otherwise
  * - `near`: 1 while the camera is within any of the reaches, 0 beyond all
+ * - `triggers`: the value the last {@link Trigger} the camera entered or left set, and the control's `default`
+ *   until one does. unlike the other tests it depends on the camera's path, not only on where it is
  */
-export type CameraTest = { kind: 'area'; area: number } | { kind: 'near'; reaches: Reach[] };
+export type CameraTest =
+	| { kind: 'area'; area: number }
+	| { kind: 'near'; reaches: Reach[] }
+	| { kind: 'triggers'; triggers: Trigger[] };
+
+/**
+ * a trigger volume that sets a control as the player crosses its boundary: the camera is inside while within
+ * any of its shapes. `enter` and `leave` are the values the crossings set, `null` when that crossing sets
+ * nothing
+ */
+export interface Trigger {
+	shapes: TriggerShape[];
+	enter: number | null;
+	leave: number | null;
+}
+
+/**
+ * a trigger volume's shape, in the Unity world frame: an environment volume's shapes (a `global` shape holds
+ * everywhere), or a sphere holding points within `radius` of `center` (3D distance)
+ */
+export type TriggerShape = EnvironmentVolumeShape | { kind: 'sphere'; center: Vec3; radius: number };
 
 /**
  * where a quest or mission control sits in the story. its values are then the game's `QuestState` /

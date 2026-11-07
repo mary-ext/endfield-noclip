@@ -325,9 +325,18 @@ bytes, become `level` drivers. missions whose objectives check a script (stage, 
 as quest drivers of its activation. the viewer lists each control's drivers and flies to a driver's
 position.
 
-a script group that a level script's spherical trigger volume swaps as the player enters and leaves
-derives from a `proximity:volume:<script id>:<slot id>` control
-([proximity](../package-format.md#proximity)), which the viewer sets from the camera.
+### following trigger volumes
+
+a group whose every show and hide action is reached only from one of the scene's own scripts'
+trigger volume crossings (`OnLeaderEnterTriggerVolume` / `…Leave…`), unguarded and with a constant
+value, follows the camera: its `script:` control takes a [`triggers`](../package-format.md#triggers)
+test with one trigger per volume, the values its enter and leave crossings set, and keeps its stored
+flag as the default until the camera crosses one. each volume's shapes become world-frame shapes as
+the game tests them ([volume shapes](../game-data/scene-states.md#trigger-volume-shapes)); a group
+isn't followed when a volume has a shape it doesn't understand (a polyline turned off the vertical,
+points beyond its box), shapes that only count for leaving, or one crossing that both shows and
+hides it. the script is assumed to be running. the pack report counts these groups
+(`scriptGroupsByVolume`).
 
 ### following quest checks on activation
 

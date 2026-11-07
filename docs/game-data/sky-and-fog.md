@@ -96,7 +96,9 @@ them (with `drawCloudAfterPlanet`, as Wuling City's phases set; without it the d
 and only their glow off the disc is covered), then the nebula and stars are added, the stars thinned
 behind the clouds by `cloudRingStarCoverage`, and the ray-traced planet goes over everything.
 
-the game's sky also has an aurora, not looked at.
+the game's sky also has an aurora, not looked at. the aurora curtains seen in Snowy Forest are
+placed effects instead, which a level script swaps by where the player is
+([trigger volume shapes](scene-states.md#trigger-volume-shapes)).
 
 ## fog
 

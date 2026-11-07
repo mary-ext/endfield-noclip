@@ -4,7 +4,13 @@ import {
 	UnsupportedLevelData,
 } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
-import type { ControlDriver, QuestRef, ScriptEventKind } from '@endfield-noclip/package-format/states';
+import type {
+	ControlDriver,
+	QuestRef,
+	ScriptEventKind,
+	Trigger,
+	TriggerShape,
+} from '@endfield-noclip/package-format/states';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { mapDefined, unique } from '@mary-ext/array-fns';
@@ -12,6 +18,7 @@ import { mapDefined, unique } from '@mary-ext/array-fns';
 import type { Context } from '../context.ts';
 import { VfsGroup } from '../hg/vfs.ts';
 
+import { unitCubeShape } from './environment.ts';
 import type { GameCondition } from './state/game-state.ts';
 import { questRef } from './state/story.ts';
 
@@ -628,48 +635,111 @@ export const entityVisibilityTargets = (
 
 // #region trigger volumes
 
-/** `LevelScriptTriggerVolumeShapeType.Sphere` */
-const SPHERE_SHAPE = 2;
+/** `LevelScriptTriggerVolumeShapeType` values */
+const ShapeType = { Box: 1, Sphere: 2, Polyline: 3, Infinite: 4 };
 
 /**
- * a group one level script shows on the player entering a trigger volume and hides on leaving it, or the
- * reverse, with nothing else setting it: in game it follows where the player stands
+ * a group set only by one level script's trigger volume crossings, each unguarded and to a constant value: in
+ * game it follows the player's path through those volumes
  */
 export interface VolumeRule {
-	/** `<script id>:<slot id>`, shared by every group the same volume sets */
-	volume: string;
-	/** the volume's shapes, all spheres; the player is inside while within any of them (3D distance) */
-	spheres: { position: Vec3; radius: number }[];
-	/** whether the group shows while the player is inside */
-	inside: boolean;
+	/** the level script's id */
+	script: string;
+	/** per volume the group's crossings name, what entering and leaving set it to (1 shows, 0 hides) */
+	triggers: Trigger[];
 }
 
-/** a group's volume rule while its paths are collected: which edges were seen */
+/** a group's volume rule while its paths are collected: per volume slot, what each crossing sets */
 interface PendingVolume {
 	script: Script;
-	slot: MemoryPackValue;
-	inside: boolean;
-	enter: boolean;
-	leave: boolean;
+	edges: Map<string, { slot: MemoryPackValue; enter: number | null; leave: number | null }>;
 }
 
-/** @returns the volume's spheres, or `null` when a shape isn't a sphere or some shapes only count for leaving */
-const volumeSpheres = (script: Script, slot: MemoryPackValue): VolumeRule['spheres'] | null => {
+/** @returns a polyline point (the shape's local x, z) */
+const vec2 = (value: MemoryPackValue | undefined): [number, number] | null =>
+	Array.isArray(value) && value.length === 2 && value.every((v) => typeof v === 'number')
+		? [value[0], value[1]]
+		: null;
+
+/**
+ * a shape covers the box `±size / 2` in its frame (`position`, then `rotation` as Unity Euler degrees); a
+ * polyline also needs the point's local x, z inside its polygon, and a sphere holds points within `radius` of
+ * `position`
+ *
+ * @returns the shape in the world frame, or `null` when it isn't understood: a polyline turned off the
+ *   vertical or with points beyond its box
+ */
+const triggerShape = (shape: Node): TriggerShape | null => {
+	const position = vec3(shape.position);
+	const rotation = vec3(shape.rotation);
+	const size = vec3(shape.size);
+	switch (shape.shapeType) {
+		case ShapeType.Box: {
+			return position && rotation && size && unitCubeShape(position, rotation, size);
+		}
+		case ShapeType.Sphere: {
+			return position && typeof shape.radius === 'number'
+				? { kind: 'sphere', center: position, radius: shape.radius }
+				: null;
+		}
+		case ShapeType.Polyline: {
+			const points = asList(shape.polyLinePoints).map(vec2);
+			if (
+				position === null ||
+				rotation === null ||
+				size === null ||
+				rotation[0] !== 0 ||
+				rotation[2] !== 0 ||
+				points.length < 3 ||
+				points.some(
+					(point) =>
+						point === null ||
+						Math.abs(point[0]) > size[0] / 2 + 0.01 ||
+						Math.abs(point[1]) > size[2] / 2 + 0.01,
+				)
+			) {
+				return null;
+			}
+			// a yaw-only frame maps local (x, z) to the world as Unity's Euler y does
+			const yaw = (rotation[1] * Math.PI) / 180;
+			const [cos, sin] = [Math.cos(yaw), Math.sin(yaw)];
+			return {
+				kind: 'prism',
+				points: mapDefined(points, (point) =>
+					point === null
+						? undefined
+						: [position[0] + point[0] * cos + point[1] * sin, position[2] - point[0] * sin + point[1] * cos],
+				),
+				bottom: position[1] - size[1] / 2,
+				top: position[1] + size[1] / 2,
+			};
+		}
+		case ShapeType.Infinite: {
+			return { kind: 'global' };
+		}
+		default: {
+			return null;
+		}
+	}
+};
+
+/** @returns the volume's shapes, or `null` when one isn't understood or some shapes only count for leaving */
+const volumeShapes = (script: Script, slot: MemoryPackValue): TriggerShape[] | null => {
 	const volume = entry(script.data.triggerVolumes, slot);
 	const shapes = asList(volume?.shapeList);
 	if (volume === null || shapes.length === 0 || volume.exitShapeStartIndex !== -1) {
 		return null;
 	}
-	const spheres: VolumeRule['spheres'] = [];
+	const out: TriggerShape[] = [];
 	for (const value of shapes) {
-		const shape = asNode(value);
-		const position = vec3(shape?.position);
-		if (shape?.shapeType !== SPHERE_SHAPE || position === null || typeof shape.radius !== 'number') {
+		const node = asNode(value);
+		const shape = node && triggerShape(node);
+		if (shape === null) {
 			return null;
 		}
-		spheres.push({ position, radius: shape.radius });
+		out.push(shape);
 	}
-	return spheres;
+	return out;
 };
 
 // #endregion
@@ -683,7 +753,7 @@ export interface ScriptLinks {
 	 * path passes only quest and mission state checks (see {@link activationCondition})
 	 */
 	rules: Map<string, ActivationRule>;
-	/** by entity id, the trigger volume that alone sets the group (see {@link VolumeRule}) */
+	/** by entity id, the trigger volumes whose crossings alone set the group (see {@link VolumeRule}) */
 	volumes: Map<string, VolumeRule>;
 	/** show and hide action targets computed at runtime (getters, the script's own slots), not followed */
 	untraced: number;
@@ -860,7 +930,7 @@ export const linkScripts = async (scripts: readonly Script[], context: LinkConte
 	const drivers = new Map<string, ControlDriver[]>();
 	// `null` once some activation path sets a group in a way quest tests don't capture
 	const rules = new Map<string, ActivationRule | null>();
-	// `null` once something other than one volume's enter and leave events sets a group
+	// `null` once something other than one script's volume crossings sets a group
 	const volumes = new Map<string, PendingVolume | null>();
 	let untraced = 0;
 	/** header types no rule maps, by paths reaching a show or hide action from them */
@@ -974,7 +1044,10 @@ export const linkScripts = async (scripts: readonly Script[], context: LinkConte
 		rules.set(target, next);
 	}
 
-	/** adds a path to its group's volume rule, or drops the rule when the path isn't an unguarded volume edge */
+	/**
+	 * adds a path to its group's volume rule, or drops the rule when the path isn't an unguarded volume
+	 * crossing
+	 */
 	function noteVolume(script: Script, path: Reach, target: string, value: number | null): void {
 		const current = volumes.get(target);
 		if (current === null) {
@@ -982,28 +1055,29 @@ export const linkScripts = async (scripts: readonly Script[], context: LinkConte
 		}
 		const type = typeOf(path.header);
 		const enters = type === 'ScriptEvent_OnLeaderEnterTriggerVolume';
+		const slot = param(script, path.header.triggerSlotIdFilter);
 		if (
 			(!enters && type !== 'ScriptEvent_OnLeaderLeaveTriggerVolume') ||
 			path.guards.length > 0 ||
-			value === null
+			value === null ||
+			slot === null ||
+			(current !== undefined && current.script !== script)
 		) {
 			volumes.set(target, null);
 			return;
 		}
-		const slot = param(script, path.header.triggerSlotIdFilter);
-		const inside = enters === (value === 1);
-		if (
-			current !== undefined &&
-			(current.script !== script || current.slot !== slot || current.inside !== inside)
-		) {
+		const next = current ?? { script, edges: new Map() };
+		const edge = next.edges.getOrInsertComputed(keyOf(slot), () => ({ slot, enter: null, leave: null }));
+		const known = enters ? edge.enter : edge.leave;
+		if (known !== null && known !== value) {
+			// the same crossing both shows and hides it
 			volumes.set(target, null);
 			return;
 		}
-		const next = current ?? { script, slot, inside, enter: false, leave: false };
 		if (enters) {
-			next.enter = true;
+			edge.enter = value;
 		} else {
-			next.leave = true;
+			edge.leave = value;
 		}
 		volumes.set(target, next);
 	}
@@ -1096,17 +1170,19 @@ export const linkScripts = async (scripts: readonly Script[], context: LinkConte
 	}
 	const followed = new Map<string, VolumeRule>();
 	for (const [target, pending] of volumes) {
-		// with only one edge, the group keeps the other value once the player first crosses
-		if (pending === null || !pending.enter || !pending.leave || pending.slot === null) {
+		if (pending === null) {
 			continue;
 		}
-		const spheres = volumeSpheres(pending.script, pending.slot);
-		if (spheres !== null) {
-			followed.set(target, {
-				volume: `${pending.script.id}:${keyOf(pending.slot)}`,
-				spheres,
-				inside: pending.inside,
-			});
+		const triggers: Trigger[] = [];
+		for (const { slot, enter, leave } of pending.edges.values()) {
+			const shapes = volumeShapes(pending.script, slot);
+			if (shapes === null) {
+				break;
+			}
+			triggers.push({ shapes, enter, leave });
+		}
+		if (triggers.length === pending.edges.size) {
+			followed.set(target, { script: pending.script.id, triggers });
 		}
 	}
 	return { drivers, rules: settled, volumes: followed, untraced, unmapped };

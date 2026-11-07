@@ -191,11 +191,11 @@ test('derives what a group shows from the quest checks its scripts make when the
 	assert.equal(activationCondition({ show: [[m1]], hide: [[q1]] }, false), null);
 });
 
-test('finds groups one script sets as the player enters and leaves a spherical trigger volume', async () => {
-	const decoration = (ID: number, target: string, visible: boolean) =>
+test('finds groups one script sets only as the player crosses its trigger volumes', async () => {
+	const decoration = (ID: number, target: string, visible: boolean, nextID = -1) =>
 		node('ShowSceneDecorationNew', {
 			ID,
-			nextID: -1,
+			nextID,
 			targetDynamicEntity: constant(target),
 			visible: constant(visible),
 		});
@@ -213,8 +213,18 @@ test('finds groups one script sets as the player enters and leaves a spherical t
 		size: [3, 3, 3],
 	});
 	const volume = (shapes: MemoryPackValue[]) => ({ exitShapeStartIndex: -1, shapeList: shapes });
+	const label = async (id: string) => ({ id, mission: null, name: null });
+	const context = {
+		ownLevels: new Set(['lv1']),
+		placements: new Map(),
+		missionsOf: new Map(),
+		label,
+		levelNames: new Map(),
+		actions: [],
+	};
+
 	// as Jingyu Valley's tree cave: cover rocks hidden inside one volume, a group shown inside another
-	const own = script(
+	const cave = script(
 		'10100030016',
 		'lv1',
 		{
@@ -233,35 +243,90 @@ test('finds groups one script sets as the player enters and leaves a spherical t
 			],
 		},
 	);
-	// only ever shown on entering, so it stays shown once the player has been inside
+	// a volume the script doesn't define isn't followed
 	const once = script('2', 'lv1', {
 		headers: [edge(1, true, 1)],
 		actions: [decoration(2, 'once', true)],
 	});
-	const { volumes } = await linkScripts([own, once], {
+	const { volumes: caveVolumes } = await linkScripts([cave, once], {
+		...context,
 		entities: new Set(['rocks', 'inner', 'once']),
-		ownLevels: new Set(['lv1']),
-		placements: new Map(),
-		missionsOf: new Map(),
-		label: async (id) => ({ id, mission: null, name: null }),
-		levelNames: new Map(),
-		actions: [],
 	});
-	assert.deepEqual(Object.fromEntries(volumes), {
+	assert.deepEqual(Object.fromEntries(caveVolumes), {
 		rocks: {
-			volume: '10100030016:80003',
-			spheres: [
-				{ position: [-1072.7, 243, -1347.8], radius: 92.4 },
-				{ position: [-1082.6, 243, -1406.1], radius: 77.8 },
+			script: '10100030016',
+			triggers: [
+				{
+					shapes: [
+						{ kind: 'sphere', center: [-1072.7, 243, -1347.8], radius: 92.4 },
+						{ kind: 'sphere', center: [-1082.6, 243, -1406.1], radius: 77.8 },
+					],
+					enter: 0,
+					leave: 1,
+				},
 			],
-			inside: false,
 		},
 		inner: {
-			volume: '10100030016:80004',
-			spheres: [{ position: [-923.6, 243, -1069.2], radius: 120 }],
-			inside: true,
+			script: '10100030016',
+			triggers: [
+				{ shapes: [{ kind: 'sphere', center: [-923.6, 243, -1069.2], radius: 120 }], enter: 1, leave: 0 },
+			],
 		},
 	});
+
+	// as Snowy Forest's sky aurora: two polyline volumes, entering one shows the group and the other hides it
+	const polyline = (position: number[], yaw: number, size: number[], points: number[][]) => ({
+		position,
+		rotation: [0, yaw, 0],
+		shapeType: 3,
+		size,
+		polyLinePoints: points,
+	});
+	const square = [
+		[-10, -10],
+		[10, -10],
+		[10, 10],
+		[-10, 10],
+	];
+	const aurora = script(
+		'36100010049',
+		'lv1',
+		{
+			headers: [edge(1, true, 80001), edge(3, true, 80002)],
+			actions: [decoration(2, 'aurora', true), decoration(4, 'aurora', false)],
+		},
+		{
+			triggerVolumes: [
+				[80001, volume([polyline([100, 50, 0], 90, [20, 40, 20], square)])],
+				[80002, volume([polyline([0, 50, 0], 0, [20, 40, 20], square)])],
+			],
+		},
+	);
+	const { volumes: skyVolumes } = await linkScripts([aurora], { ...context, entities: new Set(['aurora']) });
+	const rule = skyVolumes.get('aurora');
+	assert.equal(rule?.script, '36100010049');
+	assert.deepEqual(
+		rule?.triggers.map(({ enter, leave }) => [enter, leave]),
+		[
+			[1, null],
+			[0, null],
+		],
+	);
+	const turned = rule?.triggers[0].shapes[0];
+	assert.equal(turned?.kind, 'prism');
+	if (turned?.kind === 'prism') {
+		// Unity's yaw of 90° takes local +x to world −z and local +z to world +x
+		assert.deepEqual(
+			turned.points[1].map((v) => Math.round(v)),
+			[90, -10],
+		);
+		assert.deepEqual(
+			turned.points[2].map((v) => Math.round(v)),
+			[110, -10],
+		);
+		assert.equal(turned.bottom, 30);
+		assert.equal(turned.top, 70);
+	}
 });
 
 test('follows entity show and hide actions on interactives, counting targets computed at runtime', async () => {

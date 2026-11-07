@@ -903,8 +903,9 @@ them.
   reads, by index or `null` for state no listed control holds, so a viewer names them without
   parsing; `ruleText` joins them); its stored `default` is its value under no picks. a `camera`
   control is set from the camera, which stands in for the player, by its `test`
-  ([stream areas](#stream-areas), [proximity](#proximity)); its stored default only holds without a
-  camera. `resolveSceneValues` turns the picks and the camera's values (`cameraValues` in
+  ([stream areas](#stream-areas), [proximity](#proximity), [triggers](#triggers)); its stored
+  default only holds without a camera, or for a `triggers` test until the camera first crosses one.
+  `resolveSceneValues` turns the picks and the camera's values (`cameraValues` in
   [camera.ts](../packages/package-format/src/camera.ts)), both by control index, into every
   control's value in one pass in control order: a pick, else a derived control's formula, else the
   camera's value or the default.
@@ -945,13 +946,21 @@ content by its areas and ships the table. which content a stream area gates is i
 
 a `proximity:<id>` control is a camera control with a `near` test: one or more reaches, a position
 and a radius each. it is 1 while the camera, standing in for the player, is within the 3D distance
-of any of its reaches and 0 beyond all. two kinds exist:
+of any of its reaches and 0 beyond all. a `proximity:<interactive id>` control has one reach around
+an interactive, whose away and near poses require its values 0 and 1
+([view-state poses](extraction/prefabs-and-interactives.md#view-state-poses)).
 
-- `proximity:<interactive id>`: one reach around an interactive, whose away and near poses require
-  its values 0 and 1 ([view-state poses](extraction/prefabs-and-interactives.md#view-state-poses))
-- `proximity:volume:<script id>:<slot id>`: a level script's trigger volume, a reach per sphere.
-  script groups the script shows and hides as the player enters and leaves it derive from it
-  ([what sets a script group](game-data/scene-states.md#what-sets-a-script-group))
+### triggers
+
+a `triggers` test is a list of trigger volumes (`Trigger`), each with its shapes and the values
+entering and leaving it set (`null` when that crossing sets nothing). unlike the other tests it
+follows the camera's path: its value is whatever the last crossing set, and the control's default
+until the camera crosses one. a viewer carries what the camera was inside from one position to the
+next (`TriggerMemory`, passed to and returned by `cameraValues`); crossings in one step apply
+leaving before entering, and a fresh camera enters every volume holding it. shapes (`TriggerShape`)
+are an environment volume's (a global shape, an oriented box, a vertical prism) or a sphere. script
+groups that a level script sets only by trigger volume crossings carry such a test on their own
+`script:` control ([volume crossings](extraction/scene-controls.md#following-trigger-volumes)).
 
 ## versioning
 

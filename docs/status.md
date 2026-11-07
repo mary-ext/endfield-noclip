@@ -27,9 +27,9 @@ packs or renders correctly.
   activation, blight with its cores, outpost upgrade missions as outpost levels, tree harvest state,
   stream areas and script/event groups as controls, each listed for the levels it gates. script
   groups list what sets them in game (quests, switches, areas, dungeons), from the level scripts,
-  follow the quests their scripts check when they run, and follow the camera where a script swaps
-  them as the player enters and leaves a spherical trigger volume; so do looks that the player's
-  presence changes ([scene states](game-data/scene-states.md),
+  follow the quests their scripts check when they run, and follow the camera's path where a script
+  sets them only as the player crosses its trigger volumes; so do looks that the player's presence
+  changes ([scene states](game-data/scene-states.md),
   [scene controls](extraction/scene-controls.md))
 - environment profiles and volume blending, spatial rain, water, post-processing, baked irradiance
   with its scene-state bakes (plus the bakes of Dijiang's rooms with a cabin built) and local point,
@@ -509,9 +509,10 @@ packs or renders correctly.
   visual form mapping, and the resource-node level's link to regional development, aren't recovered
 - script-group drivers are found from client scripts only: stages, properties and events the server
   sets show as "server", and groups no client script names have none. groups swapped by trigger
-  volumes follow the camera only when every shape is a sphere and nothing else sets them; box and
-  polyline volumes, and groups also set by other events, are picked by hand, and the volume script
-  is assumed to be running
+  volumes follow the camera only when nothing else sets them; groups also set by other events, and
+  volumes with tilted polylines or leave-only shapes, are picked by hand. the volume script is
+  assumed to be running, a camera that starts inside a volume is assumed to enter it, and the
+  player's capsule radius is ignored
 - interactives level scripts show and hide default to shown, since whether they start hidden isn't
   known; show and hide targets that are a script's own slots or computed at runtime aren't followed
   (counted as `scriptVisibilityUntraced` in the pack report). LevelData function areas that hide

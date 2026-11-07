@@ -460,9 +460,9 @@ getter node (`CheckMissionOrQuestIsComplete`, `CompareQuestState`, …) named by
   another script also starts it
 - `ScriptEvent_OnLeaderEnterTriggerVolume` (and leave, list): the player entering one of the
   script's `triggerVolumes`, picked by `triggerSlotIdFilter`. a volume is a `shapeList` of shapes
-  (`shapeType` 1 box with `size` and `rotation`, 2 sphere with `radius`, 3 polyline, 4 infinite)
-  around `position`; the player is inside while within any of them. `exitShapeStartIndex` is -1 in
-  the volumes seen so far (shapes from that index presumably count only for leaving; unverified)
+  ([trigger volume shapes](#trigger-volume-shapes)); the player is inside while within any of them.
+  `exitShapeStartIndex` is -1 in the volumes seen so far (shapes from that index presumably count
+  only for leaving; unverified)
 - `EntityEvent_*`: an interactive's event; `targetEntity` names a slot of the script's own
   `interactives` (template `entityDataIdKey`, `position`; they exist while the script runs, see
   [placements and models](interactives.md#placements-and-models)) or a LevelData placement by logic
@@ -497,6 +497,28 @@ tree; the same script shows group 10100030005 only inside volume 80004, east of 
 script still has to be running for its volume events to fire; 10100030016 has no quest checks and an
 active shape of 350 m around unity −910, 249, −1255 that covers both volumes, but whether the server
 starts it unconditionally isn't known.
+
+### trigger volume shapes
+
+a shape (`LevelScriptTriggerVolumeShapeData`) has a frame: `position`, then `rotation` as Unity
+Euler degrees. the player's position is taken into that frame, where by `shapeType`:
+
+- 1, box: inside within `±size / 2` on each axis
+- 2, sphere: within `radius` of the origin
+- 3, polyline: within the `±size / 2` box and, by its local x and z, inside the polygon
+  `polyLinePoints` (the game splits it into convex parts). `size`'s x and z are the points' extent,
+  and its y the height, centred on `position`
+- 4, infinite: everywhere
+
+boxes and spheres test the player's capsule radius against the shape, polylines only the point. a
+group set only on entering volumes, with no leave events, keeps the value of the last volume
+entered. Snowy Forest's sky aurora works this way (map02_lv009, script 36100010049, running within
+397 m of unity 26, 175, 453): three polyline volumes of the same yaw tile the area around the camp.
+entering 80001, the western cliffs (x −295 to −131, y 140 to 266), shows the far aurora curtains
+over the planet (group 36100010036, `p_fxmap_map02_lv009_aurora_02`) and hides the near ones
+(36100010035, `…_aurora_near_02`); entering 80002, the valley east of it up to y 234, does the
+reverse; entering 80003, high ground to the north-east (y 252 to 407), hides both. both groups are
+authored hidden, so neither shows before the player enters one.
 
 ### following quest checks on activation
 

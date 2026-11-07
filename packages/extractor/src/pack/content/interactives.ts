@@ -23,13 +23,7 @@ import {
 	loadLevelScripts,
 	loadScriptDrivers,
 } from '../../game/script-drivers.ts';
-import {
-	derivedSource,
-	type DraftControl,
-	sceneControl,
-	scriptControlTarget,
-	switchValues,
-} from '../../game/state/scene-control.ts';
+import { derivedSource, type DraftControl, scriptControlTarget } from '../../game/state/scene-control.ts';
 import {
 	scriptWaterLevels,
 	type ScriptWaterLevel,
@@ -115,8 +109,6 @@ export const collectInteractives = async (
 	const waterDrivers = new Map<string, ControlDriver[]>();
 	/** by {@link fireSeedActionTarget}, the drivers of the script action setting the fire seed's level */
 	const fireSeedDrivers = new Map<string, ControlDriver[]>();
-	/** proximity controls of the trigger volumes script groups follow */
-	const volumeProximities: DraftControl[] = [];
 	{
 		const waterActions = scriptWater.levels.map((level) => ({
 			script: level.script,
@@ -160,42 +152,16 @@ export const collectInteractives = async (
 			);
 			content.count('scriptGroupsDerived');
 		}
-		// a group one script sets as the player enters and leaves a volume follows the camera through a proximity
-		// control per volume
+		// a group one script sets only as the player crosses its trigger volumes follows the camera's path through
+		// them; its stored flag holds until the camera first crosses one
 		content.count('scriptGroupsByVolume', 0);
 		for (const [id, rule] of found.volumes) {
 			const control = scripted.get(id);
 			if (control === undefined) {
 				continue;
 			}
-			const nearness = `proximity:volume:${rule.volume}`;
-			if (!volumeProximities.some((known) => known.id === nearness)) {
-				volumeProximities.push(
-					sceneControl({
-						kind: 'proximity',
-						id: nearness,
-						name: `Script ${rule.volume.replace(':', ' volume ')}`,
-						values: switchValues('outside', 'inside'),
-						default: 0,
-						assumption: 'follows the camera, as the game follows the player',
-						source: {
-							kind: 'camera',
-							test: {
-								kind: 'near',
-								reaches: rule.spheres.map(({ position, radius }) => ({ position: [...position], radius })),
-							},
-						},
-					}),
-				);
-			}
-			control.assumption = 'follows the camera, as its level script follows the player';
-			control.source = derivedSource(
-				controls.condition({ alternatives: [[{ control: nearness, mask: rule.inside ? 2 : 1 }]] }),
-				[
-					rule.inside ? 'shown while ' : 'hidden while ',
-					{ control: nearness, text: 'the player is inside its level script’s trigger volume' },
-				],
-			);
+			control.assumption = `follows the camera through level script ${rule.script}’s trigger volumes, as the game follows the player`;
+			control.source = { kind: 'camera', test: { kind: 'triggers', triggers: rule.triggers } };
 			content.count('scriptGroupsByVolume');
 		}
 		content.count('levelScripts', found.counts.scripts);
@@ -255,7 +221,6 @@ export const collectInteractives = async (
 		...facilities.doors.map(({ control }) => control),
 		...facilities.bridges,
 		...facilities.proximityControls,
-		...volumeProximities,
 	);
 	content.count('bridges', facilities.bridges.length);
 	content.count('unsupportedInteractiveFiles', facilities.unsupported.length);
