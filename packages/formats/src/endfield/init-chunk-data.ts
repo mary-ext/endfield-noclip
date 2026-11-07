@@ -364,17 +364,23 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 		const refColumns = group.columns.filter(
 			(c) => c.id >= Component.DrawRefFirst && c.id <= Component.DrawRefLast,
 		);
+		// the group's matrices packed into one buffer rather than a buffer per entity, so they don't pin the
+		// chunk's payload either
+		let matrices: Float32Array | undefined;
+		if (matrixColumn !== undefined) {
+			matrices = new Float32Array(group.ids.length * 16);
+			const bytes = new Uint8Array(matrices.buffer);
+			for (let i = 0; i < group.ids.length; i++) {
+				const start = matrixColumn.offset + i * matrixColumn.stride;
+				bytes.set(group.blob.subarray(start, start + 64), i * 64);
+			}
+		}
 
 		for (let i = 0; i < group.ids.length; i++) {
 			const id = group.ids[i];
 			const name = nameOf(i);
 			const bounds = boundsOf?.(i) ?? null;
-
-			let matrix: Float32Array | null = null;
-			if (matrixColumn !== undefined) {
-				const start = group.blob.byteOffset + matrixColumn.offset + i * matrixColumn.stride;
-				matrix = new Float32Array(group.blob.buffer.slice(start, start + 64));
-			}
+			const matrix = matrices?.subarray(i * 16, i * 16 + 16) ?? null;
 
 			let renderer: StaticRenderer | null = null;
 			if (refColumns.length > 0) {

@@ -288,10 +288,14 @@ const readArchetypes = (
 					throw new FormatError(`grid ${id} cluster holds ${instanceCount} of ${grassCapacity} instances`);
 				}
 			}
-			const instances = Array.from({ length: instanceCount }, (_, k) => {
-				const start = blob.byteOffset + first + k * INSTANCE_SIZE;
-				return new Float32Array(blob.buffer.slice(start, start + 64));
-			});
+			// one copy per cluster rather than per instance: map02 has ~3M instances, and an ArrayBuffer each was
+			// most of reading them
+			const start = blob.byteOffset + first;
+			const copy = blob.buffer.slice(start, start + instanceCount * INSTANCE_SIZE);
+			const instances = Array.from(
+				{ length: instanceCount },
+				(_, k) => new Float32Array(copy, k * INSTANCE_SIZE, 16),
+			);
 			const lodCount = new Set(draws.map((draw) => draw.lod)).size;
 			clusters.push({ bounds, renderer: { draws, lodCount }, instances });
 		}
