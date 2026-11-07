@@ -106,6 +106,7 @@ const convertCells = async (
 					zstdLevel: ZSTD_LEVEL,
 					stem: cellStem(record.key),
 					locality: null,
+					stepMemo: true,
 				},
 			),
 		);

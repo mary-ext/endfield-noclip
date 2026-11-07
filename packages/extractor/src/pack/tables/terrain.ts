@@ -289,6 +289,7 @@ const pageOptions = (kind: BlobKind, zstdLevel: number): PutOptions => ({
 	zstdLevel,
 	stem: '',
 	locality: null,
+	stepMemo: true,
 });
 
 /** reads, encodes and compresses the terrain into the store's directory, without committing anything */
@@ -465,6 +466,7 @@ const convertLayers = async (
 				zstdLevel: input.textureZstdLevel,
 				stem: input.layerStem,
 				locality: null,
+				stepMemo: true,
 			});
 			blobs.push(prepared.meta);
 		}

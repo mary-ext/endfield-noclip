@@ -61,6 +61,12 @@ export interface PutOptions extends BlobPlacement {
 	compress: boolean;
 	/** zstd level for this blob, instead of the store's */
 	zstdLevel?: number;
+	/**
+	 * set for the blobs of a step the pack cache remembers whole (terrain, irradiance): a later pack takes them
+	 * from the step's memo, so their stored forms aren't also remembered one by one, which cost a hash and two
+	 * file operations per blob, written only to be swept by the next pack
+	 */
+	stepMemo?: boolean;
 }
 
 /** remembers compressed blobs' stored forms by their raw bytes (`PackCache`) */
@@ -206,7 +212,7 @@ export class BlobStore {
 		}
 		// compression dominates a warm pack's instance blocks, which mostly come out as they did last time
 		const level = options.zstdLevel ?? this.#level;
-		const key = this.#memo?.storedKey(raw, level);
+		const key = options.stepMemo === true ? undefined : this.#memo?.storedKey(raw, level);
 		const remembered = key === undefined ? undefined : await this.#memo?.recallStored(key);
 		if (remembered !== undefined) {
 			return { meta: remembered, options: placement };

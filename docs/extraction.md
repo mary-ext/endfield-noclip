@@ -634,7 +634,8 @@ it), implemented in [pack/store/pack-cache.ts](../packages/extractor/src/pack/st
 - `memo/` also holds the stored form of every blob the packer compresses itself (instance blocks
   above all), keyed by a hash of its raw bytes, the zstd level and node's zstd version: a block that
   encodes to the same bytes as in an earlier pack takes its stored blob without compressing again,
-  which at the default level 19 was most of a warm pack's instance phase.
+  which at the default level 19 was most of a warm pack's instance phase. blobs of terrain and
+  irradiance, cached as whole steps, are left out.
 - `roots/` has one file per package directory listing its blobs and memos. after each pack, roots
   whose directory no longer holds a `core.czar` are dropped and anything no root references is
   deleted, so the cache holds the union of the live packages' content. deleting a package directory
