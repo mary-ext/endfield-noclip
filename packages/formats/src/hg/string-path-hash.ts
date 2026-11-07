@@ -21,6 +21,7 @@ const BUCKET_SIZE = 16;
 export class StringPathHashTable {
 	readonly #view: ByteView;
 	readonly #stringsOffset: number;
+	#byLength: Map<number, number[]> | undefined;
 	/** number of slots, which is also the number of buckets and strings */
 	readonly count: number;
 
@@ -91,12 +92,28 @@ export class StringPathHashTable {
 	 * @throws {FormatError} if the table references data outside the file
 	 */
 	*entriesWithByteLength(byteLength: number): Generator<[hash: bigint, path: string]> {
-		for (const bucket of this.#allBuckets()) {
+		for (const bucket of this.#bucketsByLength().get(byteLength) ?? []) {
 			const at = this.#stringsOffset + this.#view.u32(bucket + 12);
-			if (this.#view.u32(at) === byteLength) {
-				yield [this.#view.u64(bucket + 4), this.#view.lengthPrefixedUtf16(at)];
-			}
+			yield [this.#view.u64(bucket + 4), this.#view.lengthPrefixedUtf16(at)];
 		}
+	}
+
+	/**
+	 * one pass over every bucket on first use, so each later scan for a path visits only the buckets whose path
+	 * has its length (a few bytes per bucket)
+	 *
+	 * @returns bucket offsets by their path's byte length, in slot order
+	 */
+	#bucketsByLength(): Map<number, number[]> {
+		if (this.#byLength === undefined) {
+			const byLength = new Map<number, number[]>();
+			for (const bucket of this.#allBuckets()) {
+				const length = this.#view.u32(this.#stringsOffset + this.#view.u32(bucket + 12));
+				byLength.getOrInsertComputed(length, () => []).push(bucket);
+			}
+			this.#byLength = byLength;
+		}
+		return this.#byLength;
 	}
 
 	/** @returns bucket offsets of every slot, in slot order */

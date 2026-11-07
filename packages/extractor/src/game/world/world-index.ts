@@ -91,6 +91,8 @@ export class WorldIndex {
 	readonly vfs: Vfs;
 	#pathHash: Promise<StringPathHashTable> | undefined;
 	#initPathHash: Promise<StringPathHashTable> | undefined;
+	/** {@link hashesOf} by normalized path */
+	readonly #hashes = new Map<string, Promise<bigint[]>>();
 	#manifest: Promise<BundleManifest> | undefined;
 	#levelConfigs: Promise<Map<string, LevelConfig>> | undefined;
 	#stringPool: Promise<StringPool> | undefined;
@@ -146,24 +148,26 @@ export class WorldIndex {
 	}
 
 	/**
-	 * finds the hashes a path is stored under by scanning both tables (about a second), since the hash function
-	 * for asset paths isn't ported
+	 * finds the hashes a path is stored under by scanning both tables for paths of its length, since the hash
+	 * function for asset paths isn't ported. the first call indexes the tables by length (about a second)
 	 *
 	 * @param path asset path; matched case-insensitively, with `\` read as `/`
 	 * @returns distinct hashes, main table first
 	 */
-	async hashesOf(path: string): Promise<bigint[]> {
+	hashesOf(path: string): Promise<bigint[]> {
 		const wanted = path.toLowerCase().replaceAll('\\', '/');
-		const hashes: bigint[] = [];
-		for (const table of [await this.pathHash(), await this.initPathHash()]) {
-			// only strings of the right length are decoded; the tables keep the authoring case
-			for (const [hash, candidate] of table.entriesWithByteLength(wanted.length * 2)) {
-				if (candidate.toLowerCase() === wanted && !hashes.includes(hash)) {
-					hashes.push(hash);
+		return this.#hashes.getOrInsertComputed(wanted, async () => {
+			const hashes: bigint[] = [];
+			for (const table of [await this.pathHash(), await this.initPathHash()]) {
+				// only strings of the right length are decoded; the tables keep the authoring case
+				for (const [hash, candidate] of table.entriesWithByteLength(wanted.length * 2)) {
+					if (candidate.toLowerCase() === wanted && !hashes.includes(hash)) {
+						hashes.push(hash);
+					}
 				}
 			}
-		}
-		return hashes;
+			return hashes;
+		});
 	}
 
 	/** @returns the install's pooled JsonData strings */
