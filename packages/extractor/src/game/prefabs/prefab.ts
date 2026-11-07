@@ -147,6 +147,8 @@ export interface PrefabPose {
 	clips: readonly PoseClip[];
 	/** GameObjects the states switch on or off, by name */
 	active: ReadonlyMap<string, boolean>;
+	/** set when the states switch the prefab root off, so no part of the prefab shows */
+	hidden?: boolean;
 	/** lengths the states set on GameObjects' `VFXAdjustLength`, by GameObject name; absent when none */
 	lengths?: ReadonlyMap<string, number>;
 	/**

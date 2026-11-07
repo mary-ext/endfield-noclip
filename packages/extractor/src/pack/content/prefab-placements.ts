@@ -61,6 +61,10 @@ export const placePrefabs = async (
 		if (scene.level !== null && !subset.includesPoint(levelTag, model.position)) {
 			continue;
 		}
+		// a pose that switches the root off leaves nothing to draw, light or report
+		if (pose?.hidden === true) {
+			continue;
+		}
 		const locked = placement.locked ?? false;
 		const found = roots.root(model.pathHash);
 		const prefab = prefabs.getOrInsertComputed(`${model.pathHash}:${pose?.key ?? ''}:${locked}`, async () => {

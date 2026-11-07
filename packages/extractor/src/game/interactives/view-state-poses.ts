@@ -330,12 +330,45 @@ export const loopingMotion = (clip: TypeTreeObject): ClipMotion | null => {
 };
 
 /**
+ * the GameObjects settled states' `SetActive` behaviours switch. an empty name switches the animator's own
+ * GameObject, so on the prefab root's animator it switches the whole prefab
+ *
+ * @param settled each animator's states, in layer order ({@link statesPose})
+ * @returns the switched GameObjects by name, later states winning, and whether the prefab root stays on
+ */
+export const stateSwitches = (
+	settled: readonly { animator: string | null; states: readonly ViewStateRecord[] }[],
+): { active: Map<string, boolean>; rootActive: boolean } => {
+	const active = new Map<string, boolean>();
+	let rootActive = true;
+	for (const { animator, states: layerStates } of settled) {
+		for (const state of layerStates) {
+			for (const behavior of records(state.behaviors)) {
+				const target = text(behavior.gameObjName);
+				if (!text(behavior.$type)?.endsWith('SetActiveBehaviorDataForMemoryPack') || target === null) {
+					continue;
+				}
+				if (target !== '') {
+					active.set(target, behavior.active === true);
+				} else if (animator !== null) {
+					active.set(animator, behavior.active === true);
+				} else {
+					rootActive = behavior.active === true;
+				}
+			}
+		}
+	}
+	return { active, rootActive };
+};
+
+/**
  * @param context bundle and path readers
  * @param states the model's view states
  * @param key tells this pose apart from the model's others, for caching
  * @param settled each animator's states to draw: the GameObject its clips bind below (`null` for the prefab
  *   root) and one state per layer, in layer order
- * @returns the states' clip end poses and the GameObjects their SetActive behaviours switch
+ * @returns the states' clip end poses and the GameObjects their SetActive behaviours switch, `hidden` when
+ *   they switch the prefab root off
  * @throws {FormatError} if a clip isn't listed, found or readable
  */
 export const statesPose = async (
@@ -349,15 +382,9 @@ export const statesPose = async (
 	);
 	const [resolver, pathOf] = await Promise.all([context.resolver(), context.world.pathLookup()]);
 	const clips: PoseClip[] = [];
-	const active = new Map<string, boolean>();
+	const { active, rootActive } = stateSwitches(settled);
 	for (const { animator, states: layerStates } of settled) {
 		for (const state of layerStates) {
-			for (const behavior of records(state.behaviors)) {
-				const target = text(behavior.gameObjName);
-				if (text(behavior.$type)?.endsWith('SetActiveBehaviorDataForMemoryPack') && target !== null) {
-					active.set(target, behavior.active === true);
-				}
-			}
 			if (state.isHaveClip !== true) {
 				continue;
 			}
@@ -378,7 +405,8 @@ export const statesPose = async (
 			clips.push({ animator, ...readClipEndPose(data), motion: loopingMotion(data) });
 		}
 	}
-	return { key: `${states.model}:${key}`, clips, active };
+	const pose: PrefabPose = { key: `${states.model}:${key}`, clips, active };
+	return rootActive ? pose : { ...pose, hidden: true };
 };
 
 /**
@@ -411,6 +439,10 @@ export const settledPose = async (
 		return { animator: driven, states: paths.map((path) => path[path.length - 1]) };
 	});
 	const pose = await statesPose(context, states, key, settled);
+	if (pose.hidden === true) {
+		// effects playing under a switched-off root don't show
+		effects.length = 0;
+	}
 	return {
 		pose:
 			lengths.size === 0

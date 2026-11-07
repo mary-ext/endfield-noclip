@@ -170,9 +170,11 @@ switches while walking the hierarchy, so skinned parts follow their bones. insid
 switches GameObjects, a node saved off and left alone by the clip draws nothing rather than a
 stand-in. clips name material properties by a hash, resolved against the saved property names of the
 renderer's materials (a property the material doesn't save is dropped); a renderer whose materials
-take posed values draws a [posed copy](../package-format.md#materials) of its material. each
-facility visual form with view states is posed the same way, under its own model id, with every key
-false (a facility's player-set keys aren't read). doodad-group shells aren't posed.
+take posed values draws a [posed copy](../package-format.md#materials) of its material. a switch
+with an empty name applies to its animator's GameObject; a pose whose root animator switches the
+root off is `hidden`, and its placement places no renderers, lights or effects. each facility visual
+form with view states is posed the same way, under its own model id, with every key false (a
+facility's player-set keys aren't read). doodad-group shells aren't posed.
 
 a pose also carries the [lengths](../game-data/interactives.md#lengths-view-states-set) its layers'
 length behaviours leave set, along every layer's path rather than only its resting state. a vertical

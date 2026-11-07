@@ -5,6 +5,7 @@ import {
 	restingEffects,
 	restingLengths,
 	settledPath,
+	stateSwitches,
 	testedValues,
 	type ViewStateRecord,
 } from './view-state-poses.ts';
@@ -88,6 +89,31 @@ test('a persistent effect stays on until a later state switches it off; others e
 	assert.deepEqual(
 		restingEffects(null, path).map((rest) => rest.effect),
 		['kept'],
+	);
+});
+
+const setActive = (gameObjName: string, active: boolean): ViewStateRecord => ({
+	$type: 'Beyond_Gameplay_Core_ModelViewStateController_MVSCSetActiveBehaviorDataForMemoryPack',
+	gameObjName,
+	active,
+});
+
+test("an empty SetActive name switches the animator's own GameObject", () => {
+	// int_monster_heart_postmodel's HeartSwitch layer on the root animator: Dis hides the heart, Finsh shows it
+	const dis = state('Dis', [setActive('', false)], null);
+	const finsh = state('Finsh', [setActive('P_iprop_map02_jade+1_001_01b', false), setActive('', true)], null);
+	assert.deepEqual(stateSwitches([{ animator: null, states: [dis] }]), {
+		active: new Map(),
+		rootActive: false,
+	});
+	assert.deepEqual(stateSwitches([{ animator: null, states: [finsh] }]), {
+		active: new Map([['P_iprop_map02_jade+1_001_01b', false]]),
+		rootActive: true,
+	});
+	// on a named animator (dyn_big_wheel_postmodel's TempRoot), it switches that GameObject
+	assert.deepEqual(
+		stateSwitches([{ animator: 'TempRoot', states: [state('Playing', [setActive('', true)], null)] }]),
+		{ active: new Map([['TempRoot', true]]), rootActive: true },
 	);
 });
 

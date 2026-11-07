@@ -86,10 +86,11 @@ a model's runtime looks are view states:
 `Data/Json/Interactive/ModelViewStateControllerData/<model id>.json` (MemoryPack, root
 `MVSCModelViewStateControllerData`) holds, per animator (`modelName`, `$$ROOT$$` for the prefab
 root) and layer, a state machine. each state names an AnimationClip, behaviours (`SetActive`
-switches a GameObject by name on or off; others play effects, audio or navmesh changes) and
-transitions that wait on blackboard keys. `clipAssetInfos` gives each clip's StringPathHash. an
-Animator without a controller of its own takes its clips from these states. a model's `effectIds`
-name prefabs its states' `EffectBehavior`s play.
+switches a GameObject by name on or off, the animator's own GameObject when the name is empty, so a
+`$$ROOT$$` layer's empty switch shows or hides the whole model; others play effects, audio or
+navmesh changes) and transitions that wait on blackboard keys. `clipAssetInfos` gives each clip's
+StringPathHash. an Animator without a controller of its own takes its clips from these states. a
+model's `effectIds` name prefabs its states' `EffectBehavior`s play.
 
 a model whose `ModelTable` row sets `hasModelViewData` and names another model in
 `dependModelViewDataId` has no file of its own and uses that model's view states (the field sits on
@@ -305,6 +306,25 @@ idle dims the glows below their saved values (the blue bubble `glow02` to a thir
 `_TintColorAlpha`) and holds the shards' pivots at 0, so they cluster; near brightens the glows and
 moves the shards' pivots apart, and scales the star icon up 1.8×. the white model reuses the blue
 model's clips but for its own activation start.
+
+## monster hearts
+
+the Feranmut hearts (`int_monster_heart_postmodel`, a skinned jade frame with two jade pieces;
+`int_monster_heart02_postmodel` in indie_dg007 has the same states) publish their `state` as a map
+variable ([scene states](scene-states.md)). their `$$ROOT$$` layer `HeartSwitch` settles by `state`:
+
+| `state` | resting state | look                                                                                          |
+| ------- | ------------- | --------------------------------------------------------------------------------------------- |
+| 0–2     | `Fix_0`–`2`   | 0 to 2 jade pieces in; loops `A_anm_map02_jade+1_001_01`/`_02` (3 s)                          |
+| 3       | `Finsh`       | opened, pieces gone, ink portals `…_inkportal_2102`/`2103` on; loops `…_03_openidle_01` (2 s) |
+| 4       | `Dis`         | an empty `SetActive` switches the root off: nothing shows                                     |
+
+every loop bobs the frame and its pieces 12 cm up and back down (all bones translate together), so
+the heart always moves while it shows. `Dis` can go back to any other state, so it's an off switch,
+not the end of the sequence: three of indie_dg007's seven hearts start a fresh world at 4. no quest,
+mission or level script sets a heart's `state` (their scripts only play heart sounds and switch
+decorations; changes go through `CallServer`), so the server decides it. map02_lv004's heart
+(interactive 23400083242, at −1248, 284.1, −1220.3) starts a fresh world at 2.
 
 ## campfires
 
