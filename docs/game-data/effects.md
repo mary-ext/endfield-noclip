@@ -186,11 +186,13 @@ rotation, and c.z adds to `_DissolveScheduleOffset`. per shader:
 - VFXBaseV2, VFXDitherAlpha, [VFXWater](#waterfalls) and [six-way smoke](#six-way-smoke) (whose
   lightmaps are its main texture) follow it under `_InParticle`.
 - [VFXRefract](#refraction) reads the second set without that gate, so on a mesh its second UV set
-  stands in: c.x shifts its refraction texture and c.y its mask; its dissolve UVs aren't shifted.
+  stands in: c.x shifts its refraction texture and c.y its mask and blend texture; its dissolve and
+  spread UVs aren't shifted.
 - VFXDitherAlpha's vertex offset, whose speed's zw c.y also scrolls, is off on particles anyway
   ([vertex offset](#vertex-offset-and-brightening)).
-- only VFXBaseV2 reads c.w: with `_UseParticleDisturb` (off the ink-wash path, where that component
-  holds UV0's v) it scales the whole distortion, so a mesh with it set isn't distorted.
+- VFXBaseV2 reads c.w with `_UseParticleDisturb` (off the ink-wash path, where that component holds
+  UV0's v): it scales the whole distortion, so a mesh with it set isn't distorted. VFXRefract's
+  spread adds c.w to its schedule.
 - VFXDecal reads custom data only under `_USE_IN_PARTICLE`, from its own stream layout (box centre
   and 3D size from the Center and SizeXYZ streams, c.xyz from Custom1.xyz). one material uses it,
   `M_fx_map_lv007_angeresidue_2104`, on mesh particles of the decal cube.
@@ -293,6 +295,23 @@ the centre), scales the refraction offset, so the mask's UVs take the dissolved 
 the colour split's further shift. `_DissolveAffectBlend` blends the alpha from 1 to `d`. custom data
 z adds to the schedule offset ([custom data](#particle-custom-data)).
 
+`_USE_BLEND` tints the refracted scene by `_BlendTex`: the colour is multiplied by
+`(1 − _BlendColor.a) + blend.rgb · _BlendColor.rgb · _BlendColor.a` (`_BlendColor` is HDR, used as
+stored), and the alpha by the texture's alpha, or its red under `_UseBlendTexAsAlpha`. its UVs
+scroll, rotate and switch to polar UVs as the mask's do, and take `_BlendTexUseRefract` of the
+refraction offset. `_USE_SPREAD` replaces the cover the mask scales, otherwise 1, with a band that
+sweeps across `_SpreadTex`: with s its red (UV0, scrolled by `_SpreadUVSpeed.xy`, rotated by
+`_SpreadUVRotate` degrees, never polar), flipped to `1 − s` by `_SpreadFlip`, and R `_SpreadRange`,
+the cover is `saturate(1 − |(_SpreadScheduleOffset + c.w) · (1 + 2R) − R − s| / R)` times
+`_SpreadAlphaCurve`, c.w the particle's custom data: texels within R of a level that climbs from −R
+to 1 + R as the schedule goes from 0 to 1, so the band sweeps from the texture's darkest values to
+its brightest and is gone at both ends. no shipped variant pairs the spread with polar UVs.
+
+the fire column at Valley Pass (map01_lv002, `p_fxmap_smoke_range_f_smoke_02` at unity −753, 143,
+55, under global variable 4 = 2) uses both: `PatternSmoke01_ref`'s five billboards
+(`M_fx_common_smoke_01_02_03_1`) are a heat haze that a normal map pushes the column around in,
+tinted warm by a scrolling flow texture and swept in by the spread.
+
 the balloons (`int_balloon_postmodel`) glitch the scene behind their "connecting" sign this way
 (`distortion01` in `P_interactive_ballonconnecting`, `M_fx_robotemoji_821`), whose split tints the
 main sample magenta (`_RBMainColorMask`) against a cyan further one. Deep Dale Street
@@ -373,6 +392,16 @@ per pixel:
   dissolve to UV set 1: on particles the UV2 stream, which holds the particle's own UVs without a
   texture sheet, on meshes their UV1. custom data shifts and dissolves as the
   [shared rule](#particle-custom-data) says.
+- **switched UVs.** the shader has `_USE_POLARUV` and `_USE_SCREENUV` only together. with them each
+  texture's `*SwitchUV` (`_LightMap…`, `_Disturb…` for both distortion textures, `_Mask…`,
+  `_Blend…`, `_Dissolve…`) picks where its UVs start before the scroll: 1 the screen position (as
+  VFXBaseV2's, v from the world height under `_UsePosYAsScreenV`), times the object origin's view
+  depth past the near plane where its `*ScreenDepthUV` is set; 2 polar UVs about UV0's centre (the
+  mask's about UV set 1's under `_MaskUVSet`); any other value UV0. the dissolve's `_DissolveUVSet`
+  overrides its switch. the fire column at Valley Pass (`smoke001_150` in
+  `p_fxmap_smoke_range_f_smoke_02`, `M_fx_lv001_207_09`, 20 stretched 10 m billboards with a fire
+  lightmap) switches only its blend layer to the screen, so the red-hot flow texture its
+  `_BlendTint` (1.84, 0.25, 0.12) colours drifts across the screen rather than with each particle.
 - **distortion.** `_USE_DISTURB` (and `_USE_DISTURB_TEX2` for the second texture): each texture's
   red, remapped by `_Bi_Disturb`, times `_DisturbU/VIntensityN` (or its normal with
   `_DisturbTexNNormal`), summed, shifts the lightmap, mask, blend and dissolve UVs by their

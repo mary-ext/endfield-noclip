@@ -73,9 +73,10 @@ the water), into the composited scene with the main pass's depth attached read-o
   after the multiplies into the main pass's radiance target, and blend over it (`fs_refract`). the
   copy holds the fog, the transparent layers and the water, which the game's copy may not. colour
   offsets take their further samples from the same copy, and the soft blend reads the main pass's
-  depth. a dissolve samples slot 2 and scales the offset and alpha as the game's does. custom data
-  comes only from particles, so a mesh's second UV set, which the game's shader reads in its place,
-  isn't.
+  depth. a dissolve samples slot 2 and scales the offset and alpha as the game's does; the blend
+  layer takes slot 3 and the spread slot 4, their rows on the stack's vertex offset and edge colour
+  rows, which only VFXBaseV2 reads (`RefractRow`). custom data comes only from particles, so a
+  mesh's second UV set, which the game's shader reads in its place, isn't.
 
 ## reflection-only effects
 
@@ -133,11 +134,14 @@ other than 0 are unsupported.
 `six_way_smoke` in `effect.wgsl` (`sixWaySmokeLook` in
 [`six-way-smoke.ts`](../../packages/viewer/src/looks/effects/six-way-smoke.ts)). the positive
 lightmap takes slot 0 and the negative one slot 6, sampled at slot 0's UVs; the distortion, mask,
-blend and dissolve take slots 1–5. the particle's frame is its normal turned towards the camera and
-its object x axis made square to it. the sun takes the viewer's light colour over π, as Lit's
-diffuse does, and the shadow is sampled per pixel without the game's ramp texture. a mask or
-dissolve switched to UV set 1 reads UV0 on particles (`_InParticle`), as the UV2 stream holds the
-same UVs without a texture sheet, and stays unsupported on meshes.
+blend and dissolve take slots 1–5. each slot's bits carry where its
+[switched UVs](../game-data/effects.md#six-way-smoke) start, as the texture stack's do, plus
+`SIX_WAY_SCREEN_DEPTH` for screen UVs scaled by the object's depth; `_UsePosYAsScreenV` rides in the
+stack's screen-UV flags, whose own depth scale stays off. the particle's frame is its normal turned
+towards the camera and its object x axis made square to it. the sun takes the viewer's light colour
+over π, as Lit's diffuse does, and the shadow is sampled per pixel without the game's ramp texture.
+a mask or dissolve switched to UV set 1 reads UV0 on particles (`_InParticle`), as the UV2 stream
+holds the same UVs without a texture sheet, and stays unsupported on meshes.
 
 ## mist
 

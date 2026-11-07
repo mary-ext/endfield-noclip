@@ -1041,6 +1041,50 @@ describe('VFXRefract', () => {
 			[[0, 1, 1], null, 0],
 		);
 	});
+
+	it('tints by its blend layer and sweeps its cover by the spread', () => {
+		// the fire column's haze at Valley Pass (`M_fx_common_smoke_01_02_03_1`)
+		const haze = ofKind(
+			describeMaterial(
+				material({
+					blend: 'alphaBlend',
+					blendFactors: [5, 10],
+					keywords: ['_USE_BLEND', '_USE_MASK', '_USE_RBOFFSET', '_USE_SOFTBLEND', '_USE_SPREAD'],
+					slots: {
+						_MaskTex: slot(1),
+						_RefractTex: slot(2, [0.25, 0.5]),
+						_SpreadTex: slot(3, [0.5, 0.5]),
+						_BlendTex: slot(4, [0.5, 1]),
+					},
+					floats: {
+						_BlendTexUseRefract: 1,
+						_SpreadFlip: 1,
+						_SpreadRange: 0.649,
+						_SpreadScheduleOffset: 0.095,
+						_SpreadAlphaCurve: 1,
+						_SpreadUVRotate: 90,
+					},
+					colors: { _BlendColor: [1.498, 1.059, 1.059, 1] },
+					vectors: { _BlendTexUVSpeed: [-0.1, 0.05, 1, 1], _SpreadUVSpeed: [0, 0, 1, 1] },
+				}),
+				refract(),
+			),
+			'refract',
+		);
+		const { blend, spread } = haze;
+		assert.ok(blend !== null && spread !== null);
+		assert.deepEqual(
+			[blend.texture.texture, blend.texture.scroll, blend.texture.customScroll, blend.polar, blend.redAlpha],
+			[4, [-0.1, 0.05], [1, 1], false, false],
+		);
+		// HDR, as stored
+		assert.deepEqual([blend.color, blend.usesRefraction], [[1.498, 1.059, 1.059, 1], 1]);
+		assert.deepEqual([spread.texture.texture, spread.texture.scale], [3, [0.5, 0.5]]);
+		// the spread takes no custom data
+		assert.deepEqual(spread.texture.customScroll, [0, 0]);
+		assert.equal(spread.texture.rotation[1], -1);
+		assert.deepEqual([spread.schedule, spread.range, spread.flip, spread.alphaScale], [0.095, 0.649, 1, 1]);
+	});
 });
 
 describe('VFXWater', () => {
@@ -1258,5 +1302,48 @@ describe('VFXSmoke_SixWay', () => {
 		assert.equal(smoke({ keywords: ['_USE_MASK'] }).kind, 'unsupported');
 		assert.equal(smoke({ floats: { _MaskUVSet: 1 } }).kind, 'unsupported');
 		assert.equal(smoke({ blend: 'premultiplied', blendFactors: [1, 10] }).kind, 'unsupported');
+		// the shader has no variant with one of the two
+		assert.equal(smoke({ keywords: ['_USE_SIXWAY_LIGHTMAP', '_USE_POLARUV'] }).kind, 'unsupported');
+	});
+
+	it('starts each texture from the UVs its switch picks under `_USE_POLARUV` and `_USE_SCREENUV`', () => {
+		// the fire column's smoke at Valley Pass (`M_fx_lv001_207_09`): its blend layer reads the screen
+		const keywords = ['_USE_BLEND', '_USE_DISSOLVE', '_USE_DISTURB', '_USE_MASK', '_USE_SIXWAY_LIGHTMAP'];
+		const floats = {
+			_InParticle: 1,
+			_BlendSwitchUV: 1,
+			_DisturbSwitchUV: 2,
+			_DisturbScreenDepthUV: 1,
+			_DissolveSwitchUV: 1,
+			_DissolveScreenDepthUV: 1,
+			_MaskSwitchUV: 3,
+			_UsePosYAsScreenV: 1,
+		};
+		const switched = ofKind(
+			smoke({ keywords: [...keywords, '_USE_POLARUV', '_USE_SCREENUV'], floats }),
+			'sixWaySmoke',
+		);
+		assert.deepEqual(
+			[switched.positive.source, switched.blend?.source, switched.mask?.texture.source],
+			['uv0', 'screen', 'uv0'],
+		);
+		assert.deepEqual(switched.disturbSource, { source: 'polar', screenDepth: true });
+		assert.deepEqual(
+			[switched.dissolve?.texture.source, switched.dissolve?.texture.screenDepth],
+			['screen', true],
+		);
+		assert.equal(switched.screenVFromHeight, true);
+		// UV set 1 takes the dissolve's UVs over its switch
+		const uvSet = ofKind(
+			smoke({
+				keywords: [...keywords, '_USE_POLARUV', '_USE_SCREENUV'],
+				floats: { ...floats, _DissolveUVSet: 1 },
+			}),
+			'sixWaySmoke',
+		);
+		assert.equal(uvSet.dissolve?.texture.source, 'uv0');
+		// without the keywords the switches are ignored
+		const plain = ofKind(smoke({ keywords, floats }), 'sixWaySmoke');
+		assert.deepEqual([plain.blend?.source, plain.disturbSource.source], ['uv0', 'uv0']);
 	});
 });

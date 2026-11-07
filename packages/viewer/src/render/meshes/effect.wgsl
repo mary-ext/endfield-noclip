@@ -524,7 +524,7 @@ fn fs_effect(in: EffectOut, @builtin(front_facing) front: bool) -> EffectAccumul
 		return light_beam(in);
 	}
 	if (kind.y == FX_KIND_SIX_WAY) {
-		return six_way_smoke(in, dx.xy, dy.xy);
+		return six_way_smoke(in, bases);
 	}
 	let layer = fx_stack_layer(in, bases);
 	let color = layer.rgb;
@@ -644,12 +644,32 @@ const RF_RB_MAIN = 20u;
 const RF_RB_FIRST = 21u;
 const RF_RB_SECOND = 22u;
 const RF_DISSOLVE = 26u;
+const RF_SPREAD = 28u;
+const RF_BLEND_COLOR = 32u;
+const RF_BLEND = 33u;
+
+// a refraction slot sampled at its UVs, shifted by `shift`
+fn rf_sample(id: u32, slot: u32, bases: FxBases, custom: vec4f, shift: vec2f) -> vec4f {
+	let bias = exp2(frame.params.y);
+	let bits = fx_slot_bits(id, slot);
+	let base = fx_slot_base(bases, bits);
+	var t = fx_sample(
+		slot,
+		fx_slot_coords(id, slot, base[0] + fx_custom_shift(id, slot, custom)) + shift,
+		fx_slot_gradient(id, slot, base[1]) * bias,
+		fx_slot_gradient(id, slot, base[2]) * bias,
+	);
+	if ((bits & SLOT_RED_ALPHA) != 0u) {
+		t = vec4f(1.0, 1.0, 1.0, t.r);
+	}
+	return t;
+}
 
 // VFXRefract: the composited scene seen at an offset along `_RefractDir`, by the refraction texture's remapped
 // red (or its normal's xy) times the strength and the vertex alpha, in screen UVs. colour offsets take one or
 // two more samples further along `_RBOffset` and keep, per channel, the brightest of the masked samples. the
-// mask's colour tints it and its alpha (or red) covers what lies behind, faded in front of the scene by the
-// soft blend; blended over by that alpha
+// spread's sweeping band, the mask and the blend layer's alpha (or red) cover what lies behind, faded in front
+// of the scene by the soft blend; the mask's and blend layer's colours tint it. blended over by that cover
 @fragment
 fn fs_refract(in: EffectOut) -> @location(0) vec4f {
 	let id = in.draw;
@@ -691,19 +711,27 @@ fn fs_refract(in: EffectOut) -> @location(0) vec4f {
 		dissolved = saturate((t.r - dissolve_row.x - in.custom.z * 2.02) * dissolve_row.y);
 		offset *= dissolved;
 	}
+	// the spread: a band `range` wide around the schedule (plus the custom data's w), stretched so it starts and
+	// ends off the texture, covers where the spread texture's red (flipped) falls inside it
+	var cover = 1.0;
+	let spread = fx_row(id, RF_SPREAD);
+	if (spread.y > 0.0) {
+		let s = rf_sample(id, 4u, bases, in.custom, vec2f(0.0)).r;
+		let at = (spread.x + in.custom.w) * (1.0 + 2.0 * spread.y) - spread.y;
+		let level = spread.z + s - 2.0 * s * spread.z;
+		cover = saturate(1.0 - abs(at - level) / spread.y) * spread.w;
+	}
 	var mask = vec4f(1.0);
 	if (row2.z != 0.0) {
-		let bits = fx_slot_bits(id, 1u);
-		let base = fx_slot_base(bases, bits);
-		mask = fx_sample(
-			1u,
-			fx_slot_coords(id, 1u, base[0] + fx_custom_shift(id, 1u, in.custom)) + offset * row2.y,
-			fx_slot_gradient(id, 1u, base[1]) * bias,
-			fx_slot_gradient(id, 1u, base[2]) * bias,
-		);
-		if ((bits & SLOT_RED_ALPHA) != 0u) {
-			mask = vec4f(1.0, 1.0, 1.0, mask.r);
-		}
+		mask = rf_sample(id, 1u, bases, in.custom, offset * row2.y);
+	}
+	// the blend layer tints by `_BlendColor.a` and covers by its alpha
+	let blend_row = fx_row(id, RF_BLEND);
+	var tint = mask;
+	if (blend_row.x != 0.0) {
+		let blend = rf_sample(id, 3u, bases, in.custom, offset * blend_row.y);
+		let blend_color = fx_row(id, RF_BLEND_COLOR);
+		tint *= vec4f((1.0 - blend_color.a) + blend.rgb * blend_color.rgb * blend_color.a, blend.a);
 	}
 	let uv = in.position.xy / frame.render_size.xy + offset;
 	var behind = textureSampleLevel(fx_background, fx_background_samp, uv, 0.0).rgb;
@@ -731,8 +759,10 @@ fn fs_refract(in: EffectOut) -> @location(0) vec4f {
 	if (soft.x > 0.0) {
 		soft_fade = saturate((fx_scene_depth(vec2i(in.position.xy)) - depth) / soft.x);
 	}
-	let alpha = saturate(mask.a * soft_fade * fx_near_fade(id, depth) * mix(1.0, dissolved, dissolve_row.z));
-	return vec4f(clamp(behind * mask.rgb, vec3f(0.0), vec3f(1000.0)), alpha);
+	let alpha = saturate(
+		cover * tint.a * soft_fade * fx_near_fade(id, depth) * mix(1.0, dissolved, dissolve_row.z),
+	);
+	return vec4f(clamp(behind * tint.rgb, vec3f(0.0), vec3f(1000.0)), alpha);
 }
 
 // #endregion
@@ -988,10 +1018,22 @@ const SW_BLEND = 64u;
 const SW_DISSOLVE_ON = 128u;
 const SW_VERTEX_COLOR = 256u;
 
+// `SIX_WAY_SCREEN_DEPTH` in six-way-smoke.ts: the slot's screen UVs scale by the object's view depth
+const SW_SLOT_SCREEN_DEPTH = 8u;
+
+// a six-way slot's base UV and its gradients: UV0, polar or screen UVs by its bits (`*SwitchUV`), the screen
+// ones times `depth` where its bit asks (`*ScreenDepthUV`)
+fn sw_base(id: u32, slot: u32, bases: FxBases, depth: f32) -> array<vec2f, 3> {
+	let bits = fx_slot_bits(id, slot);
+	let b = fx_slot_base(bases, bits);
+	let s = select(1.0, depth, (bits & SW_SLOT_SCREEN_DEPTH) != 0u);
+	return array(b[0] * s, b[1] * s, b[2] * s);
+}
+
 // one distortion texture's offset: its red remapped by `_Bi_Disturb` times the u and v strengths, or with a
 // normal its (a·r, g) remapped to [-1, 1] times the u strength
-fn sw_disturb(id: u32, slot: u32, uv: vec2f, dx: vec2f, dy: vec2f, strength: vec2f, normal: bool) -> vec2f {
-	let t = ws_sample(id, slot, uv, vec2f(0.0), dx, dy);
+fn sw_disturb(id: u32, slot: u32, base: array<vec2f, 3>, strength: vec2f, normal: bool) -> vec2f {
+	let t = ws_sample(id, slot, base[0], vec2f(0.0), base[1], base[2]);
 	let bias = fx_row(id, SW_FLAGS).y;
 	let centred = t.r * (bias + 1.0) - bias;
 	if (normal) {
@@ -1011,34 +1053,40 @@ fn sw_absorb(t: f32, exponent: vec3f, range: f32) -> vec3f {
 // particle's frame (right, up, away from the camera, and their opposites). the sun takes the lightmaps
 // weighted by its direction's squared components in that frame, the irradiance volume all six. sun units
 // follow the viewer's convention for the game's light colour (docs/viewer/lighting.md#sun)
-fn six_way_smoke(in: EffectOut, dx: vec2f, dy: vec2f) -> EffectAccumulated {
+fn six_way_smoke(in: EffectOut, bases: FxBases) -> EffectAccumulated {
 	let id = in.draw;
 	ws_custom = in.custom;
 	let row = fx_row(id, SW_FLAGS);
 	let flags = u32(row.x);
-	let uv = in.uv.xy;
 	let bias = exp2(frame.params.y);
+	// what scales screen UVs by depth: the object origin's view depth past the near plane
+	let depth_scale = max(0.0, in.origin_depth - frame.local_lights.w);
 
 	var offset = vec2f(0.0);
 	let strength = fx_row(id, SW_DISTURB);
 	if ((flags & SW_DISTURB1) != 0u) {
-		offset += sw_disturb(id, 1u, uv, dx, dy, strength.xy, (flags & SW_DISTURB1_NORMAL) != 0u);
+		let base = sw_base(id, 1u, bases, depth_scale);
+		offset += sw_disturb(id, 1u, base, strength.xy, (flags & SW_DISTURB1_NORMAL) != 0u);
 	}
 	if ((flags & SW_DISTURB2) != 0u) {
-		offset += sw_disturb(id, 2u, uv, dx, dy, strength.zw, (flags & SW_DISTURB2_NORMAL) != 0u);
+		let base = sw_base(id, 2u, bases, depth_scale);
+		offset += sw_disturb(id, 2u, base, strength.zw, (flags & SW_DISTURB2_NORMAL) != 0u);
 	}
 	let use_disturb = fx_row(id, SW_DISTURB_USE);
 
 	// the lightmaps share slot 0's UVs
-	let lightmap_uv = fx_slot_coords(id, 0u, uv + fx_custom_shift(id, 0u, in.custom)) + offset * use_disturb.x;
-	let gx = fx_slot_gradient(id, 0u, dx) * bias;
-	let gy = fx_slot_gradient(id, 0u, dy) * bias;
+	let lightmap = sw_base(id, 0u, bases, depth_scale);
+	let lightmap_uv =
+		fx_slot_coords(id, 0u, lightmap[0] + fx_custom_shift(id, 0u, in.custom)) + offset * use_disturb.x;
+	let gx = fx_slot_gradient(id, 0u, lightmap[1]) * bias;
+	let gy = fx_slot_gradient(id, 0u, lightmap[2]) * bias;
 	let positive = fx_sample(0u, lightmap_uv, gx, gy);
 	let negative = fx_sample(6u, lightmap_uv, gx, gy).rgb;
 
 	var mask = vec4f(1.0);
 	if ((flags & SW_MASK) != 0u) {
-		mask = ws_sample(id, 3u, uv, offset * use_disturb.y, dx, dy);
+		let base = sw_base(id, 3u, bases, depth_scale);
+		mask = ws_sample(id, 3u, base[0], offset * use_disturb.y, base[1], base[2]);
 		if ((flags & SW_MASK_RED_ALPHA) != 0u) {
 			mask = vec4f(1.0, 1.0, 1.0, mask.r);
 		}
@@ -1050,10 +1098,12 @@ fn six_way_smoke(in: EffectOut, dx: vec2f, dy: vec2f) -> EffectAccumulated {
 		// the game applies the blend texture's `_ST` again after the distortion; its tint takes the vertex colour
 		// whatever `_DisableVertColor` says
 		let st = fx_row(id, FX_UV + 4u);
+		let base = sw_base(id, 4u, bases, depth_scale);
 		let blend_uv =
-			(fx_slot_coords(id, 4u, uv + fx_custom_shift(id, 4u, in.custom)) + offset * use_disturb.z) * st.xy + st.zw;
-		let blend = fx_sample(4u, blend_uv, fx_slot_gradient(id, 4u, dx) * st.xy * bias,
-			fx_slot_gradient(id, 4u, dy) * st.xy * bias);
+			(fx_slot_coords(id, 4u, base[0] + fx_custom_shift(id, 4u, in.custom)) + offset * use_disturb.z) * st.xy +
+			st.zw;
+		let blend = fx_sample(4u, blend_uv, fx_slot_gradient(id, 4u, base[1]) * st.xy * bias,
+			fx_slot_gradient(id, 4u, base[2]) * st.xy * bias);
 		let blend_tint = fx_row(id, SW_BLEND_TINT) * in.color;
 		color += blend.rgb * saturate((c.a + blend.a) * blend_tint.a) * blend_tint.rgb;
 	}
@@ -1061,7 +1111,9 @@ fn six_way_smoke(in: EffectOut, dx: vec2f, dy: vec2f) -> EffectAccumulated {
 	if ((flags & SW_DISSOLVE_ON) != 0u) {
 		let dissolve = fx_row(id, SW_DISSOLVE);
 		// a particle's custom data's z adds to the schedule
-		let v = ws_sample(id, 5u, uv, offset * use_disturb.w, dx, dy).r - dissolve.x - in.custom.z * 2.02;
+		let base = sw_base(id, 5u, bases, depth_scale);
+		let v = ws_sample(id, 5u, base[0], offset * use_disturb.w, base[1], base[2]).r - dissolve.x -
+			in.custom.z * 2.02;
 		let edge = saturate((dissolve.z - v) * dissolve.y);
 		alpha *= saturate(v * dissolve.y);
 		color = mix(color, fx_row(id, SW_DISSOLVE_COLOR).rgb * edge, edge);

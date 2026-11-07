@@ -1,4 +1,4 @@
-import type { SixWaySmokeSurface } from '@endfield-noclip/package-format/surfaces';
+import type { SixWaySmokeSurface, SixWayUvSource } from '@endfield-noclip/package-format/surfaces';
 
 import {
 	EffectKind,
@@ -8,13 +8,14 @@ import {
 	ROLE_NONE,
 	setNear,
 	setSlot,
+	SlotSource,
 } from './effect-look.ts';
 
 /**
  * float offsets of a six-way smoke look's parameters, in place of {@link EffectRow}'s rows 17–22. the tint,
- * UV, scroll, soft blend, near fade, misc (near fade switch, brightening) and last rows are shared. slots: 0
- * the positive lightmap, 1–2 the distortion, 3 mask, 4 blend, 5 dissolve, 6 the negative lightmap (sampled at
- * slot 0's UVs)
+ * UV, scroll, slot bits (where each slot's UVs start), soft blend, near fade, misc (near fade switch,
+ * brightening) and last rows are shared. slots: 0 the positive lightmap, 1–2 the distortion, 3 mask, 4 blend,
+ * 5 dissolve, 6 the negative lightmap (sampled at slot 0's UVs)
  */
 export const SixWayRow = {
 	/** {@link SixWayFlags}, `_Bi_Disturb`, the absorption range, `_EnvLightSaturation` */
@@ -45,6 +46,15 @@ export const SixWayFlags = {
 	VertexColor: 1 << 8,
 } as const;
 
+/** {@link EffectRow.slotBits} bit of a six-way slot whose screen UVs scale by the object's view depth */
+export const SIX_WAY_SCREEN_DEPTH = 8;
+
+const SOURCES = { uv0: SlotSource.Uv0, polar: SlotSource.Polar, screen: SlotSource.Screen } as const;
+
+/** a six-way slot's bits: no stack role, where its UVs start, and whether screen UVs scale by depth */
+const slotBits = ({ source, screenDepth }: SixWayUvSource): number =>
+	ROLE_NONE + SOURCES[source] * 32 + (source === 'screen' && screenDepth ? SIX_WAY_SCREEN_DEPTH : 0);
+
 /**
  * six-way lit smoke ({@link SixWaySmokeSurface})
  *
@@ -54,9 +64,9 @@ export const SixWayFlags = {
 export const sixWaySmokeLook = (smoke: SixWaySmokeSurface): EffectLook => {
 	const look = emptyEffect();
 	const params = look.params;
-	setSlot(look, 0, smoke.positive, ROLE_NONE);
+	setSlot(look, 0, smoke.positive, slotBits(smoke.positive));
 	// the negative lightmap samples at the positive one's UVs, which the shader takes from slot 0's rows
-	setSlot(look, 6, { ...smoke.positive, texture: smoke.negative }, ROLE_NONE);
+	setSlot(look, 6, { ...smoke.positive, texture: smoke.negative }, slotBits(smoke.positive));
 	let flags = smoke.vertexColor ? SixWayFlags.VertexColor : 0;
 	const disturb = [0, 0, 0, 0];
 	const disturbFlags = [
@@ -65,23 +75,23 @@ export const sixWaySmokeLook = (smoke: SixWaySmokeSurface): EffectLook => {
 	];
 	smoke.disturb.forEach((layer, i) => {
 		if (layer !== null) {
-			setSlot(look, 1 + i, layer.texture, ROLE_NONE);
+			setSlot(look, 1 + i, layer.texture, slotBits(smoke.disturbSource));
 			disturb[i * 2] = layer.intensity[0];
 			disturb[i * 2 + 1] = layer.intensity[1];
 			flags |= disturbFlags[i][0] | (layer.normal ? disturbFlags[i][1] : 0);
 		}
 	});
 	if (smoke.mask !== null) {
-		setSlot(look, 3, smoke.mask.texture, ROLE_NONE);
+		setSlot(look, 3, smoke.mask.texture, slotBits(smoke.mask.texture));
 		flags |= SixWayFlags.Mask | (smoke.mask.redAlpha ? SixWayFlags.MaskRedAlpha : 0);
 	}
 	if (smoke.blend !== null) {
-		setSlot(look, 4, smoke.blend, ROLE_NONE);
+		setSlot(look, 4, smoke.blend, slotBits(smoke.blend));
 		flags |= SixWayFlags.Blend;
 	}
 	if (smoke.dissolve !== null) {
 		const { dissolve } = smoke.dissolve;
-		setSlot(look, 5, smoke.dissolve.texture, ROLE_NONE);
+		setSlot(look, 5, smoke.dissolve.texture, slotBits(smoke.dissolve.texture));
 		params.set([dissolve.threshold, dissolve.sharpness, dissolve.edgeWidth, 0], SixWayRow.dissolve);
 		params.set([...dissolve.edgeColor, 0], SixWayRow.dissolveColor);
 		flags |= SixWayFlags.Dissolve;
@@ -105,6 +115,10 @@ export const sixWaySmokeLook = (smoke: SixWaySmokeSurface): EffectLook => {
 	);
 	setNear(look, smoke.near);
 	params.set([smoke.brighten.threshold, smoke.brighten.intensity], EffectRow.misc + 1);
-	params.set([smoke.unfogged ? 1 : 0, EffectKind.SixWaySmoke, 0, 0], EffectRow.unfogged);
+	// the screen UV options' depth bit stays clear: each slot scales by depth by its own bit
+	params.set(
+		[smoke.unfogged ? 1 : 0, EffectKind.SixWaySmoke, 0, smoke.screenVFromHeight ? 2 : 0],
+		EffectRow.unfogged,
+	);
 	return look;
 };

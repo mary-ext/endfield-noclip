@@ -25,6 +25,7 @@ import type {
 	DisturbLayer,
 	SixWaySmokeSurface,
 	SixWayTexture,
+	SixWayUvSource,
 	StackLayer,
 	StencilMaskSurface,
 	UndrawnSurface,
@@ -1404,12 +1405,14 @@ export const describeLitDecal = (
 
 /** keywords of `HGRP/Effect/VFXRefract` that are drawn */
 const REFRACT_KEYWORDS = new Set([
+	'_USE_BLEND',
 	'_USE_DISSOLVE',
 	'_USE_MASK',
 	'_USE_POLARUV',
 	'_USE_RBOFFSET',
 	'_USE_RGBOFFSET',
 	'_USE_SOFTBLEND',
+	'_USE_SPREAD',
 ]);
 
 /**
@@ -1482,6 +1485,40 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 			affectsAlpha: float('_DissolveAffectBlend', 0),
 		};
 	}
+	let blend: RefractSurface['blend'] = null;
+	if (has('_USE_BLEND')) {
+		const blended = textureOf('_BlendTex', '_BlendTexUVRotate', '_BlendTexUVSpeed', '_BlendSwitchUV');
+		if ('kind' in blended) {
+			return blended;
+		}
+		const tint = color('_BlendColor') ?? [1, 1, 1, 1];
+		blend = {
+			...blended,
+			redAlpha: float('_UseBlendTexAsAlpha', 0) !== 0,
+			// [HDR]: used as stored
+			color: [tint[0], tint[1], tint[2], tint[3]],
+			usesRefraction: float('_BlendTexUseRefract', 0),
+		};
+	}
+	let spread: RefractSurface['spread'] = null;
+	if (has('_USE_SPREAD')) {
+		// no variant pairs the spread with polar UVs, and its UVs take no custom data
+		const bound = reader.slot('_SpreadTex') ?? UNSET_WHITE;
+		if (bound.uv !== 0) {
+			return unsupported(`_SpreadTex on UV set ${bound.uv}`);
+		}
+		const angle = (float('_SpreadUVRotate', 0) * Math.PI) / 180;
+		spread = {
+			texture: effectTexture(bound, (color('_SpreadUVSpeed') ?? [0, 0]).slice(0, 2), [
+				Math.cos(angle),
+				-Math.sin(angle),
+			]),
+			schedule: float('_SpreadScheduleOffset', 0),
+			range: Math.max(float('_SpreadRange', 1), 1e-6),
+			flip: float('_SpreadFlip', 0),
+			alphaScale: float('_SpreadAlphaCurve', 1),
+		};
+	}
 	const dir = color('_RefractDir') ?? [1, 1, 0, 0];
 	let colorOffsets: RefractSurface['colorOffsets'] = null;
 	// `_USE_RGBOFFSET` only adds a second further sample to `_USE_RBOFFSET`'s, with a mask per sample
@@ -1511,6 +1548,8 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 		maskUsesRefraction: float('_MaskTexUseRefract', 0),
 		colorOffsets,
 		dissolve,
+		blend,
+		spread,
 		// soft blend: the cover fades out over `_SoftDistance` in front of what lies behind
 		softDistance: softBlendOf(reader)?.distance ?? 0,
 		near: nearFadeOf(reader),
@@ -1678,6 +1717,8 @@ const SIX_WAY_KEYWORDS = new Set([
 	'_USE_DISSOLVE',
 	'_USE_SOFTBLEND',
 	'_USE_FOG',
+	'_USE_POLARUV',
+	'_USE_SCREENUV',
 ]);
 
 /**
@@ -1706,6 +1747,26 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 	if ((float('_MaskUVSet', 0) !== 0 || float('_DissolveUVSet', 0) !== 0) && float('_InParticle', 0) === 0) {
 		return unsupported('a mask or dissolve on UV set 1');
 	}
+	// the shader has these keywords only together; with them each texture's `*SwitchUV` picks its UVs
+	const switched = has('_USE_POLARUV') && has('_USE_SCREENUV');
+	if (!switched && (has('_USE_POLARUV') || has('_USE_SCREENUV'))) {
+		return unsupported('_USE_POLARUV without _USE_SCREENUV, or the reverse');
+	}
+	/** where a texture's UVs start: 1 the screen, 2 polar UVs; the shader reads UV0 for any other value */
+	const switchedSource = (prefix: string): SixWayUvSource => {
+		const screenDepth = float(`${prefix}ScreenDepthUV`, 0) !== 0;
+		switch (switched ? float(`${prefix}SwitchUV`, 0) : 0) {
+			case 1: {
+				return { source: 'screen', screenDepth };
+			}
+			case 2: {
+				return { source: 'polar', screenDepth };
+			}
+			default: {
+				return { source: 'uv0', screenDepth };
+			}
+		}
+	};
 	/** a used slot; the shader samples every texture on UV set 0, or the default when none is bound */
 	const used = (name: string): TextureSlot | null | 'uv' => {
 		const slot = reader.slot(name);
@@ -1748,12 +1809,22 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 			color('_LightMapUVSpeed') ?? [0, 0, 0, 0],
 			turned('_LightMap'),
 		),
+		...switchedSource('_LightMap'),
 		disturbShare: float('_LightMapUseDisturb', 0),
 	};
-	const layer = (slot: TextureSlot, prefix: string, share: string): SixWayTexture => ({
+	const layer = (
+		slot: TextureSlot,
+		prefix: string,
+		share: string,
+		source: SixWayUvSource,
+	): SixWayTexture => ({
 		...effectTexture(slot, color(`${prefix}UVSpeed`) ?? [0, 0, 0, 0], turned(prefix)),
+		...source,
 		disturbShare: float(share, 0),
 	});
+	// UV set 1 replaces the dissolve's switched UVs; on particles it holds UV0's (above)
+	const dissolveSource: SixWayUvSource =
+		float('_DissolveUVSet', 0) !== 0 ? { source: 'uv0', screenDepth: false } : switchedSource('_Dissolve');
 	const disturbLayer = (slot: TextureSlot | null, n: 1 | 2): DisturbLayer | null =>
 		slot === null
 			? null
@@ -1769,22 +1840,24 @@ export const describeSixWaySmoke = (reader: MaterialReader): SixWaySmokeSurface 
 		positive: lightmap,
 		negative: negative.texture,
 		disturb: [disturbLayer(disturb1, 1), disturbLayer(disturb2, 2)],
+		disturbSource: switchedSource('_Disturb'),
 		disturbBias: float('_Bi_Disturb', 0),
+		screenVFromHeight: float('_UsePosYAsScreenV', 0) !== 0,
 		mask:
 			mask === null
 				? null
 				: {
-						texture: layer(mask, '_MaskTex', '_MaskTexUseDisturb'),
+						texture: layer(mask, '_MaskTex', '_MaskTexUseDisturb', switchedSource('_Mask')),
 						redAlpha: float('_UseMaskTexAsAlpha', 1) !== 0,
 					},
 		// the black default adds nothing
-		blend: blend === null ? null : layer(blend, '_BlendTex', '_BlendTexUseDisturb'),
+		blend: blend === null ? null : layer(blend, '_BlendTex', '_BlendTexUseDisturb', switchedSource('_Blend')),
 		blendTint: shared.blendTint,
 		dissolve:
 			dissolve === null
 				? null
 				: {
-						texture: layer(dissolve, '_Dissolve', '_DissolveTexUseDisturb'),
+						texture: layer(dissolve, '_Dissolve', '_DissolveTexUseDisturb', dissolveSource),
 						dissolve: { ...shared.dissolve, on: true },
 					},
 		tint,

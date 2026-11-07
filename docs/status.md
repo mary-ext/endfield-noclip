@@ -259,14 +259,15 @@ packs or renders correctly.
     dither modes and non-red masks stay unsupported; the plain variant's dither leaves out the
     vertex alpha and the near-camera fade, and `_USE_MAIN2` draws only as a mask. the Very Large
     Rift's escaping trails are unchecked in game
-  - [VFXRefract](game-data/effects.md#refraction): its blend, saturation, spread, Fresnel mask and
-    trail aren't drawn, its scene copy includes the water and fog (unchecked against the game's),
-    and on meshes it ignores the second UV set the game reads as custom data; Deep Dale Street's
-    fog-wall haze and the balloons' glitch are unchecked in game
+  - [VFXRefract](game-data/effects.md#refraction): its saturation, Fresnel mask and trail aren't
+    drawn, its scene copy includes the water and fog (unchecked against the game's), and on meshes
+    it ignores the second UV set the game reads as custom data; Deep Dale Street's fog-wall haze,
+    the balloons' glitch and Valley Pass's fire-column haze are unchecked in game
   - VFXWater: `VFX_WATER_REFRACT`, `_VAT_SOFTBODY`, punctual lights, matcaps, and
     `VFX_WATER_SIMPLE_LIGHT`'s probe (lit the full way instead)
   - [six-way smoke](game-data/effects.md#six-way-smoke): no shadow ramp texture, local lights or
-    main texture; a mask or dissolve on UV set 1 stays unsupported on meshes; unchecked in game
+    main texture; a mask or dissolve on UV set 1 stays unsupported on meshes; unchecked in game,
+    including Valley Pass's fire column and its screen-space blend layer
   - [mist](game-data/effects.md#mist): lit cards light by the mesh normal rather than their normal
     map, the cards' own fog and the boxes' depth prepass and vertex colour aren't drawn, and only
     additive boxes draw; Suiming's cave-exit light card is unchecked in game

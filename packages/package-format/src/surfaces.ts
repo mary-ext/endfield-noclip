@@ -837,8 +837,18 @@ export interface WaterSheetSurface {
 	near: EffectNearFade;
 }
 
+/**
+ * where a six-way smoke texture's UVs start (`*SwitchUV` under `_USE_POLARUV` and `_USE_SCREENUV`): UV0,
+ * polar coordinates about its centre, or the screen position, which `screenDepth` scales by the object's view
+ * depth past the near plane (`*ScreenDepthUV`)
+ */
+export interface SixWayUvSource {
+	source: 'uv0' | 'polar' | 'screen';
+	screenDepth: boolean;
+}
+
 /** a texture of a six-way smoke layer, with the share of the distortion its UVs take */
-export interface SixWayTexture extends EffectTexture {
+export interface SixWayTexture extends EffectTexture, SixWayUvSource {
 	disturbShare: number;
 }
 
@@ -854,6 +864,10 @@ export interface SixWaySmokeSurface {
 	negative: number;
 	/** the distortion's textures, both read from red: u, v per unit, or a normal in (a·r, g) when `normal` */
 	disturb: [first: DisturbLayer | null, second: DisturbLayer | null];
+	/** where both distortion textures' UVs start (`_DisturbSwitchUV`) */
+	disturbSource: SixWayUvSource;
+	/** screen UVs take v from the world height (`_UsePosYAsScreenV`) */
+	screenVFromHeight: boolean;
 	/** `_Bi_Disturb` */
 	disturbBias: number;
 	/** red is the alpha (`_UseMaskTexAsAlpha`) */
@@ -967,6 +981,32 @@ export interface RefractSurface {
 		sharpness: number;
 		/** `_DissolveAffectBlend` */
 		affectsAlpha: number;
+	} | null;
+	/**
+	 * `_USE_BLEND`, `null` without: the texture's colour times `color.rgb` tints the refracted scene by
+	 * `color.a`, and its alpha (or red, `redAlpha`) scales the cover
+	 */
+	blend: {
+		texture: EffectTexture;
+		polar: boolean;
+		redAlpha: boolean;
+		/** `_BlendColor`, HDR */
+		color: Rgba;
+		/** `_BlendTexUseRefract`: the share of the refraction offset its UVs take */
+		usesRefraction: number;
+	} | null;
+	/**
+	 * `_USE_SPREAD`, `null` without: the cover is a band of the spread texture's red (flipped by `flip`) that
+	 * sweeps across as the schedule (plus the particle's custom data w) goes from 0 to 1, `range` wide, times
+	 * `alphaScale`
+	 */
+	spread: {
+		texture: EffectTexture;
+		schedule: number;
+		range: number;
+		flip: number;
+		/** `_SpreadAlphaCurve` */
+		alphaScale: number;
 	} | null;
 	softDistance: number;
 	near: EffectNearFade;

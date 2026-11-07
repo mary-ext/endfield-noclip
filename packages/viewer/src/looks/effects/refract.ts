@@ -12,7 +12,9 @@ import {
 
 /**
  * float offsets of a VFXRefract look's parameters. the UV, scroll, slot bit, near fade and last rows are
- * {@link EffectRow}'s; slot 0 is `_RefractTex`, slot 1 `_MaskTex`
+ * {@link EffectRow}'s; slot 0 is `_RefractTex`, slot 1 `_MaskTex`, slot 2 `_DissolveTex`, slot 3 `_BlendTex`,
+ * slot 4 `_SpreadTex`. the spread and blend rows take rows the vertex stage reads only for VFXBaseV2's offset
+ * and the stack's edge colour
  */
 export const RefractRow = {
 	/** `_RefractDir` xy, the strength (`_Intensity · _TintColorAlpha`), `_Bi_Refract` */
@@ -35,6 +37,12 @@ export const RefractRow = {
 	rbSecond: 88,
 	/** the dissolve (slot 2): threshold, sharpness, how much it scales the alpha, 1 when dissolving */
 	dissolve: 104,
+	/** the spread (slot 4): schedule, range (0 without `_USE_SPREAD`), flip, alpha scale */
+	spread: 112,
+	/** the blend layer's colour (`_BlendColor`, HDR) rgb, how strongly it tints */
+	blendColor: 128,
+	/** 1 with a blend layer (slot 3), the share of the refraction offset its UVs take, 0, 0 */
+	blend: 132,
 } as const;
 
 /** a refraction slot's source bits: polar UVs about the centre, or UV set 0 */
@@ -70,6 +78,16 @@ export const refractLook = (refract: RefractSurface): EffectLook => {
 	if (dissolve !== null) {
 		setSlot(look, 2, dissolve.texture, polarBits(false));
 		params.set([dissolve.threshold, dissolve.sharpness, dissolve.affectsAlpha, 1], RefractRow.dissolve);
+	}
+	const { blend, spread } = refract;
+	if (blend !== null) {
+		setSlot(look, 3, blend.texture, polarBits(blend.polar) + (blend.redAlpha ? 16 : 0));
+		params.set(blend.color, RefractRow.blendColor);
+		params.set([1, blend.usesRefraction, 0, 0], RefractRow.blend);
+	}
+	if (spread !== null) {
+		setSlot(look, 4, spread.texture, polarBits(false));
+		params.set([spread.schedule, spread.range, spread.flip, spread.alphaScale], RefractRow.spread);
 	}
 	params[EffectRow.soft] = refract.softDistance;
 	setNear(look, refract.near);

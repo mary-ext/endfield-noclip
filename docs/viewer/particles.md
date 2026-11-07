@@ -157,7 +157,8 @@ row. only `effect.wgsl` reads them, by the effect shaders'
 [shared rule](../game-data/effects.md#particle-custom-data): the texture stack, refraction, water
 sheets and six-way smoke add z to their dissolve schedule and shift each slot's UVs by the slot's
 custom scroll (`EffectRow.customScroll`, `fx_custom_shift`) times x for slot 0 or y for the others,
-and a `particleDisturb` stack scales its distortion by w.
+a `particleDisturb` stack scales its distortion by w, and a refraction's spread adds w to its
+schedule.
 
 ## time and randomness
 
