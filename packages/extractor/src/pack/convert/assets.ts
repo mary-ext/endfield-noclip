@@ -186,7 +186,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	const textureUses = new TextureUses();
 	const materials = await loadMaterials(input, jobs, textureUses);
 	const extraIndices = input.extraTextures.map((group) =>
-		group.map(({ ref, place }) => textureUses.use(ref, place)),
+		group.map(({ ref, place }) => textureUses.use(locatedObject(ref), place)),
 	);
 	timer.end('materials');
 	const geometries = await convertGeometries(input, jobs, meshNeeds(input, materials));
@@ -302,13 +302,12 @@ class TextureUses {
 	readonly #index = new Map<string, number>();
 
 	/** @returns the texture's provisional id */
-	use(ref: ObjectRef, place: Place): number {
-		const key = objectKey(ref);
+	use({ key, locator }: LocatedObject, place: Place): number {
 		let index = this.#index.get(key);
 		if (index === undefined) {
 			index = this.objects.length;
 			this.#index.set(key, index);
-			this.objects.push({ key, locator: locateObject(ref), place });
+			this.objects.push({ key, locator, place });
 		} else {
 			this.objects[index].place = mergePlaces(this.objects[index].place, place);
 		}
@@ -319,6 +318,41 @@ class TextureUses {
 // #endregion
 
 // #region materials
+
+/** an object by key and locator, which, unlike an {@link ObjectRef}, doesn't keep its bundle loaded */
+interface LocatedObject {
+	key: string;
+	locator: ObjectLocator;
+}
+
+const locatedObject = (ref: ObjectRef): LocatedObject => ({
+	key: objectKey(ref),
+	locator: locateObject(ref),
+});
+
+/**
+ * a {@link LoadedMaterial} with its object and textures located rather than referenced: every material's load
+ * is kept until the phase ends, and holding their refs kept ~12k bundles' files and blocks (2.7 GB on map02)
+ */
+interface MaterialLoad extends Omit<LoadedMaterial, 'textures'> {
+	object: string;
+	textures: Record<string, { texture: LocatedObject | null; error?: string }>;
+}
+
+/** @returns the material loaded and detached from its bundle */
+const loadMaterialDetached = async (resolver: AssetResolver, ref: ObjectRef): Promise<MaterialLoad> => {
+	const { textures, ...loaded } = await loadMaterial(resolver, ref);
+	return {
+		...loaded,
+		object: objectKey(ref),
+		textures: Object.fromEntries(
+			Object.entries(textures).map(([slot, { ref: texture, error }]) => [
+				slot,
+				{ texture: texture === null ? null : locatedObject(texture), error },
+			]),
+		),
+	};
+};
 
 /** the materials loaded and converted, by material id */
 interface LoadedMaterials {
@@ -347,15 +381,14 @@ const loadMaterials = async (
 		normalMapUv: [],
 	};
 	// variants of one material share its load
-	const loads = new Map<bigint, Promise<{ ref: ObjectRef; loaded: LoadedMaterial }>>();
+	const loads = new Map<bigint, Promise<MaterialLoad>>();
 	await orderedPool(
 		input.materials,
 		input.materialConcurrency,
 		(asset) =>
-			loads.getOrInsertComputed(asset.hash, async () => {
-				const ref = await resolver.findUnique(asset, UnityClass.Material);
-				return { ref, loaded: await loadMaterial(resolver, ref) };
-			}),
+			loads.getOrInsertComputed(asset.hash, async () =>
+				loadMaterialDetached(resolver, await resolver.findUnique(asset, UnityClass.Material)),
+			),
 		(result, _asset, id) => {
 			if (result instanceof Error) {
 				out.converted.push(null);
@@ -371,7 +404,7 @@ const loadMaterials = async (
 				out.normalMapUv.push(null);
 				return;
 			}
-			const { ref, loaded } = result;
+			const loaded = result;
 			const place = input.places.materials[id];
 			const shader = out.shaders.intern(loaded.shader, loaded.classification.family);
 			const overrides = input.materialOverrides.get(id);
@@ -386,10 +419,10 @@ const loadMaterials = async (
 						slotErrors[slot] = resolved.error;
 						jobs.fail('texture slot', new Error(resolved.error));
 					}
-					if (resolved?.ref == null) {
+					if (resolved?.texture == null) {
 						return undefined;
 					}
-					return textures.use(resolved.ref, place);
+					return textures.use(resolved.texture, place);
 				},
 			);
 			const notDrawn = keywordsNotDrawn(loaded.shader.name, converted.material.keywords);
@@ -400,7 +433,7 @@ const loadMaterials = async (
 			// described once its textures have their final ids
 			out.converted.push(converted.material);
 			out.debug.push({
-				object: objectKey(ref),
+				object: loaded.object,
 				name: loaded.record.name,
 				shader: loaded.shader.name,
 				error: null,
