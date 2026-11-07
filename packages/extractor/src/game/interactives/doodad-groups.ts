@@ -67,7 +67,9 @@ export class DoodadGroups {
 			}
 			this.#groups.set(key, levels);
 		}
-		await this.#prefabs.find(this.#groups.values().flatMap((levels) => levels.map(({ form }) => form.prefab)));
+		await this.#prefabs.find(
+			this.#groups.values().flatMap((levels) => levels.map(({ form }) => form.prefab)),
+		);
 	}
 
 	/**

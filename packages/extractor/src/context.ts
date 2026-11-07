@@ -27,8 +27,8 @@ export interface Context {
 	 */
 	memoryPack(): Promise<MemoryPackReader>;
 	/**
-	 * drops the cached {@link memoryPack} reader, whose schema holds GameAssembly and the IL2CPP metadata
-	 * (≈380 MB); a later call reads them again
+	 * drops the cached {@link memoryPack} reader, whose schema holds GameAssembly and the IL2CPP metadata (≈380
+	 * MB); a later call reads them again
 	 */
 	releaseMemoryPack(): void;
 }
