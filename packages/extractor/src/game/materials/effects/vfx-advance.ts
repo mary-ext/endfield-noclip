@@ -27,6 +27,7 @@ import {
 const ADVANCE_KEYWORDS = new Set([
 	'_USE_DISTURB',
 	'_USE_MASK',
+	'_USE_DISSOLVE',
 	'_USE_FRESNEL',
 	'_USE_FOG',
 	'_USE_VERTOFFSET',
@@ -40,7 +41,8 @@ const BLEND_MODES: readonly EffectStackSurface['blendMode'][] = ['over', 'add'];
 
 /**
  * `HGRP/Effect/VFXAdvance` (`docs/game-data/effects.md#vfxadvance`) as a texture stack: its main texture, one
- * disturb texture and a mask, tinted, optionally faded by a Fresnel term and revealed around the player
+ * disturb texture, a mask and a dissolve, tinted, optionally faded by a Fresnel term and revealed around the
+ * player
  *
  * @param reader the material's properties
  * @returns its surface, or `unsupported`
@@ -74,7 +76,8 @@ export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface |
 		return appear;
 	}
 	const computed = computedUvSources(reader);
-	// the stack's slots, in the order the distortion runs through them: it shifts the main texture and the mask
+	// the stack's slots, in the order the distortion runs through them: it shifts the main texture, the mask and
+	// the dissolve
 	const slots = [
 		{
 			name: '_MainTex',
@@ -99,6 +102,14 @@ export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface |
 			redAlpha: float('_UseMaskTexAsAlpha', 0) !== 0,
 			disturbed: '_MaskTexUseDisturb',
 			prefix: '_MaskTex',
+		},
+		{
+			name: '_DissolveTex',
+			keyword: '_USE_DISSOLVE',
+			role: 'dissolve',
+			redAlpha: false,
+			disturbed: '_DissolveTexUseDisturb',
+			prefix: '_Dissolve',
 		},
 	] as const;
 	const layers: (StackLayer | null)[] = Array.from({ length: 7 }, () => null);
@@ -140,7 +151,7 @@ export const describeVfxAdvance = (reader: MaterialReader): EffectStackSurface |
 		distorted: has('_USE_DISTURB'),
 		particleDisturb: false,
 		weight: { disturb: 0, dissolve: 0, used: false },
-		dissolve: null,
+		dissolve: has('_USE_DISSOLVE') ? shared.dissolve : null,
 		masked: has('_USE_MASK'),
 		fresnel: has('_USE_FRESNEL')
 			? {

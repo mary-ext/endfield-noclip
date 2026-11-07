@@ -924,7 +924,7 @@ describe('VFXDitherAlpha effect variants', () => {
 
 describe('VFXAdvance', () => {
 	const advance = shader('HGRP/Effect/VFXAdvance', 'vfxAdvance', {
-		textures: { _MainTex: 'white', _MaskTex: 'white', _DisturbTex1: 'white' },
+		textures: { _MainTex: 'white', _MaskTex: 'white', _DisturbTex1: 'white', _DissolveTex: 'white' },
 	});
 	// Yinglung Pass's invisible ink bridge (`M_fx_map02_lv007_inkbridge_freelance_801`)
 	const bridge = (overrides: Partial<MaterialValues> = {}) =>
@@ -986,6 +986,40 @@ describe('VFXAdvance', () => {
 			brightColor: [0, 0, 0, 1],
 			brightVertexAlpha: true,
 			characterHeight: 0.25,
+		});
+	});
+
+	// the ink bridge walls' torn edge (`M_fx_map02_lv007_inkbridge_freelance_wall_05`)
+	it('dissolves by its dissolve texture after the distortion', () => {
+		const surface = ofKind(
+			describeMaterial(
+				bridge({
+					keywords: ['_USE_DISSOLVE', '_USE_DISTURB', '_USE_MASK'],
+					slots: { _MainTex: slot(1), _MaskTex: slot(2), _DisturbTex1: slot(3), _DissolveTex: slot(4) },
+					floats: {
+						_TintColorIntensity: 3,
+						_DissolveTexUseDisturb: 0,
+						_DissolveScheduleOffset: 0.5,
+						_DissolveEdgeSharp: 4,
+						_DissolveEmissiveEdge: 0.1,
+					},
+					colors: { _TintColor: [1, 1, 1, 1], _DissolveEmissiveColor: [1, 0.5, 0, 1] },
+				}),
+				advance,
+			),
+			'effectStack',
+		);
+		assert.deepEqual(surface.layers.slice(0, 4).map(roleOf), [
+			['main', false, 'uv0', 0],
+			['disturb1', false, 'uv0', 0],
+			['mask', false, 'uv0', 0],
+			['dissolve', false, 'uv0', 0],
+		]);
+		assert.deepEqual(surface.dissolve, {
+			threshold: 0,
+			sharpness: 4,
+			edgeWidth: 0.1,
+			edgeColor: [3, 1.5, 0],
 		});
 	});
 

@@ -63,11 +63,11 @@ what's left out is in [status](../status.md).
 ## VFXAdvance and the reveal
 
 [VFXAdvance](../game-data/effects.md#vfxadvance) materials with only a main texture, the first
-disturb texture, a mask, a Fresnel fade, fog, a vertex offset and the reveal draw through the
-texture stack (`variant: 'advance'`, `describeVfxAdvance`), in slots 0, 1 and 3; their other
-keywords, a Fresnel colour, a normal-map disturb texture and interiors stay unsupported. the ink
-keywords are drawn as the game draws them where the ink simulation hasn't run, since the viewer has
-none.
+disturb texture, a mask, a dissolve, a Fresnel fade, fog, a vertex offset and the reveal draw
+through the texture stack (`variant: 'advance'`, `describeVfxAdvance`), in slots 0–3 (main, disturb,
+mask, dissolve), the dissolve with VFXBaseV2's sweep and edge colour; their other keywords, a
+Fresnel colour, a normal-map disturb texture and interiors stay unsupported. the ink keywords are
+drawn as the game draws them where the ink simulation hasn't run, since the viewer has none.
 
 the [reveal around the player](../game-data/effects.md#invisible-bridges) (`EffectAppear`, rows
 40–43 of the look) changes the tint before the stack combines it (`fx_appear` in `effect.wgsl`), for

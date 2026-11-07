@@ -138,6 +138,11 @@ dissolve, a blend layer, polar and screen UVs, soft blending, an edge colour and
 parallax tunnel). the colour and alpha start as VFXBaseV2's (`_TintColor`, vertex colour, intensity,
 `_TintColorAlpha`), the Fresnel term fades the alpha and mixes the colour towards `_FresnelColor` by
 its w, and `_BlendMode` 1 adds. `_USE_VERTOFFSET` and the pull towards the camera are VFXBaseV2's.
+`_USE_DISSOLVE` is VFXBaseV2's [dissolve](#the-texture-stack) on `_DissolveTex` (its UVs built like
+the main texture's from `_Dissolve*` properties, shifted by `_DissolveTexUseDisturb` of the
+distortion), with the edge colour `_DissolveEmissiveColor · _TintColorIntensity`; it eats the alpha
+after the mask and before the near-camera fade. the ink bridge prefabs' walls, floors and joins
+(`M_fx_map02_lv007_inkbridge_freelance_wall_*`, `…_floor_*`, `…_join_*`) tear their edges with it.
 `_FogIntensity` mixes how much of the fog a fogged layer takes, fully past
 `_FogIntensityFadeOutDistance` metres.
 

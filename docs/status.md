@@ -242,11 +242,12 @@ packs or renders correctly.
   VFXBaseV2, VFXDecal, VFXDitherAlpha, VFXAdvance's simpler variants, VFXRefract, VFXWater sheets,
   six-way smoke and the mist (FogSimple, VFXFakeVolumeFog). other effect shaders and these shaders'
   undrawn variants show as [unsupported](viewer/materials.md#unsupported-materials)
-  - [VFXAdvance](game-data/effects.md#vfxadvance): the dissolve, blend layer, second disturb
-    texture, polar and screen UVs, soft blend, edge colour, interiors, `_FogIntensity` and a Fresnel
-    colour aren't drawn; on map02 that leaves 24 materials unsupported, most of them `_USE_DISSOLVE`
-    pieces of Yinglung Pass's ink bridge prefabs (floors, walls, joins). the ink simulation isn't
-    run
+  - [VFXAdvance](game-data/effects.md#vfxadvance): the blend layer, second disturb texture, polar
+    and screen UVs, soft blend, edge colour, interiors, `_FogIntensity`, a Fresnel colour, a
+    normal-map disturb texture and `_USE_BRIGHT` without `_USE_GLOBAL_APPEAR` aren't drawn; on map02
+    that leaves 16 materials unsupported, among them Yinglung Pass's ink bridge floor (`…_floor_01`)
+    and four of its walls (`…_wall_01`, `_03`, `_04`, `_04_a`). the dissolving walls are unchecked
+    against an in-game shot, and the ink simulation isn't run
   - [invisible bridges](game-data/effects.md#invisible-bridges): the fire seed reveals them about
     the camera, at its highest level by default since the server holds its level, without its radius
     easing between levels; the northern bridge's group is server-driven and stays at its stored
