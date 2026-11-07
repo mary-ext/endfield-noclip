@@ -3,7 +3,8 @@ import type { Chain } from '@endfield-noclip/package-format/instances';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { CULL_FLOATS, ROW_WORDS } from '../content/instance-rows.ts';
-import { type MaterialLook, alphaTextureOf } from '../looks/look.ts';
+import { alphaTextureOf } from '../looks/look.ts';
+import type { LazyMaterialLooks } from '../looks/material-looks.ts';
 import type { ParticleField, ParticleView } from '../particles/particle-rows.ts';
 import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../render/shadows/shadow-map.ts';
 import type { TextureStore } from '../render/textures/texture-store.ts';
@@ -87,8 +88,8 @@ export interface MeshSelectorInit {
 	chains: readonly Chain[];
 	/** the geometry table */
 	geometries: GeometryTable;
-	/** by material id, from `materialLooks` */
-	looks: readonly MaterialLook[];
+	/** by material id */
+	looks: LazyMaterialLooks;
 	stream: StreamManager;
 	textures: TextureStore;
 	/** writes the rows of emitters' particles */

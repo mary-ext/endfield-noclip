@@ -2,7 +2,7 @@ import type { GeometryTable } from '@endfield-noclip/package-format/geometry-tab
 import { type Chain, ChainDrawFlags, DrawRole } from '@endfield-noclip/package-format/instances';
 
 import type { MaterialLook } from '../looks/look.ts';
-import { unsupportedLook } from '../looks/material-looks.ts';
+import { type LazyMaterialLooks, unsupportedLook } from '../looks/material-looks.ts';
 import { SORTED_RANGES } from '../render/meshes/draw-ranges.ts';
 import { sortBand } from '../render/meshes/sorted-runs.ts';
 import { SHADOW_LAYERS } from '../render/shadows/shadow-map.ts';
@@ -183,8 +183,8 @@ interface MeshBucketsInit {
 	chains: readonly Chain[];
 	/** the geometry table */
 	geometries: GeometryTable;
-	/** by material id, from `materialLooks` */
-	looks: readonly MaterialLook[];
+	/** by material id */
+	looks: LazyMaterialLooks;
 	stream: Pick<StreamManager, 'get'>;
 }
 
@@ -192,10 +192,12 @@ interface MeshBucketsInit {
 export class MeshBuckets {
 	#chains: readonly Chain[];
 	#geometries: GeometryTable;
-	/** by material id, then the look stand-ins draw with at {@link #standIn} */
-	#looks: readonly MaterialLook[];
+	/** by material id */
+	#looks: LazyMaterialLooks;
 	/** the material id `DrawRole.Unsupported` draws take, one past the package's */
 	#standIn: number;
+	/** the look stand-ins draw with, at {@link #standIn} */
+	#standInLook = unsupportedLook();
 	#stream: Pick<StreamManager, 'get'>;
 	#buckets = new Map<number, MeshBucket>();
 	/** drawn draws per chain, built on first use */
@@ -207,12 +209,20 @@ export class MeshBuckets {
 	constructor(init: MeshBucketsInit) {
 		this.#chains = init.chains;
 		this.#geometries = init.geometries;
-		this.#standIn = init.looks.length;
-		this.#looks = [...init.looks, unsupportedLook()];
+		this.#standIn = init.looks.count;
+		this.#looks = init.looks;
 		this.#stream = init.stream;
 		// filled up front: an array written at scattered indices turns into a slow dictionary
 		this.#slots = Array.from({ length: init.chains.length }, () => null);
 		this.#boxes = new Uint8Array(init.chains.length);
+	}
+
+	/** @returns a material's look, the stand-ins' at {@link #standIn}, or `undefined` past it */
+	#lookOf(material: number): MaterialLook | undefined {
+		if (material === this.#standIn) {
+			return this.#standInLook;
+		}
+		return material < this.#standIn ? this.#looks.look(material) : undefined;
 	}
 
 	/**
@@ -239,7 +249,7 @@ export class MeshBuckets {
 			slots = [];
 			for (const draw of this.#chains[chain].draws) {
 				const material = draw.role === DrawRole.Unsupported ? this.#standIn : draw.material;
-				const look = material !== null && material < this.#looks.length ? this.#looks[material] : undefined;
+				const look = material === null ? undefined : this.#lookOf(material);
 				const shadowOnly = draw.role === DrawRole.ShadowOnly;
 				const queue = look?.queue;
 				const layers = {
@@ -296,7 +306,8 @@ export class MeshBuckets {
 				geometry: item,
 				submesh,
 				material,
-				look: this.#looks[material],
+				// a slot's material has a look, or the slot wouldn't have been made
+				look: this.#lookOf(material) ?? unsupportedLook(),
 				mirrored: (index & 1) === 1,
 				castOnly: (index & 2) === 2,
 				rows: Array.from({ length: SHADOW_LAYERS + 1 }, () => []),

@@ -1,7 +1,7 @@
 import { markBillboardRows } from '../content/instance-rows.ts';
 import { instanceRowKinds } from '../content/row-kinds.ts';
 import type { EnvironmentScene } from '../environment/blend.ts';
-import { materialLooks } from '../looks/material-looks.ts';
+import { LazyMaterialLooks } from '../looks/material-looks.ts';
 import type { DecodePool } from '../package/decode-pool.ts';
 import type { ViewerPackage } from '../package/viewer-package.ts';
 import { ParticleField } from '../particles/particle-rows.ts';
@@ -156,7 +156,7 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 				? new MeshSelector({
 						chains: pkg.chains,
 						geometries,
-						looks: materialLooks(pkg.materials),
+						looks: new LazyMaterialLooks(pkg.materials),
 						stream,
 						textures,
 						particles,

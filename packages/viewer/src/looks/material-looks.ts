@@ -186,6 +186,35 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] =>
 	materials.entries.map(materialLook);
 
 /**
+ * each material's look, built when first asked for: a package has tens of thousands of materials (map02:
+ * 15k, 42 ms to build at open), and a view uses a fraction of them
+ */
+export class LazyMaterialLooks {
+	#entries: readonly MaterialEntry[];
+	// filled up front: an array written at scattered indices turns into a slow dictionary
+	#looks: (MaterialLook | null)[];
+
+	/** @param materials the package's material table */
+	constructor(materials: MaterialTable) {
+		this.#entries = materials.entries;
+		this.#looks = Array.from({ length: materials.entries.length }, () => null);
+	}
+
+	/** how many materials there are */
+	get count(): number {
+		return this.#entries.length;
+	}
+
+	/**
+	 * @param material material id, below {@link count}
+	 * @returns its look
+	 */
+	look(material: number): MaterialLook {
+		return (this.#looks[material] ??= materialLook(this.#entries[material]));
+	}
+}
+
+/**
  * the queue of a VFXBaseV2 stack: opaque ones shade in the main pass, and those that multiply the scene draw
  * over the composited scene
  */
