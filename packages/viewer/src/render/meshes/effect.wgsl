@@ -1134,7 +1134,7 @@ fn six_way_smoke(in: EffectOut, bases: FxBases) -> EffectAccumulated {
 	let flags = u32(row.x);
 	let bias = exp2(frame.params.y);
 	// what scales screen UVs by depth: the object origin's view depth past the near plane
-	let depth_scale = max(0.0, in.origin_depth - frame.local_lights.w);
+	let depth_scale = max(0.0, in.origin.w - frame.local_lights.w);
 
 	var offset = vec2f(0.0);
 	let strength = fx_row(id, SW_DISTURB);
@@ -1996,7 +1996,7 @@ fn light_beam(in: EffectOut) -> EffectAccumulated {
 	let fresnel = select(0.0, pow(f, power), f > 0.0);
 	let surface = mix(mix(fresnel, 1.001, cap), fresnel, outside);
 
-	let origin_distance = abs(in.origin_depth);
+	let origin_distance = abs(in.origin.w);
 	let distance_fade = saturate((origin_distance - fade.x) / (fade.y - fade.x)) *
 		saturate((origin_distance - fade.z) / (fade.w - fade.z));
 	var t = select(0.0, 1.0, along >= falloff.x);
