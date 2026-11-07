@@ -6,6 +6,15 @@ export interface Rect {
 	maxZ: number;
 }
 
+/**
+ * @param rect a rectangle, `[min, max)` on each axis
+ * @param x world x
+ * @param z world z
+ * @returns whether the rectangle holds the point
+ */
+export const rectContains = (rect: Rect, x: number, z: number): boolean =>
+	x >= rect.minX && x < rect.maxX && z >= rect.minZ && z < rect.maxZ;
+
 /** an axis-aligned box */
 export interface Bounds {
 	min: [x: number, y: number, z: number];

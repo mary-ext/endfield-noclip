@@ -157,28 +157,32 @@ the camera is outside the ring of its HLOD tier, the game's
 [HLOD rings](game-data/world.md#streaming-layers); otherwise it refines to its children, and a
 refined leaf draws its detail blocks. per-instance LOD inside detail uses the chain thresholds.
 conditional blocks have no HLOD stand-in, so they draw within the detail ring regardless of
-refinement, or, with a grid in `param`, while the game would load that grid
-([instance selection](viewer/streaming.md#instance-selection)). `manifest.global` content (the
-game's Global chunk scenery) is drawn whenever its group shows and never replaced. `geometricError`
-(`edge / 16`, 64 m leaf → 4 m) now only orders requests. which entities become HLOD, detail, global
-and conditional content is in [extraction.md](extraction.md#how-the-packer-files-instances).
+refinement, or, with a `reach`, while the camera is inside that world x/z rectangle
+([instance selection](viewer/streaming.md#instance-selection)). the packer gives dynamic structures'
+blocks the reach where the game would load their [load grid](game-data/world.md#dynamic-load-grids)
+(the 3×3 cells around it, running on to infinity at the game's clamped frame edges), so the viewer
+needs no grid layout. global content (the game's Global chunk scenery) is drawn whenever its group
+shows and never replaced. `geometricError` (`edge / 16`, 64 m leaf → 4 m) now only orders requests.
+which entities become HLOD, detail, global and conditional content is in
+[extraction.md](extraction.md#how-the-packer-files-instances).
 
 **content refs** (`ContentRef`, `ContentKind`):
 
-| kind                 | points at                                                                      | `tier`    | `param`                                                    |
-| -------------------- | ------------------------------------------------------------------------------ | --------- | ---------------------------------------------------------- |
-| `TerrainHeights` (0) | one height page                                                                | 0         | 0                                                          |
-| `Hlod` (1)           | rows `[first, first + count)` of a group's shared HLOD block                   | HLOD tier | 0                                                          |
-| `Detail` (2)         | a whole instance block the HLODs stand in for                                  | 0         | 0                                                          |
-| `Conditional` (3)    | a whole instance block no HLOD stands in for (scene-state and dynamic content) | 0         | 0, or the game's `fb_main` grid id + 1 that loads the rows |
-| `TerrainSurface` (4) | one surface page, covering the same tile as the height page                    | 0         | 0                                                          |
-| `TerrainSplat` (5)   | a leaf's splat page                                                            | 0         | 0                                                          |
+| kind                 | points at                                                                      | `tier`    | `reach`                       |
+| -------------------- | ------------------------------------------------------------------------------ | --------- | ----------------------------- |
+| `TerrainHeights` (0) | one height page                                                                | 0         | `null`                        |
+| `Hlod` (1)           | rows `[first, first + count)` of a group's shared HLOD block                   | HLOD tier | `null`                        |
+| `Detail` (2)         | a whole instance block the HLODs stand in for                                  | 0         | `null`                        |
+| `Conditional` (3)    | a whole instance block no HLOD stands in for (scene-state and dynamic content) | 0         | `null`, or the camera's reach |
+| `TerrainSurface` (4) | one surface page, covering the same tile as the height page                    | 0         | `null`                        |
+| `TerrainSplat` (5)   | a leaf's splat page                                                            | 0         | `null`                        |
 
 every ref names a [visibility group](#visibility-groups); terrain refs use group 0 (shared, always
-loaded). detail and conditional blocks are one per (leaf, group); an instance goes to the leaf under
-its bounds centre. HLOD and global rows form one block per group in the core, HLOD rows sorted by
-node so each node's refs are one run. global refs live in `manifest.global` with kind `Detail`;
-Global chunks of scene states become conditional global blocks, drawn whole while their state is on.
+loaded). detail and conditional blocks are one per (leaf, group, reach); an instance goes to the
+leaf under its bounds centre. HLOD and global rows form one block per group in the core, HLOD rows
+sorted by node so each node's refs are one run. global refs follow the nodes' refs in `tree.bin`,
+with kind `Detail`; Global chunks of scene states become conditional global blocks, drawn whole
+while their state is on.
 
 ## manifest
 
@@ -191,14 +195,13 @@ map02, a third of the core):
 | `generation`                                                                       | see [containers and blobs](#containers-and-blobs)                                                                                                                                            |
 | `scene`                                                                            | streaming scene id and display name                                                                                                                                                          |
 | `coordinates`                                                                      | `COORDINATE_CONVENTIONS`                                                                                                                                                                     |
-| `tree`                                                                             | `TreeInfo` plus node and ref counts                                                                                                                                                          |
+| `tree`                                                                             | `TreeInfo`                                                                                                                                                                                   |
 | `terrain`                                                                          | `baseHeight`, `heightScale`, levels with pages, close-up `splat`; `null` without terrain. the square is the tree's root, and the page layout is fixed ([height page](#height-page-hgt-efht)) |
 | `levels`                                                                           | every level of the scene, even in a subset: id, tag, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment                    |
 | `environmentPosts`, `environmentSchema`, `environmentPhases`, `environmentVolumes` | see [environments](#environments)                                                                                                                                                            |
 | `heightFogFlowNoise`                                                               | texture id of the height fog's 3D flow noise, packed once, or `null` ([flow noise](game-data/sky-and-fog.md#flow-noise))                                                                     |
 | `states`                                                                           | scene controls, conditional sets, visibility groups, stream areas and missions; see [conditions](#conditions)                                                                                |
 | `archives`                                                                         | `ArchiveInfo`: name, role, tile, size, `dataOffset`                                                                                                                                          |
-| `global`                                                                           | content refs drawn regardless of refinement                                                                                                                                                  |
 | `subset`                                                                           | what `--level` / `--bounds` kept, or `null`                                                                                                                                                  |
 | `source`                                                                           | the bundle manifest's build guid and content hash: identifies the game build                                                                                                                 |
 
@@ -241,38 +244,38 @@ the user turns it on. a viewer therefore decides whether a volume applies from i
 all little-endian, every section 4-byte aligned. the tables share a 16-byte header:
 `u32 magic, u16 version, u16 0, u32 count, u32 count-or-0`.
 
-| member                  | magic  | layout                                                                                                                                                                                                                                                                                                                                                   |
-| ----------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tree.bin`              | `EFTR` | header (nodes, refs); 48-byte nodes: `u8 level, u8 childMask, u16 flags, i32 x, i32 z, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs: `u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, f32 param`                                                                                              |
-| `tables/chains.bin`     | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 flags, u8 0`; 32-byte draws: `u32 geometry, u32 material, u32 particles, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u8 flags, u8 0, i16 sortingLayer, i16 sortingOrder, u16 0`; then `f32×3` distance origins, one per `CameraDistance` chain in chain order |
-| `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 32-byte records: `16-byte hash, u16 archive, u8 codec, u8 kind, u32 offset, u32 length, u32 rawLength`                                                                                                                                                                                                                                |
-| `tables/irradiance.bin` | `EFIV` | version 2; header (entries, 0); u32 cell keys ascending (repeats allowed), then u32 blob indices, then u32 visibility groups                                                                                                                                                                                                                             |
+| member                  | magic  | layout                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tree.bin`              | `EFTR` | 24-byte header (nodes, node refs, global refs, reaches); 48-byte nodes: `i32 x, i32 z, u8 level, u8×3 0, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs, the nodes' then the global ones: `u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, u32 reach` (`0xffffffff` for none); 16-byte reaches: `f32 minX, minZ, maxX, maxZ`, `[min, max)`, possibly infinite |
+| `tables/chains.bin`     | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 flags, u8 0`; 32-byte draws: `u32 geometry, u32 material, u32 particles, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u8 flags, u8 0, i16 sortingLayer, i16 sortingOrder, u16 0`; then `f32×3` distance origins, one per `CameraDistance` chain in chain order                                                               |
+| `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 32-byte records: `16-byte hash, u16 archive, u8 codec, u8 kind, u32 offset, u32 length, u32 rawLength`                                                                                                                                                                                                                                                                                              |
+| `tables/irradiance.bin` | `EFIV` | version 2; header (entries, 0); u32 cell keys ascending (repeats allowed), then u32 blob indices, then u32 visibility groups                                                                                                                                                                                                                                                                                           |
 
-nodes are ordered coarse to fine (level, then z, then x); a node's `childMask` bit `dz·2 + dx` marks
-child `(2x + dx, 2z + dz)`, and its bounds cover everything it and its descendants draw, overhang
+nodes are ordered coarse to fine (level, then z, then x); a node's children are the nodes at
+`(l + 1, 2x + dx, 2z + dz)`, and its bounds cover everything it and its descendants draw, overhang
 included.
 
-**chains** are LOD-chain templates deduplicated across the scene by LOD count and ordered draws,
-thresholds compared by f32 bit pattern ([chains.ts](../packages/extractor/src/pack/chains.ts)). a
-draw shows while `minSquared < s² ≤ maxSquared`, `s` being Unity's LODGroup screen-relative height;
-a negative `minSquared` never culls by size. the viewer measures `s` as twice the largest
-half-extent of the instance's world bounds over its distance, relative to the screen height; which
-size the game's thresholds were authored against is unverified, and rotated objects' bounds
-overstate it. roles: `Lit`, `ShadowOnly` (shadow proxies, from the game's flag bit 10 or a prefab
-renderer's shadow casting mode) and `Unsupported` (a [stand-in](#stand-ins) for content the viewer
-can't draw, drawn with its unsupported look); an HLOD cluster's draws are `Lit`, the tree ref
-holding them (`Hlod`) says what they are. a draw's flags (`ChainDrawFlags`) say which shadow maps it
-casts into when its material casts: `CastsCascades` for the sharp cascades, `CastsStatic` for the
-cached far map. the packer reads them from a static draw's renderer flag word, as the
-[game](game-data/lighting.md) does, and sets both on prefab, decal and stand-in draws, which have
-none. `material` is `0xffffffff` for a stand-in whose material isn't known, and `particles` indexes
-the [particles table](#particles) when the draw is a particle system's mesh, else it's `0xffffffff`;
-both decode to `null`. `sortingLayer` and `sortingOrder` are a prefab renderer's `m_SortingLayer`
-and `m_SortingOrder`, which the transparent pass sorts by before distance; static draws store 0.
-prefab renderers under an enabled `LODGroup` get one draw per span of its `screenRelativeHeight`
-thresholds they show at, measured on the row's own bounds rather than the LODGroup's size. the chain
-flags say whether its instances are billboards (`BillboardFacing`, `BillboardUpright`): their
-transform's rotation is then relative to the camera's, and their bounds hold every orientation
+**chains** are LOD-chain templates deduplicated across the scene by their ordered draws, thresholds
+compared by f32 bit pattern ([chains.ts](../packages/extractor/src/pack/chains.ts)). a draw shows
+while `minSquared < s² ≤ maxSquared`, `s` being Unity's LODGroup screen-relative height; a negative
+`minSquared` never culls by size. the viewer measures `s` as twice the largest half-extent of the
+instance's world bounds over its distance, relative to the screen height; which size the game's
+thresholds were authored against is unverified, and rotated objects' bounds overstate it. roles:
+`Lit`, `ShadowOnly` (shadow proxies, from the game's flag bit 10 or a prefab renderer's shadow
+casting mode) and `Unsupported` (a [stand-in](#stand-ins) for content the viewer can't draw, drawn
+with its unsupported look); an HLOD cluster's draws are `Lit`, the tree ref holding them (`Hlod`)
+says what they are. a draw's flags (`ChainDrawFlags`) say which shadow maps it casts into when its
+material casts: `CastsCascades` for the sharp cascades, `CastsStatic` for the cached far map. the
+packer reads them from a static draw's renderer flag word, as the [game](game-data/lighting.md)
+does, and sets both on prefab, decal and stand-in draws, which have none. `material` is `0xffffffff`
+for a stand-in whose material isn't known, and `particles` indexes the [particles table](#particles)
+when the draw is a particle system's mesh, else it's `0xffffffff`; both decode to `null`.
+`sortingLayer` and `sortingOrder` are a prefab renderer's `m_SortingLayer` and `m_SortingOrder`,
+which the transparent pass sorts by before distance; static draws store 0. prefab renderers under an
+enabled `LODGroup` get one draw per span of its `screenRelativeHeight` thresholds they show at,
+measured on the row's own bounds rather than the LODGroup's size. the chain flags say whether its
+instances are billboards (`BillboardFacing`, `BillboardUpright`): their transform's rotation is then
+relative to the camera's, and their bounds hold every orientation
 ([billboards](game-data/assets.md#billboards)). `CameraDistance` makes the chain's thresholds
 squared camera distances, in m², instead of screen-relative sizes, measured from the chain's
 distance origin: a point in the instance's frame, which the instance's transform takes to the world.

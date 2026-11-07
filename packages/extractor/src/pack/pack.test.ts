@@ -71,22 +71,22 @@ describe('ChainTable', () => {
 describe('TileTreeBuilder', () => {
 	const grid = { origin: [-2048, -2048] as [number, number], rootSize: 4096 };
 
-	it('creates ancestors, child masks and merged bounds', () => {
+	it('creates ancestors, merged bounds and shared reaches', () => {
 		const builder = new TileTreeBuilder(grid);
-		const ref = { kind: ContentKind.Detail, tier: 0, group: 0, blob: 0, first: 0, count: 1, param: 0 };
-		builder.addRef({ level: 2, x: 1, z: 0 }, ref, 4);
+		const ref = { kind: ContentKind.Detail, tier: 0, group: 0, blob: 0, first: 0, count: 1, reach: null };
+		builder.addRef({ level: 2, x: 1, z: 0 }, ref);
 		builder.extend({ level: 2, x: 1, z: 0 }, { min: [-1000, 10, -2000], max: [-900, 20, -1900] });
-		builder.addRef({ level: 2, x: 0, z: 1 }, { ...ref, blob: 1 }, 4);
+		builder.addRef({ level: 2, x: 0, z: 1 }, { ...ref, blob: 1 });
 		builder.extend({ level: 2, x: 0, z: 1 }, { min: [-2000, -5, -1000], max: [-1900, 5, -900] });
-		const tree = builder.build((key) => 100 / 2 ** key.level);
+		const tree = builder.build((key) => 100 / 2 ** key.level, []);
 
 		assert.deepEqual(
-			tree.nodes.map((node) => [node.level, node.x, node.z, node.childMask]),
+			tree.nodes.map((node) => [node.level, node.x, node.z]),
 			[
-				[0, 0, 0, 0b0001],
-				[1, 0, 0, 0b0110],
-				[2, 1, 0, 0],
-				[2, 0, 1, 0],
+				[0, 0, 0],
+				[1, 0, 0],
+				[2, 1, 0],
+				[2, 0, 1],
 			],
 		);
 		assert.deepEqual(tree.nodes[0].bounds, { min: [-2000, -5, -2000], max: [-900, 20, -900] });
@@ -101,17 +101,20 @@ describe('TileTreeBuilder', () => {
 		);
 		assert.equal(tree.refs[1].blob, 1);
 		assert.equal(tree.nodes[2].geometricError, 25);
+		const rect = { minX: -Infinity, minZ: 0, maxX: 64, maxZ: 128 };
+		assert.equal(builder.reach(rect), 0);
+		assert.equal(builder.reach({ ...rect, maxX: 96 }), 1);
+		assert.equal(builder.reach({ ...rect }), 0);
 	});
 
 	it('handles tiles west and south of the root square', () => {
 		const builder = new TileTreeBuilder(grid);
 		builder.extend({ level: 6, x: -1, z: -1 }, { min: [-2100, 0, -2100], max: [-2090, 1, -2090] });
-		const tree = builder.build(() => 0);
+		const tree = builder.build(() => 0, []);
 		assert.deepEqual(
 			tree.nodes.map((node) => [node.level, node.x, node.z]),
 			Array.from({ length: 7 }, (_, level) => [level, -1, -1]),
 		);
-		assert.ok(tree.nodes.slice(0, 6).every((node) => node.childMask === 0b1000));
 	});
 });
 

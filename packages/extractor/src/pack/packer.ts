@@ -80,7 +80,6 @@ import {
 	CONTENT_KIND_NAMES,
 	ContentKind,
 	type ContentRef,
-	NodeFlags,
 	type Tree,
 	type TreeInfo,
 } from '@endfield-noclip/package-format/tree';
@@ -95,6 +94,7 @@ import type { AssetResolver, ObjectRef } from '../game/assets.ts';
 import { billboardPlacement } from '../game/billboard.ts';
 import { RENDER_PIPELINE_QUAD_PATH } from '../game/builtin-resources.ts';
 import { cabinDoors, loadCabins } from '../game/cabins.ts';
+import { decodeDynamicGrid, dynamicGridReach } from '../game/dynamic-grids.ts';
 import { loadDynamicStructures } from '../game/dynamic-structures.ts';
 import type { SceneEnvironmentVolume } from '../game/environment.ts';
 import { allOf, GameState, type MapVariables } from '../game/game-state.ts';
@@ -670,9 +670,6 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 
 type AssetTables = Pick<AssetConversion, 'geometries' | 'materials' | 'textures' | 'extraTextureIds'>;
 
-/** tree parameters before the tree is built */
-type TreeGrid = Omit<TreeInfo, 'nodeCount' | 'refCount'>;
-
 /** what setup learns about the scene */
 interface SceneIndex {
 	options: PackOptions;
@@ -682,7 +679,7 @@ interface SceneIndex {
 	surface: TerrainSurfacesData | undefined;
 	/** the manifest's terrain section without its levels, or `null` without terrain */
 	terrain: Omit<TerrainInfo, 'levels' | 'splat'> | null;
-	grid: TreeGrid;
+	grid: TreeInfo;
 	/** how HLOD cluster names map onto the grid */
 	hlod: HlodLayout;
 	subset: Subset;
@@ -769,7 +766,7 @@ const indexScene = async (
 		),
 		terrainGrid,
 	);
-	const grid: TreeGrid = { ...terrainGrid, hlodLevels: hlod.levels };
+	const grid: TreeInfo = { ...terrainGrid, hlodLevels: hlod.levels };
 	return {
 		options,
 		names,
@@ -1998,24 +1995,16 @@ const packTerrain = async (
 		textureZstdLevel: pack.scene.options.textureZstdLevel,
 		log: pack.scene.options.log,
 	});
-	const whole = { tier: 0, group: SHARED_GROUP, first: 0, count: 1 };
+	const whole = { tier: 0, group: SHARED_GROUP, first: 0, count: 1, reach: null };
 	for (const tile of packed.tiles) {
 		const { key } = tile;
-		pack.builder.addRef(
-			key,
-			{ ...whole, kind: ContentKind.TerrainHeights, blob: tile.heights, param: 0 },
-			NodeFlags.HasTerrain,
-		);
+		pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainHeights, blob: tile.heights });
 		pack.builder.extend(key, tile.bounds);
 		if (tile.surface !== null) {
-			pack.builder.addRef(
-				key,
-				{ ...whole, kind: ContentKind.TerrainSurface, blob: tile.surface, param: 0 },
-				0,
-			);
+			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSurface, blob: tile.surface });
 		}
 		if (tile.splat !== null) {
-			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSplat, blob: tile.splat, param: 0 }, 0);
+			pack.builder.addRef(key, { ...whole, kind: ContentKind.TerrainSplat, blob: tile.splat });
 		}
 	}
 	return { levels: packed.levels, splat: packed.splat, debug: packed.debug };
@@ -2079,19 +2068,15 @@ const packInstances = async (
 			})),
 		);
 		for (const [i, { group, block, order }] of encoded.entries()) {
-			builder.addRef(
-				group.key,
-				{
-					kind: group.conditional ? ContentKind.Conditional : ContentKind.Detail,
-					tier: 0,
-					group: group.visibility,
-					blob: blobs[i],
-					first: 0,
-					count: group.rows.length,
-					param: group.grid === null ? 0 : group.grid + 1,
-				},
-				NodeFlags.HasDetail,
-			);
+			builder.addRef(group.key, {
+				kind: group.conditional ? ContentKind.Conditional : ContentKind.Detail,
+				tier: 0,
+				group: group.visibility,
+				blob: blobs[i],
+				first: 0,
+				count: group.rows.length,
+				reach: group.grid === null ? null : builder.reach(dynamicGridReach(decodeDynamicGrid(group.grid))),
+			});
 			builder.extend(group.key, group.bounds!);
 			track(blobs[i], block);
 			// oxlint-disable-next-line no-await-in-loop -- lines go out in block order
@@ -2132,19 +2117,15 @@ const packInstances = async (
 				end++;
 			}
 			const node = collected.hlodNodes.get(groups[first])!;
-			builder.addRef(
-				node.key,
-				{
-					kind: ContentKind.Hlod,
-					tier: node.tier,
-					group: visibility,
-					blob,
-					first,
-					count: end - first,
-					param: 0,
-				},
-				NodeFlags.HasHlod,
-			);
+			builder.addRef(node.key, {
+				kind: ContentKind.Hlod,
+				tier: node.tier,
+				group: visibility,
+				blob,
+				first,
+				count: end - first,
+				reach: null,
+			});
 			builder.extend(node.key, node.bounds);
 			tierCounts[node.tier] += end - first;
 			hlodClusters += end - first;
@@ -2159,7 +2140,7 @@ const packInstances = async (
 		blob,
 		first: 0,
 		count: group.rows.length,
-		param: 0,
+		reach: null,
 	}));
 	return { rows, global, hlodClusters, tierCounts, rowsOf };
 };
@@ -2281,7 +2262,7 @@ const writePackage = async (
 ): Promise<{ tree: Tree; coreMembers: Record<string, number>; archives: PackReport['archives'] }> => {
 	const { scene, store } = pack;
 	const { options, grid } = scene;
-	const tree = pack.builder.build((key) => (grid.rootSize / 2 ** key.level) * ERROR_PER_EDGE);
+	const tree = pack.builder.build((key) => (grid.rootSize / 2 ** key.level) * ERROR_PER_EDGE, states.global);
 	const treeBin = encodeTree(tree);
 	const chainsBin = encodeChains(pack.chains.chains);
 	const irradianceBin = encodeIrradianceTable(states.irradiance);
@@ -2339,7 +2320,7 @@ const writePackage = async (
 		generation: generation.digest('hex').slice(0, 32),
 		scene: { id: options.scene, name: scene.names.get(options.scene) ?? null },
 		coordinates: COORDINATE_CONVENTIONS,
-		tree: { ...grid, nodeCount: tree.nodes.length, refCount: tree.refs.length },
+		tree: grid,
 		terrain:
 			scene.terrain === null
 				? null
@@ -2361,7 +2342,6 @@ const writePackage = async (
 			mainStory: states.mainStory,
 		},
 		archives,
-		global: states.global,
 		subset: scene.subset.info,
 		source: scene.source,
 	};
@@ -2412,7 +2392,7 @@ const writePackage = async (
  * @returns tree parameters aligned with the terrain quadtree; scenes without terrain get a 4096 m grid at the
  *   origin
  */
-const treeGrid = (surface: TerrainSurfacesData | undefined): TreeGrid => {
+const treeGrid = (surface: TerrainSurfacesData | undefined): TreeInfo => {
 	const rootSize = surface?.terrainSize ?? 4096;
 	const origin: [number, number] =
 		surface === undefined ? [-rootSize / 2, -rootSize / 2] : [surface.position.x, surface.position.z];
@@ -2497,7 +2477,7 @@ interface Subset {
 	includesTile(key: TileKey): boolean;
 }
 
-const buildSubset = (options: PackOptions, partition: LevelPartition | undefined, grid: TreeGrid): Subset => {
+const buildSubset = (options: PackOptions, partition: LevelPartition | undefined, grid: TreeInfo): Subset => {
 	let level: PartitionLevel | undefined;
 	if (options.level !== null) {
 		level = partition?.levels.find((candidate) => candidate.id === options.level);
@@ -2536,7 +2516,7 @@ const buildSubset = (options: PackOptions, partition: LevelPartition | undefined
 };
 
 /** @returns the cell-level tile of a 128 m streaming cell */
-const cellTile = (grid: TreeGrid, cell: { x: number; z: number }): TileKey =>
+const cellTile = (grid: TreeInfo, cell: { x: number; z: number }): TileKey =>
 	tileAt(grid, grid.cellLevel, (cell.x + 0.5) * CELL_SIZE, (cell.z + 0.5) * CELL_SIZE);
 
 /**

@@ -51,16 +51,15 @@ distance from the camera to the node's bounds (`hlodRing`):
   the error now only orders requests ([priority](#priority)).
 - until everything a refinement needs is resident, the node keeps drawing its own HLOD, so streaming
   never opens holes. disabled HLOD tiers are refined past.
-- conditional content has no HLOD stand-in, so it follows its own rule while `detail` is on. dynamic
-  structures' blocks name the game's `fb_main` grid that loads them, and draw while the camera,
-  standing in for the game's streaming centre, is in that grid's 3×3 block
-  ([dynamic load grids](../game-data/world.md#dynamic-load-grids); `dynamicGridLoaded` in
-  `package-format/dynamic-grids.ts`): a coarse grid's rows reach far, so Dijiang's corroded planet
-  and satellites show from its deck, though their renderers sit hundreds of metres to kilometres
-  from it. those blocks are listed by grid (`TileTree.gridded`), tested every frame a grid at a time
-  (about 0.1 ms per traversal on map02's 1,690 grids). the rest, scene-state content and facilities,
-  draw within `detailDistance` of their tile.
-- manifest `global` refs are pinned and drawn whenever they're resident, never requested. they have
+- conditional content has no HLOD stand-in, so it follows its own rule while `detail` is on. a ref
+  with a [reach](../package-format.md#tile-tree) draws while the camera, standing in for the game's
+  streaming centre, is inside that rectangle: dynamic structures' blocks reach as far as their game
+  grid loads them, so Dijiang's corroded planet and satellites show from its deck, though their
+  renderers sit hundreds of metres to kilometres from it. those blocks are listed by reach
+  (`TileTree.reached`), tested every frame a reach at a time (about 0.1 ms per traversal on map02's
+  1,690 grids). the rest, scene-state content and facilities, draw within `detailDistance` of their
+  tile.
+- the tree's global refs are pinned and drawn whenever they're resident, never requested. they have
   no tile to refine, so where an HLOD cluster covers global scenery both draw until the cluster's
   tile refines.
 - every ref is drawn only while its visibility group shows. the viewer evaluates `groupsShown` (see

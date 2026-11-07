@@ -6,7 +6,7 @@ import { RowKind, type RowKinds, type TierSpan } from './instance-rows.ts';
 
 /**
  * @param tree the linked tree
- * @param global manifest.global refs
+ * @param global the tree's global refs
  * @returns what the rows of each instance blob are: rows of HLOD blocks take their tier from the refs that
  *   slice them
  */

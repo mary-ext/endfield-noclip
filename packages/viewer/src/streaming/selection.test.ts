@@ -18,7 +18,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		blob,
 		first: 0,
 		count: 1,
-		param: 0,
+		reach: null,
 	});
 	const child: TileNode = {
 		index: 1,
@@ -54,7 +54,7 @@ it('streams conditional scenery independently of coarse HLOD and never requests 
 		byId: new Map(),
 		terrainLeafLevel: -1,
 		terrainRootLevel: Infinity,
-		gridded: [],
+		reached: [],
 	};
 	const wanted: number[] = [];
 	const selector = new Selector(
@@ -125,7 +125,7 @@ it('drops the HLOD of a nearby leaf with no detail instead of overlaying the sce
 		surface: null,
 		terrainSplat: null,
 		detail: [],
-		hlod: [{ kind: ContentKind.Hlod, tier: 0, group: 0, blob: 9, first: 0, count: 1, param: 0 }],
+		hlod: [{ kind: ContentKind.Hlod, tier: 0, group: 0, blob: 9, first: 0, count: 1, reach: null }],
 		conditional: [],
 		cellId: null,
 	};
@@ -135,7 +135,7 @@ it('drops the HLOD of a nearby leaf with no detail instead of overlaying the sce
 		byId: new Map(),
 		terrainLeafLevel: -1,
 		terrainRootLevel: Infinity,
-		gridded: [],
+		reached: [],
 	};
 	const item = { blob: 9 } as ContentItem;
 	const selector = new Selector(
@@ -181,7 +181,7 @@ it('keeps drawing the HLOD in place of a refinement still loading, then the refi
 		blob,
 		first: blob * 10,
 		count: blob,
-		param: 0,
+		reach: null,
 	});
 	const node = (index: number, minX: number, size: number): TileNode => ({
 		index,
@@ -215,7 +215,7 @@ it('keeps drawing the HLOD in place of a refinement still loading, then the refi
 		byId: new Map(),
 		terrainLeafLevel: -1,
 		terrainRootLevel: Infinity,
-		gridded: [],
+		reached: [],
 	};
 	const resident = new Set([1, 2]);
 	const items = new Map([1, 2, 3].map((blob) => [blob, { blob } as ContentItem]));
@@ -275,13 +275,15 @@ it('streams what is near the camera first, then the focused cells, then the rest
 		terrainSplat: null,
 		detail: [],
 		hlod: [],
-		conditional: [{ kind: ContentKind.Conditional, tier: 0, group: 0, blob, first: 0, count: 1, param: 0 }],
+		conditional: [
+			{ kind: ContentKind.Conditional, tier: 0, group: 0, blob, first: 0, count: 1, reach: null },
+		],
 		cellId,
 	});
 	const roots = [tile(1, 200, null), tile(2, 300, 'focus'), tile(3, 600, null)];
 	const priorities = new Map<number, number>();
 	const selector = new Selector(
-		{ nodes: roots, roots, byId: new Map(), terrainLeafLevel: -1, terrainRootLevel: Infinity, gridded: [] },
+		{ nodes: roots, roots, byId: new Map(), terrainLeafLevel: -1, terrainRootLevel: Infinity, reached: [] },
 		{
 			want(blob, priority) {
 				priorities.set(blob, priority);

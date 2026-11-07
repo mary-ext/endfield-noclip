@@ -74,7 +74,7 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 	const tree = buildTileTree(manifest, pkg.tree);
 	const textures = new TextureStore(deps.device, pkg.textures, { bc: deps.bc });
 	const particles = new ParticleField(pkg.particles, instances);
-	const rowKinds = instanceRowKinds(tree, manifest.global);
+	const rowKinds = instanceRowKinds(tree, pkg.tree.global);
 	const stream = new StreamManager(
 		pkg,
 		deps.pool,
@@ -145,7 +145,7 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 				return resident?.kind === 'heights' ? resident.samples : null;
 			},
 		},
-		selector: new Selector(tree, stream, manifest.global, manifest.tree.rootSize),
+		selector: new Selector(tree, stream, pkg.tree.global, manifest.tree.rootSize),
 		meshes:
 			geometriesReady > 0
 				? new MeshSelector({

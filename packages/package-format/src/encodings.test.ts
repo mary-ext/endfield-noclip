@@ -45,8 +45,6 @@ describe('tree', () => {
 					level: 0,
 					x: -1,
 					z: 0,
-					childMask: 0b1001,
-					flags: 3,
 					bounds: { min: [-4096, -10.5, 0], max: [0, 400.25, 4096] },
 					geometricError: 256,
 					refFirst: 0,
@@ -56,8 +54,6 @@ describe('tree', () => {
 					level: 1,
 					x: -2,
 					z: 1,
-					childMask: 0,
-					flags: 4,
 					bounds: { min: [-4096, 0, 2048], max: [-2048, 1, 4096] },
 					geometricError: 128,
 					refFirst: 2,
@@ -65,15 +61,18 @@ describe('tree', () => {
 				},
 			],
 			refs: [
-				{ kind: ContentKind.TerrainHeights, tier: 0, group: 0, blob: 7, first: 0, count: 1, param: 1.5 },
-				{ kind: ContentKind.Hlod, tier: 2, group: 10, blob: 3, first: 10, count: 4, param: 0 },
+				{ kind: ContentKind.TerrainHeights, tier: 0, group: 0, blob: 7, first: 0, count: 1, reach: null },
+				{ kind: ContentKind.Hlod, tier: 2, group: 10, blob: 3, first: 10, count: 4, reach: null },
+				{ kind: ContentKind.Conditional, tier: 0, group: 2, blob: 5, first: 0, count: 9, reach: 0 },
 			],
+			global: [{ kind: ContentKind.Detail, tier: 0, group: 1, blob: 2, first: 0, count: 3, reach: null }],
+			reaches: [{ minX: -Infinity, minZ: -64, maxX: 32, maxZ: Infinity }],
 		};
 		assert.deepEqual(decodeTree(encodeTree(tree)), tree);
 	});
 
 	it('rejects truncated input', () => {
-		const data = encodeTree({ nodes: [], refs: [] });
+		const data = encodeTree({ nodes: [], refs: [], global: [], reaches: [] });
 		assert.throws(() => decodeTree(data.subarray(0, 8)), PackageFormatError);
 	});
 
@@ -86,8 +85,6 @@ describe('tree', () => {
 							level: 0,
 							x: 0,
 							z: 0,
-							childMask: 0,
-							flags: 0,
 							bounds: { min: [0, 0, 0], max: [1, 1, 1] },
 							geometricError: 0,
 							refFirst: 0,
@@ -95,6 +92,8 @@ describe('tree', () => {
 						},
 					],
 					refs: [],
+					global: [],
+					reaches: [],
 				}),
 			RangeError,
 		);

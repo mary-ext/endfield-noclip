@@ -1,6 +1,6 @@
-import { dynamicGridLoaded } from '@endfield-noclip/package-format/dynamic-grids';
 import { TERRAIN_PAGE_SAMPLES } from '@endfield-noclip/package-format/terrain';
 import type { ContentRef } from '@endfield-noclip/package-format/tree';
+import { rectContains } from '@endfield-noclip/package-format/values';
 
 import { type Camera, type Plane, boxInFrustum, distanceToBox } from '../scene/camera.ts';
 import { type TileNode, type TileTree, isLeaf } from '../scene/tile-tree.ts';
@@ -143,7 +143,7 @@ export class Selector {
 	/**
 	 * @param tree the linked tree
 	 * @param stream residency
-	 * @param global manifest.global refs, always drawn
+	 * @param global the tree's global refs, always drawn
 	 * @param rootSize edge length of a level-0 tile
 	 */
 	constructor(
@@ -195,7 +195,7 @@ export class Selector {
 			}
 		}
 		if (options.instances && options.detail) {
-			this.#gridded(view);
+			this.#reached(view);
 		}
 		return selection;
 	}
@@ -246,14 +246,13 @@ export class Selector {
 	}
 
 	/**
-	 * dynamic content draws while the game would have its DynamicStreaming grid loaded, the camera standing in
-	 * for the game's streaming centre, so a grid's level sets how far its rows reach
-	 * (`docs/viewer/streaming.md#instance-selection`)
+	 * conditional content with a reach draws while the camera, standing in for the game's streaming centre, is
+	 * inside it, however far its tile (`docs/viewer/streaming.md#instance-selection`)
 	 */
-	#gridded(view: SelectionView): void {
+	#reached(view: SelectionView): void {
 		const eye = view.camera.position;
-		for (const { grid, refs } of this.#tree.gridded) {
-			if (!dynamicGridLoaded(grid, eye[0], eye[2])) {
+		for (const { reach, refs } of this.#tree.reached) {
+			if (!rectContains(reach, eye[0], eye[2])) {
 				continue;
 			}
 			for (const { node, ref } of refs) {

@@ -22,7 +22,7 @@ import type { StatesInfo } from './states.ts';
 import type { TerrainInfo } from './terrain.ts';
 import type { TextureRef } from './textures.ts';
 import { type TileKey, tileId } from './tiles.ts';
-import type { TreeInfo, ContentRef } from './tree.ts';
+import type { TreeInfo } from './tree.ts';
 import type { Rect, Bounds } from './values.ts';
 
 /** value of {@link PackageManifest.format} */
@@ -32,7 +32,7 @@ export const PACKAGE_FORMAT = 'endfield-noclip.package';
  * bumped on any incompatible change to the manifest or a table. binary encodings carry their own versions in
  * their headers
  */
-export const PACKAGE_VERSION = 74;
+export const PACKAGE_VERSION = 75;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -90,11 +90,6 @@ export interface PackageManifest {
 	states: StatesInfo;
 	/** archives by index; {@link BlobRecord.archive} indexes this list. entry 0 is the core */
 	archives: ArchiveInfo[];
-	/**
-	 * content drawn regardless of the tree's refinement while its group shows (the game's Global chunk scenery,
-	 * conditional where it comes from scene-state chunks)
-	 */
-	global: ContentRef[];
 	/** the slice of the scene that was packed, or `null` for all of it */
 	subset: SubsetInfo | null;
 	/** identifies the game build the package came from; per-asset provenance lives in the debug index */

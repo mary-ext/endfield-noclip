@@ -1,17 +1,10 @@
-import {
-	type TileKey,
-	tileAncestor,
-	tileFootprint,
-	tileId,
-	tileQuadrant,
-} from '@endfield-noclip/package-format/tiles';
+import { type TileKey, tileAncestor, tileFootprint, tileId } from '@endfield-noclip/package-format/tiles';
 import type { ContentRef, Tree, TreeInfo, TreeNode } from '@endfield-noclip/package-format/tree';
-import { type Bounds, unionBounds } from '@endfield-noclip/package-format/values';
+import { type Bounds, type Rect, unionBounds } from '@endfield-noclip/package-format/values';
 
 /** a node under construction */
 interface BuildNode {
 	key: TileKey;
-	flags: number;
 	refs: ContentRef[];
 	/** bounds of the node's own content; descendants are merged in by {@link TileTreeBuilder.build} */
 	bounds: Bounds | null;
@@ -21,6 +14,8 @@ interface BuildNode {
 export class TileTreeBuilder {
 	readonly #tree: Pick<TreeInfo, 'origin' | 'rootSize'>;
 	readonly #nodes = new Map<string, BuildNode>();
+	readonly #reaches: Rect[] = [];
+	readonly #reachIds = new Map<string, number>();
 
 	/** @param tree grid parameters */
 	constructor(tree: Pick<TreeInfo, 'origin' | 'rootSize'>) {
@@ -28,14 +23,20 @@ export class TileTreeBuilder {
 	}
 
 	/**
+	 * @param rect a world x, z rectangle
+	 * @returns its {@link ContentRef.reach}; equal rectangles share one
+	 */
+	reach(rect: Rect): number {
+		const key = `${rect.minX},${rect.minZ},${rect.maxX},${rect.maxZ}`;
+		return this.#reachIds.getOrInsertComputed(key, () => this.#reaches.push({ ...rect }) - 1);
+	}
+
+	/**
 	 * @param key tile address
 	 * @param ref content to attach
-	 * @param flags {@link NodeFlags} bits to set
 	 */
-	addRef(key: TileKey, ref: ContentRef, flags: number): void {
-		const node = this.#node(key);
-		node.refs.push(ref);
-		node.flags |= flags;
+	addRef(key: TileKey, ref: ContentRef): void {
+		this.#node(key).refs.push(ref);
 	}
 
 	/**
@@ -48,17 +49,17 @@ export class TileTreeBuilder {
 	}
 
 	/**
-	 * finishes the tree: merges bounds upwards, sets child masks and orders nodes by level, then z, then x
+	 * finishes the tree: merges bounds upwards and orders nodes by level, then z, then x
 	 *
 	 * @param geometricError error for each node, metres
+	 * @param global refs drawn regardless of refinement
 	 * @returns the encodable tree
 	 */
-	build(geometricError: (key: TileKey) => number): Tree {
+	build(geometricError: (key: TileKey) => number, global: readonly ContentRef[]): Tree {
 		// oxlint-disable-next-line unicorn/no-array-sort -- sorts a fresh copy
 		const ordered = [...this.#nodes.values()].sort(
 			(a, b) => a.key.level - b.key.level || a.key.z - b.key.z || a.key.x - b.key.x,
 		);
-		const childMasks = new Map<string, number>();
 		// deepest first, so each node's bounds are complete before they reach its parent
 		for (let i = ordered.length - 1; i >= 0; i--) {
 			const node = ordered[i];
@@ -69,11 +70,9 @@ export class TileTreeBuilder {
 			if (node.key.level === 0) {
 				continue;
 			}
-			const parentId = tileId(tileAncestor(node.key, node.key.level - 1));
-			const parent = this.#nodes.get(parentId)!;
+			const parent = this.#nodes.get(tileId(tileAncestor(node.key, node.key.level - 1)))!;
 			parent.bounds =
 				parent.bounds === null ? cloneBounds(node.bounds) : unionBounds(parent.bounds, node.bounds);
-			childMasks.set(parentId, (childMasks.get(parentId) ?? 0) | (1 << tileQuadrant(node.key)));
 		}
 
 		const nodes: TreeNode[] = [];
@@ -81,8 +80,6 @@ export class TileTreeBuilder {
 		for (const node of ordered) {
 			nodes.push({
 				...node.key,
-				childMask: childMasks.get(tileId(node.key)) ?? 0,
-				flags: node.flags,
 				bounds: node.bounds!,
 				geometricError: geometricError(node.key),
 				refFirst: refs.length,
@@ -92,13 +89,13 @@ export class TileTreeBuilder {
 				refs.push(ref);
 			}
 		}
-		return { nodes, refs };
+		return { nodes, refs, global: [...global], reaches: [...this.#reaches] };
 	}
 
 	#node(key: TileKey): BuildNode {
 		let node = this.#nodes.get(tileId(key));
 		if (node === undefined) {
-			node = { key: { ...key }, flags: 0, refs: [], bounds: null };
+			node = { key: { ...key }, refs: [], bounds: null };
 			this.#nodes.set(tileId(key), node);
 			if (key.level > 0) {
 				this.#node(tileAncestor(key, key.level - 1));

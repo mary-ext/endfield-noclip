@@ -1,8 +1,7 @@
-import { type DynamicGrid, decodeDynamicGrid } from '@endfield-noclip/package-format/dynamic-grids';
 import type { PackageManifest } from '@endfield-noclip/package-format/manifest';
 import { tileAncestor, tileFootprint, tileId, tileQuadrant } from '@endfield-noclip/package-format/tiles';
 import { ContentKind, type ContentRef, type Tree } from '@endfield-noclip/package-format/tree';
-import type { Bounds } from '@endfield-noclip/package-format/values';
+import type { Bounds, Rect } from '@endfield-noclip/package-format/values';
 
 /** a tree node with its children linked and its refs split by kind */
 export interface TileNode {
@@ -27,7 +26,7 @@ export interface TileNode {
 	terrainSplat: ContentRef | null;
 	hlod: ContentRef[];
 	detail: ContentRef[];
-	/** conditional refs drawn within the detail distance; those a game grid loads are in {@link TileTree.gridded} */
+	/** conditional refs drawn within the detail distance; those with a reach are in {@link TileTree.reached} */
 	conditional: ContentRef[];
 	/** {@link tileId} of the cellLevel ancestor (or self), for focus lookups; `null` above cellLevel */
 	cellId: string | null;
@@ -43,13 +42,14 @@ export interface TileTree {
 	terrainLeafLevel: number;
 	/** coarsest level with terrain pages */
 	terrainRootLevel: number;
-	/** conditional refs drawn while the game's DynamicStreaming grid named by their `param` loads, by grid */
-	gridded: GriddedRefs[];
+	/** conditional refs drawn while the camera is inside their reach, by reach */
+	reached: ReachedRefs[];
 }
 
-/** the conditional refs of dynamic content one game grid loads */
-export interface GriddedRefs {
-	grid: DynamicGrid;
+/** the conditional refs sharing one reach */
+export interface ReachedRefs {
+	/** where the camera must be for them to draw */
+	reach: Rect;
 	refs: { node: TileNode; ref: ContentRef }[];
 }
 
@@ -67,7 +67,7 @@ export const isLeaf = (node: TileNode): boolean => node.quadrants.every((child) 
 export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree => {
 	const info = manifest.tree;
 	const byId = new Map<string, TileNode>();
-	/** gridded refs by grid id + 1, until their nodes exist */
+	/** reached refs by reach, until their nodes exist */
 	const pending = new Map<number, { index: number; ref: ContentRef }[]>();
 	const nodes = tree.nodes.map((raw, index): TileNode => {
 		const footprint = tileFootprint(info, raw);
@@ -93,10 +93,10 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 					break;
 				}
 				case ContentKind.Conditional: {
-					if (ref.param === 0) {
+					if (ref.reach === null) {
 						conditional.push(ref);
 					} else {
-						pending.getOrInsertComputed(ref.param, () => []).push({ index, ref });
+						pending.getOrInsertComputed(ref.reach, () => []).push({ index, ref });
 					}
 					break;
 				}
@@ -148,9 +148,9 @@ export const buildTileTree = (manifest: PackageManifest, tree: Tree): TileTree =
 		}
 		parent.quadrants[tileQuadrant(node)] = node;
 	}
-	const gridded = [...pending].map(([param, refs]): GriddedRefs => ({
-		grid: decodeDynamicGrid(param - 1),
+	const reached = [...pending].map(([reach, refs]): ReachedRefs => ({
+		reach: tree.reaches[reach],
 		refs: refs.map(({ index, ref }) => ({ node: nodes[index], ref })),
 	}));
-	return { nodes, roots, byId, terrainLeafLevel, terrainRootLevel, gridded };
+	return { nodes, roots, byId, terrainLeafLevel, terrainRootLevel, reached };
 };

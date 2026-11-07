@@ -17,7 +17,7 @@ const heights = (blob: number): ContentRef => ({
 	blob,
 	first: 0,
 	count: 1,
-	param: 0,
+	reach: null,
 });
 
 const node = (level: number, patch: Partial<TileNode>): TileNode => ({
