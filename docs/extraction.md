@@ -594,7 +594,7 @@ an asset reached both by path hash (static entities) and by object (prefabs) is 
 key, so it gets two table entries and converts twice (`AssetIds` in pack/convert/asset-ids.ts).
 
 `--jobs` defaults to one worker per core but one, capped at 8, since each worker holds its own
-catalogs, manifest and block caches (a few hundred MB). `--zstd-level` (default 19) applies to
+catalogs and block caches (about 150 MB); a cold map02 pack peaks at about 6 GB RSS. `--zstd-level` (default 19) applies to
 geometry, instance blocks and terrain height and splat pages; `--texture-zstd-level` (default 9)
 applies to textures, terrain surface pages and layer textures, and is the main lever on cold pack
 time while barely changing size or decode speed. irradiance cells and the core's JSON tables always
