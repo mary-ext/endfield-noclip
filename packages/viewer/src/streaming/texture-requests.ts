@@ -11,8 +11,10 @@ export type TextureStream = Pick<StreamManager, 'want' | 'markUsed' | 'isReady' 
 export type TextureKind = '2d' | 'cube' | '2d-array' | '3d';
 
 /**
- * requests a texture's pieces coarse to fine, down to the piece holding `level`, and keeps the integrated
- * ones in use
+ * requests a texture's pieces down to the piece holding `level`, all at once and coarse first, and keeps the
+ * integrated ones in use. a piece that arrives before a coarser one waits in the store, so the levels the
+ * view needs take one round trip rather than one per piece; a texture's pieces mostly sit side by side in
+ * one archive, so they're usually read together too
  */
 const requestPieces = (
 	stream: TextureStream,
@@ -28,18 +30,12 @@ const requestPieces = (
 		const blob = piece.blob;
 		if (i < integrated) {
 			stream.markUsed(blob);
-		} else if (i === integrated) {
-			// a piece left over from before a coarser one was evicted can't be integrated: fetch it again
-			if (stream.isReady(blob)) {
+		} else {
+			// a piece left over from before a coarser one was evicted lost its levels: fetch it again
+			if (stream.isReady(blob) && !textures.waiting(texture.id, i)) {
 				stream.discard(blob);
 			}
-			// coarse pieces first; the tail always, then each level the view needs
-			if (i === 0 || piece.firstLevel + piece.levelCount - 1 >= level) {
-				stream.want(blob, priority / (1 + i));
-			}
-		} else {
-			// decoded ahead of a coarser piece: keep it from looking unused until it's integrated
-			stream.markUsed(blob);
+			stream.want(blob, priority / (1 + i));
 		}
 		if (piece.firstLevel <= level) {
 			break;

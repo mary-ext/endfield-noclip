@@ -163,15 +163,30 @@ export class TextureStore {
 			const state = this.#state(ref.texture);
 			this.#shrink(state);
 			state.waiting.set(ref.index, data);
-			while (state.waiting.has(state.integrated)) {
-				const next = state.waiting.get(state.integrated);
-				state.waiting.delete(state.integrated);
-				if (next !== undefined) {
-					this.#integrate(state, next);
+			// every piece that can integrate now, into one GPU texture
+			const ready: Uint8Array<ArrayBuffer>[] = [];
+			for (let index = state.integrated; ; index++) {
+				const next = state.waiting.get(index);
+				if (next === undefined) {
+					break;
 				}
+				state.waiting.delete(index);
+				ready.push(next);
+			}
+			if (ready.length > 0) {
+				this.#integrate(state, ready);
 			}
 		}
 		return { kind: 'texture', bytes: data.byteLength };
+	}
+
+	/**
+	 * @param id texture id
+	 * @param index piece index, coarse (tail) first
+	 * @returns whether the piece is decoded and held until a coarser one integrates
+	 */
+	waiting(id: number, index: number): boolean {
+		return this.#states.get(id)?.waiting.has(index) ?? false;
 	}
 
 	/**
@@ -314,26 +329,30 @@ export class TextureStore {
 		return bytes;
 	}
 
-	#integrate(state: TextureState, data: Uint8Array<ArrayBuffer>): void {
-		const piece = state.entry.pieces[state.integrated];
-		const next = this.#create(state, piece.firstLevel);
-		this.#replace(state, next, piece.firstLevel);
+	/** integrates the next pieces in order, allocating the GPU texture once for all of them */
+	#integrate(state: TextureState, pieces: readonly Uint8Array<ArrayBuffer>[]): void {
+		const top = state.entry.pieces[state.integrated + pieces.length - 1].firstLevel;
+		const next = this.#create(state, top);
+		this.#replace(state, next, top);
 		const info = TEXTURE_FORMATS[state.entry.format];
-		let at = 0;
-		for (let level = piece.firstLevel; level < piece.firstLevel + piece.levelCount; level++) {
-			const layout = textureLevelLayout(state.entry, level);
-			this.#device.queue.writeTexture(
-				{ texture: next, mipLevel: level - piece.firstLevel },
-				data.subarray(at, at + layout.byteLength),
-				{ bytesPerRow: layout.bytesPerRow, rowsPerImage: layout.rowsPerImage },
-				[
-					blockAligned(layout.width, info.blockWidth),
-					blockAligned(layout.height, info.blockHeight),
-					layout.depthOrArrayLayers,
-				],
-			);
-			at += layout.byteLength;
+		for (const data of pieces) {
+			const piece = state.entry.pieces[state.integrated];
+			let at = 0;
+			for (let level = piece.firstLevel; level < piece.firstLevel + piece.levelCount; level++) {
+				const layout = textureLevelLayout(state.entry, level);
+				this.#device.queue.writeTexture(
+					{ texture: next, mipLevel: level - top },
+					data.subarray(at, at + layout.byteLength),
+					{ bytesPerRow: layout.bytesPerRow, rowsPerImage: layout.rowsPerImage },
+					[
+						blockAligned(layout.width, info.blockWidth),
+						blockAligned(layout.height, info.blockHeight),
+						layout.depthOrArrayLayers,
+					],
+				);
+				at += layout.byteLength;
+			}
+			state.integrated++;
 		}
-		state.integrated++;
 	}
 }

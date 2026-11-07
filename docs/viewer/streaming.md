@@ -181,8 +181,8 @@ per-draw transforms, so the fragment shader sees one kind of UV.
 materials the game draws nothing visible with are dropped from the chain once, when it's first used
 (the rest draw, the ones the viewer can't as [unsupported](materials.md#unsupported-materials)), as
 are shadow-only draws whose material casts no shadow; the other shadow-only draws go to cast-only
-buckets even for instances in view. textures are then requested per bucket, coarse to fine, down to
-the mip that gives about one texel per pixel across the largest on-screen use, scaled by the UV
+buckets even for instances in view. textures are then requested per bucket, every piece at once, down
+to the mip that gives about one texel per pixel across the largest on-screen use, scaled by the UV
 tiling, then `textureBias` levels coarser (0 by default; each level quarters the textures' memory).
 sky, reflection and water textures are streamed whole (`streamWholeTexture`; both ways are in
 [`texture-requests.ts`](../../packages/viewer/src/streaming/texture-requests.ts)).
@@ -198,8 +198,9 @@ loads first, then the rest of the current level, then the other levels. nodes ou
 are requested at 0.1× where the traversal still reaches them: terrain children of a node in view
 (prefetch around the camera) and instance tiles in the [off-screen casters'](lighting.md#shadows)
 volume, whose instances' geometry is requested at 0.1× of its pixel height. a texture's pieces are
-requested at the bucket's priority divided by one plus the piece's index, so coarse levels come
-first. irradiance cells and whole-streamed textures (sky, reflection) use fixed priorities above all
+requested in the same frame, at the bucket's priority divided by one plus the piece's index, so
+coarse levels come first but a sharp texture takes one round trip rather than one per piece (a
+texture's pieces mostly sit side by side in one archive, so they're usually read together). irradiance cells and whole-streamed textures (sky, reflection) use fixed priorities above all
 scenery.
 
 ## residency and budgets
