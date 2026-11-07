@@ -56,6 +56,39 @@ describe('ChainTable', () => {
 		assert.equal(table.chains.length, 5);
 	});
 
+	it('keeps the replaced package’s chain ids, new chains taking the ones freed', () => {
+		// geometry ids differ between packs; their keys don't
+		const keys = (names: string[]) => ({
+			geometry: (id: number) => names[id],
+			material: (id: number) => `mat${id}`,
+			particles: (id: number) => `p${id}`,
+		});
+		const first = new ChainTable();
+		first.intern([draw({ geometry: 0 })]);
+		first.intern([draw({ geometry: 1 })]);
+		const a = first.stableOrder(keys(['a', 'b']), []);
+		assert.deepEqual(
+			[...a.ids].toSorted((x, y) => x - y),
+			[0, 1],
+		);
+
+		// the next pack meets a new chain first, keeps b and drops a
+		const second = new ChainTable();
+		second.intern([draw({ geometry: 0 })]);
+		second.intern([draw({ geometry: 1 })]);
+		const b = second.stableOrder(keys(['c', 'b']), a.keys);
+		assert.deepEqual([...b.ids], [a.ids[0], a.ids[1]]);
+		assert.deepEqual(b.keys[b.ids[1]], a.keys[a.ids[1]]);
+
+		// with only b left, the free id holds an empty chain unless it's past the end
+		const third = new ChainTable();
+		third.intern([draw({ geometry: 0 })]);
+		const c = third.stableOrder(keys(['b']), b.keys);
+		assert.equal(c.ids[0], b.ids[1]);
+		assert.equal(c.chains.length, c.ids[0] + 1);
+		assert.ok(c.chains.every((chain, id) => (id === c.ids[0]) === chain.draws.length > 0));
+	});
+
 	it('flags how instances are placed, not what their draws are', () => {
 		const table = new ChainTable();
 		assert.equal(table.chains[table.intern([draw({ role: DrawRole.ShadowOnly })])].flags, 0);
@@ -251,10 +284,16 @@ describe('InstanceBlockBuilder', () => {
 		add(2, 1, 1);
 		add(9, 0, 2);
 		add(2, 1, 3);
-		const { block, order } = rows.toBlock([64, 0, -256]);
-		assert.deepEqual([...order], [2, 1, 3, 0]);
-		assert.deepEqual([...block.chains], [9, 2, 2, 5]);
+		// the package's chain ids, which the rows sort by
+		const chainIds = new Uint32Array(10);
+		chainIds.set([7], 2);
+		chainIds.set([1], 5);
+		chainIds.set([3], 9);
+		const { block, order } = rows.toBlock([64, 0, -256], chainIds);
+		assert.deepEqual([...order], [2, 0, 1, 3]);
+		assert.deepEqual([...block.chains], [3, 1, 7, 7]);
 		assert.deepEqual(rows.groupsInOrder(order), [0, 1, 1, 1]);
+		assert.deepEqual(rows.entityIdsInOrder(order), [2, 0, 1, 3]);
 		// first output row is entity 2: rows-major 3×4 with the translation in the last column
 		assert.deepEqual([...block.transforms.subarray(0, 12)], [1, 0, 0, 38, 0, 2, 0, 50, 0, 0, 3, 56]);
 		assert.deepEqual([...block.bounds.subarray(0, 6)], [36, 50, 56, 1, 2, 3]);
@@ -347,7 +386,7 @@ describe('BlobStore', () => {
 				},
 				0,
 			);
-			const { block } = rows.toBlock([0, 0, 0]);
+			const { block } = rows.toBlock([0, 0, 0], Uint32Array.of(0, 1));
 			const index = await store.put(encodeInstanceBlock(block), {
 				kind: BlobKind.Instances,
 				compress: true,

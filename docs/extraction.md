@@ -459,10 +459,20 @@ the phases run in this order, and the report times each one:
 | debug                  | write `debug/`; the staged package is then renamed into place                                                                                                                                                                                 |
 | cache sweep            | with a cache: record the package and delete what no package uses                                                                                                                                                                              |
 
-ids for chains, geometries and materials are handed out in first-reference order and every parallel
-step commits its results in id order, so the same install and options produce byte-identical
-archives whether the pack is cold, warm or uncached. keep any new parallel work committing in a
-fixed order for the same reason.
+ids for geometries and materials are handed out in first-reference order and every parallel step
+commits its results in id order, so the same install and options produce byte-identical archives
+whether the pack is cold, warm or uncached. keep any new parallel work committing in a fixed order
+for the same reason.
+
+chains keep the ids of the package the pack replaces (`ChainTable.stableOrder` in
+[pack/chains.ts](../packages/extractor/src/pack/chains.ts)): every instance row names its chain, so
+a chain whose id shifted would change every shard's blocks and rename every shard archive. each
+chain is keyed by a hash of what its draws are (asset identities, not table ids, which shift), and
+`debug/chains.json` lists the keys by id. a chain with a known key keeps its id, new chains take the
+ids of chains that are gone and then follow at the end, both in key order, and an id left free holds
+an empty chain. so the pack after a change reuses every archive whose blocks didn't change, and
+packing the same install twice gives the same bytes; a pack into a fresh directory starts from key
+order.
 
 ### how the packer files instances
 
@@ -577,6 +587,7 @@ ignores:
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `assets.json`                   | per geometry and material id: path hash, path, located object and failure reason if any; per material also its shader, why the viewer has no look for it, its undrawn surface keywords and its texture slots whose reference couldn't be followed ([unsupported materials](viewer/materials.md#unsupported-materials)); per texture object: its texture-table id, name, failure reason and the sampler settings WebGPU can't express (Unity's mirror-once wrap, drawn as mirror-repeat) |
 | `instances.jsonl`               | one line per stored instance block: its blob hash and, per row, entity id, entity name and chunk-file index (−1 for dynamic structures and the prefab renderers they place, which get synthetic entity ids)                                                                                                                                                                                                                                                                             |
+| `chains.json`                   | per chain id, its key, which the next pack into the directory keeps the ids of ([phases](#phases)); empty for a free id                                                                                                                                                                                                                                                                                                                                                                 |
 | `chunk-files.json`              | the chunk files read, indexed by `instances.jsonl`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `environments.json`             | `levels`: per level, the chosen base environment and where each section came from; `problems`: volumes dropped for their shape or an unknown blend mode, volumes kept without a phase (unset or unreadable), references a phase couldn't resolve (left `null`), and resources not found                                                                                                                                                                                                 |
 | `water.json`                    | water surfaces and sectors packed versus present, sectors whose asset names no tile, and assets that failed to load                                                                                                                                                                                                                                                                                                                                                                     |

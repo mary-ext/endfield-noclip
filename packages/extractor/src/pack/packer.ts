@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream, type WriteStream } from 'node:fs';
-import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
@@ -33,6 +33,7 @@ import type { GeometryTable } from '@endfield-noclip/package-format/geometry';
 import {
 	encodeChains,
 	encodeInstanceBlock,
+	type Chain,
 	type ChainDraw,
 	DrawRole,
 } from '@endfield-noclip/package-format/instances';
@@ -474,11 +475,20 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 
 		// spooled, so a failed pack leaves nothing outside the package's own entries
 		const debugLog = await DebugLog.create(join(spool, 'instances.jsonl'));
+		const chainOrder = pack.chains.stableOrder(
+			{
+				geometry: (id) => pack.geometries.keyOf(id),
+				material: (id) => pack.materials.keyOf(id),
+				particles: (id) => pack.particles.keyOf(id),
+			},
+			previous === null ? [] : await readChainKeys(previous),
+		);
 		const instances = await packInstances(
 			pack,
 			entities.collected,
 			debugLog,
 			new Set(water.floaterIds.flat()),
+			chainOrder.ids,
 		);
 		await debugLog.close();
 		timer.end('instances');
@@ -540,6 +550,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			{ dir: stage, previous },
 			{
 				...states,
+				chains: chainOrder.chains,
 				environment: finishEnvironments(environments, environmentTextureIds),
 				water: finishWater(water, waterTextureIds, instances.rowsOf),
 				lights,
@@ -558,6 +569,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 
 		await writeDebug(stage, {
 			files: scene.files,
+			chains: chainOrder.keys,
 			instances: debugLog.path,
 			geometries: pack.geometries.assets,
 			materials: pack.materials.assets,
@@ -2014,6 +2026,7 @@ const TERRAIN_LAYER_STEM = 'assets/terrain-layers';
  * stores every instance block, attaching detail and HLOD blocks to the tree
  *
  * @param tracked entity ids whose stored rows the caller needs (water floaters)
+ * @param chainIds per interned chain id, its id in the package
  * @returns row counts, the global content refs, HLOD tallies, and by tracked entity id the (blob, row) of
  *   every stored row that carries it
  */
@@ -2022,6 +2035,7 @@ const packInstances = async (
 	collected: Collector,
 	debugLog: DebugLog,
 	tracked: ReadonlySet<number>,
+	chainIds: Uint32Array,
 ): Promise<{
 	rows: PackReport['instances'];
 	global: ContentRef[];
@@ -2054,7 +2068,7 @@ const packInstances = async (
 	for (let start = 0; start < detailGroups.length; start += BLOB_BATCH) {
 		const encoded = detailGroups.slice(start, start + BLOB_BATCH).map((group) => {
 			const { minX, minZ } = tileFootprint(scene.grid, group.key);
-			const { block, order } = group.rows.toBlock([minX, 0, minZ]);
+			const { block, order } = group.rows.toBlock([minX, 0, minZ], chainIds);
 			return { group, block, order };
 		});
 		// oxlint-disable-next-line no-await-in-loop -- batches bound memory and keep blob order stable
@@ -2086,7 +2100,10 @@ const packInstances = async (
 		const encoded = [...groups]
 			.toSorted((a, b) => a[0] - b[0])
 			.map(([visibility, group]) => {
-				const { block, order } = group.rows.toBlock([scene.grid.origin[0], 0, scene.grid.origin[1]]);
+				const { block, order } = group.rows.toBlock(
+					[scene.grid.origin[0], 0, scene.grid.origin[1]],
+					chainIds,
+				);
 				return { visibility, group, block, order };
 			});
 		const blobs = await store.putMany(
@@ -2243,6 +2260,8 @@ const writePackage = async (
 	/** where to write, and the package being replaced (whose unchanged archives are cloned), or `null` */
 	{ dir, previous }: { dir: string; previous: string | null },
 	states: SceneStateInfo & {
+		/** the chain templates in package order */
+		chains: Chain[];
 		environment: EnvironmentTable;
 		water: WaterTable;
 		lights: LightsTable;
@@ -2257,7 +2276,7 @@ const writePackage = async (
 	const { options, grid } = scene;
 	const tree = pack.builder.build((key) => (grid.rootSize / 2 ** key.level) * ERROR_PER_EDGE, states.global);
 	const treeBin = encodeTree(tree);
-	const chainsBin = encodeChains(pack.chains.chains);
+	const chainsBin = encodeChains(states.chains);
 	const irradianceBin = encodeIrradianceTable(states.irradiance);
 	// tables compress on the thread pool while the archives are written
 	const tablesReady = Promise.all([
@@ -2874,10 +2893,28 @@ class DebugLog {
 	}
 }
 
+/** where a package records its chains' keys, which the next pack into its directory keeps the ids of */
+const CHAIN_KEYS_PATH = 'debug/chains.json';
+
+/**
+ * @param packageDir a package the pack replaces
+ * @returns its chains' keys by id (`ChainTable.stableOrder`), or empty when it has none
+ */
+const readChainKeys = async (packageDir: string): Promise<string[]> => {
+	const text = await ignoreMissing(readFile(join(packageDir, CHAIN_KEYS_PATH), 'utf8'), null);
+	if (text === null) {
+		return [];
+	}
+	const value: unknown = JSON.parse(text);
+	return Array.isArray(value) && value.every((key) => typeof key === 'string') ? value : [];
+};
+
 const writeDebug = async (
 	outDir: string,
 	debug: {
 		files: ChunkFile[];
+		/** per chain id, its key */
+		chains: string[];
 		/** the closed {@link DebugLog}'s file, moved into place */
 		instances: string;
 		geometries: { hash: bigint; path: string | null }[];
@@ -2913,6 +2950,7 @@ const writeDebug = async (
 		}),
 	);
 	await writeFile(join(dir, 'chunk-files.json'), json(debug.files.map((file) => file.name)));
+	await writeFile(join(outDir, CHAIN_KEYS_PATH), json(debug.chains));
 	await rename(debug.instances, join(dir, 'instances.jsonl'));
 };
 

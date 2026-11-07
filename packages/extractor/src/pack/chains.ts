@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { DrawFlags } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import {
 	type Chain,
@@ -51,6 +53,9 @@ export interface ChainPlacement {
 
 const SCREEN_SIZED: ChainPlacement = { billboard: 0, distanceOrigin: null };
 
+/** what a package id no chain holds stores */
+const EMPTY_CHAIN: Chain = { flags: 0, draws: [], distanceOrigin: null };
+
 /** LOD-chain templates, deduplicated by their ordered draws, billboard mode and distance origin */
 export class ChainTable {
 	readonly chains: Chain[] = [];
@@ -76,5 +81,67 @@ export class ChainTable {
 					distanceOrigin: distanceOrigin === null ? null : [...distanceOrigin],
 				}) - 1,
 		);
+	}
+
+	/**
+	 * interned ids follow the order chains are first met, so a chain added early would shift every later id and
+	 * change every instance block naming one, renaming every shard archive. chains instead keep the ids the
+	 * replaced package gave them, matched by what their draws are; new chains take the ids of chains that are
+	 * gone, then follow at the end, both in key order. ids left free hold an empty chain
+	 *
+	 * @param keys names geometries, materials and particle systems by what they are (`AssetIds.keyOf`)
+	 * @param previous the replaced package's chain keys by id (see the returned `keys`), or empty
+	 * @returns per interned chain id, its id in the package, the chains in package order, and each one's key
+	 *   (empty for a free id), for the next pack to follow
+	 */
+	stableOrder(
+		keys: {
+			geometry: (id: number) => string;
+			material: (id: number) => string;
+			particles: (id: number) => string;
+		},
+		previous: readonly string[],
+	): { ids: Uint32Array; chains: Chain[]; keys: string[] } {
+		const keyOf = (chain: Chain): string => {
+			let key = `${chain.flags},${chain.distanceOrigin?.map(bits).join(',')}`;
+			for (const draw of chain.draws) {
+				const material = draw.material === null ? '-' : keys.material(draw.material);
+				const particles = draw.particles === null ? '-' : keys.particles(draw.particles);
+				key += `|${keys.geometry(draw.geometry)},${material},${particles},${draw.submesh},${draw.lod},${draw.role},${bits(draw.minSquared)},${bits(draw.maxSquared)},${draw.flags},${draw.sortingLayer},${draw.sortingOrder}`;
+			}
+			return createHash('sha256').update(key).digest('hex').slice(0, 32);
+		};
+		const was = new Map(previous.map((key, id) => [key, id]));
+		const ids = new Uint32Array(this.chains.length);
+		/** per package id, the interned chain that takes it, or `null` while free */
+		const slots: (number | null)[] = previous.map(() => null);
+		const chainKeys = this.chains.map(keyOf);
+		const added: number[] = [];
+		for (const [id, key] of chainKeys.entries()) {
+			const kept = was.get(key);
+			if (kept === undefined) {
+				added.push(id);
+			} else {
+				ids[id] = kept;
+				slots[kept] = id;
+			}
+		}
+		added.sort((a, b) => Number(chainKeys[a] > chainKeys[b]) - Number(chainKeys[a] < chainKeys[b]));
+		let free = 0;
+		for (const id of added) {
+			while (free < slots.length && slots[free] !== null) {
+				free++;
+			}
+			ids[id] = free;
+			slots[free] = id;
+		}
+		while (slots.length > 0 && slots.at(-1) === null) {
+			slots.pop();
+		}
+		return {
+			ids,
+			chains: slots.map((id) => (id === null ? EMPTY_CHAIN : this.chains[id])),
+			keys: slots.map((id) => (id === null ? '' : chainKeys[id])),
+		};
 	}
 }

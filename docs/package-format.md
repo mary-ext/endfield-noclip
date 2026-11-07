@@ -271,26 +271,27 @@ nodes are ordered coarse to fine (level, then z, then x); a node's children are 
 included.
 
 **chains** are LOD-chain templates deduplicated across the scene by their ordered draws, thresholds
-compared by f32 bit pattern ([chains.ts](../packages/extractor/src/pack/chains.ts)). a draw shows
-while `minSquared < s² ≤ maxSquared`, `s` being Unity's LODGroup screen-relative height; a negative
-`minSquared` never culls by size. the viewer measures `s` as twice the largest half-extent of the
-instance's world bounds over its distance, relative to the screen height; which size the game's
-thresholds were authored against is unverified, and rotated objects' bounds overstate it. roles:
-`Lit`, `ShadowOnly` (shadow proxies, from the game's flag bit 10 or a prefab renderer's shadow
-casting mode) and `Unsupported` (a [stand-in](#stand-ins) for content the viewer can't draw, drawn
-with its unsupported look); an HLOD cluster's draws are `Lit`, the tree ref holding them (`Hlod`)
-says what they are. a draw's flags (`ChainDrawFlags`) say which shadow maps it casts into when its
-material casts: `CastsCascades` for the sharp cascades, `CastsStatic` for the cached far map. the
-packer reads them from a static draw's renderer flag word, as the [game](game-data/lighting.md)
-does, and sets both on prefab, decal and stand-in draws, which have none. `material` is `0xffffffff`
-for a stand-in whose material isn't known, and `particles` indexes the [particles table](#particles)
-when the draw is a particle system's mesh, else it's `0xffffffff`; both decode to `null`.
-`sortingLayer` and `sortingOrder` are a prefab renderer's `m_SortingLayer` and `m_SortingOrder`,
-which the transparent pass sorts by before distance; static draws store 0. prefab renderers under an
-enabled `LODGroup` get one draw per span of its `screenRelativeHeight` thresholds they show at,
-measured on the row's own bounds rather than the LODGroup's size. the chain flags say whether its
-instances are billboards (`BillboardFacing`, `BillboardUpright`): their transform's rotation is then
-relative to the camera's, and their bounds hold every orientation
+compared by f32 bit pattern ([chains.ts](../packages/extractor/src/pack/chains.ts)), with ids that
+carry over between packs ([chain ids](extraction.md#phases)); a chain without draws is a free id. a
+draw shows while `minSquared < s² ≤ maxSquared`, `s` being Unity's LODGroup screen-relative height;
+a negative `minSquared` never culls by size. the viewer measures `s` as twice the largest
+half-extent of the instance's world bounds over its distance, relative to the screen height; which
+size the game's thresholds were authored against is unverified, and rotated objects' bounds
+overstate it. roles: `Lit`, `ShadowOnly` (shadow proxies, from the game's flag bit 10 or a prefab
+renderer's shadow casting mode) and `Unsupported` (a [stand-in](#stand-ins) for content the viewer
+can't draw, drawn with its unsupported look); an HLOD cluster's draws are `Lit`, the tree ref
+holding them (`Hlod`) says what they are. a draw's flags (`ChainDrawFlags`) say which shadow maps it
+casts into when its material casts: `CastsCascades` for the sharp cascades, `CastsStatic` for the
+cached far map. the packer reads them from a static draw's renderer flag word, as the
+[game](game-data/lighting.md) does, and sets both on prefab, decal and stand-in draws, which have
+none. `material` is `0xffffffff` for a stand-in whose material isn't known, and `particles` indexes
+the [particles table](#particles) when the draw is a particle system's mesh, else it's `0xffffffff`;
+both decode to `null`. `sortingLayer` and `sortingOrder` are a prefab renderer's `m_SortingLayer`
+and `m_SortingOrder`, which the transparent pass sorts by before distance; static draws store 0.
+prefab renderers under an enabled `LODGroup` get one draw per span of its `screenRelativeHeight`
+thresholds they show at, measured on the row's own bounds rather than the LODGroup's size. the chain
+flags say whether its instances are billboards (`BillboardFacing`, `BillboardUpright`): their
+transform's rotation is then relative to the camera's, and their bounds hold every orientation
 ([billboards](game-data/assets.md#billboards)). `CameraDistance` makes the chain's thresholds
 squared camera distances, in m², instead of screen-relative sizes, measured from the chain's
 distance origin: a point in the instance's frame, which the instance's transform takes to the world.

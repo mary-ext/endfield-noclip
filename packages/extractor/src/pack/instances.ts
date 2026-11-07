@@ -79,12 +79,17 @@ export class InstanceBlockBuilder {
 	 * encodes the rows sorted by (group, chain), insertion order breaking ties
 	 *
 	 * @param origin world position translations and bounds centres are made relative to
+	 * @param chainIds per chain id the rows were added with, its id in the package (`ChainTable.stableOrder`)
 	 * @returns the block, and per output row its insertion index
 	 */
-	toBlock(origin: [x: number, y: number, z: number]): { block: InstanceBlock; order: Uint32Array } {
+	toBlock(
+		origin: [x: number, y: number, z: number],
+		chainIds: Uint32Array,
+	): { block: InstanceBlock; order: Uint32Array } {
 		const count = this.#chains.length;
+		const chainOf = (i: number): number => chainIds[this.#chains[i]];
 		const order = Uint32Array.from({ length: count }, (_, i) => i).toSorted(
-			(a, b) => this.#groups[a] - this.#groups[b] || this.#chains[a] - this.#chains[b] || a - b,
+			(a, b) => this.#groups[a] - this.#groups[b] || chainOf(a) - chainOf(b) || a - b,
 		);
 		const chains = new Uint32Array(count);
 		const transforms = new Float32Array(count * 12);
@@ -97,7 +102,7 @@ export class InstanceBlockBuilder {
 		let spinning = 0;
 		for (let out = 0; out < count; out++) {
 			const i = order[out];
-			chains[out] = this.#chains[i];
+			chains[out] = chainOf(i);
 			for (let k = 0; k < 12; k++) {
 				transforms[out * 12 + k] = this.#matrices[i * 12 + k];
 			}

@@ -54,6 +54,8 @@ export class AssetIds {
 	readonly assets: AssetRef[] = [];
 	readonly #ids = new Map<bigint, number>();
 	readonly #variants = new Map<string, number>();
+	/** by id, the key of each variant, which shares its object's hash */
+	readonly #variantKeys = new Map<number, string>();
 
 	/**
 	 * @param hash StringPathHash key
@@ -101,10 +103,20 @@ export class AssetIds {
 	 */
 	internObjectVariant(ref: ObjectRef, variant: string): number {
 		const key = objectKey(ref);
-		return this.#variants.getOrInsertComputed(
-			`${key}/${variant}`,
-			() => this.assets.push({ hash: objectHash(key), path: key, locator: locateObject(ref) }) - 1,
-		);
+		return this.#variants.getOrInsertComputed(`${key}/${variant}`, (variantKey) => {
+			const id = this.assets.push({ hash: objectHash(key), path: key, locator: locateObject(ref) }) - 1;
+			this.#variantKeys.set(id, variantKey);
+			return id;
+		});
+	}
+
+	/**
+	 * @param id an asset id
+	 * @returns a key naming the asset by what it is rather than by when it was first met, so orders built from
+	 *   it don't shift when other assets come and go
+	 */
+	keyOf(id: number): string {
+		return this.#variantKeys.get(id) ?? this.assets[id].hash.toString(16);
 	}
 
 	/**
