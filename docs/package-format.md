@@ -959,6 +959,17 @@ provenance lives there rather than in the manifest, which only identifies the bu
 - **geometricError** is a placeholder the viewer uses only for request priority; the HLOD rings
   replaced it for refinement.
 - **instance compression**: meshopt filters or quantized rows could roughly halve instance blobs.
+- **references by string**: conditional sets, environment volumes and water volumes name controls by
+  id, and groups and controls name levels by the game's entity-id tag, where the rest of the package
+  uses indices; the viewer's scene state and listings are keyed by both.
+- **entry ids**: table entries repeat their own index as `id`, which the viewer's texture streaming
+  passes around.
+- **coalesced reads**: the viewer copies each blob of a coalesced range read into a buffer of its
+  own so it can go to a decode worker alone; handing a worker the whole read would skip the copies.
+- **core tables as JSON**: the geometry and texture tables could be fixed-size binary records, read
+  without parsing.
+- **water floaters** point at instance rows by (blob, row) from the water table; a row section in
+  the instance block naming the volume would bring the relation with the rows.
 - **detail placement by centre**: a very large object at a leaf disappears while that leaf shows its
   HLOD, unless the HLOD covers it, as the game assumes.
 - **tiny shards**: off-square edges produce sub-KB shards that could merge into a neighbour.
