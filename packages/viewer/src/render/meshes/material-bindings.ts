@@ -41,6 +41,17 @@ export interface EffectMaterial {
 }
 
 /** derives the mesh materials' states from their textures' bindings, and owns their bind groups */
+/** whether none of a look's textures' bindings changed since the store's `version` */
+const texturesUnchanged = (look: MaterialLook, textures: TextureStore, version: number): boolean => {
+	for (let i = 0; i < SLOTS.length; i++) {
+		const texture = look.textures[i];
+		if (texture !== null && !textures.unchangedSince(texture, version)) {
+			return false;
+		}
+	}
+	return look.volumeTexture === null || textures.unchangedSince(look.volumeTexture, version);
+};
+
 export class MaterialBindings {
 	#device: GPUDevice;
 	#materialLayout: GPUBindGroupLayout;
@@ -105,11 +116,16 @@ export class MaterialBindings {
 	 * @param material the material id
 	 * @param look its look
 	 * @param textures the package's textures
-	 * @returns the material's state, derived again only after the texture store changed
+	 * @returns the material's state, derived again only after one of its textures' bindings changed
 	 */
 	state(material: number, look: MaterialLook, textures: TextureStore): MaterialState {
 		const cached = this.#states.get(material);
 		if (cached !== undefined && cached.version === textures.version) {
+			return cached;
+		}
+		// while streaming the store changes every frame, but rarely under a given material
+		if (cached !== undefined && texturesUnchanged(look, textures, cached.version)) {
+			cached.version = textures.version;
 			return cached;
 		}
 		const slots: (TextureBinding | null)[] = [];

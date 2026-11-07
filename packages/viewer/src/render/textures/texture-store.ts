@@ -89,6 +89,8 @@ export class TextureStore {
 	bytes = 0;
 	/** bumped whenever any texture's binding changes, so users can keep what they derived from bindings */
 	version = 0;
+	/** by texture id: the {@link version} its binding last changed at */
+	#changed = new Map<number, number>();
 
 	/**
 	 * @param device the device
@@ -134,6 +136,16 @@ export class TextureStore {
 	 */
 	integrated(id: number): number {
 		return this.#states.get(id)?.integrated ?? 0;
+	}
+
+	/**
+	 * @param id texture id
+	 * @param version a {@link version} the caller derived something from the binding at
+	 * @returns whether the texture's binding is still the one it had at `version`. a binding about to shrink
+	 *   (a piece released since the last {@link commit}) counts as unchanged until it does
+	 */
+	unchangedSince(id: number, version: number): boolean {
+		return (this.#changed.get(id) ?? -1) <= version;
 	}
 
 	/**
@@ -235,6 +247,7 @@ export class TextureStore {
 		this.#retiring = [];
 		this.#states.clear();
 		this.#released.clear();
+		this.#changed.clear();
 		this.bytes = 0;
 	}
 
@@ -300,6 +313,7 @@ export class TextureStore {
 		state.top = next === null ? state.entry.mipCount : top;
 		state.version++;
 		this.version++;
+		this.#changed.set(state.id, this.version);
 		state.binding =
 			next === null
 				? null
