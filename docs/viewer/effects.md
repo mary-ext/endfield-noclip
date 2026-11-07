@@ -118,14 +118,15 @@ keep and replace are unsupported, and portals need the GPU's `depth32float-stenc
 
 ## solid effects
 
-VFXDitherAlpha shades through the opaque mesh path
-([`special-looks.ts`](../../packages/viewer/src/looks/special-looks.ts), `ditheredLook`). its
+VFXDitherAlpha and VFXWaterDitherAlpha (classified into one family) shade through the opaque mesh
+path ([`special-looks.ts`](../../packages/viewer/src/looks/special-looks.ts), `ditheredLook`). its
 [dither](../game-data/effects.md#solid-effects) is an alpha test in the cutout depth pass
 (`fs_cutout_depth` in `mesh.wgsl`), for materials without `_USE_MAIN2` in the default
-`_DitherAlphaMode`; with `_UseMainTexAsAlpha` only unlit ones, which test the texture through the
-normal slot. drawn without the test, Power Plateau's `blackspot` was a dark square. the test leaves
-out the vertex alpha and the near camera fade, and `_USE_MAIN2` is drawn only when its second
-texture masks.
+`_DitherAlphaMode`. with `_UseMainTexAsAlpha` the texture only feeds the test: unlit looks bind it
+in the normal slot, lit ones (which may need that slot for their normal map) in the base slot, with
+the tint covering the base colour as an untextured look's does. drawn without the test, Power
+Plateau's `blackspot` was a dark square. the test leaves out the vertex alpha and the near camera
+fade, and `_USE_MAIN2` is drawn only when its second texture masks.
 
 unlit VFXDitherAlpha materials with a distortion, a dissolve, a mask or polar or screen UVs draw
 through VFXBaseV2's texture stack (`describeDitherEffect`, `stackLook`), fogged, blended by the

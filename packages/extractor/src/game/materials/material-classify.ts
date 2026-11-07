@@ -22,6 +22,8 @@ const FAMILIES: [RegExp, ShaderFamily][] = [
 	[/^HGRP\/FogSimple$/i, 'fogSimple'],
 	[/^HGRP\/WaterProxy$/i, 'waterProxy'],
 	[/^HGRP\/WaterDecal$/i, 'waterDecal'],
+	// VFXDitherAlpha's passes under another name, for waterfall splashes
+	[/^HGRP\/Effect\/VFXWaterDitherAlpha$/i, 'vfxDitherAlpha'],
 	[/water/i, 'water'],
 	[/decal/i, 'decal'],
 	[/^HGRP\/Effect\/VFXBase/i, 'vfxBase'],

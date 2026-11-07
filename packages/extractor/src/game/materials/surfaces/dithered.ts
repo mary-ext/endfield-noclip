@@ -10,8 +10,8 @@ const DITHERED_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2']);
 const NO_LIGHTING_SHADER = 'HGRP/Effect/VFXDitherAlphaNoLighting';
 
 /**
- * `HGRP/Effect/VFXDitherAlpha` and its variants as an opaque G-buffer surface
- * (`docs/game-data/effects.md#solid-effects`)
+ * `HGRP/Effect/VFXDitherAlpha`, its variants and `HGRP/Effect/VFXWaterDitherAlpha` (the same passes) as an
+ * opaque G-buffer surface (`docs/game-data/effects.md#solid-effects`)
  *
  * @param reader the material's properties
  * @returns its surface, or `unsupported` with keywords or texture combinations the viewer doesn't draw
@@ -40,10 +40,10 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 	// default would otherwise make it lit
 	const lit = reader.shader.name !== NO_LIGHTING_SHADER && float('_UseLighting', 1) !== 0;
 	// the depth pass's dithered alpha test, which shapes meshes such as the soft dark disc at the centre of
-	// Power Plateau's sky vortex. the viewer draws it for the main texture's alpha (or red, as the alpha alone,
-	// on unlit surfaces) in the default dither mode
+	// Power Plateau's sky vortex. the viewer draws it for the main texture's alpha (or red, as the alpha alone)
+	// in the default dither mode
 	let dither: DitheredSurface['dither'] = null;
-	if (main !== undefined && !has('_USE_MAIN2') && float('_DitherAlphaMode', 0) === 0 && (!redAlpha || !lit)) {
+	if (main !== undefined && !has('_USE_MAIN2') && float('_DitherAlphaMode', 0) === 0) {
 		dither = {
 			texture: main,
 			redAlpha,

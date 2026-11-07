@@ -121,6 +121,38 @@ describe('dithered effects', () => {
 		assert.equal(edged.dither, null);
 	});
 
+	it('dither lit waterfall splashes by their main texture red, coloured by the tint alone', () => {
+		// the splash sheet at the foot of Si's Painting's cave falls (`M_fx_map_common_waterdecal_splashes_2504_01`)
+		const surface = describeMaterial(
+			values({
+				keywords: ['_NORMAL_MAP'],
+				blend: 'alphaTest',
+				alphaClipThreshold: 0.5,
+				cull: 'none',
+				slots: {
+					_MainTex: { texture: 8, uv: 0, scale: [1, 1], offset: [0, 0] },
+					_NormalMap: { texture: 9, uv: 0, scale: [1, 1], offset: [0, 0] },
+				},
+				floats: {
+					_UseMainTexAsAlpha: 1,
+					_TintColorIntensity: 50,
+					_TintColorAlpha: 2,
+					_DitherAlphaExp: 2,
+					_Metallic: 0.8,
+				},
+			}),
+			shaderEntry({ ...shader, name: 'HGRP/Effect/VFXWaterDitherAlpha' }),
+		);
+		assert.ok(surface.kind === 'dithered');
+		assert.equal(surface.baseMap, null);
+		assert.equal(surface.normalMap?.texture, 9);
+		assert.deepEqual(surface.lighting, { roughness: 0.5, metallic: 0.8, normalScale: 1 });
+		assert.deepEqual(
+			{ ...surface.dither, texture: surface.dither?.texture.texture },
+			{ texture: 8, redAlpha: true, alphaScale: 2, exponent: 2, tiling: 1 },
+		);
+	});
+
 	it('draw the NoLighting variant unlit, though it declares no lighting switch', () => {
 		// Si's Painting's ink plane (`M_fxmap_map02_lv010_inkpattern_huge_01_fj_03_d02`)
 		const { _UseLighting, ...floats } = shader.floats;

@@ -114,6 +114,8 @@ describe('shaderFamily', () => {
 		assert.equal(shaderFamily('Hidden/VLB_Standard'), 'volumetricBeam');
 		assert.equal(shaderFamily('HGRP/MattePainting'), 'mattePainting');
 		assert.equal(shaderFamily('HGRP/Erosion'), 'erosion');
+		assert.equal(shaderFamily('HGRP/Effect/VFXWaterDitherAlpha'), 'vfxDitherAlpha');
+		assert.equal(shaderFamily('HGRP/Effect/VFXWater'), 'water');
 		assert.equal(shaderFamily('HGRP/DecalErosionVolume'), 'decal');
 		assert.equal(shaderFamily('Custom/Thing'), 'unknown');
 	});

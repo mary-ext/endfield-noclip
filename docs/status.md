@@ -273,6 +273,9 @@ packs or renders correctly.
     fogged and its soft edges are brighter than the game's; its effect variants stay unsupported
     (Si's Painting's ink sheet `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very
     Large Rift's escaping trails are unchecked in game
+  - [VFXWaterDitherAlpha](game-data/effects.md#solid-effects) splashes draw as VFXDitherAlpha's
+    plain variant; `_SUBSURFACE` and the sequence-frame variants stay unsupported (6 of map02's 17),
+    and the splash at the foot of Si's Painting's cave falls is unchecked against an in-game shot
   - [VFXRefract](game-data/effects.md#refraction): its saturation, Fresnel mask and trail aren't
     drawn, its scene copy includes the water and fog (unchecked against the game's), and on meshes
     it ignores the second UV set the game reads as custom data; Deep Dale Street's fog-wall haze,

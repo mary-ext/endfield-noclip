@@ -87,6 +87,34 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 	]);
 });
 
+test('lit dithered effects with a red alpha dither through the base slot and take their albedo from the tint', () => {
+	// a waterfall splash sheet (`M_fx_map_common_waterdecal_splashes_2504_01`)
+	const main = { texture: 8, uv: 0, scale: [1, 1] as [number, number], offset: [0, 0] as [number, number] };
+	const [splash] = materialLooks({
+		entries: [
+			described(
+				{
+					kind: 'dithered',
+					baseMap: null,
+					normalMap: { ...main, texture: 9 },
+					color: [50, 50, 50],
+					dither: { texture: main, redAlpha: true, alphaScale: 2, exponent: 2, tiling: 1 },
+					lighting: { roughness: 0.5, metallic: 0.8, normalScale: 1 },
+					ignorePostExposure: 1,
+				},
+				'none',
+			),
+		],
+	});
+	assert.equal(splash.queue, 'cutout');
+	assert.deepEqual(splash.textures.slice(0, 2), [8, 9]);
+	assert.equal(splash.flags & LookFlags.AlphaNormal, 0);
+	// the saturated tint covers the base map's colour (`emissive.w`)
+	assert.deepEqual(Array.from(splash.params.subarray(LookRow.tint, LookRow.tint + 4)), [1, 1, 1, -1]);
+	assert.equal(splash.params[LookRow.emissive + 3], 1);
+	assert.equal(splash.params[DitherRow.dither + 3], 1);
+});
+
 test('erosion rock: its maps tile by their own scales on UV set 0, the ramp streams whole', () => {
 	const tiled = (texture: number, tiling: number): TextureSlot => ({
 		texture,

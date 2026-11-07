@@ -134,10 +134,14 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 	}
 	const { dither } = surface;
 	if (dither !== null) {
-		// an unlit look can borrow the normal slot to test the main texture's red as the alpha alone
-		if (dither.redAlpha) {
+		// the main texture's red is the alpha alone, so it can't colour the surface: an unlit look tests it through
+		// the normal slot, and a lit one, which may need that slot for its normal map, through the base slot, its
+		// albedo taken from the tint alone (below)
+		if (dither.redAlpha && surface.lighting === null) {
 			setTexture(look, Slot.Normal, dither.texture);
 			look.flags |= LookFlags.AlphaNormal;
+		} else if (dither.redAlpha) {
+			setTexture(look, Slot.Base, dither.texture);
 		}
 		params.set(
 			[dither.alphaScale, dither.exponent, dither.tiling, dither.redAlpha ? 1 : 0],
@@ -155,7 +159,7 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 	}
 	look.flags |= LookFlags.NormalRag;
 	// untextured, the tint is the albedo, which the G-buffer saturates
-	const untextured = look.textures[Slot.Base] === null;
+	const untextured = surface.baseMap === null;
 	params.set([...(untextured ? color.map((c) => Math.min(c, 1)) : color), -1], LookRow.tint);
 	params.set(
 		[lighting.roughness, lighting.roughness, lighting.metallic, lighting.normalScale],
