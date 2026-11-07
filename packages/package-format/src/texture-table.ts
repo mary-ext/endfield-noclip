@@ -1,6 +1,6 @@
 /**
- * `tables/textures.bin`, the texture table. its own module, outside the asset modules the pack cache
- * fingerprints, so a layout change leaves cached conversions valid
+ * `tables/textures.bin.zst`, the texture table: one zstd frame of the layout below. its own module, outside
+ * the asset modules the pack cache fingerprints, so a layout change leaves cached conversions valid
  *
  * @module
  */
@@ -131,7 +131,7 @@ const valueOf = <T>(values: readonly T[], code: number, label: string): T => {
 };
 
 /**
- * tables/textures.bin: 20-byte header (`'EFTX'`, u16 version, u16 0, u32 textureCount, u32 pieceCount, u32
+ * the texture table: 20-byte header (`'EFTX'`, u16 version, u16 0, u32 textureCount, u32 pieceCount, u32
  * samplerCount), then 12-byte samplers (u8 addressModeU, V and W, u8 magFilter, minFilter and mipmapFilter,
  * u16 maxAnisotropy, f32 mipBias), 16-byte textures (u8 status, u8 kind, u8 format, u8 mipCount, u16 width,
  * u16 height, u16 depthOrArrayLayers, u16 sampler, u32 firstPiece) and 8-byte pieces (u32 blob, u8
@@ -215,7 +215,7 @@ export const encodeTextureTable = (
 /**
  * checks every record once, so the table's accessors never throw on content
  *
- * @param data tables/textures.bin
+ * @param data the texture table, inflated
  * @returns the table, decoding entries on first use
  * @throws {PackageFormatError} on a bad header or length, an unknown code, a sampler index past the palette
  *   or piece ranges that don't follow each other

@@ -30,9 +30,9 @@ import it.
     manifest.json.zst             PackageManifest
     tables/blobs.bin              blob index → archive, codec, kind, offset, lengths
     tables/chains.bin             LOD-chain templates
-    tables/geometries.bin         geometry table
+    tables/geometries.bin.zst     geometry table
     tables/materials.json.zst     material table
-    tables/textures.bin           texture table
+    tables/textures.bin.zst       texture table
     tables/water.json.zst         water table
     tables/lights.json.zst        local lights
     tables/particles.json.zst     particle systems
@@ -265,16 +265,19 @@ turns it on. a viewer therefore decides whether a volume applies from its group 
 ## binary encodings
 
 all little-endian, every section 4-byte aligned. the tables share a 16-byte header:
-`u32 magic, u16 version, u16 0, u32 count, u32 count-or-0`.
+`u32 magic, u16 version, u16 0, u32 count, u32 count-or-0`. the geometry and texture tables are
+stored as one zstd frame each (`.bin.zst`), the layout below once inflated: on map02 that's 0.63 and
+0.10 MB in place of 1.21 and 0.60 MB raw, and smaller than the JSON tables they replaced; the others
+are stored as they are.
 
-| member                  | magic  | layout                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ----------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tree.bin`              | `EFTR` | 24-byte header (nodes, node refs, global refs, reaches); 48-byte nodes: `i32 x, i32 z, u8 level, u8×3 0, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs, the nodes' then the global ones: `u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, u32 reach` (`0xffffffff` for none); 16-byte reaches: `f32 minX, minZ, maxX, maxZ`, `[min, max)`, possibly infinite |
-| `tables/chains.bin`     | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 flags, u8 0`; 32-byte draws: `u32 geometry, u32 material, u32 particles, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u8 flags, u8 0, i16 sortingLayer, i16 sortingOrder, u16 0`; then `f32×3` distance origins, one per `CameraDistance` chain in chain order                                                               |
-| `tables/blobs.bin`      | `EFBX` | header (blobs, 0); 16-byte records: `u8 kind, u8 codec, u16 archive, u32 offset, u32 length, u32 rawLength`; a blob's hash is only its member path, which readers never need                                                                                                                                                                                                                                           |
-| `tables/irradiance.bin` | `EFIV` | version 2; header (entries, 0); u32 cell keys ascending (repeats allowed), then u32 blob indices, then u32 visibility groups                                                                                                                                                                                                                                                                                           |
-| `tables/geometries.bin` | `EFGE` | header (geometries, 0); 44-byte records: `u8 status, u8 tangentUv, u16 attributes, u32 blob, u32 vertexCount, u32 indexCount, u16 submeshCount, u16 animationFrames, f32×3 min, f32×3 max`; see [asset tables](#asset-tables)                                                                                                                                                                                          |
-| `tables/textures.bin`   | `EFTX` | 20-byte header (textures, pieces, samplers); 12-byte samplers: `u8 addressModeU, V, W, u8 magFilter, minFilter, mipmapFilter, u16 maxAnisotropy, f32 mipBias`; 16-byte textures: `u8 status, u8 kind, u8 format, u8 mipCount, u16 width, u16 height, u16 depthOrArrayLayers, u16 sampler, u32 firstPiece`; 8-byte pieces: `u32 blob, u8 firstLevel, u8 levelCount, u16 0`; see [asset tables](#asset-tables)           |
+| member                      | magic  | layout                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tree.bin`                  | `EFTR` | 24-byte header (nodes, node refs, global refs, reaches); 48-byte nodes: `i32 x, i32 z, u8 level, u8×3 0, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount`; 24-byte refs, the nodes' then the global ones: `u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, u32 reach` (`0xffffffff` for none); 16-byte reaches: `f32 minX, minZ, maxX, maxZ`, `[min, max)`, possibly infinite |
+| `tables/chains.bin`         | `EFCH` | header (chains, draws); 8-byte chains: `u32 firstDraw, u16 drawCount, u8 flags, u8 0`; 32-byte draws: `u32 geometry, u32 material, u32 particles, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u8 flags, u8 0, i16 sortingLayer, i16 sortingOrder, u16 0`; then `f32×3` distance origins, one per `CameraDistance` chain in chain order                                                               |
+| `tables/blobs.bin`          | `EFBX` | header (blobs, 0); 16-byte records: `u8 kind, u8 codec, u16 archive, u32 offset, u32 length, u32 rawLength`; a blob's hash is only its member path, which readers never need                                                                                                                                                                                                                                           |
+| `tables/irradiance.bin`     | `EFIV` | version 2; header (entries, 0); u32 cell keys ascending (repeats allowed), then u32 blob indices, then u32 visibility groups                                                                                                                                                                                                                                                                                           |
+| `tables/geometries.bin.zst` | `EFGE` | header (geometries, 0); 44-byte records: `u8 status, u8 tangentUv, u16 attributes, u32 blob, u32 vertexCount, u32 indexCount, u16 submeshCount, u16 animationFrames, f32×3 min, f32×3 max`; see [asset tables](#asset-tables)                                                                                                                                                                                          |
+| `tables/textures.bin.zst`   | `EFTX` | 20-byte header (textures, pieces, samplers); 12-byte samplers: `u8 addressModeU, V, W, u8 magFilter, minFilter, mipmapFilter, u16 maxAnisotropy, f32 mipBias`; 16-byte textures: `u8 status, u8 kind, u8 format, u8 mipCount, u16 width, u16 height, u16 depthOrArrayLayers, u16 sampler, u32 firstPiece`; 8-byte pieces: `u32 blob, u8 firstLevel, u8 levelCount, u16 0`; see [asset tables](#asset-tables)           |
 
 nodes are ordered coarse to fine (level, then z, then x); a node's children are the nodes at
 `(l + 1, 2x + dx, 2z + dz)`, and its bounds cover everything it and its descendants draw, overhang
@@ -1003,9 +1006,6 @@ provenance lives there rather than in the manifest, which only identifies the bu
 - **geometricError** is a placeholder the viewer uses only for request priority; the HLOD rings
   replaced it for refinement.
 - **instance compression**: meshopt filters or quantized rows could roughly halve instance blobs.
-- **raw binary tables**: the core's binary tables are stored without zstd. on map02,
-  `geometries.bin` (1.21 MB) and `textures.bin` (0.60 MB) would be 0.63 and 0.10 MB at level 9, for
-  a decode pass on open; together they're 0.5 MB larger than the JSON tables they replaced.
 - **detail placement by centre**: a very large object at a leaf disappears while that leaf shows its
   HLOD, unless the HLOD covers it, as the game assumes.
 - **tiny shards**: off-square edges produce sub-KB shards that could merge into a neighbour.

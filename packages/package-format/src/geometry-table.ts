@@ -1,6 +1,6 @@
 /**
- * `tables/geometries.bin`, the geometry table. its own module, outside the asset modules the pack cache
- * fingerprints, so a layout change leaves cached conversions valid
+ * `tables/geometries.bin.zst`, the geometry table: one zstd frame of the layout below. its own module,
+ * outside the asset modules the pack cache fingerprints, so a layout change leaves cached conversions valid
  *
  * @module
  */
@@ -50,10 +50,10 @@ const NO_TANGENT_UV = 0xff;
 const NO_BLOB = 0xff_ff_ff_ff;
 
 /**
- * tables/geometries.bin: 16-byte header (`'EFGE'`, u16 version, u16 0, u32 count, u32 0), then 44-byte
- * records: u8 status ({@link EntryStatus}), u8 tangentUv (`0xff` for none), u16 attributes, u32 blob, u32
- * vertexCount, u32 indexCount, u16 submeshCount, u16 animationFrames (0 for none), f32×3 min, f32×3 max. an
- * unconverted entry's fields past its status are 0.
+ * the geometry table: 16-byte header (`'EFGE'`, u16 version, u16 0, u32 count, u32 0), then 44-byte records:
+ * u8 status ({@link EntryStatus}), u8 tangentUv (`0xff` for none), u16 attributes, u32 blob, u32 vertexCount,
+ * u32 indexCount, u16 submeshCount, u16 animationFrames (0 for none), f32×3 min, f32×3 max. an unconverted
+ * entry's fields past its status are 0.
  *
  * @param entries entries in id order
  * @returns the encoded table
@@ -97,7 +97,7 @@ export const encodeGeometryTable = (entries: readonly GeometryEntry[]): Uint8Arr
 /**
  * checks every record's status once, so the table's accessors never throw on content
  *
- * @param data tables/geometries.bin
+ * @param data the geometry table, inflated
  * @returns the table, reading records in place
  * @throws {PackageFormatError} on a bad header, length or status
  */

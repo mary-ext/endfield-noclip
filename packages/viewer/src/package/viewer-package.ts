@@ -100,13 +100,12 @@ export const openViewerPackage = async (
 		if (file === undefined) {
 			throw new PackageError(`${CORE_ARCHIVE} has no ${path}`);
 		}
-		return file.bytes();
-	};
-	const json = async (path: string): Promise<unknown> => {
-		const bytes = await member(path);
+		const bytes = await file.bytes();
 		// `.zst` members are a single zstd frame
-		return JSON.parse(new TextDecoder().decode(path.endsWith('.zst') ? decompressZstd(bytes) : bytes));
+		return path.endsWith('.zst') ? decompressZstd(bytes) : bytes;
 	};
+	const json = async (path: string): Promise<unknown> =>
+		JSON.parse(new TextDecoder().decode(await member(path)));
 
 	const manifestValue = await json(CORE_PATHS.manifest);
 	if (

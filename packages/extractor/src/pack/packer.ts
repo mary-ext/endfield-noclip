@@ -2298,10 +2298,10 @@ const writePackage = async (
 	const treeBin = encodeTree(tree);
 	const chainsBin = encodeChains(states.chains);
 	const irradianceBin = encodeIrradianceTable(states.irradiance);
-	const geometriesBin = encodeGeometryTable(assetTables.geometries);
-	const texturesBin = encodeTextureTable(assetTables.textures.samplers, assetTables.textures.entries);
 	// tables compress on the thread pool while the archives are written
 	const tablesReady = Promise.all([
+		zstdTable(encodeGeometryTable(assetTables.geometries)),
+		zstdTable(encodeTextureTable(assetTables.textures.samplers, assetTables.textures.entries)),
 		zstdTable(json(assetTables.materials satisfies MaterialTable)),
 		zstdTable(json(states.water)),
 		zstdTable(json(states.lights)),
@@ -2315,20 +2315,18 @@ const writePackage = async (
 	]);
 	const archiveNames = [...stems.keys()];
 	const blobsBin = encodeBlobTable(store.records(archiveNames));
-	const [written, [materials, water, lights, particles, environment]] = await Promise.all([
-		store.writeArchives(dir, previous),
-		tablesReady,
-	]);
-	const tables = { materials, water, lights, particles, environment };
+	const [written, [geometries, textures, materials, water, lights, particles, environment]] =
+		await Promise.all([store.writeArchives(dir, previous), tablesReady]);
+	const tables = { geometries, textures, materials, water, lights, particles, environment };
 
 	const generation = createHash('sha256');
 	for (const part of [
 		treeBin,
 		chainsBin,
 		blobsBin,
-		geometriesBin,
+		tables.geometries,
 		tables.materials,
-		texturesBin,
+		tables.textures,
 		tables.water,
 		tables.lights,
 		tables.particles,
@@ -2374,9 +2372,9 @@ const writePackage = async (
 		{ path: CORE_PATHS.tree, data: treeBin },
 		{ path: CORE_PATHS.blobs, data: blobsBin },
 		{ path: CORE_PATHS.chains, data: chainsBin },
-		{ path: CORE_PATHS.geometries, data: geometriesBin },
+		{ path: CORE_PATHS.geometries, data: tables.geometries },
 		{ path: CORE_PATHS.materials, data: tables.materials },
-		{ path: CORE_PATHS.textures, data: texturesBin },
+		{ path: CORE_PATHS.textures, data: tables.textures },
 		{ path: CORE_PATHS.water, data: tables.water },
 		{ path: CORE_PATHS.lights, data: tables.lights },
 		{ path: CORE_PATHS.particles, data: tables.particles },
@@ -2390,9 +2388,9 @@ const writePackage = async (
 			[CORE_PATHS.tree]: treeBin.length,
 			[CORE_PATHS.blobs]: blobsBin.length,
 			[CORE_PATHS.chains]: chainsBin.length,
-			[CORE_PATHS.geometries]: geometriesBin.length,
+			[CORE_PATHS.geometries]: tables.geometries.length,
 			[CORE_PATHS.materials]: tables.materials.length,
-			[CORE_PATHS.textures]: texturesBin.length,
+			[CORE_PATHS.textures]: tables.textures.length,
 			[CORE_PATHS.water]: tables.water.length,
 			[CORE_PATHS.lights]: tables.lights.length,
 			[CORE_PATHS.particles]: tables.particles.length,
