@@ -239,6 +239,16 @@ some blackboard keys follow the player:
 
 keys that only fights or the server set (`InBattle`, `isDead`) have no offline value.
 
+Dijiang's clue wall (`int_system_spaceship_clue_collection`, a mechanical arm over the clue board at
+−94.2, 5.8, −17.3 in base01_lv001) is one. its model's `model` layer rests in `InActive`, a
+one-frame closed pose (`A_anm_map01_zmdarm+1_001_closeidle_01`), until the bool `Active` holds; then
+`Active` loops the arm through a 16 s idle (`…_openidle_01`) and its `effect` layer plays
+`P_fxmap_base01_lv001_ship_cluewall_01` on `vfx_point`. `Active` isn't an entity property and no
+template action sets it: the clue-collection component (`SpaceshipClueCollectionSystemComponent`)
+passes the system layer's runtime active state (`ESystemState.IsActive`, delivered by the Dijiang
+system's state-change events; the getter itself is VM-protected and wasn't read). no client data
+feeds it, so it has no offline default and the arm rests closed.
+
 ### template animator parameters
 
 an interactive's template can set its model's [Animator](animation.md#scenery-animators) parameters
