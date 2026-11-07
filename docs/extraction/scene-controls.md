@@ -192,16 +192,18 @@ default, since the player fells each tree at runtime.
 ## facility visual forms
 
 [facility visual forms](../game-data/scene-states.md#facility-visual-forms) are implemented in
-[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts),
-with the templates decoded as [MemoryPack](../extraction.md#memorypack-data)
-(`InteractiveTemplateData`). placements are deduplicated by id, a row created with its level
-(`createState` 0) winning over one created later. a row created later (any other `createState`) is
-placed like the rest and also requires its level's `created:<level id>` control, one per level, off
-by default, since the server or a level script creates those rows during play. every facility
-placement becomes a `facility:<id>` progression whose levels are the list indices and whose default
-is the last form, fully upgraded as in a finished world (the template's base model, form 1 for a
-recycling station, is still selectable). form numbers aren't gameplay levels, so the viewer labels
-them "Visual form", not "Level".
+[template-models.ts](../../packages/extractor/src/game/interactives/template-models.ts) and
+[facility-forms.ts](../../packages/extractor/src/game/interactives/facility-forms.ts), with the
+templates decoded as [MemoryPack](../extraction.md#memorypack-data) (`InteractiveTemplateData`).
+placements are deduplicated by id
+([placed-interactives.ts](../../packages/extractor/src/game/interactives/placed-interactives.ts)), a
+row created with its level (`createState` 0) winning over one created later. a row created later
+(any other `createState`) is placed like the rest and also requires its level's `created:<level id>`
+control, one per level, off by default, since the server or a level script creates those rows during
+play. every facility placement becomes a `facility:<id>` progression whose levels are the list
+indices and whose default is the last form, fully upgraded as in a finished world (the template's
+base model, form 1 for a recycling station, is still selectable). form numbers aren't gameplay
+levels, so the viewer labels them "Visual form", not "Level".
 
 ## Dijiang cabins and region walls
 
@@ -224,16 +226,16 @@ rows: the prefab as saved below its field's level, and with the shutter hidden f
 crop and the box's status bar aren't drawn.
 
 [region walls](../game-data/scene-states.md#dijiang-region-walls) are implemented in
-[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts):
-one `controlNexus:<level id>` control, level 1 by default, offering level 1 and each level that
-unlocks an area (levels between them change no wall). each wall shows at the offered levels below
-its area's unlock level. the cabin slot behind a locked wall stays selectable.
+[region-walls.ts](../../packages/extractor/src/game/interactives/region-walls.ts): one
+`controlNexus:<level id>` control, level 1 by default, offering level 1 and each level that unlocks
+an area (levels between them change no wall). each wall shows at the offered levels below its area's
+unlock level. the cabin slot behind a locked wall stays selectable.
 
 ## doors
 
 [doors](../game-data/scene-states.md#doors) are implemented in
-[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts)
-and [cabins.ts](../../packages/extractor/src/game/dynamic/cabins.ts), with the
+[doors.ts](../../packages/extractor/src/game/interactives/doors.ts) and
+[cabins.ts](../../packages/extractor/src/game/dynamic/cabins.ts), with the
 [door poses](prefabs-and-interactives.md#view-state-poses). each placed interactive whose model has
 door poses gets a `door:<interactive id>` control, closed (0) or open (1), with its closed and open
 poses placed under it. what opens doors in game isn't in client data, so:
@@ -247,11 +249,11 @@ poses placed under it. what opens doors in game isn't in client data, so:
 ## bridges
 
 [telescopic bridges](../game-data/scene-states.md#telescopic-bridges) are implemented in
-[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts).
-each placed bridge gets a `bridge:<interactive id>` control, retracted (0, the default and the
-template's initial state) or extended (1), with its
-[poses](prefabs-and-interactives.md#view-state-poses) placed under it. a bridge whose prefab can't
-be read as one is reported in `unsupported-interactives.json` and drawn as saved.
+[bridges.ts](../../packages/extractor/src/game/interactives/bridges.ts). each placed bridge gets a
+`bridge:<interactive id>` control, retracted (0, the default and the template's initial state) or
+extended (1), with its [poses](prefabs-and-interactives.md#view-state-poses) placed under it. a
+bridge whose prefab can't be read as one is reported in `unsupported-interactives.json` and drawn as
+saved.
 
 ## variable-driven view states
 
@@ -272,11 +274,11 @@ more than 16 levels, none of the others), replacing the off `logic:` toggle such
 
 [doodad groups](../game-data/scene-states.md#doodad-groups) are implemented in
 [doodad-shell.ts](../../packages/extractor/src/game/interactives/doodad-shell.ts) and
-[interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts).
-a shell without identity slots is reported and keeps only its own renderers. every level with doodad
-groups gets one `doodadGroups:<level id>` progression ("Resource nodes") over the group levels its
-shells name, defaulting to the highest. each form is placed at the interactive's transform and shown
-under `1 << level`.
+[doodad-groups.ts](../../packages/extractor/src/game/interactives/doodad-groups.ts). a shell without
+identity slots is reported and keeps only its own renderers. every level with doodad groups gets one
+`doodadGroups:<level id>` progression ("Resource nodes") over the group levels its shells name,
+defaulting to the highest. each form is placed at the interactive's transform and shown under
+`1 << level`.
 
 ## script groups
 
@@ -287,8 +289,8 @@ its scripts' quest checks settle it ([below](#following-quest-checks-on-activati
 such as a limited-time race course lands here, typically off. a level interactive that one of the
 scene's own scripts shows or hides by a constant entity pointer gets a `script:<logic id>` control
 too, shown by default (as placed), and its placements also require it
-([interactive-facilities.ts](../../packages/extractor/src/game/interactives/interactive-facilities.ts)).
-the packer reads the scene's level scripts once, collects those targets before placing interactives,
+([interactive-row.ts](../../packages/extractor/src/game/interactives/interactive-row.ts)). the
+packer reads the scene's level scripts once, collects those targets before placing interactives,
 then finds drivers for both kinds. pointers to a script's own slots and computed targets aren't
 followed; the pack report counts them (`scriptVisibilityUntraced`).
 

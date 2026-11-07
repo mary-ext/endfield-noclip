@@ -4,13 +4,9 @@ import { test } from 'node:test';
 import type { LevelInteractive } from '@endfield-noclip/formats/endfield/level-interactives';
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
-import {
-	jumpPadArrow,
-	startState,
-	stateOf,
-	verticalPadEffect,
-	verticalRopeFloats,
-} from './interactive-facilities.ts';
+import { jumpPadArrow, verticalPadEffect } from './jump-pads.ts';
+import { verticalRopeFloats } from './rest-looks.ts';
+import { startState, stateOf } from './template-data.ts';
 
 const property = (key: string, bits: string): MemoryPackValue => ({
 	key,
