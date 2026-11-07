@@ -73,11 +73,6 @@ export class AssetIds {
 		);
 	}
 
-	/** @returns the asset with the given id */
-	get(id: number): AssetRef {
-		return this.assets[id];
-	}
-
 	/**
 	 * interns an exact prefab dependency without inventing a game asset path
 	 *

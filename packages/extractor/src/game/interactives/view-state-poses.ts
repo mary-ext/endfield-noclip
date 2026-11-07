@@ -204,15 +204,6 @@ export const testedValues = (states: ViewStates, key: string): number[] => {
 	return [...values].toSorted((a, b) => a - b);
 };
 
-/**
- * @param layer an animator layer's state machine
- * @param blackboard the values its conditions test
- * @returns the state the layer rests in ({@link settledPath})
- * @throws {FormatError} if the layer has no starting state or its transitions loop
- */
-export const settledState = (layer: ViewStateRecord, blackboard: Blackboard): ViewStateRecord =>
-	settledPath(layer, blackboard).at(-1) ?? layer;
-
 /** an effect a model's view states keep playing once they rest */
 export interface RestingEffect {
 	/** the effect's name, which names its prefab */

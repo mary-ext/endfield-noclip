@@ -168,7 +168,3 @@ export const scaleRgb = (rgb: Readonly<Rgb> | Readonly<Vec4>, k: number): Rgb =>
 	rgb[1] * k,
 	rgb[2] * k,
 ];
-
-/** @returns a slot's largest UV scale, at least 1/1000 */
-export const uvScaleOf = (slot: Pick<TextureSlot, 'scale'>): number =>
-	Math.max(Math.abs(slot.scale[0]), Math.abs(slot.scale[1]), 1e-3);
