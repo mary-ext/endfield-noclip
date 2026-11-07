@@ -454,6 +454,7 @@ export const describeVfxBase = (
 		dissolve: float('_UseDissolve', 0) !== 0 ? shared.dissolve : null,
 		// as in the game, a mask or weight switched on without a texture in that role leaves nothing
 		masked: float('_UseMask', 0) !== 0,
+		maskAlphaOnly: false,
 		fresnel: has('_USE_FRESNEL')
 			? {
 					power: float('_FresnelPower', 1),

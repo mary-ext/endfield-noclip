@@ -165,6 +165,7 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 		params.set(dissolve.edgeColor, EffectRow.dissolveColor);
 	}
 	params[EffectRow.dissolveColor + 3] = stack.masked ? 1 : 0;
+	params[EffectRow.maskAlphaOnly] = stack.maskAlphaOnly ? 1 : 0;
 	if (stack.fresnel !== null) {
 		const { fresnel } = stack;
 		params.set([fresnel.power, fresnel.bias, fresnel.flip, fresnel.opacity], EffectRow.fresnel);

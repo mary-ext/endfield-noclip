@@ -56,6 +56,7 @@ const stack = (overrides: Partial<EffectStackSurface> = {}): EffectStackSurface 
 	weight: { disturb: 0, dissolve: 0, used: false },
 	dissolve: null,
 	masked: false,
+	maskAlphaOnly: false,
 	fresnel: null,
 	soft: null,
 	ignorePostExposure: 1,
@@ -219,6 +220,13 @@ test('a stack decal is a box drawn by its back faces with its fades; a multiplyi
 	// opaque layers shade in the main pass, still without casting shadows
 	assert.deepEqual([opaque.queue, opaque.castsShadows], ['effectOpaque', false]);
 	assert.equal(multiply.params[EffectRow.unfogged + 2], 2);
+});
+
+test('a texture stack flags a mask that scales only the alpha', () => {
+	const [dithered, plain] = materialLooks({
+		entries: [described(stack({ maskAlphaOnly: true })), described(stack())],
+	});
+	assert.deepEqual([dithered.params[EffectRow.maskAlphaOnly], plain.params[EffectRow.maskAlphaOnly]], [1, 0]);
 });
 
 test('a texture stack flags screen UVs taken about the object’s origin', () => {

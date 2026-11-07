@@ -943,7 +943,7 @@ describe('VFXDitherAlpha effect variants', () => {
 		assert.equal(lit.kind, 'unsupported');
 	});
 
-	it('mask only the tested alpha, by the mask red, and raise the alpha to _DitherAlphaExp', () => {
+	it('mask only the tested alpha, and raise the alpha to _DitherAlphaExp', () => {
 		// the rift's outer ring (`M_fxmap_map_lv008_boss_semicircle_01_fj_08`)
 		const entry = dither(
 			{ _UseMaskTexAsAlpha: 1, _MaskTexUseDisturb: 1, _UseMainTexAsAlpha: 1, _DitherAlphaExp: 1 },
@@ -964,8 +964,12 @@ describe('VFXDitherAlpha effect variants', () => {
 		const masked = ofKind(ring({}), 'effectStack');
 		assert.deepEqual(roleOf(masked.layers[3]), ['mask', true, 'uv0', 0]);
 		assert.deepEqual([masked.layers[3]?.offset, masked.masked, masked.tint[3]], [[1, 0], true, 0.5]);
-		// the stack's mask would tint by the mask's colour, which the game's colour pass doesn't
-		assert.equal(ring({ _UseMaskTexAsAlpha: 0 }).kind, 'unsupported');
+		// the colour pass never samples the mask, so it scales only the alpha, by its alpha unless it's the red
+		const alphaMasked = ofKind(ring({ _UseMaskTexAsAlpha: 0 }), 'effectStack');
+		assert.deepEqual(
+			[roleOf(alphaMasked.layers[3]), alphaMasked.maskAlphaOnly],
+			[['mask', false, 'uv0', 0], true],
+		);
 		const raised = ofKind(
 			ring({ _DitherAlphaExp: 3 }, ['_USE_DISSOLVE', '_USE_DISTURB', '_USE_MASK']),
 			'effectStack',

@@ -45,8 +45,7 @@ export const EffectKind = {
 
 /**
  * float offsets of an effect look's parameters (`MaterialLook.params`), `LOOK_FLOATS` of them; the shader
- * reads them as vec4 rows. row 39 is free past {@link EffectRow.customScroll}, as are floats 142–143 and
- * 173–175
+ * reads them as vec4 rows. row 39 is free past {@link EffectRow.customScroll}, as is float 143
  */
 export const EffectRow = {
 	/** tint rgb (times its intensity), alpha */
@@ -163,6 +162,8 @@ export const EffectRow = {
 	 * layer per unit of slope (`−scale / 30`), then the depth, crack mask and crack noise slots (0 without)
 	 */
 	parallax: 160,
+	/** 1 when the stack's mask scales only the alpha (`EffectStackSurface.maskAlphaOnly`) */
+	maskAlphaOnly: 142,
 	/** the decal's crack colour (HDR rgb), then the share of the distortion the crack noise takes */
 	crack: 164,
 	/** the decal's crack noise colour (HDR rgb, times its intensity) */

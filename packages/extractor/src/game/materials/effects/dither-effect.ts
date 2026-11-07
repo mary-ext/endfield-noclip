@@ -77,10 +77,6 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 	if (has('_USE_SCREENUV') && float('_LocalPivortSpace', 0) !== 0) {
 		return unsupported('screen UVs relative to the object');
 	}
-	// the mask feeds only the tested alpha; the stack's mask also tints, which matches only when it's the red
-	if (has('_USE_MASK') && float('_UseMaskTexAsAlpha', 1) === 0) {
-		return unsupported('a mask that isn’t its red');
-	}
 	// with `_UseMainTex2AsAlpha` the colour pass doesn't sample the second texture and only multiplies by its
 	// colour; the depth pass has no `_USE_MAIN2` variant, so the tested alpha is unchanged
 	let second: Rgb = [1, 1, 1];
@@ -127,7 +123,7 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 			name: '_MaskTex',
 			keyword: '_USE_MASK',
 			role: 'mask',
-			redAlpha: true,
+			redAlpha: float('_UseMaskTexAsAlpha', 1) !== 0,
 			disturbed: '_MaskTexUseDisturb',
 			speed: '_MaskTexUVSpeed',
 			rotation: '_MaskTexUVRotateMat',
@@ -179,6 +175,8 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 		weight: { disturb: 0, dissolve: 0, used: false },
 		dissolve: has('_USE_DISSOLVE') ? shared.dissolve : null,
 		masked: has('_USE_MASK'),
+		// only the depth pass samples the mask, for the tested alpha; the colour pass doesn't
+		maskAlphaOnly: true,
 		fresnel: null,
 		soft: null,
 		ignorePostExposure: shared.ignorePostExposure,

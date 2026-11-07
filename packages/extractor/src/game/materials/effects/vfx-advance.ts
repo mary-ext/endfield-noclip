@@ -207,6 +207,7 @@ const describeFixedSlots = (
 		weight: { disturb: 0, dissolve: 0, used: false },
 		dissolve: has('_USE_DISSOLVE') ? shared.dissolve : null,
 		masked: has('_USE_MASK'),
+		maskAlphaOnly: false,
 		fresnel: has('_USE_FRESNEL')
 			? {
 					power: float('_FresnelPower', 1),

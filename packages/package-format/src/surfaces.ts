@@ -798,6 +798,11 @@ export interface EffectStackSurface {
 	 * switched on without a texture in that role leaves nothing, as in the game
 	 */
 	masked: boolean;
+	/**
+	 * the mask scales only the alpha, by its alpha (or its red, as a red-alpha layer): VFXDitherAlpha's mask
+	 * feeds only its alpha test. elsewhere it scales the colour too
+	 */
+	maskAlphaOnly: boolean;
 	/** the Fresnel term (`_USE_FRESNEL`), flipped by `flip` and applied to the alpha by `opacity` */
 	fresnel: { power: number; bias: number; flip: Weight; opacity: Weight } | null;
 	soft: SoftBlend | null;

@@ -461,6 +461,10 @@ fn fx_combine(id: u32, bases: FxBases, tint: vec4f, custom: vec4f, vertex_color:
 	if ((bits & SLOT_RED_ALPHA) != 0u) {
 		main_sample = vec4f(1.0, 1.0, 1.0, main_sample.r);
 	}
+	// VFXDitherAlpha's mask scales only the alpha (`EffectRow.maskAlphaOnly`)
+	if (fx_row(id, FX_CAMERA_PULL).z != 0.0) {
+		mask = vec4f(1.0, 1.0, 1.0, mask.a);
+	}
 	let c = tint * main_sample * mask;
 	let blend_tint = fx_row(id, FX_BLEND_TINT) * select(vec4f(1.0), vertex_color, flags.w != 0.0);
 	var color = blend.rgb * saturate((c.a + blend.a) * blend_tint.w) * blend_tint.rgb + c.rgb;

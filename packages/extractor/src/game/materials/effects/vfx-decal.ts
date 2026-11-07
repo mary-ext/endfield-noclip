@@ -268,6 +268,7 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 			: { disturb: 0, dissolve: 0, used: false },
 		dissolve: has('_USE_DISSOLVE') ? shared.dissolve : null,
 		masked: has('_USE_MASK'),
+		maskAlphaOnly: false,
 		fresnel: null,
 		soft: null,
 		ignorePostExposure: shared.ignorePostExposure,
