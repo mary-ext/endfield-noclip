@@ -251,9 +251,14 @@ describe('instance blocks', () => {
 			rows: Uint32Array.from({ length: Math.ceil(count / 3) }, (_, i) => i * 3),
 			values: Float32Array.from({ length: Math.ceil(count / 3) * 7 }, (_, i) => i / 7),
 		},
+		// every row past the first floating
+		floaters: {
+			rows: Uint32Array.from({ length: Math.max(count - 1, 0) }, (_, i) => i + 1),
+			values: Uint32Array.from({ length: Math.max(count - 1, 0) }, (_, i) => i * 5),
+		},
 	});
 
-	it('round-trips any count, with its decal placements and spins', () => {
+	it('round-trips any count, with its decal placements, spins and floaters', () => {
 		for (const count of [0, 1, 3, 4, 5]) {
 			assert.deepEqual(decodeInstanceBlock(encodeInstanceBlock(block(count))), block(count));
 		}
@@ -278,6 +283,14 @@ describe('instance blocks', () => {
 		});
 		assert.throws(() => encodeInstanceBlock({ ...block(3), spins: spins([1, 1]) }), RangeError);
 		assert.throws(() => encodeInstanceBlock({ ...block(3), spins: spins([3]) }), RangeError);
+		assert.throws(
+			() =>
+				encodeInstanceBlock({
+					...block(3),
+					floaters: { rows: Uint32Array.of(0), values: new Uint32Array(2) },
+				}),
+			RangeError,
+		);
 	});
 });
 

@@ -97,12 +97,12 @@ export const openScene = (pkg: ViewerPackage, deps: SceneDeps): LoadedScene => {
 			},
 			instances: {
 				job: (blob, stored) => ({ kind: 'instances', ...stored, rowKinds: rowKinds.get(blob) ?? [] }),
-				upload: (blob, decoded) => {
+				upload: (_blob, decoded) => {
 					// the decode worker doesn't hold the chains
 					markBillboardRows(decoded, pkg.chains);
 					const resident = instances.upload(decoded);
 					if (resident !== null) {
-						waterLevels.track(resident, blob);
+						waterLevels.track(resident);
 					}
 					return resident;
 				},

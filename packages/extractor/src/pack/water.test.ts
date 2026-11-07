@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import type { Bounds } from '@endfield-noclip/package-format/values';
-import type { WaterGlobal, WaterTable, WaterVolumeEntry } from '@endfield-noclip/package-format/water';
+import type { WaterGlobal, WaterTable } from '@endfield-noclip/package-format/water';
 
 import type { LevelWaterVolume } from '../game/water-volumes.ts';
 
@@ -186,7 +186,6 @@ describe('volumeEntry', () => {
 		assert.equal(entry.base, 51.187);
 		assert.equal(entry.initial, 0.5);
 		assert.equal(hasWaterLevelControl(entry), true);
-		assert.deepEqual(entry.floaters, []);
 		assert.deepEqual(entry.levels, [
 			{ fraction: 0.08, speed: 0.11 },
 			{ fraction: 0.37, speed: 0.1192 },
@@ -266,7 +265,6 @@ describe('finishWater', () => {
 			surfaceOwners: [],
 			table,
 			textures: [],
-			floaterIds: [],
 			levelSources: [],
 			debug: {
 				surfaces: { scene: 0, packed: 0 },
@@ -278,7 +276,7 @@ describe('finishWater', () => {
 				errors: [],
 			},
 		};
-		const finished = finishWater(plan, [10, 11, 12, 13, null], new Map());
+		const finished = finishWater(plan, [10, 11, 12, 13, null]);
 		assert.deepEqual(
 			{ ...finished.global, sectors: finished.global?.sectors },
 			{
@@ -299,60 +297,11 @@ describe('finishWater', () => {
 		assert.deepEqual(JSON.parse(JSON.stringify(finished)), finished);
 	});
 
-	it("turns floater entity ids into their stored rows, reporting ids that weren't stored", () => {
-		const volume = (id: string): WaterVolumeEntry => ({
-			entityId: id,
-			base: 0,
-			heightMax: 1,
-			initial: 0,
-			fillSpeed: 1,
-			levels: [],
-			control: null,
-			parent: null,
-			floaters: [],
-		});
-		const plan: WaterPlan = {
-			surfaceOwners: [],
-			table: { global: null, configs: [], surfaces: [], volumes: [volume('1'), volume('2')] },
-			textures: [],
-			floaterIds: [[7, 8], [9]],
-			levelSources: [[], []],
-			debug: {
-				surfaces: { scene: 0, packed: 0 },
-				volumes: { scene: 2, packed: 2 },
-				global: null,
-				sectors: { scene: 0, packed: 0, untiled: 0 },
-				untiledSectors: [],
-				rows: [],
-				errors: [],
-			},
-		};
-		const rowsOf = new Map([
-			[7, [{ blob: 3, row: 0 }]],
-			[
-				8,
-				[
-					{ blob: 3, row: 4 },
-					{ blob: 5, row: 1 },
-				],
-			],
-		]);
-		const finished = finishWater(plan, [], rowsOf);
-		assert.deepEqual(finished.volumes[0].floaters, [
-			{ blob: 3, row: 0 },
-			{ blob: 3, row: 4 },
-			{ blob: 5, row: 1 },
-		]);
-		assert.deepEqual(finished.volumes[1].floaters, []);
-		assert.deepEqual(plan.debug.errors, ['water volume 2: no stored row for floater entities 9']);
-	});
-
 	it('passes a table without global water through', () => {
 		const plan: WaterPlan = {
 			surfaceOwners: [],
 			table: { global: null, configs: [], surfaces: [], volumes: [] },
 			textures: [],
-			floaterIds: [],
 			levelSources: [],
 			debug: {
 				surfaces: { scene: 3, packed: 0 },
@@ -364,7 +313,7 @@ describe('finishWater', () => {
 				errors: [],
 			},
 		};
-		assert.deepEqual(finishWater(plan, [], new Map()), {
+		assert.deepEqual(finishWater(plan, []), {
 			global: null,
 			configs: [],
 			surfaces: [],

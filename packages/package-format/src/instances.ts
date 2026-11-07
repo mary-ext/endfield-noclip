@@ -125,14 +125,19 @@ export interface InstanceBlock {
 	decals: RowSection;
 	/** the spinning rows and their spins, {@link SPIN_FLOATS} each */
 	spins: RowSection;
+	/**
+	 * the rows floating on a gameplay water volume and, one each, the index into `WaterTable.volumes` of the
+	 * volume they float on
+	 */
+	floaters: RowSection<Uint32Array>;
 }
 
 /** values some rows of an instance block carry */
-export interface RowSection {
+export interface RowSection<Values extends Float32Array | Uint32Array = Float32Array> {
 	/** the rows that carry them, ascending */
 	rows: Uint32Array;
-	/** a fixed number of floats per row in {@link rows} */
-	values: Float32Array;
+	/** a fixed number of values per row in {@link rows} */
+	values: Values;
 }
 
 /**
@@ -149,18 +154,19 @@ export const DECAL_PLACEMENT_FLOATS = 8;
  */
 export const SPIN_FLOATS = 7;
 
-/** the row sections of an instance block, in encoded order */
+/** the row sections of an instance block, in encoded order, and their 32-bit values per row */
 const ROW_SECTIONS = [
-	{ key: 'decals', floats: DECAL_PLACEMENT_FLOATS },
-	{ key: 'spins', floats: SPIN_FLOATS },
-] as const satisfies readonly { key: keyof InstanceBlock; floats: number }[];
+	{ key: 'decals', words: DECAL_PLACEMENT_FLOATS },
+	{ key: 'spins', words: SPIN_FLOATS },
+	{ key: 'floaters', words: 1 },
+] as const satisfies readonly { key: keyof InstanceBlock; words: number }[];
 
 const CHAIN_SIZE = 8;
 const DRAW_SIZE = 32;
 const ORIGIN_SIZE = 12;
 /** a `null` reference, as encoded */
 const NONE = 0xff_ff_ff_ff;
-const INSTANCE_HEADER_SIZE = 32;
+const INSTANCE_HEADER_SIZE = 24 + ROW_SECTIONS.length * 4;
 /** bytes per instance row across the per-row sections */
 const INSTANCE_ROW_SIZE = 4 + 48 + 24;
 
@@ -174,7 +180,7 @@ const CHAINS_HEADER: HeaderShape = {
 /** 'EFIN' */
 const INSTANCES_HEADER: HeaderShape = {
 	magic: 0x4e_49_46_45,
-	version: 5,
+	version: 6,
 	size: INSTANCE_HEADER_SIZE,
 	label: 'instance block',
 };
@@ -310,10 +316,10 @@ export const decodeChains = (data: Uint8Array): Chain[] => {
 };
 
 /**
- * instance block: 32-byte header (`'EFIN'`, u16 version, u16 0, u32 count, f32×3 origin, then a u32 row count
- * per row section: decals, spins), then sections of `count` elements each: u32 chain, f32×12 transform, f32×6
- * bounds; then each row section: its u32 rows, ascending, and their floats (f32×8 decal placements, f32×7
- * spins).
+ * instance block: 36-byte header (`'EFIN'`, u16 version, u16 0, u32 count, f32×3 origin, then a u32 row count
+ * per row section: decals, spins, floaters), then sections of `count` elements each: u32 chain, f32×12
+ * transform, f32×6 bounds; then each row section: its u32 rows, ascending, and their values (f32×8 decal
+ * placements, f32×7 spins, a u32 water volume per floater).
  *
  * @param block rows
  * @returns the encoded block
@@ -325,9 +331,9 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 	if (block.transforms.length !== count * 12 || block.bounds.length !== count * 6) {
 		throw new RangeError('instance block sections differ in length');
 	}
-	for (const { key, floats } of ROW_SECTIONS) {
+	for (const { key, words } of ROW_SECTIONS) {
 		const { rows, values } = block[key];
-		if (values.length !== rows.length * floats) {
+		if (values.length !== rows.length * words) {
 			throw new RangeError(`instance block ${key} differ in length`);
 		}
 		if (!areAscendingRows(rows, count)) {
@@ -365,7 +371,7 @@ const areAscendingRows = (rows: Uint32Array, count: number): boolean =>
 const instanceBlockSize = (count: number, sectionRows: readonly number[]): number =>
 	INSTANCE_HEADER_SIZE +
 	count * INSTANCE_ROW_SIZE +
-	ROW_SECTIONS.reduce((sum, { floats }, i) => sum + sectionRows[i] * (4 + floats * 4), 0);
+	ROW_SECTIONS.reduce((sum, { words }, i) => sum + sectionRows[i] * (4 + words * 4), 0);
 
 /**
  * @param data an instance block
@@ -387,22 +393,33 @@ export const decodeInstanceBlock = (data: Uint8Array): InstanceBlock => {
 	at += count * 48;
 	const bounds = f32Section(data, at, count * 6);
 	at += count * 24;
-	const sections = ROW_SECTIONS.map(({ key, floats }, i): RowSection => {
-		const rows = u32Section(data, at, sectionRows[i]);
-		at += sectionRows[i] * 4;
-		const values = f32Section(data, at, sectionRows[i] * floats);
-		at += sectionRows[i] * floats * 4;
+	let section = 0;
+	const readSection = <Values extends Float32Array | Uint32Array>(
+		read: (data: Uint8Array, at: number, count: number) => Values,
+	): RowSection<Values> => {
+		const { key, words } = ROW_SECTIONS[section];
+		const length = sectionRows[section];
+		section++;
+		const rows = u32Section(data, at, length);
+		at += length * 4;
+		const values = read(data, at, length * words);
+		at += length * words * 4;
 		if (!areAscendingRows(rows, count)) {
 			throw new PackageFormatError(`instance block ${key} rows aren’t ascending rows of the block`);
 		}
 		return { rows, values };
-	});
+	};
+	// in ROW_SECTIONS order
+	const decals = readSection(f32Section);
+	const spins = readSection(f32Section);
+	const floaters = readSection(u32Section);
 	return {
 		origin: [view.getFloat32(12, true), view.getFloat32(16, true), view.getFloat32(20, true)],
 		chains,
 		transforms,
 		bounds,
-		decals: sections[0],
-		spins: sections[1],
+		decals,
+		spins,
+		floaters,
 	};
 };

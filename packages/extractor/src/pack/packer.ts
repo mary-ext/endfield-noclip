@@ -73,7 +73,7 @@ import {
 	type TreeInfo,
 } from '@endfield-noclip/package-format/tree';
 import type { Bounds, Rect, Vec3 } from '@endfield-noclip/package-format/values';
-import type { WaterFloater, WaterTable, WaterVolumeEntry } from '@endfield-noclip/package-format/water';
+import type { WaterTable, WaterVolumeEntry } from '@endfield-noclip/package-format/water';
 
 import { definite, mapDefined, unique } from '@mary-ext/array-fns';
 
@@ -490,8 +490,8 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			pack,
 			entities.collected,
 			debugLog,
-			new Set(water.floaterIds.flat()),
 			chainOrder.ids,
+			new Map(water.table.volumes.map(({ entityId }, i) => [entityId, i])),
 		);
 		await debugLog.close();
 		timer.end('instances');
@@ -549,7 +549,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 		const [environmentTextureIds, waterTextureIds] = assetTables.extraTextureIds;
 		const environmentTable = finishEnvironments(environments, environmentTextureIds);
 		indexEnvironmentControls(environmentTable, states.controlIndex);
-		const waterTable = finishWater(water, waterTextureIds, instances.rowsOf);
+		const waterTable = finishWater(water, waterTextureIds);
 		indexWaterControls(waterTable, states.controlIndex);
 		const written = await writePackage(
 			pack,
@@ -1449,8 +1449,6 @@ const collectEntities = async (
 			}
 		}
 	}
-	/** by volume id, the entity ids of its floaters' instance rows */
-	const floaterRows = new Map<string, number[]>();
 	const cabins = await loadCabins(context, dynamic.slots, scene.partition);
 	counts.cabinSlots = cabins.rooms.length;
 	{
@@ -1503,13 +1501,10 @@ const collectEntities = async (
 		}
 		const { pose } = placement;
 		const locked = placement.locked ?? false;
-		/** the rows of an interactive placement that floats on a water volume */
-		let floating: number[] | undefined;
+		/** the id of the water volume an interactive placement floats on */
+		let floatsOn: string | undefined;
 		if (placement.source.startsWith('Data/Json/LevelData/')) {
-			const volume = floaterVolume.get(placement.source.slice(placement.source.lastIndexOf('#') + 1));
-			if (volume !== undefined) {
-				floating = floaterRows.getOrInsertComputed(volume, () => []);
-			}
+			floatsOn = floaterVolume.get(placement.source.slice(placement.source.lastIndexOf('#') + 1));
 		}
 		const prefab = prefabs.getOrInsertComputed(`${model.pathHash}:${pose?.key ?? ''}:${locked}`, async () => {
 			const paths = unique(
@@ -1668,7 +1663,6 @@ const collectEntities = async (
 				continue;
 			}
 			const entityId = syntheticEntityId(levelTag, modelId++);
-			floating?.push(entityId);
 			addStructure(
 				{
 					chain: pack.chains.intern(draws, {
@@ -1681,6 +1675,7 @@ const collectEntities = async (
 					matrix,
 					bounds,
 					entityId,
+					floatsOn,
 				},
 				levelTag,
 				renderer.name,
@@ -1726,7 +1721,7 @@ const collectEntities = async (
 			position,
 			roomType,
 		})),
-		waterVolumes: { volumes: waterVolumes.volumes, floaterRows, unsupported: waterVolumes.unsupported },
+		waterVolumes: { volumes: waterVolumes.volumes, unsupported: waterVolumes.unsupported },
 		scriptWater,
 		waterDrivers,
 		placements: facilities.placements,
@@ -2061,36 +2056,23 @@ const TERRAIN_LAYER_STEM = 'assets/terrain-layers';
 /**
  * stores every instance block, attaching detail and HLOD blocks to the tree
  *
- * @param tracked entity ids whose stored rows the caller needs (water floaters)
  * @param chainIds per interned chain id, its id in the package
- * @returns row counts, the global content refs, HLOD tallies, and by tracked entity id the (blob, row) of
- *   every stored row that carries it
+ * @param volumes by water volume id, its index in the water table, for the rows floating on it
+ * @returns row counts, the global content refs and HLOD tallies
  */
 const packInstances = async (
 	pack: PackState,
 	collected: Collector,
 	debugLog: DebugLog,
-	tracked: ReadonlySet<number>,
 	chainIds: Uint32Array,
+	volumes: ReadonlyMap<string, number>,
 ): Promise<{
 	rows: PackReport['instances'];
 	global: ContentRef[];
 	hlodClusters: number;
 	tierCounts: number[];
-	rowsOf: Map<number, WaterFloater[]>;
 }> => {
 	const { store, builder, scene } = pack;
-	const rowsOf = new Map<number, WaterFloater[]>();
-	const track = (blob: number, group: Group, order: Uint32Array): void => {
-		if (tracked.size === 0) {
-			return;
-		}
-		for (const [row, id] of group.rows.entityIdsInOrder(order).entries()) {
-			if (tracked.has(id)) {
-				rowsOf.getOrInsertComputed(id, () => []).push({ blob, row });
-			}
-		}
-	};
 	const rows = {
 		detail: countRows(collected.detail.values()),
 		hlod: countRows(collected.hlod.values()),
@@ -2104,7 +2086,7 @@ const packInstances = async (
 	for (let start = 0; start < detailGroups.length; start += BLOB_BATCH) {
 		const encoded = detailGroups.slice(start, start + BLOB_BATCH).map((group) => {
 			const { minX, minZ } = tileFootprint(scene.grid, group.key);
-			const { block, order } = group.rows.toBlock([minX, 0, minZ], chainIds);
+			const { block, order } = group.rows.toBlock([minX, 0, minZ], chainIds, volumes);
 			return { group, block, order };
 		});
 		// oxlint-disable-next-line no-await-in-loop -- batches bound memory and keep blob order stable
@@ -2125,7 +2107,6 @@ const packInstances = async (
 				reach: group.grid === null ? null : builder.reach(dynamicGridReach(decodeDynamicGrid(group.grid))),
 			});
 			builder.extend(group.key, group.bounds!);
-			track(blobs[i], group, order);
 			// oxlint-disable-next-line no-await-in-loop -- lines go out in block order
 			await debugLog.block(store.hashOf(blobs[i]), group, order);
 		}
@@ -2139,6 +2120,7 @@ const packInstances = async (
 				const { block, order } = group.rows.toBlock(
 					[scene.grid.origin[0], 0, scene.grid.origin[1]],
 					chainIds,
+					volumes,
 				);
 				return { visibility, group, block, order };
 			});
@@ -2149,7 +2131,6 @@ const packInstances = async (
 			})),
 		);
 		for (const [i, { group, order }] of encoded.entries()) {
-			track(blobs[i], group, order);
 			// oxlint-disable-next-line no-await-in-loop -- lines go out in block order
 			await debugLog.block(store.hashOf(blobs[i]), group, order);
 		}
@@ -2192,7 +2173,7 @@ const packInstances = async (
 		count: group.rows.length,
 		reach: null,
 	}));
-	return { rows, global, hlodClusters, tierCounts, rowsOf };
+	return { rows, global, hlodClusters, tierCounts };
 };
 
 /** the manifest's levels and scenery states */

@@ -417,6 +417,7 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 								built.spins.base.buffer,
 								built.spins.runs.buffer,
 							]),
+					...(built.floaters === null ? [] : [built.floaters.rows.buffer, built.floaters.volumes.buffer]),
 				],
 			};
 		}

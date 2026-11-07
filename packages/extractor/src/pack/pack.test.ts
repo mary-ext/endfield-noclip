@@ -289,7 +289,7 @@ describe('InstanceBlockBuilder', () => {
 		chainIds.set([7], 2);
 		chainIds.set([1], 5);
 		chainIds.set([3], 9);
-		const { block, order } = rows.toBlock([64, 0, -256], chainIds);
+		const { block, order } = rows.toBlock([64, 0, -256], chainIds, new Map());
 		assert.deepEqual([...order], [2, 0, 1, 3]);
 		assert.deepEqual([...block.chains], [3, 1, 7, 7]);
 		assert.deepEqual(rows.groupsInOrder(order), [0, 1, 1, 1]);
@@ -297,6 +297,36 @@ describe('InstanceBlockBuilder', () => {
 		// first output row is entity 2: rows-major 3×4 with the translation in the last column
 		assert.deepEqual([...block.transforms.subarray(0, 12)], [1, 0, 0, 38, 0, 2, 0, 50, 0, 0, 3, 56]);
 		assert.deepEqual([...block.bounds.subarray(0, 6)], [36, 50, 56, 1, 2, 3]);
+	});
+
+	it('names the water volume index of each floating row, in output order, dropping unpacked volumes', () => {
+		const rows = new InstanceBlockBuilder();
+		const add = (chain: number, entityId: number, floatsOn?: string) =>
+			rows.add(
+				{
+					chain,
+					entityId,
+					matrix: matrix(0, 0, 0),
+					bounds: { center: [0, 0, 0], extents: [1, 1, 1] },
+					floatsOn,
+				},
+				0,
+			);
+		add(1, 0, '13');
+		add(0, 1);
+		add(0, 2, '7');
+		add(1, 3, 'left out');
+		const { block, order } = rows.toBlock(
+			[0, 0, 0],
+			Uint32Array.of(0, 1),
+			new Map([
+				['7', 0],
+				['13', 4],
+			]),
+		);
+		assert.deepEqual([...order], [1, 2, 0, 3]);
+		assert.deepEqual([...block.floaters.rows], [1, 2]);
+		assert.deepEqual([...block.floaters.values], [0, 4]);
 	});
 });
 
@@ -388,7 +418,7 @@ describe('BlobStore', () => {
 				},
 				0,
 			);
-			const { block } = rows.toBlock([0, 0, 0], Uint32Array.of(0, 1));
+			const { block } = rows.toBlock([0, 0, 0], Uint32Array.of(0, 1), new Map());
 			const index = await store.put(encodeInstanceBlock(block), {
 				kind: BlobKind.Instances,
 				compress: true,

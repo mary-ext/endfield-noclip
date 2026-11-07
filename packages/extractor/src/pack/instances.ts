@@ -20,6 +20,8 @@ export interface InstanceInput {
 	decalPlacement?: readonly number[];
 	/** the spin the instance turns with, world space; absent on rows that hold still */
 	spin?: Rotator;
+	/** the game id of the water volume the instance floats on; absent on rows that don't float */
+	floatsOn?: string;
 }
 
 /**
@@ -40,6 +42,8 @@ export class InstanceBlockBuilder {
 	readonly #placements = new Map<number, readonly number[]>();
 	/** by insertion index, the spinning rows' spins */
 	readonly #spins = new Map<number, Rotator>();
+	/** by insertion index, the floating rows' water volume ids */
+	readonly #floatsOn = new Map<number, string>();
 
 	/** number of rows */
 	get length(): number {
@@ -72,6 +76,9 @@ export class InstanceBlockBuilder {
 		if (row.spin !== undefined) {
 			this.#spins.set(this.#chains.length - 1, row.spin);
 		}
+		if (row.floatsOn !== undefined) {
+			this.#floatsOn.set(this.#chains.length - 1, row.floatsOn);
+		}
 		return this.#chains.length - 1;
 	}
 
@@ -80,11 +87,14 @@ export class InstanceBlockBuilder {
 	 *
 	 * @param origin world position translations and bounds centres are made relative to
 	 * @param chainIds per chain id the rows were added with, its id in the package (`ChainTable.stableOrder`)
+	 * @param volumes by water volume id, its index in the water table; a row floating on a volume missing here
+	 *   is stored as not floating
 	 * @returns the block, and per output row its insertion index
 	 */
 	toBlock(
 		origin: [x: number, y: number, z: number],
 		chainIds: Uint32Array,
+		volumes: ReadonlyMap<string, number>,
 	): { block: InstanceBlock; order: Uint32Array } {
 		const count = this.#chains.length;
 		const chainOf = (i: number): number => chainIds[this.#chains[i]];
@@ -98,6 +108,8 @@ export class InstanceBlockBuilder {
 		const placements = new Float32Array(this.#placements.size * DECAL_PLACEMENT_FLOATS);
 		const spinRows = new Uint32Array(this.#spins.size);
 		const spins = new Float32Array(this.#spins.size * SPIN_FLOATS);
+		const floaterRows: number[] = [];
+		const floaterVolumes: number[] = [];
 		let decals = 0;
 		let spinning = 0;
 		for (let out = 0; out < count; out++) {
@@ -131,6 +143,12 @@ export class InstanceBlockBuilder {
 				);
 				spinning++;
 			}
+			const floatsOn = this.#floatsOn.get(i);
+			const volume = floatsOn === undefined ? undefined : volumes.get(floatsOn);
+			if (volume !== undefined) {
+				floaterRows.push(out);
+				floaterVolumes.push(volume);
+			}
 		}
 		return {
 			block: {
@@ -140,6 +158,7 @@ export class InstanceBlockBuilder {
 				bounds,
 				decals: { rows: decalRows, values: placements },
 				spins: { rows: spinRows, values: spins },
+				floaters: { rows: Uint32Array.from(floaterRows), values: Uint32Array.from(floaterVolumes) },
 			},
 			order,
 		};

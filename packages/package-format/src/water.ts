@@ -22,7 +22,8 @@ export interface WaterTable {
 /**
  * a gameplay water volume (LevelData `waterVolumes`): a polygon of water whose surface level scripts raise
  * and lower. its surface sits at `base + heightMax · fraction`; its {@link WaterSurfaceEntry} is packed at
- * {@link initial}, and a viewer moves it and the volume's {@link floaters} vertically by the difference
+ * {@link initial}, and a viewer moves it, and the instance rows floating on the volume (an instance block's
+ * `floaters`), vertically by the difference
  */
 export interface WaterVolumeEntry {
 	/** the game's id, decimal, for tracing the volume back */
@@ -48,16 +49,6 @@ export interface WaterVolumeEntry {
 	 * `null` for a volume of its own; a following volume has no control
 	 */
 	parent: number | null;
-	/** instance rows of the interactives that float on the volume: they follow its surface up and down */
-	floaters: WaterFloater[];
-}
-
-/** an instance row floating on a water volume */
-export interface WaterFloater {
-	/** blob-table index of the instance block holding the row */
-	blob: number;
-	/** the row's index in the block */
-	row: number;
 }
 
 /** a fill a water volume can be at */

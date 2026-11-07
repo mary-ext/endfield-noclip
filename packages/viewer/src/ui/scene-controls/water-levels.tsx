@@ -57,7 +57,7 @@ export const WaterLevels = ({ viewer, matches }: { viewer: Viewer; matches: (tex
 	const rows = (entries: readonly (typeof all)[number][]) =>
 		entries.map(({ state, surface, listed }) => {
 			const { control } = listed;
-			const { entry, current, target } = state;
+			const { entry, current, target, floating } = state;
 			const height = metres(waterHeight(entry, current));
 			const { center, size } = surfaceView(state, surface);
 			return (
@@ -67,7 +67,7 @@ export const WaterLevels = ({ viewer, matches }: { viewer: Viewer; matches: (tex
 						detail={
 							<>
 								{current === target ? `at ${height}` : `moving, ${height}`}
-								{entry.floaters.length > 0 && ` · ${entry.floaters.length} floating parts`}
+								{floating > 0 && ` · ${floating} floating parts loaded`}
 							</>
 						}
 					>

@@ -34,6 +34,8 @@ export interface WaterVolumeState {
 	/** 0–1 of `heightMax` */
 	current: number;
 	target: number;
+	/** rows of resident blocks floating on it */
+	floating: number;
 }
 
 /**
@@ -83,8 +85,8 @@ export class WaterLevels {
 	#parents = new Int32Array(0);
 	/** metres above the packed surface, per volume, for the water renderer */
 	#offsets = new Float32Array(0);
-	/** by instance-block blob, its floating rows and their volumes */
-	#floaters = new Map<number, { row: number; volume: number }[]>();
+	/** per volume, rows of resident blocks floating on it */
+	#floating = new Uint32Array(0);
 	#rows = new Map<ResidentInstances, FloatingRow[]>();
 
 	/** @param volumes the package's water volumes, all at their authored fill */
@@ -95,18 +97,18 @@ export class WaterLevels {
 		this.#speed = Float64Array.from(volumes, (volume) => volume.fillSpeed);
 		this.#parents = Int32Array.from(volumes, (volume) => volume.parent ?? -1);
 		this.#offsets = new Float32Array(volumes.length);
-		this.#floaters.clear();
-		for (const [i, volume] of volumes.entries()) {
-			for (const { blob, row } of volume.floaters) {
-				this.#floaters.getOrInsertComputed(blob, () => []).push({ row, volume: i });
-			}
-		}
+		this.#floating = new Uint32Array(volumes.length);
 		this.#rows.clear();
 	}
 
-	/** @returns every volume's fill and target */
+	/** @returns every volume's fill, target and resident floating rows */
 	get states(): WaterVolumeState[] {
-		return this.#volumes.map((entry, i) => ({ entry, current: this.#current[i], target: this.#target[i] }));
+		return this.#volumes.map((entry, i) => ({
+			entry,
+			current: this.#current[i],
+			target: this.#target[i],
+			floating: this.#floating[i],
+		}));
 	}
 
 	/** @returns per volume, metres its surface sits above where it was packed */
@@ -178,28 +180,36 @@ export class WaterLevels {
 	}
 
 	/**
-	 * remembers a block's floating rows, if any
+	 * remembers a block's floating rows, if any. a row naming a volume the package doesn't have holds still
 	 *
 	 * @param resident a block just uploaded
-	 * @param blob its blob-table index
 	 */
-	track(resident: ResidentInstances, blob: number): void {
-		const floaters = this.#floaters.get(blob);
-		if (floaters === undefined) {
+	track(resident: ResidentInstances): void {
+		const { floaters } = resident;
+		if (floaters === null) {
 			return;
 		}
 		const f32 = resident.rowsF32;
-		this.#rows.set(
-			resident,
-			floaters.map(({ row, volume }) => {
-				const at = row * ROW_WORDS;
-				return { resident, row, volume, ty: f32[at + 7], cy: f32[at + 13], applied: 0 };
-			}),
-		);
+		const rows: FloatingRow[] = [];
+		for (const [i, row] of floaters.rows.entries()) {
+			const volume = floaters.volumes[i];
+			if (volume >= this.#volumes.length) {
+				continue;
+			}
+			const at = row * ROW_WORDS;
+			rows.push({ resident, row, volume, ty: f32[at + 7], cy: f32[at + 13], applied: 0 });
+			this.#floating[volume]++;
+		}
+		if (rows.length > 0) {
+			this.#rows.set(resident, rows);
+		}
 	}
 
 	/** @param resident a block being released */
 	untrack(resident: ResidentInstances): void {
+		for (const { volume } of this.#rows.get(resident) ?? []) {
+			this.#floating[volume]--;
+		}
 		this.#rows.delete(resident);
 	}
 

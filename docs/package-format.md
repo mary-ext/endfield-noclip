@@ -338,12 +338,12 @@ exactly while the cabin shows.
 
 ### instance block (`.inst`, `EFIN`)
 
-32-byte header: `u32 magic, u16 version, u16 0, u32 count, f32×3 origin`, then a `u32` row count per
-row section (decals, spins). then struct-of-arrays sections of `count` elements: `u32 chain`,
-`f32×12 transform` (rows3x4, translation relative to origin), `f32×6 bounds` (world AABB centre
-relative to origin, then half-extents, as the game stores them). then each **row section**, values
-only some rows carry: its ascending `u32 row`s, then a fixed number of floats per row (`RowSection`,
-one codec for all of them):
+36-byte header: `u32 magic, u16 version, u16 0, u32 count, f32×3 origin`, then a `u32` row count per
+row section (decals, spins, floaters). then struct-of-arrays sections of `count` elements:
+`u32 chain`, `f32×12 transform` (rows3x4, translation relative to origin), `f32×6 bounds` (world
+AABB centre relative to origin, then half-extents, as the game stores them). then each **row
+section**, values only some rows carry: its ascending `u32 row`s, then a fixed number of 32-bit
+values per row (`RowSection`, one codec for all of them):
 
 - **decals**: `f32×8` rect decal placements (the RGBA8 colour, used as stored, with RGB times the
   intensity, then the UV scale and offset of the box's `local.xz + 0.5`).
@@ -352,6 +352,9 @@ one codec for all of them):
   centre are its stored ones turned `speed · t` about the axis through the pivot, as Unity's
   `Quaternion.AngleAxis` turns; the stored half-extents still bound it by sphere. the tile tree's
   bounds hold the cylinder each spinning row's box sweeps.
+- **floaters** ([floaters](game-data/water.md#floaters)): a `u32` per row, the index into the water
+  table's `volumes` of the volume the row floats on. the row follows that volume's surface up and
+  down by as much as it moves from its packed fill ([water](#water)).
 
 origin is the leaf's minimum corner (y 0) for detail blocks and the tree origin for core blocks.
 rows are sorted by (HLOD node, chain), so equal chains form instanced ranges. who owns a row and
@@ -554,8 +557,7 @@ WaterTable
                                     transform, bounds, config, meshNormals,
                                     volume (kind 'volume') }
   volumes    WaterVolumeEntry[]   { entityId, base, heightMax, initial, fillSpeed,
-                                    levels: { fraction, speed }[], control, parent,
-                                    floaters: { blob, row }[] }
+                                    levels: { fraction, speed }[], control, parent }
 WaterGlobal  { mapSize, sectorSize, center, flowmapPrecision,
                flowMap, causticMap, normalMaps, rainMap, sectors: { x, z, texture }[] }
 ```
@@ -616,10 +618,12 @@ packing rules:
   action setting a fill, and the quests needing it drained, with that fill as their `value`. it
   gates no content, so it's kept as a consumer of the volume, listed for the volume's level.
   `parent` indexes the volume whose surface a basin follows (`null` when that volume isn't packed);
-  a following volume has no control. `floaters` are the stored instance rows, as (block blob, row
-  index), of the renderers of every interactive placement whose component 39 names the volume; the
-  packer finds them by entity id once the blocks are stored, and lists a floater with no stored row
-  in `debug/water.json`.
+  a following volume has no control.
+- **floaters**: the renderers of every interactive placement whose component 39 names a volume float
+  on it. the entity pass records the volume's game id on each of their rows, and the instance
+  blocks, written after the table is planned, store it as the volume's table index in their
+  [floaters section](#instance-block-inst-efin). a row whose volume was left out of the table is
+  stored as not floating.
 
 ### particles
 
@@ -975,8 +979,6 @@ provenance lives there rather than in the manifest, which only identifies the bu
   passes around.
 - **core tables as JSON**: the geometry and texture tables could be fixed-size binary records, read
   without parsing.
-- **water floaters** point at instance rows by (blob, row) from the water table; a row section in
-  the instance block naming the volume would bring the relation with the rows.
 - **detail placement by centre**: a very large object at a leaf disappears while that leaf shows its
   HLOD, unless the HLOD covers it, as the game assumes.
 - **tiny shards**: off-square edges produce sub-KB shards that could merge into a neighbour.

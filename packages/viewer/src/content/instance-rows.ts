@@ -202,6 +202,16 @@ export interface InstanceRows {
 	placements: Float32Array<ArrayBuffer>;
 	/** the block's spinning rows, or `null` when every row holds still */
 	spins: RowSpins | null;
+	/** the block's rows floating on a water volume, or `null` when none does */
+	floaters: RowFloaters | null;
+}
+
+/** a block's rows floating on water volumes, which follow their volume's surface up and down */
+export interface RowFloaters {
+	/** the rows, ascending */
+	rows: Uint32Array<ArrayBuffer>;
+	/** per row, the index into the package's water volumes of the volume it floats on */
+	volumes: Uint32Array<ArrayBuffer>;
 }
 
 /**
@@ -292,6 +302,10 @@ export const buildInstanceRows = (block: InstanceBlock, kinds: RowKinds): Instan
 		runs: new Uint32Array(runs),
 		placements: new Float32Array(values),
 		spins,
+		floaters:
+			block.floaters.rows.length === 0
+				? null
+				: { rows: new Uint32Array(block.floaters.rows), volumes: new Uint32Array(block.floaters.values) },
 	};
 };
 

@@ -71,8 +71,10 @@ it differs from the game in that:
 [water-levels.ts](../../packages/viewer/src/scene-states/water-levels.ts) holds each
 [water volume](../game-data/water.md#water-volumes)'s fill. a volume's surface is packed at its
 authored fill; the water renderer raises its transform and bounds by the difference, and the
-floaters' instance rows (the package names each by block blob and row) move by the same amount, in
-the CPU copy the selection culls with and on the GPU.
+floaters' instance rows (an instance block's `floaters` section names each row's volume) move by the
+same amount, in the CPU copy the selection culls with and on the GPU. a block's floating rows are
+tracked from when it's uploaded until it's released, so the section's "floating parts" count is of
+the rows loaded.
 
 the "Water levels" section of the scene conditions panel
 ([water-levels.tsx](../../packages/viewer/src/ui/scene-controls/water-levels.tsx)) lists the volumes

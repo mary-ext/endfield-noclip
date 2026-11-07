@@ -24,6 +24,7 @@ const block = (chains: number[], decalRows: number[] = []): InstanceBlock => ({
 		values: Float32Array.from({ length: decalRows.length * 8 }, (_, i) => i),
 	},
 	spins: { rows: new Uint32Array(0), values: new Float32Array(0) },
+	floaters: { rows: new Uint32Array(0), values: new Uint32Array(0) },
 });
 
 it('marks the rows of billboard chains, keeping the rest of their info words', () => {
