@@ -248,7 +248,8 @@ export const planEnvironments = async (
 	);
 
 	// every volume with its own phase, for blending at the camera. a phase that can't be read leaves its volume
-	// without one, which the viewer skips
+	// without one, which the viewer skips. the references that can't be read are reported in volume order, as
+	// the loads finish in any order
 	const volumePhases = await Promise.all(
 		volumes.environment.map(async ({ volume }) => {
 			const load = phase(volume);
@@ -257,12 +258,24 @@ export const planEnvironments = async (
 			}
 			try {
 				const loadedPhase = await load;
-				return { loaded: loadedPhase, textures: await resolvePhaseTextures(resolver, loadedPhase, report) };
+				const problems: EnvironmentProblem[] = [];
+				const textures = await resolvePhaseTextures(resolver, loadedPhase, (problem) =>
+					problems.push(problem),
+				);
+				return { loaded: loadedPhase, textures, problems };
 			} catch (error) {
 				return errorText(error);
 			}
 		}),
 	);
+	for (const loadedPhase of volumePhases) {
+		if (typeof loadedPhase !== 'string') {
+			const keyed = loadedPhase.problems.map((problem) => ({ problem, key: JSON.stringify(problem) }));
+			for (const { problem } of keyed.toSorted((a, b) => (a.key < b.key ? -1 : 1))) {
+				report(problem);
+			}
+		}
+	}
 	const textureIndex = new Map<string, number>();
 	const phaseIndex = new Map<string, number>();
 	const volumeIndex = new Map<EnvironmentVolume, number>();
