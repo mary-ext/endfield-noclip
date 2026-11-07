@@ -22,8 +22,8 @@ import {
 } from '../../game/assets/assets.ts';
 import { describeMaterial, materialSway } from '../../game/materials/material-describe.ts';
 import { type LoadedMaterial, loadMaterial } from '../../game/materials/material-load.ts';
-import { keywordsNotDrawn } from '../../game/materials/material-surfaces.ts';
 import type { MaterialValues as ConvertedMaterial } from '../../game/materials/material-values.ts';
+import { keywordsNotDrawn } from '../../game/materials/surfaces/surface-keywords.ts';
 import type { MaterialValues } from '../../game/prefabs/prefab.ts';
 import { orderedPool } from '../../pool.ts';
 import { PhaseTimer } from '../phase-timer.ts';

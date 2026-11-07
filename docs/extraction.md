@@ -275,12 +275,21 @@ first-subshader tags and declared properties from `m_ParsedForm`. then, in the e
   factors would otherwise classify as glass.
 - `describeMaterial`
   ([material-describe.ts](../packages/extractor/src/game/materials/material-describe.ts)) interprets
-  the converted material into its [surface](package-format.md#materials): the surface shaders in
-  [material-surfaces.ts](../packages/extractor/src/game/materials/material-surfaces.ts), the effects
-  in [material-effects.ts](../packages/extractor/src/game/materials/material-effects.ts), each
-  reading its properties through
+  the converted material into its [surface](package-format.md#materials), with the describer its
+  shader family (and, for some families, its shader name) picks from one table. each describer is a
+  module of its own: the surface shaders in
+  [surfaces/](../packages/extractor/src/game/materials/surfaces/), the effects in
+  [effects/](../packages/extractor/src/game/materials/effects/). each reads its properties through
   [material-values.ts](../packages/extractor/src/game/materials/material-values.ts), which falls
-  back to the shader's declared defaults.
+  back to the shader's declared defaults, and takes its common steps (the blend and keyword checks
+  that mark a material unsupported, scrolled and turned textures, fades, dissolves, the texture
+  stack's shared rows) from
+  [describe-steps.ts](../packages/extractor/src/game/materials/describe-steps.ts),
+  [effect-steps.ts](../packages/extractor/src/game/materials/effects/effect-steps.ts) and
+  [texture-stack.ts](../packages/extractor/src/game/materials/effects/texture-stack.ts). so a newly
+  drawn shader is a describer module plus its entry in `describeMaterial`'s table (and, for a
+  surface shader, the keywords it reads in
+  [surface-keywords.ts](../packages/extractor/src/game/materials/surfaces/surface-keywords.ts)).
 
 all of these live apart from asset-decode.ts, outside the conversion worker's imports, so changing
 them keeps the [pack cache](#pack-cache)'s conversions.

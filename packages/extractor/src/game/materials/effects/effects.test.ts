@@ -4,8 +4,8 @@ import { describe, it } from 'node:test';
 import type { TextureSlot } from '@endfield-noclip/package-format/materials';
 import type { MaterialSurface } from '@endfield-noclip/package-format/surfaces';
 
-import { describeMaterial } from './material-describe.ts';
-import type { MaterialValues, ShaderEntry, ShaderFamily } from './material-values.ts';
+import { describeMaterial } from '../material-describe.ts';
+import type { MaterialValues, ShaderEntry, ShaderFamily } from '../material-values.ts';
 
 const shader = (name: string, family: ShaderFamily, overrides: Partial<ShaderEntry> = {}): ShaderEntry => ({
 	name,

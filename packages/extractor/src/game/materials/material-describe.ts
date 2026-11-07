@@ -3,31 +3,25 @@
  * (`package-format/surfaces.ts`): which model, with the shader's properties, keywords and formulas applied. a
  * material whose keywords or texture combinations the viewer doesn't draw becomes `unsupported` with the
  * reason, which the pack lists in `debug/assets.json`. stays out of the conversion worker's imports.
+ *
+ * each shader the viewer draws has a describer module, in `surfaces/` for the shaders shaded as surfaces (the
+ * Lit model, matte paintings, erosion, dithered effects, lit decals) and `effects/` for the effect looks,
+ * built from the shared steps beside them (`describe-steps.ts`, `effects/effect-steps.ts`,
+ * `effects/texture-stack.ts`) and picked by {@link DESCRIBERS}
  */
 
 import type { LitSway, MaterialSurface } from '@endfield-noclip/package-format/surfaces';
 
-import {
-	describeDitherEffect,
-	describeLightBeam,
-	describeLitDecal,
-	describeMistCard,
-	describeMistVolume,
-	describeRefract,
-	describeSixWaySmoke,
-	describeVfxBase,
-	describeVfxDecal,
-	describeWaterFoam,
-	describeWaterSheet,
-	isDitherEffect,
-} from './material-effects.ts';
-import {
-	describeDithered,
-	describeErosion,
-	describeLit,
-	describeMattePainting,
-	swayOf,
-} from './material-surfaces.ts';
+import { describeDitherEffect, isDitherEffect } from './effects/dither-effect.ts';
+import { describeLightBeam } from './effects/light-beam.ts';
+import { describeMistCard } from './effects/mist-card.ts';
+import { describeMistVolume } from './effects/mist-volume.ts';
+import { describeRefract } from './effects/refract.ts';
+import { describeSixWaySmoke } from './effects/six-way-smoke.ts';
+import { describeVfxBase } from './effects/vfx-base.ts';
+import { describeVfxDecal } from './effects/vfx-decal.ts';
+import { describeWaterFoam } from './effects/water-foam.ts';
+import { describeWaterSheet } from './effects/water-sheet.ts';
 import {
 	type MaterialReader,
 	type MaterialValues,
@@ -36,6 +30,12 @@ import {
 	type ShaderFamily,
 	unsupported,
 } from './material-values.ts';
+import { describeDithered } from './surfaces/dithered.ts';
+import { describeErosion } from './surfaces/erosion.ts';
+import { describeLitDecal } from './surfaces/lit-decal.ts';
+import { swayOf } from './surfaces/lit-sway.ts';
+import { describeLit } from './surfaces/lit.ts';
+import { describeMattePainting } from './surfaces/matte-painting.ts';
 
 /**
  * shader families drawn only through effect looks of their own (fog volumes, light beams, effects, projected

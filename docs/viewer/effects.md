@@ -5,9 +5,9 @@ how the viewer draws the effects [game-data/effects.md](../game-data/effects.md)
 per family beside the rows they share in `effect-look.ts`, and
 [`effect.wgsl`](../../packages/viewer/src/render/meshes/effect.wgsl)). the extractor reads each
 effect material's properties and keywords into a [surface](../package-format.md#materials)
-([game/materials/material-effects.ts](../../packages/extractor/src/game/materials/material-effects.ts)),
-or marks it unsupported with the reason; the viewer packs the surface into the look's rows, 12 of
-which effect looks have past the mesh looks' 32. effects on particle meshes play through the
+([game/materials/effects/](../../packages/extractor/src/game/materials/effects/), one module per
+shader), or marks it unsupported with the reason; the viewer packs the surface into the look's rows,
+12 of which effect looks have past the mesh looks' 32. effects on particle meshes play through the
 [particles](particles.md#particles), which also carry their [custom data](particles.md#custom-data);
 what's left out is in [status](../status.md).
 

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { describeMaterial } from './material-describe.ts';
-import { keywordsNotDrawn } from './material-surfaces.ts';
-import type { MaterialValues, ShaderEntry } from './material-values.ts';
+import { describeMaterial } from '../material-describe.ts';
+import type { MaterialValues, ShaderEntry } from '../material-values.ts';
+
+import { keywordsNotDrawn } from './surface-keywords.ts';
 
 /** a shader entry declaring only the overrides' properties */
 const shaderEntry = (
