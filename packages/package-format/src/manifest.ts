@@ -25,7 +25,7 @@ export const PACKAGE_FORMAT = 'endfield-noclip.package';
  * bumped on any incompatible change to the manifest or a table. binary encodings carry their own versions in
  * their headers
  */
-export const PACKAGE_VERSION = 88;
+export const PACKAGE_VERSION = 89;
 
 /** the archive every package has; the viewer opens it first */
 export const CORE_ARCHIVE = 'core.czar';
@@ -86,6 +86,23 @@ export interface PackageManifest {
 	states: StatesInfo;
 	/** rooms' own irradiance bakes, each applying while its group shows */
 	irradianceRegions: IrradianceRegionInfo[];
+	/** the player's fire seed, or `null` when no level script of the scene sets it */
+	fireSeed: FireSeedInfo | null;
+}
+
+/**
+ * the fire seed the player carries, which reveals invisible bridges around them
+ * (`docs/game-data/effects.md#invisible-bridges`): the scene control holding its level and, per value of that
+ * control, the global reveal radii the game sets
+ */
+export interface FireSeedInfo {
+	/** index into `StatesInfo.controls` */
+	control: number;
+	/**
+	 * by control value, the inner and outer radius (m) every effect with a global reveal adds to its own
+	 * (`_VFXParams3.xy`)
+	 */
+	radii: [inner: number, outer: number][];
 }
 
 /** the streaming scene */

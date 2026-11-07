@@ -70,6 +70,12 @@ const FX_CAMERA_PULL = 35u;
 // the texture stack's per-slot custom data shifts (u, v), from row 36 on (`EffectRow.customScroll` in
 // effect-look.ts)
 const FX_CUSTOM_SCROLL = 36u;
+// the texture stack's reveal around the player (`EffectRow.appear*`): radii, alpha factor and edge; noise
+// scale, speed, centre height and 1 with a reveal; brightening colour; 1 when the vertex alpha scales it
+const FX_APPEAR = 40u;
+const FX_APPEAR_NOISE = 41u;
+const FX_APPEAR_BRIGHT = 42u;
+const FX_APPEAR_VERTEX_ALPHA = 43u;
 // the slot of the vertex offset's texture (`OFFSET_SLOT` in stack.ts)
 const FX_OFFSET_SLOT = 6u;
 // how the vertex stage moves vertices (`VertexMotion` in stack.ts)
@@ -574,6 +580,52 @@ fn fs_effect_multiply(in: EffectOut) -> @location(0) vec4f {
 	return vec4f(mix(vec3f(1.0), layer.rgb, layer.a), 1.0);
 }
 
+// GLSL's smoothstep, which also runs from a higher edge to a lower one as the reveal's do
+fn fx_smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+	let t = saturate((x - edge0) / (edge1 - edge0));
+	return t * t * (3.0 - 2.0 * t);
+}
+
+// the reveal edge's hash of a lattice point, its coordinates wrapped to 1024 first
+fn fx_appear_hash(p: vec2f) -> f32 {
+	let q = p - 1024.0 * trunc(p / 1024.0);
+	return fract(sin(dot(q, vec2f(12.9898, 78.233))) * 43758.5453);
+}
+
+// the reveal edge's value noise in 0…1, smoothly interpolated between lattice hashes
+fn fx_appear_noise(p: vec2f) -> f32 {
+	let i = floor(p);
+	let f = fract(p);
+	let a = fx_appear_hash(i);
+	let b = fx_appear_hash(i + vec2f(1.0, 0.0));
+	let c = fx_appear_hash(i + vec2f(0.0, 1.0));
+	let d = fx_appear_hash(i + vec2f(1.0));
+	let u = f * f * (3.0 - 2.0 * f);
+	return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+// VFXAdvance's and VFXDitherAlpha's reveal around the player (`EffectAppear`), the camera standing in for the
+// player: the tint brightens towards the global radii (`frame.render_size.zw`, the fire seed's) and its alpha
+// fades past them, over an edge the noise frays. returns the tint
+fn fx_appear(in: EffectOut, bases: FxBases, tint: vec4f) -> vec4f {
+	let id = in.look;
+	let appear = fx_row(id, FX_APPEAR);
+	let noise = fx_row(id, FX_APPEAR_NOISE);
+	let inner = appear.x + frame.render_size.z;
+	let outer = appear.y + frame.render_size.w;
+	let d = length(in.rel - vec3f(0.0, noise.z, 0.0));
+	var bright = fx_row(id, FX_APPEAR_BRIGHT) * fx_smoothstep(outer, inner, d);
+	bright.a *= select(1.0, in.color.a, fx_row(id, FX_APPEAR_VERTEX_ALPHA).x != 0.0);
+	var revealed = tint + bright;
+	// the noise runs over the main texture's UVs, before the distortion
+	let base = fx_slot_base(bases, fx_slot_bits(id, 0u));
+	let uv = fx_slot_coords(id, 0u, base[0] + fx_custom_shift(id, 0u, in.custom));
+	let n = fx_appear_noise(uv * noise.x + frame.eye.w * noise.y) * 2.0 - 1.0;
+	let fade = fx_smoothstep(outer, inner, d + appear.w * n);
+	revealed.a = saturate(mix(revealed.a, revealed.a * appear.z, fade));
+	return revealed;
+}
+
 // a texture-stack layer's colour (exposed, unpremultiplied) and alpha
 fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
 	let id = in.look;
@@ -586,6 +638,9 @@ fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
 	if (breathing.w > 0.0) {
 		let wave = saturate(pow(cos(frame.eye.w * breathing.y) * 0.5 + 0.5, breathing.z));
 		tint.a *= mix(breathing.x, 1.0, wave);
+	}
+	if (fx_row(id, FX_APPEAR_NOISE).w > 0.0) {
+		tint = fx_appear(in, bases, tint);
 	}
 	var combined = fx_combine(id, bases, tint, in.custom);
 	let depth = dot(in.rel, frame.view_forward.xyz);

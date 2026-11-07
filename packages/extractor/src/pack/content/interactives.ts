@@ -8,6 +8,12 @@ import type { Context } from '../../context.ts';
 import { cabinDoors, type CabinRoom, loadCabins } from '../../game/dynamic/cabins.ts';
 import type { DynamicStructures, StructureModel } from '../../game/dynamic/dynamic-structures.ts';
 import {
+	fireSeedActionTarget,
+	fireSeedControl,
+	loadFireSeedRadii,
+	scriptFireSeedLevels,
+} from '../../game/fire-seed.ts';
+import {
 	type InteractiveStandIn,
 	loadInteractiveFacilities,
 } from '../../game/interactives/interactive-facilities.ts';
@@ -52,6 +58,11 @@ export interface SceneInteractives {
 	waterDrivers: ReadonlyMap<string, ControlDriver[]>;
 	/** every placed interactive's template and position, by logic id */
 	placements: ReadonlyMap<string, { template: string; position: Vec3 }>;
+	/**
+	 * the player's fire seed, whose control is registered: its control's id and the reveal radii per level;
+	 * `null` when no level script of the scene sets it
+	 */
+	fireSeed: { control: string; radii: [inner: number, outer: number][] } | null;
 	/** interactive LevelData files skipped as a whole, and templates or models that couldn't be resolved */
 	unsupported: { path: string; reason: string }[];
 }
@@ -81,6 +92,8 @@ export const collectInteractives = async (
 	const levelScripts = await loadLevelScripts(context, scene.id, new Set(scripted.keys()));
 	const scriptWater = scriptWaterLevels(levelScripts);
 	content.count('waterScriptActionsComputed', scriptWater.computed);
+	const fireSeedLevels = scriptFireSeedLevels(levelScripts);
+	content.count('fireSeedScriptActions', fireSeedLevels.length);
 
 	const facilities = await loadInteractiveFacilities(context, {
 		scene: scene.id,
@@ -100,6 +113,8 @@ export const collectInteractives = async (
 
 	/** by {@link waterActionTarget}, the drivers of the script action setting a water fill */
 	const waterDrivers = new Map<string, ControlDriver[]>();
+	/** by {@link fireSeedActionTarget}, the drivers of the script action setting the fire seed's level */
+	const fireSeedDrivers = new Map<string, ControlDriver[]>();
 	/** proximity controls of the trigger volumes script groups follow */
 	const volumeProximities: DraftControl[] = [];
 	{
@@ -109,13 +124,24 @@ export const collectInteractives = async (
 			target: waterActionTarget(level),
 		}));
 		const waterTargets = new Set(waterActions.map(({ target }) => target));
-		const found = await loadScriptDrivers(context, levelScripts, new Set(scripted.keys()), waterActions);
+		const fireSeedActions = fireSeedLevels.map((level) => ({
+			script: level.script,
+			node: level.node,
+			target: fireSeedActionTarget(level),
+		}));
+		const fireSeedTargets = new Set(fireSeedActions.map(({ target }) => target));
+		const found = await loadScriptDrivers(context, levelScripts, new Set(scripted.keys()), [
+			...waterActions,
+			...fireSeedActions,
+		]);
 		for (const [id, drivers] of found.drivers) {
 			const control = scripted.get(id);
 			if (control !== undefined) {
 				control.drivers = drivers;
 			} else if (waterTargets.has(id)) {
 				waterDrivers.set(id, drivers);
+			} else if (fireSeedTargets.has(id)) {
+				fireSeedDrivers.set(id, drivers);
 			}
 		}
 		// a group its scripts set by quest checks whenever they run follows those quests; its default is then the
@@ -233,6 +259,22 @@ export const collectInteractives = async (
 	);
 	content.count('bridges', facilities.bridges.length);
 	content.count('unsupportedInteractiveFiles', facilities.unsupported.length);
+
+	let fireSeed: SceneInteractives['fireSeed'] = null;
+	if (fireSeedLevels.length > 0) {
+		const radii = await loadFireSeedRadii(context);
+		const control = fireSeedControl(radii, fireSeedLevels, fireSeedDrivers);
+		controls.add(control);
+		// it reveals effects rather than gating content, in the levels whose scripts set it
+		const scriptLevels = new Set(
+			mapDefined(fireSeedLevels, ({ script }) => levelScripts.scripts.find(({ id }) => id === script)?.level),
+		);
+		controls.keep(
+			control.id,
+			mapDefined(scene.partition?.levels ?? [], ({ id, tag }) => (scriptLevels.has(id) ? tag : undefined)),
+		);
+		fireSeed = { control: control.id, radii };
+	}
 	return {
 		facilityModels: facilities.models,
 		cabinModels: cabins.models,
@@ -241,6 +283,7 @@ export const collectInteractives = async (
 		scriptWater,
 		waterDrivers,
 		placements: facilities.placements,
+		fireSeed,
 		unsupported: facilities.unsupported,
 	};
 };

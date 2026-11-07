@@ -11,6 +11,7 @@ import type { PackageSource } from '../package/package-source.ts';
 import { openViewerPackage } from '../package/viewer-package.ts';
 import { frameSettings } from '../render/frame/frame-graph.ts';
 import { SETTLE_FRAMES } from '../render/post/temporal-aa.ts';
+import { revealRadii } from '../scene-states/fire-seed.ts';
 import { volumesForLevel } from '../scene-states/listing.ts';
 import { type GroupsConsumer, SceneState } from '../scene-states/scene-state.ts';
 import { WaterLevels, type WaterVolumeState } from '../scene-states/water-levels.ts';
@@ -708,6 +709,7 @@ export class Viewer {
 				time: this.#time,
 				windClock: this.#windClock,
 				terrain: scene?.pkg.manifest.terrain,
+				revealRadii: revealRadii(scene?.pkg.manifest.fireSeed ?? null, this.#sceneState.values),
 				options,
 				times: this.#times,
 			});

@@ -125,7 +125,57 @@ Wuling's ink drops use it too.
 
 `_USE_BRIGHT` with `_BrightType` 0 and no `_BrightCenter` (w 0) adds `_BrightColor` and a UV wobble
 within `_OuterRadius` of the player. the teal streams winding between Wuling City's floating pillars
-(`M_fx_map02_zhenlie_*`, map02_lv002) use both.
+(`M_fx_map02_zhenlie_*`, map02_lv002) use both. VFXBaseV2's radii are the material's alone;
+VFXAdvance and VFXDitherAlpha add the [global reveal radii](#invisible-bridges) under
+`_USE_GLOBAL_APPEAR`.
+
+## VFXAdvance
+
+`HGRP/Effect/VFXAdvance` is VFXBaseV2's sibling with fixed slots rather than sample textures: a main
+texture, `_DisturbTex1` (and a second) shifting the main texture and `_MaskTex` by their
+`*UseDisturb` shares as the [texture stack](#the-texture-stack)'s disturb role does, a mask, a
+dissolve, a blend layer, polar and screen UVs, soft blending, an edge colour and an "interior" (a
+parallax tunnel). the colour and alpha start as VFXBaseV2's (`_TintColor`, vertex colour, intensity,
+`_TintColorAlpha`), the Fresnel term fades the alpha and mixes the colour towards `_FresnelColor` by
+its w, and `_BlendMode` 1 adds. `_USE_VERTOFFSET` and the pull towards the camera are VFXBaseV2's.
+`_FogIntensity` mixes how much of the fog a fogged layer takes, fully past
+`_FogIntensityFadeOutDistance` metres.
+
+`_INK_DISTORT` and `_INK_COLOR_DISTORT` read the runtime ink simulation, a texture the game draws
+around the player (`_InkSimulationWorldToUV`): the first shifts the UVs by its red and green times
+`_InkDisturbOffset`, the second blends `_InkColor` in by its result times `_InkStrength` (at most
+`_InkMaxAlpha`). both fade on steep surfaces and do nothing outside the simulation's square, so a
+scene the player hasn't disturbed draws as without them.
+
+## invisible bridges
+
+Yinglung Pass (map02_lv007) has ink bridges that show only around the player while they carry a lit
+fire seed. their pieces are VFXAdvance (`M_fx_map02_lv007_inkbridge_freelance_801`, the
+Fresnel-rimmed body; `…_802`, the ink strokes, with a vertex offset) and VFXDitherAlpha (`…_802_01`,
+the solid surface) layers, all with `_USE_BRIGHT` and `_USE_GLOBAL_APPEAR`. the bridge between the
+pillars west of unity −602, 248, 569 is two script groups of such pieces along x ≈ −623: z 515–534
+(group 10200150050, loaded by default) and z 556–587 (10200150054, which only script 10200030004
+shows).
+
+**the reveal.** for d the distance from the player's position (`_VFXParams0.xyz`) raised by
+`_CharacterHeight`, and `s(x) = smoothstep(_OuterRadius + R.y, _InnerRadius + R.x, x)` with R the
+global reveal radii (`_VFXParams3.xy`):
+
+- the tint gains `_BrightColor · s(d)`, its alpha times the vertex alpha with `_BrightUseVertColor`
+- the alpha becomes `saturate(mix(a, a · _DistortAlpha, s(d + _DistortOnEdge · n)))`, n a value
+  noise in −1…1 (a sine hash of lattice points wrapped to 1024, smoothly interpolated) over the main
+  texture's UVs times `_DistortScale`, scrolled by the time times `_DistortSpeed` on both axes
+
+the bridges' materials set inner 2, outer −4 and `_DistortAlpha` 0, so they show within R.x − 4 m of
+the player and vanish past R.x + 2 m, over an edge the noise frays by up to `_DistortOnEdge` (1 m on
+the body).
+
+**the fire seed.** `FireSeedBrain.SetFireSeedLevel`, run only by the level-script action
+`SetFireSeedLevel` (scripts 10200030004 and 10200260001 set levels 0–4), sets R from
+`FireSeedGameplayConfig`: without a seed (level 0) its `invisibleBrightInnerRadius` and `…Outer`
+(9999 and 50000 m), which leave every revealed effect transparent; at level n, `effectRadius[n − 1]`
+(4, 7, 10, 10, 12 m) and that plus `radiusThickness` (0.5 m). the radius eases to a new level over
+`fadeTime` along `radiusChangeCurve`. what R holds before any script sets a level isn't recovered.
 
 ### water blending
 

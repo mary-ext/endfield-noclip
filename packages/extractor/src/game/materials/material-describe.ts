@@ -18,6 +18,7 @@ import { describeMistCard } from './effects/mist-card.ts';
 import { describeMistVolume } from './effects/mist-volume.ts';
 import { describeRefract } from './effects/refract.ts';
 import { describeSixWaySmoke } from './effects/six-way-smoke.ts';
+import { describeVfxAdvance } from './effects/vfx-advance.ts';
 import { describeVfxBase } from './effects/vfx-base.ts';
 import { describeVfxDecal } from './effects/vfx-decal.ts';
 import { describeWaterFoam } from './effects/water-foam.ts';
@@ -63,7 +64,7 @@ const byShader = (describers: Record<string, Describer>): ReadonlyMap<string, De
 
 /**
  * the describer of each family the viewer draws: one for all of the family's shaders, or one per shader name,
- * where the family's other shaders have no look. the families left out (VFXAdvance, …) have none
+ * where the family's other shaders have no look. the families left out have none
  */
 const DESCRIBERS: { readonly [F in ShaderFamily]?: Describer | ReadonlyMap<string, Describer> } = {
 	lit: describeLit,
@@ -85,6 +86,7 @@ const DESCRIBERS: { readonly [F in ShaderFamily]?: Describer | ReadonlyMap<strin
 	vfxFakeVolumeFog: byShader({ 'HGRP/Effect/VFXFakeVolumeFog': describeMistVolume }),
 	volumetricBeam: describeLightBeam,
 	vfxBase: byShader({ 'HGRP/Effect/VFXBaseV2': describeVfxBase }),
+	vfxAdvance: byShader({ 'HGRP/Effect/VFXAdvance': describeVfxAdvance }),
 	vfxRefract: byShader({ 'HGRP/Effect/VFXRefract': describeRefract }),
 	vfxSmokeSixWay: describeSixWaySmoke,
 	water: byShader({ 'HGRP/Effect/VFXWater': describeWaterSheet }),

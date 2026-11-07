@@ -239,9 +239,18 @@ packs or renders correctly.
 ## effects and particles
 
 - scene effects ([scene effects](game-data/effects.md), [viewer](viewer/effects.md)): drawn are
-  VFXBaseV2, VFXDecal, VFXDitherAlpha, VFXRefract, VFXWater sheets, six-way smoke and the mist
-  (FogSimple, VFXFakeVolumeFog). other effect shaders (VFXAdvance, …) and these shaders' undrawn
-  variants show as [unsupported](viewer/materials.md#unsupported-materials)
+  VFXBaseV2, VFXDecal, VFXDitherAlpha, VFXAdvance's simpler variants, VFXRefract, VFXWater sheets,
+  six-way smoke and the mist (FogSimple, VFXFakeVolumeFog). other effect shaders and these shaders'
+  undrawn variants show as [unsupported](viewer/materials.md#unsupported-materials)
+  - [VFXAdvance](game-data/effects.md#vfxadvance): the dissolve, blend layer, second disturb
+    texture, polar and screen UVs, soft blend, edge colour, interiors, `_FogIntensity` and a Fresnel
+    colour aren't drawn; on map02 that leaves 24 materials unsupported, most of them `_USE_DISSOLVE`
+    pieces of Yinglung Pass's ink bridge prefabs (floors, walls, joins). the ink simulation isn't
+    run
+  - [invisible bridges](game-data/effects.md#invisible-bridges): the fire seed reveals them about
+    the camera, without its radius easing between levels; the bridges' look is unchecked against an
+    in-game shot, as is the reveal radii before any script sets a level (0 in scenes without a fire
+    seed)
   - VFXBaseV2 and VFXDecal: additive blend states, `_BlendMode` 2 outside a multiplying blend or
     with a stencil, opaque blending with a stencil, a soft blend or an edge colour (opaque layers
     are fogged by the composite and the falling gravel is unchecked in game), the sixth sample

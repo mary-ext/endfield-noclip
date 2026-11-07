@@ -215,6 +215,7 @@ package (its scene, tree, levels, controls and archives); placed content lives i
 | `levels`            | every level of the scene, even in a subset: id, name, rect, `playerInitPos`, owned cells at `cellLevel`, packed instance count and `contentBounds`, base environment                         |
 | `states`            | scene controls, conditional sets, visibility groups, stream areas and missions; see [conditions](#conditions)                                                                                |
 | `irradianceRegions` | rooms' own irradiance bakes; see [irradiance cells](#irradiance-cells)                                                                                                                       |
+| `fireSeed`          | the [fire seed](game-data/effects.md#invisible-bridges)'s control and each of its values' global reveal radii (`FireSeedInfo`), or `null` when no level script sets it                       |
 
 a package's levels are its scene's own map's, which don't overlap, so a viewer can show them all at
 once; a group's `level` (an index into `levels`) says who owns its content (`null` for shared

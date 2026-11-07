@@ -60,6 +60,24 @@ what's left out is in [status](../status.md).
   folds the shift of their `*CustomData` constants into each slot's offset; the `_USE_IN_PARTICLE`
   variant is unsupported.
 
+## VFXAdvance and the reveal
+
+[VFXAdvance](../game-data/effects.md#vfxadvance) materials with only a main texture, the first
+disturb texture, a mask, a Fresnel fade, fog, a vertex offset and the reveal draw through the
+texture stack (`variant: 'advance'`, `describeVfxAdvance`), in slots 0, 1 and 3; their other
+keywords, a Fresnel colour, a normal-map disturb texture and interiors stay unsupported. the ink
+keywords are drawn as the game draws them where the ink simulation hasn't run, since the viewer has
+none.
+
+the [reveal around the player](../game-data/effects.md#invisible-bridges) (`EffectAppear`, rows
+40–43 of the look) changes the tint before the stack combines it (`fx_appear` in `effect.wgsl`), for
+VFXAdvance and VFXDitherAlpha's effect variants alike. the camera stands in for the player, so the
+fire seed reveals bridges around the camera. the global radii ride in `frame.render_size.zw`, set
+from the `fireSeed:player` control through `PackageManifest.fireSeed` (`revealRadii`); in scenes
+without one they're 0, which leaves the materials' own radii about the camera. a reveal of fixed
+radii (`_USE_BRIGHT` alone) or about a fixed point stays unsupported. the reveal's brightening
+colour is linearized as the tint is.
+
 ## over the composited scene
 
 effects whose blending the transparent pass's targets can't hold draw after compositing (and after

@@ -45,7 +45,8 @@ export const EffectKind = {
 
 /**
  * float offsets of an effect look's parameters (`MaterialLook.params`), `LOOK_FLOATS` of them; the shader
- * reads them as vec4 rows. the last row is free past {@link EffectRow.customScroll}, as are floats 142–143
+ * reads them as vec4 rows. row 39 is free past {@link EffectRow.customScroll}, as are floats 142–143 and
+ * 173–175
  */
 export const EffectRow = {
 	/** tint rgb (times its intensity), alpha */
@@ -139,6 +140,17 @@ export const EffectRow = {
 	 * (`StackLayer.customScroll`), 14 floats over rows 36–39
 	 */
 	customScroll: 144,
+	/**
+	 * the texture stack's reveal around the player (`EffectAppear`): inner radius, outer radius, the alpha's
+	 * factor past them, how far the noise shifts the edge
+	 */
+	appear: 160,
+	/** the reveal's noise scale, its speed, the height above the player its centre sits at, 1 with a reveal */
+	appearNoise: 164,
+	/** the reveal's brightening colour (linear rgb, alpha) */
+	appearBright: 168,
+	/** 1 when the vertex alpha scales the brightening's alpha */
+	appearVertexAlpha: 172,
 } as const;
 
 /**

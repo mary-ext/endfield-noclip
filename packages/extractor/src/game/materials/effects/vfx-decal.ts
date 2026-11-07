@@ -226,5 +226,6 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		opaque: false,
 		screenUv: { byDepth: false, heightAsV: false },
 		stencil: null,
+		appear: null,
 	};
 };

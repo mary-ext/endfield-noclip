@@ -7,6 +7,7 @@ import { encodeIrradianceTable } from '@endfield-noclip/package-format/irradianc
 import {
 	CORE_ARCHIVE,
 	CORE_PATHS,
+	type FireSeedInfo,
 	PACKAGE_FORMAT,
 	PACKAGE_VERSION,
 } from '@endfield-noclip/package-format/manifest';
@@ -313,6 +314,14 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 		indexEnvironmentControls(environmentTable, states.controlIndex);
 		const waterTable = finishWater(water, waterTextureIds);
 		indexWaterControls(waterTable, states.controlIndex);
+		let fireSeed: FireSeedInfo | null = null;
+		if (entities.fireSeed !== null) {
+			const control = states.controlIndex.get(entities.fireSeed.control);
+			if (control === undefined) {
+				throw new Error(`fire seed control ${entities.fireSeed.control} isn't among the package's controls`);
+			}
+			fireSeed = { control, radii: entities.fireSeed.radii };
+		}
 		const tree = builder.build(
 			(key) => (scene.grid.rootSize / 2 ** key.level) * ERROR_PER_EDGE,
 			instances.global,
@@ -366,6 +375,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 					mainStory: states.mainStory,
 				},
 				irradianceRegions,
+				fireSeed,
 			},
 			members,
 		);

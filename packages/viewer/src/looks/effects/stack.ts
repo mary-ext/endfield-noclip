@@ -119,7 +119,8 @@ const setSoftBody = (look: EffectLook, body: EffectSoftBody): void => {
 };
 
 /**
- * the texture stack of VFXBaseV2, VFXDecal and VFXDitherAlpha's effect variants ({@link EffectStackSurface})
+ * the texture stack of VFXBaseV2, VFXDecal, VFXDitherAlpha's effect variants and VFXAdvance ({@link
+ * EffectStackSurface})
  *
  * @param stack the stack
  * @returns its look
@@ -186,6 +187,13 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 	}
 	if (stack.lighting !== null) {
 		params.set([1, stack.lighting.worldUp ? 1 : 0], EffectRow.offsetMode + 2);
+	}
+	if (stack.appear !== null) {
+		const { appear } = stack;
+		params.set([appear.inner, appear.outer, appear.alphaFar, appear.edge], EffectRow.appear);
+		params.set([appear.noiseScale, appear.noiseSpeed, appear.characterHeight, 1], EffectRow.appearNoise);
+		params.set(appear.brightColor, EffectRow.appearBright);
+		params[EffectRow.appearVertexAlpha] = appear.brightVertexAlpha ? 1 : 0;
 	}
 	params.set(
 		[

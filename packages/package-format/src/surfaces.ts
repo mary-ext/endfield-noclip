@@ -721,13 +721,38 @@ export interface TexturedDissolve<Texture extends EffectTexture = EffectTexture>
 }
 
 /**
- * the texture stack of `HGRP/Effect/VFXBaseV2`, `HGRP/Effect/VFXDecal` and VFXDitherAlpha's effect variants
- * (`docs/game-data/effects.md`)
+ * the reveal around the player of VFXAdvance's and VFXDitherAlpha's `_USE_BRIGHT` with `_USE_GLOBAL_APPEAR`
+ * (`docs/game-data/effects.md#invisible-bridges`). for `d` the distance from the player's position raised by
+ * `characterHeight`, `s(x) = smoothstep(outer + R.outer, inner + R.inner, x)` with `R` the global radii
+ * (`FireSeedInfo.radii`):
+ *
+ * - the tint gains `brightColor · s(d)`, its alpha times the vertex alpha with `brightVertexAlpha`
+ * - the tint's alpha then becomes `saturate(mix(a, a · alphaFar, s(d + edge · n)))`, `n` a value noise in −1…1
+ *   over the main texture's UVs times `noiseScale`, scrolled by `noiseSpeed` per second on both axes
+ */
+export interface EffectAppear {
+	inner: number;
+	outer: number;
+	/** `_DistortAlpha`: the alpha's factor where `s` reaches 1 */
+	alphaFar: number;
+	/** `_DistortOnEdge`: how far (m) the noise shifts the edge */
+	edge: number;
+	noiseScale: number;
+	noiseSpeed: number;
+	/** HDR as stored (linear) */
+	brightColor: Color;
+	brightVertexAlpha: boolean;
+	characterHeight: number;
+}
+
+/**
+ * the texture stack of `HGRP/Effect/VFXBaseV2`, `HGRP/Effect/VFXDecal`, VFXDitherAlpha's effect variants and
+ * `HGRP/Effect/VFXAdvance` (`docs/game-data/effects.md`)
  */
 export interface EffectStackSurface {
 	kind: 'effectStack';
 	/** VFXDecal boxes project onto the surfaces inside them */
-	variant: 'base' | 'decal' | 'dither';
+	variant: 'base' | 'decal' | 'dither' | 'advance';
 	/** seven slots; the last is the vertex offset's when there is one */
 	layers: (StackLayer | null)[];
 	/** linear rgb times its intensity, alpha */
@@ -816,6 +841,8 @@ export interface EffectStackSurface {
 	/** screen UVs scale by the object's view depth, and take v from the world height */
 	screenUv: { byDepth: boolean; heightAsV: boolean };
 	stencil: EffectStencil | null;
+	/** the reveal around the player; `null` without one */
+	appear: EffectAppear | null;
 }
 
 /** an opaque VFXBaseV2 material that only writes the stencil: a portal's mask */

@@ -14,7 +14,8 @@ struct Frame {
 	view_up: vec4f,
 	// output width, height (px), pixel factor (output px per metre at 1 m), minimum projected instance size (px)
 	viewport: vec4f,
-	// render width, height (px), z, w unused
+	// render width, height (px), then the inner and outer radius (m) the player's fire seed adds to every global
+	// reveal (`FireSeedInfo.radii`, the game's `_VFXParams3.xy`)
 	render_size: vec4f,
 	// #endregion
 	// #region lighting

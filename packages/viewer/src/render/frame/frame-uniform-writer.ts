@@ -92,6 +92,8 @@ export interface FrameUniformInputs {
 	/** each irradiance clipmap level's centre, `null` while it's not filled */
 	irradiance: readonly (Vec3 | null)[];
 	lights: Readonly<LocalLightFrame>;
+	/** the global reveal radii the player's fire seed sets (`FireSeedInfo.radii`), `Frame.render_size.zw` */
+	revealRadii: readonly [inner: number, outer: number];
 	options: {
 		minBoxPixels: number;
 		outlineMetres: number;
@@ -229,5 +231,6 @@ export const writeFrameUniforms = (f32: Float32Array, u32: Uint32Array, inputs: 
 		f32.set(camera.up(), FrameOffsets.viewUp);
 		f32[FrameOffsets.renderSize] = width;
 		f32[FrameOffsets.renderSize + 1] = height;
+		f32.set(inputs.revealRadii, FrameOffsets.renderSize + 2);
 	}
 };

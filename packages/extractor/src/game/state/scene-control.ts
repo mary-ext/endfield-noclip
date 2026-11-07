@@ -111,6 +111,7 @@ const CATEGORY_OF_KIND: Readonly<Record<string, string>> = {
 	bridge: 'doors',
 	area: 'streaming',
 	proximity: 'nearby',
+	fireSeed: 'nearby',
 	harvest: 'harvest',
 	script: 'scripts',
 	logic: 'logic',

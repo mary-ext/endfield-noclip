@@ -39,6 +39,7 @@ const inputs = (patch: Partial<FrameUniformInputs> = {}): FrameUniformInputs => 
 		shadows: false,
 		irradiance: [[1, 2, 3], null, null],
 		lights: { count: 5, tilesX: 6, tilesY: 7 },
+		revealRadii: [9999, 50000],
 		options: {
 			minBoxPixels: 1.5,
 			outlineMetres: 60,
@@ -63,7 +64,10 @@ describe('writeFrameUniforms', () => {
 	it('packs the eye, clock and sizes', () => {
 		const { f32 } = write();
 		assert.deepEqual([...f32.subarray(FrameOffsets.eye, FrameOffsets.eye + 4)], [10, 20, 30, 12.5]);
-		assert.deepEqual([...f32.subarray(FrameOffsets.renderSize, FrameOffsets.renderSize + 2)], [800, 400]);
+		assert.deepEqual(
+			[...f32.subarray(FrameOffsets.renderSize, FrameOffsets.renderSize + 4)],
+			[800, 400, 9999, 50000],
+		);
 		assert.equal(f32[FrameOffsets.viewport], 1600);
 		// textures sample one level sharper at half the output size
 		assert.equal(f32[FrameOffsets.params + 1], -1);

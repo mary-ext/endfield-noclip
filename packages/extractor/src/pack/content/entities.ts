@@ -25,7 +25,7 @@ import { collectStaticChunks } from './static-chunks.ts';
 /** what the entities phase finds besides instance rows, for the phases after it */
 export interface SceneEntities extends Pick<
 	SceneInteractives,
-	'scriptWater' | 'waterDrivers' | 'placements' | 'unsupported'
+	'scriptWater' | 'waterDrivers' | 'placements' | 'fireSeed' | 'unsupported'
 > {
 	/** how many HLOD clusters' bounds centres lie in the tile they're filed under */
 	hlodNameMatches: number;
@@ -56,7 +56,7 @@ export const collectEntities = async (
 	const { scene, controls } = content;
 	const hlodNameMatches = await collectStaticChunks(context.world, content);
 	const sources = await collectPlacementSources(context, content);
-	const { scriptWater, waterDrivers, placements, unsupported, cabinRooms } = sources.interactives;
+	const { scriptWater, waterDrivers, placements, fireSeed, unsupported, cabinRooms } = sources.interactives;
 
 	const waterVolumes = await readWaterVolumes(context, scene.id, scene.level, scene.partition);
 	content.count('waterVolumes', waterVolumes.volumes.length);
@@ -80,6 +80,7 @@ export const collectEntities = async (
 		scriptWater,
 		waterDrivers,
 		placements,
+		fireSeed,
 		unsupported,
 		hlodNameMatches,
 		placedVolumes,

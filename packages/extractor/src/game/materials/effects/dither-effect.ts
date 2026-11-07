@@ -5,10 +5,12 @@ import type {
 } from '@endfield-noclip/package-format/surfaces';
 
 import { pastUvSets, undrawnKeywords } from '../describe-steps.ts';
-import { type MaterialReader, unsupported } from '../material-values.ts';
+import { isUnsupported, type MaterialReader, unsupported } from '../material-values.ts';
 
 import { effectTexture, matrixRotationOf, speedOf, UNSET_WHITE } from './effect-steps.ts';
 import {
+	APPEAR_KEYWORDS,
+	appearOf,
 	computedUvSources,
 	screenUvOf,
 	sourceOf,
@@ -48,10 +50,18 @@ export const isDitherEffect = (reader: MaterialReader): boolean =>
 export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface | UnsupportedSurface => {
 	const { float, colorOrVector: color, has } = reader;
 	const keywords = undrawnKeywords(reader, {
-		has: (keyword) => DITHER_EFFECT_KEYWORDS.has(keyword) || DITHER_EFFECT_EXTRA_KEYWORDS.has(keyword),
+		has: (keyword) =>
+			DITHER_EFFECT_KEYWORDS.has(keyword) ||
+			DITHER_EFFECT_EXTRA_KEYWORDS.has(keyword) ||
+			APPEAR_KEYWORDS.has(keyword),
 	});
 	if (keywords !== null) {
 		return keywords;
+	}
+	// the depth pass tests the alpha after the reveal, as the stack blends by it
+	const appear = appearOf(reader);
+	if (isUnsupported(appear)) {
+		return appear;
 	}
 	if (float('_UseLighting', 0) !== 0) {
 		return unsupported('a lit effect variant');
@@ -169,5 +179,6 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 		opaque: false,
 		screenUv: screenUvOf(reader),
 		stencil: null,
+		appear,
 	};
 };

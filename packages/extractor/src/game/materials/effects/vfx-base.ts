@@ -502,6 +502,7 @@ export const describeVfxBase = (
 		opaque,
 		screenUv: screenUvOf(reader),
 		stencil,
+		appear: null,
 	};
 };
 

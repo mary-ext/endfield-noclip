@@ -74,7 +74,31 @@ const stack = (overrides: Partial<EffectStackSurface> = {}): EffectStackSurface 
 	opaque: false,
 	screenUv: { byDepth: true, heightAsV: false },
 	stencil: null,
+	appear: null,
 	...overrides,
+});
+
+test('a texture stack’s reveal around the player fills the rows past the customScroll ones', () => {
+	const params = (appear: EffectStackSurface['appear']) =>
+		materialLooks({ entries: [described(stack({ variant: 'advance', appear }))] })[0].params;
+	const revealed = params({
+		inner: 2,
+		outer: -4,
+		alphaFar: 0,
+		edge: 1,
+		noiseScale: 8,
+		noiseSpeed: 0.5,
+		brightColor: [0, 0, 0, 1],
+		brightVertexAlpha: true,
+		characterHeight: 0.1,
+	});
+	assert.deepEqual(
+		[...revealed.subarray(EffectRow.appear, EffectRow.appearVertexAlpha + 1)],
+		[2, -4, 0, 1, 8, 0.5, Math.fround(0.1), 1, 0, 0, 0, 1, 1],
+	);
+	// without one the switch stays off
+	assert.equal(params(null)[EffectRow.appearNoise + 3], 0);
+	assert.ok(EffectRow.appearVertexAlpha < LOOK_FLOATS);
 });
 
 test('a texture stack packs each layer’s role, red alpha, source and distortion share into its slot bits', () => {

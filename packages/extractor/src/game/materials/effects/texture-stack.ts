@@ -1,16 +1,18 @@
 /**
- * steps of the shaders drawn as a texture stack (VFXBaseV2, VFXDitherAlpha's effect variants and VFXDecal),
- * whose tint and shared rows six-way smoke takes too
+ * steps of the shaders drawn as a texture stack (VFXBaseV2, VFXDitherAlpha's effect variants, VFXAdvance and
+ * VFXDecal), whose tint and shared rows six-way smoke takes too
  */
 
 import type {
+	EffectAppear,
 	EffectStackSurface,
 	EffectUvSource,
 	EffectVertexOffset,
+	UnsupportedSurface,
 } from '@endfield-noclip/package-format/surfaces';
 import type { Color } from '@endfield-noclip/package-format/values';
 
-import { linearRgb, type MaterialReader, scaleRgb } from '../material-values.ts';
+import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
 
 import {
 	dissolveOf,
@@ -71,6 +73,49 @@ export const screenUvOf = ({ float }: MaterialReader): EffectStackSurface['scree
 	byDepth: float('_ScreenUVUseDepth', 1) !== 0,
 	heightAsV: float('_UsePosYAsScreenV', 0) !== 0,
 });
+
+/** keywords of the reveal around the player, which VFXAdvance and VFXDitherAlpha draw together */
+export const APPEAR_KEYWORDS: ReadonlySet<string> = new Set(['_USE_BRIGHT', '_USE_GLOBAL_APPEAR']);
+
+/**
+ * the reveal around the player of VFXAdvance and VFXDitherAlpha: `_USE_BRIGHT`'s radial brightening and alpha
+ * fade, with `_USE_GLOBAL_APPEAR` adding the global radii the fire seed sets to the material's
+ *
+ * @returns the reveal, `null` without either keyword, or `unsupported` for one keyword alone (the viewer has
+ *   no player for a reveal of fixed radii) and for brightenings that aren't radial about the player
+ */
+export const appearOf = (reader: MaterialReader): EffectAppear | UnsupportedSurface | null => {
+	const { float, colorOrVector: color, has } = reader;
+	const bright = has('_USE_BRIGHT');
+	const global = has('_USE_GLOBAL_APPEAR');
+	if (!bright && !global) {
+		return null;
+	}
+	if (!bright || !global) {
+		return unsupported(
+			bright ? '_USE_BRIGHT without _USE_GLOBAL_APPEAR' : '_USE_GLOBAL_APPEAR without _USE_BRIGHT',
+		);
+	}
+	if (float('_BrightType', 0) !== 0) {
+		return unsupported(`_BrightType ${float('_BrightType', 0)}`);
+	}
+	if ((color('_BrightCenter')?.[3] ?? 0) !== 0) {
+		return unsupported('a brightening about a fixed point');
+	}
+	const brightColor = color('_BrightColor') ?? [0, 0, 0, 0];
+	return {
+		inner: float('_InnerRadius', 0),
+		outer: float('_OuterRadius', 0),
+		alphaFar: float('_DistortAlpha', 1),
+		edge: float('_DistortOnEdge', 0),
+		noiseScale: float('_DistortScale', 1),
+		noiseSpeed: float('_DistortSpeed', 0),
+		// added to the tint, so linearized as the tint is
+		brightColor: [...linearRgb(brightColor), brightColor[3]],
+		brightVertexAlpha: float('_BrightUseVertColor', 0) !== 0,
+		characterHeight: float('_CharacterHeight', 0),
+	};
+};
 
 /** the material property of the vertex offset's texture */
 const OFFSET_TEXTURE = '_OffsetTex';

@@ -922,6 +922,85 @@ describe('VFXDitherAlpha effect variants', () => {
 	});
 });
 
+describe('VFXAdvance', () => {
+	const advance = shader('HGRP/Effect/VFXAdvance', 'vfxAdvance', {
+		textures: { _MainTex: 'white', _MaskTex: 'white', _DisturbTex1: 'white' },
+	});
+	// Yinglung Pass's invisible ink bridge (`M_fx_map02_lv007_inkbridge_freelance_801`)
+	const bridge = (overrides: Partial<MaterialValues> = {}) =>
+		material({
+			keywords: [
+				'_INK_DISTORT',
+				'_USE_BRIGHT',
+				'_USE_DISTURB',
+				'_USE_FOG',
+				'_USE_FRESNEL',
+				'_USE_GLOBAL_APPEAR',
+				'_USE_MASK',
+			],
+			cull: 'none',
+			slots: { _MainTex: slot(1), _MaskTex: slot(2), _DisturbTex1: slot(3) },
+			floats: {
+				_UseMainTexAsAlpha: 1,
+				_UseMaskTexAsAlpha: 1,
+				_MaskTexUseDisturb: 0.15,
+				_DisturbUIntensity1: 2,
+				_FresnelPower: 11,
+				_FresnelBias: 0.6,
+				_FresnelFlip: 1,
+				_FresnelAffectOpacity: 1,
+				_InnerRadius: 2,
+				_OuterRadius: -4,
+				_DistortAlpha: 0,
+				_DistortOnEdge: 1,
+				_DistortScale: 8,
+				_DistortSpeed: 0.5,
+				_BrightUseVertColor: 1,
+				_CharacterHeight: 0.25,
+				_InParticle: 0,
+			},
+			colors: { _TintColor: [1, 1, 1, 1], _BrightColor: [0, 0, 0, 1], _BrightCenter: [0, 0, 0, 0] },
+			vectors: { _MaskTexUVSpeed: [0.215, 0, 0, 0], _DisturbUVSpeed1: [0.0025, 0.2, 0, 0] },
+			...overrides,
+		});
+
+	it('draws its main texture, distortion and mask as a fogged texture stack revealed about the player', () => {
+		const surface = ofKind(describeMaterial(bridge(), advance), 'effectStack');
+		assert.equal(surface.variant, 'advance');
+		assert.deepEqual(surface.layers.slice(0, 4).map(roleOf), [
+			['main', true, 'uv0', 0],
+			['disturb1', false, 'uv0', 0],
+			['mask', true, 'uv0', 0.15],
+			null,
+		]);
+		assert.deepEqual(surface.layers[1]?.scroll, [0.0025, 0.2]);
+		assert.deepEqual([surface.distorted, surface.masked, surface.unfogged], [true, true, false]);
+		assert.deepEqual(surface.fresnel, { power: 11, bias: 0.6, flip: 1, opacity: 1 });
+		assert.deepEqual(surface.appear, {
+			inner: 2,
+			outer: -4,
+			alphaFar: 0,
+			edge: 1,
+			noiseScale: 8,
+			noiseSpeed: 0.5,
+			brightColor: [0, 0, 0, 1],
+			brightVertexAlpha: true,
+			characterHeight: 0.25,
+		});
+	});
+
+	it('leaves out what it can’t draw', () => {
+		const reasons = [
+			bridge({ keywords: ['_USE_SOFTBLEND'] }),
+			bridge({ keywords: ['_USE_BRIGHT'] }),
+			bridge({ colors: { _BrightCenter: [1, 2, 3, 1] } }),
+			bridge({ floats: { _UseInterior: 1 } }),
+			bridge({ colors: { _FresnelColor: [1, 1, 1, 1] } }),
+		].map((values) => describeMaterial(values, advance).kind);
+		assert.deepEqual(reasons, Array(5).fill('unsupported'));
+	});
+});
+
 describe('VFXRefract', () => {
 	const refract = (overrides: Partial<ShaderEntry> = {}) =>
 		shader('HGRP/Effect/VFXRefract', 'vfxRefract', {

@@ -54,6 +54,7 @@ export interface RenderInput {
 	windClock: number;
 	/** the loaded package's terrain, `null` or `undefined` for none */
 	terrain: TerrainInfo | null | undefined;
+	revealRadii: FrameUniformInputs['revealRadii'];
 	options: FrameUniformInputs['options'];
 	/** where the CPU spans go */
 	times: FrameTimes;
@@ -230,6 +231,7 @@ export class Renderer {
 			shadows: settings.shadows,
 			irradiance: this.irradiance.centers(),
 			lights,
+			revealRadii: input.revealRadii,
 			options: input.options,
 		});
 		// each cascade's frame: the main one with the cascade's view-projection
