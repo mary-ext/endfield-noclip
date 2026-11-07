@@ -5,7 +5,7 @@ import type { Decoded } from '../package/decode-protocol.ts';
 import { PackageChangedError } from '../package/package-source.ts';
 import type { ViewerPackage } from '../package/viewer-package.ts';
 
-import { type QueuedRange, coalesceRanges } from './coalesce.ts';
+import { BlobCoalescer } from './coalesce.ts';
 import { type ContentItem, MAX_READ_FAILURES } from './content-item.ts';
 import {
 	RESIDENT_KINDS,
@@ -63,7 +63,11 @@ interface FetchedBytes {
 }
 
 /** a shard blob's byte range, with what reading its archive needs */
-interface ShardRange extends QueuedRange {
+interface ShardRange {
+	archive: number;
+	/** absolute byte range in the archive, `[start, end)` */
+	start: number;
+	end: number;
 	path: string;
 	/** the archive's size, which a read checks to notice a re-packed package */
 	archiveSize: number;
@@ -98,6 +102,12 @@ export class StreamManager {
 	#createdCount = 0;
 	/** by blob index: a queued shard blob's byte range, made when it's first queued */
 	#ranges: (ShardRange | undefined)[];
+	/** groups queued shard blobs into range reads */
+	#coalescer: BlobCoalescer;
+	/** the queue's blobs and priorities as {@link #dispatch} hands them to the coalescer, reused */
+	#queuedBlobs: number[] = [];
+	#queuedPriorities = new Float64Array(0);
+	#isQueued = (blob: number): boolean => this.#items[blob]?.state === 'queued';
 	/** the ready, unpinned items: what eviction picks from */
 	#evictable = new Set<ContentItem>();
 	/** queued shard blobs */
@@ -141,6 +151,9 @@ export class StreamManager {
 		this.#items = Array.from({ length: pkg.blobs.length });
 		this.#created = new Int32Array(pkg.blobs.length);
 		this.#ranges = Array.from({ length: pkg.blobs.length });
+		this.#coalescer = new BlobCoalescer(pkg.blobs.length, (blob) =>
+			pkg.blobs[blob].archive === CORE_ARCHIVE_INDEX ? null : this.#shardRange(blob),
+		);
 	}
 
 	// #region per-frame API
@@ -396,22 +409,35 @@ export class StreamManager {
 			return;
 		}
 
-		const queued = [...this.#queued];
-		const ranges = queued.map((item) => {
-			const range = this.#shardRange(item.blob);
-			range.priority = item.priority;
-			return range;
-		});
-		for (const read of coalesceRanges(ranges, this.options.maxRequests - this.#inFlight.size)) {
+		const n = this.#queued.size;
+		if (this.#queuedPriorities.length < n) {
+			this.#queuedPriorities = new Float64Array(Math.max(n, this.#queuedPriorities.length * 2));
+		}
+		const blobs = this.#queuedBlobs;
+		const priorities = this.#queuedPriorities;
+		blobs.length = 0;
+		for (const item of this.#queued) {
+			priorities[blobs.length] = item.priority;
+			blobs.push(item.blob);
+		}
+		const reads = this.#coalescer.reads(
+			blobs,
+			priorities,
+			this.#isQueued,
+			this.options.maxRequests - this.#inFlight.size,
+		);
+		for (const read of reads) {
 			if (this.#fetched.size + this.#fetching >= MAX_UNDECODED) {
 				break;
 			}
-			const members = read.members.map((i) => queued[i]);
-			for (const item of members) {
+			const members: ContentItem[] = [];
+			for (const blob of read.members) {
+				const item = this.#item(blob);
 				item.state = 'fetching';
 				this.#queued.delete(item);
+				members.push(item);
 			}
-			this.#fetch(ranges[read.members[0]], read.start, read.end, members);
+			this.#fetch(this.#shardRange(read.members[0]), read.start, read.end, members);
 		}
 	}
 
@@ -420,7 +446,7 @@ export class StreamManager {
 		let range = this.#ranges[blob];
 		if (range === undefined) {
 			const { archive, path, start, length, archiveSize } = this.#package.blobRange(blob);
-			range = { archive, start, end: start + length, priority: 0, path, archiveSize };
+			range = { archive, start, end: start + length, path, archiveSize };
 			this.#ranges[blob] = range;
 		}
 		return range;

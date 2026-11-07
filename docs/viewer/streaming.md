@@ -233,9 +233,12 @@ the renderers and stores that own the GPU side; their residency shapes are in
   blobs averaging ~60 KiB, so latency, not bandwidth, bounds loading. measured from the dev server
   on Wuling's first views: 32 takes 3–4 s where 8 took 9–12 s; 64, dispatching freed slots between
   frames, and wider coalescing (up to 75% more bytes fetched) gain little or nothing. queued blobs
-  are sorted by priority, and each seed coalesces neighbours in the same archive (gaps ≤ 64 KiB,
+  seed reads by priority, and each seed coalesces neighbours in the same archive (gaps ≤ 64 KiB,
   span ≤ 2 MiB, ≤ 96 blobs) into one range read
-  ([`streaming/coalesce.ts`](../../packages/viewer/src/streaming/coalesce.ts)). core blobs are read
+  ([`streaming/coalesce.ts`](../../packages/viewer/src/streaming/coalesce.ts)). every blob's place
+  in byte order is sorted once when the stream opens (about 20 ms for map02's 113k blobs), so a
+  dispatch heapifies the queue and walks neighbours instead of sorting it twice, which took 1.5 ms
+  at 5k queued blobs and 7 ms at 20k. core blobs are read
   from memory without a request slot. requests whose blobs nobody wanted for more than 2 frames are
   aborted; queued blobs not wanted this frame return to idle. no new reads start while 384 blobs
   (`MAX_UNDECODED`) are fetched or being read and not yet decoding.
