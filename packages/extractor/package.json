@@ -12,6 +12,7 @@
 		"@endfield-noclip/package-format": "workspace:*",
 		"@mary-ext/array-fns": "^0.1.0",
 		"@mary-ext/czar": "^0.1.2",
+		"@mary-ext/ds-queue": "^0.1.0",
 		"meshoptimizer": "1.3.0"
 	}
 }
