@@ -1093,6 +1093,10 @@ export const particleReach = (info: ParticleSystemInfo, meshRadius: number): Aab
 		const along = s.kind === ParticleShapeKind.ConeVolume ? s.length : 0;
 		const tube = s.kind === ParticleShapeKind.Donut ? s.donutRadius : 0;
 		let spread = s.radius + tube + along * Math.tan((Math.min(Math.abs(s.angle), 89) * Math.PI) / 180);
+		if (s.kind === ParticleShapeKind.Box) {
+			// the unit cube's corners; a box ignores its radius
+			spread = Math.sqrt(3) / 2;
+		}
 		if (s.mesh !== null) {
 			// the farthest vertex; edges and triangles lie within their vertices' hull
 			spread = 0;

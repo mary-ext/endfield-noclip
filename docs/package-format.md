@@ -666,11 +666,12 @@ unless the mode is Shape. the entry keeps:
   over 0–1 (the game stores gradient key times as 0–65535)
 - the shape (sphere, hemisphere, cone, cone volume, box, circle, donut or mesh, with its radius,
   thickness, donut radius, angle, length, arc, placement and random-direction and -position
-  amounts). a [mesh shape](game-data/effects.md#particle-systems) carries its mesh: positions (to
-  0.1 mm), normals, the vertex colours as bytes when it uses them, and the primitives it emits from
-  (three or two corners each), with its placement, vertex spawn mode, edge spread and normal offset.
-  a shape texture, edge placement stepping by Loop or PingPong, and meshes the engine refuses or
-  that mix lines and triangles stand in
+  amounts). a box's bounds take its unit cube's corners, as it ignores its radius. a
+  [mesh shape](game-data/effects.md#particle-systems) carries its mesh: positions (to 0.1 mm),
+  normals, the vertex colours as bytes when it uses them, and the primitives it emits from (three or
+  two corners each), with its placement, vertex spawn mode, edge spread and normal offset. a shape
+  texture, edge placement stepping by Loop or PingPong, and meshes the engine refuses or that mix
+  lines and triangles stand in
 - the velocity module (linear, orbital about an offset, radial and speed modifier, as curves too,
   though a speed modifier curve not alongside drag), and size and rotation over lifetime (curves
   too)

@@ -540,6 +540,20 @@ test('the reach covers the cone, the rise under gravity and the largest mesh', (
 	assert.deepEqual(reach.center, [0, 0, 0]);
 });
 
+test('a box reaches its corners whatever its radius', () => {
+	const reachOf = (radius: number) => {
+		const read = readParticleSystem(
+			system({
+				ShapeModule: { ...(system().ShapeModule as object), type: 5, radius: { value: radius } },
+			}),
+			renderer(),
+		);
+		assert.ok(read !== null && 'info' in read);
+		return particleReach(read.info, 0).extents[0];
+	};
+	assert.equal(reachOf(0.01), reachOf(65));
+});
+
 // Jingyu Valley's fish school (`p_fxmap_map02_lv001_fish_2101`): a sphere field swirling the fish about its
 // +y, pulling them in and slowing them
 const fishField = (overrides: Record<string, unknown> = {}): TypeTreeObject => ({
