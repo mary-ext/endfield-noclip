@@ -22,13 +22,7 @@ import type {
 } from '@endfield-noclip/package-format/surfaces';
 import type { Rgb } from '@endfield-noclip/package-format/values';
 
-import {
-	linearRgb,
-	type MaterialReader,
-	scaleRgb,
-	type ShaderFamily,
-	unsupported,
-} from './material-values.ts';
+import { linearRgb, type MaterialReader, scaleRgb, unsupported } from './material-values.ts';
 
 // #region keywords
 
@@ -88,20 +82,6 @@ export const keywordsNotDrawn = (shader: string, keywords: readonly string[]): s
 // #endregion
 
 // #region lit
-
-/** the families drawn by the Lit model */
-export const LIT_FAMILIES: ReadonlySet<ShaderFamily> = new Set([
-	'lit',
-	'litEffect',
-	'litTransparent',
-	'litForward',
-	'trunk',
-	'leaf',
-	'grass',
-	'cardMesh',
-	'hlod',
-	'terrain',
-]);
 
 /** shaders whose G-buffer pass writes the material's `_StencilRef` into the stencil */
 const STENCIL_REF_SHADERS = new Set([

@@ -26,10 +26,10 @@ import {
 	describeErosion,
 	describeLit,
 	describeMattePainting,
-	LIT_FAMILIES,
 	swayOf,
 } from './material-surfaces.ts';
 import {
+	type MaterialReader,
 	type MaterialValues,
 	readerOf,
 	type ShaderEntry,
@@ -54,6 +54,42 @@ const EFFECT_FAMILIES: ReadonlySet<ShaderFamily> = new Set([
 	'waterDecal',
 	'water',
 ]);
+
+/** describes a material of the shader it was picked for */
+type Describer = (reader: MaterialReader) => MaterialSurface;
+
+const byShader = (describers: Record<string, Describer>): ReadonlyMap<string, Describer> =>
+	new Map(Object.entries(describers));
+
+/**
+ * the describer of each family the viewer draws: one for all of the family's shaders, or one per shader name,
+ * where the family's other shaders have no look. the families left out (VFXAdvance, …) have none
+ */
+const DESCRIBERS: { readonly [F in ShaderFamily]?: Describer | ReadonlyMap<string, Describer> } = {
+	lit: describeLit,
+	litEffect: describeLit,
+	litTransparent: describeLit,
+	litForward: describeLit,
+	trunk: describeLit,
+	leaf: describeLit,
+	grass: describeLit,
+	cardMesh: describeLit,
+	hlod: describeLit,
+	terrain: describeLit,
+	mattePainting: describeMattePainting,
+	erosion: describeErosion,
+	vfxDitherAlpha: (reader) =>
+		isDitherEffect(reader) ? describeDitherEffect(reader) : describeDithered(reader),
+	decal: byShader({ 'HGRP/Effect/VFXDecal': describeVfxDecal, 'HGRP/DecalLit': describeLitDecal }),
+	fogSimple: describeMistCard,
+	vfxFakeVolumeFog: byShader({ 'HGRP/Effect/VFXFakeVolumeFog': describeMistVolume }),
+	volumetricBeam: describeLightBeam,
+	vfxBase: byShader({ 'HGRP/Effect/VFXBaseV2': describeVfxBase }),
+	vfxRefract: byShader({ 'HGRP/Effect/VFXRefract': describeRefract }),
+	vfxSmokeSixWay: describeSixWaySmoke,
+	water: byShader({ 'HGRP/Effect/VFXWater': describeWaterSheet }),
+	waterDecal: describeWaterFoam,
+};
 
 /**
  * shaders the game never shades into the image: VFXReflectionPass only writes screen-space reflections'
@@ -93,57 +129,7 @@ export const describeMaterial = (material: MaterialValues, shader: ShaderEntry):
 	if (material.blend === 'additive' && !EFFECT_FAMILIES.has(shader.family)) {
 		return unsupported('additive blending outside the effect shaders');
 	}
-	const reader = readerOf(material, shader);
-	switch (shader.family) {
-		case 'mattePainting': {
-			return describeMattePainting(reader);
-		}
-		case 'erosion': {
-			return describeErosion(reader);
-		}
-		case 'fogSimple': {
-			return describeMistCard(reader);
-		}
-		case 'vfxFakeVolumeFog': {
-			return shader.name === 'HGRP/Effect/VFXFakeVolumeFog' ? describeMistVolume(reader) : noLook;
-		}
-		case 'volumetricBeam': {
-			return describeLightBeam(reader);
-		}
-		case 'vfxDitherAlpha': {
-			return isDitherEffect(reader) ? describeDitherEffect(reader) : describeDithered(reader);
-		}
-		case 'vfxBase': {
-			return shader.name === 'HGRP/Effect/VFXBaseV2' ? describeVfxBase(reader) : noLook;
-		}
-		case 'water': {
-			return shader.name === 'HGRP/Effect/VFXWater' ? describeWaterSheet(reader) : noLook;
-		}
-		case 'vfxRefract': {
-			return shader.name === 'HGRP/Effect/VFXRefract' ? describeRefract(reader) : noLook;
-		}
-		case 'vfxSmokeSixWay': {
-			return describeSixWaySmoke(reader);
-		}
-		case 'waterDecal': {
-			return describeWaterFoam(reader);
-		}
-		case 'decal': {
-			switch (shader.name) {
-				case 'HGRP/Effect/VFXDecal': {
-					return describeVfxDecal(reader);
-				}
-				case 'HGRP/DecalLit': {
-					return describeLitDecal(reader);
-				}
-				default: {
-					return noLook;
-				}
-			}
-		}
-		default: {
-			// the other effect families (VFXAdvance, …) have no look
-			return LIT_FAMILIES.has(shader.family) ? describeLit(reader) : noLook;
-		}
-	}
+	const describers = DESCRIBERS[shader.family];
+	const describer = describers instanceof Map ? describers.get(shader.name) : describers;
+	return describer === undefined ? noLook : describer(readerOf(material, shader));
 };
