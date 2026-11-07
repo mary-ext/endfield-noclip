@@ -49,12 +49,13 @@ import {
 	type TerrainTileFiles,
 } from '../../game/world/terrain-source.ts';
 import type { VfsFile } from '../../hg/vfs.ts';
+import { orderedPool } from '../../pool.ts';
 import type { BlobMeta } from '../store/blob-file.ts';
 import { type BlobStore, type PutOptions, tileLocality } from '../store/blob-store.ts';
 import type { PackCache, StepMemo } from '../store/pack-cache.ts';
 
 /** tiles read and compressed at once; bounds memory */
-const TILE_BATCH = 64;
+const TILES_IN_FLIGHT = 64;
 
 /**
  * the game's terrain layout against the package's, which stores the game's pages as they are
@@ -322,48 +323,53 @@ const convertTerrain = async (
 		}
 		return out;
 	};
-	for (let start = 0; start < tiles.length; start += TILE_BATCH) {
-		// oxlint-disable-next-line no-await-in-loop -- batches bound memory
-		const batch = await Promise.all(
-			tiles.slice(start, start + TILE_BATCH).map(async ({ key, file, channels }) => {
-				const samples = readTerrainHeightSamples(await readTexture(file));
-				const heights = store.prepare(
-					encodeHeightPage(samples, TERRAIN_PAGE_SAMPLES),
-					pageOptions(BlobKind.TerrainHeights, input.zstdLevel),
+	// a sliding window rather than batches, so one slow tile doesn't hold up the next 63; commits stay in tile
+	// order
+	await orderedPool(
+		tiles,
+		TILES_IN_FLIGHT,
+		async ({ key, file, channels }) => {
+			const samples = readTerrainHeightSamples(await readTexture(file));
+			const heights = store.prepare(
+				encodeHeightPage(samples, TERRAIN_PAGE_SAMPLES),
+				pageOptions(BlobKind.TerrainHeights, input.zstdLevel),
+			);
+			let page: Promise<{ meta: BlobMeta }> | null = null;
+			if (channels.A !== undefined && channels.N !== undefined) {
+				const [albedo, normal] = await Promise.all([readPage(channels.A), readPage(channels.N)]);
+				page = store.prepare(
+					encodeSurfacePage({ side: TERRAIN_SURFACE_TEXELS, albedo, normal }),
+					// block-compressed texels, so the texture level: higher levels barely shrink them
+					pageOptions(BlobKind.TerrainSurface, input.textureZstdLevel),
 				);
-				let page: Promise<{ meta: BlobMeta }> | null = null;
-				if (channels.A !== undefined && channels.N !== undefined) {
-					const [albedo, normal] = await Promise.all([readPage(channels.A), readPage(channels.N)]);
-					page = store.prepare(
-						encodeSurfacePage({ side: TERRAIN_SURFACE_TEXELS, albedo, normal }),
-						// block-compressed texels, so the texture level: higher levels barely shrink them
-						pageOptions(BlobKind.TerrainSurface, input.textureZstdLevel),
-					);
-				}
-				let splat: Promise<{ meta: BlobMeta }> | null = null;
-				if (
-					typeof layers !== 'string' &&
-					key.level === leafLevel &&
-					channels.S !== undefined &&
-					channels.T !== undefined
-				) {
-					const [control, tint] = await Promise.all([readTexture(channels.S), readTexture(channels.T)]);
-					splat = store.prepare(
-						encodeSplatPage({
-							side: TERRAIN_SURFACE_TEXELS,
-							cells,
-							control: readTerrainControlPage(control),
-							tint: readTerrainTintPage(tint),
-							index: leafIndex(layers.index, key),
-						}),
-						pageOptions(BlobKind.TerrainSplat, input.zstdLevel),
-					);
-				}
-				const [y0, y1] = heightRange(terrain, samples);
-				return { key, y0, y1, heights: await heights, page: await page, splat: await splat };
-			}),
-		);
-		for (const { key, y0, y1, heights, page, splat } of batch) {
+			}
+			let splat: Promise<{ meta: BlobMeta }> | null = null;
+			if (
+				typeof layers !== 'string' &&
+				key.level === leafLevel &&
+				channels.S !== undefined &&
+				channels.T !== undefined
+			) {
+				const [control, tint] = await Promise.all([readTexture(channels.S), readTexture(channels.T)]);
+				splat = store.prepare(
+					encodeSplatPage({
+						side: TERRAIN_SURFACE_TEXELS,
+						cells,
+						control: readTerrainControlPage(control),
+						tint: readTerrainTintPage(tint),
+						index: leafIndex(layers.index, key),
+					}),
+					pageOptions(BlobKind.TerrainSplat, input.zstdLevel),
+				);
+			}
+			const [y0, y1] = heightRange(terrain, samples);
+			return { key, y0, y1, heights: await heights, page: await page, splat: await splat };
+		},
+		(result) => {
+			if (result instanceof Error) {
+				throw result;
+			}
+			const { key, y0, y1, heights, page, splat } = result;
 			memo.blobs.push(heights.meta);
 			if (page !== null) {
 				memo.blobs.push(page.meta);
@@ -372,8 +378,8 @@ const convertTerrain = async (
 				memo.blobs.push(splat.meta);
 			}
 			memo.value.tiles.push({ key, minY: y0, maxY: y1, surface: page !== null, splat: splat !== null });
-		}
-	}
+		},
+	);
 	if (typeof layers !== 'string') {
 		memo.blobs.push(...layers.blobs);
 		memo.value.splat = layers.info;
