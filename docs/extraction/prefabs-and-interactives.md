@@ -285,14 +285,17 @@ an [auto-moving platform](../game-data/interactives.md#auto-moving-platforms)
 `state` is 1 and whose `spline_id` names a spline rides it. its level's LevelData files are decoded
 whole through the [MemoryPack schema](../extraction.md#memorypack-data) for their splines
 (`readLevelSplines`, [level-splines.ts](../../packages/formats/src/endfield/level-splines.ts)), once
-per level that has such a platform. `curvePath` builds the spline's Bézier curves in world space,
-measures them with a 30-sample arc-length table per curve, and samples the platform's trip at 15
-frames per second over one loop (the trip's length over the speed; twice that back and forth). each
-frame is the prefab root's translation in the placement's space, the pose's `path`; `poseFrames`
-poses the hierarchy on those frames, so every mesh renderer gets a `rigid` motion and skinned ones a
-`skinned` one, as for [looping clips](#looping-clips). a platform that turns along the curve, waits
-at knots, eases, or stops at its target (mode 0) is reported in `unsupported-interactives.json` and
-stays at its placement.
+per level that has such a platform. `curvePath` builds the spline's Bézier curves in world space and
+measures them with a 30-sample arc-length table per curve. it then simulates one loop (one trip, or
+there and back) in 1/240 s steps, with the trip's speed ramp and its knot waits, and samples it at
+15 frames per second from where the initial phase puts the platform; the loop's length is within a
+step per trip of the game's. a knot that waits for the player ends the simulation and parks the
+platform there (a two-frame still path). each frame is the prefab root's translation in the
+placement's space, the pose's `path`; `poseFrames` poses the hierarchy on those frames, so every
+mesh renderer gets a `rigid` motion and skinned ones a `skinned` one, as for
+[looping clips](#looping-clips). a platform that turns along the curve, varies its speed by segment
+or curve, or stops at its target (mode 0) is reported in `unsupported-interactives.json` and stays
+at its placement.
 
 ### crane towers
 

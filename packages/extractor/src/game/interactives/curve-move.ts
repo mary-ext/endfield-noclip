@@ -26,6 +26,15 @@ export const isAutoMovePlatform = (template: MemoryPackValue): boolean =>
 	componentOf(template, '_InteractiveAutoMovePlatformComponentDataForMemoryPack') !== null &&
 	componentOf(template, CURVE_MOVE.suffix) !== null;
 
+/** a knot a curve move stops at as it passes */
+export interface CurveWait {
+	node: number;
+	/** waits until the player comes within the component's `radius`, instead of for `time` */
+	forNearby: boolean;
+	/** seconds */
+	time: number;
+}
+
 /** what a curve move component does once started */
 export interface CurveMove {
 	/** the LevelData spline it rides; 0 names none */
@@ -40,10 +49,15 @@ export interface CurveMove {
 	initialPhase: number;
 	/** `curve_move_direction` 1 turns it along the curve; 0 keeps its own rotation */
 	followsTangent: boolean;
-	/** knots it waits at (`curve_node_index_list`) */
-	waitNodes: number;
-	/** `tween` 1 eases in and out over `distance` */
-	eased: boolean;
+	/** the knots it stops at, in `curve_node_index_list` order */
+	waits: CurveWait[];
+	/**
+	 * with `tween` 1, the metres (`distance`) over which each trip speeds up from 0.1 m/s and slows back down;
+	 * `null` moves at a uniform speed
+	 */
+	ramp: number | null;
+	/** whether `curve_segment_speed` or a speed curve (`use_curve_control_speed`) changes the speed */
+	variesSpeed: boolean;
 }
 
 const toFloat = (bits: bigint): number => {
@@ -62,8 +76,12 @@ export const curveMoveOf = (template: MemoryPackValue, row: LevelInteractive): C
 	if (params === null) {
 		return null;
 	}
-	const bits = (key: string): bigint => params.get(key)?.values[0]?.bits ?? 0n;
+	const atoms = (key: string): { bits: bigint }[] => params.get(key)?.values ?? [];
+	const bits = (key: string): bigint => atoms(key)[0]?.bits ?? 0n;
 	const int = (key: string): number => Number(BigInt.asIntN(32, bits(key)));
+	// the three lists are parallel, one entry per waiting knot
+	const nearby = atoms('wait_for_nearby_list');
+	const times = atoms('curve_node_wait_time_list');
 	return {
 		splineId: int('spline_id'),
 		speed: toFloat(bits('speed')),
@@ -72,8 +90,13 @@ export const curveMoveOf = (template: MemoryPackValue, row: LevelInteractive): C
 		targetIndex: int('curve_target_index'),
 		initialPhase: toFloat(bits('initial_phase')),
 		followsTangent: int('curve_move_direction') === 1,
-		waitNodes: params.get('curve_node_index_list')?.values.length ?? 0,
-		eased: int('tween') === 1,
+		waits: atoms('curve_node_index_list').map((atom, i) => ({
+			node: Number(BigInt.asIntN(32, atom.bits)),
+			forNearby: (nearby[i]?.bits ?? 0n) !== 0n,
+			time: toFloat(times[i]?.bits ?? 0n),
+		})),
+		ramp: int('tween') === 1 ? toFloat(bits('distance')) : null,
+		variesSpeed: atoms('curve_start_index_list').length > 0 || bits('use_curve_control_speed') !== 0n,
 	};
 };
 
@@ -120,10 +143,56 @@ const pointAlong = (table: CurveTable, distance: number): [number, number, numbe
 	return bezierPoint(table.curve, (i - 1 + local) / LUT_SAMPLES);
 };
 
+/** the slowest a ramped trip moves, at its ends */
+const RAMP_FLOOR = 0.1;
+
+/** seconds per step of the simulated move, finer than a path frame so the speed ramp integrates closely */
+const STEP = 1 / 240;
+
+/** the longest loop drawn; a longer one is reported */
+const MAX_PERIOD = 600;
+
+/** one trip from a start knot to a target knot */
+interface Trip {
+	/** where it starts, in metres along the spline from knot 0 */
+	offset: number;
+	/** 1 along the knot order, -1 against it */
+	direction: 1 | -1;
+	length: number;
+	/** the waiting knots it passes, by distance from its start */
+	stops: { distance: number; wait: CurveWait }[];
+}
+
+/**
+ * @param move its curve move parameters
+ * @param length the trip's length
+ * @param travelled metres into the trip
+ * @returns its speed there: with a ramp, it rises linearly from 0.1 m/s over the ramp's first metres and
+ *   falls towards 0 over its last (both half the trip when they'd overlap), never below 0.1 m/s nor above its
+ *   speed
+ */
+const speedAt = (move: CurveMove, length: number, travelled: number): number => {
+	if (move.ramp === null || length <= 0) {
+		return move.speed;
+	}
+	const ramp = move.ramp * 2 > length ? length / 2 : move.ramp;
+	const at = Math.min(Math.max(travelled, 0), length);
+	let speed = move.speed;
+	if (ramp > 1e-6 && at < ramp) {
+		speed = RAMP_FLOOR + (move.speed - RAMP_FLOOR) * (at / ramp);
+	} else if (ramp > 1e-6 && at >= length - ramp) {
+		speed = ((length - at) / ramp) * move.speed;
+	}
+	return speed < RAMP_FLOOR ? RAMP_FLOOR : Math.min(speed, move.speed);
+};
+
 /**
  * the path an auto-moving platform loops through, as the game's curve move plays it once started: it rides
- * the spline at a constant speed from its start knot, its position replaced by the spline's (its rotation and
- * scale kept). with start and target knots equal it goes round the whole spline, closed for the trip
+ * the spline from its start knot, its position replaced by the spline's (its rotation and scale kept). with
+ * start and target knots equal it goes round the whole spline, closed for the trip. each trip fires every
+ * knot it passes, its start and target included, so a platform that turns round at a waiting knot waits there
+ * twice (once arriving, once setting off). a knot that waits for the player parks it there, as while the
+ * player is away
  *
  * @param spline the spline it rides
  * @param move its curve move parameters
@@ -138,14 +207,15 @@ export const curvePath = (
 	if (move.speed <= 0) {
 		return { reason: 'curve move speed is not above 0' };
 	}
-	if (move.followsTangent || move.waitNodes > 0 || move.eased) {
-		return { reason: "curve move turns along the curve, waits at knots or eases, which aren't drawn" };
+	if (move.followsTangent || move.variesSpeed) {
+		return { reason: "curve move turns along the curve or varies its speed, which isn't drawn" };
 	}
 	if (move.mode !== 1 && move.mode !== 2) {
 		return { reason: `curve move mode ${move.mode} isn't drawn` };
 	}
 	const loop = move.startIndex === move.targetIndex;
-	const tables = splineCurves(spline, spline.closed || loop).map(tableOf);
+	const wraps = spline.closed || loop;
+	const tables = splineCurves(spline, wraps).map(tableOf);
 	const { startIndex, targetIndex } = move;
 	if (
 		tables.length === 0 ||
@@ -158,31 +228,86 @@ export const curvePath = (
 	const total = tables.reduce((sum, table) => sum + table.length, 0);
 	const lengthTo = (knot: number): number =>
 		tables.slice(0, knot).reduce((sum, table) => sum + table.length, 0);
-	const offset = lengthTo(startIndex);
-	// a trip from a later knot to an earlier one runs backwards
-	const direction = startIndex > targetIndex ? -1 : 1;
-	const span = loop ? total : Math.abs(lengthTo(targetIndex) - offset);
-	if (span <= 0) {
+	const knotCount = wraps ? tables.length : tables.length + 1;
+	const tripOf = (from: number, to: number): Trip => {
+		const offset = lengthTo(from);
+		// a trip from a later knot to an earlier one runs backwards
+		const direction = from > to ? -1 : 1;
+		const stops: Trip['stops'] = [];
+		for (let knot = 0; knot < knotCount; knot++) {
+			// a whole-spline trip fires only the knots from its start on (back to it, backwards); others those
+			// between its ends
+			const passes = loop
+				? direction * (knot - from) >= 0
+				: knot >= Math.min(from, to) && knot <= Math.max(from, to);
+			const wait = move.waits.find((entry) => entry.node === knot);
+			if (passes && wait !== undefined) {
+				stops.push({ distance: Math.abs(lengthTo(knot) - offset), wait });
+			}
+		}
+		stops.sort((a, b) => a.distance - b.distance);
+		return { offset, direction, length: loop ? total : Math.abs(lengthTo(to) - offset), stops };
+	};
+	const trips =
+		move.mode === 2
+			? [tripOf(startIndex, targetIndex), tripOf(targetIndex, startIndex)]
+			: [tripOf(startIndex, targetIndex)];
+	if (trips[0].length <= 0) {
 		return { reason: `spline ${spline.id} has no length` };
 	}
-	const period = ((move.mode === 2 ? 2 : 1) * span) / move.speed;
-	const frameCount = Math.max(Math.round(period * PATH_FRAME_RATE), 2);
-	const matrices: Float32Array[] = [];
-	for (let frame = 0; frame < frameCount; frame++) {
-		let travelled =
-			(move.initialPhase * span + (frame / frameCount) * period * move.speed) %
-			(move.mode === 2 ? 2 * span : span);
-		if (travelled > span) {
-			travelled = 2 * span - travelled;
-		}
-		let distance = (((offset + direction * travelled) % total) + total) % total;
+	const pointOf = (trip: Trip, travelled: number): Float32Array => {
+		let distance = trip.offset + trip.direction * travelled;
+		distance = wraps ? ((distance % total) + total) % total : Math.min(Math.max(distance, 0), total);
 		let curve = 0;
 		while (curve < tables.length - 1 && distance > tables[curve].length) {
 			distance -= tables[curve].length;
 			curve++;
 		}
 		const point = pointAlong(tables[curve], distance);
-		matrices.push(trsMatrix(inverseTransformPoint(placement, point), [0, 0, 0, 1], [1, 1, 1]));
+		return trsMatrix(inverseTransformPoint(placement, point), [0, 0, 0, 1], [1, 1, 1]);
+	};
+	// one simulated step per entry: which trip, and how far into it as the step begins
+	const steps: { trip: number; travelled: number }[] = [];
+	for (const [index, trip] of trips.entries()) {
+		let travelled = 0;
+		let next = 0;
+		for (;;) {
+			while (next < trip.stops.length && trip.stops[next].distance <= travelled) {
+				const { wait } = trip.stops[next];
+				if (wait.forNearby) {
+					const parked = pointOf(trip, trip.stops[next].distance);
+					return { path: { frameRate: 1, matrices: [parked, parked] } };
+				}
+				for (let held = Math.round(wait.time / STEP); held > 0; held--) {
+					steps.push({ trip: index, travelled });
+				}
+				next++;
+			}
+			if (travelled >= trip.length) {
+				break;
+			}
+			steps.push({ trip: index, travelled });
+			travelled = Math.min(travelled + speedAt(move, trip.length, travelled) * STEP, trip.length);
+			if (steps.length * STEP > MAX_PERIOD) {
+				return { reason: `curve move loop is longer than ${MAX_PERIOD} s` };
+			}
+		}
+	}
+	// the loop starts where the first trip has covered its initial phase
+	const phase = move.initialPhase * trips[0].length;
+	const first =
+		phase > 0
+			? Math.max(
+					steps.findIndex((step) => step.trip === 0 && step.travelled >= phase),
+					0,
+				)
+			: 0;
+	const period = steps.length * STEP;
+	const frameCount = Math.max(Math.round(period * PATH_FRAME_RATE), 2);
+	const matrices: Float32Array[] = [];
+	for (let frame = 0; frame < frameCount; frame++) {
+		const step = steps[(first + Math.floor((frame * steps.length) / frameCount)) % steps.length];
+		matrices.push(pointOf(trips[step.trip], step.travelled));
 	}
 	return { path: { frameRate: frameCount / period, matrices } };
 };

@@ -396,14 +396,42 @@ placement's own.
 - **position**: `rotation · EvaluatePosition(spline, ratio) + position`, replacing the platform's
   own position; its rotation stays unless `curve_move_direction` is 1 (along the tangent). the ratio
   is the distance travelled from knot 0 over the spline's length, so the platform moves at `speed`
-  metres per second along the curve. `tween` 1 eases over `distance`; 0 is uniform.
-  `sync_speed_to_audio` only feeds the speed to an audio parameter.
+  metres per second along the curve. `sync_speed_to_audio` only feeds the speed to an audio
+  parameter.
+- **speed ramp**: `tween` 0 is uniform. `tween` 1 (EaseInOutExpo by name, but a linear ramp in code)
+  ramps each trip over `distance` metres at both ends (half the trip each when the two would
+  overlap): the speed rises linearly with distance from 0.1 m/s to `speed` over the first `distance`
+  metres, and falls linearly with distance from `speed` towards 0 over the last. it never drops
+  below 0.1 m/s, so a trip ends at that speed. each frame takes the speed at the distance reached so
+  far, then moves.
 - **the trip**: it starts at `curve_start_index` and travels to `curve_target_index`; equal indices
   close the spline for the trip and go round it whole. a later start than target runs backwards.
   `curve_move_mode` 0 stops at the target, 1 starts over from the start knot (dropping the
-  overshoot), 2 goes back and forth. `initial_phase` starts it that fraction of the trip on. it
-  waits only at knots in `curve_node_index_list`. `knotProgresses` and `keyNodeIndexList` aren't
-  read.
+  overshoot), 2 goes back and forth, swapping start and target. `initial_phase` starts it that
+  fraction of the trip on. `curve_start_index_list`, `curve_target_index_list` and
+  `curve_segment_speed` set a speed per stretch of knots, and `use_curve_control_speed` drives the
+  speed from a curve. `knotProgresses` and the spline's `keyNodeIndexList` aren't read.
+- **knots**: every knot of the spline is a key node, and a trip fires each one it reaches (its
+  distance from the trip's start ≤ the distance travelled). that includes its start knot just after
+  setting off and its target on arrival, so a back-and-forth platform fires its end knot twice as it
+  turns round. a whole-spline trip fires only the knots from its start index on (back to it when
+  backwards), at their distance from the start. `curve_move_suppress_start_key_node` skips the start
+  knot on the very first trip only. a fired knot listed in `curve_node_index_list` stops the
+  platform, the entry at the same position in `wait_for_nearby_list` and `curve_node_wait_time_list`
+  saying how. one that waits for nearby pauses until the player (the formation's centre) comes
+  within `radius` metres of the platform. otherwise it pauses for the wait time, resumes, and the
+  ramp carries on where it was. so a platform waiting 1 s at both ends of a back-and-forth trip
+  stops 2 s at each end.
+
+map02's floating towers (`int_platform_automove_floatingtower`, map02_lv007 near unity −415,
+250, 690) go back and forth on two-knot splines at 3 or 4 m/s with a 1 m ramp and 1 s waits.
+10200030167 and 10200030408 set `state` 1 and move. 10200030166 does too, but its start knot waits
+for nearby, so it parks there until the player comes within 2 m. 10200030295 and 10200030247 keep
+the template's `state` 0. 10200030295 (−402.6, 256.3, 696.7) is a step of the fire seed altar
+10200030288's puzzle: level script 10200030031, which lists it as the interactive it puts at risk
+and whose objective is the altar's `state` being 1, sends only a server call (`CallServer`) when the
+player first enters a 5 × 10 × 5 m box on the platform. no client data sets its `state`, so the
+server starts it, and a fresh world shows it still at its placement.
 
 in indie_race001 every moving platform belongs to a level script: script 12800025038 places eight 4
 m platforms on spline 25012, a 144 m loop under the crane rails near unity 80, 122, 92, an eighth of

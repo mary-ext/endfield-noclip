@@ -413,10 +413,14 @@ packs or renders correctly.
   pieces) aren't placed: they exist while their script runs, and which scripts the server starts
   (the player's distance to its start shape, missions, activities) isn't known from the data
 - [auto-moving platforms](game-data/interactives.md#auto-moving-platforms) ride their splines from
-  the viewer clock's zero, and drop no overshoot at the end of a loop. ones that turn along the
-  curve, wait at knots, ease, or stop at their target stay at their placement
-  (`unsupported-interactives.json`); effects, particles and billboards on a moving platform stay
-  behind; other curve movers (coins, butterflies, kickable balls), which scripts start, hold still
+  the viewer clock's zero, and drop no overshoot at the end of a loop. ones parked at a knot that
+  waits for the player don't set off as the camera comes near; ones that turn along the curve, vary
+  their speed by segment or curve, or stop at their target stay at their placement
+  (`unsupported-interactives.json`). platforms a level script starts through the server, such as
+  map02's floating tower 10200030295 at the fire seed altar, stay at their placement (see
+  [auto-moving platforms](game-data/interactives.md#auto-moving-platforms)); effects, particles and
+  billboards on a moving platform stay behind; other curve movers (coins, butterflies, kickable
+  balls), which scripts start, hold still
 - [crane towers](game-data/interactives.md#crane-towers) draw their placement's starting steps, with
   the container hung from the hook; the steps the player's operations save on the server aren't
   offered as controls
