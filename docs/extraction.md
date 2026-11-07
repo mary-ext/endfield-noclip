@@ -87,12 +87,14 @@ it (`always` when nothing gates the row).
   [stand-ins](package-format.md#stand-ins) are marked with the reasons: a prefab's renderers by its
   asset path, placed cubes by name within 2 m.
 
-a source that fails to load is reported on stderr and the rest are still searched. each text line
-gives the distance, kind, level, position, name, size, visibility, the first draw's mesh, material
-and material bundle (the prefab path and bundle for prefab rows, the component ids for entities
-without a renderer) for `asset` and `bundle dump`, and the source chunk, dynamic row, LevelData row
-or cabin row. JSON adds every draw, matrices, bounds, the raw visibility alternatives and rotation
-and scale for prefabs.
+every kind but `static` comes from the packer's own placement sources
+([survey.ts](../packages/extractor/src/pack/survey.ts)), level scripts included, so rows are gated
+as in the package. if they fail to load, that's reported on stderr and static rows are still
+searched. each text line gives the distance, kind, level, position, name, size, visibility, the
+first draw's mesh, material and material bundle (the prefab path and bundle for prefab rows, the
+component ids for entities without a renderer) for `asset` and `bundle dump`, and the source chunk,
+dynamic row, LevelData row or cabin row. JSON adds every draw, matrices, bounds, the raw visibility
+alternatives and rotation and scale for prefabs.
 
 both searches default to 100 results; `--limit` must be positive. summaries and limit notices go to
 stderr, leaving `--json` as one JSON array (`[]` for no matches). without `--near`, reaching the
@@ -483,10 +485,11 @@ registers controls and lights, counts what it read for the report and records wh
 couldn't read. so:
 
 - **a new kind of placed prefab** (a game system that places models) returns its placements as
-  `StructureModel`s and joins the placement list in `collectEntities`; its renderers, lights,
-  environment volumes and stand-ins follow from
+  `StructureModel`s and joins the placement list in `collectPlacementSources`; its renderers,
+  lights, environment volumes and stand-ins follow from
   [prefab-placements.ts](../packages/extractor/src/pack/content/prefab-placements.ts), which reads
-  each prefab's root once for all of them.
+  each prefab's root once for all of them, and `world find` and `world env` list it too, as they run
+  the placement sources on their own ([survey.ts](../packages/extractor/src/pack/survey.ts)).
 - **a new kind of content** is a module in `content/` called from `collectEntities` at a fixed point
   in the order.
 - **a new table** adds its type and `CORE_PATHS` entry to package-format, a module here that plans

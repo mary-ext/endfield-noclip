@@ -27,35 +27,30 @@ import {
 	separatePositionals,
 } from '../cli-args.ts';
 import { type Context, withContext } from '../context.ts';
-import { ignoreMissing } from '../errors.ts';
+import { errorText, ignoreMissing } from '../errors.ts';
+import type { StructureModel } from '../game/dynamic/dynamic-structures.ts';
 import {
-	type LoadedPhase,
-	loadEnvironmentPhase,
 	loadLevelPhases,
 	loadSceneVolumes,
 	resolveLevelEnvironment,
 	resolveLevelPost,
+	scenePhaseLoader,
 } from '../game/environment.ts';
+import type { InteractiveStandIn } from '../game/interactives/interactive-facilities.ts';
 import {
 	boxDistance,
 	describeAlternatives,
-	loadDynamicPlacements,
 	parsePlacementKinds,
 	PLACEMENT_KINDS,
 	type PlacementKind,
 } from '../game/placements.ts';
 import { sourceVisibility } from '../game/state/chunk-sources.ts';
-import { GameState } from '../game/state/game-state.ts';
-import {
-	defaultSceneStates,
-	loadMapVariables,
-	loadSceneStates,
-	sceneStateControl,
-} from '../game/state/scene-conditions.ts';
+import { defaultSceneStates, sceneStateControl } from '../game/state/scene-conditions.ts';
 import { stripMarkup } from '../game/state/story.ts';
 import { loadDungeonUses, readOperatorNames } from '../game/world/dungeons.ts';
-import type { IndexedEntity, WorldIndex } from '../game/world/world-index.ts';
+import { type IndexedEntity, pivotOf, type WorldIndex } from '../game/world/world-index.ts';
 import { DEBUG_DIR, STAND_INS_FILE, type StandInReport } from '../pack/debug.ts';
+import { type ScenePlacementSurvey, surveyPlacedVolumes, surveyPlacements } from '../pack/survey.ts';
 
 export const summary = 'browse scenes and levels; search asset paths and everything placed in a scene';
 
@@ -375,11 +370,12 @@ const findPlacements = async (
 		}
 	}
 
-	if (!full() && PLACEMENT_KINDS.some((kind) => kind !== 'static' && kinds.has(kind))) {
-		const dynamic = await loadDynamicPlacements(context, scene, kinds);
-		for (const { kind, message } of dynamic.failures) {
-			console.error(`${kind}: not searched: ${message}`);
-		}
+	const placedKinds = kinds.has('static') ? kinds.size > 1 : kinds.size > 0;
+	const survey = full() || !placedKinds ? null : await surveyPlacements(context, scene).catch(errorText);
+	if (typeof survey === 'string') {
+		console.error(`${[...kinds].filter((kind) => kind !== 'static').join(', ')}: not searched: ${survey}`);
+	} else if (survey !== null) {
+		const dynamic = surveyRows(survey, kinds);
 		for (const { entity, pivot, visibility } of dynamic.entities) {
 			const position = pivot === null ? null : ([pivot.x, pivot.y, pivot.z] as const);
 			const place = measure(entity.bounds, position);
@@ -446,7 +442,7 @@ const findPlacements = async (
 				},
 			});
 		}
-		for (const { standIn } of dynamic.missing) {
+		for (const standIn of dynamic.missing) {
 			const place = measure(null, standIn.position);
 			if (full() || place === undefined || !matches([standIn.template, standIn.source])) {
 				continue;
@@ -499,6 +495,45 @@ const findPlacements = async (
 	console.error(
 		`${shown.length} matches${counts.length === 0 ? '' : ` (${counts.join(', ')})`}${rows.length >= limit ? '; limit reached, raise --limit for more' : ''}${standIns.found ? '' : `; no out/${scene}/debug/stand-ins.json, so stand-ins aren't marked`}`,
 	);
+};
+
+/** a scene's placements outside its chunk files, by kind, with their visibility as text */
+interface SurveyRows {
+	entities: { entity: ChunkEntity; pivot: IndexedEntity['pivot']; visibility: string }[];
+	prefabs: {
+		kind: Exclude<PlacementKind, 'static' | 'dynamic'>;
+		model: StructureModel;
+		visibility: string;
+	}[];
+	/** facilities without a model the reader found */
+	missing: InteractiveStandIn[];
+}
+
+const surveyRows = (survey: ScenePlacementSurvey, kinds: ReadonlySet<PlacementKind>): SurveyRows => {
+	const { dynamic, interactives } = survey;
+	const prefab = (kind: SurveyRows['prefabs'][number]['kind'], model: StructureModel) => ({
+		kind,
+		model,
+		visibility: describeAlternatives(model.visibility.alternatives),
+	});
+	return {
+		entities: kinds.has('dynamic')
+			? dynamic.entities.map(({ entity, visibility }) => ({
+					entity,
+					pivot: pivotOf(entity),
+					visibility: describeAlternatives(visibility.alternatives),
+				}))
+			: [],
+		prefabs: [
+			// effect rows are keyed `effect:<grid>/<index>`, model rows `<grid>/<index>`
+			...dynamic.models.map((model) =>
+				prefab(model.source.startsWith('effect:') ? 'effect' : 'model', model),
+			),
+			...interactives.facilityModels.map((model) => prefab('facility', model)),
+			...interactives.cabinModels.map((model) => prefab('cabin', model)),
+		].filter(({ kind }) => kinds.has(kind)),
+		missing: kinds.has('facility') ? interactives.standIns : [],
+	};
 };
 
 /** stand-ins the scene's package reports, for marking found rows */
@@ -797,15 +832,18 @@ const showEnvironment = async (context: Context, target: string): Promise<void> 
 		scene = found.partition;
 		levels = [found.level];
 	}
-	const [volumes, pathOf, names, resolver, states] = await Promise.all([
+	// the volumes placed prefabs carry join the chunk volumes, as in the package
+	const survey = await surveyPlacements(context, scene.mapId);
+	const [chunkVolumes, placed, pathOf, names, resolver] = await Promise.all([
 		loadSceneVolumes(world, scene.mapId),
+		surveyPlacedVolumes(context, survey),
 		world.pathLookup(),
 		world.names(),
 		context.resolver(),
-		loadSceneStates(world, scene.mapId),
 	]);
-	const game = new GameState({ variables: await loadMapVariables(world, scene.mapId) });
-	game.note(mapDefined(states, ({ condition }) => condition ?? undefined));
+	const volumes = { ...chunkVolumes, environment: [...chunkVolumes.environment, ...placed] };
+	const fromPrefabs = new Set(placed.map(({ volume }) => volume));
+	const { sceneStates: states, game } = survey.scene;
 	const enabled = defaultSceneStates(states, game);
 	console.log(
 		`scene states (default: ${
@@ -826,14 +864,30 @@ const showEnvironment = async (context: Context, target: string): Promise<void> 
 					?.split('/')
 					.pop()
 					?.replace(/\.asset$/, '') ?? hashText(hash));
-	const phaseLoads = new Map<bigint, Promise<LoadedPhase>>();
-	const loadPhase = ({ envPhase }: EnvironmentVolume) =>
-		envPhase === null
-			? null
-			: phaseLoads.getOrInsertComputed(envPhase, () => loadEnvironmentPhase(resolver, envPhase, pathOf));
+	const loadPhase = scenePhaseLoader(resolver, pathOf, volumes.environment);
+	/** a chunk volume's phase asset, or a prefab volume's phase object, by name */
+	const phaseName = async (volume: EnvironmentVolume | null): Promise<string> => {
+		if (volume === null || !fromPrefabs.has(volume)) {
+			return assetName(volume?.envPhase ?? null);
+		}
+		const load = loadPhase(volume);
+		return load === null
+			? '(none)'
+			: load.then(
+					({ phase }) => phase.name,
+					(error: unknown) => `(unreadable: ${errorText(error)})`,
+				);
+	};
 
 	const choices = levels.map((level) => resolveLevelEnvironment(level, volumes, enabled));
 	const phases = await Promise.all(choices.map((choice) => loadLevelPhases(choice, loadPhase)));
+	const listed = choices.map((choice) => choice.shares.slice(0, 6));
+	/** per level, its listed volumes' phase names, then its base's */
+	const listedPhases = await Promise.all(
+		choices.map((choice, i) =>
+			Promise.all([...listed[i].map(({ volume }) => phaseName(volume)), phaseName(choice.volume)]),
+		),
+	);
 	for (const [i, level] of levels.entries()) {
 		const choice = choices[i];
 		console.log(`${level.id} (tag ${level.tag}) ${names.get(level.id) ?? ''}`);
@@ -841,15 +895,16 @@ const showEnvironment = async (context: Context, target: string): Promise<void> 
 			`  ${choice.samples} samples on a ${CELL_SIZE / 4} m grid over the level's cells; its volumes by coverage:`,
 		);
 		console.log('    covers   shown  priority type  volume → phase');
-		for (const { volume, covered, wins } of choice.shares.slice(0, 6)) {
+		for (const [j, { volume, covered, wins }] of listed[i].entries()) {
+			const name = fromPrefabs.has(volume) ? `${volume.name} (prefab)` : volume.name;
 			console.log(
-				`    ${percent(covered, choice.samples).padStart(6)}  ${percent(wins, choice.samples).padStart(6)}  ${String(volume.priority).padStart(8)} ${String(volume.volumeType).padStart(4)}  ${volume.name} → ${assetName(volume.envPhase)}`,
+				`    ${percent(covered, choice.samples).padStart(6)}  ${percent(wins, choice.samples).padStart(6)}  ${String(volume.priority).padStart(8)} ${String(volume.volumeType).padStart(4)}  ${name} → ${listedPhases[i][j]}`,
 			);
 		}
 		if (choice.shares.length > 6) {
 			console.log(`    … ${choice.shares.length - 6} more`);
 		}
-		console.log(`  base: ${assetName(choice.volume?.envPhase ?? null)}`);
+		console.log(`  base: ${listedPhases[i].at(-1)}`);
 		const loaded = phases[i];
 		if (loaded !== null) {
 			const sources = Object.entries(loaded.composed).map(([name, { source }]) =>

@@ -34,8 +34,6 @@ import {
 	type LevelEnvironmentChoice,
 	type LoadedPhase,
 	type LoadedVolumeProfile,
-	loadEnvironmentPhase,
-	loadEnvironmentPhaseObject,
 	loadLevelPhases,
 	loadSceneVolumes,
 	loadVolumeProfile,
@@ -43,6 +41,7 @@ import {
 	resolveLevelPost,
 	type SceneEnvironmentVolume,
 	type SceneVolumes,
+	scenePhaseLoader,
 	type SectionSource,
 } from '../../game/environment.ts';
 import { type LoadedMaterial, loadMaterial } from '../../game/materials/material-load.ts';
@@ -224,22 +223,8 @@ export const planEnvironments = async (
 		plan.flowNoise = plan.textures.push(flowNoise) - 1;
 	}
 
-	// levels mostly share phases and profiles, so loads are cached; they run for all levels at once. prefab
-	// volumes name their phase object, chunk volumes a StringPathHash asset
-	const phaseObjects = new Map(volumes.environment.map((entry) => [entry.volume, entry.phaseObject]));
-	const phaseLoads = new Map<string, Promise<LoadedPhase>>();
-	const phase = (volume: EnvironmentVolume): Promise<LoadedPhase> | null => {
-		const object = phaseObjects.get(volume) ?? null;
-		if (object !== null) {
-			return phaseLoads.getOrInsertComputed(objectKey(object), () =>
-				loadEnvironmentPhaseObject(resolver, object),
-			);
-		}
-		const hash = volume.envPhase;
-		return hash === null
-			? null
-			: phaseLoads.getOrInsertComputed(`hash:${hash}`, () => loadEnvironmentPhase(resolver, hash, pathOf));
-	};
+	// levels mostly share phases and profiles, so loads are cached; they run for all levels at once
+	const phase = scenePhaseLoader(resolver, pathOf, volumes.environment);
 	const postLoads = new Map<bigint, Promise<LoadedVolumeProfile>>();
 	const postProfile = (hash: bigint) =>
 		postLoads.getOrInsertComputed(hash, () => loadVolumeProfile(resolver, hash, pathOf));

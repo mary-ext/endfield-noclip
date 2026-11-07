@@ -7,7 +7,10 @@ import { mapDefined } from '@mary-ext/array-fns';
 import type { Context } from '../../context.ts';
 import { cabinDoors, type CabinRoom, loadCabins } from '../../game/dynamic/cabins.ts';
 import type { DynamicStructures, StructureModel } from '../../game/dynamic/dynamic-structures.ts';
-import { loadInteractiveFacilities } from '../../game/interactives/interactive-facilities.ts';
+import {
+	type InteractiveStandIn,
+	loadInteractiveFacilities,
+} from '../../game/interactives/interactive-facilities.ts';
 import {
 	activationCondition,
 	entityVisibilityTargets,
@@ -35,8 +38,12 @@ import type { PackContent } from './pack-content.ts';
 
 /** the scene's interactives, as the rest of the pack needs them */
 export interface SceneInteractives {
-	/** the prefabs facilities and cabins place, in that order */
-	models: StructureModel[];
+	/** the prefabs facilities place */
+	facilityModels: StructureModel[];
+	/** the prefabs Dijiang's built cabins place */
+	cabinModels: StructureModel[];
+	/** facilities placed without a model the reader found, which stand-in cubes mark */
+	standIns: InteractiveStandIn[];
 	/** Dijiang's cabin slots, with the control that builds each */
 	cabinRooms: CabinRoom[];
 	/** the constant water fills the scene's level scripts set, and how many they compute */
@@ -227,7 +234,9 @@ export const collectInteractives = async (
 	content.count('bridges', facilities.bridges.length);
 	content.count('unsupportedInteractiveFiles', facilities.unsupported.length);
 	return {
-		models: [...facilities.models, ...cabins.models],
+		facilityModels: facilities.models,
+		cabinModels: cabins.models,
+		standIns: facilities.standIns,
 		cabinRooms: cabins.rooms,
 		scriptWater,
 		waterDrivers,

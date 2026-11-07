@@ -131,5 +131,5 @@ the post profile is the level's own global `Volume`, else the scene's, highest p
 environment table `posts` entry that `LevelInfo.environment.post` names.
 
 the pack report lists each level's base volume, its coverage and where it's shown, and which
-sections were inherited, and `world env` explains the choice (voting on chunk volumes only, not
-prefab ones); check them when a level looks wrong.
+sections were inherited, and `world env` explains the choice over the same chunk and prefab volumes
+(prefab ones marked); check them when a level looks wrong.

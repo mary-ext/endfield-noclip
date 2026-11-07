@@ -30,7 +30,7 @@ import { mapDefined } from '@mary-ext/array-fns';
 
 import { mapPool } from '../pool.ts';
 
-import type { AssetResolver, ObjectRef } from './assets/assets.ts';
+import { type AssetResolver, objectKey, type ObjectRef } from './assets/assets.ts';
 import type { Visibility } from './state/scene-control.ts';
 import type { WorldIndex } from './world/world-index.ts';
 
@@ -373,6 +373,33 @@ export interface LoadedPhase {
 	ref: ObjectRef;
 	phase: EnvironmentPhase;
 }
+
+/**
+ * @param resolver asset resolver
+ * @param pathOf hash → path lookup
+ * @param volumes the scene's environment volumes: prefab volumes name their phase object, chunk volumes a
+ *   StringPathHash asset
+ * @returns a loader of a volume's phase, `null` for a volume without one; each phase loads once, as levels
+ *   mostly share them
+ */
+export const scenePhaseLoader = (
+	resolver: AssetResolver,
+	pathOf: (hash: bigint) => string | undefined,
+	volumes: readonly SceneEnvironmentVolume[],
+): ((volume: EnvironmentVolume) => Promise<LoadedPhase> | null) => {
+	const phaseObjects = new Map(volumes.map((entry) => [entry.volume, entry.phaseObject]));
+	const loads = new Map<string, Promise<LoadedPhase>>();
+	return (volume) => {
+		const object = phaseObjects.get(volume) ?? null;
+		if (object !== null) {
+			return loads.getOrInsertComputed(objectKey(object), () => loadEnvironmentPhaseObject(resolver, object));
+		}
+		const hash = volume.envPhase;
+		return hash === null
+			? null
+			: loads.getOrInsertComputed(`hash:${hash}`, () => loadEnvironmentPhase(resolver, hash, pathOf));
+	};
+};
 
 /**
  * @param resolver asset resolver

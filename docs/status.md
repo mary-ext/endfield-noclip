@@ -102,8 +102,8 @@ packs or renders correctly.
   Hub (night and destruction volumes) and Snowy Forest (night volume), and the base-environment vote
   is wrong wherever level scripts switch volumes. cylinder volumes (`volumeType` 4) and prefab
   prisms under a non-identity placement are dropped (listed in `debug/environments.json`), local
-  post `Volume`s are read but not applied, `world env` votes on chunk volumes only, and scenes
-  without levels get no environment ([viewer](viewer/environment.md#environment-volumes))
+  post `Volume`s are read but not applied, and scenes without levels get no environment
+  ([viewer](viewer/environment.md#environment-volumes))
 - environment phases ([environment](game-data/environment.md#environment-phases)): `windConfig`
   drives only the [wind clock](viewer/materials.md#swaying-cloth) (wind motors aren't read), and
   `snowConfig`, `volumetricCloudConfig` and other sections aren't extracted. the blend's rules for

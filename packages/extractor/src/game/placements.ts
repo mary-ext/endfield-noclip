@@ -1,16 +1,10 @@
-import type { ChunkEntity } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 
-import type { Context } from '../context.ts';
-
-import { loadCabins } from './dynamic/cabins.ts';
-import { loadDynamicStructures, type StructureModel } from './dynamic/dynamic-structures.ts';
-import { loadInteractiveFacilities, type InteractiveStandIn } from './interactives/interactive-facilities.ts';
-import { GameState, type Alternatives } from './state/game-state.ts';
-import { loadMapVariables } from './state/scene-conditions.ts';
+import type { Alternatives } from './state/game-state.ts';
 import type { Requirement } from './state/scene-control.ts';
-import { loadUpgradeLinks } from './state/settlement-upgrades.ts';
-import { pivotOf, type IndexedEntity } from './world/world-index.ts';
+
+// what `world find` lists and how it describes it; the placements themselves come from the packer's own
+// sources (`pack/survey.ts`)
 
 // #region kinds
 
@@ -98,142 +92,6 @@ const describeRequirement = ({ control, mask }: Requirement): string => {
 		}
 	}
 	return `${control}=${values.join('/')}`;
-};
-
-// #endregion
-
-// #region loading
-
-/** an ECS entity in a dynamic structure, with its visibility */
-export interface EntityPlacement {
-	kind: 'dynamic';
-	entity: ChunkEntity;
-	/** see `IndexedEntity.pivot` */
-	pivot: IndexedEntity['pivot'];
-	visibility: string;
-}
-
-/** a placed prefab, with its visibility */
-export interface PrefabPlacement {
-	kind: 'model' | 'effect' | 'facility' | 'cabin';
-	model: StructureModel;
-	visibility: string;
-}
-
-/** an interactive placed without a model the reader found; the package draws a stand-in cube for it */
-export interface MissingFacility {
-	kind: 'facility';
-	standIn: InteractiveStandIn;
-}
-
-/** dynamic placements of a scene, and the sources that failed to load */
-export interface DynamicPlacements {
-	entities: EntityPlacement[];
-	prefabs: PrefabPlacement[];
-	missing: MissingFacility[];
-	failures: { kind: PlacementKind; message: string }[];
-}
-
-/**
- * loads a scene's placements outside its static chunks, under the default game state. a source that throws is
- * reported in `failures` rather than failing the rest
- *
- * @param context install readers
- * @param scene streaming scene id
- * @param kinds the kinds to load; `static` is ignored here
- * @returns the placements of the requested kinds
- */
-export const loadDynamicPlacements = async (
-	context: Pick<Context, 'vfs' | 'world' | 'resolver' | 'memoryPack'>,
-	scene: string,
-	kinds: ReadonlySet<PlacementKind>,
-): Promise<DynamicPlacements> => {
-	const result: DynamicPlacements = { entities: [], prefabs: [], missing: [], failures: [] };
-	const partition = await context.world.partition(scene);
-	const fail = (kind: PlacementKind, error: unknown): void => {
-		result.failures.push({ kind, message: error instanceof Error ? error.message : String(error) });
-	};
-	// facilities need them too: blight cores follow their erosion roots' and sludge patches' gates
-	const needsStructures =
-		kinds.has('dynamic') ||
-		kinds.has('model') ||
-		kinds.has('effect') ||
-		kinds.has('cabin') ||
-		kinds.has('facility');
-	let structures: Awaited<ReturnType<typeof loadDynamicStructures>> | undefined;
-	if (needsStructures) {
-		try {
-			const game = new GameState({
-				links: await loadUpgradeLinks(context, scene),
-				variables: await loadMapVariables(context.world, scene),
-			});
-			structures = await loadDynamicStructures(context, scene, partition, game);
-		} catch (error) {
-			for (const kind of ['dynamic', 'model', 'effect', 'cabin'] as const) {
-				if (kinds.has(kind)) {
-					fail(kind, error);
-				}
-			}
-		}
-	}
-	if (structures !== undefined) {
-		if (kinds.has('dynamic')) {
-			for (const { entity, visibility } of structures.entities) {
-				result.entities.push({
-					kind: 'dynamic',
-					entity,
-					pivot: pivotOf(entity),
-					visibility: describeAlternatives(visibility.alternatives),
-				});
-			}
-		}
-		for (const model of structures.models) {
-			// effect rows are keyed `effect:<grid>/<index>`, model rows `<grid>/<index>`
-			const kind = model.source.startsWith('effect:') ? 'effect' : 'model';
-			if (kinds.has(kind)) {
-				result.prefabs.push({ kind, model, visibility: describeAlternatives(model.visibility.alternatives) });
-			}
-		}
-		if (kinds.has('cabin')) {
-			try {
-				const cabins = await loadCabins(context, structures.slots, partition);
-				for (const model of cabins.models) {
-					result.prefabs.push({
-						kind: 'cabin',
-						model,
-						visibility: describeAlternatives(model.visibility.alternatives),
-					});
-				}
-			} catch (error) {
-				fail('cabin', error);
-			}
-		}
-	}
-	if (kinds.has('facility')) {
-		try {
-			// placements as authored: level scripts' show and hide actions aren't followed here
-			const facilities = await loadInteractiveFacilities(context, {
-				scene,
-				level: null,
-				partition,
-				scripted: new Set(),
-				erosionCores: structures?.erosionCores ?? new Map(),
-			});
-			for (const model of facilities.models) {
-				result.prefabs.push({
-					kind: 'facility',
-					model,
-					visibility: describeAlternatives(model.visibility.alternatives),
-				});
-			}
-			for (const standIn of facilities.standIns) {
-				result.missing.push({ kind: 'facility', standIn });
-			}
-		} catch (error) {
-			fail('facility', error);
-		}
-	}
-	return result;
 };
 
 // #endregion
