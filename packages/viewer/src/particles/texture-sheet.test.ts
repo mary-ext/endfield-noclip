@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { SheetRow } from '@endfield-noclip/package-format/particles';
-
 import { packRowColor, packRowCustom, rowSheet } from '../content/instance-rows.ts';
 
 import { sheet } from './test-systems.ts';
@@ -21,9 +19,9 @@ describe('sheetTile', () => {
 		// 30 fps through 64 frames: one second in, the 30th frame, wrapping after 64
 		assert.equal(sheetTile(sheet({ frameOverTime: null }), 0, 1, 0, r, 0), 30);
 		assert.equal(sheetTile(sheet({ frameOverTime: null }), 0, 3, 0, r, 0), 90 % 64);
-		assert.equal(sheetTile(sheet({ row: 2 }), 0.5, 0, 0, r, 0), 2 * 8 + 3);
-		assert.equal(sheetTile(sheet({ row: SheetRow.MeshIndex }), 0, 0, 0, r, 1), 8);
-		assert.equal(sheetTile(sheet({ row: SheetRow.Random }), 0, 0, 0, r, 0), 4 * 8);
+		assert.equal(sheetTile(sheet({ rows: { kind: 'fixed', row: 2 } }), 0.5, 0, 0, r, 0), 2 * 8 + 3);
+		assert.equal(sheetTile(sheet({ rows: { kind: 'mesh' } }), 0, 0, 0, r, 1), 8);
+		assert.equal(sheetTile(sheet({ rows: { kind: 'random' } }), 0, 0, 0, r, 0), 4 * 8);
 	});
 
 	it('packs into the row sheet word, and colours and custom data into theirs', () => {

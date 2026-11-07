@@ -11,7 +11,7 @@ import {
 	ParticleMeshSpawn,
 	ParticleRenderMode,
 	ParticleShapeKind,
-	SheetRow,
+	SheetUvChannels,
 } from '@endfield-noclip/package-format/particles';
 
 import {
@@ -207,21 +207,25 @@ test('a looping mesh particle system keeps its emission, shape, gravity, orbit a
 	assert.equal(info.alignment, ParticleAlignment.View);
 	assert.equal(info.rate.scalar, 1.1);
 	assert.equal(info.shape?.kind, ParticleShapeKind.Cone);
-	assert.equal(info.shape?.radius, 65);
+	assert.equal(info.shape.radius, 65);
 	assert.equal(info.motion.kind, 'free');
 	assert.deepEqual(info.motion.gravityModifier, {
 		mode: CurveMode.TwoConstants,
 		scalar: -0.012,
 		min: -0.003,
-		curve: null,
-		minCurve: null,
 	});
-	assert.equal(info.motion.velocity?.orbital[2].min, -0.05);
+	assert.deepEqual(info.motion.velocity?.orbital[2], {
+		mode: CurveMode.TwoConstants,
+		scalar: -0.005,
+		min: -0.05,
+	});
 	// without 3D rotation only the rotation about z is read
 	assert.equal(info.startRotation[0].scalar, 0);
 	assert.equal(info.startRotation[2].scalar, 6.28);
+	const growth = info.sizeOverLifetime?.[1];
+	assert.equal(growth?.mode, CurveMode.Curve);
 	assert.deepEqual(
-		info.sizeOverLifetime?.[1].curve?.keys.map((key) => key.value),
+		growth.curve.keys.map((key) => key.value),
 		[1, 0.1],
 	);
 	assert.equal(info.rotationOverLifetime, null);
@@ -282,15 +286,14 @@ test('a ring-buffered flipbook particle keeps its sheet and how it outlives its 
 	const faint = { startColor: { minMaxState: 0, minColor: white, maxColor: { ...white, a: 0.25 } } };
 	const read = readParticleSystem(system({ ringBufferMode: 1, UVModule: sheet() }, faint), renderer());
 	assert.ok(read !== null && 'info' in read);
-	assert.deepEqual(read.info.startColor.max, [1, 1, 1, 0.25]);
-	assert.equal(read.info.startColor.maxGradient, null);
+	assert.deepEqual(read.info.startColor, { mode: GradientMode.Color, color: [1, 1, 1, 0.25] });
 	assert.deepEqual(read.info.ringBuffer, { loop: false, loopRange: [0, 1] });
 	const textureSheet = read.info.textureSheet;
 	assert.deepEqual(textureSheet?.tiles, [8, 8]);
 	// the whole sheet ignores the row mode
-	assert.equal(textureSheet?.row, null);
-	assert.equal(textureSheet?.frameOverTime?.scalar, 0.9999);
-	assert.equal(textureSheet?.uvChannels, 3);
+	assert.deepEqual(textureSheet?.rows, { kind: 'all' });
+	assert.equal(textureSheet.frameOverTime?.scalar, 0.9999);
+	assert.equal(textureSheet.uvChannels, SheetUvChannels.Uv0 | SheetUvChannels.Uv1);
 
 	const looped = readParticleSystem(
 		system({ ringBufferMode: 2, ringBufferLoopRange: { x: 0.2, y: 0.8 } }),
@@ -309,9 +312,9 @@ test('a ring-buffered flipbook particle keeps its sheet and how it outlives its 
 		assert.ok(result !== null && 'info' in result);
 		return result.info.textureSheet;
 	};
-	assert.equal(row({ rowMode: 0, rowIndex: 3 })?.row, 3);
-	assert.equal(row({ rowMode: 1 })?.row, SheetRow.Random);
-	assert.equal(row({ rowMode: 2 })?.row, SheetRow.MeshIndex);
+	assert.deepEqual(row({ rowMode: 0, rowIndex: 3 })?.rows, { kind: 'fixed', row: 3 });
+	assert.deepEqual(row({ rowMode: 1 })?.rows, { kind: 'random' });
+	assert.deepEqual(row({ rowMode: 2 })?.rows, { kind: 'mesh' });
 	assert.equal(row({ rowMode: 0, timeMode: 2 })?.frameOverTime, null);
 });
 
@@ -438,7 +441,7 @@ test('the accelerate mushroom plays its velocity-aligned arrows, spin curves and
 	assert.equal(read.info.rotationOverLifetime?.[2].mode, CurveMode.TwoCurves);
 	assert.equal(read.info.rotationOverLifetime?.[2].scalar, 1.05);
 	assert.equal(read.info.shape?.kind, ParticleShapeKind.Donut);
-	assert.equal(read.info.shape?.donutRadius, 0.2);
+	assert.equal(read.info.shape.donutRadius, 0.2);
 });
 
 test('billboards draw one quad, stretched ones keep how they lengthen', () => {
@@ -496,17 +499,17 @@ test('start colours and colour over lifetime keep their gradients and random ran
 	assert.equal(startColor.min[3], 0.2);
 	assert.equal(startColor.max[3], 0.45);
 	assert.equal(colorOverLifetime?.mode, GradientMode.TwoGradients);
-	assert.deepEqual(colorOverLifetime?.maxGradient?.colorKeys, [
+	assert.deepEqual(colorOverLifetime.max.colorKeys, [
 		{ time: 0, color: [1, 1, 1] },
 		{ time: 1, color: [0.5, 0.5, 0.5] },
 	]);
 	assert.deepEqual(
-		colorOverLifetime?.maxGradient?.alphaKeys.map((key) => key.alpha),
+		colorOverLifetime.max.alphaKeys.map((key) => key.alpha),
 		[0, 1, 1],
 	);
-	assert.ok(Math.abs((colorOverLifetime?.maxGradient?.alphaKeys[1].time ?? 0) - 0.4) < 1e-4);
-	assert.equal(colorOverLifetime?.maxGradient?.fixed, false);
-	assert.equal(colorOverLifetime?.minGradient?.fixed, true);
+	assert.ok(Math.abs(colorOverLifetime.max.alphaKeys[1].time - 0.4) < 1e-4);
+	assert.equal(colorOverLifetime.max.fixed, false);
+	assert.equal(colorOverLifetime.min.fixed, true);
 });
 
 test('linear velocities can be curves', () => {
@@ -596,6 +599,7 @@ test('a sphere force field keeps its ranges, curves and the emitter seen from it
 	assert.equal(field.startRange, 3);
 	assert.equal(field.endRange, 15);
 	assert.deepEqual(field.rotationRandomness, [0.01, 0.25]);
+	assert.equal(field.rotationSpeed.mode, CurveMode.TwoConstants);
 	assert.equal(field.rotationSpeed.min, 4);
 	assert.equal(field.dragByVelocity, true);
 	assert.deepEqual(field.fromEmitter, [...fromEmitter]);
@@ -701,8 +705,10 @@ const triangles = submesh(MeshTopology.Triangles, 0, 6);
 test('mesh shapes emit from their mesh', () => {
 	const read = readParticleSystem(system({ ShapeModule: meshShape() }), renderer());
 	assert.ok(read !== null && 'info' in read);
-	assert.equal(read.info.shape?.kind, ParticleShapeKind.Mesh);
-	assert.deepEqual(read.shapeMesh, { fileId: 0, pathId: 7n });
+	// the shape waits for its mesh
+	assert.equal(read.info.shape, null);
+	assert.equal(read.shapeMesh?.shape.kind, ParticleShapeKind.Mesh);
+	assert.deepEqual(read.shapeMesh.mesh, { fileId: 0, pathId: 7n });
 
 	const mesh = particleShapeMesh(meshShape(), decoded([triangles]));
 	assert.ok(typeof mesh !== 'string');
@@ -766,12 +772,12 @@ test('a mesh shape reaches its farthest vertex', () => {
 		system({ ShapeModule: meshShape({ randomPositionAmount: 0 }) }),
 		renderer(),
 	);
-	assert.ok(read !== null && 'info' in read && read.info.shape !== null);
+	assert.ok(read !== null && 'info' in read && read.shapeMesh !== null);
 	const mesh = particleShapeMesh(meshShape(), decoded([triangles]));
 	assert.ok(typeof mesh !== 'string');
 	const still = {
 		...read.info,
-		shape: { ...read.info.shape, mesh, scale: [1, 1, 1] as [number, number, number] },
+		shape: { ...read.shapeMesh.shape, mesh, scale: [1, 1, 1] as [number, number, number] },
 	};
 	const plain = { ...still, shape: { ...still.shape, mesh: { ...mesh, positions: [0, 0, 0] } } };
 	const reach = particleReach(still, 0).extents[0] - particleReach(plain, 0).extents[0];

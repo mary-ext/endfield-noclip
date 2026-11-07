@@ -5,7 +5,7 @@ import { ParticleShapeKind, type ParticleSplineInfo } from '@endfield-noclip/pac
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { dragged, draggedFall, splinePoint, steppedPath, travelled } from './motion.ts';
-import { constant, line, run, system } from './test-systems.ts';
+import { constant, line, placement, run, system } from './test-systems.ts';
 
 describe('spline paths', () => {
 	// Dijiang's central shaft lifts its cargo 70 m up a straight segment whose handles sit on its ends
@@ -35,7 +35,7 @@ describe('spline paths', () => {
 			startLifetime: constant(49),
 			rate: constant(0.5),
 			maxParticles: 26,
-			shape: { ...system().shape!, kind: ParticleShapeKind.Box, position: [2, 0, 0], scale: [0, 0, 0] },
+			shape: { kind: ParticleShapeKind.Box, ...placement, position: [2, 0, 0], scale: [0, 0, 0] },
 			startRotation: [constant(0), constant(0), constant(0)],
 			spline: lift,
 		});

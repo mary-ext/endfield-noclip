@@ -22,6 +22,7 @@ import {
 	type Gradient,
 } from '@endfield-noclip/package-format/curves';
 import {
+	type ConstantMinMaxCurveInfo,
 	CurveMode,
 	GradientMode,
 	GRAVITY,
@@ -41,10 +42,13 @@ import {
 	type ParticleShapeInfo,
 	ParticleShapeKind,
 	type ParticleShapeMeshInfo,
+	type ParticleShapePlacement,
+	type ParticleShapeRadius,
+	type ParticleSheetRows,
 	type ParticleSystemInfo,
 	type ParticleTextureSheetInfo,
 	type ParticleVelocityInfo,
-	SheetRow,
+	SheetUvChannels,
 } from '@endfield-noclip/package-format/particles';
 
 /** the renderer's meshes and their weights */
@@ -98,7 +102,7 @@ export interface ExternalForcesRead {
 /** what {@link readParticleSystem} found */
 export type ParticleSystemRead =
 	| {
-			/** the system, drawing the first of its meshes */
+			/** the system, drawing the first of its meshes; its shape is `null` while {@link shapeMesh} is pending */
 			info: ParticleSystemInfo;
 			/**
 			 * the meshes particles pick from, in the order of {@link ParticleSystemInfo.meshWeights}; empty for
@@ -111,10 +115,10 @@ export type ParticleSystemRead =
 			 */
 			forces: ExternalForcesRead | null;
 			/**
-			 * the mesh a {@link ParticleShapeKind.Mesh} shape emits from, for the caller to decode into
-			 * {@link ParticleShapeInfo.mesh} with {@link particleShapeMesh}; `null` for other shapes
+			 * a {@link ParticleShapeKind.Mesh} shape and the mesh it emits from, for the caller to decode with
+			 * {@link particleShapeMesh} and set as the system's shape; `null` for other shapes
 			 */
-			shapeMesh: PPtr | null;
+			shapeMesh: { shape: PendingMeshShape; mesh: PPtr } | null;
 	  }
 	| { reason: string };
 
@@ -161,30 +165,37 @@ export const readAnimationCurve = (value: TypeTreeObject): AnimationCurve => ({
  */
 export const readMinMaxCurve = (value: TypeTreeObject): MinMaxCurveInfo => {
 	const mode = numberField(value, 'minMaxState');
+	const scalar = () => numberField(value, 'scalar');
 	switch (mode) {
-		case CurveMode.Constant:
-		case CurveMode.Curve:
-		case CurveMode.TwoCurves:
+		case CurveMode.Constant: {
+			return { mode, scalar: scalar() };
+		}
 		case CurveMode.TwoConstants: {
-			break;
+			return { mode, scalar: scalar(), min: numberField(value, 'minScalar') };
+		}
+		case CurveMode.Curve: {
+			return { mode, scalar: scalar(), curve: readAnimationCurve(objectField(value, 'maxCurve')) };
+		}
+		case CurveMode.TwoCurves: {
+			return {
+				mode,
+				scalar: scalar(),
+				curve: readAnimationCurve(objectField(value, 'maxCurve')),
+				minCurve: readAnimationCurve(objectField(value, 'minCurve')),
+			};
 		}
 		default: {
 			throw new FormatError(`unknown MinMaxCurve mode ${mode}`);
 		}
 	}
-	const curves = mode === CurveMode.Curve || mode === CurveMode.TwoCurves;
-	return {
-		mode,
-		scalar: numberField(value, 'scalar'),
-		min: numberField(value, 'minScalar'),
-		curve: curves ? readAnimationCurve(objectField(value, 'maxCurve')) : null,
-		minCurve: mode === CurveMode.TwoCurves ? readAnimationCurve(objectField(value, 'minCurve')) : null,
-	};
 };
 
 /** @returns whether a MinMaxCurve is one constant or a random one between two */
-const isConstant = (curve: MinMaxCurveInfo): boolean =>
+export const isConstantCurve = (curve: MinMaxCurveInfo): curve is ConstantMinMaxCurveInfo =>
 	curve.mode === CurveMode.Constant || curve.mode === CurveMode.TwoConstants;
+
+/** a MinMaxCurve of 0 */
+export const ZERO_CURVE: MinMaxCurveInfo = { mode: CurveMode.Constant, scalar: 0 };
 
 /**
  * @param curve a MinMaxCurve
@@ -198,9 +209,12 @@ export const curveReach = (curve: MinMaxCurveInfo): number => {
 		case CurveMode.TwoConstants: {
 			return Math.max(Math.abs(curve.scalar), Math.abs(curve.min));
 		}
-		default: {
+		case CurveMode.Curve:
+		case CurveMode.TwoCurves: {
+			const keys =
+				curve.mode === CurveMode.TwoCurves ? [...curve.curve.keys, ...curve.minCurve.keys] : curve.curve.keys;
 			let most = 0;
-			for (const key of [...(curve.curve?.keys ?? []), ...(curve.minCurve?.keys ?? [])]) {
+			for (const key of keys) {
 				most = Math.max(most, Math.abs(key.value));
 			}
 			return most * Math.abs(curve.scalar);
@@ -257,59 +271,91 @@ export const readGradient = (value: TypeTreeObject): Gradient => {
  */
 export const readMinMaxGradient = (value: TypeTreeObject): MinMaxGradientInfo => {
 	const mode = numberField(value, 'minMaxState');
+	const gradient = (name: string) => readGradient(objectField(value, name));
 	switch (mode) {
-		case GradientMode.Color:
+		case GradientMode.Color: {
+			return { mode, color: rgba(objectField(value, 'maxColor')) };
+		}
 		case GradientMode.Gradient:
-		case GradientMode.TwoColors:
-		case GradientMode.TwoGradients:
 		case GradientMode.RandomColor: {
-			break;
+			return { mode, gradient: gradient('maxGradient') };
+		}
+		case GradientMode.TwoColors: {
+			return { mode, min: rgba(objectField(value, 'minColor')), max: rgba(objectField(value, 'maxColor')) };
+		}
+		case GradientMode.TwoGradients: {
+			return { mode, min: gradient('minGradient'), max: gradient('maxGradient') };
 		}
 		default: {
 			throw new FormatError(`unknown MinMaxGradient mode ${mode}`);
 		}
 	}
-	const gradients =
-		mode === GradientMode.Gradient || mode === GradientMode.TwoGradients || mode === GradientMode.RandomColor;
-	return {
-		mode,
-		max: rgba(objectField(value, 'maxColor')),
-		min: rgba(objectField(value, 'minColor')),
-		maxGradient: gradients ? readGradient(objectField(value, 'maxGradient')) : null,
-		minGradient: mode === GradientMode.TwoGradients ? readGradient(objectField(value, 'minGradient')) : null,
-	};
 };
 
-const readShape = (shape: TypeTreeObject): ParticleShapeInfo | string => {
+/** a mesh shape before its mesh is decoded (see {@link ParticleSystemRead}) */
+export type PendingMeshShape = Omit<
+	Extract<ParticleShapeInfo, { kind: typeof ParticleShapeKind.Mesh }>,
+	'mesh'
+>;
+
+const readShape = (
+	shape: TypeTreeObject,
+): Exclude<ParticleShapeInfo, { kind: typeof ParticleShapeKind.Mesh }> | PendingMeshShape | string => {
 	const kind = numberField(shape, 'type');
 	if (!isShapeKind(kind)) {
 		return `shape ${kind}`;
 	}
-	if (kind === ParticleShapeKind.Mesh) {
-		const unsupported = meshShapeUnsupported(shape);
-		if (unsupported !== null) {
-			return unsupported;
-		}
-	}
-	const radius = objectField(shape, 'radius');
-	const arc = objectField(shape, 'arc');
-	return {
-		kind,
-		radius: numberField(radius, 'value'),
-		radiusThickness: numberField(shape, 'radiusThickness'),
-		donutRadius: optionalNumberField(shape, 'donutRadius') ?? 0,
-		angle: numberField(shape, 'angle'),
-		length: numberField(shape, 'length'),
-		arc: numberField(arc, 'value'),
+	const placement: ParticleShapePlacement = {
 		position: vector3Field(shape, 'm_Position'),
 		rotation: vector3Field(shape, 'm_Rotation'),
 		scale: vector3Field(shape, 'm_Scale'),
 		randomDirection: numberField(shape, 'randomDirectionAmount'),
 		sphericalDirection: numberField(shape, 'sphericalDirectionAmount'),
 		randomPosition: numberField(shape, 'randomPositionAmount'),
-		// the caller decodes the mesh (particleShapeMesh)
-		mesh: null,
 	};
+	const round = (): ParticleShapeRadius => ({
+		radius: numberField(objectField(shape, 'radius'), 'value'),
+		radiusThickness: numberField(shape, 'radiusThickness'),
+	});
+	const arc = () => numberField(objectField(shape, 'arc'), 'value');
+	switch (kind) {
+		case ParticleShapeKind.Sphere:
+		case ParticleShapeKind.Hemisphere: {
+			return { kind, ...round(), ...placement };
+		}
+		case ParticleShapeKind.Cone: {
+			return { kind, ...round(), arc: arc(), angle: numberField(shape, 'angle'), ...placement };
+		}
+		case ParticleShapeKind.ConeVolume: {
+			return {
+				kind,
+				...round(),
+				arc: arc(),
+				angle: numberField(shape, 'angle'),
+				length: numberField(shape, 'length'),
+				...placement,
+			};
+		}
+		case ParticleShapeKind.Circle: {
+			return { kind, ...round(), arc: arc(), ...placement };
+		}
+		case ParticleShapeKind.Donut: {
+			return {
+				kind,
+				...round(),
+				arc: arc(),
+				donutRadius: optionalNumberField(shape, 'donutRadius') ?? 0,
+				...placement,
+			};
+		}
+		case ParticleShapeKind.Box: {
+			return { kind, ...placement };
+		}
+		case ParticleShapeKind.Mesh: {
+			// the caller decodes the mesh (particleShapeMesh)
+			return meshShapeUnsupported(shape) ?? { kind, ...placement };
+		}
+	}
 };
 
 // #region mesh shape
@@ -481,7 +527,7 @@ const readSpeedLimit = (clamp: TypeTreeObject): ParticleSpeedLimitInfo | null | 
 
 const readDrag = (clamp: TypeTreeObject): ParticleDragInfo | null | string => {
 	const amount = readMinMaxCurve(objectField(clamp, 'drag'));
-	if (!isConstant(amount)) {
+	if (!isConstantCurve(amount)) {
 		return 'drag curve';
 	}
 	if (curveReach(amount) === 0) {
@@ -520,25 +566,25 @@ const readTextureSheet = (uv: TypeTreeObject): ParticleTextureSheetInfo | string
 	if (tiles.some((n) => n < 1 || n > MAX_SHEET_TILES)) {
 		return `sheet of ${tiles[0]}×${tiles[1]} tiles`;
 	}
-	let row: number | null;
+	let rows: ParticleSheetRows;
 	switch (numberField(uv, 'animationType')) {
 		case SheetAnimation.WholeSheet: {
-			row = null;
+			rows = { kind: 'all' };
 			break;
 		}
 		case SheetAnimation.SingleRow: {
 			const mode = optionalNumberField(uv, 'rowMode') ?? SheetRowMode.Custom;
 			switch (mode) {
 				case SheetRowMode.Custom: {
-					row = Math.min(Math.max(numberField(uv, 'rowIndex'), 0), tiles[1] - 1);
+					rows = { kind: 'fixed', row: Math.min(Math.max(numberField(uv, 'rowIndex'), 0), tiles[1] - 1) };
 					break;
 				}
 				case SheetRowMode.Random: {
-					row = SheetRow.Random;
+					rows = { kind: 'random' };
 					break;
 				}
 				case SheetRowMode.MeshIndex: {
-					row = SheetRow.MeshIndex;
+					rows = { kind: 'mesh' };
 					break;
 				}
 				default: {
@@ -557,13 +603,13 @@ const readTextureSheet = (uv: TypeTreeObject): ParticleTextureSheetInfo | string
 	}
 	return {
 		tiles,
-		row,
+		rows,
 		frameOverTime: timeMode === SheetTime.Lifetime ? readMinMaxCurve(objectField(uv, 'frameOverTime')) : null,
 		fps: numberField(uv, 'fps'),
 		startFrame: readMinMaxCurve(objectField(uv, 'startFrame')),
 		cycles: numberField(uv, 'cycles'),
 		// -1 (every channel) and other masks keep the two UV sets the viewer's shaders read
-		uvChannels: numberField(uv, 'uvChannelMask') & 3,
+		uvChannels: numberField(uv, 'uvChannelMask') & (SheetUvChannels.Uv0 | SheetUvChannels.Uv1),
 	};
 };
 
@@ -778,10 +824,8 @@ export const readParticleSystem = (
 	const initial = objectField(system, 'InitialModule');
 	const emission = objectField(system, 'EmissionModule');
 	const emits = booleanField(emission, 'enabled');
-	const rate = emits
-		? readMinMaxCurve(objectField(emission, 'rateOverTime'))
-		: { mode: CurveMode.Constant, scalar: 0, min: 0, curve: null, minCurve: null };
-	if (!isConstant(rate)) {
+	const rate = emits ? readMinMaxCurve(objectField(emission, 'rateOverTime')) : ZERO_CURVE;
+	if (!isConstantCurve(rate)) {
 		return { reason: 'rate curve' };
 	}
 	const bursts = emits
@@ -794,12 +838,18 @@ export const readParticleSystem = (
 		: [];
 
 	let shape: ParticleShapeInfo | null = null;
+	let shapeMesh: { shape: PendingMeshShape; mesh: PPtr } | null = null;
 	if (enabled(system, 'ShapeModule')) {
-		const read = readShape(objectField(system, 'ShapeModule'));
+		const module = objectField(system, 'ShapeModule');
+		const read = readShape(module);
 		if (typeof read === 'string') {
 			return { reason: read };
 		}
-		shape = read;
+		if (read.kind === ParticleShapeKind.Mesh) {
+			shapeMesh = { shape: read, mesh: pptrField(module, 'm_Mesh') };
+		} else {
+			shape = read;
+		}
 	}
 	let velocity: ParticleVelocityInfo | null = null;
 	if (enabled(system, 'VelocityModule')) {
@@ -822,7 +872,7 @@ export const readParticleSystem = (
 		}
 		clamp = limit ?? drag;
 		// the viewer's dragged path takes the speed modifier as a constant
-		if (drag !== null && velocity !== null && !isConstant(velocity.speedModifier)) {
+		if (drag !== null && velocity !== null && !isConstantCurve(velocity.speedModifier)) {
 			return { reason: 'speed modifier curve with drag' };
 		}
 	}
@@ -848,7 +898,6 @@ export const readParticleSystem = (
 
 	const curve = (parent: TypeTreeObject, name: string) => readMinMaxCurve(objectField(parent, name));
 	const { startSize, startRotation } = readStartPose(initial);
-	const zero: MinMaxCurveInfo = { mode: CurveMode.Constant, scalar: 0, min: 0, curve: null, minCurve: null };
 
 	let sizeOverLifetime: ParticleSystemInfo['sizeOverLifetime'] = null;
 	if (enabled(system, 'SizeModule')) {
@@ -864,7 +913,7 @@ export const readParticleSystem = (
 		const z = curve(rotation, 'curve');
 		rotationOverLifetime = booleanField(rotation, 'separateAxes')
 			? [curve(rotation, 'x'), curve(rotation, 'y'), z]
-			: [zero, zero, z];
+			: [ZERO_CURVE, ZERO_CURVE, z];
 	}
 	let textureSheet: ParticleTextureSheetInfo | null = null;
 	if (enabled(system, 'UVModule')) {
@@ -886,7 +935,7 @@ export const readParticleSystem = (
 	}
 	const delay = curve(system, 'startDelay');
 	// Unity's inspector offers a constant or two for the delay; a curve would need a time to read it at
-	if (!isConstant(delay)) {
+	if (!isConstantCurve(delay)) {
 		return { reason: 'start delay curve' };
 	}
 	return {
@@ -945,8 +994,7 @@ export const readParticleSystem = (
 		},
 		meshes,
 		forces,
-		shapeMesh:
-			shape?.kind === ParticleShapeKind.Mesh ? pptrField(objectField(system, 'ShapeModule'), 'm_Mesh') : null,
+		shapeMesh,
 	};
 };
 
@@ -980,14 +1028,13 @@ export const readStartPose = (
 ): Pick<ParticleSystemInfo, 'startSize' | 'startRotation'> => {
 	const curve = (name: string) => readMinMaxCurve(objectField(initial, name));
 	const size = curve('startSize');
-	const zero: MinMaxCurveInfo = { mode: CurveMode.Constant, scalar: 0, min: 0, curve: null, minCurve: null };
 	return {
 		startSize: booleanField(initial, 'size3D')
 			? [size, curve('startSizeY'), curve('startSizeZ')]
 			: [size, size, size],
 		startRotation: booleanField(initial, 'rotation3D')
 			? [curve('startRotationX'), curve('startRotationY'), curve('startRotation')]
-			: [zero, zero, curve('startRotation')],
+			: [ZERO_CURVE, ZERO_CURVE, curve('startRotation')],
 	};
 };
 
@@ -1090,19 +1137,38 @@ export const particleReach = (info: ParticleSystemInfo, meshRadius: number): Aab
 	let shape = 0;
 	if (info.shape !== null) {
 		const s = info.shape;
-		const along = s.kind === ParticleShapeKind.ConeVolume ? s.length : 0;
-		const tube = s.kind === ParticleShapeKind.Donut ? s.donutRadius : 0;
-		let spread = s.radius + tube + along * Math.tan((Math.min(Math.abs(s.angle), 89) * Math.PI) / 180);
-		if (s.kind === ParticleShapeKind.Box) {
-			// the unit cube's corners; a box ignores its radius
-			spread = Math.sqrt(3) / 2;
-		}
-		if (s.mesh !== null) {
-			// the farthest vertex; edges and triangles lie within their vertices' hull
-			spread = 0;
-			const p = s.mesh.positions;
-			for (let i = 0; i < p.length; i += 3) {
-				spread = Math.max(spread, Math.hypot(p[i], p[i + 1], p[i + 2]));
+		// how far from the shape's axis a particle starts, at unit scale, and how far along it
+		let spread = 0;
+		let along = 0;
+		switch (s.kind) {
+			case ParticleShapeKind.Sphere:
+			case ParticleShapeKind.Hemisphere:
+			case ParticleShapeKind.Cone:
+			case ParticleShapeKind.Circle: {
+				spread = s.radius;
+				break;
+			}
+			case ParticleShapeKind.ConeVolume: {
+				along = s.length;
+				spread = s.radius + along * Math.tan((Math.min(Math.abs(s.angle), 89) * Math.PI) / 180);
+				break;
+			}
+			case ParticleShapeKind.Donut: {
+				spread = s.radius + s.donutRadius;
+				break;
+			}
+			case ParticleShapeKind.Box: {
+				// the unit cube's corners
+				spread = Math.sqrt(3) / 2;
+				break;
+			}
+			case ParticleShapeKind.Mesh: {
+				// the farthest vertex; edges and triangles lie within their vertices' hull
+				const p = s.mesh.positions;
+				for (let i = 0; i < p.length; i += 3) {
+					spread = Math.max(spread, Math.hypot(p[i], p[i + 1], p[i + 2]));
+				}
+				break;
 			}
 		}
 		shape =

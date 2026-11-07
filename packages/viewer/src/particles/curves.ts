@@ -18,11 +18,11 @@ export const evaluateMinMax = (curve: MinMaxCurveInfo, time: number, r: number):
 			return curve.scalar;
 		}
 		case CurveMode.Curve: {
-			return curve.curve === null ? curve.scalar : curve.scalar * evaluateCurve(curve.curve, time);
+			return curve.scalar * evaluateCurve(curve.curve, time);
 		}
 		case CurveMode.TwoCurves: {
-			const high = curve.curve === null ? 1 : evaluateCurve(curve.curve, time);
-			const low = curve.minCurve === null ? high : evaluateCurve(curve.minCurve, time);
+			const high = evaluateCurve(curve.curve, time);
+			const low = evaluateCurve(curve.minCurve, time);
 			return curve.scalar * (low + (high - low) * r);
 		}
 		case CurveMode.TwoConstants: {
@@ -48,24 +48,21 @@ export const evaluateMinMaxGradient = (
 		a[2] + (b[2] - a[2]) * r,
 		a[3] + (b[3] - a[3]) * r,
 	];
-	const max = gradient.maxGradient;
 	switch (gradient.mode) {
 		case GradientMode.Color: {
-			return [...gradient.max];
+			return [...gradient.color];
 		}
 		case GradientMode.Gradient: {
-			return max === null ? [...gradient.max] : evaluateGradient(max, time);
+			return evaluateGradient(gradient.gradient, time);
 		}
 		case GradientMode.TwoColors: {
 			return between(gradient.min, gradient.max);
 		}
 		case GradientMode.TwoGradients: {
-			const high = max === null ? gradient.max : evaluateGradient(max, time);
-			const low = gradient.minGradient === null ? high : evaluateGradient(gradient.minGradient, time);
-			return between(low, high);
+			return between(evaluateGradient(gradient.min, time), evaluateGradient(gradient.max, time));
 		}
 		case GradientMode.RandomColor: {
-			return max === null ? [...gradient.max] : evaluateGradient(max, r);
+			return evaluateGradient(gradient.gradient, r);
 		}
 	}
 };
@@ -79,9 +76,12 @@ export const upperBound = (curve: MinMaxCurveInfo): number => {
 		case CurveMode.TwoConstants: {
 			return Math.max(curve.scalar, curve.min);
 		}
-		default: {
+		case CurveMode.Curve:
+		case CurveMode.TwoCurves: {
+			const keys =
+				curve.mode === CurveMode.TwoCurves ? [...curve.curve.keys, ...curve.minCurve.keys] : curve.curve.keys;
 			let most = -Infinity;
-			for (const key of [...(curve.curve?.keys ?? []), ...(curve.minCurve?.keys ?? [])]) {
+			for (const key of keys) {
 				most = Math.max(most, key.value * curve.scalar);
 			}
 			return Number.isFinite(most) ? most : 0;

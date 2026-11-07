@@ -7,6 +7,7 @@ import {
 	type ParticleVelocityInfo,
 	ParticleMeshSpawn,
 	ParticleShapeKind,
+	type ParticleShapeRadius,
 	type ParticleSpeedLimitInfo,
 	type ParticleSystemInfo,
 } from '@endfield-noclip/package-format/particles';
@@ -126,6 +127,10 @@ const popMin = (heap: number[]): void => {
 
 /** a burst firing's key within its loop */
 const burstKey = (burst: number, cycle: number): number => burst * 2 ** 20 + cycle;
+
+/** @returns the inner fraction of a round shape's radius particles don't start in */
+const innerRadius = (shape: ParticleShapeRadius): number =>
+	1 - Math.min(Math.max(shape.radiusThickness, 0), 1);
 
 /** a live particle being placed */
 interface Placing {
@@ -332,7 +337,7 @@ export class ParticleSimulation {
 		const forces: ParticleForcesInfo | null = info.motion.kind === 'free' ? info.motion.forces : null;
 		this.#forces =
 			forces === null ? null : { multiplier: forces.multiplier, fields: forces.fields.map(prepareField) };
-		const shapeMesh = info.shape?.mesh ?? null;
+		const shapeMesh = info.shape?.kind === ParticleShapeKind.Mesh ? info.shape.mesh : null;
 		this.#meshShape = shapeMesh === null ? null : prepareMeshShape(shapeMesh);
 		{
 			const bursts = info.bursts;
@@ -677,10 +682,10 @@ export class ParticleSimulation {
 		const r0 = random(seed, id, Channel.Shape0);
 		const r1 = random(seed, id, Channel.Shape1);
 		const r2 = random(seed, id, Channel.Shape2);
-		const inner = 1 - Math.min(Math.max(shape.radiusThickness, 0), 1);
 		switch (shape.kind) {
 			case ParticleShapeKind.Sphere:
 			case ParticleShapeKind.Hemisphere: {
+				const inner = innerRadius(shape);
 				unitVectorInto(direction, r0, r1);
 				if (shape.kind === ParticleShapeKind.Hemisphere) {
 					direction[2] = Math.abs(direction[2]);
@@ -695,6 +700,7 @@ export class ParticleSimulation {
 			case ParticleShapeKind.Cone:
 			case ParticleShapeKind.ConeVolume:
 			case ParticleShapeKind.Circle: {
+				const inner = innerRadius(shape);
 				const phi = (r0 * shape.arc * Math.PI) / 180;
 				// uniform in the ring's area
 				const rho = Math.sqrt(inner * inner + (1 - inner * inner) * r1);
@@ -747,6 +753,7 @@ export class ParticleSimulation {
 			}
 			case ParticleShapeKind.Donut: {
 				// a point of the circle, then one of the tube's cross-section around it, uniform in its area
+				const inner = innerRadius(shape);
 				const phi = (r0 * shape.arc * Math.PI) / 180;
 				const theta = 2 * Math.PI * r1;
 				const rho = shape.donutRadius * Math.sqrt(inner * inner + (1 - inner * inner) * r2);

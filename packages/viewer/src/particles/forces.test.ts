@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { MinMaxCurveInfo } from '@endfield-noclip/package-format/particles';
+import { type MinMaxCurveInfo, ParticleShapeKind } from '@endfield-noclip/package-format/particles';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { applyForces, type ForceRandoms, prepareField } from './forces.ts';
 import { PARTICLE_FLOATS, ParticleSimulation } from './simulation.ts';
-import { DOWN, between, constant, same, system } from './test-systems.ts';
+import { DOWN, between, constant, placement, same, system } from './test-systems.ts';
 
 describe('force fields', () => {
 	// Jingyu Valley's fish school: a sphere field 3–15 m out, centred on the emitter, whose +y is the emitter's
@@ -79,7 +79,15 @@ describe('force fields', () => {
 			ringBuffer: { loop: false, loopRange: [0, 1] },
 			startSpeed: constant(1),
 			gravityModifier: constant(0),
-			shape: { ...system().shape!, radius: 3, radiusThickness: 0, angle: 90, rotation: [90, 0, 0] },
+			shape: {
+				kind: ParticleShapeKind.Cone,
+				radius: 3,
+				radiusThickness: 0,
+				arc: 360,
+				angle: 90,
+				...placement,
+				rotation: [90, 0, 0],
+			},
 			forces: {
 				multiplier: constant(1),
 				fields: [{ ...fish, rotationSpeed: between(-4, 4), drag: constant(0.3) }],

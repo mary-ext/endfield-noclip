@@ -6,35 +6,33 @@ import {
 	ParticleRenderMode,
 	ParticleShapeKind,
 	type ParticleFreeMotionInfo,
+	type ParticleShapePlacement,
 	type ParticleSplineInfo,
 	type ParticleSystemInfo,
 	type ParticleTextureSheetInfo,
+	SheetUvChannels,
 } from '@endfield-noclip/package-format/particles';
 // curves and systems the particle tests build on
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { PARTICLE_FLOATS, ParticleSimulation } from './simulation.ts';
 
-export const constant = (value: number): MinMaxCurveInfo => ({
+type CurveOf<Mode extends CurveMode> = Extract<MinMaxCurveInfo, { mode: Mode }>;
+
+export const constant = (value: number): CurveOf<typeof CurveMode.Constant> => ({
 	mode: CurveMode.Constant,
 	scalar: value,
-	min: 0,
-	curve: null,
-	minCurve: null,
 });
 
-export const between = (min: number, max: number): MinMaxCurveInfo => ({
+export const between = (min: number, max: number): CurveOf<typeof CurveMode.TwoConstants> => ({
 	mode: CurveMode.TwoConstants,
 	scalar: max,
 	min,
-	curve: null,
-	minCurve: null,
 });
 
-export const line = (from: number, to: number): MinMaxCurveInfo => ({
+export const line = (from: number, to: number): CurveOf<typeof CurveMode.Curve> => ({
 	mode: CurveMode.Curve,
 	scalar: 1,
-	min: 0,
 	curve: {
 		keys: [
 			{
@@ -59,8 +57,17 @@ export const line = (from: number, to: number): MinMaxCurveInfo => ({
 		preWrapMode: 2,
 		postWrapMode: 2,
 	},
-	minCurve: null,
 });
+
+/** a shape's placement at the emitter's origin, scattering nothing */
+export const placement: ParticleShapePlacement = {
+	position: [0, 0, 0],
+	rotation: [0, 0, 0],
+	scale: [1, 1, 1],
+	randomDirection: 0,
+	sphericalDirection: 0,
+	randomPosition: 0,
+};
 
 const fields = (
 	overrides: Partial<ParticleSystemInfo>,
@@ -75,13 +82,7 @@ const fields = (
 	maxParticles: 150,
 	simulationSpeed: 1,
 	startLifetime: constant(80),
-	startColor: {
-		mode: GradientMode.Color,
-		max: [1, 1, 1, 1],
-		min: [1, 1, 1, 1],
-		maxGradient: null,
-		minGradient: null,
-	},
+	startColor: { mode: GradientMode.Color, color: [1, 1, 1, 1] },
 	colorOverLifetime: null,
 	startSize: [constant(4), constant(4), constant(4)],
 	startRotation: [constant(0), constant(0), between(0, Math.PI * 2)],
@@ -91,17 +92,9 @@ const fields = (
 		kind: ParticleShapeKind.Cone,
 		radius: 65,
 		radiusThickness: 0.5,
-		donutRadius: 0,
-		angle: 2,
-		length: 5,
 		arc: 360,
-		position: [0, 0, 0],
-		rotation: [0, 0, 0],
-		scale: [1, 1, 1],
-		randomDirection: 0,
-		sphericalDirection: 0,
-		randomPosition: 0,
-		mesh: null,
+		angle: 2,
+		...placement,
 	},
 	sizeOverLifetime: null,
 	rotationOverLifetime: null,
@@ -153,12 +146,12 @@ export const system = ({
 
 export const sheet = (overrides: Partial<ParticleTextureSheetInfo> = {}): ParticleTextureSheetInfo => ({
 	tiles: [8, 8],
-	row: null,
+	rows: { kind: 'all' },
 	frameOverTime: { ...line(0, 1), scalar: 0.9999 },
 	fps: 30,
 	startFrame: constant(0),
 	cycles: 1,
-	uvChannels: 3,
+	uvChannels: SheetUvChannels.Uv0 | SheetUvChannels.Uv1,
 	...overrides,
 });
 

@@ -771,8 +771,9 @@ export const readPrefabRenderers = async (
 				});
 			} else {
 				let read = readParticleSystem(system.data, rendererData);
-				if (read !== null && 'info' in read && read.info.shape !== null && read.shapeMesh !== null) {
-					const shapeMesh = await resolver.resolve(system.ref, read.shapeMesh);
+				if (read !== null && 'info' in read && read.shapeMesh !== null) {
+					const pending = read.shapeMesh;
+					const shapeMesh = await resolver.resolve(system.ref, pending.mesh);
 					const mesh =
 						shapeMesh === null
 							? 'no shape mesh'
@@ -783,7 +784,7 @@ export const readPrefabRenderers = async (
 					read =
 						typeof mesh === 'string'
 							? { reason: mesh }
-							: { ...read, info: { ...read.info, shape: { ...read.info.shape, mesh } } };
+							: { ...read, info: { ...read.info, shape: { ...pending.shape, mesh } }, shapeMesh: null };
 				}
 				const emitter = particleEmitterMatrix(parent, local, scalingMode);
 				// a system a script starts is still there to see, so it gets a stand-in too

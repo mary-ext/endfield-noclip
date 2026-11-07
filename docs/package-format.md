@@ -610,14 +610,16 @@ interned to one entry ([particles.ts](../packages/package-format/src/particles.t
 viewer can evaluate from its emission time and its own random values: in closed form, or, under a
 speed limit or force fields, by stepping the particle from its birth. values are Unity
 `MinMaxCurve`s (a constant, a curve times a scalar, or random between two of either), colours
-`MinMaxGradient`s (likewise, plus a random point of a gradient). a system draws its meshes, or a
-unit quad (the chain draw's geometry) that its render mode turns to the camera, stretches along the
-particle's velocity, or lays flat. an emitter is an ordinary instance row: its transform is the
-system's frame and its bounds cover everywhere a particle reaches, so the row culls like any other.
-a ring-buffered system's particles outlive their lifetime until replaced, their age held at its end
-(while they move on) or looping part of it; a texture sheet names the flipbook tile each particle's
-mesh UVs are remapped into. a system's `motion` is `free` (start speed, gravity, the velocity module
-and the Limit Velocity module's drag or speed limit) or a `spline` its particles follow at its speed
+`MinMaxGradient`s (likewise, plus a random point of a gradient), each a union on its Unity mode
+holding only what that mode reads. enums mirroring Unity's keep its integers; discriminants the
+package adds (motion, clamp, sheet rows) are strings. a system draws its meshes, or a unit quad (the
+chain draw's geometry) that its render mode turns to the camera, stretches along the particle's
+velocity, or lays flat. an emitter is an ordinary instance row: its transform is the system's frame
+and its bounds cover everywhere a particle reaches, so the row culls like any other. a ring-buffered
+system's particles outlive their lifetime until replaced, their age held at its end (while they move
+on) or looping part of it; a texture sheet names the flipbook tile each particle's mesh UVs are
+remapped into. a system's `motion` is `free` (start speed, gravity, the velocity module and the
+Limit Velocity module's drag or speed limit) or a `spline` its particles follow at its speed
 instead.
 
 a [spline mover](game-data/effects.md#spline-movers) packs as such a system
@@ -664,14 +666,15 @@ unless the mode is Shape. the entry keeps:
   their curves and gradients are the `AnimationCurve` and `Gradient` of
   [`curves.ts`](../packages/package-format/src/curves.ts), which lens flares use too, with key times
   over 0–1 (the game stores gradient key times as 0–65535)
-- the shape (sphere, hemisphere, cone, cone volume, box, circle, donut or mesh, with its radius,
-  thickness, donut radius, angle, length, arc, placement and random-direction and -position
-  amounts). a box's bounds take its unit cube's corners, as it ignores its radius. a
-  [mesh shape](game-data/effects.md#particle-systems) carries its mesh: positions (to 0.1 mm),
-  normals, the vertex colours as bytes when it uses them, and the primitives it emits from (three or
-  two corners each), with its placement, vertex spawn mode, edge spread and normal offset. a shape
-  texture, edge placement stepping by Loop or PingPong, and meshes the engine refuses or that mix
-  lines and triangles stand in
+- the shape (sphere, hemisphere, cone, cone volume, box, circle, donut or mesh), a union on its
+  kind: every kind keeps its placement and random-direction and -position amounts, and only the
+  fields it reads of radius and thickness (round kinds), arc (cones, circle, donut), angle (cones),
+  length (cone volume) and donut radius. a box is the unit cube its scale stretches, so its bounds
+  take the cube's corners. a [mesh shape](game-data/effects.md#particle-systems) carries its mesh:
+  positions (to 0.1 mm), normals, the vertex colours as bytes when it uses them, and the primitives
+  it emits from (three or two corners each), with its placement, vertex spawn mode, edge spread and
+  normal offset. a shape texture, edge placement stepping by Loop or PingPong, and meshes the engine
+  refuses or that mix lines and triangles stand in
 - the velocity module (linear, orbital about an offset, radial and speed modifier, as curves too,
   though a speed modifier curve not alongside drag), and size and rotation over lifetime (curves
   too)
@@ -692,8 +695,9 @@ unless the mode is Shape. the entry keeps:
   ([pivot](game-data/effects.md#particle-systems))
 - the ring buffer mode and `ringBufferLoopRange`
 - the texture sheet: `UVModule` in grid mode, up to 64×64 tiles, the whole sheet or one row (fixed,
-  random or by mesh), timed over the lifetime by `frameOverTime` and `cycles` or by `fps`, offset by
-  `startFrame`, both read as fractions of the frames, on the UV sets of `uvChannelMask`
+  random or by mesh; `rows`, a union on its kind), timed over the lifetime by `frameOverTime` and
+  `cycles` or by `fps`, offset by `startFrame`, both read as fractions of the frames, on the UV sets
+  of `uvChannelMask` (`uvChannels`, `SheetUvChannels` bits)
 - the custom data the second texture coordinate set holds: with `m_UseCustomVertexStreams`, the
   streams past position, normal, tangent and colour fill 4-wide sets in the renderer's order, and
   the components of `CustomDataModule`'s first stream (vector mode, up to `vectorComponentCount0`)

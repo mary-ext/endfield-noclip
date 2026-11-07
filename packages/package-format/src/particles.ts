@@ -1,3 +1,12 @@
+/**
+ * the particles table. a discriminant mirroring a Unity enum keeps that enum's integers, gaps included
+ * ({@link CurveMode}, {@link ParticleShapeKind}, …), so the packer copies the game's value through; a
+ * discriminant the package introduces itself is a string ({@link ParticleMotionInfo},
+ * {@link ParticleClampInfo}, {@link ParticleSheetRows})
+ *
+ * @module
+ */
+
 import type { AnimationCurve, Gradient } from './curves.ts';
 import type { Vec3 } from './values.ts';
 
@@ -26,21 +35,46 @@ export const CurveMode = {
 export type CurveMode = (typeof CurveMode)[keyof typeof CurveMode];
 
 /**
- * a Unity `MinMaxCurve`: a constant, a curve, or a random value between two of either. curves are read at a
- * normalized time (a particle's age over its lifetime, or the emission time over the system's duration) and
- * scaled by {@link scalar}
+ * a Unity `MinMaxCurve`: a constant, a curve, or a random value between two of either. every mode has a
+ * `scalar`: the constant (or the upper one), or the curves' multiplier. curves are read at a normalized time
+ * (a particle's age over its lifetime, or the emission time over the system's duration) and scaled by it
  */
-export interface MinMaxCurveInfo {
-	mode: CurveMode;
-	/** the constant (or the upper one), or the curves' multiplier */
-	scalar: number;
-	/** the lower constant ({@link CurveMode.TwoConstants}) */
-	min: number;
-	/** the curve, or the upper one; `null` for constants */
-	curve: AnimationCurve | null;
-	/** the lower curve ({@link CurveMode.TwoCurves}); `null` otherwise */
-	minCurve: AnimationCurve | null;
-}
+export type MinMaxCurveInfo =
+	| {
+			mode: typeof CurveMode.Constant;
+			scalar: number;
+	  }
+	| {
+			mode: typeof CurveMode.TwoConstants;
+			/** the upper constant */
+			scalar: number;
+			/** the lower constant */
+			min: number;
+	  }
+	| {
+			mode: typeof CurveMode.Curve;
+			/** the curve's multiplier */
+			scalar: number;
+			curve: AnimationCurve;
+	  }
+	| {
+			mode: typeof CurveMode.TwoCurves;
+			/** both curves' multiplier */
+			scalar: number;
+			/** the upper curve */
+			curve: AnimationCurve;
+			/** the lower curve */
+			minCurve: AnimationCurve;
+	  };
+
+/** a {@link MinMaxCurveInfo} of one constant or a random one between two */
+export type ConstantMinMaxCurveInfo = Extract<
+	MinMaxCurveInfo,
+	{ mode: typeof CurveMode.Constant | typeof CurveMode.TwoConstants }
+>;
+
+/** an rgba colour as authored (sRGB rgb) */
+export type ParticleColor = [r: number, g: number, b: number, a: number];
 
 /** {@link MinMaxGradientInfo.mode} values, Unity's `ParticleSystemGradientMode` */
 export const GradientMode = {
@@ -58,17 +92,30 @@ export type GradientMode = (typeof GradientMode)[keyof typeof GradientMode];
  * a Unity `MinMaxGradient`: a colour, a gradient, a random value between two of either, or a random point of
  * a gradient. gradients are read at a normalized time, as {@link MinMaxCurveInfo}'s curves are
  */
-export interface MinMaxGradientInfo {
-	mode: GradientMode;
-	/** the colour (or the upper one), rgba as authored (sRGB rgb) */
-	max: [r: number, g: number, b: number, a: number];
-	/** the lower colour ({@link GradientMode.TwoColors}) */
-	min: [r: number, g: number, b: number, a: number];
-	/** the gradient, or the upper one; `null` for colours */
-	maxGradient: Gradient | null;
-	/** the lower gradient ({@link GradientMode.TwoGradients}); `null` otherwise */
-	minGradient: Gradient | null;
-}
+export type MinMaxGradientInfo =
+	| {
+			mode: typeof GradientMode.Color;
+			color: ParticleColor;
+	  }
+	| {
+			mode: typeof GradientMode.Gradient;
+			gradient: Gradient;
+	  }
+	| {
+			mode: typeof GradientMode.TwoColors;
+			min: ParticleColor;
+			max: ParticleColor;
+	  }
+	| {
+			mode: typeof GradientMode.TwoGradients;
+			min: Gradient;
+			max: Gradient;
+	  }
+	| {
+			mode: typeof GradientMode.RandomColor;
+			/** the gradient a random point is read from */
+			gradient: Gradient;
+	  };
 
 /** {@link ParticleSystemInfo.renderMode} values, Unity's `ParticleSystemRenderMode` */
 export const ParticleRenderMode = {
@@ -104,7 +151,7 @@ export const ParticleShapeKind = {
 	/** from the base disc, along the cone */
 	Cone: 4,
 	Box: 5,
-	/** from a mesh's vertices, edges or triangles ({@link ParticleShapeInfo.mesh}) */
+	/** from a mesh's vertices, edges or triangles ({@link ParticleShapeMeshInfo}) */
 	Mesh: 6,
 	/** from anywhere inside the cone, up to its length */
 	ConeVolume: 8,
@@ -115,24 +162,36 @@ export const ParticleShapeKind = {
 
 export type ParticleShapeKind = (typeof ParticleShapeKind)[keyof typeof ParticleShapeKind];
 
-/** where particles start and which way they leave (Unity's `ShapeModule`), in the emitter's frame */
-export interface ParticleShapeInfo {
-	kind: ParticleShapeKind;
-	/** m */
-	radius: number;
-	/**
-	 * the outer fraction of the radius particles start in: 0 on the edge only, 1 anywhere inside. a donut
-	 * applies it to its tube's radius
-	 */
-	radiusThickness: number;
-	/** the donut's tube radius, m */
-	donutRadius: number;
-	/** the cone's half angle, degrees */
-	angle: number;
-	/** the cone volume's length, m */
-	length: number;
-	/** the slice of the circle used, degrees from +x towards +y */
-	arc: number;
+/**
+ * where particles start and which way they leave (Unity's `ShapeModule`), in the emitter's frame: the fields
+ * of its kind, then its {@link ParticleShapePlacement}. a box spans the unit cube around the shape's centre,
+ * leaving along +z
+ */
+export type ParticleShapeInfo = (
+	| ({ kind: typeof ParticleShapeKind.Sphere | typeof ParticleShapeKind.Hemisphere } & ParticleShapeRadius)
+	| ({ kind: typeof ParticleShapeKind.Cone } & ParticleShapeRadius & ParticleShapeArc & ParticleShapeCone)
+	| ({ kind: typeof ParticleShapeKind.ConeVolume } & ParticleShapeRadius &
+			ParticleShapeArc &
+			ParticleShapeCone & {
+				/** the cone's length, m */
+				length: number;
+			})
+	| ({ kind: typeof ParticleShapeKind.Circle } & ParticleShapeRadius & ParticleShapeArc)
+	| ({ kind: typeof ParticleShapeKind.Donut } & ParticleShapeRadius &
+			ParticleShapeArc & {
+				/** the tube's radius, m */
+				donutRadius: number;
+			})
+	| { kind: typeof ParticleShapeKind.Box }
+	| {
+			kind: typeof ParticleShapeKind.Mesh;
+			mesh: ParticleShapeMeshInfo;
+	  }
+) &
+	ParticleShapePlacement;
+
+/** what every {@link ParticleShapeInfo} has: its placement in the emitter and how it scatters its particles */
+export interface ParticleShapePlacement {
 	/** the shape's own placement in the emitter: translation, Euler angles in degrees (Unity's order), scale */
 	position: Vec3;
 	rotation: Vec3;
@@ -143,8 +202,29 @@ export interface ParticleShapeInfo {
 	sphericalDirection: number;
 	/** each start position moves by up to this much along each axis, m */
 	randomPosition: number;
-	/** the mesh {@link ParticleShapeKind.Mesh} emits from; `null` for other kinds */
-	mesh: ParticleShapeMeshInfo | null;
+}
+
+/** a round {@link ParticleShapeInfo}'s size */
+export interface ParticleShapeRadius {
+	/** m; a donut's circle through its tube's centre */
+	radius: number;
+	/**
+	 * the outer fraction of the radius particles start in: 0 on the edge only, 1 anywhere inside. a donut
+	 * applies it to its tube's radius
+	 */
+	radiusThickness: number;
+}
+
+/** the part of a circle a cone, circle or donut {@link ParticleShapeInfo} uses */
+export interface ParticleShapeArc {
+	/** degrees from +x towards +y */
+	arc: number;
+}
+
+/** a cone {@link ParticleShapeInfo}'s opening */
+export interface ParticleShapeCone {
+	/** the half angle, degrees */
+	angle: number;
 }
 
 /** {@link ParticleShapeMeshInfo.placement} values, Unity's `ParticleSystemMeshShapeType` */
@@ -430,12 +510,25 @@ export interface ParticleRingBufferInfo {
 	loopRange: [number, number];
 }
 
-/** {@link ParticleTextureSheetInfo.row} values besides a fixed row */
-export const SheetRow = {
+/** which tiles of a {@link ParticleTextureSheetInfo} a particle steps through */
+export type ParticleSheetRows =
+	/** the whole sheet */
+	| { kind: 'all' }
+	/** one row, the same for every particle */
+	| {
+			kind: 'fixed';
+			/** 0 for the top row, up to the sheet's rows less one */
+			row: number;
+	  }
 	/** a random row per particle */
-	Random: -1,
-	/** the row of the particle's mesh, {@link ParticleSystemInfo.mesh} */
-	MeshIndex: -2,
+	| { kind: 'random' }
+	/** the row numbered by the particle's mesh, {@link ParticleSystemInfo.mesh} */
+	| { kind: 'mesh' };
+
+/** {@link ParticleTextureSheetInfo.uvChannels} bits */
+export const SheetUvChannels = {
+	Uv0: 1 << 0,
+	Uv1: 1 << 1,
 } as const;
 
 /**
@@ -446,11 +539,7 @@ export const SheetRow = {
 export interface ParticleTextureSheetInfo {
 	/** tiles across and down, 1–64 each */
 	tiles: [number, number];
-	/**
-	 * `null` steps through the whole sheet; a row number steps along that row alone, or a {@link SheetRow} value
-	 * picks the row per particle
-	 */
-	row: number | null;
+	rows: ParticleSheetRows;
 	/**
 	 * the frame, as a fraction of the frames: read at the particle's age over its lifetime, repeated
 	 * {@link cycles} times. `null` when frames advance by {@link fps} instead
@@ -461,7 +550,7 @@ export interface ParticleTextureSheetInfo {
 	/** added to the frame, as a fraction of the frames; read at the emission's place in its loop */
 	startFrame: MinMaxCurveInfo;
 	cycles: number;
-	/** which UV sets take the tile: bit 0 for UV0, bit 1 for UV1 */
+	/** which UV sets take the tile, {@link SheetUvChannels} bits */
 	uvChannels: number;
 }
 

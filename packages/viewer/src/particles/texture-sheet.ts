@@ -1,4 +1,4 @@
-import { type ParticleTextureSheetInfo, SheetRow } from '@endfield-noclip/package-format/particles';
+import type { ParticleTextureSheetInfo } from '@endfield-noclip/package-format/particles';
 
 import { evaluateMinMax } from './curves.ts';
 import { Channel } from './random.ts';
@@ -23,7 +23,7 @@ export const sheetTile = (
 	mesh: number,
 ): number => {
 	const [columns, rows] = sheet.tiles;
-	const frames = sheet.row === null ? columns * rows : columns;
+	const frames = sheet.rows.kind === 'all' ? columns * rows : columns;
 	let frame = evaluateMinMax(sheet.startFrame, loop, randomOf(Channel.StartFrame));
 	if (sheet.frameOverTime === null) {
 		frame += (age * sheet.fps) / frames;
@@ -34,18 +34,18 @@ export const sheetTile = (
 		frame += evaluateMinMax(sheet.frameOverTime, phase, randomOf(Channel.FrameOverTime));
 	}
 	const index = Math.min(Math.floor((frame - Math.floor(frame)) * frames), frames - 1);
-	switch (sheet.row) {
-		case null: {
+	switch (sheet.rows.kind) {
+		case 'all': {
 			return index;
 		}
-		case SheetRow.Random: {
+		case 'fixed': {
+			return sheet.rows.row * columns + index;
+		}
+		case 'random': {
 			return Math.floor(randomOf(Channel.SheetRow) * rows) * columns + index;
 		}
-		case SheetRow.MeshIndex: {
+		case 'mesh': {
 			return Math.min(mesh, rows - 1) * columns + index;
-		}
-		default: {
-			return sheet.row * columns + index;
 		}
 	}
 };

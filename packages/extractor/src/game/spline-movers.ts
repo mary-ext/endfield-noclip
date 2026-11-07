@@ -25,7 +25,7 @@ import {
 } from '@endfield-noclip/package-format/particles';
 
 import type { AssetResolver, ObjectRef } from './assets.ts';
-import { emissionBound, readAnimationCurve } from './particle-system.ts';
+import { emissionBound, isConstantCurve, readAnimationCurve, ZERO_CURVE } from './particle-system.ts';
 
 /** the most LOD groups a mover picks from that the viewer's mesh weights hold */
 const MAX_GROUPS = 4;
@@ -166,24 +166,25 @@ export const isSplineMoverType = (ref: ObjectRef): boolean => {
 export const readSerializedMinMaxCurve = (value: TypeTreeObject): MinMaxCurveInfo => {
 	const mode = numberField(value, 'm_Mode');
 	switch (mode) {
-		case CurveMode.Constant:
+		case CurveMode.Constant: {
+			return { mode, scalar: numberField(value, 'm_ConstantMax') };
+		}
 		case CurveMode.TwoConstants: {
+			return { mode, scalar: numberField(value, 'm_ConstantMax'), min: numberField(value, 'm_ConstantMin') };
+		}
+		case CurveMode.Curve: {
 			return {
 				mode,
-				scalar: numberField(value, 'm_ConstantMax'),
-				min: numberField(value, 'm_ConstantMin'),
-				curve: null,
-				minCurve: null,
+				scalar: numberField(value, 'm_CurveMultiplier'),
+				curve: readAnimationCurve(objectField(value, 'm_CurveMax')),
 			};
 		}
-		case CurveMode.Curve:
 		case CurveMode.TwoCurves: {
 			return {
 				mode,
 				scalar: numberField(value, 'm_CurveMultiplier'),
-				min: 0,
 				curve: readAnimationCurve(objectField(value, 'm_CurveMax')),
-				minCurve: mode === CurveMode.TwoCurves ? readAnimationCurve(objectField(value, 'm_CurveMin')) : null,
+				minCurve: readAnimationCurve(objectField(value, 'm_CurveMin')),
 			};
 		}
 		default: {
@@ -192,15 +193,13 @@ export const readSerializedMinMaxCurve = (value: TypeTreeObject): MinMaxCurveInf
 	}
 };
 
-const isConstant = (curve: MinMaxCurveInfo): boolean =>
-	curve.mode === CurveMode.Constant || curve.mode === CurveMode.TwoConstants;
-
-/** @returns a constant curve, or two constants', with both scaled */
-const scaled = (curve: MinMaxCurveInfo, by: number): MinMaxCurveInfo => ({
-	...curve,
-	scalar: curve.scalar * by,
-	min: curve.min * by,
-});
+/** @returns the curve with its values scaled: its constants, or its curves' multiplier */
+const scaled = (curve: MinMaxCurveInfo, by: number): MinMaxCurveInfo => {
+	if (curve.mode === CurveMode.TwoConstants) {
+		return { ...curve, scalar: curve.scalar * by, min: curve.min * by };
+	}
+	return { ...curve, scalar: curve.scalar * by };
+};
 
 const clamp01 = (value: number): number => Math.min(Math.max(value, 0), 1);
 
@@ -269,23 +268,29 @@ export const readSplineMover = (data: TypeTreeObject): SplineMoverRead => {
 	if (speed.mode !== CurveMode.Constant || speed.scalar <= 0) {
 		return { reason: 'spline speed curve' };
 	}
-	if (!isConstant(startLifetime)) {
+	if (!isConstantCurve(startLifetime)) {
 		return { reason: 'spline lifetime curve' };
 	}
 	// the time the whole spline takes at the speed; the start lifetime is a fraction of it
 	const traverse = total / speed.scalar;
-	const lifetime: MinMaxCurveInfo = {
-		...startLifetime,
-		scalar: clamp01(startLifetime.scalar) * traverse,
-		min: clamp01(startLifetime.min) * traverse,
-	};
-	const rate = numberField(desc, 'emissionRateOverTime');
+	let lifetime: MinMaxCurveInfo;
+	switch (startLifetime.mode) {
+		case CurveMode.Constant: {
+			lifetime = { mode: startLifetime.mode, scalar: clamp01(startLifetime.scalar) * traverse };
+			break;
+		}
+		case CurveMode.TwoConstants: {
+			lifetime = {
+				mode: startLifetime.mode,
+				scalar: clamp01(startLifetime.scalar) * traverse,
+				min: clamp01(startLifetime.min) * traverse,
+			};
+			break;
+		}
+	}
 	const rateCurve: MinMaxCurveInfo = {
 		mode: CurveMode.Constant,
-		scalar: rate,
-		min: rate,
-		curve: null,
-		minCurve: null,
+		scalar: numberField(desc, 'emissionRateOverTime'),
 	};
 	// a mover has no cap of its own; it holds what one lifetime of its stream emits
 	const bound = emissionBound(rateCurve, [], lifetime, 1);
@@ -293,7 +298,6 @@ export const readSplineMover = (data: TypeTreeObject): SplineMoverRead => {
 	const size = curve('startSize');
 	const growth = curve('sizeOverLifeTime');
 	const radians = Math.PI / 180;
-	const zero: MinMaxCurveInfo = { mode: CurveMode.Constant, scalar: 0, min: 0, curve: null, minCurve: null };
 	// without 3D start rotations the game turns objects about z alone
 	const turned = booleanField(desc, 'has3dStartRotation');
 	return {
@@ -304,23 +308,17 @@ export const readSplineMover = (data: TypeTreeObject): SplineMoverRead => {
 			sizedByScale: true,
 			duration: 1,
 			looping: true,
-			startDelay: zero,
+			startDelay: ZERO_CURVE,
 			maxParticles: bound,
 			emissionBound: bound,
 			simulationSpeed: numberField(desc, 'simulateSpeed'),
 			startLifetime: lifetime,
-			startColor: {
-				mode: GradientMode.Color,
-				max: [1, 1, 1, 1],
-				min: [1, 1, 1, 1],
-				maxGradient: null,
-				minGradient: null,
-			},
+			startColor: { mode: GradientMode.Color, color: [1, 1, 1, 1] },
 			colorOverLifetime: null,
 			startSize: [size, size, size],
 			startRotation: [
-				turned ? scaled(curve('startRotationX'), radians) : zero,
-				turned ? scaled(curve('startRotationY'), radians) : zero,
+				turned ? scaled(curve('startRotationX'), radians) : ZERO_CURVE,
+				turned ? scaled(curve('startRotationY'), radians) : ZERO_CURVE,
 				scaled(curve('startRotationZ'), radians),
 			],
 			rate: rateCurve,
@@ -328,19 +326,12 @@ export const readSplineMover = (data: TypeTreeObject): SplineMoverRead => {
 			// objects start anywhere in the box, offset from the spline
 			shape: {
 				kind: ParticleShapeKind.Box,
-				radius: 0,
-				radiusThickness: 1,
-				donutRadius: 0,
-				angle: 0,
-				length: 0,
-				arc: 360,
 				position: box.center,
 				rotation: [0, 0, 0],
 				scale: [box.extents[0] * 2, box.extents[1] * 2, box.extents[2] * 2],
 				randomDirection: 0,
 				sphericalDirection: 0,
 				randomPosition: 0,
-				mesh: null,
 			},
 			motion: { kind: 'spline', segments, speed },
 			sizeOverLifetime: [growth, growth, growth],

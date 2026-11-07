@@ -9,7 +9,7 @@ import {
 } from '@endfield-noclip/package-format/particles';
 
 import { PARTICLE_FLOATS, ParticleSimulation, ringBufferAge } from './simulation.ts';
-import { DOWN, constant, line, run, same, sheet, system } from './test-systems.ts';
+import { DOWN, constant, line, placement, run, same, sheet, system } from './test-systems.ts';
 
 describe('ringBufferAge', () => {
 	it('holds a particle at its end, or replays its loop range', () => {
@@ -210,11 +210,12 @@ describe('ParticleSimulation', () => {
 				startLifetime: constant(10),
 				bursts: [{ time: 0, count: constant(100), cycles: 1, interval: 0.01, probability: 1 }],
 				shape: {
-					...system().shape!,
 					kind: ParticleShapeKind.Donut,
 					radius: 1,
-					donutRadius: 0.2,
 					radiusThickness: 0.4,
+					arc: 360,
+					donutRadius: 0.2,
+					...placement,
 				},
 			}),
 			0.5,
@@ -235,8 +236,8 @@ describe('ParticleSimulation', () => {
 			startLifetime: constant(10),
 			bursts: [{ time: 0, count: constant(20), cycles: 1, interval: 0.01, probability: 1 }],
 			shape: {
-				...system().shape!,
 				kind: ParticleShapeKind.Mesh,
+				...placement,
 				scale: [2, 2, 2],
 				mesh: {
 					placement: ParticleMeshPlacement.Vertex,
@@ -274,9 +275,8 @@ describe('ParticleSimulation', () => {
 			startLifetime: constant(10),
 			bursts: [{ time: 0, count: constant(4), cycles: 1, interval: 0.01, probability: 1 }],
 			shape: {
-				...system().shape!,
 				kind: ParticleShapeKind.Mesh,
-				scale: [1, 1, 1],
+				...placement,
 				mesh: {
 					placement: ParticleMeshPlacement.Vertex,
 					spawn: ParticleMeshSpawn.Loop,

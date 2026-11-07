@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { Gradient } from '@endfield-noclip/package-format/curves';
-import { CurveMode, GradientMode, type MinMaxCurveInfo } from '@endfield-noclip/package-format/particles';
+import {
+	CurveMode,
+	GradientMode,
+	type MinMaxCurveInfo,
+	type MinMaxGradientInfo,
+} from '@endfield-noclip/package-format/particles';
 
 import { evaluateMinMax, evaluateMinMaxGradient } from './curves.ts';
 import { between, constant, line } from './test-systems.ts';
@@ -20,15 +25,13 @@ describe('min-max gradients', () => {
 		fixed: false,
 	};
 	it('pick between two colours or gradients by the random value', () => {
-		const two = {
+		const two: MinMaxGradientInfo = {
 			mode: GradientMode.TwoColors,
-			max: [1, 1, 1, 0.45] as [number, number, number, number],
-			min: [1, 1, 1, 0.2] as [number, number, number, number],
-			maxGradient: null,
-			minGradient: null,
+			min: [1, 1, 1, 0.2],
+			max: [1, 1, 1, 0.45],
 		};
 		assert.ok(Math.abs(evaluateMinMaxGradient(two, 0, 0.5)[3] - 0.325) < 1e-9);
-		const gradients = { ...two, mode: GradientMode.TwoGradients, maxGradient: fade, minGradient: fade };
+		const gradients: MinMaxGradientInfo = { mode: GradientMode.TwoGradients, min: fade, max: fade };
 		assert.deepEqual(evaluateMinMaxGradient(gradients, 0.2, 0.3), [0.9, 0.9, 0.9, 0.5]);
 	});
 });
@@ -39,9 +42,9 @@ describe('evaluateMinMax', () => {
 		assert.equal(evaluateMinMax(between(2, 4), 0.5, 0.25), 2.5);
 		assert.equal(evaluateMinMax(line(1, 0), 0.25, 0), 0.75);
 		const curves: MinMaxCurveInfo = {
-			...line(1, 1),
 			mode: CurveMode.TwoCurves,
 			scalar: 2,
+			curve: line(1, 1).curve,
 			minCurve: line(0, 0).curve,
 		};
 		assert.equal(evaluateMinMax(curves, 0.5, 0.5), 1);
