@@ -171,6 +171,17 @@ it('drops the HLOD of a nearby leaf with no detail instead of overlaying the sce
 	const far = new Camera();
 	far.position = [32, 32, -1000];
 	assert.equal(selector.run({ ...view, camera: far }, options, null).instances.length, 1);
+
+	// refined, a node stays refined until 20 m past its ring (256 m for the detail)
+	const at = (distance: number): number => {
+		const camera = new Camera();
+		camera.position = [32, 32, -distance];
+		return selector.run({ ...view, camera }, options, null).instances.length;
+	};
+	assert.equal(at(250), 0);
+	assert.equal(at(270), 0);
+	assert.equal(at(280), 1);
+	assert.equal(at(270), 1);
 });
 
 it('keeps drawing the HLOD in place of a refinement still loading, then the refinement', () => {

@@ -43,7 +43,9 @@ distance from the camera to the node's bounds (`hlodRing`):
   PC preset, 4000), tier 1 within HLOD0's radius (512 m) and tier 2 within HLOD1's (1024 m), each
   widened to `detailDistance` if that's larger. HLOD2 keeps drawing past the game's 2048 m, so an
   overview isn't empty. a node with no shown HLOD always refines, and a leaf with none refines
-  within `detailDistance`.
+  within `detailDistance`. a node refined on the last traversal stays refined until 20 m past its
+  ring, the game's unload hysteresis, so a camera hovering at a ring doesn't swap and refetch the
+  two representations every frame.
 - with `detail` on, a leaf refines into its detail blocks, even when it has none: some clusters
   stand for scenery filed under neighbouring leaves or as global scenery, which draws anyway, so
   keeping the cluster would overlay it.

@@ -110,6 +110,12 @@ export const hlodRing = (tier: number | null, detailDistance: number, leaf: bool
 		: Math.max(HLOD_RADII[Math.min(tier, HLOD_RADII.length) - 1], detailDistance);
 };
 
+/**
+ * a node refined last frame stays refined until the camera is this far past its ring, m: the game removes
+ * cells only after the centre moved 20 m (`docs/game-data/world.md#streaming-layers`), and without it a
+ * camera hovering at a ring swaps HLOD and detail, and refetches them, every frame
+ */
+const UNREFINE_SLACK = 20;
 /** start morphing at this fraction of a level's range */
 const MORPH_START = 0.7;
 /** priority multiplier for content in the focused area */
@@ -139,6 +145,9 @@ export class Selector {
 	#patchPool: TerrainPatch[] = [];
 	/** each node's surface source, reused across frames */
 	#surfaces = new Map<TileNode, SurfaceSource>();
+	#frame = 0;
+	/** by node index: the last frame its instances refined */
+	#refinedFrame: Int32Array;
 
 	/**
 	 * @param tree the linked tree
@@ -156,6 +165,7 @@ export class Selector {
 		this.#stream = stream;
 		this.#global = global;
 		this.#rootSize = rootSize;
+		this.#refinedFrame = new Int32Array(tree.nodes.length).fill(-2);
 	}
 
 	/**
@@ -170,6 +180,7 @@ export class Selector {
 		selection.instances.length = 0;
 		selection.visited = 0;
 		this.#focusCells = focusCells;
+		this.#frame++;
 
 		if (options.instances && options.global) {
 			// global blobs are pinned: drawn once they arrive, never wanted
@@ -387,7 +398,11 @@ export class Selector {
 		const leaf = isLeaf(node);
 		// a leaf refines even without detail of its own (`docs/viewer/streaming.md#instance-selection`)
 		const canRefine = !leaf || options.detail;
-		const refine = canRefine && distance < hlodRing(tier, options.detailDistance, leaf);
+		const slack = this.#refinedFrame[node.index] === this.#frame - 1 ? UNREFINE_SLACK : 0;
+		const refine = canRefine && distance < hlodRing(tier, options.detailDistance, leaf) + slack;
+		if (refine) {
+			this.#refinedFrame[node.index] = this.#frame;
+		}
 
 		if (!refine) {
 			return !hasHlod || this.#emitHlod(node, options, priority);
