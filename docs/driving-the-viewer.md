@@ -21,6 +21,8 @@ read the port from the `Local:` line the server prints. the URL takes the
 - after `agent-browser close`, reopen with `--webgpu` again.
 - `agent-browser console` keeps lines from before a reload; read only what follows
   `[vite] connected`.
+- reload after editing a `.wgsl` file: the page keeps the pipelines it compiled, so a shader change
+  doesn't show until then.
 - reload after re-packing to read the new core. an open page retains the old manifest and may
   request archives the replacement removed; see [sources](viewer/loading.md#sources).
 - wrap multi-statement `agent-browser eval` code in an IIFE: top-level `const` collides across
