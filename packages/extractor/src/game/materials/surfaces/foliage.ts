@@ -1,6 +1,6 @@
 /** the foliage shaders' inputs to the Lit model (`docs/game-data/materials.md#foliage`) */
 
-import type { GrassInputs, LeafInputs } from '@endfield-noclip/package-format/surfaces';
+import type { GrassInputs, LeafInputs, TrunkInputs } from '@endfield-noclip/package-format/surfaces';
 
 import { linearRgb, type MaterialReader } from '../material-values.ts';
 
@@ -15,6 +15,7 @@ export const leafInputsOf = (reader: MaterialReader): LeafInputs => {
 			power: float('_FakeDirectionalShadowPow', 1),
 		},
 		diffuseUsesVertexNormal: float('_DiffuseUseVertexNormal', 0),
+		twoSidedNormal: float('_TwoSidedNormal', 0) > 0,
 		aoTransmission: [float('_AoAffectTransmissionStart', 0), float('_AoAffectTransmissionRange', 0.01)],
 		aoSubsurface: [float('_AoAffectSubsurfaceStart', 0), float('_AoAffectSubsurfaceRange', 0.01)],
 		subsurface: float('_SubsurfaceIntensity', 0),
@@ -42,6 +43,30 @@ const leafBlendOf = ({ float, color }: MaterialReader): NonNullable<LeafInputs['
 		normalAdd: float('_BlendNormalAdd', 0),
 		normalPower: float('_BlendNormalPower', 1),
 		withVertexNormal: float('_BlendWithVertexNormal', 0),
+	};
+};
+
+/**
+ * `HGRP/Foliage/Trunk`'s `_FOLIAGE_TRUNK` inputs (`docs/game-data/materials.md#foliage`)
+ *
+ * @param reader the material's properties
+ * @returns the inputs, or `null` without the keyword
+ */
+export const trunkInputsOf = ({ float, color, has }: MaterialReader): TrunkInputs | null => {
+	if (!has('_FOLIAGE_TRUNK')) {
+		return null;
+	}
+	return {
+		vertexAo: float('_TrunkVertexAoStrength', 0),
+		ramp:
+			float('_EnableTrunkRamp', 0) > 0.5
+				? {
+						color: linearRgb(color('_TrunkRampColor') ?? [1, 1, 1, 1]),
+						intensity: float('_TrunkRampIntensity', 0),
+						range: float('_TrunkRampRange', 0),
+						transition: float('_TrunkRampTransitionRange', 0),
+					}
+				: null,
 	};
 };
 

@@ -15,6 +15,7 @@ import {
 	LayerSource,
 	LeafBlendRow,
 	SwayRow,
+	TrunkRow,
 	VertexOffsetRow,
 } from './lit-look.ts';
 import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
@@ -67,6 +68,7 @@ const litSurface = (overrides: Partial<LitSurface> = {}): LitSurface => ({
 	detail: null,
 	overlay: null,
 	foliage: null,
+	trunk: null,
 	sway: null,
 	vertexOffset: null,
 	keepsLitDecalsOff: false,
@@ -394,6 +396,32 @@ test('moss mounds: the mask layer takes its mask map into the emissive slot, unt
 	assert.deepEqual(emissiveMapped.textures.slice(3), [5, null, null, null]);
 });
 
+test("a trunk's vertex AO and ramp fill the rows leaves keep their canopy ramp in", () => {
+	// the Jingyu arch tree's bark has no ramp; the second trunk has one
+	const [bark, ramped, plain] = materialLooks({
+		entries: [
+			described(litSurface({ layout: 'mro', trunk: { vertexAo: 0.9, ramp: null } })),
+			described(
+				litSurface({
+					layout: 'mro',
+					trunk: {
+						vertexAo: 1,
+						ramp: { color: [0.5, 0.25, 0.125], intensity: 0.75, range: 0.2, transition: 0.1 },
+					},
+				}),
+			),
+			described(litSurface({ layout: 'mro' })),
+		],
+	});
+	const row = (look: typeof bark, at: number) => Array.from(look.params.subarray(at, at + 4));
+	assert.deepEqual(row(bark, TrunkRow.shape), [0, 0, 0.9, 0].map(Math.fround));
+	assert.deepEqual(row(ramped, TrunkRow.shape), [0.2, 0.1, 1, 0.75].map(Math.fround));
+	assert.deepEqual(row(ramped, TrunkRow.color), [0.5, 0.25, 0.125, 0]);
+	// zeros leave other surfaces as they are
+	assert.deepEqual([...row(plain, TrunkRow.shape), ...row(plain, TrunkRow.color)], [0, 0, 0, 0, 0, 0, 0, 0]);
+	assert.equal(bark.flags & LookFlags.Foliage, 0);
+});
+
 test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit decals off set their bit', () => {
 	const [leaf, grass] = materialLooks({
 		entries: [
@@ -407,6 +435,7 @@ test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit 
 						occlusionShadow: 0.5,
 						fakeShadow: { strength: 0.25, power: 2 },
 						diffuseUsesVertexNormal: 1,
+						twoSidedNormal: true,
 						aoTransmission: [0, 0.01],
 						aoSubsurface: [0, 0.01],
 						subsurface: 0.3,
@@ -448,6 +477,8 @@ test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit 
 	assert.equal(leaf.params[LookRow.detail2 + 3], 1);
 	assert.deepEqual(row(leaf, LeafBlendRow.color), [0.9, 0.5, 0.75, 1].map(Math.fround));
 	assert.deepEqual(row(leaf, LeafBlendRow.shape), [-0.75, 2, 1, 1]);
+	// no canopy ramp leaves its colour white; the last value is `_TwoSidedNormal`
+	assert.deepEqual(row(leaf, LookRow.canopyColor), [1, 1, 1, 1]);
 	assert.equal(grass.flags & LookFlags.FoliageLeaf, 0);
 	assert.deepEqual(row(grass, LeafBlendRow.shape), [0, 0, 0, 0]);
 	assert.deepEqual(row(grass, LookRow.foliage), [0.5, 0.25, 1, 0]);

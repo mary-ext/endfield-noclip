@@ -128,12 +128,28 @@ export interface LitSurface {
 	/** the parallax glow or the second layer, which share their textures' slots */
 	overlay: ParallaxGlow | LitLayer | null;
 	foliage: LeafInputs | GrassInputs | CardInputs | null;
+	/** `HGRP/Foliage/Trunk`'s `_FOLIAGE_TRUNK` inputs, `null` without the keyword */
+	trunk: TrunkInputs | null;
 	/** `_SIMPLE_VERTEXANIM_CLOTH`'s sway in the wind, `null` when still */
 	sway: LitSway | null;
 	/** `_USE_VERTOFFSET`'s offset by a scrolling texture, `null` without; it adds to the sway */
 	vertexOffset: LitVertexOffset | null;
 	/** the surface keeps `HGRP/DecalLit` decals off (`docs/game-data/materials.md#decals`) */
 	keepsLitDecalsOff: boolean;
+}
+
+/**
+ * a trunk's `_FOLIAGE_TRUNK` inputs (`docs/game-data/materials.md#foliage`), read from the mesh's vertex
+ * colours: R is ambient occlusion and A the height the ramp runs along
+ */
+export interface TrunkInputs {
+	/** `_TrunkVertexAoStrength`: how much the vertex AO darkens the material occlusion */
+	vertexAo: number;
+	/**
+	 * `_EnableTrunkRamp`: the albedo blends toward `color` (linear) by `intensity` times the base map's alpha,
+	 * where the vertex colour's A is below `range`, fading out over `transition` above it. `null` when off
+	 */
+	ramp: { color: Rgb; intensity: number; range: number; transition: number } | null;
 }
 
 /**
@@ -360,6 +376,11 @@ export interface LeafInputs {
 	occlusionShadow: number;
 	fakeShadow: { strength: number; power: number };
 	diffuseUsesVertexNormal: number;
+	/**
+	 * `_TwoSidedNormal`: back faces turn the shading normal around. without it they keep the mesh's, so a
+	 * canopy shades as the one shape its normals describe
+	 */
+	twoSidedNormal: boolean;
 	/** the vertex AO ranges that fade transmission and subsurface in */
 	aoTransmission: [start: number, range: number];
 	aoSubsurface: [start: number, range: number];

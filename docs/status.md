@@ -83,9 +83,10 @@ packs or renders correctly.
 - surface shading that shows most indoors: per-draw emission colours other than prefabs'
   `AnimationProperties_Emissive` resting colour aren't known ([emission](#surfaces-and-terrain));
   meshes without tangents draw their normal map flat (what the game's bump does there is unchecked);
-  normals are transformed by the model matrix rather than its inverse transpose; every material
-  lights the side facing the camera; the packed tangent frame isn't decoded, so tangents are
-  generated (MikkTSpace) from a UV set ([geometry](package-format.md#binary-encodings))
+  normals are transformed by the model matrix rather than its inverse transpose; every material but
+  leaves without `_TwoSidedNormal` lights the side facing the camera; the packed tangent frame isn't
+  decoded, so tangents are generated (MikkTSpace) from a UV set
+  ([geometry](package-format.md#binary-encodings))
 - screen-space reflections
   ([screen-space reflections](viewer/lighting.md#screen-space-reflections)): the rain wetness
   variant's ripple normals aren't drawn, and reflection-only effects don't write the march's inputs
@@ -173,15 +174,15 @@ packs or renders correctly.
   the game lets glass cast shadows is unchecked
 - foliage ([foliage](game-data/materials.md#foliage), [viewer](viewer/materials.md#foliage)): wind,
   the grass's per-instance colour and terrain albedo blend (`_BLEND_TERRAIN_ALBEDO`), the card LOD's
-  normal decoding (so it takes neither the bend nor the masks), trunk ramps and vertex AO (trunks
-  take only Lit's texture layout, so no detail map or layers), `TreeFoliageCardMeshLod`'s own inputs
-  (shaded as plain alpha-tested foliage, so without its `_BLEND_COLOR`: blossom trees lose their
-  colour at card distance, unless the card's atlas carries it), leaves' `_AO_MASK_TUNE_COLOR`, the
-  card LODs' view and height culling, sphere-shadow proxies, the vertical-normal AO boost, broadleaf
-  indirect transmission and contact shadows. grass and tree grids
-  ([terrain](viewer/terrain.md#foliage-grids)) draw every instance at the cluster's LOD, without the
-  game's sparsity thinning; the cluster LOD measure (`rendererHalfSize`), the per-instance
-  parameters and column 7 aren't read
+  normal decoding (so it takes neither the bend nor the masks), the trunks' detail map, layers and
+  terrain blend (they take Lit's texture layout and their vertex AO and ramp; `HGRP/Lit`'s own
+  `_FOLIAGE_TRUNK` isn't read), `TreeFoliageCardMeshLod`'s own inputs (shaded as plain alpha-tested
+  foliage, so without its `_BLEND_COLOR`: blossom trees lose their colour at card distance, unless
+  the card's atlas carries it), leaves' `_AO_MASK_TUNE_COLOR`, the card LODs' view and height
+  culling, sphere-shadow proxies, the vertical-normal AO boost, broadleaf indirect transmission and
+  contact shadows. grass and tree grids ([terrain](viewer/terrain.md#foliage-grids)) draw every
+  instance at the cluster's LOD, without the game's sparsity thinning; the cluster LOD measure
+  (`rendererHalfSize`), the per-instance parameters and column 7 aren't read
 - Lit layers ([lit layers](viewer/materials.md#lit-layers)): `HGRP/LitEffect` (about 100 map02
   materials) draws as Lit without dissolve and disturb; the tri-channel mask on MRO-layout
   materials, G and B of its switch-texture variants, `_UseMaskRUVSetAndTilingScale`, the parallax

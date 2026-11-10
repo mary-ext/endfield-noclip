@@ -15,7 +15,7 @@ import type { Rgb } from '@endfield-noclip/package-format/values';
 
 import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
 
-import { grassInputsOf, leafInputsOf } from './foliage.ts';
+import { grassInputsOf, leafInputsOf, trunkInputsOf } from './foliage.ts';
 import { layerOf, parallaxGlowOf } from './lit-overlays.ts';
 import { swayOf, vertexOffsetOf } from './lit-sway.ts';
 
@@ -262,6 +262,7 @@ export const describeLit = (reader: MaterialReader): LitSurface | UnsupportedSur
 		detail,
 		overlay,
 		foliage: foliageInputs,
+		trunk: family === 'trunk' ? trunkInputsOf(reader) : null,
 		sway: shader.name === 'HGRP/Lit' ? swayOf(reader) : null,
 		vertexOffset: shader.name === 'HGRP/Lit' ? vertexOffsetOf(reader) : null,
 		keepsLitDecalsOff:

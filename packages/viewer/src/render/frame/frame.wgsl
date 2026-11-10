@@ -625,8 +625,11 @@ fn local_light_shadow(i: u32, rel: vec3f, n: vec3f, to_light: vec3f) -> f32 {
 // Lambert without the 1/π and without (1 − F), so in the units of the light's colour the result is
 // `colour · (diffuse + π · specular)`. a soft source radius widens the lobe; a tube takes the point of the
 // segment nearest the reflection for its specular. the game's multiple-scattering term is left out
-// (docs/game-data/lighting.md#local-lights)
-fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_color: vec3f, f0: vec3f, roughness: f32) -> vec3f {
+// (docs/game-data/lighting.md#local-lights). foliage takes the two-sided model of `foliage_sun` from each light
+// instead, in the same units: its specular faded for back views, light transmitted through the leaf and wrapped
+// past the terminator, all under the material's own sun shadow
+fn local_lighting(s: Surface, v: vec3f, rel: vec3f, px: vec2f, diffuse_color: vec3f, f0: vec3f, roughness: f32) -> vec3f {
+	let n = s.normal;
 	let words = light_bin_words(px, rel);
 	if (words.x == 0xffffffffu) {
 		return vec3f(0.0);
@@ -663,7 +666,8 @@ fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_color: vec3
 			} else {
 				n_dot_l = clamp(dot(n, l), 0.0, 1.0);
 			}
-			if (n_dot_l <= 0.0) {
+			// foliage is lit from behind too
+			if (n_dot_l <= 0.0 && !s.foliage) {
 				continue;
 			}
 			let h = normalize(l_spec + v);
@@ -680,9 +684,24 @@ fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_color: vec3
 			let visibility = 0.5 / (n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - a2) + a2) + n_dot_v * sqrt(n_dot_l * n_dot_l * (1.0 - a2) + a2) + 1e-4);
 			let f = fresnel_schlick(f0, v_dot_h);
 			let g = lights[i * LIGHT_VEC4S + 4u];
-			let specular = clamp(min(f * (distribution * norm * visibility), vec3f(2048.0)) * g.x, vec3f(0.0), vec3f(1000.0));
+			var lobe = min(f * (distribution * norm * visibility), vec3f(2048.0));
+			var through = vec3f(0.0);
+			var diffuse = diffuse_color;
+			if (s.foliage) {
+				let v_dot_l = dot(v, l_spec);
+				let n_dot_l_signed = dot(n, l_spec);
+				lobe *= mix(saturate(dot(n, v) + 0.2) * saturate(saturate(v_dot_l) + 0.5), 1.0, saturate(v_dot_l + 1.0)) *
+					s.sun_shadow;
+				let towards_light = saturate(-v_dot_l);
+				let spread = (towards_light * 0.36 - towards_light) * towards_light + 1.0;
+				let hue = diffuse_color / max(0.01, max(diffuse_color.r, max(diffuse_color.g, diffuse_color.b)));
+				through = (hue * s.transmission * saturate(0.5 - n_dot_l_signed) * (0.36 / (spread * spread)) +
+					diffuse_color * (saturate(n_dot_l_signed + s.subsurface) - n_dot_l)) * s.sun_shadow;
+				diffuse *= s.sun_shadow;
+			}
+			let specular = clamp(lobe * g.x, vec3f(0.0), vec3f(1000.0));
 			let shadow = local_light_shadow(i, rel, n, light.to_light);
-			sum += (specular + diffuse_color) * n_dot_l * lights[i * LIGHT_VEC4S + 1u].rgb * (light.attenuation * shadow);
+			sum += ((specular + diffuse) * n_dot_l + through) * lights[i * LIGHT_VEC4S + 1u].rgb * (light.attenuation * shadow);
 		}
 	}
 	return min(sum, vec3f(255.0));
@@ -779,7 +798,7 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		}
 		direct *= frame.sun_color.rgb * visibility * frame.sun.w;
 	}
-	direct += local_lighting(n, v, rel, px, diffuse_color, f0, roughness);
+	direct += local_lighting(s, v, rel, px, diffuse_color, f0, roughness);
 
 	let irradiance = ambient_irradiance(frame.eye.xyz + rel, n);
 	let diffuse_ambient = diffuse_color * irradiance;

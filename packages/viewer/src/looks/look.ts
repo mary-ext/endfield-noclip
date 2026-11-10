@@ -272,9 +272,12 @@ export const LookRow = {
 	 * mask ramp's start height, rate and strength (`_DirParams`)
 	 */
 	foliage2: 116,
-	/** leaves: the canopy ramp's range, transition range, colour brighter scale, how much its colour covers */
+	/**
+	 * leaves: the canopy ramp's range, transition range, colour brighter scale, how much its colour covers.
+	 * trunks reuse this row and the next (`TrunkRow` in lit-look.ts)
+	 */
 	canopy: 120,
-	/** leaves: `_CanopyRampColor`, linear */
+	/** leaves: `_CanopyRampColor`, linear, then 1 for `_TwoSidedNormal` */
 	canopyColor: 124,
 	/**
 	 * three rows, the HDR colours the emissive map's G, B and A add (`LitEmission.channels`); effect looks use

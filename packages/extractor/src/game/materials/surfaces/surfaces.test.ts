@@ -805,6 +805,43 @@ describe('the Lit model', () => {
 		]);
 	});
 
+	it("reads a leaf's _TwoSidedNormal, which is off unless the material sets it", () => {
+		const leaf = (floats: Record<string, number>) => {
+			const shader = shaderEntry({ name: 'HGRP/Foliage/Leaf', family: 'leaf', floats });
+			const foliage = lit(describeMaterial(values({}), shader)).foliage;
+			assert.equal(foliage?.kind, 'leaf');
+			return foliage.twoSidedNormal;
+		};
+		// the Jingyu cherry trees' leaves keep their canopy's normals on back faces
+		assert.equal(leaf({ _TwoSidedNormal: 0 }), false);
+		assert.equal(leaf({}), false);
+		assert.equal(leaf({ _TwoSidedNormal: 1 }), true);
+	});
+
+	it("reads a trunk's vertex AO and ramp only with _FOLIAGE_TRUNK", () => {
+		// the Jingyu arch tree's bark: texture occlusion off, vertex AO nearly full, no ramp
+		const floats = { _TrunkVertexAoStrength: 0.9, _EnableTrunkRamp: 0, _TrunkRampIntensity: 1 };
+		const trunk = (keywords: string[], patch: Record<string, number> = {}) => {
+			const shader = shaderEntry({
+				name: 'HGRP/Foliage/Trunk',
+				family: 'trunk',
+				floats: { ...floats, ...patch, _TrunkRampRange: 0.25, _TrunkRampTransitionRange: 0.5 },
+				colors: { _TrunkRampColor: [1, 0.5, 0, 1] },
+			});
+			return lit(describeMaterial(values({ keywords }), shader)).trunk;
+		};
+		assert.equal(trunk([]), null);
+		assert.deepEqual(trunk(['_FOLIAGE_TRUNK']), { vertexAo: 0.9, ramp: null });
+		const ramp = trunk(['_FOLIAGE_TRUNK'], { _EnableTrunkRamp: 1 })?.ramp;
+		assert.deepEqual(ramp, { color: [1, ramp?.color[1], 0], intensity: 1, range: 0.25, transition: 0.5 });
+		assert.deepEqual(keywordsNotDrawn('HGRP/Foliage/Trunk', ['_FOLIAGE_TRUNK', '_DETAIL_MAP']), [
+			'_DETAIL_MAP',
+		]);
+		// Lit has the keyword too, but only the trunk shader's is read
+		const litShader = shaderEntry({ name: 'HGRP/Lit', family: 'lit', floats });
+		assert.equal(lit(describeMaterial(values({ keywords: ['_FOLIAGE_TRUNK'] }), litShader)).trunk, null);
+	});
+
 	it('rejects maps on UV sets past 1', () => {
 		const shader = shaderEntry({ name: 'HGRP/Lit', family: 'lit' });
 		const surface = describeMaterial(values({ slots: { _BaseColorMap: slot(1, 2) } }), shader);

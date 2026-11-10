@@ -213,6 +213,9 @@ of the sun's illuminance, before the shadow map and cloud shadow:
 - wrap: albedo × `(sat(n·l + subsurface) − sat(n·l))` / π
 - all four are multiplied by the sun shadow term
 
+[local lights](lighting.md#local-lights) light foliage through the same four terms, with the shading
+normal's N·L in place of the stored one.
+
 `HGRP/Foliage/Leaf` fills the inputs from its material and the mesh's vertex colours (R ambient
 occlusion, A height in the canopy):
 
@@ -228,6 +231,11 @@ occlusion, A height in the canopy):
 | `_CANOPY_COLOR_RAMP`: `_CanopyRamp{Color,Intensity,Range,…}` | albedo blends toward the colour (times the albedo, brightened, or covering it) by `smoothstep(range + transition, range, A)` × (1 − normal alpha) × intensity; `…StartAtTop` reads 1 − A                                               |
 | `_BLEND_COLOR`: `_BlendColor`, `_BlendNormal{Add,Power}`     | albedo × `mix(_BlendColor, _BaseColor, k)`, `k = sat(pow(sat(n.y + 0.5 + add), power) + 1 − sat((1 − normal alpha) · _BlendColor.a · 10))`; `_BlendWithVertexNormal` blends `n.y` from the normal-mapped normal to the vertex normal's |
 | `_Reflectance`                                               | F0 `0.08 · (0.5 + 0.75 · r)`, `r` quantized to 3 bits                                                                                                                                                                                  |
+
+a leaf's back faces keep the shading normal of the front unless `_TwoSidedNormal` is set, which
+turns it around. the trees' leaf cards carry normals that follow the canopy's shape rather than each
+card, so without it (the Jingyu cherry trees) a canopy shades as one rounded volume from every side;
+the fake directional shadow and the N·L above take that same unturned normal.
 
 `_BLEND_COLOR` is what colours blossoms: Marker Stone's pear trees have a near-white `_BaseColor`
 and a pink `_BlendColor`, so the thin parts of a petal (low normal alpha) turn pink except where
@@ -255,6 +263,13 @@ to the same as its object-space height:
 both write a reflectance of 4/7. the card LOD decodes its normal map differently and masks by its B.
 the grass grids also carry a per-instance colour ([world](world.md#foliage-grids)): the second
 parameter vector's RGB, covering the albedo by its A.
+
+`HGRP/Foliage/Trunk` is lit as Lit is, from Lit's texture layout. with `_FOLIAGE_TRUNK` its mesh's
+vertex colours add two things: the material occlusion is multiplied by
+`mix(1, R, _TrunkVertexAoStrength)`, which is all the occlusion a bark with `_OcclusionStrength` 0
+has, and with `_EnableTrunkRamp` the albedo blends toward `_TrunkRampColor` by `_TrunkRampIntensity`
+× the base map's alpha × `smoothstep(range + transition, range, A)` (`_TrunkRampRange`,
+`_TrunkRampTransitionRange`). the keyword also sways the trunk in the wind.
 
 ## glass
 

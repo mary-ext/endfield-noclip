@@ -69,9 +69,10 @@ struct Look {
 	// the ramp starts at the top
 	foliage2: vec4f,
 	// leaves: canopy ramp range, transition range, colour brighter scale, colour cover. dithered VFXDitherAlpha
-	// (`DitherRow` in special-looks.ts): alpha scale, exponent, dither tiling, 1 when the alpha is the texture's red
+	// (`DitherRow` in special-looks.ts): alpha scale, exponent, dither tiling, 1 when the alpha is the texture's red.
+	// trunks (`TrunkRow` in lit-look.ts): the ramp's range and transition range, vertex AO strength, ramp intensity
 	canopy: vec4f,
-	// leaves: canopy ramp colour (linear)
+	// leaves: canopy ramp colour (linear), then 1 for `_TwoSidedNormal`. trunks: the ramp's colour (linear)
 	canopy_color: vec4f,
 	// the HDR colours the emissive map's G, B and A add (rgb); effect looks use these rows and the rest for
 	// their own (`EffectRow` in effects/effect-look.ts)
@@ -610,8 +611,10 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	}
 	n = normalize(n);
 	// two-sided materials (foliage) show both faces, and smooth normals can face away at silhouettes: light the
-	// side facing us
-	let towards_viewer = dot(n, in.rel) <= 0.0;
+	// side facing us. leaves without `_TwoSidedNormal` keep the normals the canopy's shape gave them, whichever
+	// face shows, as the game's do
+	let canopy_normal = (flags & FOLIAGE_LEAF) != 0u && look.canopy_color.w < 0.5;
+	let towards_viewer = canopy_normal || dot(n, in.rel) <= 0.0;
 	if (!towards_viewer) {
 		n = -n;
 	}
@@ -775,6 +778,9 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		} else {
 			s = grass_surface(s, look, in, select(1.0, packed.a, has_normal));
 		}
+	} else if (look.tint.w >= 0.0) {
+		// not a dithered look, whose dither sits in the trunk's row
+		s = trunk_surface(s, look, in, base_a);
 	}
 	// the game wets what its deferred lighting shades, so not the forward-shaded glass
 	if (wet) {
@@ -788,6 +794,17 @@ fn hermite(low: f32, high: f32, x: f32) -> f32 {
 	let span = high - low;
 	let t = saturate((x - low) / select(span, 1e-6, span == 0.0));
 	return t * t * (3.0 - 2.0 * t);
+}
+
+// a trunk's `_FOLIAGE_TRUNK` (`TrunkRow` in lit-look.ts; zeros on other looks, which change nothing): the vertex
+// colour's R darkens the material occlusion, and the albedo ramps toward a colour below a height in its A, by
+// the base map's alpha
+fn trunk_surface(surface: Surface, look: Look, in: VertexOut, base_a: f32) -> Surface {
+	var s = surface;
+	s.occlusion *= mix(1.0, in.color.r, look.canopy.z);
+	let ramp = look.canopy.w * hermite(look.canopy.x + look.canopy.y, look.canopy.x, in.color.a) * base_a;
+	s.albedo = mix(s.albedo, look.canopy_color.rgb, ramp);
+	return s;
 }
 
 // `HGRP/Foliage/Leaf`'s inputs to the two-sided foliage lighting (`leafParams` in lit-look.ts). the vertex

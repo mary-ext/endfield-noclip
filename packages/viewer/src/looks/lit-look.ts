@@ -9,6 +9,7 @@ import type {
 	LitSway,
 	LitVertexOffset,
 	ParallaxGlow,
+	TrunkInputs,
 } from '@endfield-noclip/package-format/surfaces';
 
 import {
@@ -178,6 +179,9 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 	if (surface.sway !== null && surface.foliage === null) {
 		swayParams(look, surface.sway);
 	}
+	if (surface.trunk !== null && surface.foliage === null) {
+		trunkParams(look, surface.trunk);
+	}
 	// the offset's textures take the parallax slots, and only the alpha-tested depth and shadow passes read
 	// the UV sets and textures it needs; their vertex stages don't read the normal
 	const { vertexOffset } = surface;
@@ -272,6 +276,28 @@ const emissivePulseParams = (look: MaterialLook, pulse: NonNullable<LitEmission[
 
 // #region foliage
 
+/**
+ * where a trunk's `_FOLIAGE_TRUNK` inputs go: rows only leaves use otherwise (a trunk doesn't sway, so the
+ * sway's direction row is free). mesh.wgsl reads them on every look that isn't foliage, where zeros change
+ * nothing
+ */
+export const TrunkRow = {
+	/** the ramp's range and transition range, `_TrunkVertexAoStrength`, the ramp's intensity (0 without one) */
+	shape: LookRow.canopy,
+	/** `_TrunkRampColor`, linear */
+	color: LookRow.canopyColor,
+} as const;
+
+/** a trunk's vertex AO and ramp (docs/game-data/materials.md#foliage) */
+const trunkParams = (look: MaterialLook, trunk: TrunkInputs): void => {
+	const ramp = trunk.ramp;
+	look.params.set(
+		[ramp?.range ?? 0, ramp?.transition ?? 0, trunk.vertexAo, ramp?.intensity ?? 0],
+		TrunkRow.shape,
+	);
+	look.params.set(ramp?.color ?? [0, 0, 0], TrunkRow.color);
+};
+
 /** `HGRP/Foliage/Leaf`'s inputs to the two-sided foliage lighting (`docs/game-data/materials.md#foliage`) */
 const leafParams = (look: MaterialLook, leaf: LeafInputs): void => {
 	const params = look.params;
@@ -295,7 +321,7 @@ const leafParams = (look: MaterialLook, leaf: LeafInputs): void => {
 		[canopy?.range ?? 0, canopy?.transition ?? 0, canopy?.brighterScale ?? 1, canopy?.cover ?? 0],
 		LookRow.canopy,
 	);
-	params.set(canopy?.color ?? [1, 1, 1], LookRow.canopyColor);
+	params.set([...(canopy?.color ?? [1, 1, 1]), leaf.twoSidedNormal ? 1 : 0], LookRow.canopyColor);
 	const blend = leaf.blend;
 	if (blend !== null) {
 		params.set([...blend.color, blend.strength], LeafBlendRow.color);
