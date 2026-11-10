@@ -63,11 +63,15 @@
 - **bind layouts**
   ([`render/frame/bind-layouts.ts`](../../packages/viewer/src/render/frame/bind-layouts.ts)): group
   0 is the frame (uniforms, shadow map, reflection cubemap, irradiance clipmaps, shadow ramp, local
-  lights and their bins, cloud shadow) for every family and the volumetric fog, so a pass binds it
-  once; group 1 is per family; meshes add group 2 (per-draw parameters, the look table, the fog's
-  inputs) and group 3 (material textures). a mesh draw's parameters are 16 floats rewritten every
-  frame: the geometry's dequantization, the look flags with the material's streaming state and the
-  geometry's streams, the UV set transforms, and the material's slot in the look table. the look
+  lights and their bins, cloud shadow) for every
+  family and the volumetric fog, so a pass binds it once; group 1 is per family; meshes add group 2
+  (per-draw parameters, the look table, the fog's inputs) and group 3 (material textures; the mesh
+  shader's is laid out in
+  [`mesh-pipelines.ts`](../../packages/viewer/src/render/meshes/mesh-pipelines.ts) beside the
+  effects', since its vertex stage samples two of the slots for the
+  [vertex offset](materials.md#vertex-offset)). a mesh draw's parameters are 16 floats rewritten
+  every frame: the geometry's dequantization, the look flags with the material's streaming state and
+  the geometry's streams, the UV set transforms, and the material's slot in the look table. the look
   table ([`mesh-renderer.ts`](../../packages/viewer/src/render/meshes/mesh-renderer.ts)) holds each
   drawn material's `LOOK_FLOATS` parameters, which don't change once built: a material gets the next
   slot and its upload the first time it's drawn, a frame's new slots going up in one write per run.

@@ -5,8 +5,6 @@
  * @module
  */
 
-import { SLOTS, Slot } from '../../looks/look.ts';
-
 const VERTEX = GPUShaderStage.VERTEX;
 const FRAGMENT = GPUShaderStage.FRAGMENT;
 
@@ -29,12 +27,9 @@ export interface BindLayouts {
 	 * the fog's inputs, and the look table (each drawn material's parameters)
 	 */
 	draw: GPUBindGroupLayout;
-	/** group 3 of the mesh families: the material's texture slots and its base, detail and parallax samplers */
-	materials: GPUBindGroupLayout;
 
 	terrainPipeline: GPUPipelineLayout;
 	instancesPipeline: GPUPipelineLayout;
-	meshPipeline: GPUPipelineLayout;
 }
 
 /**
@@ -111,37 +106,15 @@ export const createBindLayouts = (device: GPUDevice): BindLayouts => {
 			storage(5, VERTEX | FRAGMENT),
 		],
 	});
-	const texture = (binding: number): GPUBindGroupLayoutEntry => ({
-		binding,
-		visibility: FRAGMENT,
-		texture: { sampleType: 'float' },
-	});
-	const materials = device.createBindGroupLayout({
-		label: 'materials',
-		// the texture slots, then the samplers of the base, detail and parallax slots
-		entries: [
-			...SLOTS.map((_, slot) => texture(slot)),
-			...[Slot.Base, Slot.Detail, Slot.Parallax].map((_, i): GPUBindGroupLayoutEntry => ({
-				binding: SLOTS.length + i,
-				visibility: FRAGMENT,
-				sampler: { type: 'filtering' },
-			})),
-		],
-	});
 	return {
 		frame,
 		terrain,
 		instances,
 		draw,
-		materials,
 		terrainPipeline: device.createPipelineLayout({ label: 'terrain', bindGroupLayouts: [frame, terrain] }),
 		instancesPipeline: device.createPipelineLayout({
 			label: 'instances',
 			bindGroupLayouts: [frame, instances],
-		}),
-		meshPipeline: device.createPipelineLayout({
-			label: 'mesh',
-			bindGroupLayouts: [frame, instances, draw, materials],
 		}),
 	};
 };

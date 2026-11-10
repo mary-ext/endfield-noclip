@@ -684,6 +684,82 @@ describe('the Lit model', () => {
 		);
 	});
 
+	it('offsets HGRP/Lit vertices by a scrolling texture on the UV set its switch picks, with its mask', () => {
+		// M_cloth_map02_sfcanvas+1_001_01a's values
+		const shader = shaderEntry({
+			name: 'HGRP/Lit',
+			family: 'lit',
+			floats: {
+				_OffsetSwitchDir: 0,
+				_OffsetIntensity: 0,
+				_Bi_Offset: 0,
+				_OffsetUVSet: 0,
+				_OffsetMaskPower: 0,
+				_UseVertexColorMask: 0,
+			},
+			textures: { _OffsetTex: 'white', _OffsetMaskTex: 'white' },
+		});
+		const ribbon = {
+			_OffsetSwitchDir: 1,
+			_OffsetIntensity: 0.4,
+			_OffsetUVSet: 1,
+			_OffsetMaskPower: 5,
+		};
+		const colors: MaterialValues['colors'] = {
+			_OffsetDir: [2, 2, 2, 15],
+			_OffsetSpeed: [-1, -2, 2, 20],
+			_OffsetMaskSpeed: [0, 0, 0, 0],
+		};
+		const noise = {
+			texture: 7,
+			uv: 0,
+			scale: [1, 1.3] as [number, number],
+			offset: [0, 0] as [number, number],
+		};
+		const mask = { texture: 8, uv: 0, scale: [1, 1] as [number, number], offset: [0, 1] as [number, number] };
+		const both = ['_USE_VERTOFFSET', '_USE_VERTOFFSETMASK'];
+		const offset = (
+			keywords: string[],
+			floats: Record<string, number> = ribbon,
+			slots: MaterialValues['slots'] = { _OffsetTex: noise, _OffsetMaskTex: mask },
+			entry = shader,
+		) => lit(describeMaterial(values({ keywords, floats, colors, slots }), entry)).vertexOffset;
+
+		assert.deepEqual(offset(both), {
+			texture: { ...noise, uv: 1 },
+			scroll: [-1, -2],
+			direction: [2, 2, 2],
+			space: 'world',
+			intensity: 0.4,
+			bias: 0,
+			vertexAlphaWeight: false,
+			mask: { texture: { ...mask, uv: 1 }, scroll: [0, 0], strength: 1 },
+		});
+		// without the mask keyword, or with a mask texture left unset, which reads as white: unmasked
+		assert.equal(offset(['_USE_VERTOFFSET'])?.mask, null);
+		assert.equal(offset(both, ribbon, { _OffsetTex: noise })?.mask, null);
+		// the balloon tube's: its direction in object space, on UV set 0
+		const tube = offset(both, { _OffsetIntensity: -0.1, _OffsetMaskPower: 5 });
+		assert.deepEqual([tube?.space, tube?.texture.uv, tube?.intensity], ['object', 0, -0.1]);
+		assert.equal(offset(both, { ...ribbon, _OffsetSwitchDir: 2 })?.space, 'normal');
+		assert.equal(offset(both, { ...ribbon, _UseVertexColorMask: 1 })?.vertexAlphaWeight, true);
+
+		assert.equal(offset(['_USE_VERTOFFSETMASK']), null);
+		assert.equal(offset(both, ribbon, { _OffsetMaskTex: mask }), null);
+		assert.equal(
+			offset(both, ribbon, { _OffsetTex: noise }, { ...shader, textures: { _OffsetMaskTex: 'black' } }),
+			null,
+		);
+		assert.equal(
+			offset(both, ribbon, undefined, { ...shader, name: 'HGRP/LitEffect', family: 'litEffect' }),
+			null,
+		);
+		assert.deepEqual(keywordsNotDrawn('HGRP/Lit', [...both, '_SIMPLE_VERTEXANIM_ROPE']), [
+			'_SIMPLE_VERTEXANIM_ROPE',
+		]);
+		assert.deepEqual(keywordsNotDrawn('HGRP/LitEffect', both), both);
+	});
+
 	it("keeps lit decals off surfaces whose shader writes a _StencilRef with the decals' bit; HLODs write 0", () => {
 		const keepsOff = (name: string, family: ShaderEntry['family'], stencilRef: number) =>
 			lit(describeMaterial(values(), shaderEntry({ name, family, floats: { _StencilRef: stencilRef } })))

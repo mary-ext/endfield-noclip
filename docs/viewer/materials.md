@@ -79,9 +79,9 @@ normal decoding isn't read. `HGRP/Foliage/Trunk` takes only Lit's texture layout
 ## swaying cloth
 
 [swaying cloth](../game-data/materials.md#swaying-cloth) is the surface's `sway`, packed by
-`swayParams` into rows only foliage uses otherwise (no look flag bit is free), and offset in
-`instance_rel`, which the shading, depth, alpha-tested depth and shadow passes share, so the passes
-agree on the swayed position. the vertex colour's alpha arrives as the position stream's W
+`swayParams` into rows only foliage uses otherwise, and offset in `instance_rel`, which the shading,
+depth, alpha-tested depth and shadow passes share, so the passes agree on the swayed position. the
+vertex colour's alpha arrives as the position stream's W
 ([geometry blob](../package-format.md#geometry-blob-mesh-efgm)), so the depth passes read no extra
 stream. the wind clock is `Frame.wind.x`, advanced with the animation clock at the blended
 environment's [wind](../game-data/environment.md#wind) rate, so the sway moves only while frames
@@ -89,6 +89,39 @@ render, every placement swings from one clock rather than the game's running one
 means still air. each pass's `_DisableAnimateVert` is taken as 0. the viewer draws no motion
 vectors, so the previous frame's offset isn't needed. skinned geometry drops the weight, so a
 swaying material on an animated mesh keeps still, and `_GPU_CLOTH` materials keep still too.
+
+## vertex offset
+
+the [vertex offset](../game-data/materials.md#vertex-offset) is the surface's `vertexOffset`
+([lit-sway.ts](../../packages/extractor/src/game/materials/surfaces/lit-sway.ts)), packed by
+`vertexOffsetParams`: the offset texture and its mask take the parallax slots, marked by the
+`VertexOffset` look flag so the fragment stage doesn't read them as a glow, and their inputs take
+the three parallax rows the emission pulse leaves alone. `vertex_offset` in `mesh.wgsl` samples them
+in the vertex stage, so the mesh pipelines' material group
+([`mesh-pipelines.ts`](../../packages/viewer/src/render/meshes/mesh-pipelines.ts)) shows the two
+parallax slots to the vertex stage and carries a fourth sampler, the noise slot's own, for the mask.
+the offset adds to the sway.
+
+- **passes**: the offset needs the UV sets and the material's textures wherever vertices are
+  positioned. the alpha-tested depth and shadow path already reads both (`vs_cutout_depth`), and the
+  opaque one reads positions alone, so only alpha-tested looks are offset, which every map02
+  material with the keyword is; an opaque one keeps still. `vs_main` and `vs_cutout_depth` add the
+  same expression, so the passes agree on the position. a look's draws are alpha-tested only once
+  the map holding its alpha is bound, and the shader tests that same flag, so a material drawn
+  opaque while it streams keeps still rather than splitting from its depth. the offset also waits
+  for its own textures.
+- **clock**: the scroll runs on the animation clock (`Frame.eye.w`, seconds), so it moves only while
+  frames render, and every placement scrolls in step.
+- **left out**: an offset along the vertex normal (`_OffsetSwitchDir` 2), since the depth passes
+  don't read normals; an offset on a surface with a parallax glow or a layer, whose maps hold the
+  slots; one whose offset texture is unset. a fractional `_OffsetUVSet` reads as the nearer set.
+- **weights and bounds**: an offset weighted by the vertex colour's alpha reads it from position W
+  as the sway does, and the packer grows the mesh's bounds by the offset's reach
+  ([geometry blob](../package-format.md#geometry-blob-mesh-efgm)). skinned geometry drops the
+  weight, so a weighted offset on an animated mesh keeps still; an unweighted one, like the
+  balloon's, is added after the skinning. an object-space direction turns by the transform the
+  geometry is drawn with, which for a skinned renderer posed into its prefab is the prefab's rather
+  than the renderer's; the balloon's renderers sit unrotated in theirs.
 
 ## glass
 

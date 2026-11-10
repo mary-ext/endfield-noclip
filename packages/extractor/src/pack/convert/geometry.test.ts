@@ -264,6 +264,25 @@ describe('convertMesh', () => {
 		assert.ok(still.read(VertexAttribute.Position).every(([, , , w]) => w === 0));
 	});
 
+	it("grows the bounds by a vertex offset's reach, and carries the weight only when it's weighted", () => {
+		const colors = attribute(
+			4,
+			Array.from({ length: 24 }, (_, i) => (i % 4 === 3 ? 0.5 : 1)),
+		);
+		const still = convertMesh(testMesh({ colors }), null).entry.bounds;
+		const reach = [0.8, 0.25, 0] as [number, number, number];
+		const offset = convertMesh(testMesh({ colors }), null, { offset: { reach, weighted: false } });
+		for (let k = 0; k < 3; k++) {
+			assert.ok(Math.abs(offset.entry.bounds.min[k] - (still.min[k] - reach[k])) < 1e-6);
+			assert.ok(Math.abs(offset.entry.bounds.max[k] - (still.max[k] + reach[k])) < 1e-6);
+		}
+		const positions = decodeAll(offset.blob).read(VertexAttribute.Position);
+		assert.ok(positions.every(([, , , w]) => w === 0));
+		const weighted = convertMesh(testMesh({ colors }), null, { offset: { reach, weighted: true } });
+		const weights = decodeAll(weighted.blob).read(VertexAttribute.Position);
+		assert.ok(weights.every(([, , , w]) => Math.abs(w - 0.5) < 1e-3));
+	});
+
 	it('quantizes attributes into the documented formats', () => {
 		const { blob, entry } = convertMesh(testMesh(), null);
 		const { geometry, streams, read } = decodeAll(blob);

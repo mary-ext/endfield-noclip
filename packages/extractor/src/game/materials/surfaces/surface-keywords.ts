@@ -25,8 +25,14 @@ const LIT_KEYWORDS = [
  */
 const DRAWN_KEYWORDS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
 	Object.entries({
-		// only `HGRP/Lit`'s sway is decoded
-		'HGRP/Lit': [...LIT_KEYWORDS, '_SIMPLE_VERTEXANIM', '_SIMPLE_VERTEXANIM_CLOTH'],
+		// only `HGRP/Lit`'s sway and vertex offset are decoded
+		'HGRP/Lit': [
+			...LIT_KEYWORDS,
+			'_SIMPLE_VERTEXANIM',
+			'_SIMPLE_VERTEXANIM_CLOTH',
+			'_USE_VERTOFFSET',
+			'_USE_VERTOFFSETMASK',
+		],
 		'HGRP/LitEffect': LIT_KEYWORDS,
 		'HGRP/LitTransparent': [...SURFACE_KEYWORDS, '_TWO_BASEMAP'],
 		// its own cubemap reflection (`_CUSTOM_IBL`) isn't drawn: the viewer lights Lit surfaces deferred

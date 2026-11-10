@@ -3,7 +3,7 @@ import { BlobKind } from '@endfield-noclip/package-format/blobs';
 import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
 import type { Chain } from '@endfield-noclip/package-format/instances';
 import type { MaterialEntry, MaterialTable } from '@endfield-noclip/package-format/materials';
-import type { LitSway } from '@endfield-noclip/package-format/surfaces';
+import type { LitSway, LitVertexOffset } from '@endfield-noclip/package-format/surfaces';
 import {
 	type TextureEntry,
 	textureLevelLayout,
@@ -18,7 +18,11 @@ import {
 	type ObjectRef,
 	recordBundleReads,
 } from '../../game/assets/assets.ts';
-import { describeMaterial, materialSway } from '../../game/materials/material-describe.ts';
+import {
+	describeMaterial,
+	materialSway,
+	materialVertexOffset,
+} from '../../game/materials/material-describe.ts';
 import {
 	type LocatedMaterial,
 	type LocatedObject,
@@ -43,7 +47,7 @@ import {
 	type ConvertResultOf,
 	resultMatches,
 } from './convert-pool.ts';
-import type { SwayReach } from './geometry.ts';
+import type { OffsetReach, SwayReach } from './geometry.ts';
 import { convertMaterial, ShaderTable } from './materials.ts';
 
 // converting the assets the packer referenced (by the ids `AssetIds` handed out) reads materials first (they
@@ -499,12 +503,15 @@ interface MeshNeeds {
 	tangentUv: (number | null)[];
 	/** the farthest any swaying material moves it, `null` without one */
 	sway: (SwayReach | null)[];
+	/** the farthest any material's vertex offset moves it, `null` without one */
+	offset: (OffsetReach | null)[];
 }
 
 /**
  * a mesh gets tangents when any draw of it uses a normal-mapped material, for the lowest uv set any of them
  * reads its normal map on; a mesh any swaying material draws carries sway weights, and bounds that hold the
- * farthest sway
+ * farthest sway; a mesh any material offsets by a texture gets bounds that hold the farthest offset, and the
+ * weights when one is weighted by them
  */
 const meshNeeds = (input: AssetConversionInput, materials: LoadedMaterials): MeshNeeds => {
 	const count = input.geometries.length;
@@ -514,6 +521,12 @@ const meshNeeds = (input: AssetConversionInput, materials: LoadedMaterials): Mes
 		const swayed =
 			material === null ? null : materialSway(material, materials.shaders.shaders[material.shader]);
 		return swayed === null ? null : swayReach(swayed);
+	});
+	const offset: (OffsetReach | null)[] = Array.from({ length: count }, () => null);
+	const offsetReaches = materials.converted.map((material) => {
+		const moved =
+			material === null ? null : materialVertexOffset(material, materials.shaders.shaders[material.shader]);
+		return moved === null ? null : offsetReach(moved);
 	});
 	for (const chain of input.chains) {
 		for (const draw of chain.draws) {
@@ -533,12 +546,28 @@ const meshNeeds = (input: AssetConversionInput, materials: LoadedMaterials): Mes
 						? reach
 						: { flat: Math.max(held.flat, reach.flat), perHeight: Math.max(held.perHeight, reach.perHeight) };
 			}
+			const moved = draw.material === null ? null : (offsetReaches[draw.material] ?? null);
+			const heldOffset = offset[draw.geometry];
+			if (moved !== null) {
+				offset[draw.geometry] =
+					heldOffset === null
+						? moved
+						: {
+								reach: [
+									Math.max(heldOffset.reach[0], moved.reach[0]),
+									Math.max(heldOffset.reach[1], moved.reach[1]),
+									Math.max(heldOffset.reach[2], moved.reach[2]),
+								],
+								weighted: heldOffset.weighted || moved.weighted,
+							};
+			}
 		}
 	}
 	return {
 		tangentUvs,
 		tangentUv: tangentUvs.map((uvs) => (uvs.size === 0 ? null : Math.min(...uvs))),
 		sway,
+		offset,
 	};
 };
 
@@ -573,6 +602,7 @@ const convertGeometries = async (
 				asset,
 				tangentUv: needs.tangentUv[id],
 				sway: needs.sway[id],
+				offset: needs.offset[id],
 				zstdLevel: input.geometryZstdLevel,
 			}),
 		(result, _asset, id) => {
@@ -772,6 +802,45 @@ const swayReach = ({ intensity, kite, tendency }: LitSway): SwayReach => {
 		return { flat: amplitude * offset, perHeight: amplitude };
 	}
 	return { flat: Math.abs(intensity) * 0.5 * (1 + offset), perHeight: 0 };
+};
+
+/**
+ * how far a vertex offset moves a vertex along each of the mesh's axes, the largest `direction · intensity ·
+ * (n · (1 + bias) − bias) · (1 − strength · (1 − m))` of `docs/game-data/materials.md#vertex-offset` over the
+ * textures' `n` and `m` in 0…1. a direction along the world's axes, or along the normal, can point anywhere
+ * in the mesh's frame, so its length reaches along every axis; placements are taken as near unit scale
+ */
+const offsetReach = ({
+	direction,
+	space,
+	intensity,
+	bias,
+	mask,
+	vertexAlphaWeight,
+}: LitVertexOffset): OffsetReach => {
+	const masked = mask === null ? 1 : Math.max(1, Math.abs(1 - mask.strength));
+	const scale = Math.abs(intensity) * Math.max(1, Math.abs(bias)) * masked;
+	let reach: OffsetReach['reach'];
+	switch (space) {
+		case 'object': {
+			reach = [
+				Math.abs(direction[0]) * scale,
+				Math.abs(direction[1]) * scale,
+				Math.abs(direction[2]) * scale,
+			];
+			break;
+		}
+		case 'world': {
+			const length = Math.hypot(...direction) * scale;
+			reach = [length, length, length];
+			break;
+		}
+		case 'normal': {
+			reach = [scale, scale, scale];
+			break;
+		}
+	}
+	return { reach, weighted: vertexAlphaWeight };
 };
 
 /** rewrites a material's slots from per-object ids to texture-table ids, in place (the entry is ours) */

@@ -185,11 +185,17 @@ packs or renders correctly.
 - other surface keywords the viewer ignores, listed per material in `debug/assets.json`
   ([unsupported materials](viewer/materials.md#unsupported-materials)), on map02:
   `_MACRO_NORMAL_MAP` (about 90 materials), `_SUBSURFACE*`, `_FAKE*` (glints, cracks, dust, volume,
-  refraction), interior parallax and mapping, `_ZWRITE_OFF`, Lit's `_USE_VERTOFFSET` (the balloon
-  tube's wobble), and vertex animation other than `HGRP/Lit`'s
-  [swaying cloth](viewer/materials.md#swaying-cloth) (`_SIMPLE_VERTEXANIM_PENDULUM`, `…_ROPE`,
+  refraction), interior parallax and mapping, `_ZWRITE_OFF`, and vertex animation other than
+  `HGRP/Lit`'s [swaying cloth](viewer/materials.md#swaying-cloth) and
+  [vertex offset](viewer/materials.md#vertex-offset) (`_SIMPLE_VERTEXANIM_PENDULUM`, `…_ROPE`,
   `HGRP/LitTransparent`'s cloth, `_VAT_*`, `_COMMONVAT_*`, `_GPU_CLOTH`, `_MOVING_BAMBOO`). the
   cloth sway is unchecked against an in-game shot
+- Lit's vertex offset (`_USE_VERTOFFSET`) is drawn only on alpha-tested materials, which all four on
+  map02 are: an opaque one keeps still, as does one that offsets along the vertex normal, sits on a
+  surface with a parallax glow or a layer, or weighs the offset by vertex alpha on an animated mesh.
+  its scroll clock is [assumed](game-data/materials.md#vertex-offset) to be seconds, and it's
+  unchecked against an in-game shot beyond the ribbons of Jingyu's cherry-tree islet being known to
+  flap
 - shaders without a look, shown as [unsupported](viewer/materials.md#unsupported-materials) and
   counted per shader by `pack`: on map02 `Hidden/HGRP/Effect/VFXInkWashPaint`,
   `HGRP/Effect/VFXRadialBlur`, `HGRP/CharacterNPR`, `Hidden/HGRP/LitEffectBlend`,
@@ -440,7 +446,8 @@ packs or renders correctly.
   ([looping clips](extraction/prefabs-and-interactives.md#looping-clips)). every placement plays in
   step from the viewer's clock (the game's start per placement is unknown), the animation moves only
   while frames render, each moving renderer stores every frame of its own, and the balloon's sway
-  and its tube's vertex wobble (`_USE_VERTOFFSET`, not drawn) are unchecked against an in-game shot
+  and its tube's [vertex offset](viewer/materials.md#vertex-offset), whose object-space direction
+  the viewer turns by the prefab's transform, are unchecked against an in-game shot
 - facility visual forms settle with every key false. looks the player's presence changes follow the
   camera ([keys the player sets](game-data/interactives.md#keys-the-player-sets)); a campfire's
   `InZone` sphere uses the template's 2.5 m radius, not the runtime radius the game swaps in once

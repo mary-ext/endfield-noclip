@@ -1,6 +1,6 @@
 import { ADD, ALPHA_OVER, KEEP, PREMULTIPLIED_OVER } from '../../gfx/blend.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
-import { SLOTS } from '../../looks/look.ts';
+import { SLOTS, Slot } from '../../looks/look.ts';
 import type { BindLayouts } from '../frame/bind-layouts.ts';
 import { FRAME_WGSL } from '../frame/frame-uniforms.ts';
 import {
@@ -39,11 +39,41 @@ interface MeshPipelines {
 	/** each phase's descriptor by key, from which its stencil variants are derived */
 	describers: Map<string, PhaseDescriber>;
 	/**
+	 * group 3 of the mesh pipelines: the material's texture slots, then the samplers of its base, detail,
+	 * parallax and parallax noise slots
+	 */
+	materialLayout: GPUBindGroupLayout;
+	/**
 	 * group 3 of the effect pipelines: seven textures, their samplers, the main pass's depth, surfaces and
 	 * diffuse ambient, a 3D texture, and the composited scene's copy
 	 */
 	effectLayout: GPUBindGroupLayout;
 }
+
+/** @returns the layout of the mesh pipelines' group 3 */
+const createMaterialLayout = (device: GPUDevice): GPUBindGroupLayout => {
+	const VERTEX = GPUShaderStage.VERTEX;
+	const FRAGMENT = GPUShaderStage.FRAGMENT;
+	// the vertex stage samples a vertex offset's texture and its mask in the parallax slots, each with its own
+	// sampler (`vertex_offset` in mesh.wgsl); only the mask reads the noise slot's
+	const samplers = [FRAGMENT, FRAGMENT, VERTEX | FRAGMENT, VERTEX];
+	return device.createBindGroupLayout({
+		label: 'mesh materials',
+		entries: [
+			...SLOTS.map((_, slot): GPUBindGroupLayoutEntry => ({
+				binding: slot,
+				visibility: slot === Slot.Parallax || slot === Slot.ParallaxNoise ? VERTEX | FRAGMENT : FRAGMENT,
+				texture: { sampleType: 'float' },
+			})),
+			// the samplers of the base, detail, parallax and parallax noise slots
+			...samplers.map((visibility, i): GPUBindGroupLayoutEntry => ({
+				binding: SLOTS.length + i,
+				visibility,
+				sampler: { type: 'filtering' },
+			})),
+		],
+	});
+};
 
 /** @returns the layout of the effect pipelines' group 3 */
 const createEffectLayout = (device: GPUDevice): GPUBindGroupLayout => {
@@ -117,7 +147,7 @@ const meshVertex = (module: GPUShaderModule, uvFormat: UvFormat, streams: Vertex
  * @param layouts shared layouts
  * @param pipelines the cache to compile into
  * @param format the main pass's targets
- * @returns the phases' descriptors and the effect material layout
+ * @returns the phases' descriptors and the mesh and effect material layouts
  */
 export const prepareMeshPipelines = (
 	device: GPUDevice,
@@ -136,13 +166,18 @@ export const prepareMeshPipelines = (
 
 	// #region meshes
 	const module = pipelines.module('mesh', [FRAME_WGSL, FOG_WGSL, normalMapWgsl, meshWgsl].join('\n'));
+	const materialLayout = createMaterialLayout(device);
+	const meshPipelineLayout = device.createPipelineLayout({
+		label: 'mesh',
+		bindGroupLayouts: [layouts.frame, layouts.instances, layouts.draw, materialLayout],
+	});
 	/** describes a phase of the mesh shader */
 	const describeMesh = (
 		phase: DrawPhase,
 		stages: Pick<GPURenderPipelineDescriptor, 'fragment' | 'depthStencil'>,
 	): void => {
 		describe(phase, (cullMode, uvFormat) => ({
-			layout: layouts.meshPipeline,
+			layout: meshPipelineLayout,
 			vertex: meshVertex(module, uvFormat, phase.streams),
 			primitive: { topology: 'triangle-list', frontFace: FRONT_FACE, cullMode },
 			...stages,
@@ -294,5 +329,5 @@ export const prepareMeshPipelines = (
 	);
 	// #endregion
 
-	return { describers, effectLayout };
+	return { describers, materialLayout, effectLayout };
 };

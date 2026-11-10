@@ -273,9 +273,14 @@ export class MeshRenderer {
 			? new InstanceCuller(device, pipelines, () => ({ ...instances.buffers, drawIds: this.#drawIds }))
 			: null;
 		this.#pyramid = new DepthPyramid(device, pipelines);
-		const { describers, effectLayout } = prepareMeshPipelines(device, layouts, pipelines, format);
+		const { describers, materialLayout, effectLayout } = prepareMeshPipelines(
+			device,
+			layouts,
+			pipelines,
+			format,
+		);
 		this.#describers = describers;
-		this.#materials = new MaterialBindings(device, layouts.materials, effectLayout);
+		this.#materials = new MaterialBindings(device, materialLayout, effectLayout);
 	}
 
 	// #region residency

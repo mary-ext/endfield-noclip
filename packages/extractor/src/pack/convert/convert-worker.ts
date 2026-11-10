@@ -61,6 +61,7 @@ const convertWith = async (job: ConvertJob): Promise<ConvertOutput> => {
 			if (job.asset.synthetic !== undefined) {
 				const converted = convertMesh(syntheticMesh(job.asset.synthetic), job.tangentUv, {
 					sway: job.sway ?? undefined,
+					offset: job.offset ?? undefined,
 				});
 				return {
 					kind: 'geometry',
@@ -81,6 +82,7 @@ const convertWith = async (job: ConvertJob): Promise<ConvertOutput> => {
 			}
 			const converted = convertMesh(source, job.tangentUv, {
 				sway: job.sway ?? undefined,
+				offset: job.offset ?? undefined,
 				motion: motion?.skin,
 			});
 			return {

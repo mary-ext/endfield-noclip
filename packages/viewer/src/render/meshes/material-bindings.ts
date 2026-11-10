@@ -172,6 +172,8 @@ export class MaterialBindings {
 					{ binding: SLOTS.length, resource: slots[0]?.sampler ?? this.#defaultSampler },
 					{ binding: SLOTS.length + 1, resource: detail?.sampler ?? this.#defaultSampler },
 					{ binding: SLOTS.length + 2, resource: slots[5]?.sampler ?? this.#defaultSampler },
+					// the noise slot's own, which only a vertex offset's mask is sampled with
+					{ binding: SLOTS.length + 3, resource: slots[6]?.sampler ?? this.#defaultSampler },
 				],
 			});
 		});

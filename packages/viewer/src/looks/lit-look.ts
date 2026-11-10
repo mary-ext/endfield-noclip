@@ -7,6 +7,7 @@ import type {
 	LitLayer,
 	LitSurface,
 	LitSway,
+	LitVertexOffset,
 	ParallaxGlow,
 } from '@endfield-noclip/package-format/surfaces';
 
@@ -24,7 +25,9 @@ import {
  * the Lit model ({@link LitSurface}). slots are shared where materials rarely use both (`SLOTS`): the MRO
  * layout's map takes the tri-channel mask's slot, which therefore isn't drawn there, and a mask layer's mask
  * map the emissive map's, so mask layers on emissive-mapped materials aren't drawn. `_EMISSIVE_ANIM`'s pulse
- * keeps its inputs in the parallax rows, so it stays still on surfaces with a parallax glow or a layer
+ * keeps its inputs in the parallax rows, so it stays still on surfaces with a parallax glow or a layer. a
+ * vertex offset's textures take the parallax slots, so it isn't drawn on those surfaces either, nor on ones
+ * that aren't alpha-tested or that offset along the normal (docs/viewer/materials.md#vertex-offset)
  *
  * @param surface the surface
  * @param cull the faces the material culls
@@ -175,10 +178,22 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 	if (surface.sway !== null && surface.foliage === null) {
 		swayParams(look, surface.sway);
 	}
+	// the offset's textures take the parallax slots, and only the alpha-tested depth and shadow passes read
+	// the UV sets and textures it needs; their vertex stages don't read the normal
+	const { vertexOffset } = surface;
+	if (
+		vertexOffset !== null &&
+		vertexOffset.space !== 'normal' &&
+		surface.foliage === null &&
+		parallaxRowsFree &&
+		look.queue === 'cutout'
+	) {
+		vertexOffsetParams(look, vertexOffset);
+	}
 	return look;
 };
 
-// #region sway and pulse
+// #region vertex animation and pulse
 
 /**
  * where `_SIMPLE_VERTEXANIM_CLOTH`'s sway keeps its inputs: rows only leaves and grass use otherwise.
@@ -199,6 +214,41 @@ const swayParams = (look: MaterialLook, sway: LitSway): void => {
 		[sway.tendency, sway.direction === null ? 0 : 1, ...(sway.direction ?? [0, 0])],
 		SwayRow.direction,
 	);
+};
+
+/**
+ * where `_USE_VERTOFFSET`'s offset keeps its inputs: the parallax rows the pulse leaves alone, on a look with
+ * {@link LookFlags.VertexOffset}, whose parallax slots hold the offset texture and its mask
+ */
+export const VertexOffsetRow = {
+	/** `_OffsetDir.xyz`, 1 when it lies along the world's axes (0: turned by the object's transform) */
+	direction: LookRow.parallaxColor,
+	/**
+	 * `_OffsetIntensity`, `_Bi_Offset`, 1 when the vertex colour's alpha weighs the offset, the mask's strength
+	 * (`_OffsetMaskPower / 5`; 0 unmasked)
+	 */
+	shape: LookRow.parallaxDark,
+	/** UV scroll per second of the offset texture (xy) and of its mask (zw) */
+	scroll: LookRow.parallaxBright,
+} as const;
+
+/**
+ * `_USE_VERTOFFSET`'s offset by a scrolling texture (docs/game-data/materials.md#vertex-offset). both
+ * textures sample the offset's UV set, each through its own `_ST`
+ */
+const vertexOffsetParams = (look: MaterialLook, offset: LitVertexOffset): void => {
+	const { mask } = offset;
+	look.flags |= LookFlags.VertexOffset;
+	setTexture(look, Slot.Parallax, offset.texture);
+	if (mask !== null) {
+		setTexture(look, Slot.ParallaxNoise, mask.texture);
+	}
+	look.params.set([...offset.direction, offset.space === 'world' ? 1 : 0], VertexOffsetRow.direction);
+	look.params.set(
+		[offset.intensity, offset.bias, offset.vertexAlphaWeight ? 1 : 0, mask?.strength ?? 0],
+		VertexOffsetRow.shape,
+	);
+	look.params.set([...offset.scroll, ...(mask?.scroll ?? [0, 0])], VertexOffsetRow.scroll);
 };
 
 /**

@@ -130,8 +130,53 @@ export interface LitSurface {
 	foliage: LeafInputs | GrassInputs | CardInputs | null;
 	/** `_SIMPLE_VERTEXANIM_CLOTH`'s sway in the wind, `null` when still */
 	sway: LitSway | null;
+	/** `_USE_VERTOFFSET`'s offset by a scrolling texture, `null` without; it adds to the sway */
+	vertexOffset: LitVertexOffset | null;
 	/** the surface keeps `HGRP/DecalLit` decals off (`docs/game-data/materials.md#decals`) */
 	keepsLitDecalsOff: boolean;
+}
+
+/**
+ * `HGRP/Lit`'s `_USE_VERTOFFSET` (`docs/game-data/materials.md#vertex-offset`): each vertex moves along a
+ * direction by `intensity · (n · (1 + bias) − bias)`, `n` the red of a texture scrolling over one of the
+ * mesh's UV sets, read at its top mip level
+ */
+export interface LitVertexOffset {
+	/** `_OffsetTex` on the UV set `_OffsetUVSet` picks, through its `_ST` */
+	texture: TextureSlot;
+	/** the texture's UV scroll per second (`_OffsetSpeed.xy`) */
+	scroll: Vec2;
+	/** `_OffsetDir.xyz`, as authored: not a unit vector, so its length scales the offset */
+	direction: [x: number, y: number, z: number];
+	/**
+	 * `_OffsetSwitchDir`: the direction turned and scaled by the object's transform, taken along the world's
+	 * axes as it is, or the vertex normal, turned by the object's transform, in its place
+	 */
+	space: 'object' | 'world' | 'normal';
+	/** `_OffsetIntensity` */
+	intensity: number;
+	/** `_Bi_Offset`'s remap, which lets the offset run both ways */
+	bias: number;
+	/**
+	 * the vertex colour's alpha weighs the offset (`_UseVertexColorMask`); the geometry's position W carries
+	 * it, as for a {@link LitSway}
+	 */
+	vertexAlphaWeight: boolean;
+	/** `_USE_VERTOFFSETMASK`; `null` without, or when its texture is unset and reads as white */
+	mask: LitVertexOffsetMask | null;
+}
+
+/**
+ * a mask on a {@link LitVertexOffset}: the offset is scaled by `1 − strength · (1 − r)`, `r` the mask
+ * texture's red at its top mip level
+ */
+export interface LitVertexOffsetMask {
+	/** `_OffsetMaskTex` on the offset texture's UV set, through its own `_ST` */
+	texture: TextureSlot;
+	/** its UV scroll per second (`_OffsetMaskSpeed.xy`) */
+	scroll: Vec2;
+	/** `_OffsetMaskPower / 5` */
+	strength: number;
 }
 
 /**

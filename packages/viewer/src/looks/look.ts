@@ -7,7 +7,8 @@ import type { TextureRef } from '@endfield-noclip/package-format/textures';
  * of WebGPU's default sixteen, so slots are shared where materials rarely use both: the third holds `_MROMap`
  * in the MRO layout and the tri-channel `_MaskMap` otherwise ({@link LookFlags.TriChannelMask}), and looks
  * with {@link LookFlags.LayerBlend} put the layer's `_Layer1BaseMap` and `_Layer1BumpMap` in the parallax
- * slots (no map02 material has both keywords) and its `_LayerBlendMaskMap` in the emissive slot
+ * slots (no map02 material has both keywords) and its `_LayerBlendMaskMap` in the emissive slot. looks with
+ * {@link LookFlags.VertexOffset} put `_OffsetTex` and `_OffsetMaskTex` in the parallax slots
  */
 export const SLOTS = [
 	'_BaseColorMap',
@@ -71,7 +72,12 @@ export const LookFlags = {
 	FoliageLeaf: 1 << 27,
 	/** a scene effect (`effects/`), drawn by `effect.wgsl` in one of the effect queues ({@link LookQueue}) */
 	Effect: 1 << 28,
-	// bits 29 and 30 are free
+	/**
+	 * `_USE_VERTOFFSET`: the parallax slots hold the vertex offset's texture and its mask rather than a glow,
+	 * and the vertex stage samples them (`vertexOffsetParams` in lit-look.ts)
+	 */
+	VertexOffset: 1 << 29,
+	// bit 30 is free
 	/**
 	 * `_LAYERBLEND_TOP` or `_LAYERBLEND_MASK`: the parallax slots and rows hold the layer (`layerBlendParams`).
 	 * the sign bit, so the value is negative; `words` in mesh-renderer.ts store it unsigned
@@ -240,7 +246,10 @@ export const LookRow = {
 	parallax: 88,
 	/** pulse phase per second, pulse phase per metre of the object's position, ignore post exposure, pulse mean */
 	parallax2: 92,
-	/** `_ParallaxColor` (HDR, as stored) times `_ParallaxIntensity`, mask channel */
+	/**
+	 * `_ParallaxColor` (HDR, as stored) times `_ParallaxIntensity`, mask channel. looks with a vertex offset
+	 * reuse this row and the next two (`VertexOffsetRow`)
+	 */
 	parallaxColor: 96,
 	/** `_ParallaxColorDark` times `_ParallaxIntensity` */
 	parallaxDark: 100,

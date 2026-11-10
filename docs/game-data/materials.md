@@ -413,7 +413,40 @@ this variant.
 
 `_SIMPLE_VERTEXANIM_PENDULUM`, `_SIMPLE_VERTEXANIM_ROPE` and `_GPU_CLOTH` are other branches of the
 same family, not described here; the cloth materials that also enable `_GPU_CLOTH` are simulated
-rather than swayed.
+rather than swayed. the [vertex offset](#vertex-offset) is a separate keyword, and a material with
+both adds the two offsets.
+
+## vertex offset
+
+`HGRP/Lit` materials with `_USE_VERTOFFSET` (on map02 the red cloth ribbons hung from trees, as on
+Jingyu's cherry-tree islet, and the balloons' tubes, all alpha-tested and all with
+`_USE_VERTOFFSETMASK`) move each vertex by a scrolling noise texture in the vertex stage of every
+pass, the G-buffer, depth and shadow passes alike. like the [sway](#swaying-cloth) the offset is
+added in world space after skinning and the object-to-world transform:
+
+`offset = direction · _OffsetIntensity · (n · (1 + _Bi_Offset) − _Bi_Offset) · w · k`
+
+- `n` is `_OffsetTex`'s red at its top mip level, at
+  `uv · _OffsetTex_ST.xy + _OffsetTex_ST.zw + _OffsetSpeed.xy · t`. `uv` blends UV sets 0 and 1 by
+  `_OffsetUVSet` (0 or 1 on the materials seen) and `t` is the scroll clock below. `_Bi_Offset` 0
+  leaves `n` as it is, so the offset only runs one way; 1 remaps it to −1…1.
+- `direction` is `_OffsetDir.xyz`, not normalized, so its length scales the offset.
+  `_OffsetSwitchDir` picks its space: 1 takes it along the world's axes as it is, 2 takes the vertex
+  normal in its place, turned by the object's transform, and any other value turns `_OffsetDir` by
+  the object's transform (its rotation and scale).
+- `w` is the vertex colour's alpha when `_UseVertexColorMask` is positive, else 1.
+- `k` is `1 − p · (1 − m)` under `_USE_VERTOFFSETMASK` and 1 without it, with `p` =
+  `_OffsetMaskPower / 5` and `m` `_OffsetMaskTex`'s red, read like the offset texture through its
+  own `_ST` and `_OffsetMaskSpeed`, on the same UV set. at the authored power of 5 the mask scales
+  the offset directly.
+
+each texture is read with its own sampler; the four materials' textures all repeat. the per-pass
+`_DisableAnimateVert` scales this offset as it does the sway, and the previous frame's offset, for
+motion vectors, reads the previous frame's clock.
+
+the scroll clock is the fourth component of the pipeline's time parameters, which stock Unity leaves
+unused. what the game writes there isn't traced: it's assumed to be seconds, so `_OffsetSpeed` is UV
+tiles per second.
 
 ## clock
 
@@ -425,6 +458,7 @@ erosion flow advance 0.05 × their speed per tick of the shader clock. that HGRP
 ## open
 
 - the [clock](#clock)'s rate, and the clock that scrolls the emissive map
+- what the [vertex offset](#vertex-offset)'s scroll clock holds (assumed seconds)
 - the detail map's channels per `_DetailMode` (roughness from B in mode 1, from the alpha in mode
   0), unchecked against a shot
 - the layers' UV set 2 read as set 0, on the strength of map02's meshes and one in-game shot

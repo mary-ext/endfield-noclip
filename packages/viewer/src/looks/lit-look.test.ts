@@ -2,9 +2,21 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { MaterialCull, ReadyMaterial, TextureSlot } from '@endfield-noclip/package-format/materials';
-import type { LitLayer, LitSurface, MaskChannel } from '@endfield-noclip/package-format/surfaces';
+import type {
+	LitLayer,
+	LitSurface,
+	LitVertexOffset,
+	MaskChannel,
+} from '@endfield-noclip/package-format/surfaces';
 
-import { EmissivePulseRow, LayerBlendRow, LayerSource, LeafBlendRow, SwayRow } from './lit-look.ts';
+import {
+	EmissivePulseRow,
+	LayerBlendRow,
+	LayerSource,
+	LeafBlendRow,
+	SwayRow,
+	VertexOffsetRow,
+} from './lit-look.ts';
 import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
 import { materialLooks } from './material-looks.ts';
 
@@ -56,6 +68,7 @@ const litSurface = (overrides: Partial<LitSurface> = {}): LitSurface => ({
 	overlay: null,
 	foliage: null,
 	sway: null,
+	vertexOffset: null,
 	keepsLitDecalsOff: false,
 	...overrides,
 });
@@ -82,6 +95,69 @@ test('a swaying Lit surface keeps its sway in the sway rows', () => {
 	);
 	assert.deepEqual([...look.params.subarray(SwayRow.direction, SwayRow.direction + 4)], [0, 1, 1, 0]);
 	assert.deepEqual([...wind.params.subarray(SwayRow.direction, SwayRow.direction + 4)], [0.5, 0, 0, 0]);
+});
+
+test('a vertex offset takes the parallax slots and rows of an alpha-tested Lit surface', () => {
+	// M_cloth_map02_sfcanvas+1_001_01a: ribbons flapping along the world's axes, masked towards their tops
+	const slot = (texture: number): TextureSlot => ({ texture, uv: 0, scale: [1, 1], offset: [0, 0] });
+	const vertexOffset: LitVertexOffset = {
+		texture: { texture: 13, uv: 1, scale: [1, 1.3], offset: [0, 0] },
+		scroll: [-1, -2],
+		direction: [2, 2, 2],
+		space: 'world',
+		intensity: 0.4,
+		bias: 0,
+		vertexAlphaWeight: false,
+		mask: { texture: { texture: 14, uv: 1, scale: [1, 1], offset: [0, 1] }, scroll: [0, 0], strength: 1 },
+	};
+	const ribbon = {
+		textures: { base: slot(1), normal: slot(2), mro: null, emissive: null },
+		alphaClip: 0.5,
+		alphaFromNormal: true,
+		vertexOffset,
+	};
+	const [look, unmasked, object, opaque, normal, layered] = materialLooks({
+		entries: [
+			described(litSurface(ribbon)),
+			described(litSurface({ ...ribbon, vertexOffset: { ...vertexOffset, mask: null } })),
+			described(
+				litSurface({
+					...ribbon,
+					vertexOffset: { ...vertexOffset, space: 'object', vertexAlphaWeight: true },
+				}),
+			),
+			// only alpha-tested draws read the UV sets and textures in their depth passes
+			described(litSurface({ ...ribbon, alphaClip: null })),
+			described(litSurface({ ...ribbon, vertexOffset: { ...vertexOffset, space: 'normal' } })),
+			described(litSurface({ ...ribbon, overlay: topLayer() })),
+		],
+	});
+	const row = (params: Float32Array, at: number) => Array.from(params.subarray(at, at + 4));
+	const offsetFlags =
+		LookFlags.VertexOffset |
+		LookFlags.ParallaxMap |
+		LookFlags.ParallaxNoiseMap |
+		(1 << (UV1_SHIFT + 5)) |
+		(1 << (UV1_SHIFT + 6));
+	assert.equal(look.queue, 'cutout');
+	assert.equal(look.flags & offsetFlags, offsetFlags);
+	assert.deepEqual(look.textures.slice(5), [13, 14]);
+	assert.deepEqual(row(look.params, LookRow.uv + 5 * 4), [1, 1.3, 0, 0].map(Math.fround));
+	assert.deepEqual(row(look.params, LookRow.uv + 6 * 4), [1, 1, 0, 1]);
+	assert.deepEqual(row(look.params, VertexOffsetRow.direction), [2, 2, 2, 1]);
+	assert.deepEqual(row(look.params, VertexOffsetRow.shape), [0.4, 0, 0, 1].map(Math.fround));
+	assert.deepEqual(row(look.params, VertexOffsetRow.scroll), [-1, -2, 0, 0]);
+
+	assert.deepEqual(unmasked.textures.slice(5), [13, null]);
+	assert.equal(unmasked.flags & LookFlags.ParallaxNoiseMap, 0);
+	assert.equal(unmasked.params[VertexOffsetRow.shape + 3], 0);
+	assert.equal(object.params[VertexOffsetRow.direction + 3], 0);
+	assert.equal(object.params[VertexOffsetRow.shape + 2], 1);
+	for (const still of [opaque, normal, layered]) {
+		assert.equal(still.flags & LookFlags.VertexOffset, 0);
+		assert.ok(!still.textures.includes(13));
+	}
+	assert.notEqual(layered.flags & LookFlags.LayerBlend, 0);
 });
 
 test('pulsing emission takes the free parallax rows; a surface with a glow keeps its emission still', () => {

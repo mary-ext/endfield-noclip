@@ -1,6 +1,6 @@
 /**
- * the Lit model (`docs/game-data/materials.md`); its overlays, foliage inputs and sway are modules of their
- * own
+ * the Lit model (`docs/game-data/materials.md`); its overlays, foliage inputs and vertex animation are
+ * modules of their own
  */
 
 import type { TextureSlot } from '@endfield-noclip/package-format/materials';
@@ -17,7 +17,7 @@ import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../materi
 
 import { grassInputsOf, leafInputsOf } from './foliage.ts';
 import { layerOf, parallaxGlowOf } from './lit-overlays.ts';
-import { swayOf } from './lit-sway.ts';
+import { swayOf, vertexOffsetOf } from './lit-sway.ts';
 
 /** shaders whose G-buffer pass writes the material's `_StencilRef` into the stencil */
 const STENCIL_REF_SHADERS = new Set([
@@ -263,6 +263,7 @@ export const describeLit = (reader: MaterialReader): LitSurface | UnsupportedSur
 		overlay,
 		foliage: foliageInputs,
 		sway: shader.name === 'HGRP/Lit' ? swayOf(reader) : null,
+		vertexOffset: shader.name === 'HGRP/Lit' ? vertexOffsetOf(reader) : null,
 		keepsLitDecalsOff:
 			STENCIL_REF_SHADERS.has(shader.name) && (float('_StencilRef', 0) & LIT_DECAL_STENCIL_BIT) !== 0,
 	};

@@ -55,6 +55,14 @@ export interface SwayReach {
 	perHeight: number;
 }
 
+/** how far a material's vertex offset (`LitVertexOffset`) can move a vertex */
+export interface OffsetReach {
+	/** metres along each of the mesh's axes */
+	reach: [x: number, y: number, z: number];
+	/** the vertex colour's alpha weighs the offset, so the shader needs it */
+	weighted: boolean;
+}
+
 /** what a mesh is converted with besides its UV set for tangents */
 export interface MeshConversionOptions {
 	/**
@@ -62,6 +70,11 @@ export interface MeshConversionOptions {
 	 * sway weight (its colour's alpha), and the bounds grow horizontally to hold the sway
 	 */
 	sway?: SwayReach;
+	/**
+	 * the farthest vertex offset of any material drawing the mesh: the bounds grow to hold it, and the position
+	 * stream's W carries the colour's alpha when an offset is weighted by it
+	 */
+	offset?: OffsetReach;
 	/**
 	 * the skeletal animation a skinned mesh plays, given in its bind space; the blob then keeps the mesh
 	 * unposed, with its bone weights and indices, and its bounds hold every frame
@@ -76,7 +89,7 @@ const UV_UNORM16_SPAN = 16;
  * @param mesh the decoded mesh
  * @param tangentUv UV set to generate MikkTSpace tangents from (because a normal-mapped material draws the
  *   mesh), or `null`. ignored when the mesh has its own tangents, or lacks normals or that UV set
- * @param options the sway and skeletal animation the mesh is drawn with, if any
+ * @param options the sway, vertex offset and skeletal animation the mesh is drawn with, if any
  * @returns the blob and its entry fields
  * @throws {FormatError} on topologies other than triangles and quads, out-of-range indices or an empty mesh,
  *   or with a motion, a mesh without bone weights and indices, more than four influences or 256 bones, or
@@ -85,7 +98,7 @@ const UV_UNORM16_SPAN = 16;
 export const convertMesh = (
 	mesh: DecodedMesh,
 	tangentUv: number | null,
-	{ sway, motion }: MeshConversionOptions = {},
+	{ sway, offset, motion }: MeshConversionOptions = {},
 ): ConvertedGeometry => {
 	const corners = submeshCorners(mesh);
 	if (corners.every((list) => list.length === 0)) {
@@ -171,22 +184,25 @@ export const convertMesh = (
 	let swayReach = 0;
 	{
 		const out = new Uint16Array(vertexCount * 4);
-		const colors = sway === undefined ? null : mesh.colors;
+		const weighted = sway !== undefined || offset?.weighted === true;
+		const colors = weighted ? mesh.colors : null;
 		for (const [i, v] of order.entries()) {
 			const source = vertexOf(v) * 3;
 			for (let k = 0; k < 3; k++) {
 				out[i * 4 + k] =
 					scale[k] === 0 ? 0 : Math.round(((positions[source + k] - min[k]) / scale[k]) * 65535);
 			}
-			// W: the sway weight, the colour's alpha (white, so 1, without colours)
-			if (sway !== undefined) {
+			// W: the sway and offset weight, the colour's alpha (white, so 1, without colours)
+			if (weighted) {
 				let weight = 1;
 				if (colors !== null && colors.dimension >= 4) {
 					weight = Math.min(Math.max(colors.data[vertexOf(v) * colors.dimension + 3], 0), 1);
 				}
 				out[i * 4 + 3] = Math.round(weight * 65535);
-				const y = Math.abs(positions[source + 1]);
-				swayReach = Math.max(swayReach, weight * (sway.flat + sway.perHeight * y));
+				if (sway !== undefined) {
+					const y = Math.abs(positions[source + 1]);
+					swayReach = Math.max(swayReach, weight * (sway.flat + sway.perHeight * y));
+				}
 			}
 		}
 		add(
@@ -272,6 +288,13 @@ export const convertMesh = (
 		bounds = {
 			min: [bounds.min[0] - swayReach, bounds.min[1], bounds.min[2] - swayReach],
 			max: [bounds.max[0] + swayReach, bounds.max[1], bounds.max[2] + swayReach],
+		};
+	}
+	if (offset !== undefined) {
+		const { reach } = offset;
+		bounds = {
+			min: bounds.min.map((value, k) => value - reach[k]),
+			max: bounds.max.map((value, k) => value + reach[k]),
 		};
 	}
 	// #endregion

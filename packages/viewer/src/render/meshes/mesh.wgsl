@@ -51,7 +51,8 @@ struct Look {
 	// pulse phase per second, pulse phase per metre of the object's position, 1 when the glow ignores the post
 	// exposure, pulse mean
 	parallax2: vec4f,
-	// bright colour, w = mask channel
+	// bright colour, w = mask channel. with a vertex offset, this row and the next two hold its inputs
+	// (`VertexOffsetRow` in lit-look.ts)
 	parallax_color: vec4f,
 	// dark colour
 	parallax_dark: vec4f,
@@ -100,6 +101,9 @@ const EROSION = 33554432u;
 const FOLIAGE_LEAF = 134217728u;
 // a scene effect, drawn by effect.wgsl; its rows are laid out by looks/effects/
 const EFFECT = 268435456u;
+// `_USE_VERTOFFSET` (`vertexOffsetParams` in lit-look.ts): the parallax slots hold the vertex offset's texture
+// and its mask, which the vertex stage samples
+const VERTEX_OFFSET = 536870912u;
 // `_LAYERBLEND_TOP` or `_LAYERBLEND_MASK` (`layerBlendParams` in lit-look.ts): the parallax slots and rows hold
 // the layer, and a mask map sits in the emissive slot
 const LAYER_BLEND = 2147483648u;
@@ -146,6 +150,9 @@ fn look_slot(draw: Draw) -> u32 {
 @group(3) @binding(7) var base_sampler: sampler;
 @group(3) @binding(8) var detail_sampler: sampler;
 @group(3) @binding(9) var parallax_sampler: sampler;
+// the noise slot's own sampler, for the vertex offset's mask; the glow and the layers sample the slot with
+// the parallax slot's
+@group(3) @binding(10) var noise_sampler: sampler;
 
 struct VertexIn {
 	@location(0) position: vec4f,
@@ -185,10 +192,11 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	let look = looks[look_slot(draw)];
 	let p = draw.offset.xyz + v.position.xyz * draw.scale.xyz;
 	let origin = vec3f(row.t0.w, row.t1.w, row.t2.w) + blocks[row_block(row.block)].xyz;
-	// as vs_cutout_depth computes it, so alpha-tested depth matches exactly where they're shaded
-	let rel = instance_rel(v.position, ii, draw, look);
 	let m = row_basis(row.t0, row.t1, row.t2, row.info);
 	let flags = bitcast<u32>(draw.offset.w);
+	let uv = vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw);
+	// as vs_cutout_depth computes it, so alpha-tested depth matches exactly where they're shaded
+	let rel = instance_rel(v.position, ii, draw, look) + vertex_offset(flags, look, m, uv, v.position.w);
 	// no normals in the mesh: zero here, faceted in the fragment shader
 	var n = vec3f(0.0);
 	if ((flags & HAS_NORMALS) != 0u) {
@@ -207,7 +215,7 @@ fn vs_main(v: VertexIn, @builtin(instance_index) ii: u32) -> VertexOut {
 	out.rel = rel;
 	out.normal = n;
 	out.tangent = t;
-	out.uv = sheet_uv(row.sheet,vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw));
+	out.uv = sheet_uv(row.sheet, uv);
 	out.draw = draw_id;
 	out.phase = world.x + world.y + world.z;
 	out.object_y = p.y;
@@ -265,6 +273,40 @@ fn sway(flags: u32, look: Look, p: vec3f, weight: f32, rel: vec3f, origin: vec3f
 	return vec3f(along.x, 0.0, along.y) * offset;
 }
 
+// `_USE_VERTOFFSET`'s world-space offset (`vertexOffsetParams` in lit-look.ts,
+// docs/game-data/materials.md#vertex-offset): along a direction by a scrolling texture's red, scaled by a
+// mask's. `basis` is the object's transform, `uv` the mesh's UV sets before the sheet remap, and `weight` the
+// vertex colour's alpha, which the geometry carries in position W. only alpha-tested draws are offset, since
+// only their depth and shadow passes read the UV sets and textures (vs_cutout_depth): a look's draws are
+// alpha-tested exactly while the map holding its alpha is bound. the offset waits for its own textures too
+fn vertex_offset(flags: u32, look: Look, basis: mat3x3f, uv: vec4f, weight: f32) -> vec3f {
+	let alpha_map = select(BASE_MAP, NORMAL_MAP, (flags & ALPHA_NORMAL) != 0u);
+	let needed = VERTEX_OFFSET | PARALLAX_MAP | alpha_map;
+	let shape = look.parallax_dark;
+	let masked = shape.w != 0.0;
+	if ((flags & needed) != needed || (masked && (flags & PARALLAX_NOISE_MAP) == 0u)) {
+		return vec3f(0.0);
+	}
+	let direction = look.parallax_color;
+	let scroll = look.parallax_bright * frame.eye.w;
+	// both textures sample one UV set, each through its own transform
+	let source = slot_set(uv, flags, PARALLAX_SLOT);
+	let noise_t = look.slot_uv[PARALLAX_SLOT];
+	let mask_t = look.slot_uv[NOISE_SLOT];
+	let noise_uv = source * noise_t.xy + noise_t.zw + scroll.xy;
+	let noise = textureSampleLevel(parallax_map, parallax_sampler, noise_uv, 0.0).r;
+	var scale = shape.x * (noise * (1.0 + shape.y) - shape.y);
+	if (masked) {
+		let mask_uv = source * mask_t.xy + mask_t.zw + scroll.zw;
+		let mask = textureSampleLevel(parallax_noise_map, noise_sampler, mask_uv, 0.0).r;
+		scale *= 1.0 - shape.w * (1.0 - mask);
+	}
+	if (shape.z > 0.5) {
+		scale *= weight;
+	}
+	return select(basis * direction.xyz, direction.xyz, direction.w > 0.5) * scale;
+}
+
 // `_USE_CAMERA_BASED_TILLING` (`grassParams` in lit-look.ts): grass leans away from the camera along its up
 // vector flattened onto the ground, by the vertex's object-space height times the intensity in world metres
 fn grass_lean(flags: u32, look: Look, height: f32) -> vec3f {
@@ -303,10 +345,15 @@ fn vs_cutout_depth(v: CutoutDepthIn, @builtin(instance_index) ii: u32) -> Cutout
 	let draw_id = draw_ids[ii];
 	let draw = draws[draw_id];
 	let look = looks[look_slot(draw)];
-	var out: CutoutDepthOut;
-	out.position = frame.view_proj * vec4f(instance_rel(v.position, ii, draw, look), 1.0);
 	let row = rows[list[ii]];
-	out.uv = sheet_uv(row.sheet,vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw));
+	let m = row_basis(row.t0, row.t1, row.t2, row.info);
+	let flags = bitcast<u32>(draw.offset.w);
+	let uv = vec4f(v.uv0 * draw.uv0.xy + draw.uv0.zw, v.uv1 * draw.uv1.xy + draw.uv1.zw);
+	// as vs_main computes it
+	let rel = instance_rel(v.position, ii, draw, look) + vertex_offset(flags, look, m, uv, v.position.w);
+	var out: CutoutDepthOut;
+	out.position = frame.view_proj * vec4f(rel, 1.0);
+	out.uv = sheet_uv(row.sheet, uv);
 	out.draw = draw_id;
 	return out;
 }
@@ -702,12 +749,14 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	// (docs/game-data/materials.md#emission)
 	let tint = mix(s.albedo, vec3f(1.0), look.emissive2.x);
 	s.emission = emission * tint * mix(1.0, frame.ambient.y, look.emissive2.z);
-	if ((flags & (PARALLAX_MAP | LAYER_BLEND)) == 0u && look.parallax.z > 0.0) {
+	// a vertex offset's textures in the parallax slots leave the pulse its rows
+	let pulse_rows = (flags & (PARALLAX_MAP | LAYER_BLEND)) == 0u || (flags & VERTEX_OFFSET) != 0u;
+	if (pulse_rows && look.parallax.z > 0.0) {
 		s.emission *= mix(1.0, emissive_pulse(look), look.parallax2.x);
 	}
 
 	// the glow needs its pattern; without a noise map it marches a flat height field
-	if ((flags & (PARALLAX_MAP | LAYER_BLEND)) == PARALLAX_MAP && in.tangent.w != 0.0) {
+	if ((flags & (PARALLAX_MAP | LAYER_BLEND | VERTEX_OFFSET)) == PARALLAX_MAP && in.tangent.w != 0.0) {
 		// the glow's mask uses the same channel numbering as the emission mask, one lower
 		let glow_mask = map_channel(flags, look.parallax_color.w + 1.0, base_a, packed, mask);
 		if (glow_mask > 0.01) {

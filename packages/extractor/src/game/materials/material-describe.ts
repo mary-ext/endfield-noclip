@@ -10,7 +10,7 @@
  * `effects/texture-stack.ts`) and picked by {@link DESCRIBERS}
  */
 
-import type { LitSway, MaterialSurface } from '@endfield-noclip/package-format/surfaces';
+import type { LitSway, LitVertexOffset, MaterialSurface } from '@endfield-noclip/package-format/surfaces';
 
 import { describeDitherEffect, isDitherEffect } from './effects/dither-effect.ts';
 import { describeLightBeam } from './effects/light-beam.ts';
@@ -34,7 +34,7 @@ import {
 import { describeDithered } from './surfaces/dithered.ts';
 import { describeErosion } from './surfaces/erosion.ts';
 import { describeLitDecal } from './surfaces/lit-decal.ts';
-import { swayOf } from './surfaces/lit-sway.ts';
+import { swayOf, vertexOffsetOf } from './surfaces/lit-sway.ts';
 import { describeLit } from './surfaces/lit.ts';
 import { describeMattePainting } from './surfaces/matte-painting.ts';
 
@@ -112,6 +112,22 @@ const UNDRAWN_SHADERS = new Set(['HGRP/Effect/VFXReflectionPass']);
  */
 export const materialSway = (material: MaterialValues, shader: ShaderEntry): LitSway | null =>
 	shader.name === 'HGRP/Lit' && material.blend !== 'additive' ? swayOf(readerOf(material, shader)) : null;
+
+/**
+ * the vertex offset a material's surface will carry, for converting the meshes it draws before the surfaces
+ * are described
+ *
+ * @param material a converted material
+ * @param shader its shader's entry
+ * @returns its vertex offset, or `null` without one
+ */
+export const materialVertexOffset = (
+	material: MaterialValues,
+	shader: ShaderEntry,
+): LitVertexOffset | null =>
+	shader.name === 'HGRP/Lit' && material.blend !== 'additive'
+		? vertexOffsetOf(readerOf(material, shader))
+		: null;
 
 /**
  * @param material a converted material
