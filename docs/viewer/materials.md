@@ -69,10 +69,12 @@ the viewer evaluates the game's [foliage model](../game-data/materials.md#foliag
 (`foliage_sun` in [`frame.wgsl`](../../packages/viewer/src/render/frame/frame.wgsl)).
 `HGRP/Foliage/Leaf`'s and the grass shaders' inputs are their surfaces' `foliage`
 ([game/materials/surfaces/foliage.ts](../../packages/extractor/src/game/materials/surfaces/foliage.ts)),
-packed by `leafParams` and `grassParams`; the grass takes `h` as the vertex's object-space height.
-the grass card LOD takes neither the bend nor the masks, since its normal decoding isn't read.
-`HGRP/Foliage/Trunk` takes only Lit's texture layout, and `HGRP/Foliage/TreeFoliageCardMeshLod`
-draws as plain alpha-tested foliage.
+packed by `leafParams` and `grassParams`; a leaf's `_BLEND_COLOR` rides in the tri-channel mask's
+rows, and its normal-mapped normal is the viewer's, turned towards the camera on back faces, where
+the game's isn't (the same wherever `_BlendWithVertexNormal` is 1); the grass takes `h` as the
+vertex's object-space height. the grass card LOD takes neither the bend nor the masks, since its
+normal decoding isn't read. `HGRP/Foliage/Trunk` takes only Lit's texture layout, and
+`HGRP/Foliage/TreeFoliageCardMeshLod` draws as plain alpha-tested foliage.
 
 ## swaying cloth
 

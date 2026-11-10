@@ -330,6 +330,16 @@ export interface LeafInputs {
 		cover: number;
 		color: Rgb;
 	} | null;
+	/** `_BLEND_COLOR`, `null` without it */
+	blend: {
+		/** `_BlendColor`, linear */
+		color: Rgb;
+		/** `_BlendColor`'s alpha: how far the normal map's alpha spreads the colour */
+		strength: number;
+		normalAdd: number;
+		normalPower: number;
+		withVertexNormal: number;
+	} | null;
 }
 
 /** `HGRP/Foliage/Grass` and its card LOD's inputs (`docs/game-data/materials.md#foliage`) */

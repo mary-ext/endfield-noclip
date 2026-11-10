@@ -700,6 +700,35 @@ describe('the Lit model', () => {
 		);
 	});
 
+	it("reads a leaf's _BLEND_COLOR only with its keyword", () => {
+		// the pear blossoms' values
+		const shader = shaderEntry({
+			name: 'HGRP/Foliage/Leaf',
+			family: 'leaf',
+			floats: { _BlendNormalAdd: -0.86, _BlendNormalPower: 1.8, _BlendWithVertexNormal: 1 },
+			colors: { _BlendColor: [1, 0.5, 0, 0.75] },
+		});
+		const blend = (keywords: string[]) => {
+			const foliage = lit(describeMaterial(values({ keywords }), shader)).foliage;
+			assert.equal(foliage?.kind, 'leaf');
+			return foliage.blend;
+		};
+		assert.equal(blend([]), null);
+		const read = blend(['_BLEND_COLOR']);
+		assert.deepEqual(read, {
+			color: [1, read?.color[1], 0],
+			strength: 0.75,
+			normalAdd: -0.86,
+			normalPower: 1.8,
+			withVertexNormal: 1,
+		});
+		// sRGB 0.5 is linear 0.214
+		assert.ok(Math.abs((read?.color[1] ?? 0) - 0.214) < 1e-3);
+		assert.deepEqual(keywordsNotDrawn('HGRP/Foliage/Leaf', ['_BLEND_COLOR', '_AO_MASK_TUNE_COLOR']), [
+			'_AO_MASK_TUNE_COLOR',
+		]);
+	});
+
 	it('rejects maps on UV sets past 1', () => {
 		const shader = shaderEntry({ name: 'HGRP/Lit', family: 'lit' });
 		const surface = describeMaterial(values({ slots: { _BaseColorMap: slot(1, 2) } }), shader);

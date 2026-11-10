@@ -30,7 +30,8 @@ struct Look {
 	// x = how little the albedo tints emission (1: not at all), y = the emission mask channel, z = 1 when
 	// emission ignores the post exposure
 	emissive2: vec4f,
-	// the tri-channel mask's R, G and B: linear colour, strength
+	// the tri-channel mask's R, G and B: linear colour, strength. leaves: `_BLEND_COLOR` (`LeafBlendRow` in
+	// lit-look.ts)
 	mask_albedo: array<vec4f, 3>,
 	// per mask channel (xyz): the roughness and metallic it blends toward, its contrast and offset
 	mask_roughness: vec4f,
@@ -766,14 +767,24 @@ fn leaf_surface(surface: Surface, look: Look, in: VertexOut, has_normal: bool, n
 	);
 	s.albedo = mix(s.albedo, tinted, ramp);
 
-	// the sun's shadow: the vertex AO, and a fake shadow on the side of the canopy facing away from the sun
-	let fake = saturate(1.0 - pow(saturate(dot(s.normal, -frame.sun.xyz) * 0.5 + 0.5), look.foliage.z) * look.foliage.y);
-	s.sun_shadow = mix(1.0, in.color.r, look.foliage.x) * fake;
-	// the diffuse N·L, from the vertex normal as the mesh stores it (not turned towards the viewer)
+	// the vertex normal as the mesh stores it (not turned towards the viewer)
 	var vertex_normal = s.normal;
 	if (dot(in.normal, in.normal) > 1e-6) {
 		vertex_normal = normalize(in.normal);
 	}
+	// `_BLEND_COLOR` (`LeafBlendRow` in lit-look.ts): the albedo times the blend colour, or times the tint again
+	// on thick parts whose normal faces up
+	let blend = look.mask_albedo[1];
+	if (blend.w > 0.5) {
+		let up = saturate(mix(s.normal.y, vertex_normal.y, blend.z) + 0.5 + blend.x);
+		let keep = saturate(pow(up, blend.y) + 1.0 - saturate(thin * look.mask_albedo[0].w * 10.0));
+		s.albedo *= mix(look.mask_albedo[0].rgb, look.tint.rgb, keep);
+	}
+
+	// the sun's shadow: the vertex AO, and a fake shadow on the side of the canopy facing away from the sun
+	let fake = saturate(1.0 - pow(saturate(dot(s.normal, -frame.sun.xyz) * 0.5 + 0.5), look.foliage.z) * look.foliage.y);
+	s.sun_shadow = mix(1.0, in.color.r, look.foliage.x) * fake;
+	// the diffuse N·L takes the stored vertex normal
 	s.sun_n_dot_l = saturate(dot(mix(s.normal, vertex_normal, look.foliage.w), frame.sun.xyz));
 	return s;
 }

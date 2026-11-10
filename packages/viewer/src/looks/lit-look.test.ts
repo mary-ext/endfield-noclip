@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import type { MaterialCull, ReadyMaterial, TextureSlot } from '@endfield-noclip/package-format/materials';
 import type { LitLayer, LitSurface, MaskChannel } from '@endfield-noclip/package-format/surfaces';
 
-import { EmissivePulseRow, LayerBlendRow, LayerSource, SwayRow } from './lit-look.ts';
+import { EmissivePulseRow, LayerBlendRow, LayerSource, LeafBlendRow, SwayRow } from './lit-look.ts';
 import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
 import { materialLooks } from './material-looks.ts';
 
@@ -336,6 +336,13 @@ test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit 
 						subsurface: 0.3,
 						transmissionDistanceFade: 1,
 						canopy: null,
+						blend: {
+							color: [0.9, 0.5, 0.75],
+							strength: 1,
+							normalAdd: -0.75,
+							normalPower: 2,
+							withVertexNormal: 1,
+						},
 					},
 					keepsLitDecalsOff: true,
 				}),
@@ -363,7 +370,10 @@ test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit 
 	assert.deepEqual(row(leaf, LookRow.foliage), [0.5, 0.25, 2, 1]);
 	assert.deepEqual(row(leaf, LookRow.surface2).slice(1, 3), [0.07, 0.2].map(Math.fround));
 	assert.equal(leaf.params[LookRow.detail2 + 3], 1);
+	assert.deepEqual(row(leaf, LeafBlendRow.color), [0.9, 0.5, 0.75, 1].map(Math.fround));
+	assert.deepEqual(row(leaf, LeafBlendRow.shape), [-0.75, 2, 1, 1]);
 	assert.equal(grass.flags & LookFlags.FoliageLeaf, 0);
+	assert.deepEqual(row(grass, LeafBlendRow.shape), [0, 0, 0, 0]);
 	assert.deepEqual(row(grass, LookRow.foliage), [0.5, 0.25, 1, 0]);
 	assert.deepEqual(row(grass, LookRow.foliageAo), [1, 2, 0.5, 1]);
 	assert.deepEqual(row(grass, LookRow.foliage2), [0.1, 3, 4, 0.25].map(Math.fround));

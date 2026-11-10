@@ -246,7 +246,23 @@ const leafParams = (look: MaterialLook, leaf: LeafInputs): void => {
 		LookRow.canopy,
 	);
 	params.set(canopy?.color ?? [1, 1, 1], LookRow.canopyColor);
+	const blend = leaf.blend;
+	if (blend !== null) {
+		params.set([...blend.color, blend.strength], LeafBlendRow.color);
+		params.set([blend.normalAdd, blend.normalPower, blend.withVertexNormal, 1], LeafBlendRow.shape);
+	}
 };
+
+/**
+ * where `_BLEND_COLOR` keeps its inputs: the tri-channel mask's rows, which leaves don't use. mesh.wgsl
+ * blends when the last value of {@link LeafBlendRow.shape} is set
+ */
+export const LeafBlendRow = {
+	/** `_BlendColor`: linear colour, alpha */
+	color: LookRow.maskAlbedo,
+	/** `_BlendNormalAdd`, `_BlendNormalPower`, `_BlendWithVertexNormal`, 1 with `_BLEND_COLOR` */
+	shape: LookRow.maskAlbedo + 4,
+} as const;
 
 /**
  * `HGRP/Foliage/Grass` and its card LOD: their inputs to the two-sided foliage lighting, the bent normal and

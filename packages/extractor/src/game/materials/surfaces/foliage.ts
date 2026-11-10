@@ -30,6 +30,18 @@ export const leafInputsOf = (reader: MaterialReader): LeafInputs => {
 					color: linearRgb(color('_CanopyRampColor') ?? [1, 1, 1, 1]),
 				}
 			: null,
+		blend: has('_BLEND_COLOR') ? leafBlendOf(reader) : null,
+	};
+};
+
+const leafBlendOf = ({ float, color }: MaterialReader): NonNullable<LeafInputs['blend']> => {
+	const blend = color('_BlendColor') ?? [1, 1, 1, 1];
+	return {
+		color: linearRgb(blend),
+		strength: blend[3],
+		normalAdd: float('_BlendNormalAdd', 0),
+		normalPower: float('_BlendNormalPower', 1),
+		withVertexNormal: float('_BlendWithVertexNormal', 0),
 	};
 };
 
