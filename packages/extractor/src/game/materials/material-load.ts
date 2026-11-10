@@ -61,8 +61,9 @@ export const locatedObject = (ref: ObjectRef): LocatedObject => ({
 
 /**
  * {@link loadMaterial} by asset, keeping nothing that holds its bundles: a pack keeps every material's load
- * until its textures are listed, and holding refs kept ~12k bundles' files and blocks (2.7 GB on map02). the
- * pack cache stores the result, so it must depend on nothing but the bundles read and this module's code
+ * until its textures are listed, and refs would hold thousands of bundles' files and blocks (gigabytes on
+ * map02). the pack cache stores the result, so it must depend on nothing but the bundles read and this
+ * module's code
  *
  * @param resolver asset resolver
  * @param asset the material

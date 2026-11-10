@@ -672,9 +672,9 @@ export class Viewer {
 			this.#time += dt;
 			this.#windClock += windClockRate(look.environment.wind) * dt;
 		}
-		// frames that only settle or adapt reuse the last selection, unless it holds particles, which move by
-		// the clock like the effects' scrolling textures, while the clock runs. with nothing rendering and nothing
-		// loading, the traversal would repeat the last frame's
+		// frames that only settle or adapt reuse the last selection, unless it holds particles or spinning rows,
+		// which move by the clock while it runs. with nothing rendering and nothing loading, the traversal would
+		// repeat the last frame's
 		const moving = options.animate && (traversal.particlesShown || traversal.spinsShown);
 		const traverse =
 			scene !== null &&

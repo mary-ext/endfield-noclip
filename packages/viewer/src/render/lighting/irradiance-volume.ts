@@ -25,7 +25,7 @@ const SPACING = [0.5, 2, 8] as const;
 /** a level re-centres once the camera is this many texels from its centre (well within its fade margin) */
 const RECENTRE = 4;
 /**
- * cell buffer size to start with and at most (bytes). the windows around the camera hold ~20–80 MB of cells,
+ * cell buffer size to start with and at most (bytes). the windows around the camera hold tens of MB of cells,
  * and the streaming budget bounds what stays resident besides
  */
 const CELL_BUFFER_INITIAL = 32 * 1024 ** 2;

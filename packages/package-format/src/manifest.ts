@@ -35,7 +35,7 @@ export const CORE_ARCHIVE_INDEX = 0;
 
 /**
  * fixed member paths inside {@link CORE_ARCHIVE}. `.zst` members are one zstd frame each (the JSON shrinks
- * 6–50× that way); the rest are stored as they are
+ * several times over that way); the rest are stored as they are
  */
 export const CORE_PATHS = {
 	manifest: 'manifest.json.zst',

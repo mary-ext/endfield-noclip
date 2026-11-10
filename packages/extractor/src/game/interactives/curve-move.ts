@@ -167,9 +167,8 @@ interface Trip {
  * @param move its curve move parameters
  * @param length the trip's length
  * @param travelled metres into the trip
- * @returns its speed there: with a ramp, it rises linearly from 0.1 m/s over the ramp's first metres and
- *   falls towards 0 over its last (both half the trip when they'd overlap), never below 0.1 m/s nor above its
- *   speed
+ * @returns its speed there, in metres per second: its own, ramped linearly with distance at both ends of the
+ *   trip when it has a ramp
  */
 const speedAt = (move: CurveMove, length: number, travelled: number): number => {
 	if (move.ramp === null || length <= 0) {
@@ -187,12 +186,9 @@ const speedAt = (move: CurveMove, length: number, travelled: number): number => 
 };
 
 /**
- * the path an auto-moving platform loops through, as the game's curve move plays it once started: it rides
- * the spline from its start knot, its position replaced by the spline's (its rotation and scale kept). with
- * start and target knots equal it goes round the whole spline, closed for the trip. each trip fires every
- * knot it passes, its start and target included, so a platform that turns round at a waiting knot waits there
- * twice (once arriving, once setting off). a knot that waits for the player parks it there, as while the
- * player is away
+ * the path an auto-moving platform loops through once started, by the trip, ramp and knot rules of the
+ * auto-moving platforms page: its position is the spline's, its rotation and scale its own. a knot that waits
+ * for the player parks it there, as while the player is away
  *
  * @param spline the spline it rides
  * @param move its curve move parameters

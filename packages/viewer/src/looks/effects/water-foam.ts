@@ -3,9 +3,9 @@ import type { WaterFoamSurface } from '@endfield-noclip/package-format/surfaces'
 import { EffectKind, type EffectLook, EffectRole, EffectRow, emptyEffect, setSlot } from './effect-look.ts';
 
 /**
- * float offsets of a WaterDecal look's parameters, in place of {@link EffectRow}'s rows 17–27. slots 0–3 are
- * the base colour map, disturb, mask and dissolve textures; their UV rows hold each `_ST` and their scroll
- * rows each scroll per second, which the shader applies in the game's order for each
+ * float offsets of a WaterDecal look's parameters, in place of {@link EffectRow}'s rows 0, 17–28 and 32–34.
+ * slots 0–3 are the base colour map, disturb, mask and dissolve textures; their UV rows hold each `_ST` and
+ * their scroll rows each scroll per second, which the shader applies in the game's order for each
  */
 export const WaterFoamRow = {
 	/** `_BaseColor` rgb, `_OverallOpacity` */

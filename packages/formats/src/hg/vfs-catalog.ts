@@ -123,7 +123,7 @@ export const parseVfsCatalog = (raw: Uint8Array, key: Uint8Array): VfsCatalog =>
 			const name = readShortString(r);
 			// the name hash isn't needed to read files
 			r.skip(8);
-			// a Bundle catalog has ~280k files, so they share their chunk's string rather than each holding a copy
+			// a Bundle catalog has hundreds of thousands of files, so they share their chunk's string rather than each holding a copy
 			const chunkMd5Bytes = r.bytesView(16);
 			const chunkMd5 = bytesEqual(chunkMd5Bytes, md5Bytes) ? md5 : toHex(chunkMd5Bytes);
 			const dataMd5 = toHex(r.bytesView(16));

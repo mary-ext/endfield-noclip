@@ -1,5 +1,5 @@
 /**
- * the game's DynamicStreaming load grids (`docs/game-data/world.md#dynamic-streaming`): level `L` cells are
+ * the game's DynamicStreaming load grids (`docs/game-data/world.md#dynamic-load-grids`): level `L` cells are
  * `32 << L` m on a 4096 m frame centred on the origin, and a row loads while the streaming centre's cell at
  * its grid's level is within one cell of the grid's, on both axes
  *

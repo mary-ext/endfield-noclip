@@ -132,11 +132,8 @@ const SPLAT_HEADER: HeaderShape = {
 };
 
 /**
- * height page: 8-byte header (`'EFHT'`, u16 version, u16 side), then the raw samples as two byte planes (all
- * low bytes, then all high bytes) of zigzag-encoded deltas. interior samples are predicted by the gradient
- * `left + above - aboveLeft`, the first row by the left neighbour, the first column by the sample above, the
- * first sample by 0. arithmetic wraps at 16 bits, so the hole bit survives. on map02's leaves with zstd-19
- * this is 2.15 KB per 65² page, against 2.36 KB for left-only prediction and 3.6 KB for raw samples.
+ * encodes a height page (`.hgt`; layout in docs/package-format.md): zigzag deltas from a gradient prediction,
+ * as two byte planes. arithmetic wraps at 16 bits, so the hole bit survives
  *
  * @param samples `side²` raw samples, rows along +Z
  * @param side samples per edge
@@ -207,8 +204,8 @@ export interface SurfacePage {
 }
 
 /**
- * surface page: 8-byte header (`'EFTS'`, u16 version, u16 side), then the albedo's BC3 blocks, then the
- * normal's, each in row-major block order as `writeTexture` takes them.
+ * encodes a surface page (`.tsp`; layout in docs/package-format.md), its images in row-major block order as
+ * `writeTexture` takes them
  *
  * @param page the images
  * @returns the encoded page
@@ -264,8 +261,7 @@ export interface SplatPage {
 }
 
 /**
- * splat page: 12-byte header (`'EFSL'`, u16 version, u16 side, u16 cells, u16 0), then the control texels,
- * the tint's BC3 blocks and the index cells.
+ * encodes a splat page (`.tsl`; layout in docs/package-format.md)
  *
  * @param page the inputs
  * @returns the encoded page

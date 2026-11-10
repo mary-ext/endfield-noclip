@@ -39,7 +39,8 @@ struct Look {
 	mask_offset: vec4f,
 	// detail mode (0 colour overlay, 1 PBR), mask mode, normal intensity, PBR intensity
 	detail: vec4f,
-	// view depths where the detail starts and finishes fading, overlay brighter scale
+	// view depths where the detail starts and finishes fading, overlay brighter scale (transparent looks: 1 for
+	// premultiplied blending), 1 when the surface keeps lit decals off
 	detail2: vec4f,
 	// overlay colour (linear), how much it covers
 	detail_overlay: vec4f,
@@ -106,7 +107,7 @@ const LAYER_SOURCE_TOP = 0.0;
 const LAYER_SOURCE_MASK_MAP = 1.0;
 // slot i samples UV set 1 when bit UV1_SHIFT + i is set
 const UV1_SHIFT = 18u;
-// set per draw from the geometry's streams (`GeometryFlags` in mesh-renderer.ts)
+// set per draw from the geometry's streams (`GeometryFlags` in look.ts)
 const HAS_NORMALS = 512u;
 const HAS_TANGENTS = 1024u;
 const HAS_COLORS = 67108864u;
@@ -236,10 +237,9 @@ fn instance_rel(position: vec4f, ii: u32, draw: Draw, look: Look) -> vec3f {
 	return rel + grass_lean(flags, look, p.y) + sway(flags, look, p, position.w, rel, origin);
 }
 
-// `_SIMPLE_VERTEXANIM_CLOTH` (`swayParams` in lit-look.ts, docs/game-data/materials.md#swaying-cloth): a
-// horizontal world-space offset by a sine of the wind clock, phased by the object's world X and weighted by
-// the vertex colour's alpha, which the geometry carries in position W. kites swing by their object-space
-// height; other cloth runs as a wave along world Z
+// `_SIMPLE_VERTEXANIM_CLOTH`'s world-space offset (`swayParams` in lit-look.ts,
+// docs/game-data/materials.md#swaying-cloth). `weight` is the vertex colour's alpha, which the geometry carries
+// in position W
 fn sway(flags: u32, look: Look, p: vec3f, weight: f32, rel: vec3f, origin: vec3f) -> vec3f {
 	let intensity = look.foliage2.x;
 	if (weight == 0.0 || intensity == 0.0 || (flags & (FOLIAGE | EROSION | UNLIT | EFFECT)) != 0u) {
@@ -265,8 +265,7 @@ fn sway(flags: u32, look: Look, p: vec3f, weight: f32, rel: vec3f, origin: vec3f
 }
 
 // `_USE_CAMERA_BASED_TILLING` (`grassParams` in lit-look.ts): grass leans away from the camera along its up
-// vector flattened onto the ground, by the vertex's object-space height times the intensity in world metres,
-// so seen from above the blades cover more of the ground
+// vector flattened onto the ground, by the vertex's object-space height times the intensity in world metres
 fn grass_lean(flags: u32, look: Look, height: f32) -> vec3f {
 	if ((flags & (FOLIAGE | FOLIAGE_LEAF)) != FOLIAGE) {
 		return vec3f(0.0);
@@ -695,8 +694,6 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 			+ channels[2].rgb * glow.a;
 	}
 	if ((flags & EMISSIVE_MASK) != 0u) {
-		// mask channel 1 is the base colour's alpha. in the two-basemap layout 2 is the normal map's B and 3 its
-		// alpha; with an MRO map 2 is the base alpha too and 3 the MRO map's alpha. a map still streaming reads 0
 		emission = look.emissive.rgb
 			* saturate((map_channel(flags, look.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
 	}
@@ -781,10 +778,10 @@ fn leaf_surface(surface: Surface, look: Look, in: VertexOut, has_normal: bool, n
 	return s;
 }
 
-// `HGRP/Foliage/Grass` and its card LOD (`grassParams` in lit-look.ts): occlusion and a sun mask that rise
-// from a floor at the root to 1 up the blade, the sun mask's diffuse and transmission parts masked by the normal
-// map's alpha (`mask`), and transmission where those agree. the game ramps by the distance from a point far
-// below the root, which over a blade's width is the object-space height
+// `HGRP/Foliage/Grass` and its card LOD (`grassParams` in lit-look.ts, docs/game-data/materials.md#foliage):
+// occlusion and a sun mask that rise from a floor at the root to 1 up the blade, by the object-space height
+// standing in for the game's; the sun mask's diffuse and transmission parts masked by the normal map's alpha
+// (`mask`), and transmission where those agree
 fn grass_surface(surface: Surface, look: Look, in: VertexOut, mask: f32) -> Surface {
 	var s = surface;
 	let height = max(in.object_y, 0.0);

@@ -57,8 +57,8 @@ struct Config {
 @group(2) @binding(5) var flow_map: texture_2d<f32>;
 @group(2) @binding(6) var repeat_sampler: sampler;
 // [0]: x = 1 with wave normals, y = 1 with a flow map, z = flow map size (m), w = 1 with a caustic map;
-// [1]: the flow map's centre (world xz), z = 1 with foam boxes drawn into `foam_texture`, w unused; [2]: the sun as the atmosphere fog takes it (raw colour,
-// pre-exposed), w unused
+// [1]: the flow map's centre (world xz), z = 1 with foam boxes drawn into `foam_texture`, w unused;
+// [2]: the sun as the atmosphere fog takes it (raw colour, pre-exposed), w unused
 @group(2) @binding(7) var<uniform> water: array<vec4f, 3>;
 @group(2) @binding(8) var caustic_map: texture_2d<f32>;
 // the foam the WaterDecal boxes leave on the surface (`fs_water_foam` in effect.wgsl): rgb to add, alpha what's

@@ -1,9 +1,7 @@
 import { FormatError } from '../binary/binary-reader.ts';
 import { ByteView } from '../binary/byte-view.ts';
 
-// SparkBuffer config tables (`Data/TableCfg/*.bytes`, Table group). layout recovered from MapIdTable,
-// LevelDescTable, I18nTextTable_*, SpaceshipAreaUnlockNeedCenterLvTable, SpaceshipGrowCabinLvTable and the
-// Dungeon* tables; map fields from SettlementBasicDataTable.
+// SparkBuffer config tables (`Data/TableCfg/*.bytes`, Table group):
 //
 //   u32 typesOffset, u32 rootOffset, u32 dataOffset
 //   types: u32 count, count × { u8 kind (6 = enum, 8 = bean), pad4, u32 hash, cstring name, pad4, then

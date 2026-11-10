@@ -1,7 +1,7 @@
 /**
  * bounds over groups of consecutive instance rows, so the mesh selection can reject a whole group before
  * testing its rows one by one. a block's rows are mostly in placement order, which keeps neighbours near one
- * another (on map02 a group of 32 has a median radius of 20 m), and dense views walk over 100k rows a frame,
+ * another (a group of 32 typically spans a few tens of metres), and dense views walk over 100k rows a frame,
  * most of them too small, too far for any LOD or out of view.
  *
  * @module

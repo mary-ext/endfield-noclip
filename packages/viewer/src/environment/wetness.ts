@@ -1,8 +1,9 @@
 import type { RainConfig } from '@endfield-noclip/package-format/environment';
 
 /**
- * the game's rain occlusion map range (`rainOcclusionMapRange` of its rain presetting asset, m), which also
- * places the far fade. the asset wasn't found; this is a guess within the field's 1–200 range
+ * the range (m) the wetness is full within, which also places the far fade: the game's rain occlusion map
+ * covers 100 m, and that the coverage uses the same range is inferred
+ * (docs/game-data/environment.md#wetness)
  */
 const OCCLUSION_RANGE = 100;
 

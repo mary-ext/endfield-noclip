@@ -14,7 +14,7 @@ import {
 
 /**
  * 32-bit words per row: transform (12), bounds centre + block word (4), half extents + info (4), then the
- * words {@link RowWord} names from the texture sheet on (4). frame.wgsl's `Row` mirrors it
+ * words {@link RowWord} names from the texture sheet on (4). frame.wgsl's `InstanceRow` mirrors it
  */
 export const ROW_WORDS = 24;
 

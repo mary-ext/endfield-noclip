@@ -64,8 +64,7 @@ const IRRADIANCE_HEADER: HeaderShape = {
 };
 
 /**
- * tables/irradiance.bin: 16-byte header (`'EFIV'`, u16 version, u16 0, u32 entryCount, u32 0), then the
- * entries' cell keys (u32 each, ascending, repeats allowed), blob indices and visibility groups (u32 each).
+ * encodes `tables/irradiance.bin` (layout in docs/package-format.md)
  *
  * @param table the cells
  * @returns the encoded table

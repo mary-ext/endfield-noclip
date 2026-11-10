@@ -38,13 +38,13 @@ import { chainDraw, FLT_MAX, type PackContent } from './pack-content.ts';
  * @param roots the placed prefabs' roots, shared with the pack's other prefab readers
  * @param content the pack's content; rows, lights, stand-ins and unsupported prefabs are added
  * @param placements every placed prefab, in placement order
+ * @param floaterVolume by floating interactive's level logic id, its water volume's id
  */
 export const placePrefabs = async (
 	world: WorldIndex,
 	roots: PrefabRoots,
 	content: PackContent,
 	placements: readonly StructureModel[],
-	/** by floating interactive's level logic id, its water volume's id */
 	floaterVolume: ReadonlyMap<string, string>,
 ): Promise<void> => {
 	const { scene } = content;

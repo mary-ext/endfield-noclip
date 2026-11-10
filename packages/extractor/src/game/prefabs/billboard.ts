@@ -46,7 +46,7 @@ export const isBillboardType = (ref: ObjectRef): boolean => {
 
 /**
  * reads an enabled `VFXBillBoard`. modes 2 and 3 turn about an up axis the viewer takes as the world's
- * vertical, which they are on upright placements
+ * vertical, which it is on upright placements
  *
  * @param data the component's fields (see {@link isBillboardType})
  * @param frame its GameObject's matrix in prefab space

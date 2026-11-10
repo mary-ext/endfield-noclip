@@ -74,7 +74,10 @@ export interface StructureModel {
 	source: string;
 	/** the level logic id of the interactive it draws, absent for other placements */
 	logicId?: string;
-	/** the global id level scripts address its dynamic structure by, absent for other placements */
+	/**
+	 * the id of the resource owner placing it: its global id, which level scripts address it by, else
+	 * `<grid>:<ordinal>`. absent for other placements
+	 */
 	owner?: string;
 	visibility: Visibility;
 	/** the pose to draw the prefab in, `null` for the saved one */
@@ -100,7 +103,7 @@ export interface DynamicStructures {
 	entities: DynamicEntity[];
 	/** local lights in the ECS groups, under their structure's visibility */
 	lights: { light: ChunkLight; visibility: Visibility }[];
-	/** script-group and logic-gate controls; load gates read controls of the game state instead */
+	/** script, logic, harvest and blight controls; other load gates read controls of the game state instead */
 	controls: DraftControl[];
 	/** MapConfig scene state indices the visibility expressions require, as `sceneStateControl` controls */
 	sceneStates: Set<number>;
@@ -157,9 +160,8 @@ const EQUAL = 0;
 /** `CompareOperator.NotEqual` */
 const NOT_EQUAL = 1;
 /**
- * blight control values: the core alive or destroyed. an erosion root loads while its variable isn't 2 and a
- * sludge patch while its variable is 0; while an erosion root's variable is unset neither loads, a state the
- * control leaves out
+ * blight control values. present stands for an erosion root's variable other than 2 and a sludge patch's at
+ * 0; the variable unset, under which the blight doesn't load either, isn't a value
  */
 const BLIGHT_PRESENT = 0;
 const BLIGHT_CLEANSED = 1;

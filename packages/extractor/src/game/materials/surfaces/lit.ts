@@ -130,9 +130,8 @@ export const describeLit = (reader: MaterialReader): LitSurface | UnsupportedSur
 			source = 'mask';
 		}
 		if (source !== null && emissive !== undefined) {
-			// `_EMISSIVE_ANIM_SWEEP` lights each colour inside a band that sweeps up the object, by its alpha:
-			// alpha 1 glows only in the band. the band isn't drawn, so this keeps each colour at its resting
-			// value outside it (docs/game-data/materials.md#emission)
+			// `_EMISSIVE_ANIM_SWEEP`'s band isn't drawn, so each colour keeps the share that glows outside it:
+			// one minus its alpha (docs/game-data/materials.md#emission)
 			const sweep = lit && has('_EMISSIVE_ANIM_SWEEP');
 			const resting = (rgba: readonly [number, number, number, number], scale: number): Rgb =>
 				scaleRgb(rgba, sweep ? scale * (1 - Math.min(Math.max(rgba[3], 0), 1)) : scale);
@@ -213,9 +212,9 @@ export const describeLit = (reader: MaterialReader): LitSurface | UnsupportedSur
 	}
 
 	let overlay: LitSurface['overlay'] = null;
-	// an empty noise slot reads as Unity's black default, which still glows (the originium crystals of
-	// `M_interactive_campfire+1_003_02` and Dijiang's far crystal leave it empty). an empty pattern would glow in
-	// the dark colour alone; none is seen
+	// an empty noise slot reads as the shader's black default and still glows
+	// (docs/game-data/materials.md#lit-layers). an empty pattern would glow in the dark colour alone; none is
+	// seen
 	if (pattern !== null) {
 		overlay = parallaxGlowOf(reader, pattern, noise);
 	} else if (lit && !parallax) {

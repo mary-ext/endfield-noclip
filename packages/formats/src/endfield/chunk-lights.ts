@@ -7,26 +7,10 @@ import { readChunkRows, readPropertyTable } from './mono-objects.ts';
 // local lights among the InitChunkData component-group entities (tag-2 rows, `init-chunk-data.ts`). their
 // group columns 42 and 63 are zero-filled in the file; the values sit in the entity's own root row, whose slot 3
 // is a keyed property table (`mono-objects.ts` layout) holding two blobs:
-//
-//   key 0xff000000, 236 bytes: the light as the renderer consumes it
-//     0 f32×4 colour (sRGB, as authored)   16 f32 intensity   20 f32 colour temperature (K)   24 u32 use temperature
-//     28 f32×4 position, 1                  44 f32×4 direction (the transform's +z), 0
-//     60 f32×4 linear colour · intensity · temperature tint (rgb), intensity
-//     76 f32 range   80 f32 25 / range²   84 f32 spot angle (degrees; −1 for point lights)   88 u32 type
-//     92 f32×4 copy of 60   108 f32×16 object-to-world (column-major)   172 f32×16 world-to-object
-//   key 0xff010000, 448 bytes: the authored settings of HG's Light, then its additional data
-//     12 u32 type   20 f32 specular intensity   24 f32 range   36 f32 spot angle   40 f32 inner spot angle
-//     48 f32 cot(spot / 2)   52 f32 1 / cos(spot / 2)   80 u32 Unity LightmapBakeType (4 realtime, 1 mixed)
-//     91 u8 shadow only   92 u8 culling box on   94 u8 culling distance on
-//     100 f32×3 culling box offset   112 f32×3 box half extents   124 f32×3 box rotation (Euler degrees)
-//     136 f32 box falloff threshold   140 i32 priority   144 f32 tube length (−1 or 0: not a tube)
-//     148 f32 soft source radius   152 f32 culling distance   156 f32 falloff distance   160 u32 shadows
-//     172 f32 shadow strength   436 u8 character only   440 f32 volumetric scattering intensity
-//     444 f32 falloff exponent (negative: inverse square)
-//
-// layouts found by census over map01 and map02 (a value per offset against the authored properties of Unity's
-// Light: the defaults 30° and 21.80208° for the angles, 6570 K for the temperature, and so on), and the order of
-// the properties of HG's Light.
+//   key 0xff000000, 236 bytes (core): the light as the renderer consumes it
+//   key 0xff010000, 448 bytes (settings): the authored settings of HG's Light, then its additional data
+// every offset of both is tabled under the local lights of docs/game-data/world.md#initchunkdata-layout;
+// `decodeLight` reads the ones `ChunkLight` exposes.
 
 // #region types
 

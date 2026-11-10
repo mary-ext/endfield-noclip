@@ -29,7 +29,10 @@ converts only what the install or the converter changed. the cache keeps what th
 deletes the rest after each pack; a package directory deleted by hand releases its share at the next pack.
 --no-cache converts everything and keeps nothing.`;
 
-/** default worker count at most; each worker holds ~400 MB of its own catalogs and caches */
+/**
+ * default worker count at most; each worker holds roughly 150–200 MB of its own catalogs and caches (the
+ * bundle manifest is shared), before the assets of its jobs in flight
+ */
 const MAX_DEFAULT_JOBS = 8;
 
 export const run = async (args: string[]): Promise<void> => {

@@ -149,9 +149,8 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 			disturbShare: slot.disturbed === null ? 0 : float(slot.disturbed, 1),
 		};
 	}
-	// the colour pass emits `tint · intensity · vertex colour · main`; the depth pass tests the tint's alpha times
-	// `_TintColorAlpha`, the vertex alpha, the main texture's alpha (its red), the mask's red, the dissolve and the
-	// near fade
+	// the tint's colour is the colour pass's and its alpha the depth pass's tested alpha
+	// (docs/game-data/effects.md#solid-effects)
 	const { tint: ownTint, intensity } = stackTintOf(reader);
 	const tint: typeof ownTint = [
 		ownTint[0] * second[0],

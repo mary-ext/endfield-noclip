@@ -15,9 +15,8 @@ import { ChunkObjectKind, INIT_CHUNK_VERSIONS } from './init-chunk-data.ts';
 //
 // a field key is `bit << 24 | field << 16 | element`: the component's mask bit index (14 for 0x4000; 0 for
 // Transform), the field's index in its class and, for fixed arrays (matrix rows, curve keys), the element. a
-// value is addressed by a uoffset in slot 5 and laid out by its type code, see {@link MonoValue}. the layout
-// was worked out in this project and checked against `Env_*` volumes (whose envPhase hashes resolve to
-// `EnvParse/Env_*.asset`) and Global Volumes.
+// value is addressed by a uoffset in slot 5 and laid out by its type code, see {@link MonoValue}
+// (docs/game-data/world.md#streamingchunkdata).
 
 // #region types
 

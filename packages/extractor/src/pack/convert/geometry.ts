@@ -211,8 +211,8 @@ export const convertMesh = (
 				encodeOctahedral(normals[source * 3], normals[source * 3 + 1], normals[source * 3 + 2], 16, oct);
 			} else {
 				// the game's normal is already a 10-bit octahedral pair over the same mapping. its integers are
-				// stored as they are and the stream's scale restores ÷511: exact, and ~30% smaller after
-				// meshopt + zstd than respreading them over 16 bits
+				// stored as they are and the stream's scale restores ÷511: exact, and smaller than respreading
+				// them over 16 bits
 				unpackOct10(packedNormals[source], oct);
 			}
 			out[i * 2] = oct[0];

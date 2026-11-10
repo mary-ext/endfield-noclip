@@ -39,7 +39,7 @@ import { type PoseFrames, poseFrames, poseSkin, skinMotion } from './skin-pose.t
 
 // #region types
 
-/** one enabled mesh renderer in a prefab's highest-detail authored LOD */
+/** one enabled renderer of a prefab, whichever LOD it belongs to ({@link sizes}) */
 export interface PrefabRenderer {
 	name: string;
 	matrix: Float32Array;
@@ -68,9 +68,9 @@ export interface PrefabRenderer {
 	particles: ParticleSystemInfo | null;
 	/**
 	 * why the renderer can't draw as the game does, `null` when it can. it's then a stand-in: a particle system
-	 * the viewer can't play draws its mesh once at the emitter (turned to the camera for quads), and a skinned
-	 * mesh the reader can't pose draws unposed at its renderer, or posed without its blend shapes, and a
-	 * renderer under a switched-off GameObject draws as it would once switched on
+	 * the viewer can't play draws its mesh once at the emitter (turned to the camera for quads), a skinned mesh
+	 * the reader can't pose draws unposed at its renderer, or posed without its blend shapes, and a renderer
+	 * under a switched-off GameObject draws as it would once switched on
 	 */
 	unsupported: string | null;
 	/**

@@ -1,6 +1,6 @@
 // skins an animated geometry's bind pose at the current frame and writes the result over its own vertex
-// streams, in the formats the mesh pipelines read (`DecodedSkin`, `SkinAnimation` in the package format).
-// needs octahedral.wgsl
+// streams, in the formats the mesh pipelines read (`DecodedSkin` in decode-protocol.ts, `SkinAnimation` in
+// package-format). needs octahedral.wgsl
 
 struct Skin {
 	vertex_count: u32,

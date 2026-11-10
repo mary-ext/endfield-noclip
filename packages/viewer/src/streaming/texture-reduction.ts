@@ -19,7 +19,7 @@ const TEXTURE_SHARE = 0.25;
 /**
  * lowers material texture resolution while the stream budget is full of content in use, and restores it once
  * there's room, as Unity's texture streaming drops mip levels to stay within its budget. without it, textures
- * filled the budget and paused all streaming, so meshes that came into view afterwards stayed boxes
+ * fill the budget and pause all streaming, so meshes that come into view afterwards stay boxes
  */
 export class TextureReduction {
 	/** mip levels added to every material texture request */

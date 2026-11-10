@@ -475,9 +475,9 @@ export class GameState {
 	}
 
 	/**
-	 * a load gate on another map's variable never passes: the game checks a gate's map id against the current
-	 * scene's before comparing. dungeons that stream a map (Typhoeus's dung02_rdg009 in map02's lv009) gate
-	 * their own scenery this way. gates give numeric map ids, MapConfig conditions string ones
+	 * a load gate on another map's variable never passes
+	 * (docs/game-data/scene-states.md#gates-on-another-maps-variable). gates give numeric map ids, MapConfig
+	 * conditions string ones, so only a numeric id marks a gate
 	 */
 	#otherMapGate(condition: Extract<GameCondition, { kind: 'mapVar' | 'globalVar' }>): boolean {
 		const known = this.#mapVariables;

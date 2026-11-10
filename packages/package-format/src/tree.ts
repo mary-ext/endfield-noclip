@@ -135,13 +135,7 @@ const NONE = 0xff_ff_ff_ff;
 const isContentKind = enumGuard(ContentKind);
 
 /**
- * tree.bin: 24-byte header (`'EFTR'`, u16 version, u16 0, u32 nodeCount, u32 refCount, u32 globalCount, u32
- * reachCount), then 48-byte nodes, 24-byte content refs (the nodes', then the global ones) and 16-byte
- * reaches.
- *
- * node: i32 x, i32 z, u8 level, u8×3 0, f32×3 min, f32×3 max, f32 geometricError, u32 refFirst, u32 refCount.
- * ref: u8 kind, u8 tier, u16 0, u32 group, u32 blob, u32 first, u32 count, u32 reach (`0xffffffff` for none).
- * reach: f32 minX, f32 minZ, f32 maxX, f32 maxZ.
+ * tree.bin; the layout is in docs/package-format.md (binary encodings).
  *
  * @param tree nodes, refs and reaches
  * @returns the encoded file

@@ -155,7 +155,6 @@ export class SceneState {
 		this.#triggers = camera.memory;
 		const values = states === null ? [] : resolveSceneValues(states, this.#picks, this.#camera);
 		this.#values = values;
-		// water volumes move to the fill their `waterLevel` control picks, at the game's speed times the rate
 		this.#followers.follow(values);
 		const results = states === null ? [] : conditionResults(states, values);
 		if (!sameResults(results, this.#results)) {

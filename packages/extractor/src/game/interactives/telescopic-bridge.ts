@@ -121,10 +121,8 @@ const railPose = async (
 };
 
 /**
- * reads a telescopic bridge prefab's settled looks. the game copies the Mono's platform GameObject (switched
- * off in the prefab) once per piece, places the copies end to end along the root's +z from the start port,
- * moves the end port past the last one and stretches the track under them; retracted, the copies are switched
- * off, the end port returns to the start port and the track is switched off
+ * reads a telescopic bridge prefab's settled looks ({@link TelescopicPoses}) from its root MonoBehaviour. the
+ * game draws copies of the platform piece, never the piece itself, so each copy is a placement of its own
  *
  * @param resolver bundle reader
  * @param root the prefab's root GameObject

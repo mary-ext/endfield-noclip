@@ -243,12 +243,7 @@ export const parseIrradianceRegion = (data: Uint8Array): IrradianceRegion => {
 // #endregion
 
 /**
- * a decompressed cell, as the GPU reads it (all u32, little-endian): a perfect spatial hash over 4³-probe
- * blocks, `u32 T, u32 O`, `O³` offset words (byte triples), `T³` entries of `(key, probe offset, mask lo,
- * mask hi)`, then 16-byte probes. a block key is `bx | by << 8 | bz << 16`, a block being 4³ probes at the
- * level's spacing (`0.5 · 4^level` m); an entry's probes are at `probe offset + popcount(mask below the
- * probe's bit) · 16` (relative to the cell). a probe is L0 rgb as R11G11B10F, then three rgba8 words: the L1
- * direction of red, green and blue (`· 4 − 2`, relative to that channel's L0) with a validity weight in
- * alpha
+ * a decompressed cell, as the GPU reads it: a perfect spatial hash over 4³-probe blocks, then 16-byte probes
+ * (docs/game-data/irradiance.md#cells-and-probes)
  */
 export type IrradianceCell = Uint8Array;

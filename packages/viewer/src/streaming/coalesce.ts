@@ -71,8 +71,8 @@ export class BlobCoalescer {
 
 	/**
 	 * seeds are taken by descending priority (ties in queue order); each takes in its untaken neighbours in the
-	 * same archive that `queued` accepts, while the gaps stay at most 64 KiB, the read at most 2 MiB and 96
-	 * blobs, growing right before left. blobs between them that aren't queued are read over.
+	 * same archive that `queued` accepts, within {@link COALESCE_GAP}, {@link COALESCE_SPAN} and
+	 * {@link COALESCE_COUNT}, growing right before left. blobs between them that aren't queued are read over.
 	 *
 	 * @param blobs the queued blobs, all readable by range
 	 * @param priorities larger reads sooner, by index into `blobs`

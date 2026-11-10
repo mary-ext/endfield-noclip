@@ -1,9 +1,9 @@
 import type { Vec3 } from './values.ts';
 
 /**
- * `tables/lights.json`: the scene's local point and spot lights, loaded with the core. a viewer lights with
- * the ones whose group shows, like instances. the game's directional lights, lights that only cast shadows
- * and lights that only light characters are left out
+ * `tables/lights.json.zst`: the scene's local point and spot lights, loaded with the core. a viewer lights
+ * with the ones whose group shows, like instances. the game's directional lights, lights that only cast
+ * shadows and lights that only light characters are left out
  */
 export interface LightsTable {
 	lights: LightEntry[];

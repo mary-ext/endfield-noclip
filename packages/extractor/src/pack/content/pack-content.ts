@@ -25,8 +25,8 @@ import { LightCollector } from '../tables/lights.ts';
 import { ParticleTable } from '../tables/particles.ts';
 
 // what the entity phase builds up. every content source (static chunks, dynamic structures, interactives,
-// cabins, placed prefabs) writes through this one object, so a new source needs no plumbing of its own: it
-// interns draws, files rows, registers controls and lights, and reports what it left out here.
+// cabins, placed prefabs) writes through this one object: it interns draws, files rows, registers controls and
+// lights, and reports what it left out here.
 
 /** the largest f32: a draw's LOD range without an upper bound */
 export const FLT_MAX = 3.4028234663852886e38;

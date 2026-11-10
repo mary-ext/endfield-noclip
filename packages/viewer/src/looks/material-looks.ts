@@ -194,8 +194,8 @@ export const materialLooks = (materials: MaterialTable): MaterialLook[] =>
 	materials.entries.map(materialLook);
 
 /**
- * each material's look, built when first asked for: a package has tens of thousands of materials (map02: 15k,
- * 42 ms to build at open), and a view uses a fraction of them
+ * each material's look, built when first asked for: a package has tens of thousands of materials (tens of
+ * milliseconds to build at open), and a view uses a fraction of them
  */
 export class LazyMaterialLooks {
 	#entries: readonly MaterialEntry[];

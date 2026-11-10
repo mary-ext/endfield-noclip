@@ -30,7 +30,7 @@ import type { PackCache, StepMemo } from '../store/pack-cache.ts';
 /** VFS group of `Data/IrradianceVolume` */
 const IRRADIANCE_GROUP = 'A63D7E6A';
 
-/** zstd level of cells: 1.6 GB of them on map02 are compressed on every pack, too slow at the blob default */
+/** zstd level of cells: a scene's gigabytes of them are too slow to compress at the blob default */
 const ZSTD_LEVEL = 9;
 
 /** cells decoded and compressed at once; a few past the libuv pool keeps it busy */
@@ -79,7 +79,7 @@ const convertCells = async (
 	};
 	const { report } = memo.value;
 	for (const { name, stateGroup, payload: payloadFile, records } of selected) {
-		// oxlint-disable-next-line no-await-in-loop -- one ~67 MB payload in memory at a time
+		// oxlint-disable-next-line no-await-in-loop -- one payload (tens of MB) in memory at a time
 		const payload = await vfs.readVerified(payloadFile);
 		for (const record of records) {
 			const { level } = irradianceCellOrigin(record.key);

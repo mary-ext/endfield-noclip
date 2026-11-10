@@ -116,9 +116,8 @@ const isVolumeType = (ref: ObjectRef): boolean => {
 
 /**
  * reads the enabled environment volumes of a prefab's active GameObjects. box volumes take the GameObject's
- * transform under the placement (rotation and scale composed per axis, which holds for the unrotated or
- * uniformly scaled hierarchies authored); prism shapes are stored in world coordinates as in chunk data, so a
- * prism under a placement that moves it is rejected
+ * transform under the placement, composed per axis: exact only for unrotated or uniformly scaled hierarchies.
+ * prism shapes are in world coordinates, so one under a placement that moves it is rejected
  *
  * @param resolver bundle reader
  * @param root prefab GameObject

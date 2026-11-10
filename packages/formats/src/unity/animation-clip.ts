@@ -12,7 +12,7 @@ import {
 	optionalNumberField,
 } from './values.ts';
 
-/** a Transform property a clip animates, at the clip's last frame */
+/** a Transform property a clip animates, at one time of the clip */
 export type ClipTransformValue =
 	| { kind: 'position' | 'scale'; value: [number, number, number] }
 	| { kind: 'rotation'; value: [number, number, number, number] };
@@ -107,10 +107,9 @@ const eulerQuaternion = (
 };
 
 /**
- * reads the values a generic (non-humanoid) AnimationClip ends on. the muscle clip stores each animated
- * value's start and stop in binding order (`m_ValueArrayDelta`), so the end pose needs no curve sampling.
- * Transform bindings take three values (position, scale, Euler rotation) or four (rotation); other float
- * bindings one; PPtr bindings none. Euler rotations apply in the rotation order their binding records
+ * reads the values a generic (non-humanoid) AnimationClip ends on, from the stop values the muscle clip
+ * stores in binding order (`m_ValueArrayDelta`), so without sampling curves
+ * (`docs/game-data/animation.md#bindings`)
  *
  * @param clip AnimationClip type-tree object
  * @returns the end value of every animated Transform property, GameObject activity and renderer property
@@ -328,13 +327,14 @@ const sampleStreamed = (keys: readonly StreamedKey[], time: number): number => {
 /**
  * reads a generic (non-humanoid) AnimationClip's curves for playback: the streamed block (Unity's cubic
  * keys), the dense block (frames at its own rate, linearly interpolated, as floats or Hypergryph's 16-bit
- * encoding: `(u16 − 32767.5) / 32767.5`, times `m_PositionFactor` for positions; rotations are normalized as
- * quaternions) and the constant block, in that order of the bindings' scalars
+ * encoding) and the constant block, in that order of the bindings' scalars, or the clip's ACL transform
+ * tracks when it has them (`docs/game-data/animation.md#curves`). rotations come out normalized
  *
  * @param clip AnimationClip type-tree object
  * @returns its Transform values over time
- * @throws {FormatError} for legacy clips, ACL-compressed curves, 16-bit dense curves other than positions and
- *   rotations, unknown Transform attributes, or blocks that don't add up to the bindings
+ * @throws {FormatError} for legacy clips, ACL-compressed clips without transform tracks or that
+ *   {@link readAclMotion} rejects, dense encodings other than floats and the 16-bit one, unknown Transform
+ *   attributes or Euler rotation orders, or blocks that don't add up to the bindings
  */
 export const readClipMotion = (clip: TypeTreeObject): ClipMotion => {
 	if (booleanField(clip, 'm_Legacy')) {

@@ -11,11 +11,11 @@ import type { AnimationCurve, Gradient } from './curves.ts';
 import type { Vec3 } from './values.ts';
 
 /**
- * `tables/particles.json`: the particle systems that chain draws emit ({@link ChainDraw.particles}), loaded
- * with the core. each is a Unity `ParticleSystem` drawing one mesh or one camera-facing quad per particle,
- * reduced to the modules a viewer can evaluate in closed form: a particle's state follows from its emission
- * time and its own random values, so a viewer can place every live particle at any time without stepping a
- * simulation
+ * `tables/particles.json.zst`: the particle systems that chain draws emit ({@link ChainDraw.particles}),
+ * loaded with the core. each is a Unity `ParticleSystem` drawing one mesh or one quad per particle, reduced
+ * to the modules a viewer can evaluate from a particle's emission time and its own random values: in closed
+ * form, or, under a speed limit or force fields, by stepping the particle from its birth at
+ * {@link PARTICLE_STEP_RATE}
  */
 export interface ParticlesTable {
 	systems: ParticleSystemInfo[];
@@ -415,10 +415,7 @@ export interface ParticleFreeMotionInfo {
 	velocity: ParticleVelocityInfo | null;
 	/** what Unity's `ClampVelocityModule` does to the particles' speed; `null` without */
 	clamp: ParticleClampInfo | null;
-	/**
-	 * the force fields pushing the particles (Unity's `ExternalForcesModule`); `null` without. the packer
-	 * leaves such systems without drag
-	 */
+	/** the force fields pushing the particles (Unity's `ExternalForcesModule`); `null` without */
 	forces: ParticleForcesInfo | null;
 }
 
@@ -436,18 +433,9 @@ export const PARTICLE_STEP_RATE = 30;
  * one Unity `ParticleSystemForceField` with a sphere shape. a particle feels it only while its distance from
  * the field's centre, measured in the field's own frame (scale included), lies between {@link startRange} and
  * {@link endRange}. every curve but the multiplier is read at that distance's place between the two, 0–1; two
- * constants pick one value per particle, the same for every field. each step applies, in order, to the
- * particle's own velocity `v` (after gravity, before the velocity module), with `m` the multiplier and `dt`
- * the step:
- *
- * - `v += direction · m · dt`, the direction in the field's axes
- * - `v -= n · gravity · m · dt · 30`, `n` the unit direction from the centre to the particle (reversed within
- *   {@link gravityFocus} of the range), so a positive gravity pulls inwards
- * - `v += (t · rotationSpeed · m − v) · rotationAttraction · m · dt · 30`, `t` the unit tangent about the
- *   field's +y (tilted per particle by {@link rotationRandomness}), pulling the whole velocity towards a
- *   swirl of that speed
- * - the speed `s` drops by `drag · m · dt`, times `π (size / 2)²` with {@link dragBySize} and `s²` with
- *   {@link dragByVelocity}, to no less than 0
+ * constants pick one value per particle, the same for every field. each step the field changes the particle's
+ * own velocity (after gravity, before the velocity module) by its direction, gravity, swirl and drag, in that
+ * order, each scaled by the multiplier; the terms are in docs/game-data/particles.md's external forces
  */
 export interface ParticleForceFieldInfo {
 	/**
@@ -464,11 +452,16 @@ export interface ParticleForceFieldInfo {
 	rotationRandomness: [x: number, z: number];
 	/** m/s² along the field's x, y and z */
 	direction: [MinMaxCurveInfo, MinMaxCurveInfo, MinMaxCurveInfo];
+	/** the pull towards the field's centre when positive, m/s per 1/30 s */
 	gravity: MinMaxCurveInfo;
-	/** m/s about the field's +y */
+	/** m/s about the field's +y: the swirl the whole velocity is pulled towards */
 	rotationSpeed: MinMaxCurveInfo;
-	/** 0–1 */
+	/** 0–1: the share of the way to the swirl the velocity is pulled per 1/30 s */
 	rotationAttraction: MinMaxCurveInfo;
+	/**
+	 * m/s² off the speed, to no less than 0: times the cross-section `π (size / 2)²` with {@link dragBySize} and
+	 * the speed squared with {@link dragByVelocity}
+	 */
 	drag: MinMaxCurveInfo;
 	dragBySize: boolean;
 	dragByVelocity: boolean;
@@ -476,8 +469,7 @@ export interface ParticleForceFieldInfo {
 
 /**
  * Unity's `ClampVelocityModule`: drag slowing each particle's start velocity and its fall, or (with a
- * `dampen`) a speed limit each particle's speed is pulled down to. the packer turns a system using both into
- * a stand-in
+ * `dampen`) a speed limit each particle's speed is pulled down to, which carries the module's drag with it
  */
 export type ParticleClampInfo = ParticleDragInfo | ParticleSpeedLimitInfo;
 
@@ -567,9 +559,9 @@ export interface ParticleDragInfo {
 
 /**
  * a limit on a particle's whole speed, its velocity over lifetime included. while the speed exceeds the
- * limit, each step pulls it {@link dampen} of the way down to the limit per 1/30 s, taking the excess from the
- * particle's own velocity: with speed `s`, limit `L` and a step of `t` seconds, the speed becomes `s + (L −
- * s)(1 − (1 − dampen)^(30 t))` along the same direction
+ * limit, each step pulls it {@link dampen} of the way down to the limit per 1/30 s along the same direction,
+ * taking the excess from the particle's own velocity (the formula is in docs/game-data/particles.md's Limit
+ * Velocity)
  */
 export interface ParticleSpeedLimitInfo {
 	kind: 'limit';

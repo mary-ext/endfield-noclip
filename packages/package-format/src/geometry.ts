@@ -17,14 +17,14 @@ import type { Bounds } from './values.ts';
  */
 export const VertexAttribute = {
 	/**
-	 * `unorm16x4`, always dequantized: `position = offset + value.xyz · scale` (`w` is 0). the mesh's own frame
-	 * (Unity, left-handed)
+	 * `unorm16x4`, always dequantized: `position = offset + value.xyz · scale`. `w` is the vertex's sway weight
+	 * when a swaying material draws the mesh, else 0. the mesh's own frame (Unity, left-handed)
 	 */
 	Position: 0,
 	/**
-	 * `snorm16x2`: an octahedral unit vector `(x, y)`, dequantized first when the stream is flagged (the game's
-	 * 10-bit normals are stored as their integers with a scale of 32767/511). decode in the shader: `n = (x, y,
-	 * 1 - |x| - |y|)`; where `n.z < 0`, `n.xy = (1 - |n.yx|) · sign(n.xy)` (sign of 0 taken as +1); normalize
+	 * `snorm16x2`: an octahedral unit vector `(x, y)`, dequantized first when the stream is flagged. decode in
+	 * the shader: `n = (x, y, 1 - |x| - |y|)`; where `n.z < 0`, `n.xy = (1 - |n.yx|) · sign(n.xy)` (sign of 0
+	 * taken as +1); normalize
 	 */
 	Normal: 1,
 	/**
@@ -218,13 +218,8 @@ const ANIMATION_HEADER_SIZE = 32;
 const isGeometryVertexFormat = enumGuard(GeometryVertexFormat);
 
 /**
- * geometry blob: 32-byte header (`'EFGM'`, u16 version, u16 flags, u32 vertexCount, u32 indexCount, u16
- * streamCount, u16 submeshCount, u32 index payload length, u32 animation length, u32 0), 32-byte stream
- * records (u8 attribute, u8 format, u8 flags, u8 0, u32 payload length, f32×3 offset, f32×3 scale), 40-byte
- * submesh records (u32 firstIndex, u32 indexCount, u32 baseVertex, u32 vertexCount, f32×3 min, f32×3 max),
- * then the stream payloads in record order, the index payload and the animation (absent when its length is 0:
- * a 32-byte header of u16 boneCount, u16 frameCount, f32 frameRate, f32×3 offset, f32×3 scale, then the f32
- * matrices), each starting 4-byte aligned.
+ * the layout is in docs/package-format.md (geometry blob). payloads follow the records in record order, then
+ * the index payload and the animation (absent when its length is 0), each starting 4-byte aligned.
  *
  * @param blob the container; payloads are stored as given
  * @returns the encoded blob

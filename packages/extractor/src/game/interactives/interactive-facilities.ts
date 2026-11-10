@@ -52,18 +52,10 @@ export interface InteractiveStandIn {
 }
 
 /**
- * resolves the models of interactives placed by referenced LevelData: the visual forms of facility templates,
- * each under a `facility:<id>` control, and every other interactive's model (its template variant's, else the
- * template's; none for a variant that overrides it with an empty model), always shown. a model that is a
- * doodad-group shell also places its form models, one per group level, under a per-level `doodadGroups:<level
- * id>` control. a model with door poses is placed closed and open, under a `door:<id>` control, closed by
- * default. a telescopic bridge is placed retracted and extended, under a `bridge:<id>` control, retracted by
- * default. a model without view states whose template sets its own Animator's bools on load is posed in the
- * states they settle; one bool from a saved property puts it under an `activation:<id>` control, set by
- * default. rows the game creates later (`createState` ≠ 0) are placed the same way and also require their
- * level's `created:<level id>` control, off by default. a limited-time photo event's spot also requires the
- * scene's `activity:snapshot` control, off by default. an auto-moving platform that starts with its level
- * rides its spline
+ * places the models of the interactives that referenced LevelData places. each row is drawn by the first kind
+ * that claims it, else as its plain model (with any doodad forms) or its facility forms; each kind's class
+ * says what it draws and under which control, and docs/extraction/prefabs-and-interactives.md#interactives
+ * lists the steps
  *
  * @param context install readers and the bundle resolver
  * @param options.scene owning map

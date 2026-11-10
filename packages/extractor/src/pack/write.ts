@@ -33,8 +33,8 @@ export interface WrittenArchive {
 }
 
 /**
- * a `.zst` core member: one zstd frame. level 9 is within ~15 % of level 19 on these tables at a fortieth of
- * the time (2.5 s per table on map02)
+ * a `.zst` core member: one zstd frame. level 9 is within about 15% of level 19 on these tables at a small
+ * fraction of the time
  *
  * @param value a table
  * @returns its JSON, compressed

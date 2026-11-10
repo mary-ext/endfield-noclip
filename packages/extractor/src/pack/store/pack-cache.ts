@@ -55,7 +55,7 @@ export class PackCache {
 	/** where the pack's blob store writes */
 	readonly blobs: BlobDir;
 	readonly hits = { geometries: 0, materials: 0, textures: 0 };
-	/** conversion results as JSON, by key */
+	/** conversion results, step outputs, values and stored forms, by key */
 	readonly #memos: BlobDir;
 	readonly #fingerprint: string;
 	readonly #stepFingerprints = new Map<string, Promise<string>>();

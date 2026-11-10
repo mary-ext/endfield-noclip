@@ -205,14 +205,10 @@ const scaled = (curve: MinMaxCurveInfo, by: number): MinMaxCurveInfo => {
 const clamp01 = (value: number): number => Math.min(Math.max(value, 0), 1);
 
 /**
- * reads an `HGSplineMovingObjects`: meshes the game emits at a steady rate and moves along a spline, each
- * picking one of the desc's LOD groups. it becomes a particle system whose particles follow
- * {@link ParticleSystemInfo.spline}.
- *
- * the game moves each object by the speed curve (`velocityOverLifeTime`) in the mover's own time, the frame's
- * time times `simulateSpeed`, starts it in the desc's box, sizes it by its start size times the size curve
- * and turns it by its start Euler angles (degrees, Unity's order). its lifetime is the start lifetime clamped
- * to 0–1, a fraction of the time the spline takes at the mean speed
+ * reads an `HGSplineMovingObjects` (`docs/game-data/particles.md#spline-movers`): meshes the game emits at a
+ * steady rate and moves along a spline, each picking one of the desc's LOD groups. it becomes a particle
+ * system whose particles follow a spline ({@link ParticleSystemInfo.motion}). a lifetime is taken as the
+ * start lifetime's fraction of the time the spline takes at the speed
  *
  * @param data the component's fields (see {@link isSplineMoverType})
  * @returns the system and its LOD groups, or why the viewer can't play it: noise, rotation over lifetime, an

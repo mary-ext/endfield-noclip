@@ -279,7 +279,7 @@ export const animatorPose = async (
 						numberField(animator, 'm_Enabled') === 0
 							? null
 							: await resolver.resolve(component.ref, pptrField(animator, 'm_Controller'));
-					// override controllers swap clips by name; their base controller isn't followed yet
+					// override controllers swap clips by name; their base controller isn't followed
 					if (controller === null || controller.info.classId !== UnityClass.AnimatorController) {
 						continue;
 					}

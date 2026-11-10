@@ -697,10 +697,8 @@ const STREAM_COMPONENTS: Record<number, number> = {
 };
 
 /**
- * reads what a renderer's second texture coordinate set holds of the particles' first custom data. the engine
- * packs the vertex streams past the fixed ones into 4-wide texture coordinate sets in the renderer's order,
- * and evaluates a vector mode's curves every frame at each particle's age over its lifetime, its randoms
- * fixed per particle
+ * reads what a renderer's second texture coordinate set holds of the particles' first custom data, by the
+ * engine's stream packing (`docs/game-data/particles.md#texture-sheets-and-custom-data`)
  *
  * @param system the emitter's `ParticleSystem`
  * @param renderer its `ParticleSystemRenderer`
@@ -755,7 +753,7 @@ export const readCustomData = (
  * @param renderer its `ParticleSystemRenderer`
  * @returns the system and the meshes its particles draw, or why the viewer can't play it: a render mode, a
  *   module, shape, texture sheet or ring buffer mode it doesn't evaluate, a speed modifier curve alongside
- *   drag, a per-axis speed limit or one alongside drag, a drag or rate curve, or no mesh. `null` for a system
+ *   drag without a speed limit, a per-axis speed limit, a drag or rate curve, or no mesh. `null` for a system
  *   that doesn't play on awake, which shows nothing until a script starts it
  */
 export const readParticleSystem = (
@@ -923,8 +921,8 @@ export const readParticleSystem = (
 	const bound = emissionBound(rate, bursts, startLifetime, duration);
 	let maxParticles = numberField(initial, 'maxNumParticles');
 	if (maxParticles === 0) {
-		// some effects store a cap of 0 yet show in game (the tilted torch flames), so the game must size them
-		// itself. take the most one lifetime's emission can hold, which also keeps a ring buffer from piling up
+		// systems storing a cap of 0 still show in game (docs/game-data/particles.md#emission-and-lifetime). take
+		// the most one lifetime's emission can hold, which also keeps a ring buffer from piling up
 		maxParticles = bound;
 	}
 	const delay = curve(system, 'startDelay');

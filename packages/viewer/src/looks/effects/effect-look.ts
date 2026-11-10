@@ -117,7 +117,7 @@ export const EffectRow = {
 	 * (`_LocalPivortSpace`)
 	 */
 	unfogged: 124,
-	/** rows past the mesh looks' 32. the texture stack's edge colour (`_USE_EDGECOLOR`): rgb (HDR), strength */
+	/** the texture stack's edge colour (`_USE_EDGECOLOR`): rgb (HDR), strength */
 	edgeColor: 128,
 	/** the edge's distance, offset, mode (0: multiply, 1: add), 1 with `_USE_EDGECOLOR` */
 	edge: 132,

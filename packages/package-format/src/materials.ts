@@ -1,7 +1,7 @@
 import type { UnconvertedEntry } from './entries.ts';
 import type { MaterialSurface } from './surfaces.ts';
 
-/** `tables/materials.json`; a material's id is its index in `entries` */
+/** `tables/materials.json.zst`; a material's id is its index in `entries` */
 export interface MaterialTable {
 	entries: MaterialEntry[];
 }

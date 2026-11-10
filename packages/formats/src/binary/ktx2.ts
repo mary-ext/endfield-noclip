@@ -282,7 +282,7 @@ export interface Ktx2Texture {
 	 * depth slice, tightly packed
 	 */
 	levels: Uint8Array[];
-	/** extra key/value metadata, written after `KTXwriter` and `KTXorientation` in key order */
+	/** extra key/value metadata, written sorted by key together with `KTXwriter` and `KTXorientation` */
 	metadata?: Record<string, string>;
 	/** `KTXorientation`; defaults to `ru` (`r` for one-row textures), since Unity data starts at the bottom row */
 	orientation?: string;

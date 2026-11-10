@@ -2,7 +2,7 @@ import { type ReactNode, useState } from 'react';
 
 /**
  * a `<details>` that builds its content only while open. the scene conditions panel lists thousands of
- * controls in collapsed sections, and building them all took over 100 ms whenever the panel re-rendered
+ * controls in collapsed sections, and building them all takes over 100 ms whenever the panel re-renders
  *
  * @param props.summary the `<summary>` element
  * @param props.initiallyOpen whether it starts open; closed by default

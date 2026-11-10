@@ -114,7 +114,7 @@ test('a variable a MapConfig condition names and one a gate numbers share a cont
 	};
 	const gated = gateCondition({ kind: 'mapVar', key: 125, compare: 0, value: 1, mapId: 85 });
 	game.note([named, gated]);
-	// the MapConfig test reads unset as 0, the gate fails while unset
+	// both fail while the variable is unset
 	assert.deepEqual(game.requirements(named), [[{ control: 'mapVar:85:#125', mask: 0b0100 }]]);
 	assert.deepEqual(game.requirements(gated), [[{ control: 'mapVar:85:#125', mask: 0b0100 }]]);
 	const controls = game.controls();

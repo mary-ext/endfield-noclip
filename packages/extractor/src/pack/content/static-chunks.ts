@@ -11,9 +11,8 @@ import { type InstanceInput, rowReach } from '../instances/instances.ts';
 
 import { decalPlacement, type PackContent } from './pack-content.ts';
 
-// the scene's chunk files: static entities, foliage grids and local lights. an entity first met in an
-// always-loaded file of the default area stays unconditional; any other collects every file holding it and
-// loads while any of them does (docs/extraction.md#how-the-packer-files-instances)
+// the scene's chunk files: static entities, foliage grids and local lights, filed as
+// docs/extraction.md#how-the-packer-files-instances describes
 
 /** reads ahead this many chunk files while decoding the current one */
 const READ_AHEAD = 8;

@@ -40,8 +40,7 @@ export interface EffectMaterial {
 	volume: TextureBinding | null;
 }
 
-/** derives the mesh materials' states from their textures' bindings, and owns their bind groups */
-/** whether none of a look's textures' bindings changed since the store's `version` */
+/** @returns whether none of a look's textures' bindings changed since the store's `version` */
 const texturesUnchanged = (look: MaterialLook, textures: TextureStore, version: number): boolean => {
 	for (let i = 0; i < SLOTS.length; i++) {
 		const texture = look.textures[i];
@@ -52,6 +51,7 @@ const texturesUnchanged = (look: MaterialLook, textures: TextureStore, version: 
 	return look.volumeTexture === null || textures.unchangedSince(look.volumeTexture, version);
 };
 
+/** derives the mesh materials' states from their textures' bindings, and owns their bind groups */
 export class MaterialBindings {
 	#device: GPUDevice;
 	#materialLayout: GPUBindGroupLayout;

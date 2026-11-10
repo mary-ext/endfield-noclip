@@ -68,10 +68,8 @@ interface ChunkHandle {
 }
 
 /**
- * read-only view of the game's virtual file system.
- *
- * the Persistent layer (patches) carries a complete catalog that supersedes StreamingAssets'; its chunks may
- * live in either layer, Persistent first.
+ * read-only view of the game's virtual file system. a group's catalog comes whole from the first layer of
+ * {@link vfsLayerDirs} holding one; its chunks may live in either layer
  */
 export class Vfs {
 	readonly gameData: string;

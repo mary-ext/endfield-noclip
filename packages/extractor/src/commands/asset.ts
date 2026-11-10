@@ -192,11 +192,7 @@ const save = async (path: string, bytes: Uint8Array): Promise<void> => {
 	console.error(`wrote ${bytes.length} bytes to ${path}`);
 };
 
-/**
- * @param texture decoded texture
- * @param level zstd level, or `undefined` for no supercompression
- * @returns KTX2 bytes
- */
+/** @param level zstd level, or `undefined` for no supercompression */
 const encodeKtx2 = (texture: DecodedTexture, level: number | undefined): Uint8Array => {
 	return writeKtx2(toKtx2Texture(texture), {
 		writer: 'endfield-noclip extractor',

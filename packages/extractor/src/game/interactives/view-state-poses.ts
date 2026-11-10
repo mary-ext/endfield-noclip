@@ -232,9 +232,9 @@ export interface RestingEffect {
 }
 
 /**
- * the effects a layer's effect behaviours leave playing once it rests. a persistent effect is switched on or
- * off by each state that names it, in the order the layer enters them; any other effect plays while the state
- * that names it is active, so only the resting state's count. fire-and-forget effects are left to run out
+ * the effects a layer's effect behaviours leave playing once it rests: the persistent ones its states
+ * switched on and not off again, in the order it enters them, and the resting state's others. fire-and-forget
+ * effects are left to run out
  *
  * @param animator the GameObject the layer's animator drives, `null` for the prefab root
  * @param path the states the layer enters ({@link settledPath})
@@ -277,9 +277,9 @@ export const restingEffects = (
 };
 
 /**
- * the lengths a layer's length behaviours leave set: each sets its GameObject's `VFXAdjustLength` to its
- * blackboard float, or its constant without one, plus its deviation, in the order the layer enters its
- * states. one whose float isn't on the blackboard sets nothing. the length stays once its state is left
+ * the lengths a layer's length behaviours leave set on their GameObjects' `VFXAdjustLength`, in the order the
+ * layer enters its states: a length stays once its state is left. one whose float isn't on the blackboard
+ * sets nothing
  *
  * @param path the states the layer enters ({@link settledPath})
  * @param blackboard the values its conditions test

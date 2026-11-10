@@ -30,7 +30,7 @@ export const HDR_FORMAT: GPUTextureFormat = 'rgba16float';
  */
 export const WATER_FOAM_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
-/** what lit surfaces hand the screen-space reflections, packed (`pack_reflection_surface` in frame.wgsl) */
+/** what lit surfaces hand the screen-space reflections, packed (reflection-surface.wgsl) */
 const REFLECTION_SURFACE_FORMAT: GPUTextureFormat = 'rg32uint';
 
 /**

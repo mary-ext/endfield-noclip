@@ -103,8 +103,7 @@ export const unpackTerrainFile = (packed: Uint8Array): Uint8Array => {
  * parses a clear `TRET` file.
  *
  * header (little-endian): `'TRET'`, u32 version (1), u16 width, u16 height, u16 mip count, u16
- * GraphicsFormat, u32 payload size. the mip count field is inferred from layer files, whose payloads are
- * exactly the sum of their mip chains.
+ * GraphicsFormat, u32 payload size.
  *
  * @param clear output of {@link unpackTerrainFile}; mips are views into it
  * @throws {FormatError} on a bad magic, version or format, or if the payload isn't exactly the mip chain
@@ -168,20 +167,12 @@ export const readTerrainTexture = (packed: Uint8Array): TerrainTexture => {
 // #region paths
 
 /**
- * tile channels and the shader property each one binds to:
- *
- * - `H` `_HeightmapAtlas`: 65² u16 heights
- * - `N` `_NormalmapAtlas`: baked normal page, DXT5
- * - `T` `_TintColorAtlas`: tint page, DXT5 sRGB
- * - `A` `_AlbedoAtlas`: baked albedo page, DXT5
- * - `S` `_SplatCtrlAtlas`: splat control page, RGBA8
- * - `C` `_CliffIndexAtlas`: 34² cliff index, R8G8
- *
- * pages are 132² with a 2-texel border around a 128² core covering the tile.
+ * tile channels: `H` heights, `N` baked normal, `T` tint, `A` baked albedo, `S` splat control, `C` cliff
+ * index. their layouts and shader bindings are in docs/game-data/world.md#terrain
  */
 export type TerrainTileChannel = 'H' | 'N' | 'T' | 'A' | 'S' | 'C';
 
-/** layer roles: `D` diffuse → `_Splats`, `N` normal → `_Normals`, `C` cone map → `_ConeMaps` */
+/** layer roles: `D` diffuse, `N` normal, `C` cone map */
 export type TerrainLayerRole = 'D' | 'N' | 'C';
 
 /** a parsed terrain path */
@@ -306,9 +297,6 @@ export interface TerrainLayer {
 /**
  * one `TerrainNodeData` entry. the table is a complete quadtree in breadth-first order down to the leaf
  * level, indexed by {@link terrainNodeIndex}, whether or not a node has tile files.
- *
- * checked against map02's tiles: `localMaxHeight` is the maximum of the node's samples with the hole bit
- * masked off, and `localMinHeight` counts holes as 0.
  */
 export interface TerrainNode {
 	/** the node's level; 0 for the root and for levels above the coarsest tiles */
@@ -316,9 +304,9 @@ export interface TerrainNode {
 	/** index of the parent node */
 	parent: number;
 	allHole: boolean;
-	/** metres above `position.y` */
+	/** metres above `position.y`; holes count as 0 */
 	localMinHeight: number;
-	/** metres above `position.y` */
+	/** metres above `position.y`, over the node's samples with the hole bit masked off */
 	localMaxHeight: number;
 	/**
 	 * metres; despite its name not the error of drawing this node instead of its children, but close to its
@@ -531,14 +519,8 @@ export const TERRAIN_PAGE_SIZE = 132;
 export const TERRAIN_PAGE_BORDER = 2;
 
 /**
- * reads a baked `A` or `N` page's BC3 blocks.
- *
- * - `A`: rgb albedo, stored linear despite the format's name; a feeds the game's subsurface curvature, which
- *   the viewer doesn't use
- * - `N`: rg world-space normal x and z as `· 2 − 1`, y reconstructed as `√(1 − x² − z²)`; b perceptual
- *   roughness; a occlusion
- *
- * rows advance along world +Z like the height page's.
+ * reads a baked `A` or `N` page's BC3 blocks (channel contents in docs/game-data/world.md#terrain). rows
+ * advance along world +Z like the height page's.
  *
  * @param texture a decoded `_A` or `_N` file
  * @returns the page's single level of BC3 blocks; a view into the texture

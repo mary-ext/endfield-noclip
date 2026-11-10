@@ -12,8 +12,8 @@ import {
 	type ViewStateRecord,
 } from './view-state-poses.ts';
 
-// derives settled open/closed poses from model view states: clip end pose plus GameObject switches.
-// state selection rules: docs/game-data/interactives.md#interactive-doors.
+// a door's open and closed poses, from its model's view states. which states are the open and closed ones:
+// docs/game-data/interactives.md#interactive-doors
 
 /** the open and closed looks of a door model */
 export interface DoorPoses {

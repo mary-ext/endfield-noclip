@@ -148,8 +148,8 @@ export const vertexOffsetOf = (reader: MaterialReader): EffectVertexOffset | nul
 		}
 	}
 	return {
-		// the vertex stage reads the scroll after the `_ST`, unscaled and unrotated
-		// its speed's zw scroll by custom data only on particles, where the offset is off
+		// the vertex stage reads the scroll after the `_ST`, unscaled and unrotated; its speed's zw scroll by
+		// custom data only on particles, where the offset is off
 		texture: effectTexture(slot, ownSpeedOf(reader, '_OffsetSpeed')),
 		uv1: float('_OffsetUVSet', 0) !== 0,
 		direction: [dir[0], dir[1], dir[2]],

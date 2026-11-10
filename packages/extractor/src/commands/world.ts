@@ -443,7 +443,7 @@ async function* staticCandidates(
 ): AsyncGenerator<FoundCandidate> {
 	const { near, radius } = options;
 	const { names, standIns, partition } = lookups;
-	// a 128 m cell of margin keeps entities whose bounds reach into the searched cells
+	// a cell of margin keeps entities whose bounds reach into the searched cells
 	const cell =
 		near === undefined ? null : { x: Math.floor(near[0] / CELL_SIZE), z: Math.floor(near[2] / CELL_SIZE) };
 	const reach = radius === undefined ? 0 : Math.ceil(radius / CELL_SIZE) + 1;

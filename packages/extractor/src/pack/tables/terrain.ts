@@ -78,10 +78,7 @@ const checkTerrainLayout = (): void => {
 	}
 };
 
-/**
- * layer texture levels skipped from the top: the game's 1024² textures repeat every 2–9 m, so 512² still
- * gives 57–230 texels per metre, at a quarter of the size
- */
+/** layer texture levels skipped from the top: 512² still gives 57–230 texels per metre, at a quarter of 1024² */
 const TERRAIN_LAYER_SKIP = 1;
 
 /** what {@link packTerrain} needs */

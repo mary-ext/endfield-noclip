@@ -761,9 +761,9 @@ const withSavedValues = (record: MaterialRecord, saved: MaterialValues | null): 
 };
 
 /**
- * how far a sway moves a vertex of full weight (`docs/game-data/materials.md#swaying-cloth`): the offset is
- * `(s + 1 + tendency) · amplitude`, where a kite's sine `s` is scaled by the object-space height and its
- * amplitude is `intensity · 0.05`, and a wave's amplitude is `intensity · 0.5`
+ * how far a sway moves a vertex of full weight, the largest `(s + 1 + tendency) · amplitude` of
+ * `docs/game-data/materials.md#swaying-cloth`: a kite's sine `s` is scaled by the object-space height, a
+ * wave's stays within ±1
  */
 const swayReach = ({ intensity, kite, tendency }: LitSway): SwayReach => {
 	const offset = Math.abs(1 + tendency);

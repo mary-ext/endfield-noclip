@@ -1,6 +1,5 @@
 /**
- * how the binary tables store an entry's status. its own module, outside the asset modules the pack cache
- * fingerprints, so a table layout change leaves cached conversions valid
+ * how the binary tables store an entry's status. its own module for the reason the geometry table has one
  *
  * @module
  */

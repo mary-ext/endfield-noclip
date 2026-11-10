@@ -14,8 +14,8 @@ import { FlatBuffer } from '../binary/flatbuffer.ts';
 //   Bounds  = Coord min, Coord max, f32 minHeight, f32 maxHeight;  Coord = f32 x, f32 y (world x, z)
 // slots 7–9 (`HlodUnloadBounds`, `HlodUnloadTriggers`, `HlodUnloadPoints`) are not decoded.
 //
-// while the streaming centre is inside one or more triggers the client shows the union of those areas' visible
-// slices, otherwise RootVisible (docs/game-data/world.md#stream-areas). area 0 is the default scenery.
+// how the client picks the visible areas from these is in docs/game-data/world.md#stream-areas. area 0 is the
+// default scenery.
 
 // #region types
 

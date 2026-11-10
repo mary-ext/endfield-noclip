@@ -28,7 +28,7 @@ export type MembershipBucket =
 	| 'level'
 	/** tag 0: shared by the whole map */
 	| 'shared'
-	/** non-zero tag with no level (e.g. engine-reserved ids) */
+	/** non-zero tag with no level (e.g. tag 31's generated colliders) */
 	| 'unassigned';
 
 /** where an entity's pivot lies relative to the ownership grid */
@@ -87,7 +87,10 @@ export const cellOf = (worldX: number, worldZ: number): { x: number; z: number }
 	z: Math.floor(worldZ / CELL_SIZE),
 });
 
-/** @returns the entity-id level tag */
+/**
+ * @param entityId full 32-bit entity id
+ * @returns its level tag, the top 5 bits
+ */
 export const levelTagOf = (entityId: number): number => entityId >>> 27;
 
 /**
@@ -95,7 +98,8 @@ export const levelTagOf = (entityId: number): number => entityId >>> 27;
  *
  * @param map the map's MapConfig
  * @param configs any set of LevelConfigs; those of other maps are ignored
- * @returns the partition, with issues listed rather than thrown
+ * @returns the partition, with disagreements between the cell sources listed rather than thrown
+ * @throws {FormatError} if the map has more levels than the 5-bit tag can name
  */
 export const buildLevelPartition = (map: MapConfig, configs: Iterable<LevelConfig>): LevelPartition => {
 	// a level belongs to the partition when it owns cells of this map's grid

@@ -5,8 +5,7 @@ import type { WorldIndex } from '../world/world-index.ts';
 
 import type { LevelWaterVolume } from './water-volumes.ts';
 
-// quests whose objectives need a pool drained (docs/game-data/water.md#depletable-pools): Treasure Beneath the
-// Pond waits for Wuling City's Tianjing Courtyard pond to hold 800 of its 40000 units or less
+// quests whose objectives need a pool drained (docs/game-data/water.md#depletable-pools)
 
 /** a quest that completes once a water volume is (nearly) empty */
 export interface WaterDrain {

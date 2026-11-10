@@ -2,9 +2,9 @@ import type { UnconvertedEntry } from './entries.ts';
 
 /**
  * a texture's smallest mip levels are stored together in one blob, the longest run of levels (smallest first)
- * whose combined size stays within this many bytes; every larger level is a blob of its own. for BC7 that's
- * levels up to 128² (21.8 KB) in the tail and 256² (64 KB) as the smallest single-level piece, so no streamed
- * piece is much smaller than this and a texture is drawable after one small read
+ * whose combined size stays within this many bytes; every larger level is a blob of its own. so no streamed
+ * piece is much smaller than this (BC7's 256² level is exactly it) and a texture is drawable after one small
+ * read
  */
 export const TEXTURE_TAIL_BYTES = 64 * 1024;
 

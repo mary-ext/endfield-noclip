@@ -39,9 +39,8 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 	// the NoLighting variant draws only in an unlit forward pass and doesn't declare `_UseLighting`, whose
 	// default would otherwise make it lit
 	const lit = reader.shader.name !== NO_LIGHTING_SHADER && float('_UseLighting', 1) !== 0;
-	// the depth pass's dithered alpha test, which shapes meshes such as the soft dark disc at the centre of
-	// Power Plateau's sky vortex. the viewer draws it for the main texture's alpha (or red, as the alpha alone)
-	// in the default dither mode
+	// the depth pass's dithered alpha test, drawn for the main texture's alpha (or red, as the alpha alone) in
+	// the default dither mode
 	let dither: DitheredSurface['dither'] = null;
 	if (main !== undefined && !has('_USE_MAIN2') && float('_DitherAlphaMode', 0) === 0) {
 		dither = {

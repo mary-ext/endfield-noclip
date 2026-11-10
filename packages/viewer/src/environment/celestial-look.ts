@@ -179,7 +179,6 @@ const nebulaLook = (star: StarConfig | undefined): NebulaLook | null => {
 	}
 	return {
 		texture: star.nebulaMap,
-		// the game adds the texel × the raw tint × 2
 		tint: rgb(star.nebulaTint, 2),
 		rotation: star.nebulaMapRotation * DEG,
 		planetMask: star.celestialNebulaConverage,

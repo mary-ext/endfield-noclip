@@ -40,7 +40,7 @@ export const coreBlobs = (
 
 /**
  * every terrain layer texture, which every splat page draws from all of; pinned when the first splat page
- * arrives rather than at load, since only ground within the splat pages' reach uses them (map02: 21 MB)
+ * arrives rather than at load, since only ground within the splat pages' reach uses them (tens of MB)
  *
  * @param pkg the package
  * @returns the blobs to pin, each once

@@ -322,8 +322,8 @@ export const describeVfxBase = (
 			return unsupported('opaque blending without depth writes');
 		}
 	}
-	// the shader writes its alpha times `1 − _BlendMode`: 1 adds the premultiplied colour over what's behind, and
-	// 2 writes `lerp(1, colour, alpha)` for a blend state that multiplies what's behind by it
+	// mode 0 covers what's behind, 1 adds to it, and 2 writes a colour for a blend state that multiplies it
+	// (docs/game-data/effects.md#vfxbasev2, blend modes)
 	const blendMode = float('_BlendMode', 0);
 	if (blendMode !== 0 && blendMode !== 1 && blendMode !== 2) {
 		return unsupported(`_BlendMode ${blendMode}`);
@@ -367,8 +367,7 @@ export const describeVfxBase = (
 			continue;
 		}
 		let slot: EffectSlot | undefined = reader.slot(name);
-		// a sample texture samples the shader's default when the material binds none; an unset slot binds white.
-		// the white talosite's shards take their mask from such a slot
+		// a sample texture samples the shader's default when the material binds none; an unset slot binds white
 		if (slot === undefined && i > 0 && reader.shader.textures[name] === 'white') {
 			slot = UNSET_WHITE;
 		}

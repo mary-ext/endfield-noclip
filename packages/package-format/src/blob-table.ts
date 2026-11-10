@@ -43,8 +43,7 @@ const isBlobCodec = enumGuard(BlobCodec);
 const isBlobKind = enumGuard(BlobKind);
 
 /**
- * tables/blobs.bin: 16-byte header (`'EFBX'`, u16 version, u16 0, u32 blobCount, u32 0), then 16-byte
- * records: u8 kind, u8 codec, u16 archive, u32 offset, u32 length, u32 rawLength.
+ * tables/blobs.bin; the layout is in docs/package-format.md (binary encodings).
  *
  * @param blobs records in index order
  * @returns the encoded table

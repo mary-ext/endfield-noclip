@@ -24,9 +24,10 @@ export type InteractiveTable = ReturnType<typeof readInteractiveTable>;
 export const loadInteractiveTable = async (sources: FacilitySources): Promise<InteractiveTable> =>
 	readInteractiveTable(await sources.read(INTERACTIVE_TABLE), (id) => sources.string(id));
 
-// templates with the model-upgrade component have their visual forms as a progression control; every other
-// template draws its base model only. templates carry no display name, so these labels are ours; other
-// upgrade-capable templates are labelled by their id
+/**
+ * our labels for templates with the model-upgrade component, which carry no display name; those not listed
+ * are labelled by their id
+ */
 const FACILITY_NAMES = new Map([
 	['int_system_domain_shop', 'Stock redistribution facility'],
 	['int_system_domain_depot', 'Depot'],

@@ -10,8 +10,8 @@ import type { ChunkFile, WorldIndex } from '../world/world-index.ts';
 import { type DraftControl, sceneControl } from './scene-control.ts';
 
 // the catalogue behind `variants <scene>`: a scene's stream areas (docs/game-data/world.md#stream-areas) and
-// progression controllers (docs/game-data/scene-states.md#progressions). stream areas only add entities to
-// area 0; none of their ids or placements repeat an area-0 entity.
+// progression controllers (docs/game-data/scene-states.md#progressions). an area's entity count needn't
+// leave out area 0's, since stream areas only add entities to it.
 
 // #region types
 

@@ -143,9 +143,8 @@ interface Posed {
 const MONO_FIELDS = ['rotateBaseTrans', 'rotateHeaderTrans', 'ropeEndTrans', 'ropeScaleTrans', 'attachTrans'];
 
 /**
- * reads a crane tower prefab's look at its steps, as the tower component sets it up: the rope's scale
- * Transform stretched to (1, 1, length + 1) and its end moved to (0, −length, 0), the arm's base and the hook
- * turned to their world yaws
+ * reads a crane tower prefab's look at its steps, as the tower component sets it up: the rope stretched and
+ * its end lowered by the rope length, the arm's base and the hook turned to their world yaws
  *
  * @param resolver bundle reader
  * @param root the prefab's root GameObject

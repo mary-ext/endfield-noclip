@@ -43,7 +43,7 @@ const SOURCES: Record<EffectUvSource, SlotSource> = {
  * how the vertex stage moves an effect's vertices ({@link EffectRow.offsetMode} x). with the soft body, the
  * {@link OFFSET_SLOT} holds the position texture, its UV row UV1's u scale and the frame rows' scale, its
  * scroll row the cycles per second and the phase; {@link EffectRow.offsetDir} holds the offset's minimum and
- * the frame count, and {@link EffectRow.offset} its range and the camera pull
+ * the frame count, and {@link EffectRow.offset} its range
  */
 export const VertexMotion = {
 	None: 0,

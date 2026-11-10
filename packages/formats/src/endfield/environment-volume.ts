@@ -8,21 +8,14 @@ import {
 	type MonoValue,
 } from './mono-objects.ts';
 
-// environment and post-processing volumes among the tag-1 chunk objects (`mono-objects.ts`).
-//
-// `HGEnvironmentVolume` (component 0x4000) fields, named after the IL2CPP properties of
-// `HGEnvironmentVolumeBase` / `HGEnvironmentVolume`:
-//   0 int volumeType (EnvVolumeType)   1 int blendMode (EnvBlendMode)
-//   2 int priority   3 float blendDistance   4 float fadeInDuration   5 float fadeOutDuration
-//   6 asset _envPhase (an `HGEnvironmentPhase`, from StreamingChunkData)   7 blob polyLineShape
+// environment and post-processing volumes among the tag-1 chunk objects (`mono-objects.ts`); their fields and
+// shapes are in docs/game-data/environment.md#environment-volumes. the result types name their fields after the
+// properties of the game's `HGEnvironmentVolumeBase` / `HGEnvironmentVolume` and Unity's `Volume`; the asset
+// fields (the phase, the profile) come from the StreamingChunkData half.
 //
 // the polyline blob: u32 byteLength, f32×3 position, f32×3 rotation (Euler degrees), u32 n, n × f32×2 points
 // (x, z relative to position), then an edge BVH the client builds from them, and last f32 height,
-// f32 baseHeightOffset. the prism spans y ∈ [position.y + baseHeightOffset, + height].
-//
-// Unity `Volume` (component 0x8000): 0 bool isGlobal, 1 float priority, 2 float blendDistance, 3 float weight,
-// 4 asset sharedProfile (a `VolumeProfile`, from StreamingChunkData). local ones carry a `BoxCollider`
-// (component 0x10): 2 vector3 center, 3 vector3 size.
+// f32 baseHeightOffset.
 
 // #region types
 
@@ -56,7 +49,7 @@ export interface ObjectTransform {
 	scale: [x: number, y: number, z: number];
 }
 
-/** a vertical prism over a closed polygon */
+/** a vertical prism over a closed polygon, spanning y ∈ [position.y + baseHeightOffset, + height] */
 export interface PolyLineShape {
 	/** the shape's origin; {@link points} are relative to it before rotation */
 	position: [x: number, y: number, z: number];

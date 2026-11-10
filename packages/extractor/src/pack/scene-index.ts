@@ -132,7 +132,7 @@ export const indexScene = async (
 				(a.name < b.name ? -1 : 1),
 		);
 	const terrainGrid = treeGrid(surface);
-	// HLOD clusters sit in Global chunks only (every scene of the install), which are small
+	// HLOD clusters sit in Global chunks only, which are small
 	const hlod = layoutHlodGrid(
 		await hlodSamples(
 			world,

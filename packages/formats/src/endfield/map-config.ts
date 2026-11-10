@@ -2,9 +2,9 @@ import { FormatError } from '../binary/binary-reader.ts';
 import { isObject } from '../unity/values.ts';
 
 // `Data/Json/MapConfig/<map>.json` (JsonData group): plain JSON (UTF-8 with BOM). the parts a viewer needs are
-// the level ownership grid (`levelIds` is row-major over `sideGridNum²` 128 m cells centred on the origin,
-// holding LevelConfig idNums, 0 = no level) and the scene states with the conditions that switch them
-// (`BaseGameScene.CalculateSceneStateMask`).
+// the level ownership grid (docs/game-data/world.md#mapconfig-and-the-ownership-grid) and the scene states with
+// the conditions that switch them (the game's `BaseGameScene.CalculateSceneStateMask`;
+// docs/game-data/scene-states.md#mapconfig-scene-states).
 
 /** streaming cell size in metres */
 export const CELL_SIZE = 128;
@@ -17,7 +17,7 @@ export interface MapConfig {
 	isSeamless: boolean;
 	/** cells per side of the ownership grid */
 	sideGridNum: number;
-	/** row-major level idNums, index `(z + N/2)·N + (x + N/2)` for cell (x, z) */
+	/** row-major LevelConfig idNums (0 = no level), index `(z + N/2)·N + (x + N/2)` for cell (x, z) */
 	levelIds: number[];
 	/** level ids listed by the map, in stored order */
 	levelStrIds: string[];

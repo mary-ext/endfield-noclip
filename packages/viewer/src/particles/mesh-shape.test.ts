@@ -70,7 +70,7 @@ describe('meshShapePoint', () => {
 		const pingPong = { ...vertex, spawn: ParticleMeshSpawn.PingPong };
 		// 0 1 2 3 4 5 5 4 3 …
 		assert.deepEqual(point(pingPong, [0, 0, 0], 7).position, [4, 0, 0]);
-		// bursts don't number their emissions, so they pick at random
+		// without an emission number (bursts the simulation doesn't number), they pick at random
 		assert.deepEqual(point(loop, [0.6, 0.5, 0], null).position, [4, 0, 0]);
 	});
 

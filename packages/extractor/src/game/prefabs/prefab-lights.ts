@@ -17,10 +17,9 @@ import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 import type { Placement } from './prefab-environment.ts';
 import { PRUNE, walkPrefab } from './prefab-walk.ts';
 
-// local lights inside prefabs the game places through model rows, such as the lighting prefab of a Dijiang
-// cabin (docs/game-data/lighting.md#local-lights). they are Unity `Light` components with HG's additional
-// light data beside them, serialized by Unity rather than flattened into the chunk blobs, so the colour the
-// chunk files store precomputed is derived here the same way.
+// local lights inside prefabs placed through model rows (docs/game-data/lighting.md#local-lights): Unity
+// `Light` components with HG's additional light data beside them, so the colour the chunk files store
+// precomputed is derived here.
 
 /** a prefab's light in prefab space: everything a {@link ChunkLight} has but its id and placement */
 export interface PrefabLight {

@@ -45,7 +45,10 @@ export class DepthPyramid {
 		);
 	}
 
-	/** @returns the pyramid's size at its first level and its level count, or `null` before the first build */
+	/**
+	 * @returns the pyramid's view, its size at its first level and its level count, or `null` before the first
+	 *   build
+	 */
 	get extent(): { width: number; height: number; levels: number; view: GPUTextureView } | null {
 		const first = this.#levels[0];
 		if (this.#view === null || first === undefined) {

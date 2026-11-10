@@ -519,9 +519,9 @@ fn fx_nothing() -> EffectAccumulated {
 	return EffectAccumulated(vec4f(0.0));
 }
 
-// the UV sources of a pixel of a texture-stack layer. screen UVs: the pixel's position, centred and scaled by
-// the width, or (`_LocalPivortSpace`) its view-space offset from the object's origin in metres, optionally v
-// by the world height, then times the object's view depth past the near plane. call in uniform control flow
+// the UV sources of a pixel of a texture-stack layer. the look's screen-UV flags shape the screen UVs: 4 takes
+// them about the object's origin (`_LocalPivortSpace`), 2 takes v from the world height, 1 scales them by the
+// object's view depth past the near plane. call in uniform control flow
 fn fx_layer_bases(in: EffectOut) -> FxBases {
 	let kind = fx_row(in.look, FX_UNFOGGED);
 	let size = frame.render_size.xy;
@@ -626,10 +626,9 @@ fn fx_appear_noise(p: vec2f) -> f32 {
 	return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
 }
 
-// VFXAdvance's and VFXDitherAlpha's reveal around the player (`EffectAppear`), the camera standing in for the
-// player: the tint brightens towards the material's radii, plus the global ones (`frame.render_size.zw`, the
-// fire seed's) under `_USE_GLOBAL_APPEAR`, and its alpha fades past them, over an edge the noise frays. returns
-// the tint
+// VFXAdvance's and VFXDitherAlpha's reveal around the player (`EffectAppear`,
+// docs/game-data/effects.md#invisible-bridges), the camera standing in for the player; the global radii are
+// `frame.render_size.zw`. returns the tint
 fn fx_appear(in: EffectOut, bases: FxBases, tint: vec4f) -> vec4f {
 	let id = in.look;
 	let appear = fx_row(id, FX_APPEAR);
@@ -685,8 +684,7 @@ fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
 	let lighting = fx_row(id, FX_OFFSET_MODE);
 	if (lighting.z > 0.0) {
 		// `_USE_LIGHTING`: the colour is an albedo, lit by the irradiance volume and the sun at the surface's normal
-		// turned towards the camera, or at the world's up. as for the waterfall sheets, the game's division of the
-		// lit colour by the post exposure under `_IgnorePostExposure` is left out
+		// turned towards the camera, or at the world's up; the game's division by the post exposure is left out
 		var n = normalize(in.normal);
 		n = select(-n, n, dot(n, in.rel) <= 0.0);
 		n = select(n, vec3f(0.0, 1.0, 0.0), lighting.w > 0.0);
@@ -749,11 +747,8 @@ fn rf_sample(id: u32, slot: u32, bases: FxBases, custom: vec4f, shift: vec2f) ->
 	return t;
 }
 
-// VFXRefract: the composited scene seen at an offset along `_RefractDir`, by the refraction texture's remapped
-// red (or its normal's xy) times the strength and the vertex alpha, in screen UVs. colour offsets take one or
-// two more samples further along `_RBOffset` and keep, per channel, the brightest of the masked samples. the
-// spread's sweeping band, the mask and the blend layer's alpha (or red) cover what lies behind, faded in front
-// of the scene by the soft blend; the mask's and blend layer's colours tint it. blended over by that cover
+// VFXRefract (docs/game-data/effects.md#refraction): the composited scene seen at an offset in screen UVs,
+// tinted by the mask's and blend layer's colours, and blended over by their alpha times the spread's band
 @fragment
 fn fs_refract(in: EffectOut) -> @location(0) vec4f {
 	let id = in.look;
@@ -902,10 +897,9 @@ fn ws_frame_offset(frame: f32, size: vec2f) -> vec2f {
 	return fract(vec2f((n - row * size.x) / size.x, row / size.y));
 }
 
-// VFXWater, the sheets of falling water (`vfxWaterLook`): the tinted main texture and mask, or a flipbook whose
-// frames blend along their motion vectors, distorted by a scrolling texture and eaten by a dissolve; lit by the
-// irradiance volume and the sun, with transmission through the sheet. sun units follow the viewer's
-// illuminance convention; the game's CPU scaling remains unknown (docs/viewer/lighting.md#sun)
+// VFXWater, the sheets of falling water (`waterSheetLook` in water-sheet.ts,
+// docs/game-data/effects.md#waterfalls). sun units follow the viewer's illuminance convention
+// (docs/viewer/lighting.md#sun)
 fn water_sheet(in: EffectOut, front: bool, dx: vec2f, dy: vec2f, rel_dx: vec3f, rel_dy: vec3f) -> EffectAccumulated {
 	let id = in.look;
 	ws_custom = in.custom;
@@ -1027,9 +1021,8 @@ fn water_sheet(in: EffectOut, front: bool, dx: vec2f, dy: vec2f, rel_dx: vec3f, 
 	}
 	n = select(-n, n, front);
 
-	// lighting: the lit share takes the irradiance volume and the sun, the rest stays as it is
-	// the game also divides the lit share by the post exposure under `_IgnorePostExposure`, which in the viewer's
-	// exposure darkens sheets in dark places far below the game's; only the unlit share keeps it
+	// lighting: the lit share takes the irradiance volume and the sun, the rest stays as it is. only the unlit
+	// share takes the game's division by the post exposure (docs/viewer/effects.md#waterfalls)
 	let lit = color * ws.z;
 	let unlit = color * (1.0 - ws.z) * mix(1.0, frame.ambient.y, soft.z);
 	let sss_row = fx_row(id, WS_SUBSURFACE);
@@ -1132,11 +1125,10 @@ fn sw_absorb(t: f32, exponent: vec3f, range: f32) -> vec3f {
 	return min(vec3f(range), pow(vec3f(saturate(t / range)), exponent) * range);
 }
 
-// six-way lit smoke (`sixWaySmokeLook`): the texture stack (distortion, mask, blend, dissolve) makes the colour
-// the smoke absorbs and its opacity; two lightmaps hold how much light passes from each axis of the
-// particle's frame (right, up, away from the camera, and their opposites). the sun takes the lightmaps
-// weighted by its direction's squared components in that frame, the irradiance volume all six. sun units
-// follow the viewer's convention for the game's light colour (docs/viewer/lighting.md#sun)
+// six-way lit smoke (`sixWaySmokeLook` in six-way-smoke.ts, docs/game-data/effects.md#six-way-smoke): the
+// texture stack makes the colour the smoke absorbs and its opacity; the two lightmaps hold how much light
+// passes from each axis of the particle's frame. sun units follow the viewer's convention for the game's
+// light colour (docs/viewer/lighting.md#sun)
 fn six_way_smoke(in: EffectOut, bases: FxBases) -> EffectAccumulated {
 	let id = in.look;
 	ws_custom = in.custom;
@@ -1461,9 +1453,9 @@ fn fx_surface_normal(px: vec2i) -> vec3f {
 	return surface.normal;
 }
 
-// VFXDecal's `_USE_PARALLAX`: from the main texture's UVs, the view ray (`view`, towards the camera) steps down
-// through the depth texture's red (1 at the top) in 30 layers across the box's x and z over its y, and the UV
-// shift interpolates between the last layer above the surface and the first below
+// VFXDecal's `_USE_PARALLAX` (docs/game-data/effects.md#vfxdecal): the main texture's UV shift where the view
+// ray (`view`, towards the camera) meets the depth texture's red (1 at the top), stepped down in 30 layers and
+// interpolated between the last layer above the surface and the first below
 fn fx_decal_parallax(id: u32, in: EffectOut, bases: FxBases, view: vec3f) -> vec2f {
 	let row = fx_row(id, FX_PARALLAX);
 	let depth_slot = u32(row.y);
@@ -1622,19 +1614,11 @@ struct LitDecal {
 	emission: vec3f,
 }
 
-// `HGRP/DecalLit` boxes (`litDecalLook` in lit-decal.ts) over a surface of normal `n` and roughness `roughness`
-// at camera-relative `rel` (with its screen gradients): the base colour tinted by the placement's colour, its
-// alpha times the opacity (faded on surfaces facing away from the box's y). where the material's colour masks
-// let it, the PBR map's roughness, normal, metallic and occlusion replace the surface's. `uv` is the box's
-// `local.xz + 0.5` with its screen gradients; the placement's colour and UV transform are its row's.
-//
-// with `_BLEND_WATER_FLOW` the normal and roughness come from two layers of a water normal map scrolling down
-// the world's y, each projected along x and z (at world zy and xy) and blended by how much the surface faces
-// either axis, its UVs pushed further down on steep walls by `_NormalFactor`; the decal fades in towards
-// vertical surfaces by `_AngleBlendFallOff2`, and its roughness is the first layer's B times `_WaterRoughness`.
-//
-// with `_BLEND_EMISSIVE` it also emits `_EmissiveColor` times a channel of `_SampleTex1` (or the base map's
-// alpha) by `_EmissiveChannel`, times the decal's colour unless `_AlbedoAffectEmissive`
+// `HGRP/DecalLit` boxes (`litDecalLook` in lit-decal.ts, docs/game-data/materials.md#decals) over a surface of
+// normal `n` and roughness `roughness` at camera-relative `rel` (with its screen gradients): where the
+// material's colour masks let it, the decal's roughness, normal, metallic and occlusion replace the surface's.
+// `uv` is the box's `local.xz + 0.5` with its screen gradients; the placement's colour and UV transform are
+// its row's
 fn ld_decal(in: EffectOut, rel: vec3f, rel_dx: vec3f, rel_dy: vec3f, uv: vec2f, dx: vec2f, dy: vec2f, n: vec3f,
 	roughness: f32) -> LitDecal {
 	let id = in.look;
@@ -1772,11 +1756,10 @@ fn fx_lit_decal(in: EffectOut, px: vec2i, rel: vec3f, rel_dx: vec3f, rel_dy: vec
 	return fx_accumulate(shaded.radiance.rgb * d.alpha, d.alpha, rel, in.position.xy, 0.0);
 }
 
-// lit decals that write no albedo, only the normal, roughness or occlusion of the surface beneath, between the
-// main and the transparent pass: the viewer has no GBuffer to change, so each adds the difference between the
-// surface lit with and without its changes, times its alpha, to the radiance. the surface's colour is its
-// diffuse ambient over the ambient light at its normal (taken as a dielectric's); its emission, shadows and
-// everything else it was lit by stay as the main pass drew them
+// lit decals that write no albedo, between the main and the transparent pass (docs/viewer/materials.md#decals):
+// each adds the difference between the surface lit with and without its changes, times its alpha, to the
+// radiance. the surface's colour is its diffuse ambient over the ambient light at its normal (taken as a
+// dielectric's)
 @fragment
 fn fs_decal_relight(in: EffectOut) -> @location(0) vec4f {
 	let px = vec2i(in.position.xy);
@@ -1850,9 +1833,9 @@ fn mist_fade(range: vec2f, depth: f32) -> f32 {
 	return saturate((depth - range.x) / (range.y - range.x));
 }
 
-// `HGRP/FogSimple` mist cards: the main texture's red broken up by the noise texture, times a scrolling wind
-// sample of it and a Fresnel term (on colour and opacity both, as the game's), in the flat colour or lit by the
-// sun; faded by view depth, towards the card's top (object y) and where it nears what lies behind it
+// `HGRP/FogSimple` mist cards (docs/game-data/effects.md#mist): the main texture's red broken up by the noise
+// texture, the wind and a Fresnel term, in the flat colour or lit by the sun; faded by view depth, towards the
+// card's top and where it nears what lies behind it
 @fragment
 fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
 	let id = in.look;
@@ -1893,8 +1876,8 @@ fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
 	let depth = dot(in.rel, frame.view_forward.xyz);
 	let fade = fx_row(id, MIST_FADE);
 	let top = fx_row(id, MIST_TOP);
-	// the game measures the top fade in world height below the origin, in units of the object's y scale, not
-	// along the object's y axis: an upside-down card still fades towards the sky
+	// the top fade runs by the world height below the origin, in units of the object's y scale, not along the
+	// object's y axis: an upside-down card still fades towards the sky
 	let basis = mist_basis(in);
 	let origin = -(basis * vec3f(in.to_object0.w, in.to_object1.w, in.to_object2.w));
 	let below = (origin.y - in.rel.y) / max(length(basis[1]), 1e-6);
@@ -1908,10 +1891,9 @@ fn fs_mist_card(in: EffectOut) -> EffectAccumulated {
 	return mist_accumulate(id, max(color, vec3f(0.0)) * alpha, alpha, in.rel, in.position.xy);
 }
 
-// `HGRP/Effect/VFXFakeVolumeFog` boxes, drawn by their back faces without a depth test like the decals: from
-// the nearer of the surface behind and the back face, the fog's thickness along the ray towards the camera
-// through the unit cube (or up to the camera inside it), faded towards the box's edges and top, with distance and,
-// for boxes the camera can't walk into, close to them
+// `HGRP/Effect/VFXFakeVolumeFog` boxes (docs/game-data/effects.md#mist), drawn by their back faces without a
+// depth test like the decals: the fog's thickness from the nearer of the surface behind and the back face,
+// along the ray towards the camera through the unit cube (or up to the camera inside it), then the box's fades
 @fragment
 fn fs_mist_volume(in: EffectOut) -> EffectAccumulated {
 	let id = in.look;
@@ -2017,10 +1999,8 @@ fn beam_unskew(id: u32, p: vec3f) -> vec3f {
 	return vec3f(p.xy - dir.xy * (p.z / dir.z), p.z);
 }
 
-// a volumetric light beam: the cone's side lit by a Fresnel-like term about the beam's axis, attenuated along
-// the length, faded where it meets the surfaces behind (depth blend), near the camera, by the camera's distance
-// to the beam and past an optional clipping plane. the mesh holds the inside and outside faces (UV0's v) and a
-// start cap (u)
+// a volumetric light beam (docs/game-data/lighting.md#light-beams): the product of the side, attenuation and
+// fade terms listed there. the mesh holds the inside and outside faces (UV0's v) and a start cap (u)
 fn light_beam(in: EffectOut) -> EffectAccumulated {
 	let id = in.look;
 	let color = fx_row(id, BM_COLOR);

@@ -1160,8 +1160,8 @@ export type WaterFoamSource = number;
 
 /**
  * `HGRP/WaterDecal`, a box of foam projected onto the water surface inside it, which the water then lights
- * (`docs/game-data/water.md#waterdecal`). every placement map02 uses takes the neutral per-placement values
- * (`HGWaterDecalRenderer`), so the material is the whole look
+ * (`docs/game-data/water.md#waterdecal`). the per-placement `HGWaterDecalRenderer` values aren't packed, so
+ * the material is the whole look
  */
 export interface WaterFoamSurface {
 	kind: 'waterFoam';

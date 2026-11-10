@@ -56,7 +56,7 @@ const MAX_UNDECODED = 384;
 const STALE_FRAMES = 30;
 /**
  * time a frame spends on unpinned uploads at most, ms. uploads cost per item more than per byte (buffer and
- * texture creation, instance rows), so the byte budget alone let bursts of a hundred land on one frame
+ * texture creation, instance rows), so the byte budget alone would let bursts of a hundred land on one frame
  */
 const UPLOAD_MS = 2;
 

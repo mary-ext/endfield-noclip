@@ -196,7 +196,7 @@ export class InteractiveRow {
 	 */
 	scaleOf(model: { scale: number }): [number, number, number] {
 		const { row } = this;
-		// zero is the authored "no scale override" sentinel on LevelInteractiveData.
+		// a `modelScale` of 0 is the authored 'no override'
 		const scale = row.modelScale > 0 ? row.modelScale : model.scale;
 		return [row.scale[0] * scale, row.scale[1] * scale, row.scale[2] * scale];
 	}

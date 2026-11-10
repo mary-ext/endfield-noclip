@@ -55,8 +55,8 @@ export const particleEmitterMatrix = (
 
 /**
  * where a particle system the viewer can't play stands in: at its transform, sized as the game sizes its
- * particles. `Hierarchy` takes the whole hierarchy's scale, `Local` only the system's own and `Shape` none,
- * so a system whose parent stretches a wide spawn box doesn't stand in as a quad as wide as the box.
+ * particles ({@link ScalingMode}), so a system whose parent stretches a wide spawn box doesn't stand in as a
+ * quad as wide as the box.
  *
  * @param parent the parent's world matrix
  * @param local the system's local transform

@@ -1,8 +1,8 @@
 /**
- * the tree tiles of HLOD clusters. cluster names (`HLOD<tier>_<i>_<j>_Cluster_…`) give the cell on the tier's
- * grid, but clamp negative coordinates to 0, and a cluster's bounds centre is a poor stand-in since one large
- * member can overhang its cell by hundreds of metres (see `docs/game-data/world.md#lod-and-hlod`). the grid's
- * cell size and origin differ per scene and aren't stored anywhere found, so they're fitted to the names.
+ * the tree tiles of HLOD clusters. cluster names give the cell on the tier's grid, but clamp negative
+ * coordinates to 0, and a cluster's bounds centre is a poor stand-in since its bounds overhang its cell (see
+ * `docs/game-data/world.md#lod-and-hlod`). the grid's cell size and origin differ per scene and aren't stored
+ * anywhere found, so they're fitted to the names.
  *
  * @module
  */
@@ -32,10 +32,10 @@ const MAX_CELL_DOUBLINGS = 3;
  */
 const SNAP_TOLERANCE = 8;
 
-/** an HLOD cluster as the grid sees it */
 /** HLOD cluster entity names: `HLOD<tier>_<i>_<j>_Cluster_<hash>_<n>…`, `i`/`j` being the tier's grid cell */
 export const HLOD_NAME = /^HLOD(\d)_(-?\d+)_(-?\d+)_Cluster_/;
 
+/** an HLOD cluster as the grid sees it */
 export interface HlodSample {
 	tier: number;
 	/** the cell in its name */

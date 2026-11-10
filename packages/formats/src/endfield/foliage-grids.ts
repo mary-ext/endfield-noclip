@@ -7,30 +7,19 @@ import { ChunkObjectKind, Component, type RendererDraw, type StaticRenderer } fr
 import { levelTagOf } from './level-partition.ts';
 import { readChunkRows, readPropertyTable, type MonoValue } from './mono-objects.ts';
 
-// scattered foliage: the grass and tree grids among a chunk's proxy objects (tag-3 rows, the game's
-// `ProxyEntityType`; docs/game-data/world.md#foliage-grids). each grid is a 64 m cell's worth of ECS entities
-// the client creates itself, serialized as whole archetypes into the row's keyed property table
-// (`mono-objects.ts` layout):
+// scattered foliage: the grass and tree grids among a chunk's proxy objects (tag-3 rows). each grid is a 64 m
+// cell's worth of ECS entities the client creates itself, serialized as whole archetypes into the row's keyed
+// property table (`mono-objects.ts` layout). the full layout is in docs/game-data/world.md#foliage-grids:
 //
-//   row         0 name (`GrassGrid_<x>_<z>#<level tag>_<hex id>`, `TreeGrid_…`)   2 u8 proxy type   3 table
-//   Init        0xff000000 archetype count
-//               0xff01xxxx archetype bounds   0xff02xxxx entity count
-//               0xff03xxxx descriptors, 8 bytes each: u16 component id, u16 stride, u32 0
+//   row         0 name   2 u8 proxy type   3 table
+//   Init        0xff000000 archetype count, then per archetype a:
+//               0xff02xxxx entity count   0xff03xxxx descriptors, 8 bytes each: u16 component id, u16 stride
 //               0xff04xxxx component-major blob of count · Σ stride bytes, as an InitChunkData group's
 //   Streaming   0xff050000 batch table length n, then per entry i < n:
 //               0xff06xxxx u32 batch key   0xff07xxxx material   0xff08xxxx mesh   0xff09xxxx submesh
 //
-// the archetypes reuse InitChunkData's bounds (0–5) and draw-info (8–14) columns; a draw's 24-byte info names
-// its batch entry instead of holding asset keys:
-//
-//   grass (`GrassRendererInfo`)   0 u16 keywords   2 u16 0   4 u32 batch key   8 f32 sparsity
-//                                 12 u32 renderer flags
-//   tree (`RendererInfo`)         2 u8 submesh   12 u32 batch index   16 u32 renderer flags
-//
-// grass entities are clusters of nearby instances: column 37 + k holds `count` then up to 4·2^k 96-byte
-// instances (`GrassClusterK{4,8,16,32}Component`). a tree entity is one instance in column 80
-// (`HGTreeComponent`). an instance is a column-major object-to-world matrix and two vec4 parameters. layout
-// found by census over map01 and map02, with the component names from the IL2CPP metadata.
+// the archetypes reuse InitChunkData's bounds (0–5) and draw-info (8–14) columns, and hold their instances
+// in a column of their own.
 
 // #region types
 
@@ -75,10 +64,12 @@ const BATCH_MATERIAL_KEY = 0xff070000;
 const BATCH_MESH_KEY = 0xff080000;
 const BATCH_SUBMESH_KEY = 0xff090000;
 
-/** `GrassClusterK4Component`; ids up to {@link GRASS_CLUSTER_LAST} double the capacity */
+/** a grass cluster of up to 4 instances; each id up to {@link GRASS_CLUSTER_LAST} doubles the capacity */
 const GRASS_CLUSTER_FIRST = 37;
 const GRASS_CLUSTER_LAST = 40;
+/** a tree entity's one instance */
 const TREE_INSTANCE = 80;
+/** a column-major object-to-world matrix and two vec4 parameters */
 const INSTANCE_SIZE = 96;
 const DRAW_INFO_SIZE = 24;
 
@@ -288,8 +279,8 @@ const readArchetypes = (
 					throw new FormatError(`grid ${id} cluster holds ${instanceCount} of ${grassCapacity} instances`);
 				}
 			}
-			// one copy per cluster rather than per instance: map02 has ~3M instances, and an ArrayBuffer each was
-			// most of reading them
+			// one copy per cluster rather than per instance: a scene has millions of instances, and an ArrayBuffer each would
+			// be most of the cost of reading them
 			const start = blob.byteOffset + first;
 			const copy = blob.buffer.slice(start, start + instanceCount * INSTANCE_SIZE);
 			const instances = Array.from(
@@ -319,6 +310,8 @@ const readDraws = (
 		const lod = at + 4 + capacity * DRAW_INFO_SIZE + d * 8;
 		let batch: Batch | undefined;
 		let flags: number;
+		// the info names its batch entry instead of holding asset keys: grass by the entry's key, trees by its
+		// index
 		if (grid.type === FoliageGridType.Grass) {
 			batch = grid.byKey.get(view.getUint32(info + 4, true));
 			flags = view.getUint32(info + 12, true);

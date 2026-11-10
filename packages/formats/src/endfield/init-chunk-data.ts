@@ -26,23 +26,24 @@ export const INIT_CHUNK_VERSIONS: readonly number[] = [47, 49];
 /** a root object row */
 export interface ChunkObject {
 	id: number;
-	/**
-	 * union tag of the row. by name census: 1 = environment (reflection probes, `Env_*`, volumes, wind, terrain
-	 * root), 2 = component-group entities (renderers, colliders, decals, lights; the game's `ECSEntityType`), 3
-	 * = proxy entities (audio, grass and tree grids, surface-type data; the game's `ProxyEntityType`). see
-	 * {@link ChunkObjectKind}
-	 */
+	/** union tag of the row: a {@link ChunkObjectKind} value, or another the game has */
 	kind: number;
 	name: string;
 }
 
-/** {@link ChunkObject.kind} values with a decoder */
+/** {@link ChunkObject.kind} values with a decoder; what each holds is by name census */
 export const ChunkObjectKind = {
-	/** GameObjects rebuilt as MonoBehaviours, see `mono-objects.ts` */
+	/**
+	 * GameObjects rebuilt as MonoBehaviours (reflection probes, `Env_*`, volumes, wind, terrain root), see
+	 * `mono-objects.ts`
+	 */
 	Mono: 1,
-	/** component-group entities */
+	/** component-group entities (renderers, colliders, decals, lights; the game's `ECSEntityType`) */
 	Entity: 2,
-	/** proxy entities; the grass and tree grids are read by `foliage-grids.ts` */
+	/**
+	 * proxy entities (audio, grass and tree grids, surface-type data; the game's `ProxyEntityType`); the grids
+	 * are read by `foliage-grids.ts`
+	 */
 	Proxy: 3,
 } as const;
 

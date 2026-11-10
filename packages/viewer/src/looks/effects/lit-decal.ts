@@ -11,7 +11,7 @@ import {
 } from './effect-look.ts';
 
 /**
- * float offsets of an `HGRP/DecalLit` look's parameters, in place of {@link EffectRow}'s rows 17–20. the tint
+ * float offsets of an `HGRP/DecalLit` look's parameters, in place of {@link EffectRow}'s rows 17–26. the tint
  * (the placement's colour; alpha times `_DecalOpacity`), the UV rows of slot 0 (`_BaseColorMap`) and 1
  * (`_SampleTex1`) and the last row are shared
  */
@@ -51,8 +51,7 @@ export const DecalLitRow = {
 	emissiveMask: 100,
 	/**
 	 * 1 when the PBR map takes the placement's UV transform rather than its own (`FX_UV` + 1), then 0, 0, 0.
-	 * the base map always takes the placement's, and the tint row holds `_DecalOpacity` in its alpha, which
-	 * multiplies the placement's colour
+	 * the base map always takes the placement's
 	 */
 	pbrPlaced: 104,
 } as const;

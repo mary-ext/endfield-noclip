@@ -190,11 +190,7 @@ const isDrawRole = enumGuard(DrawRole);
 const hasDistanceOrigin = (flags: number): boolean => (flags & ChainFlags.CameraDistance) !== 0;
 
 /**
- * tables/chains.bin: 16-byte header (`'EFCH'`, u16 version, u16 0, u32 chainCount, u32 drawCount), 8-byte
- * chains (u32 firstDraw, u16 drawCount, u8 flags, u8 0), then 32-byte draws (u32 geometry, u32 material, u32
- * particles, `0xffffffff` for none, u16 submesh, u8 lod, u8 role, f32 minSquared, f32 maxSquared, u8 flags,
- * u8 0, i16 sortingLayer, i16 sortingOrder, u16 0), then f32×3 distance origins, one per
- * {@link ChainFlags.CameraDistance} chain in chain order.
+ * tables/chains.bin; the layout is in docs/package-format.md (binary encodings).
  *
  * @param chains chain templates in id order
  * @returns the encoded table
@@ -316,10 +312,7 @@ export const decodeChains = (data: Uint8Array): Chain[] => {
 };
 
 /**
- * instance block: 36-byte header (`'EFIN'`, u16 version, u16 0, u32 count, f32×3 origin, then a u32 row count
- * per row section: decals, spins, floaters), then sections of `count` elements each: u32 chain, f32×12
- * transform, f32×6 bounds; then each row section: its u32 rows, ascending, and their values (f32×8 decal
- * placements, f32×7 spins, a u32 water volume per floater).
+ * an instance block; the layout is in docs/package-format.md (instance block).
  *
  * @param block rows
  * @returns the encoded block

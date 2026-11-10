@@ -2,23 +2,16 @@ import { FormatError } from '../binary/binary-reader.ts';
 import type { AttributeReader, TypeDefinition } from '../il2cpp/metadata.ts';
 import type { Il2CppRuntime, Il2CppTypeRef } from '../il2cpp/registration.ts';
 
-// MemoryPack-serialized game data (level scripts, view-state controllers). the client deserializes through
-// generated wrapper classes named `<Namespace_Type>ForMemoryPack`: an object is a member-count byte (255 for
-// null) followed by its members in the order of the wrapper's `__name__` setter properties, base wrapper first;
-// a polymorphic base is a union, a tag byte (250 then a u16 for large tags, 255 for null) choosing the subtype
-// from the wrapper's `[MemoryPackUnion(tag, typeof(subtype))]` attributes. the schema is read from the user's
-// install (its IL2CPP metadata and binary), never stored in this repo. collections are an int32 count (-1 for
-// null, decoded as empty) and their elements; strings are ids into the JsonData string pool.
+// MemoryPack-serialized game data (level scripts, interactive templates, LevelData, view-state controllers).
+// the client deserializes through generated wrapper classes named `<Namespace_Type>ForMemoryPack`: an object
+// is a member-count byte (255 for null) followed by its members in the order of the wrapper's `__name__`
+// setter properties, base wrapper first; a polymorphic base is a union, a tag byte choosing the subtype from
+// the wrapper's `[MemoryPackUnion(tag, typeof(subtype))]` attributes. collections are an int32 count and
+// their elements; strings are ids into the JsonData string pool. the schema is read from the user's install
+// (its IL2CPP metadata and binary), never stored in this repo.
 //
-// rules beyond the generated wrappers, found by decoding every level script of the client to its exact length:
-//
-// - unmanaged structs of a few kinds (`*Ptr`, tags, poses, path hashes, spline knots) are copied raw at their
-//   in-memory size, padding included, except as List elements, which go through their wrapper. path hashes
-//   and spline knots were confirmed by decoding every LevelData file but Dijiang's two to its exact length
-// - a Dictionary of two unmanaged types is copied raw as KeyValuePair rows
-// - `Nullable<T>` of an unmanaged T is raw: a has-value byte, then T at its alignment
-// - `AnimationCurve`, `SerializeFieldDictionary`, `SendLuaEvent*` and `AudioBlackScreenBehaviour` have their own
-//   formatters, decoded below
+// the rules beyond the generated wrappers (raw unmanaged structs, raw dictionaries, flagged values and the
+// types with formatters of their own) are in docs/game-data/scene-states.md#level-scripts
 
 /** a decoded value: objects carry their wrapper's name as `$type`; 64-bit integers are decimal strings */
 export type MemoryPackValue =
@@ -146,7 +139,10 @@ export class MemoryPackSchema {
 		return found?.length === 1 ? found[0] : undefined;
 	}
 
-	/** @returns a wrapper's members and union subtypes */
+	/**
+	 * @param index a wrapper's definition index
+	 * @returns its members and union subtypes
+	 */
 	wrapper(index: number): Wrapper {
 		return this.#cache.getOrInsertComputed(index, (): Wrapper => {
 			const { metadata } = this.runtime;
@@ -370,6 +366,7 @@ export class MemoryPackReader {
 			if (tag === 255) {
 				return null;
 			}
+			// 250 escapes to a u16 for large tags
 			if (tag === 250) {
 				tag = this.#u16();
 			}
@@ -546,6 +543,7 @@ export class MemoryPackReader {
 				};
 			}
 			case 'AudioBlackScreenBehaviour': {
+				// a raw struct: the skips are its padding
 				const preset = this.#u8();
 				const flags = this.#u8();
 				const fadeIn = this.#u8() !== 0;

@@ -12,12 +12,12 @@ import { FRAME_WGSL } from '../frame/frame-uniforms.ts';
 import fogWgsl from './volumetric-fog.wgsl?raw';
 
 /**
- * froxels across, down and in depth. the game sizes its grid from the view in cells of at least a set number
- * of pixels, capped at a source size, so large views get a near-constant grid; these values and the depth
- * distribution are Unreal's defaults, since the game's quality presets aren't recovered
+ * froxels across, down and in depth: a fixed grid, coarser than the game's, which follows the view in cells
+ * of a set pixel size up to a capped source size (240 × 135 × 128 at PC high,
+ * docs/game-data/quality-settings.md)
  */
 const GRID: readonly [number, number, number] = [160, 90, 64];
-/** slices per doubling of depth past the first */
+/** slices per doubling of depth past the first. the game's value isn't recovered; this is Unreal's default */
 const DEPTH_DISTRIBUTION_SCALE = 32;
 /** the game starts the first slice this far past the near plane or start distance */
 const NEAR_OFFSET = 0.095;

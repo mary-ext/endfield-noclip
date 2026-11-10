@@ -776,8 +776,7 @@ const volumeSurface = (
 		transform: [1, 0, 0, 0, 0, 1, 0, y, 0, 0, 1, 0],
 		bounds: { min: [Math.min(...xs), y, Math.min(...zs)], max: [Math.max(...xs), y, Math.max(...zs)] },
 		config,
-		// the game draws a volume through an HGWaterRendererV2 of a pooled prefab whose render type isn't
-		// recovered; the polygon faces straight up either way
+		// the flat polygon faces straight up, with or without its normals
 		meshNormals: false,
 		volume: index,
 	};

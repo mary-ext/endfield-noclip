@@ -2,44 +2,22 @@ import { FormatError } from '../binary/binary-reader.ts';
 import { FlatBuffer } from '../binary/flatbuffer.ts';
 
 // DynamicStreaming main grids: `Data/DynamicStreaming/PC/Scene/<scene>/fb_main_<L>_<i>_<j>.bytes`. this reads
-// only what state selection needs: each entity's id, controller components and resource groups with their
-// LogicState masks. field indices and record layouts follow Variante/endfield_research_kit (MIT,
+// what state selection needs: each entity's id, controller, gate and view-state components, its resource
+// groups with their LogicState masks, and its extra-scene, erosion and sludge links.
+// field indices and record layouts follow Variante/endfield_research_kit (MIT,
 // `scripts/game_data/contracts/dynamic_{main_vector,root_comp,resource_comp,scalar_components}_native.json`);
 // the ResourceComp stride (132, not the contract's 124) and the DataIndex type → vector pairing were measured
 // on the client.
 //
 //   root: 3 [SingleGrid table]   4 [string] (root string table: settlement ids, POI ids, level ids …)
-//   grid: 0 u32 uniqueId (L<<16 | i<<8 | j)   5 [DataIndex 16 B]   12 [ResourceGroupWithStateDesc 88 B]
-//         17 [IdComp 16 B]   29 [SettlementControlComp 20 B]   30 [FactoryRegionControlComp 8 B]
-//         32 [ResourceComp 132 B]   33 [RootComp 84 B, one per entity]   55 [PoiControlComp 8 B]
+//   grid: 0 u32 uniqueId (L<<16 | i<<8 | j), then vectors of fixed-width records (`Slot`, `Width`)
 //   DataGroup (24 B) = i32 invalid, i32 type, u32 grid, i32 index, i32 num, i32 total: a typed slice of the vector
 //     `type` selects, in grid `grid`
 //   DataIndex (16 B) = the first four DataGroup fields
 //   RootComp: u32 entityType @0, u32 state @4, Comps DataGroup @8 (slice of DataIndex: the entity's components)
-//   ResourceComp: Res DataGroup @0 (slice of ResourceGroupWithStateDesc)
-//   ResourceGroupWithStateDesc: Group DataGroup @0 (Model 5 / Effect 6 / Ecs 7 rows, possibly in another grid),
-//     u32 sceneState @24, u32 logicState @28, i32 levelNum @32 (LevelConfig idNum), i32 factoryIndex @36
-//   SettlementControlComp: i32 settlement (root string) @0, bool controlLoad @4, i32 compareType @8,
-//     i32 compareValue @12, bool isMain @16
-//   IdComp: u64 uniqueId @0, u64 overrideId @8 (0 on every entity seen; IL2CPP `FBDynamicSceneIdComp`)
-//   FactoryRegionControlComp: i32 region (root string, a level id) @0, i32 @4
-//   PoiControlComp: i32 poi (root string) @0, i32 domainType @4
-//   46 [ExtraSceneComp 40 B] = Vector3 minPos @0, maxPos @12, currentPos @24, u32 direction @36
-//   36 [ErosionRootComp 48 B] = u64 erosionCoreId @0 (the core's level-data logic id), PosList DataGroup @8,
-//     Vector3 erosionCorePos @32 (IL2CPP `FBDynamicSceneErosionRootComp`; the stride was measured on map01)
-//   44 [SludgeComp 264 B] = Vector3 pos @96, u64 coreId @248 (the core's level-data logic id); offsets follow
-//     IL2CPP `FBDynamicSceneSludgeComp`'s field order, whose natural alignment gives the measured stride
-//   37 [ModelViewStateControllerNewComp 36 B] = i32 modelIdStrId (root string) @0, bool useOldVersion @4,
-//     DataGroup keyStateToNameMap @8, i32 keyState @32 (IL2CPP `FBDynamicSceneModelViewStateControllerNewComp`)
-//   16 [MissionCondition 16 B] = i32 id (root string), i32 isQuest, i32 state, i32 isSame
-//   27 [MissionControlComp 32 B] = Conditions DataGroup @0 (MissionCondition rows), i32 compareType @24,
-//     i32 toBeTrue @28
-//   28 [GlobalVarControlComp 40 B] = i32 globalKey @0 (a client game variable id, not a root string),
-//     u8 controlLoad @4, i32 compareType @8, i64 compareValue @16, i32 extra1–4 @24
-//   52 [MapVarControlComp 48 B] = i32 mapKey @0 (an id like globalKey), u8 controlLoad @4, i32 compareType @8,
-//     i64 compareValue @16, i32 extra1–4 @24, i32 mapId @40
 //
-// how the gates load an entity: docs/game-data/scene-states.md#dynamic-load-gates
+// each record's fields are in docs/game-data/assets.md#fb_main-grids; how the gates load an entity, in
+// docs/game-data/scene-states.md#dynamic-load-gates
 
 // #region types
 
@@ -198,6 +176,7 @@ export interface ExtraSceneSlot {
 
 // #endregion
 
+/** FlatBuffer field slots: the root's two, then a grid's id and record vectors */
 const Slot = {
 	RootGrids: 3,
 	RootStrings: 4,
@@ -220,6 +199,7 @@ const Slot = {
 	PoiControlComp: 55,
 } as const;
 
+/** record strides, in bytes */
 const Width = {
 	DataIndex: 16,
 	ResourceGroupWithStateDesc: 88,

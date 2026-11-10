@@ -20,12 +20,11 @@ import { assetProperty, type StreamingChunk } from './streaming-chunk-data.ts';
 
 // open-world water (docs/game-data/water.md). three sources join here:
 // - InitChunkData component 30 (104 bytes) places each water surface: `u32 render type mask, i32 runtime mesh
-//   id, f32×16 object-to-world, f32×4 param0, f32×4 param1`, beside bounds, name and an unread 24-byte
-//   column 7. every surface sits in a Global chunk.
-// - the same id's StreamingChunkData record binds the surface mesh (key 0xff000000) and its `WaterConfig`
-//   MonoBehaviour asset (key 0xff010000).
-// - a kind-1 `Water#<tag>_…` object per level binds the scene's `Global_Water_Config` asset (key 0x20000000,
-//   the HGWaterGlobalConfig component); that config holds the flow/caustic/normal textures and the sector grid.
+//   id, f32×16 object-to-world, f32×4 param0, f32×4 param1`, beside the bounds and name columns.
+// - the same id's StreamingChunkData record binds the surface mesh and its `WaterConfig` MonoBehaviour asset.
+// - a kind-1 `Water#<tag>_…` object per level binds the scene's `Global_Water_Config` asset, which holds the
+//   flow/caustic/normal textures and the sector grid.
+// the binding keys are `WaterProperty`.
 // the component layout is ported from An1X3R/Endfield-map-extractor (MIT, `extractor_core/water.py`).
 
 // #region types

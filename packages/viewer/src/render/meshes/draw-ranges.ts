@@ -145,7 +145,7 @@ export const PASS_PHASES: Record<MeshPass, readonly DrawPhase[]> = {
 
 /**
  * the ranges the transparent pass draws: one list sorted far to near across all of them, by each instance's
- * distance, as the game draws its transparent queue (`docs/game-data/materials.md#transparent-draw-order`)
+ * distance (sorted-runs.ts)
  */
 export const SORTED_RANGES: ReadonlySet<DrawRange> = new Set(
 	PASS_PHASES.transparent.map(({ range }) => range),

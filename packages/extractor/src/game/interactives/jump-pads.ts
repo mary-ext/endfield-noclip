@@ -102,7 +102,7 @@ export class JumpPads implements TemplateReader {
 		const pad = this.#pads.get(row.template);
 		const arrow = pad === undefined ? null : jumpPadArrow(pad, row);
 		if (arrow !== null) {
-			// a stationary effect, unscaled, independent of the pad's state
+			// a stationary effect, unscaled, under the row's gate alone
 			this.#effects.queue({
 				effect: arrow.effect,
 				source,

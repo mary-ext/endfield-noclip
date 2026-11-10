@@ -595,8 +595,8 @@ export interface RainConfig {
 
 /**
  * `HGLensFlareConfig`: the lens flare the sun draws while `enable` is set (SRP core's data-driven lens
- * flare). its direction is {@link LightConfig.rotationLensFlare}'s and its light colour
- * {@link LightConfig.directColor}
+ * flare). its direction is the sun's or {@link LightConfig.lensFlarePitchYaw}, as
+ * {@link LightConfig.lensFlarePitchYawMode} says, and its light colour {@link LightConfig.directColor}
  */
 export interface LensFlareConfig {
 	enable: boolean;
@@ -605,7 +605,7 @@ export interface LensFlareConfig {
 	intensity: number;
 	scale: number;
 	useOcclusion: boolean;
-	/** how far around the sun occlusion samples reach, in units of tan⁻¹ 0.0576 (about 3.3°) */
+	/** how far around the sun occlusion samples reach, in units of tan 0.0576 of the sun's distance (about 3.3°) */
 	occlusionRadius: number;
 	sampleCount: number;
 	occlusionOffset: number;
@@ -723,7 +723,7 @@ export interface LiftGammaGain {
 /**
  * `HGColorGradingConfig`: tonemapping and URP-style grading (the colour curves aren't included).
  * `tonemappingMode` is the game's `TonemappingMode`: 0 `None`, 1 `Neutral`, 2 `ACES`, 3 `Custom`, 4
- * `External`, 5 `ACES_modified` (5 everywhere seen; 1–4 are hidden from the game's inspector)
+ * `External`, 5 `ACES_modified` (5 everywhere seen)
  */
 export interface ColorGradingConfig {
 	tonemappingMode: number;

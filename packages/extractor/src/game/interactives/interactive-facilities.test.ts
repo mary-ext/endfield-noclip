@@ -18,7 +18,8 @@ const property = (key: string, bits: string): MemoryPackValue => ({
 
 const commonPerform = { $type: 'Beyond_Gameplay_Core_InteractiveCommonPerformComponentDataForMemoryPack' };
 
-// the jump pad (int_jumpmachine): saved `state` 1, so it starts on; its variants leave `state` alone
+// the jump pad (int_jumpmachine): saved `state` 1, so it starts on; a variant overrides it only by setting
+// `state` itself
 const jumpPad: MemoryPackValue = {
 	componentList: [commonPerform],
 	saveProperties: [property('is_locked', '0'), property('state', '1')],

@@ -25,8 +25,7 @@ const bits = (value: number): number => {
 export const CASTS_EVERYWHERE = ChainDrawFlags.CastsCascades | ChainDrawFlags.CastsStatic;
 
 /**
- * the game draws a caster into its cascades only with `CastShadow`, `RealtimeShadowCaster` and the cascade's
- * bit, and into its cached far map only with `CastShadow` and `StaticShadowCaster`
+ * which sun shadow maps a draw casts into, by the game's rule (the lighting page's shadows)
  *
  * @param renderFlags a static renderer draw's flag word
  * @returns its {@link ChainDraw.flags}
@@ -89,10 +88,10 @@ export class ChainTable {
 	}
 
 	/**
-	 * interned ids follow the order chains are first met, so a chain added early would shift every later id and
-	 * change every instance block naming one, renaming every shard archive. chains instead keep the ids the
-	 * replaced package gave them, matched by what their draws are; new chains take the ids of chains that are
-	 * gone, then follow at the end, both in key order. ids left free hold an empty chain
+	 * gives chains the ids the replaced package gave them, matched by what their draws are, so instance blocks
+	 * naming them keep their bytes (interned ids follow first-met order, and one early chain would shift the
+	 * rest). new chains take the ids of chains that are gone, then follow at the end, both in key order; ids
+	 * left free hold an empty chain
 	 *
 	 * @param keys names geometries, materials and particle systems by what they are (`AssetIds.keyOf`)
 	 * @param previous the replaced package's chain keys by id (see the returned `keys`), or empty

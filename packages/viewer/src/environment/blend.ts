@@ -373,7 +373,7 @@ const applyPhase = (
 	const target = profile as unknown as Sections;
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- as above
 	const source = phase.sections as unknown as Sections;
-	// the atmosphere each side's fog defers to; sections are replaced, never changed in place
+	// the atmosphere each side's fog defers to, read before the loop replaces `target.atmosphere`
 	const atmospheres = {
 		from: target.atmosphere,
 		to: phase.active.includes('atmosphere') ? source.atmosphere : target.atmosphere,

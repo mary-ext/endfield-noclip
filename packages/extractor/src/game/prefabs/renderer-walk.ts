@@ -342,8 +342,7 @@ const readAdjustLengthComponent: ComponentReader = {
 const readUnlockConfig: ComponentReader = {
 	accepts: behaviourOf(isUnlockEffectConfigType),
 	async read(walk, node, _, component) {
-		// the game looks the component up on the model's root and switches its models whether or not it's
-		// enabled, and only for a placement with a mini-game or submit lock
+		// the game looks it up on the model's root only, and acts on it whether or not it's enabled
 		if (!node.isRoot) {
 			return;
 		}

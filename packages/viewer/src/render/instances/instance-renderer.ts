@@ -33,7 +33,7 @@ import type { MainPassFormat } from '../frame/render-targets.ts';
 
 import boxesWgsl from './instance-boxes.wgsl?raw';
 
-/** rows the mega buffer starts with (10 MiB) */
+/** rows the mega buffer starts with (12 MiB) */
 const INITIAL_ROWS = 131_072;
 /** bytes per decal placement (`DECAL_PLACEMENT_FLOATS`) */
 const PLACEMENT_BYTES = 32;

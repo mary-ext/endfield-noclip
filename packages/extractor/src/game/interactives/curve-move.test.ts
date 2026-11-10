@@ -158,8 +158,7 @@ describe('auto-moving platforms', () => {
 		const result = curvePath(spline, move, placement);
 		assert.ok('path' in result);
 		const { matrices, frameRate } = result.path;
-		// 15 + 7 + 15 + 7 metres at 4 m/s
-		// to a simulation step (1/240 s) per trip
+		// 15 + 7 + 15 + 7 metres at 4 m/s, to within a simulation step (1/240 s) per trip
 		near([matrices.length / frameRate], [11], 'period', 0.01);
 		const world = (frame: number) => transformPoint(multiplyMatrices(placement, matrices[frame]), [0, 0, 0]);
 		// knot 2, (0, 7, -15) turned a quarter about y

@@ -45,7 +45,7 @@ export interface LifterStart {
  * @param entity its entity properties
  * @param row a placed lift
  * @returns its floor, the platform's position there and the door keys that floor's `doorside_list` entry
- *   sets, or why it can't start: the game reads past the end of `position_list` for a floor it doesn't list
+ *   sets, or why it can't start: `position_list` doesn't list its floor
  */
 export const lifterStart = (
 	template: MemoryPackValue,

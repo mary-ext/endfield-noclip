@@ -74,7 +74,7 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 			maxStorageBufferBindingSize: limits.maxStorageBufferBindingSize,
 			maxTextureArrayLayers: limits.maxTextureArrayLayers,
 			maxStorageBuffersPerShaderStage: limits.maxStorageBuffersPerShaderStage,
-			// the effect and water pipelines bind 18 and 19 sampled textures to their fragment stage, over the default 16
+			// the effect pipelines bind 19 sampled textures to their fragment stage, over the default 16
 			// (docs/viewer/gpu-resources.md)
 			maxSampledTexturesPerShaderStage: limits.maxSampledTexturesPerShaderStage,
 		},

@@ -20,17 +20,15 @@ import type { StructureModel } from './dynamic-structures.ts';
 import { readGrowBoxShutter, readPlantingFieldLevels } from './grow-boxes.ts';
 
 // Dijiang's cabins: rooms the player builds into fixed slots of the spaceship
-// (docs/game-data/scene-states.md#dijiang-cabins). a built cabin's rows are placed at the slot origin, turned
-// by its direction in quarter turns of yaw; with that convention each cabin's entrance meets the slot's door.
-// a slot gets the largest cabin type whose row pivots fit its box, else the smallest: our rule, since no client
-// data assigning types to slots was found.
+// (docs/game-data/scene-states.md#dijiang-cabins). a built cabin's rows go to the slot origin, turned by the
+// slot's direction in quarter turns of yaw. a slot gets the largest cabin type whose row pivots fit its box,
+// else the smallest: our rule, since no client data assigning types to slots was found.
 
 const CABIN_DATA = 'Data/Json/SpaceshipCabinData.json';
 
 /**
  * the game's room type ids (`SpaceshipRoomTypeTable`) of the cabin types, which name their rooms' bakes. the
- * table names no cabin types, so these are matched by hand by its rows' icon names
- * (`icon_sapceship_room_icon_manufacturing_station`, `…_grow_cabin`)
+ * table names no cabin types, so these are matched by hand, by its rows' icon names
  */
 const ROOM_TYPES = new Map([
 	['ManufacturingStation', 1],
@@ -269,8 +267,8 @@ export const loadCabins = async (
 };
 
 /**
- * the farthest a slot's door stands from the slot origin: the medium slot's is 10.2 m off, the small ones' 9
- * m
+ * how far from a slot's origin its door can stand, m in plan: the medium slot's is 10.2 m off, the small
+ * ones' 9 m
  */
 const DOOR_REACH = 12;
 

@@ -78,9 +78,9 @@ export interface MaterialClassification {
 	cull: MaterialCull;
 	zWrite: boolean;
 	/**
-	 * Lit-family `_BaseTextureMapCount` (from the `_TWO_BASEMAP` keyword when the float is absent): 0 adds an
-	 * MRO map and an `RAG` normal map; otherwise the normal map is `RG` with roughness in B. `null` for shaders
-	 * without the switch (the Lit families and the shaders that declare `_BaseTextureMapCount` have it)
+	 * Lit-family `_BaseTextureMapCount`, from the `_TWO_BASEMAP` keyword when the float is absent
+	 * (`docs/game-data/materials.md#texture-layouts`). `null` for shaders without the switch (the Lit families
+	 * and the shaders that declare `_BaseTextureMapCount` have it)
 	 */
 	baseTextureMapCount: number | null;
 }
@@ -99,9 +99,9 @@ export const classifyHgrpMaterial = (
 	shader: ShaderSummary,
 ): MaterialClassification => {
 	const { floats, keywords } = material;
-	// a material keeps the properties of shaders it used before (HGRP/Lit materials carry LitTransparent's
-	// `_SurfaceType` and blend factors), so only properties the shader declares count, falling back to the
-	// shader's default as Unity does. a shader without property info keeps every material value
+	// a material keeps the properties of shaders it used before, so only properties the shader declares count,
+	// falling back to the shader's default as Unity does. a shader without property info keeps every material
+	// value
 	const declared = new Map(shader.properties.map((property) => [property.name, property.default[0]]));
 	// property names are Unity's, underscores included
 	const float = (name: string): number | undefined => {

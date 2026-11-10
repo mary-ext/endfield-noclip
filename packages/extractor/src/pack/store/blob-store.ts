@@ -63,8 +63,8 @@ export interface PutOptions extends BlobPlacement {
 	zstdLevel?: number;
 	/**
 	 * set for the blobs of a step the pack cache remembers whole (terrain, irradiance): a later pack takes them
-	 * from the step's memo, so their stored forms aren't also remembered one by one, which cost a hash and two
-	 * file operations per blob, written only to be swept by the next pack
+	 * from the step's memo, so their stored forms aren't also remembered one by one, which would cost a hash
+	 * and two file operations per blob for memos the next pack sweeps
 	 */
 	stepMemo?: boolean;
 }
@@ -132,10 +132,10 @@ interface Layout {
  * deduplicated by the SHA-256 of their stored bytes, and laid out into czar archives at the end. a blob's
  * index is fixed by its commit, so tables can reference blobs before any archive exists.
  *
- * archives are named by their content (`archiveName`): a group whose blobs total more than the cap is split
- * by blob hash into a power-of-two number of parts, so a re-pack that changes a few blobs changes only the
- * archives holding them, and {@link BlobStore.writeArchives} links every other archive from the previous
- * package instead of writing it again
+ * archives are named by their content (`archiveName`) and a group over the cap is split into parts by hash,
+ * so a re-pack that changes a few blobs changes only the archives holding them, and
+ * {@link BlobStore.writeArchives} links every other archive from the previous package instead of writing it
+ * again
  */
 export class BlobStore {
 	readonly dir: BlobDir;

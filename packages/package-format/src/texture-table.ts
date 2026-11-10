@@ -131,14 +131,9 @@ const valueOf = <T>(values: readonly T[], code: number, label: string): T => {
 };
 
 /**
- * the texture table: 20-byte header (`'EFTX'`, u16 version, u16 0, u32 textureCount, u32 pieceCount, u32
- * samplerCount), then 12-byte samplers (u8 addressModeU, V and W, u8 magFilter, minFilter and mipmapFilter,
- * u16 maxAnisotropy, f32 mipBias), 16-byte textures (u8 status, u8 kind, u8 format, u8 mipCount, u16 width,
- * u16 height, u16 depthOrArrayLayers, u16 sampler, u32 firstPiece) and 8-byte pieces (u32 blob, u8
- * firstLevel, u8 levelCount, u16 0). a texture's pieces are `[firstPiece, next texture's firstPiece)` of the
- * piece list (the list's end for the last), coarse to fine; an unconverted entry has none and its other
- * fields are 0. kinds, formats, address modes and filters are indices into {@link TEXTURE_KIND_CODES},
- * {@link TEXTURE_FORMAT_CODES} and the orders `repeat, clamp-to-edge, mirror-repeat` and `nearest, linear`.
+ * encodes the texture table (layout in docs/package-format.md): samplers, then fixed-size texture records,
+ * then the piece list. a texture's pieces are `[firstPiece, next texture's firstPiece)` of the list (its end
+ * for the last), coarse to fine; an unconverted entry has none and its other fields are 0
  *
  * @param samplers the sampler palette
  * @param entries entries in id order

@@ -18,10 +18,8 @@ import { collectStaticChunks } from './static-chunks.ts';
 
 // the entities phase: every content source of the scene, in a fixed order. the order matters: geometry and
 // material ids are handed out in first-reference order, synthetic entity ids in call order, and an entity the
-// chunk files hold keeps their gating over a dynamic structure's. a new kind of content is one more source
-// here, writing through PackContent; a new kind of placed prefab only needs to join the placement list.
-// `world find` and `world env` run the placement sources and placed volumes on their own, so they list what
-// the package holds
+// chunk files hold keeps their gating over a dynamic structure's. `world find` and `world env` run the
+// placement sources and placed volumes on their own (docs/extraction.md#code-layout)
 
 /** what the entities phase finds besides instance rows, for the phases after it */
 export interface SceneEntities extends Pick<
@@ -34,10 +32,7 @@ export interface SceneEntities extends Pick<
 	placedVolumes: SceneEnvironmentVolume[];
 	/** Dijiang's cabin slots, with the group that shows their built cabin */
 	cabinRooms: CabinRoomGroup[];
-	/**
-	 * gameplay water volumes, the entity ids of the instance rows floating on each (by volume id), and the
-	 * LevelData files they couldn't be read from
-	 */
+	/** gameplay water volumes, and the LevelData files they couldn't be read from */
 	waterVolumes: WaterVolumeInput;
 }
 

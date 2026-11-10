@@ -243,7 +243,7 @@ const heightFogLook = (fog: HeightFogInput, light: LightInput): HeightFog => ({
 			: null,
 });
 
-/** the volumetric fog as the game packs it, minus the flow noise, local fog volumes and local lights */
+/** the volumetric fog as the game packs it, minus the flow noise and local fog volumes */
 const volumetricFogLook = (
 	fog: VolumetricFogInput,
 	light: LightInput,
