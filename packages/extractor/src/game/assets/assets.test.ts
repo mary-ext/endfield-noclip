@@ -502,7 +502,18 @@ test('prefab lights read the enabled lights of active GameObjects with their HG 
 		m_CullingBoxHalfExtents: vector(1, 1, 1),
 		m_CullingBoxOrientation: vector(0, 0, 0),
 		m_CullingBoxFalloffThreshold: 0.8,
-		m_Shadows: { m_PlatformSpecificType: { defaultParam: 2 }, m_Strength: 1 },
+		m_Shadows: {
+			m_PlatformSpecificType: { defaultParam: 2 },
+			m_Strength: 1,
+			m_NormalBias: 0.4,
+			m_NearPlane: 0.2,
+			m_FarPlane: 15,
+			m_ShadowCullDistance: 50,
+			m_ShadowFadeRatio: 0.8,
+			m_ShadowGuardAngle: 0,
+			m_PointLightShadowCasterFaces: -1,
+			m_CasterProperties: 6,
+		},
 	});
 	const additional = {
 		m_LightCharacterOnly: 0,

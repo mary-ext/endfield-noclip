@@ -652,7 +652,9 @@ export class Viewer {
 			resized ||
 			options.continuous ||
 			compiled ||
-			(scene !== null && scene.stream.version !== traversal.seenVersion);
+			(scene !== null && scene.stream.version !== traversal.seenVersion) ||
+			// a local light's shadow tile waits for its casters to be selected and drawn
+			renderer.lights.shadows.pending;
 		this.#dirty = false;
 		// the temporal antialiasing converges over a few more jittered frames of the same view
 		let settling = false;
@@ -710,6 +712,7 @@ export class Viewer {
 				windClock: this.#windClock,
 				terrain: scene?.pkg.manifest.terrain,
 				revealRadii: revealRadii(scene?.pkg.manifest.fireSeed ?? null, this.#sceneState.values),
+				content: { version: scene?.stream.version ?? 0, idle: scene?.stream.idle ?? true },
 				options,
 				times: this.#times,
 			});

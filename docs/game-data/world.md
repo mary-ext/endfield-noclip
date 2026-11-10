@@ -250,13 +250,25 @@ data:
 | 156    | f32   | falloff distance                                       |
 | 160    | u32   | shadows: 0 none, 2 soft                                |
 | 172    | f32   | shadow strength                                        |
+| 176    | f32   | shadow depth bias (the rasteriser's)                   |
+| 180    | f32   | shadow normal bias                                     |
+| 184    | f32   | shadow near plane                                      |
+| 256    | f32   | shadow far plane                                       |
+| 260    | f32   | shadow cull distance                                   |
+| 264    | f32   | shadow fade ratio                                      |
+| 268    | f32   | shadow guard angle (degrees)                           |
+| 272    | i32   | point light shadow faces (a bit each, −1 all)          |
+| 276    | i32   | shadow caster properties (bits, below)                 |
 | 436    | u8    | character only                                         |
 | 440    | f32   | volumetric scattering intensity                        |
 | 444    | f32   | falloff exponent (negative: inverse square)            |
 
 both layouts were found by census over map01 and map02: a value per offset against the authored
 properties of Unity's `Light` and their defaults (30° and 21.80208° for the angles, 6570 K for the
-temperature), and the order of the properties of HG's light.
+temperature), and the order of the properties of HG's light. the shadow fields are the ones the
+game's light getters read, and match a prefab `Light`'s `m_Shadows` values. the caster properties'
+bits are 1 for a light that moves, 2 when static objects cast and 4 when dynamic objects do; what
+they select is under [local light shadows](lighting.md#local-light-shadows).
 
 #### render flags
 

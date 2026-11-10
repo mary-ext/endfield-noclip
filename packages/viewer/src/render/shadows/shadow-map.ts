@@ -39,11 +39,18 @@ const OFFSCREEN_CASTER_REACH = 250;
 /**
  * @param planes the view's camera-relative frustum planes
  * @param towardsSun unit vector towards the sun
- * @returns the volume instances outside the view can cast shadows into it from
+ * @param lights world-space spheres (x, y, z, radius) around what casts into local lights' shadow maps
+ * @returns the volumes instances outside the view can cast shadows from: into the view along the sun, or into
+ *   a local light's map
  */
-export const offscreenCasters = (planes: readonly Plane[], towardsSun: Vec3): CasterVolume => ({
+export const offscreenCasters = (
+	planes: readonly Plane[],
+	towardsSun: Vec3,
+	lights: Float64Array,
+): CasterVolume => ({
 	planes: sweepPlanes(planes, [-towardsSun[0], -towardsSun[1], -towardsSun[2]], OFFSCREEN_CASTER_REACH),
 	distance: OFFSCREEN_CASTER_REACH,
+	lights,
 });
 
 /** depth state of the shadow pass's pipelines: standard depth, casters biased along their slope against acne */

@@ -10,6 +10,8 @@ struct View {
 	caster_planes: array<vec4f, 5>,
 	shadow_axes: array<vec4f, 3>,
 	shadow_layers: array<vec4f, 4>,
+	// camera-relative spheres (xyz, radius) whose rows cast into a local light's shadow map
+	light_casters: array<vec4f, 8>,
 	plane_count: u32,
 	caster_plane_count: u32,
 	item_count: u32,
@@ -23,7 +25,7 @@ struct View {
 	shadows: u32,
 	slots_at: u32,
 	buckets_at: u32,
-	pad0: u32,
+	light_caster_count: u32,
 	pad1: u32,
 	pad2: u32,
 	// last frame's camera-relative view-projection, whose depth the pyramid holds
@@ -102,6 +104,18 @@ fn in_caster_planes(p: vec3f, radius: f32) -> bool {
 	return true;
 }
 
+fn in_light_casters(p: vec3f, radius: f32) -> bool {
+	for (var i = 0u; i < view.light_caster_count; i++) {
+		let sphere = view.light_casters[i];
+		let d = p - sphere.xyz;
+		let reach = radius + sphere.w;
+		if (dot(d, d) <= reach * reach) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // whether a sphere was wholly behind last frame's depth, as seen from last frame's camera. bounds that reach off
 // that screen or in front of its near plane count as visible
 fn occluded(p: vec3f, radius: f32) -> bool {
@@ -165,12 +179,12 @@ fn test_row(row: u32, flags: u32) -> Tested {
 	}
 	out.in_view = (flags & ITEM_INSIDE) != 0u || in_planes(p, radius);
 	if (!out.in_view) {
-		if (
-			view.caster_plane_count == 0u ||
-			pixels < view.caster_min_pixels ||
-			distance - radius > view.caster_distance ||
-			!in_caster_planes(p, radius)
-		) {
+		if (pixels < view.caster_min_pixels) {
+			return out;
+		}
+		let sun_caster = view.caster_plane_count != 0u && distance - radius <= view.caster_distance &&
+			in_caster_planes(p, radius);
+		if (!sun_caster && !in_light_casters(p, radius)) {
 			return out;
 		}
 	}

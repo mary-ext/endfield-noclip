@@ -5,6 +5,9 @@ import { dot } from '../../math/vec3.ts';
 import type { Camera, Plane } from '../../scene/camera.ts';
 import { wgslConst } from '../shaders/wgsl-const.ts';
 
+import { LightShadows } from './light-shadows.ts';
+import { MAX_SHADOW_RECORDS, SHADOW_RECORD_VEC4S, type ShadowFrame } from './shadow-tiles.ts';
+
 /** lights the shading takes per frame, as the game's light list does */
 const MAX_LOCAL_LIGHTS = 256;
 /** u32 words per bin mask */
@@ -14,7 +17,9 @@ const LIGHT_TILE_SIZE = 32;
 /** view-depth slices, 1 m each */
 const LIGHT_SLICES = 2048;
 /** vec4s per light in the light buffer */
-const LIGHT_VEC4S = 8;
+const LIGHT_VEC4S = 9;
+/** where the shadow records start in the light buffer, vec4s */
+const SHADOW_RECORDS_AT = MAX_LOCAL_LIGHTS * LIGHT_VEC4S;
 /** tiles the bin buffer holds at most (a 8192 × 4096 render) */
 const MAX_TILES = 256 * 128;
 
@@ -24,6 +29,8 @@ export const LOCAL_LIGHTS_WGSL = [
 	wgslConst('LIGHT_SLICES', 'f32', LIGHT_SLICES),
 	wgslConst('LIGHT_MASK_WORDS', 'u32', MASK_WORDS),
 	wgslConst('LIGHT_VEC4S', 'u32', LIGHT_VEC4S),
+	wgslConst('LIGHT_SHADOW_RECORDS', 'u32', SHADOW_RECORDS_AT),
+	wgslConst('LIGHT_SHADOW_VEC4S', 'u32', SHADOW_RECORD_VEC4S),
 ].join('\n');
 
 /** what the frame uniforms need from this frame's lights */
@@ -49,8 +56,14 @@ interface Candidate {
 export class LocalLights {
 	readonly lightBuffer: GPUBuffer;
 	readonly binBuffer: GPUBuffer;
+	/** the lights' shadow maps, whose records follow the lights in {@link lightBuffer} */
+	readonly shadows: LightShadows;
 	readonly #device: GPUDevice;
-	readonly #lightData = new Float32Array(MAX_LOCAL_LIGHTS * LIGHT_VEC4S * 4);
+	readonly #lightData = new Float32Array((SHADOW_RECORDS_AT + MAX_SHADOW_RECORDS * SHADOW_RECORD_VEC4S) * 4);
+	/** whether the last prepared frame could draw shadow tiles */
+	#shadowsEnabled = false;
+	/** the streamed content's version at the last prepared frame */
+	#contentVersion = -1;
 	#bins = new Uint32Array(0);
 	#entries: readonly LightEntry[] = [];
 	#groupsShown: readonly boolean[] = [];
@@ -70,6 +83,7 @@ export class LocalLights {
 	/** @param device the device */
 	constructor(device: GPUDevice) {
 		this.#device = device;
+		this.shadows = new LightShadows(device);
 		this.lightBuffer = device.createBuffer({
 			label: 'local lights',
 			size: this.#lightData.byteLength,
@@ -87,6 +101,7 @@ export class LocalLights {
 		this.#entries = lights;
 		this.#shown = null;
 		this.#view.fill(Number.NaN);
+		this.shadows.reset();
 	}
 
 	/** @param shown per visibility group of the package, whether its content shows */
@@ -94,28 +109,48 @@ export class LocalLights {
 		this.#groupsShown = shown;
 		this.#shown = null;
 		this.#view.fill(Number.NaN);
+		// what shows changed, and with it what casts
+		this.shadows.reset();
 	}
 
 	/**
 	 * selects, packs and bins this frame's lights and uploads them, unless they were last prepared for the same
-	 * view, lights and groups. call before writing the frame uniforms.
+	 * view, lights and groups and no shadow tile waits to be drawn. picks the shadow tile the frame draws
+	 * ({@link LightShadows.request}). call before writing the frame uniforms.
 	 *
 	 * @param camera the camera (its jitter is ignored: bins are a pixel larger than they need to be)
 	 * @param width render width, px
 	 * @param height render height, px
+	 * @param shadowFrame what the shadow tiles are scheduled by
 	 * @returns the counts the frame uniforms carry; the object is reused by the next call
 	 */
-	prepare(camera: Camera, width: number, height: number): Readonly<LocalLightFrame> {
+	prepare(
+		camera: Camera,
+		width: number,
+		height: number,
+		shadowFrame: ShadowFrame,
+	): Readonly<LocalLightFrame> {
 		const frameInfo = this.#frame;
-		if (!this.#viewChanged(camera, width, height)) {
+		const shadows = this.shadows;
+		const moved = this.#viewChanged(camera, width, height);
+		if (
+			!moved &&
+			!shadows.pending &&
+			shadows.request === null &&
+			shadowFrame.enabled === this.#shadowsEnabled &&
+			shadowFrame.contentVersion === this.#contentVersion
+		) {
 			return frameInfo;
 		}
+		this.#shadowsEnabled = shadowFrame.enabled;
+		this.#contentVersion = shadowFrame.contentVersion;
 		const tilesX = Math.min(Math.ceil(width / LIGHT_TILE_SIZE), 256);
 		const tilesY = Math.min(Math.ceil(height / LIGHT_TILE_SIZE), 128);
 		frameInfo.count = 0;
 		frameInfo.tilesX = tilesX;
 		frameInfo.tilesY = tilesY;
 		const selected = this.#select(camera, width / height);
+		shadows.update(selected, shadowFrame);
 		if (selected.length === 0) {
 			return frameInfo;
 		}
@@ -135,8 +170,23 @@ export class LocalLights {
 		const aspect = width / height;
 		const near = camera.near;
 
+		let records = 0;
 		for (const [i, candidate] of selected.entries()) {
 			packLight(this.#lightData, i, candidate);
+			// its shadow records, once a tile of its is drawn
+			const shadowAt = (i * LIGHT_VEC4S + 8) * 4;
+			const written =
+				candidate.entry.shadow === null
+					? 0
+					: shadows.writeRecords(
+							this.#lightData,
+							(SHADOW_RECORDS_AT + records * SHADOW_RECORD_VEC4S) * 4,
+							candidate,
+						);
+			this.#lightData[shadowAt] = written === 0 ? -1 : records;
+			this.#lightData[shadowAt + 1] =
+				written === 0 ? 0 : shadows.strength(candidate.entry, candidate.distance2);
+			records += written;
 			const word = i >>> 5;
 			const bit = 1 << (i & 31);
 			const { center, radius } = candidate;
@@ -187,6 +237,10 @@ export class LocalLights {
 		}
 		const queue = this.#device.queue;
 		queue.writeBuffer(this.lightBuffer, 0, this.#lightData, 0, selected.length * LIGHT_VEC4S * 4);
+		if (records > 0) {
+			const at = SHADOW_RECORDS_AT * 4;
+			queue.writeBuffer(this.lightBuffer, at * 4, this.#lightData, at, records * SHADOW_RECORD_VEC4S * 4);
+		}
 		queue.writeBuffer(this.binBuffer, 0, bins);
 		frameInfo.count = selected.length;
 		return frameInfo;
@@ -194,6 +248,7 @@ export class LocalLights {
 
 	/** frees the buffers */
 	destroy(): void {
+		this.shadows.destroy();
 		this.lightBuffer.destroy();
 		this.binBuffer.destroy();
 	}
@@ -327,6 +382,7 @@ const boundingSphere = (candidate: Candidate): void => {
  * - 3: 1 / (cos(inner / 2) − cos(outer / 2)), tube length, falloff exponent, soft source radius
  * - 4: specular intensity, volumetric intensity, box falloff threshold, 1 with a culling box
  * - 5–7: the box's rows3x4
+ * - 8: its first shadow record (-1 for none) and its shadow's strength, written by {@link LocalLights.prepare}
  */
 const packLight = (out: Float32Array, index: number, { entry, rel, fade }: Candidate): void => {
 	const at = index * LIGHT_VEC4S * 4;

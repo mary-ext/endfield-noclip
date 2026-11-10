@@ -147,13 +147,50 @@ the package's `lights` table ([JSON tables](../package-format.md#json-tables)) h
 and tube lights; directional, shadow-only and character-only lights are left out. it feeds
 [`render/lighting/local-lights.ts`](../../packages/viewer/src/render/lighting/local-lights.ts), and
 `local_lighting` in [`frame.wgsl`](../../packages/viewer/src/render/frame/frame.wgsl) follows the
-game's lobe ([local lights](../game-data/lighting.md#local-lights)), without its multiple-scattering
-term, shadows, cookies or flicker. lights load under their file's, structure's or placement's
-visibility; a light the chunk files also hold keeps its files' conditions. a prefab light's culling
-box turns with its placement.
+game's lobe ([local lights](../game-data/lighting.md#local-lights)) and its two-sided model on
+foliage, without its multiple-scattering term, cookies or flicker. lights load under their file's,
+structure's or placement's visibility; a light the chunk files also hold keeps its files'
+conditions. a prefab light's culling box turns with its placement.
 
 each frame `local-lights.ts` takes the lights whose condition holds, that are within their culling
 distance and in the view, sorts them by camera distance then priority and keeps the nearest 256, the
 game's cap on PC. it bins them into the game's tiles and slices using conservative bounding spheres
 on the CPU, and keeps the last upload while the camera, render size and shown lights stay the same.
 the volumetric fog lights each froxel with the same lists.
+
+### local light shadows
+
+the viewer keeps the game's atlas of cached tiles
+([local light shadows](../game-data/lighting.md#local-light-shadows)) for the lights whose `shadow`
+the package holds: those that cast from static scenery without moving. the game's per-frame tiles
+for moving lights and moving objects aren't drawn, since the viewer has no such casters to speak of.
+
+[`shadow-tiles.ts`](../../packages/viewer/src/render/lighting/shadow-tiles.ts) ranks the frame's
+casters as the game does (nearest light first, 200 m and the light's cull distance, 12 + 12 + 16
+tiles of 1024², 512² and 256²), draws one tile a frame in the game's order, evicts as it does and
+fades the strength towards the cull distance.
+[`light-shadows.ts`](../../packages/viewer/src/render/lighting/light-shadows.ts) owns the 4096²
+atlas and the tile's pass: a clear of the tile's viewport, then the casters the sun's far layer
+draws (static shadow casters and the terrain), through the same depth pipelines with the tile's
+projection in the frame uniforms. each light's records (the matrix to its tile, the tile's rect, the
+bias and far plane) follow the lights in the light buffer, and `local_light_shadow` in `frame.wgsl`
+looks them up for surfaces and for the fog's froxels.
+
+where the viewer differs:
+
+- **casters stream.** the game has the scenery loaded when it draws a tile once; here a tile is
+  drawn at once with what the view holds, and again whenever content arrives, until it's drawn with
+  the stream idle. while a tile waits, its light's reach (a sphere around its cone, up to 8 lights
+  at a time) is added to the selection's caster volume, so scenery outside the view is selected,
+  streamed and drawn into it. a settled tile is drawn again only when the camera comes within half
+  the distance it was drawn from, to take the nearer view's LODs. frames keep rendering while a tile
+  waits.
+- **casters are the sun's.** a tile draws the selection's far-layer casters, picked for the camera's
+  LODs and culled by the camera's small-instance thresholds rather than the light's view, and not
+  culled to the light's culling box. local-light shadows go off with the sun's shadow passes.
+- **bias.** casters take the sun passes' slope-scaled bias instead of the light's own depth bias,
+  and receivers move along the normal by the game's offset plus about a texel and a half where they
+  are.
+- **filter.** a 3 × 3 grid of bilinear comparisons stands in for the game's 5 × 5 tent, on surfaces
+  and in the fog alike.
+- shadow-only lights aren't packed, so they darken nothing.

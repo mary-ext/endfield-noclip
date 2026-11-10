@@ -92,6 +92,11 @@ struct Frame {
 @group(0) @binding(12) var<storage, read> light_bins: array<u32>;
 // the cloud shadow's tiling texture (red), sampled with irradiance_repeat; a placeholder while off
 @group(0) @binding(13) var cloud_shadow_map: texture_2d<f32>;
+// the local lights' shadow atlas (light-shadows.ts), compared through shadow_sampler; its records follow the lights
+// in `lights`, from LIGHT_SHADOW_RECORDS: the matrix from a camera-relative position to a tile's uv, depth and view
+// depth, the tile's rect in the atlas (origin, size), then a texel's size at 1 m, the constant offset along the
+// normal, the far plane and 1 for a drawn tile
+@group(0) @binding(14) var light_shadow_map: texture_depth_2d;
 
 // #region sun shadow
 
@@ -555,6 +560,67 @@ fn local_light_at(i: u32, rel: vec3f) -> LocalLight {
 	return out;
 }
 
+// what a local light's shadow map lets through to a camera-relative point (docs/viewer/lighting.md#local-light-
+// shadows): a spot looks its one tile up, a point light the tile of the cube face the point lies in. `n` is the
+// surface normal the lookup is pushed along (zero in the fog), `to_light` runs from the point to the light
+fn local_light_shadow(i: u32, rel: vec3f, n: vec3f, to_light: vec3f) -> f32 {
+	let s = lights[i * LIGHT_VEC4S + 8u];
+	if (s.x < 0.0 || s.y <= 0.0) {
+		return 1.0;
+	}
+	let spot = lights[i * LIGHT_VEC4S + 1u].w < 0.5;
+	var record = u32(s.x);
+	if (!spot) {
+		// faces in the order +X −X +Y −Y +Z −Z
+		let d = -to_light;
+		let a = abs(d);
+		if (a.x >= a.y && a.x >= a.z) {
+			record += select(1u, 0u, d.x > 0.0);
+		} else if (a.y >= a.z) {
+			record += select(3u, 2u, d.y > 0.0);
+		} else {
+			record += select(5u, 4u, d.z > 0.0);
+		}
+	}
+	let base = LIGHT_SHADOW_RECORDS + record * LIGHT_SHADOW_VEC4S;
+	let params = lights[base + 5u];
+	if (params.w < 0.5) {
+		return 1.0;
+	}
+	let m = mat4x4f(lights[base], lights[base + 1u], lights[base + 2u], lights[base + 3u]);
+	// off the surface towards the light: the game's constant offset, plus about a texel where the point is
+	let depth = (m * vec4f(rel, 1.0)).w;
+	let side = select(-1.0, 1.0, dot(n, to_light) >= 0.0);
+	let clip = m * vec4f(rel + n * (side * (params.y + params.x * depth * 1.5)), 1.0);
+	if (clip.w <= 0.0) {
+		return 1.0;
+	}
+	let p = clip.xyz / clip.w;
+	if (any(p <= vec3f(0.0)) || any(p >= vec3f(1.0))) {
+		return 1.0;
+	}
+	let rect = lights[base + 4u];
+	let texel = 1.0 / vec2f(textureDimensions(light_shadow_map));
+	// taps stay inside the tile
+	let low = rect.xy + texel;
+	let high = rect.xy + rect.zw - texel;
+	let uv = rect.xy + p.xy * rect.zw;
+	var sum = 0.0;
+	for (var y = -1; y <= 1; y++) {
+		for (var x = -1; x <= 1; x++) {
+			let tap = clamp(uv + vec2f(f32(x), f32(y)) * texel, low, high);
+			sum += textureSampleCompareLevel(light_shadow_map, shadow_sampler, tap, p.z);
+		}
+	}
+	var strength = s.y;
+	if (spot) {
+		// fades out towards the far plane and the tile's edges
+		let edge = min(min(p.x, p.y), min(1.0 - p.x, 1.0 - p.y));
+		strength = min(strength, smoothstep(0.0, 0.05, min((params.z - clip.w) * 0.25, edge)));
+	}
+	return mix(1.0, sum / 9.0, strength);
+}
+
 // the local lights' direct light on a surface, with the game's lobe for them (and its sun): GGX without the 1/π,
 // Lambert without the 1/π and without (1 − F), so in the units of the light's colour the result is
 // `colour · (diffuse + π · specular)`. a soft source radius widens the lobe; a tube takes the point of the
@@ -615,7 +681,8 @@ fn local_lighting(n: vec3f, v: vec3f, rel: vec3f, px: vec2f, diffuse_color: vec3
 			let f = fresnel_schlick(f0, v_dot_h);
 			let g = lights[i * LIGHT_VEC4S + 4u];
 			let specular = clamp(min(f * (distribution * norm * visibility), vec3f(2048.0)) * g.x, vec3f(0.0), vec3f(1000.0));
-			sum += (specular + diffuse_color) * n_dot_l * lights[i * LIGHT_VEC4S + 1u].rgb * light.attenuation;
+			let shadow = local_light_shadow(i, rel, n, light.to_light);
+			sum += (specular + diffuse_color) * n_dot_l * lights[i * LIGHT_VEC4S + 1u].rgb * (light.attenuation * shadow);
 		}
 	}
 	return min(sum, vec3f(255.0));
@@ -645,7 +712,8 @@ fn local_fog_lighting(rel: vec3f, px: vec2f, ray: vec3f, g: f32) -> vec3f {
 				continue;
 			}
 			let phase = henyey_greenstein(g, dot(ray, normalize(light.to_light)));
-			sum += lights[i * LIGHT_VEC4S + 1u].rgb * (light.attenuation * phase * intensity);
+			let shadow = local_light_shadow(i, rel, vec3f(0.0), light.to_light);
+			sum += lights[i * LIGHT_VEC4S + 1u].rgb * (light.attenuation * phase * intensity * shadow);
 		}
 	}
 	return sum;

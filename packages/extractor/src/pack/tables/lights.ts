@@ -1,6 +1,11 @@
 import { type ChunkLight, LightType } from '@endfield-noclip/formats/endfield/chunk-lights';
 import { unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
-import { type LightEntry, LightKind, type LightsTable } from '@endfield-noclip/package-format/lights';
+import {
+	type LightEntry,
+	LightKind,
+	type LightShadow,
+	type LightsTable,
+} from '@endfield-noclip/package-format/lights';
 
 import type { Visibility } from '../../game/state/scene-control.ts';
 import type { ChunkSource } from '../../game/world/world-index.ts';
@@ -132,6 +137,49 @@ export const lightEntry = (light: ChunkLight, group: number): LightEntry => {
 						matrix: inverseBox(box.offset, box.rotation, box.halfExtents),
 						falloffThreshold: box.falloffThreshold,
 					},
+		shadow: lightShadow(light),
+	};
+};
+
+/** `shadowCasterProperties` bits */
+const CasterProperty = {
+	/** the light moves, so its map is drawn every frame */
+	Dynamic: 1,
+	/** static objects cast */
+	Static: 2,
+} as const;
+
+/** every cube face */
+const ALL_FACES = 0b111111;
+
+/**
+ * @param light a spot or point light
+ * @returns the shadow it casts from static scenery through a cached map, or `null`: the light casts none,
+ *   moves, or shadows only moving objects, which the viewer has none of
+ */
+const lightShadow = (light: ChunkLight): LightShadow | null => {
+	const properties = light.shadowCasterProperties;
+	if (
+		light.shadows === 0 ||
+		(properties & CasterProperty.Dynamic) !== 0 ||
+		(properties & CasterProperty.Static) === 0
+	) {
+		return null;
+	}
+	const spot = light.type === LightType.Spot;
+	const faces = spot ? 0 : light.shadowCasterFaces & ALL_FACES;
+	if (!spot && faces === 0) {
+		return null;
+	}
+	return {
+		strength: light.shadowStrength,
+		normalBias: light.shadowNormalBias,
+		nearPlane: light.shadowNearPlane,
+		farPlane: light.shadowFarPlane,
+		guardAngle: spot ? light.shadowGuardAngle : 0,
+		faces,
+		cullDistance: light.shadowCullDistance,
+		fadeRatio: light.shadowFadeRatio,
 	};
 };
 

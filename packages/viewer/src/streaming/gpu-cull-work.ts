@@ -60,30 +60,38 @@ export const COUNTER_WORDS = 1 + SHADOW_LAYERS;
 /** counters before the buckets': the instances and triangles drawn in view */
 export const STATS_WORDS = 2;
 
+/** the local lights whose casters outside the view a frame selects at once (`CasterVolume.lights`) */
+export const MAX_LIGHT_CASTERS = 8;
+
+/** where the light caster spheres start in `View`, floats */
+const LIGHT_CASTERS_AT = 68;
+
 /**
  * floats of `View` in instance-cull.wgsl: the view's planes, the caster volume's planes, the shadow axes and
- * layers (vec4 each), then {@link ViewWord}
+ * layers and the light caster spheres (vec4 each), then {@link ViewWord}
  */
-export const VIEW_FLOATS = 84;
+export const VIEW_FLOATS = 116;
 
 /** words of `View` past its vec4 arrays */
 export const ViewWord = {
-	planeCount: 68,
-	casterPlaneCount: 69,
-	itemCount: 70,
-	bucketCount: 71,
-	pixelFactor: 72,
-	viewportHeight: 73,
-	minPixels: 74,
-	casterMinPixels: 75,
-	casterDistance: 76,
-	shadowReach: 77,
+	planeCount: 100,
+	casterPlaneCount: 101,
+	itemCount: 102,
+	bucketCount: 103,
+	pixelFactor: 104,
+	viewportHeight: 105,
+	minPixels: 106,
+	casterMinPixels: 107,
+	casterDistance: 108,
+	shadowReach: 109,
 	/** 1 when shadow layers group the casters */
-	shadows: 78,
+	shadows: 110,
 	/** where the slot region starts in the work buffer, u32 */
-	slotsAt: 79,
+	slotsAt: 111,
 	/** where the bucket region starts, u32 */
-	bucketsAt: 80,
+	bucketsAt: 112,
+	/** how many light caster spheres are set */
+	lightCasterCount: 113,
 } as const;
 
 /** what a GPU-culled bucket gathers over a frame */
@@ -199,6 +207,8 @@ export const writeCullView = (
 		casterPlanes: Float64Array;
 		casterFloats: number;
 		casterDistance: number;
+		/** camera-relative spheres (x, y, z, radius), at most {@link MAX_LIGHT_CASTERS} */
+		lightCasters: Float64Array;
 		casterMinPixels: number;
 		pixelFactor: number;
 		viewportHeight: number;
@@ -227,6 +237,10 @@ export const writeCullView = (
 		}
 		out[ViewWord.shadowReach] = layers.reach;
 	}
+	for (let s = 0; s < view.lightCasters.length; s++) {
+		out[LIGHT_CASTERS_AT + s] = view.lightCasters[s];
+	}
+	words[ViewWord.lightCasterCount] = view.lightCasters.length / 4;
 	words[ViewWord.planeCount] = view.planeFloats / 4;
 	words[ViewWord.casterPlaneCount] = view.casterFloats / 4;
 	out[ViewWord.pixelFactor] = view.pixelFactor;

@@ -212,9 +212,9 @@ the colour temperature's tint from HDRP's published curve fit (pivot 6570 K), wh
 stored chunk colour. a prefab light's culling box is authored in the prefab's axes (unverified: that
 it turns with the placement, for turned cabins). the scenes also hold directional lights,
 shadow-only lights (a dozen or so on map02), which emit nothing but darken the other local lights
-through their shadow maps, and character-only lights (none on map02); how the volumetric fog treats
-both is under [fog](sky-and-fog.md#fog). both bake types on the maps, realtime and mixed, light
-directly.
+through their [shadow maps](#local-light-shadows), and character-only lights (none on map02); how
+the volumetric fog treats both is under [fog](sky-and-fog.md#fog). both bake types on the maps,
+realtime and mixed, light directly.
 
 | input                                                         | effect                                                                                                                                                                    |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -242,8 +242,45 @@ a 256-bit mask; a pixel walks the lights set in both its tile's and its slice's 
 fog lights each froxel with the same lists, through the fog's Henyey-Greenstein phase times each
 light's volumetric scattering intensity ([fog](sky-and-fog.md#fog)).
 
-about a thousand map02 lights cast shadows. lights can also carry cookies (no map02 light has one),
-a flicker component and [light beams](#light-beams).
+foliage takes the lights through its own two-sided model ([foliage](materials.md#foliage)), as it
+does the sun: per unit of a light's colour and attenuation, the albedo × N·L of the shading normal,
+the specular lobe dimmed for views from behind the leaf, the transmission lobe about the direction
+to the light and the wrapped diffuse, all times the material's own sun shadow term (the vertex AO
+and the fake directional shadow, which stays aimed by the sun) and without the 1/π.
+
+lights can also carry cookies (no map02 light has one), a flicker component and
+[light beams](#light-beams).
+
+### local light shadows
+
+about a thousand map02 lights are authored to cast shadows. each frame the game walks the frame's
+lights nearest first and makes a shadow caster of every one with shadows on that is nearer the
+camera than its shadow cull distance and than 200 m. a spot is one caster; a point light is one per
+cube face its face mask enables. the light's caster properties say what casts into it:
+
+- **static casters** (the light doesn't move and static objects cast, nearly every shadowed light on
+  the maps) keep a cached map of the static scenery. their maps share a square atlas four tiles wide
+  (4096² at high quality) in three sizes: the first 12 casters of the frame get a full tile (1024²),
+  the next 12 a quarter of one (512²), the next 16 a sixteenth (256²), and casters past the fortieth
+  draw unshadowed. each size is a 4 × 4 grid whose last quadrant holds the next size. one tile is
+  drawn a frame: a caster whose rank moved it to another size first, then a caster without a tile. a
+  tile stays cached while its light is within its cull distance, in view or not, and a full size
+  evicts the tile used longest ago.
+- **dynamic casters** (a moving light, or one dynamic objects cast into) get up to 6 still and 2
+  moving lights' tiles beside the atlas, redrawn every frame with the dynamic objects.
+
+a spot's map is a perspective view along the light with a field of view of its spot angle plus its
+guard angle, from its shadow near plane to its shadow far plane, which is not its range. a point
+light's faces are 92° wide. static tiles draw the scenery flagged as a static shadow caster, foliage
+included, culled to the map's frustum and to the light's culling box when it has one, with the
+light's depth bias on the rasteriser.
+
+a surface looks the map up at its position pushed along its normal by a texel's size at 1 m times
+the light's normal bias × 7.5, filters it with a 5 × 5 tent, and blends the result in by the
+shadow's strength: the light's shadow strength, fading to nothing over the last `1 − fade ratio` of
+the cull distance as the camera recedes. a spot's shadow also fades out over the last 0.2 m before
+the far plane and the outer twentieth of its map. at high quality the volumetric fog's froxels take
+the same shadows.
 
 ### light beams
 
@@ -286,3 +323,7 @@ per-renderer value and a global tint and saturation whose sources aren't recover
 - the sun's units: the sun shades with the local lights' lobe (no 1/π on diffuse); whether the CPU
   folds a 1/π into the sun's colour is unknown. phases also carry a `directIntensityDividePi`.
 - where local reflection probes are placed.
+- [local light shadows](#local-light-shadows): what makes the game draw a cached tile again (a
+  native flag on the light), the native cull of a tile's casters and its small-caster measure, how a
+  light that is both a static and a dynamic caster combines its two tiles, and how the fog's froxels
+  filter the map.

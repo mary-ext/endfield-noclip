@@ -111,6 +111,14 @@ const readLight = (name: string, light: TypeTreeObject, additional: TypeTreeObje
 			: null,
 		shadows: numberField(objectField(shadows, 'm_PlatformSpecificType'), 'defaultParam'),
 		shadowStrength: numberField(shadows, 'm_Strength'),
+		shadowNormalBias: numberField(shadows, 'm_NormalBias'),
+		shadowNearPlane: numberField(shadows, 'm_NearPlane'),
+		shadowFarPlane: numberField(shadows, 'm_FarPlane'),
+		shadowCullDistance: numberField(shadows, 'm_ShadowCullDistance'),
+		shadowFadeRatio: numberField(shadows, 'm_ShadowFadeRatio'),
+		shadowGuardAngle: numberField(shadows, 'm_ShadowGuardAngle'),
+		shadowCasterFaces: numberField(shadows, 'm_PointLightShadowCasterFaces'),
+		shadowCasterProperties: numberField(shadows, 'm_CasterProperties'),
 	};
 };
 

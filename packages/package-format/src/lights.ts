@@ -3,7 +3,8 @@ import type { Vec3 } from './values.ts';
 /**
  * `tables/lights.json.zst`: the scene's local point and spot lights, loaded with the core. a viewer lights
  * with the ones whose group shows, like instances. the game's directional lights, lights that only cast
- * shadows and lights that only light characters are left out
+ * shadows and lights that only light characters are left out, as are the shadows of lights that move or
+ * shadow only moving objects
  */
 export interface LightsTable {
 	lights: LightEntry[];
@@ -63,4 +64,30 @@ export interface LightEntry {
 	 * `max |q|` from `(1 + falloffThreshold) / 2` to 1. `null` when unconfined
 	 */
 	cullingBox: { matrix: number[]; falloffThreshold: number } | null;
+	/** the shadow the light casts from static scenery, `null` for a light that casts none */
+	shadow: LightShadow | null;
+}
+
+/**
+ * a local light's shadow settings (`docs/game-data/lighting.md#local-light-shadows`): a spot casts through
+ * one perspective map along its direction, a point light through one per cube face
+ */
+export interface LightShadow {
+	/** how far the shadow darkens, 0–1 */
+	strength: number;
+	/** scales the receiver's offset along its normal, in shadow-map texels */
+	normalBias: number;
+	/** the projection's near and far planes from the light, m; nothing farther than `farPlane` is shadowed */
+	nearPlane: number;
+	farPlane: number;
+	/** degrees added to a spot's full cone angle for the projection; 0 for points */
+	guardAngle: number;
+	/** a bit per cube face a point light casts through, in the order +X −X +Y −Y +Z −Z; 0 for spots */
+	faces: number;
+	/**
+	 * the light casts no shadow from farther than `cullDistance` from the camera (m), and its strength fades in
+	 * linearly from there to `fadeRatio · cullDistance`
+	 */
+	cullDistance: number;
+	fadeRatio: number;
 }

@@ -13,6 +13,7 @@ import type { Plane } from '../scene/camera.ts';
 import {
 	type GpuCullWork,
 	ItemFlags,
+	MAX_LIGHT_CASTERS,
 	NO_BUCKET,
 	SlotFlags,
 	addItem,
@@ -20,7 +21,13 @@ import {
 	gpuCullWork,
 	writeCullView,
 } from './gpu-cull-work.ts';
-import { firstRunAt, firstShadowLayer, sphereInPlanes, sphereInsidePlanes } from './instance-culling.ts';
+import {
+	firstRunAt,
+	firstShadowLayer,
+	sphereInPlanes,
+	sphereInsidePlanes,
+	sphereTouchesSpheres,
+} from './instance-culling.ts';
 import {
 	BUCKET_LIFETIME,
 	type ChainSlot,
@@ -213,6 +220,8 @@ export class MeshSelector {
 	/** floats of {@link #casterPlanes} in use this frame, 0 without casters */
 	#casterFloats = 0;
 	#casterDistance = 0;
+	/** this frame's light caster spheres (`CasterVolume.lights`), camera-relative */
+	#lightCasters = new Float64Array(0);
 	#pending: ChainSlot[] = [];
 	/**
 	 * per chain, by `wanted LOD * 2 + castOnly`: the stand-in {@link #residentLod} found, and the frame it was
@@ -298,12 +307,25 @@ export class MeshSelector {
 			this.#casterDistance = casters.distance;
 		}
 		this.#casterFloats = casterFloats;
+		// the lights' caster spheres, relative to the eye like the rows
+		const lightCount = Math.min((casters?.lights.length ?? 0) / 4, MAX_LIGHT_CASTERS);
+		if (this.#lightCasters.length !== lightCount * 4) {
+			this.#lightCasters = new Float64Array(lightCount * 4);
+		}
+		const lightCasters = this.#lightCasters;
+		for (let s = 0; s < lightCount * 4; s += 4) {
+			lightCasters[s] = (casters?.lights[s] ?? 0) - eye[0];
+			lightCasters[s + 1] = (casters?.lights[s + 1] ?? 0) - eye[1];
+			lightCasters[s + 2] = (casters?.lights[s + 2] ?? 0) - eye[2];
+			lightCasters[s + 3] = casters?.lights[s + 3] ?? 0;
+		}
 		writeCullView(work, {
 			planes,
 			planeFloats,
 			casterPlanes,
 			casterFloats,
 			casterDistance: this.#casterDistance,
+			lightCasters,
 			casterMinPixels: CASTER_MIN_PIXELS,
 			pixelFactor,
 			viewportHeight,
@@ -349,9 +371,11 @@ export class MeshSelector {
 				const inView = sphereInPlanes(planes, planeFloats, gx, gy, gz, radius);
 				if (
 					!inView &&
-					(casterFloats === 0 ||
-						rowPixels < CASTER_MIN_PIXELS ||
-						!sphereInPlanes(casterPlanes, casterFloats, gx, gy, gz, radius))
+					(rowPixels < CASTER_MIN_PIXELS ||
+						!(
+							(casterFloats > 0 && sphereInPlanes(casterPlanes, casterFloats, gx, gy, gz, radius)) ||
+							sphereTouchesSpheres(lightCasters, gx, gy, gz, radius)
+						))
 				) {
 					continue;
 				}
@@ -743,6 +767,7 @@ export class MeshSelector {
 		const casterPlanes = this.#casterPlanes;
 		const casterFloats = this.#casterFloats;
 		const casterDistance = this.#casterDistance;
+		const lightCasters = this.#lightCasters;
 		const pending = this.#pending;
 		const f32 = instances.rowsF32;
 		const cull = instances.cull;
@@ -775,10 +800,13 @@ export class MeshSelector {
 				let castOnly = false;
 				if (!inside && !sphereInPlanes(planes, planeFloats, x, y, z, radius)) {
 					if (
-						casterFloats === 0 ||
 						(radius * pixelFactor) / distance < CASTER_MIN_PIXELS ||
-						distance - radius > casterDistance ||
-						!sphereInPlanes(casterPlanes, casterFloats, x, y, z, radius)
+						!(
+							(casterFloats > 0 &&
+								distance - radius <= casterDistance &&
+								sphereInPlanes(casterPlanes, casterFloats, x, y, z, radius)) ||
+							sphereTouchesSpheres(lightCasters, x, y, z, radius)
+						)
 					) {
 						continue;
 					}

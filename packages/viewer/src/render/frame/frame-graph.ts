@@ -8,6 +8,7 @@
 import type { Camera } from '../../scene/camera.ts';
 import type { InstanceRenderer } from '../instances/instance-renderer.ts';
 import type { IrradianceVolume } from '../lighting/irradiance-volume.ts';
+import type { LightShadows } from '../lighting/light-shadows.ts';
 import type { MeshRenderer } from '../meshes/mesh-renderer.ts';
 import type { PostProcess } from '../post/post-process.ts';
 import { type PostSettings, effectiveSettings } from '../post/settings.ts';
@@ -92,6 +93,8 @@ export interface FrameContext {
 	frame: FrameGroup;
 	/** the shadow passes' frame group, and each shadow layer's uniforms offset (none when shadows are off) */
 	shadowFrame: { group: GPUBindGroup; offsets: readonly number[] };
+	/** the frame group of the local-light shadow tile drawn this frame, or `null` for none */
+	lightShadowFrame: FrameGroup | null;
 	/** the frame counter, which the fog's noise steps by */
 	index: number;
 	/** the animation clock, s */
@@ -107,6 +110,7 @@ export interface FrameSystems {
 	irradiance: IrradianceVolume;
 	shadowMap: ShadowMap;
 	shadowLayers: ShadowLayerCache;
+	lightShadows: LightShadows;
 	terrain: TerrainRenderer;
 	instances: InstanceRenderer;
 	meshes: MeshRenderer;
@@ -291,7 +295,19 @@ export const encodeFrame = (
 		});
 	}
 
-	// after the shadow layers, which it reads
+	// one tile of the local lights' atlas, from the casters the far layer draws: static scenery
+	const lightShadowFrame = context.lightShadowFrame;
+	if (lightShadowFrame !== null) {
+		const far = SHADOW_LAYERS - 1;
+		draws += systems.lightShadows.encode(
+			encoder,
+			(pass) => pass.setBindGroup(0, lightShadowFrame.group, [lightShadowFrame.offset]),
+			(pass) =>
+				(settings.terrain ? systems.terrain.encodeShadow(pass, far) : 0) + meshes.encodeShadow(pass, far),
+		);
+	}
+
+	// after the shadow maps, which it reads
 	const froxels =
 		settings.volumetricFog &&
 		systems.fog.encode(encoder, {

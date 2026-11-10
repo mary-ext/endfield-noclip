@@ -588,6 +588,12 @@ the light uses one, the colour temperature's tint; see
 and their culling boxes, authored in the prefab's axes, turn with the placement (unchecked against
 the game for turned cabins). directional, shadow-only and character-only lights aren't packed.
 
+a light's `shadow` (`LightShadow`) is its
+[shadow settings](game-data/lighting.md#local-light-shadows) when it casts from static scenery
+through a cached map: shadows on, not a moving light, static objects casting, and for a point light
+at least one face. other lights have `null` there, among them the few that shadow only moving
+objects.
+
 ### water
 
 `tables/water.json.zst` holds the [water](game-data/water.md) surfaces and the scene's global water

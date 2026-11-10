@@ -69,10 +69,17 @@ packs or renders correctly.
   get the outdoor sun wherever no drawn geometry shadows them. map02's `shadowOC_CAVE_*` entities
   (InitChunkData component 61, [world](game-data/world.md#initchunkdata-layout)) are likely the
   game's cave shadow occluders; they aren't packed and what they do is unchecked
-- local lights ([local lights](viewer/lighting.md#local-lights)): no shadows (on surfaces or in the
-  volumetric fog), cookies, flicker or multiple-scattering term; directional, shadow-only and
-  character-only lights aren't packed; [light beams](viewer/effects.md#light-beams) lack their 3D
-  noise, a per-renderer scale and a global tint, and aren't checked against an in-game shot
+- local lights ([local lights](viewer/lighting.md#local-lights)): no cookies, flicker or
+  multiple-scattering term; directional, shadow-only and character-only lights aren't packed. their
+  [shadows](viewer/lighting.md#local-light-shadows) come from static scenery through the game's
+  cached tiles only (no per-frame tiles for moving lights or objects), drawn from the sun's
+  far-layer casters at the camera's LODs rather than culled for the light's view and its culling
+  box, with the sun passes' bias and a 3 × 3 filter for the game's 5 × 5 tent, and redrawn as
+  casters stream in, which the game doesn't need; they go off with the sun's shadows. checked
+  against in-game shots at Jingyu's cherry-tree pit and cave arch only, where lit blossoms and the
+  arch's bark still read paler than the game's (the bark by its ambient).
+  [light beams](viewer/effects.md#light-beams) lack their 3D noise, a per-renderer scale and a
+  global tint, and aren't checked against an in-game shot
 - surface shading that shows most indoors: per-draw emission colours other than prefabs'
   `AnimationProperties_Emissive` resting colour aren't known ([emission](#surfaces-and-terrain));
   meshes without tangents draw their normal map flat (what the game's bump does there is unchecked);

@@ -6,6 +6,7 @@ import { type Camera, type Plane, boxInFrustum, distanceToBox } from '../scene/c
 import { type TileNode, type TileTree, isLeaf } from '../scene/tile-tree.ts';
 
 import type { ContentItem } from './content-item.ts';
+import { boxTouchesSpheres } from './instance-culling.ts';
 import type { StreamManager } from './stream-manager.ts';
 
 // #region types
@@ -74,6 +75,11 @@ export interface CasterVolume {
 	planes: Plane[];
 	/** how far from the camera, m */
 	distance: number;
+	/**
+	 * world-space spheres (x, y, z, radius) whose instances cast into a local light's shadow map, wherever the
+	 * view looks
+	 */
+	lights: Float64Array;
 }
 
 /** camera state for one traversal */
@@ -297,10 +303,13 @@ export class Selector {
 			return true;
 		}
 		const casters = view.casters;
-		if (casters !== null && distance <= casters.distance && boxInFrustum(casters.planes, min, max, eye)) {
+		if (casters === null) {
+			return null;
+		}
+		if (distance <= casters.distance && boxInFrustum(casters.planes, min, max, eye)) {
 			return false;
 		}
-		return null;
+		return boxTouchesSpheres(casters.lights, min, max) ? false : null;
 	}
 
 	#shows(ref: ContentRef): boolean {

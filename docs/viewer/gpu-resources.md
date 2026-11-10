@@ -59,11 +59,11 @@
   a dynamic offset. a frame needs the main block plus one per shadow layer.
   [`render/frame/frame-uniform-writer.ts`](../../packages/viewer/src/render/frame/frame-uniform-writer.ts)
   holds the block's layout and packs it from plain inputs; a shadow layer's block is a copy with the
-  layer's view-projection.
+  layer's view-projection, and so is a local light's shadow tile's.
 - **bind layouts**
   ([`render/frame/bind-layouts.ts`](../../packages/viewer/src/render/frame/bind-layouts.ts)): group
   0 is the frame (uniforms, shadow map, reflection cubemap, irradiance clipmaps, shadow ramp, local
-  lights and their bins, cloud shadow) for every
+  lights with their shadow records, their bins and their shadow atlas, cloud shadow) for every
   family and the volumetric fog, so a pass binds it once; group 1 is per family; meshes add group 2
   (per-draw parameters, the look table, the fog's inputs) and group 3 (material textures; the mesh
   shader's is laid out in

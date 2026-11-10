@@ -48,6 +48,14 @@ test('placed prefab lights take the placement, and their culling boxes turn with
 			cullingBox: { offset: [2, 0, 0], halfExtents: [3, 1, 1], rotation: [0, 0, 0], falloffThreshold: 0.8 },
 			shadows: 0,
 			shadowStrength: 1,
+			shadowNormalBias: 0.4,
+			shadowNearPlane: 0.2,
+			shadowFarPlane: 10,
+			shadowCullDistance: 50,
+			shadowFadeRatio: 0.8,
+			shadowGuardAngle: 0,
+			shadowCasterFaces: -1,
+			shadowCasterProperties: 6,
 		},
 	};
 	const id = ((3 << 27) | 0x7ffffff) >>> 0;

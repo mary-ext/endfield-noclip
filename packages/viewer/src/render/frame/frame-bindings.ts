@@ -35,6 +35,8 @@ export class FrameBindings {
 	readonly #sources: FrameSources;
 	/** the shadow passes can't bind the map they render into */
 	readonly #shadowPlaceholder: GPUTextureView;
+	/** nor the local lights' atlas, which a tile's pass renders into */
+	readonly #lightShadowPlaceholder: GPUTextureView;
 	/** bound while the level has no reflection cubemap, or it hasn't streamed in */
 	readonly #noReflection: TextureBinding;
 	#reflection: TextureBinding;
@@ -58,6 +60,14 @@ export class FrameBindings {
 				usage: GPUTextureUsage.TEXTURE_BINDING,
 			})
 			.createView({ dimension: '2d-array' });
+		this.#lightShadowPlaceholder = device
+			.createTexture({
+				label: 'light shadow placeholder',
+				size: [1, 1],
+				format: SHADOW_FORMAT,
+				usage: GPUTextureUsage.TEXTURE_BINDING,
+			})
+			.createView();
 		this.#noReflection = {
 			view: placeholder(device, 'black', 'cube'),
 			sampler: sampler(device, LINEAR_CLAMP_MIPMAPPED),
@@ -127,7 +137,11 @@ export class FrameBindings {
 		const { layout, uniforms, shadows, irradiance, lights } = this.#sources;
 		const reflection = this.#reflection;
 		const clipmaps = irradiance.views();
-		const group = (label: string, shadowView: GPUTextureView): GPUBindGroup =>
+		const group = (
+			label: string,
+			shadowView: GPUTextureView,
+			lightShadowView: GPUTextureView,
+		): GPUBindGroup =>
 			this.#device.createBindGroup({
 				label,
 				layout,
@@ -146,8 +160,12 @@ export class FrameBindings {
 					{ binding: 11, resource: { buffer: lights.lightBuffer } },
 					{ binding: 12, resource: { buffer: lights.binBuffer } },
 					{ binding: 13, resource: this.#views.cloudShadow },
+					{ binding: 14, resource: lightShadowView },
 				],
 			});
-		return [group('frame', shadows.view), group('shadow frame', this.#shadowPlaceholder)];
+		return [
+			group('frame', shadows.view, lights.shadows.view),
+			group('shadow frame', this.#shadowPlaceholder, this.#lightShadowPlaceholder),
+		];
 	}
 }

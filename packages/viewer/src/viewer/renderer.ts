@@ -56,6 +56,11 @@ export interface RenderInput {
 	terrain: TerrainInfo | null | undefined;
 	revealRadii: FrameUniformInputs['revealRadii'];
 	options: FrameUniformInputs['options'];
+	/**
+	 * the streamed content's state: a counter that rises whenever content arrives, and whether nothing is
+	 * streaming in. local lights' shadow tiles are redrawn as their casters arrive
+	 */
+	content: { version: number; idle: boolean };
 	/** where the CPU spans go */
 	times: FrameTimes;
 }
@@ -108,11 +113,11 @@ export class Renderer {
 		);
 		this.#layouts = createBindLayouts(device);
 		this.pipelines = new PipelineCache(device);
-		// the main pass's frame plus one per shadow layer
+		// the main pass's frame, one per shadow layer and one for a local light's shadow tile
 		const alignment = device.limits.minUniformBufferOffsetAlignment;
 		this.#ring = new UniformRing(
 			device,
-			Math.ceil(FRAME_UNIFORM_BYTES / alignment) * alignment * (1 + SHADOW_LAYERS),
+			Math.ceil(FRAME_UNIFORM_BYTES / alignment) * alignment * (2 + SHADOW_LAYERS),
 			3,
 		);
 		this.shadows = new ShadowMap(device);
@@ -148,6 +153,7 @@ export class Renderer {
 			irradiance: this.irradiance,
 			shadowMap: this.shadows,
 			shadowLayers: new ShadowLayerCache(),
+			lightShadows: this.lights.shadows,
 			terrain: this.terrain,
 			instances: this.instances,
 			meshes: this.meshes,
@@ -155,7 +161,16 @@ export class Renderer {
 			water: this.water,
 			post: this.post,
 		};
-		this.pools = [this.terrain, this.instances, this.meshes, this.targets, this.post, this.fog, this.shadows];
+		this.pools = [
+			this.terrain,
+			this.instances,
+			this.meshes,
+			this.targets,
+			this.post,
+			this.fog,
+			this.shadows,
+			this.lights.shadows,
+		];
 		this.#histories = [this.post, this.fog, this.meshes];
 		this.#owned = [
 			this.post,
@@ -211,7 +226,21 @@ export class Renderer {
 		const ring = this.#ring;
 		ring.beginFrame();
 		const { width, height, outputWidth, outputHeight } = this.targets;
-		const lights = settings.localLights ? this.lights.prepare(camera, width, height) : NO_LOCAL_LIGHTS;
+		// shadow tiles draw the sun's far-layer casters, so they need its passes on
+		const compiling = this.pipelines.compiling > 0;
+		const lightShadows = this.lights.shadows;
+		let lights: Readonly<LocalLightFrame> = NO_LOCAL_LIGHTS;
+		if (settings.localLights) {
+			lights = this.lights.prepare(camera, width, height, {
+				enabled: settings.shadows,
+				compiling,
+				contentVersion: input.content.version,
+				streamIdle: input.content.idle,
+			});
+		} else {
+			// nothing waits while the lights are off
+			lightShadows.update([], { enabled: false, compiling, contentVersion: 0, streamIdle: true });
+		}
 		const uniforms = ring.allocate(FRAME_UNIFORM_BYTES);
 		writeFrameUniforms(uniforms.f32, uniforms.u32, {
 			camera,
@@ -245,6 +274,13 @@ export class Renderer {
 				cascadeOffsets.push(block.offset);
 			}
 		}
+		let lightShadowOffset: number | null = null;
+		if (lightShadows.request !== null) {
+			const block = ring.allocate(FRAME_UNIFORM_BYTES);
+			block.f32.set(uniforms.f32);
+			block.f32.set(lightShadows.request.render, FrameOffsets.viewProj);
+			lightShadowOffset = block.offset;
+		}
 		ring.flush();
 		times.span('uniforms');
 
@@ -259,10 +295,12 @@ export class Renderer {
 				outputHeight,
 				frame: { group: this.bindings.main, offset: uniforms.offset },
 				shadowFrame: { group: this.bindings.shadow, offsets: cascadeOffsets },
+				lightShadowFrame:
+					lightShadowOffset === null ? null : { group: this.bindings.shadow, offset: lightShadowOffset },
 				index: input.index,
 				time: input.time,
 				settings,
-				compiling: this.pipelines.compiling > 0,
+				compiling,
 			},
 			this.frame,
 		);

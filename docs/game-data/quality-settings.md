@@ -44,31 +44,31 @@ the settings are TextAssets in the game's initial bundles.
 
 desktop values; a blank cell repeats the one to its left.
 
-| setting                                                                 | 1000      | 2000      | 3000             | 4000               | 5000      |
-| ----------------------------------------------------------------------- | --------- | --------- | ---------------- | ------------------ | --------- |
-| reflections: march steps (`ssrRayMarchingSampleCount`)                  | off       | 16        | 32               |                    | 128       |
-| reflections: upsampled to full size (`ssrV2Upsample`)                   | no        |           |                  |                    | yes       |
-| cascade tile (`CSMTileResolution`)                                      | 1024      |           | 2048             |                    |           |
-| cascade reach, fade start (`CSMMaxDistance`, `CSMFadeInnerDistance`), m | 40, 30    | 50, 40    | 60, 50           | 80, 60 (from 3500) |           |
-| character shadow map                                                    | 512       |           | 1024             |                    |           |
-| local-light shadow tile, atlas height                                   | 512, 1024 |           | 1024, 2048       |                    |           |
-| contact shadows                                                         | off       | on        |                  |                    |           |
-| GTAO slices × steps (`GTAOQualityLevel`)                                | 2 × 2     |           | 3 × 3            |                    |           |
-| visibility SH range scale                                               | off       | 2         | 3.5              | 5                  |           |
-| grass sparsity (`GrassGlobalSparsity`)                                  | 0.8       | 1         |                  |                    |           |
-| terrain parallax (`TerrainPOM`)                                         | off       | on        |                  |                    |           |
-| erosion blend                                                           | off       |           | on               |                    |           |
-| volumetric fog cell (`gridPixelSize`), px                               | off       | 16        | 8                |                    |           |
-| volumetric fog source cap (`maxSourceRT*`)                              | —         | 1920×1080 |                  |                    | 2560×1440 |
-| volumetric fog samples where history misses                             | —         | 8         | 16               |                    |           |
-| local-light shadows in the volumetric fog                               | —         | no        |                  | yes                |           |
-| cloud downscale (`downResRatio`), march step scale                      | 2, 2      | 2, 2.5    | 2, 3             |                    | 1.5, 3    |
-| light shaft downsample                                                  | 4         | 2         |                  |                    |           |
-| lens flare occlusion samples                                            | off       | 8         |                  |                    | 32        |
-| rain lighting (`EnableRainLighting`)                                    | off       |           | on               |                    |           |
-| water prepass texture                                                   | —         | 512       | 1024 (from 2500) |                    |           |
-| effect LOD setting (`settingLodLevel`)                                  | 1         |           | 2                | 4                  | 8         |
-| factory entity cull distance, m                                         | 60        |           | 80               |                    | 100       |
+| setting                                                                 | 1000   | 2000      | 3000             | 4000               | 5000      |
+| ----------------------------------------------------------------------- | ------ | --------- | ---------------- | ------------------ | --------- |
+| reflections: march steps (`ssrRayMarchingSampleCount`)                  | off    | 16        | 32               |                    | 128       |
+| reflections: upsampled to full size (`ssrV2Upsample`)                   | no     |           |                  |                    | yes       |
+| cascade tile (`CSMTileResolution`)                                      | 1024   |           | 2048             |                    |           |
+| cascade reach, fade start (`CSMMaxDistance`, `CSMFadeInnerDistance`), m | 40, 30 | 50, 40    | 60, 50           | 80, 60 (from 3500) |           |
+| character shadow map                                                    | 512    |           | 1024             |                    |           |
+| local-light shadow tile (`PunctualLightTileMaxSize`)                    | 512    |           | 1024             |                    |           |
+| contact shadows                                                         | off    | on        |                  |                    |           |
+| GTAO slices × steps (`GTAOQualityLevel`)                                | 2 × 2  |           | 3 × 3            |                    |           |
+| visibility SH range scale                                               | off    | 2         | 3.5              | 5                  |           |
+| grass sparsity (`GrassGlobalSparsity`)                                  | 0.8    | 1         |                  |                    |           |
+| terrain parallax (`TerrainPOM`)                                         | off    | on        |                  |                    |           |
+| erosion blend                                                           | off    |           | on               |                    |           |
+| volumetric fog cell (`gridPixelSize`), px                               | off    | 16        | 8                |                    |           |
+| volumetric fog source cap (`maxSourceRT*`)                              | —      | 1920×1080 |                  |                    | 2560×1440 |
+| volumetric fog samples where history misses                             | —      | 8         | 16               |                    |           |
+| local-light shadows in the volumetric fog                               | —      | no        |                  | yes                |           |
+| cloud downscale (`downResRatio`), march step scale                      | 2, 2   | 2, 2.5    | 2, 3             |                    | 1.5, 3    |
+| light shaft downsample                                                  | 4      | 2         |                  |                    |           |
+| lens flare occlusion samples                                            | off    | 8         |                  |                    | 32        |
+| rain lighting (`EnableRainLighting`)                                    | off    |           | on               |                    |           |
+| water prepass texture                                                   | —      | 512       | 1024 (from 2500) |                    |           |
+| effect LOD setting (`settingLodLevel`)                                  | 1      |           | 2                | 4                  | 8         |
+| factory entity cull distance, m                                         | 60     |           | 80               |                    | 100       |
 
 the 2000 cells of the last two rows are inherited (the level lists neither); from which side is
 unchecked. crowds are capped at 80 NPCs spawned and 50 rendered at 4000, 50 and 50 at 2000, and 40
@@ -85,7 +85,9 @@ the same at every desktop level:
   the cascade's view are skipped. the far map reaches 800 m in 256² tiles, renders at most 8 tiles a
   frame and skips casters under 0.01. shadow views pick LODs as the camera does (there is no shadow
   LOD), shadow proxies are on, and the sun's shadow is resolved into a screen-space mask. local
-  lights cast shadows only within 200 m, from at most 6 environment and 2 movable casters.
+  lights cast shadows only within 200 m: still lights through 40 cached tiles, and at most 6 still
+  and 2 moving lights through tiles redrawn every frame for the moving objects
+  ([local light shadows](lighting.md#local-light-shadows)).
 - **reflection march.** the step count falls with view depth, by
   `clamp(2 · e^(−0.07 · depth), 0.125, 1)`, to a floor of 32, so only very high's 128 steps change:
   they hold to about 10 m and reach the floor by about 30 m.

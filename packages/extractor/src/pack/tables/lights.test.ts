@@ -33,6 +33,14 @@ const light = (patch: Partial<ChunkLight> = {}): ChunkLight => ({
 	cullingBox: null,
 	shadows: 0,
 	shadowStrength: 1,
+	shadowNormalBias: 0.4,
+	shadowNearPlane: 0.2,
+	shadowFarPlane: 10,
+	shadowCullDistance: 50,
+	shadowFadeRatio: 0.8,
+	shadowGuardAngle: 0,
+	shadowCasterFaces: -1,
+	shadowCasterProperties: 6,
 	...patch,
 });
 
@@ -65,6 +73,40 @@ test('spots keep their cone and lose the length field, which only tubes use', ()
 	assert.deepEqual([spot.spotAngle, spot.innerSpotAngle, spot.tubeLength], [30, 20, 0]);
 	const point = lightEntry(light(), 0);
 	assert.deepEqual([point.kind, point.spotAngle, point.tubeLength], [LightKind.Point, 0, 3]);
+});
+
+test('a light keeps its shadow only when it casts one from static scenery through a cached map', () => {
+	assert.equal(lightEntry(light(), 0).shadow, null);
+	// the Jingyu cherry-tree pit's key light
+	const spot = lightEntry(
+		light({
+			type: LightType.Spot,
+			shadows: 2,
+			shadowNormalBias: 0.18,
+			shadowFarPlane: 90,
+			shadowCullDistance: 176.1,
+			shadowGuardAngle: 3,
+		}),
+		0,
+	);
+	assert.deepEqual(spot.shadow, {
+		strength: 1,
+		normalBias: 0.18,
+		nearPlane: 0.2,
+		farPlane: 90,
+		guardAngle: 3,
+		faces: 0,
+		cullDistance: 176.1,
+		fadeRatio: 0.8,
+	});
+	// a point light casts through the faces its mask names, and a guard angle means nothing to it
+	const point = lightEntry(light({ shadows: 2, shadowCasterFaces: 0b001001, shadowGuardAngle: 3 }), 0);
+	assert.deepEqual([point.shadow?.faces, point.shadow?.guardAngle], [0b001001, 0]);
+	assert.equal(lightEntry(light({ shadows: 2 }), 0).shadow?.faces, 0b111111);
+	assert.equal(lightEntry(light({ shadows: 2, shadowCasterFaces: 0 }), 0).shadow, null);
+	// a moving light's map is drawn every frame, and one that shadows only moving objects has nothing to shadow
+	assert.equal(lightEntry(light({ shadows: 2, shadowCasterProperties: 7 }), 0).shadow, null);
+	assert.equal(lightEntry(light({ shadows: 2, shadowCasterProperties: 4 }), 0).shadow, null);
 });
 
 test('lights carry every file holding them, for gating like instances', () => {

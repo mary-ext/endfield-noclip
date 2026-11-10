@@ -70,6 +70,58 @@ export const sphereInsidePlanes = (
 };
 
 /**
+ * @param spheres (x, y, z, radius) each
+ * @param x the sphere's centre, in the spheres' space
+ * @param y
+ * @param z
+ * @param radius the sphere's radius
+ * @returns whether the sphere touches any of `spheres`
+ */
+export const sphereTouchesSpheres = (
+	spheres: Float64Array,
+	x: number,
+	y: number,
+	z: number,
+	radius: number,
+): boolean => {
+	for (let s = 0; s < spheres.length; s += 4) {
+		const dx = x - spheres[s];
+		const dy = y - spheres[s + 1];
+		const dz = z - spheres[s + 2];
+		const reach = radius + spheres[s + 3];
+		if (dx * dx + dy * dy + dz * dz <= reach * reach) {
+			return true;
+		}
+	}
+	return false;
+};
+
+/**
+ * @param spheres (x, y, z, radius) each
+ * @param min the box's corners, in the spheres' space
+ * @param max
+ * @returns whether the box touches any of `spheres`
+ */
+export const boxTouchesSpheres = (
+	spheres: Float64Array,
+	min: readonly number[],
+	max: readonly number[],
+): boolean => {
+	for (let s = 0; s < spheres.length; s += 4) {
+		let squared = 0;
+		for (let axis = 0; axis < 3; axis++) {
+			const c = spheres[s + axis];
+			const d = Math.max(min[axis] - c, 0, c - max[axis]);
+			squared += d * d;
+		}
+		if (squared <= spheres[s + 3] ** 2) {
+			return true;
+		}
+	}
+	return false;
+};
+
+/**
  * each layer draws the instances whose first layer is it or an earlier one: that holds every caster it needs,
  * plus a few near the camera that only the nearer layers need.
  *

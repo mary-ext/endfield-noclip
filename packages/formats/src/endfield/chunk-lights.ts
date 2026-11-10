@@ -76,6 +76,21 @@ export interface ChunkLight {
 	/** the authored shadow mode: 0 none, 2 soft */
 	shadows: number;
 	shadowStrength: number;
+	/** scales the receiver's offset along its normal, in shadow-map texels */
+	shadowNormalBias: number;
+	/** the shadow projection's near and far planes from the light, m; the far plane isn't the range */
+	shadowNearPlane: number;
+	shadowFarPlane: number;
+	/** the light casts no shadow from farther than this from the camera, m */
+	shadowCullDistance: number;
+	/** the fraction of {@link shadowCullDistance} from which the shadow fades out */
+	shadowFadeRatio: number;
+	/** degrees added to a spot's cone for the shadow projection */
+	shadowGuardAngle: number;
+	/** a bit per cube face a point light casts through, in the order +X −X +Y −Y +Z −Z; −1 for all */
+	shadowCasterFaces: number;
+	/** bits: 1 the light moves, 2 static objects cast, 4 dynamic objects cast */
+	shadowCasterProperties: number;
 }
 
 // #endregion
@@ -184,5 +199,13 @@ const decodeLight = (id: number, name: string, core: DataView, settings: DataVie
 			: null,
 		shadows: settings.getUint32(160, true),
 		shadowStrength: s(172),
+		shadowNormalBias: s(180),
+		shadowNearPlane: s(184),
+		shadowFarPlane: s(256),
+		shadowCullDistance: s(260),
+		shadowFadeRatio: s(264),
+		shadowGuardAngle: s(268),
+		shadowCasterFaces: settings.getInt32(272, true),
+		shadowCasterProperties: settings.getInt32(276, true),
 	};
 };
