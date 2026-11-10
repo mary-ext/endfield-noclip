@@ -25,8 +25,10 @@ the package side of [the selectors](../game-data/scene-states.md#the-selectors-a
 | facility visual form       | `facility:<interactive id>`                        | the last visual form (fully upgraded)                             |
 | campfire activation        | `activation:<interactive id>`                      | activated (a finished save)                                       |
 | saved Animator bool        | `activation:<row id>`                              | set (a finished save)                                             |
+| script's saved property    | `activation:<script id>:<property>`                | set (a finished save)                                             |
 | player proximity           | `proximity:<interactive id>`                       | follows the camera                                                |
 | interactive created later  | `created:<level id>`, not created / created        | not created                                                       |
+| event photo spots          | `activity:snapshot`, one per scene                 | off                                                               |
 | doodad group level         | `doodadGroups:<level id>`                          | the highest level its shells name                                 |
 | Dijiang cabin slot         | `cabin:<entity id>`, empty / built                 | empty                                                             |
 | growth chamber level       | `cabinLevel:<entity id>`, the table's levels       | level 1                                                           |
@@ -138,14 +140,15 @@ else the template id), plus the property when it isn't `state`. its assumption s
 interactive and property it is and the value a fresh world starts at; its default stays as for other
 variables.
 
-a blight's variable ([blight and its cores](../game-data/scene-states.md#dynamic-load-gates)),
+a blight's variable ([blight and its cores](../game-data/scene-states.md#blight-and-its-cores)),
 map01's erosion and map02's sludge alike, gets a control described for it instead, from
 [dynamic-structures.ts](../../packages/extractor/src/game/dynamic/dynamic-structures.ts): still
-`mapVar:<map>:#<id>`, named `Blight (x, z)` after the erosion root's core position or the sludge
-patch's position, with two values, present (the core alive: an erosion variable other than 2, a
-sludge variable of 0) and cleansed (destroyed, the default, as in a finished world). its patches and
-its core both require present. `GameState.claimVariable` hands the variable over only when no other
-condition reads it; otherwise the patches keep the generic control and the core stays unconditional.
+`mapVar:<map>:#<id>`, named "Blight core" and placed at the erosion root's core position or the
+sludge patch's position, with two values, present (an erosion variable other than 2, a sludge
+variable of 0) and cleansed (the default, as in a finished world). the sludge control's two values
+hide that an active core (1) already unloads its sludge. its patches and its core both require
+present. `GameState.claimVariable` hands the variable over only when no other condition reads it;
+otherwise the patches keep the generic control and the core stays unconditional.
 
 ## dynamic load gates
 
@@ -158,7 +161,7 @@ variable is a variable control like a MapConfig one. variables with `controlLoad
 gates.
 
 server-set variable gates stay plain variable controls: Yinglung Pass's
-[outpost tiers](../game-data/scene-states.md#dynamic-load-gates) (#321–324) and energy point towers
+[outpost tiers](../game-data/scene-states.md#outpost-tiers) (#321–324) and energy point towers
 (`defenceFnish`) each follow their own control. every tier variable defaults to 1, its highest
 compared value, so all four tiers show until the user turns some off.
 
@@ -222,9 +225,10 @@ medium slot and manufacturing cabins in the small ones. that rule is ours: no cl
 a cabin type to a slot was found, so a slot shows the type that fits, not necessarily the one the
 game builds there. the small slot with no door and no room-table row is offered like the others. the
 cabin types' room type ids (which name their rooms' bakes) are matched to `SpaceshipRoomTypeTable`
-rows by hand, by the rows' icon names (`…_icon_manufacturing_station` is 1, `…_icon_grow_cabin` 2):
-the table names no cabin types. each slot is a `cabin:<id>` control, empty by default. a slot's
-region bake goes with the built cabin ([irradiance cells](../package-format.md#irradiance-cells)).
+rows by hand, by the rows' icon names (`icon_sapceship_room_icon_manufacturing_station` is 1,
+`…_icon_grow_cabin` 2): the table names no cabin types. each slot is a `cabin:<id>` control, empty
+by default. a slot's region bake goes with the built cabin
+([irradiance cells](../package-format.md#irradiance-cells)).
 
 the packer numbers a growth chamber's planting boxes in the order the cabin scene's entity lists
 them in its resource groups
@@ -276,7 +280,9 @@ value and while unset. the variable's default, the highest value tested, gives t
 look: The Hub → Valley Pass bridge lowered, the magic Wuling bridges extended. an entity with
 several variables follows its first. the same variable sets a controller-less entity's level: a
 resource group with logic-state bits loads while the variable equals one of them (or, for a mask of
-more than 16 levels, none of the others), replacing the off `logic:` toggle such groups got before.
+more than 16 levels, none of the others), and gets no `logic:` toggle. old-version controllers
+(entity type 5), trigger-driven ones and the one a script sets by name (`SetDecorationViewState`)
+aren't posed.
 
 ## doodad groups
 
@@ -371,7 +377,7 @@ the spot the mechanism names (an interactive's placement for doors, bridges, cam
 interactives scripts show; a cabin slot; a blight's core), else the centre of the box around the
 instances the control gates, carried back through the controls it derives. content wider or deeper
 than 1024 m counts as spread over the scene and gets no place, unless the mechanism names a spot.
-lights, water surfaces and environment volumes don't add to the box yet.
+lights, water surfaces and environment volumes don't add to the box.
 
 the label names the position in the game's words
 ([map-labels.ts](../../packages/extractor/src/game/world/map-labels.ts)): the display name of the

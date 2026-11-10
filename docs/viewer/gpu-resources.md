@@ -1,18 +1,18 @@
 # GPU resource management
 
-- **device** ([`gfx/device.ts`](../../packages/viewer/src/gfx/device.ts)): the effect and water
-  pipelines exceed WebGPU's default of 16 sampled textures per stage, so the device asks for the
-  adapter's limit. without BC support, package BC textures cannot stream and materials use their
-  untextured look. optional stencil support enables effect portals; timestamp queries enable GPU
-  profiling. what each pipeline's fragment stage binds, against the defaults the device keeps for
-  samplers and storage buffers:
+- **device** ([`gfx/device.ts`](../../packages/viewer/src/gfx/device.ts)): the effect pipelines
+  exceed WebGPU's default of 16 sampled textures per stage, so the device asks for the adapter's
+  limit, as it does for storage buffers per stage; samplers stay at the default. without BC support,
+  package BC textures cannot stream and materials use their untextured look. optional stencil
+  support enables effect portals; timestamp queries enable GPU profiling. what each pipeline's
+  fragment stage binds, against WebGPU's defaults:
 
   | pipeline | sampled textures (16) | samplers (16) | storage buffers (8) |
   | -------- | --------------------- | ------------- | ------------------- |
-  | mesh     | 13                    | 8             | 4                   |
+  | mesh     | 14                    | 9             | 4                   |
   | terrain  | 12                    | 7             | 4                   |
-  | effects  | 18                    | 14            | 4                   |
-  | water    | 19                    | 7             | 3                   |
+  | effects  | 19                    | 15            | 4                   |
+  | water    | 15                    | 7             | 3                   |
 
 - **range allocator**
   ([`gfx/range-allocator.ts`](../../packages/viewer/src/gfx/range-allocator.ts)): first-fit over
@@ -22,12 +22,12 @@
   [`GrowableBuffer`s](../../packages/viewer/src/gfx/growable-buffer.ts): they start at 128k 96-byte
   rows (12 MiB), 32 MiB and 1024 pages (8 MiB) and, when a range doesn't fit, copy themselves into a
   buffer twice the size, up to 1.5M rows (137 MiB), 192 MiB and 4096 pages (33 MiB); rect decal
-  placements get a buffer of their own the same way. a level's view holds a few MiB of rows, 20–40
-  MiB of cells and 4–7 MiB of heights, so they grow only as content from several views piles up
+  placements get a buffer of their own the same way. a level's view holds a few MiB of rows and
+  heights and a few tens of MiB of cells, so they grow only as content from several views piles up
   under a large budget; they never shrink, since the budget bounds them. owners rebuild their bind
   groups when the buffer's `version` changes. surface pages use a pair of BC3 texture arrays, one
   layer per page (1024 layers, or the device's array-layer limit if lower; 34 MiB); splat pages use
-  256 slots of an RGBA8 control array, a BC3 tint array and an index buffer (22 MiB); the package's
+  256 slots of an RGBA8 control array, a BC3 tint array and an index buffer (21 MiB); the package's
   layer textures get two BC7 arrays sized at load. the surface and splat arrays are allocated at
   full size up front, since a texture array can't grow without copying every layer.
 - **geometry pools**
@@ -39,15 +39,15 @@
   stream, all allocated by the same vertex range; a geometry pays for every stream its pool stores,
   missing ones written as the zeros or UV set 0 an unpooled geometry would bind. there are four
   vertex pools, by UV format and stream set: _compact_ for geometry with neither UV set 1 nor
-  colours (90% of the vertices at map02_lv007's opening view), which stores positions, normals, UV
+  colours (about nine tenths of the vertices at a map02 view), which stores positions, normals, UV
   set 0 and tangents and binds UV set 0 for set 1 and the normals for the colours (ignored without
   `HasColors`), and _full_ for the rest, with all six; and one index pool per index format. at that
-  view, with 106 MiB of geometry, a single full pool per UV format would have held 33 MiB of padding
-  for missing streams; the compact split leaves about 1 MiB. pools start at 64k vertices and 1 MiB
-  of indices, grow 1.5× by copying into larger buffers (up to the device's `maxBufferSize`) when no
+  view a single full pool per UV format would have held about a third as much again in padding for
+  missing streams; the compact split leaves almost none. pools start at 64k vertices and 1 MiB of
+  indices, grow 1.5× by copying into larger buffers (up to the device's `maxBufferSize`) when no
   free range fits, and never shrink, like the other pools, so they keep the size of the most
-  geometry resident at once (after flying over map02 under a 384 MiB budget, the compact pool held
-  27 MiB in 170 MiB). a geometry's residency counts only its ranges, and the stats' pool bytes count
+  geometry resident at once (after flying over map02 under a small budget, the compact pool was less
+  than a fifth full). a geometry's residency counts only its ranges, and the stats' pool bytes count
   the whole buffers. draws are sorted by pool within each pipeline, so the main pass rebinds vertex
   buffers a handful of times instead of for nearly every draw. an animated geometry keeps one vertex
   buffer of its own, which its skinning pass writes from compute (its bind pose, frames and skinning
@@ -81,10 +81,12 @@
 - **pipeline cache** ([`gfx/pipeline-cache.ts`](../../packages/viewer/src/gfx/pipeline-cache.ts)):
   modules by label, pipelines by a state key such as `mesh/opaque/back/unorm16x2`, compiled with
   `createRenderPipelineAsync` (or `createComputePipelineAsync` through `prepareCompute`, for the
-  volumetric fog, the irradiance update, the auto exposure's histogram and the skinning of animated
-  geometry), so they compile once per session rather than per package. renderers `prepare` the
-  pipelines they use at construction, so streaming compiles nothing; only the stencil variants of
-  effect pipelines compile on first use
+  volumetric fog, the irradiance update, the auto exposure's histogram, the skinning of animated
+  geometry, the instance culler and the depth pyramid), so they compile once per session rather than
+  per package. renderers `prepare` the pipelines they use at construction, so streaming compiles
+  nothing; only a mesh pipeline's stencil variants (portal masks and the effects testing them)
+  compile on first use. the fullscreen post passes and the lens flare create theirs outside the
+  cache, synchronously at construction
   ([`render/meshes/mesh-pipelines.ts`](../../packages/viewer/src/render/meshes/mesh-pipelines.ts)
   for the meshes, whose phases and passes are listed in
   [`draw-ranges.ts`](../../packages/viewer/src/render/meshes/draw-ranges.ts)). a draw or dispatch
@@ -115,9 +117,9 @@
   textures arrive as pieces, the mip tail first and then one blob per larger level. the GPU texture
   holds a contiguous run of levels from the finest integrated piece down to 1×1. integrating finer
   pieces creates a texture large enough for all that can integrate at once and copies the coarser
-  levels over; releasing a piece shrinks it the same way at the next `commit`. a piece that arrives
-  before its coarser neighbour waits. BC blocks upload as stored, without transcoding. replaced
-  textures are destroyed one commit later, because bindings from before the swap are still in that
-  frame's command buffer; bind groups rebuild when a binding's `version` changes
+  levels over; releasing a piece shrinks it the same way. a piece that arrives before its coarser
+  neighbour waits. BC blocks upload as stored, without transcoding. replaced textures are destroyed
+  one commit later, because bindings from before the swap are still in that frame's command buffer;
+  bind groups rebuild when a binding's `version` changes
   ([`gfx/bind-group-cache.ts`](../../packages/viewer/src/gfx/bind-group-cache.ts) keeps the
   material, effect and water groups by the versions and views they were built from).

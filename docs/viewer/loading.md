@@ -47,8 +47,9 @@ the repo's `out/`; set `NOCLIP_PACKAGES=/path` to point it elsewhere
 ([`package/viewer-package.ts`](../../packages/viewer/src/package/viewer-package.ts)) reads the whole
 core archive, checks the manifest's format and version (a mismatch throws `PackageError` rather than
 guessing at fields), and decodes its tables (tree, blob table, LOD chains, geometry, material,
-texture, water, light, particle and irradiance tables). shard JSON headers are never fetched: the
-blob table gives each shard blob's absolute byte range, so a blob costs one range read.
+texture, water, light, particle, environment and irradiance tables). shard JSON headers are never
+fetched: the blob table gives each shard blob's offset in its archive's data section, whose start
+the manifest's archive entry holds, so a blob costs one range read.
 
 `load` then sets the irradiance volume to the package's and `openScene`
 ([`viewer/scene-loader.ts`](../../packages/viewer/src/viewer/scene-loader.ts)) builds the linked
@@ -74,21 +75,21 @@ not yet posted: the stream manager releases the ones it drops instead of decodin
 left the worker frees the buffer. until then the whole read stays in memory, gaps included, for its
 last waiting blob. per-blob copies remain only for uncompressed texture, layer and irradiance blobs
 that share their read, whose bytes the worker copies out to transfer back; every other kind is
-decoded into new arrays anyway. on two flights between map02 levels, 954–1,148 of ~2,900 decoded
-blobs shared a read; copying them out on the main thread, as the viewer once did, was about 21 MB
-per flight, and the workers copied under 3 KiB in their place.
+decoded into new arrays anyway. flying between map02 levels, about a third of the decoded blobs
+shared a read; copying each out on the main thread would be tens of MB per flight, where the workers
+copy a few KiB.
 
 [`package/decode-worker.ts`](../../packages/viewer/src/package/decode-worker.ts) undoes the blob
 codec and builds GPU-ready arrays:
 
-| kind                       | worker output                                                                                                                                              |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| heights                    | raw `u16` samples, padded to whole words for the storage buffer                                                                                            |
-| instances                  | instance rows, per-row cull data, (chain, first, count) runs and decal placements, built by `buildInstanceRows`                                            |
-| geometry                   | meshopt-decoded vertex streams (quantized positions, `snorm16x2` octahedral normals, UV0, UV1, tangents, `unorm8x4` colours) and indices padded to 4 bytes |
-| surface                    | the albedo and normal BC3 images, each in its own buffer                                                                                                   |
-| splat                      | the control, tint and index arrays                                                                                                                         |
-| texture, layer, irradiance | the decompressed bytes as stored                                                                                                                           |
+| kind                       | worker output                                                                                                                                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| heights                    | raw `u16` samples, padded to whole words for the storage buffer                                                                                                                                                                                 |
+| instances                  | instance rows, per-row cull data, (chain, first, count) runs, decal placements, and the rows that spin or float on a water volume, built by `buildInstanceRows`                                                                                 |
+| geometry                   | meshopt-decoded vertex streams (quantized positions, `snorm16x2` octahedral normals, UV0, UV1, tangents, `unorm8x4` colours), indices padded to 4 bytes, the UV sets' format and transforms, and an animated mesh's bind pose and bone matrices |
+| surface                    | the albedo and normal BC3 images, each in its own buffer                                                                                                                                                                                        |
+| splat                      | the control, tint and index arrays                                                                                                                                                                                                              |
+| texture, layer, irradiance | the decompressed bytes as stored                                                                                                                                                                                                                |
 
 a 16-bit UV set stays `unorm16x2`, dequantized in the vertex shader, unless the mesh's other set is
 stored as floats; then both are `float32x2`. a mesh without UV1 draws UV0 in its place.

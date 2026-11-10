@@ -43,8 +43,9 @@ resolver on first use.
 | `terrain`  | lists terrain scenes and tiles, and exports heightmaps as PNG                                                                                                                                                                                                                                                                                                             |
 | `water`    | lists water surfaces by map, level or cell, counts them, and dumps water configs                                                                                                                                                                                                                                                                                          |
 
-only `init` and `pack` are needed to produce a package; the others are for research and debugging.
-their glTF/PNG/KTX2 exports (`export/`) mirror Unity's X axis and use base colours only.
+only `init` and `pack` are needed to produce a package; the others are for research and debugging,
+and each one's usage text lists its subcommands and flags. `asset`'s glTF exports (`export/`) mirror
+Unity's X axis and use base colours only.
 
 ### finding assets and scenery
 
@@ -116,8 +117,8 @@ text.
 material the containers need (`keys.vfsKey` for catalogs and encrypted logical files, `keys.bundle`
 for the bundle cipher). it matches the gitignored `*.local.json` pattern and is written with mode
 0600; keys never go into committed files or bundled code ([decisions](architecture.md#decisions)).
-`config.ts` validates its shape and key lengths on load and tells the user to run `init` when it's
-missing.
+`config.ts` validates its shape on load, and the key lengths when a command opens the install, and
+tells the user to run `init` when it's missing.
 
 `pack` also reads the install's IL2CPP metadata
 (`Endfield_Data/il2cpp_data/Metadata/global-metadata.dat`) and `GameAssembly.dll` beside
@@ -148,21 +149,78 @@ extractor adds file handles, caching and cross-file lookups on top.
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------- |
 | VFS            | `VFS/<group hash>/` directories per data group, each with a ChaCha20-encrypted `.blc` catalog listing logical files and the `.chk` chunk files that store them; some logical files are encrypted individually | `formats/src/hg/vfs-catalog.ts`                                 | `extractor/src/hg/vfs.ts`             |
 | HG bundle      | Unity's UnityFS bundle with the signature, header, block table and directory scrambled, blocks passed through a keyed XOR pad, and data compressed with a nibble-interleaved ("inverted") LZ4                 | `formats/src/hg/bundle.ts`, `bundle-cipher.ts`, `binary/lz4.ts` | `extractor/src/hg/bundles.ts`         |
-| SerializedFile | Unity 2021.3 assets files (format 22) with embedded TypeTrees, inside bundles                                                                                                                                 | `formats/src/unity/serialized-file.ts`, `type-tree.ts`          | `extractor/src/game/assets/assets.ts` |
+| SerializedFile | Unity 2021.3.34f5 assets files (format 22, target platform 19, StandaloneWindows64) with embedded TypeTrees, inside bundles                                                                                   | `formats/src/unity/serialized-file.ts`, `type-tree.ts`          | `extractor/src/game/assets/assets.ts` |
 
 **VFS.** the install has two layers, `Persistent/VFS` (patches) and `StreamingAssets/VFS`. a group's
 Persistent catalog is complete and supersedes the StreamingAssets one, while its chunks may live in
 either layer (Persistent first). every logical file carries the MD5 of its decrypted bytes, which
 `readVerified` checks. the well-known group hashes are in `VfsGroup` (`hg/vfs.ts`): Bundle and
-InitialBundle hold asset bundles, BundleManifest the bundle manifest, ExtendData the StringPathHash
-tables, Streaming and DynamicStreaming the world chunk data, Terrain the terrain tiles, JsonData
-pooled LevelConfig/LevelData, and Table the SparkBuffer config tables. Streaming, DynamicStreaming
-and terrain files are wrapped in a size-prefixed inverted-LZ4 envelope
-(`formats/src/hg/payload.ts`); a few terrain files are stored raw.
+InitialBundle hold asset bundles, BundleManifest the bundle manifest, ExtendData and
+InitialExtendData the main and initial StringPathHash tables, Streaming and DynamicStreaming the
+world chunk data, Terrain the terrain tiles, JsonData pooled LevelConfig/LevelData, and Table the
+SparkBuffer config tables. Streaming, DynamicStreaming and terrain files are wrapped in a
+size-prefixed inverted-LZ4 envelope (`formats/src/hg/payload.ts`); a few terrain files are stored
+raw. Bundle, Streaming, Terrain and ExtendData files aren't encrypted individually; BundleManifest,
+nearly all of JsonData, Table and the Lua and IFix patch groups are. not read:
+`Persistent/index_main.json` (an obfuscated index the merged `.blc` catalogs make unnecessary) and
+`CompressData.bin` (Brotli-compressed UTF-16 JSON, the AI's NodeCanvas behaviour trees).
+
+**the build.** the client is an IL2CPP build of Unity 2021.3.34f5, a version suffix Unity doesn't
+publish (a source-licensed, patched editor). its `global-metadata.dat` is version 29 and
+unencrypted, with one extra int32 per type definition row, which
+[il2cpp/metadata.ts](../packages/formats/src/il2cpp/metadata.ts) tells by the row size. the render
+pipeline (HGRP) is `HG.RenderPipelines.Runtime` over SRP Core, not URP or HDRP, with native engine
+modules behind managed shims (`HGGraphicsModule`, `HGGraphicsCPPModule`, `HGOcclusionCullingModule`,
+`ClusterRendererModule`); the client also ships `HG.HLOD.Runtime`, `Google.FlatBuffers`,
+`MemoryPack` and an IL hotfix VM (`IFixRuntime`).
 
 **bundles.** `UnityBundle` is a random-access reader: it parses the header and directory, then
 decodes only the blocks overlapping a requested range, so pulling one CAB out of a large bundle
-reads little. the descrambling is ported from AnimeStudio.
+reads little. the descrambling is ported from AnimeStudio. the bundle cipher is AES-128 with a
+custom substitution box, chained like OFB except that the next IV is derived from the keystream
+block. it only covers sampled positions (a buffer of up to 256 bytes whole, else `256 / blocks`
+bytes at the start of each of the first 256 sixteen-byte blocks), so it reduces to one 256-byte XOR
+pad, derived once from the keys. the blocks-info is padded and compressed with standard LZ4, data
+blocks of type 5 are padded and compressed with inverted LZ4, and type 0 blocks are raw. the encoder
+may end an LZ4 block on a match, which strict decoders reject.
+
+**catalogs and encrypted files.** a `.blc` catalog is `u32 version`, 8 more bytes, then a ChaCha20
+body whose nonce is those first 12 bytes (block counter from 1). an encrypted logical file uses the
+same key with the nonce `u32 catalog version ‖ i64 ivSeed`, the seed coming from its catalog entry,
+so any 64-byte-aligned slice decrypts on its own. the catalog's `codeVersion` is 4 or 5; 5 widens
+each chunk's and file's tag (`VFSFileTag`) from 4 bytes to 8, and a file's tag follows its optional
+seed. the game calls a group a VFS block (`VFBlockMainInfo`, with an `EVFSBlockType` such as 11 for
+`Bundle`).
+
+**pooled strings.** pooled JsonData payloads (LevelConfig, LevelData) store `i32` string ids, −2 for
+null and −1 for the empty string, into the USPC v1 pools `Data/Json/StringPool/StringPool<n>.byte`
+([string-pool.ts](../packages/formats/src/hg/string-pool.ts), layout per
+Variante/endfield_research_kit). a block file is `u32 'USPC'`, `u32 version` (1), `u32 flags` (1 =
+LZ4), `u32 count`, `u32 rawSize`, `u32 packedSize` and the body, which raw is `u32 count`, `count`
+`u32` offsets and `count` strings (`u32 byteLength`, UTF-8); block 0 has a `u32` block file count
+before its magic. every block holds as many strings as block 0, so id `i` is in block
+`⌊i / blockSize⌋`.
+
+**config tables.** a SparkBuffer table (`Data/TableCfg/*.bytes`,
+[spark-buffer.ts](../packages/formats/src/hg/spark-buffer.ts)) is a typed map:
+
+- `u32 typesOffset`, `u32 rootOffset`, `u32 dataOffset`
+- types: `u32 count`, each `u8 kind` (6 enum, 8 bean), padding to 4, `u32 hash`, a C string name,
+  padding to 4, then for a bean `u32 fieldCount` fields of (C string name, type ref) and for an enum
+  `u32 valueCount` values of (C string name, padding to 4, `i32 value`)
+- a type ref is `u8 type` (the game's `SparkType`: 0 bool, 1 byte, 2 int, 3 long, 4 float, 5 double,
+  6 enum, 7 string, 8 bean, 9 array, 10 map), followed for beans and enums by padding to 4 and the
+  `u32` type hash, for arrays by the element's type ref, and for maps by the key's and the value's
+- root: `u8 10` (map), a C string name, the key and value type refs
+- data: `u32 slotCount`, `slotCount` × `(u32 entriesOffset, u32 entryCount)`; entries are key then
+  value, packed with natural alignment. bools and bytes are `u8`, ints and enums `i32`, longs `i64`,
+  floats `f32`, doubles `f64`. strings (C strings), beans, arrays and maps are `u32` absolute
+  offsets, `0xFFFFFFFF` for null; a bean's fields follow the same packing, an array is `u32 count`
+  and its elements, and a map field has the root's data layout
+
+the layout was recovered from MapIdTable, LevelDescTable, the I18nTextTable files,
+SpaceshipAreaUnlockNeedCenterLvTable, SpaceshipGrowCabinLvTable and the Dungeon tables, with map
+fields from SettlementBasicDataTable.
 
 ### asset resolution
 
@@ -171,7 +229,7 @@ the bundle manifest maps asset paths to bundles and their dependency closures
 ([lookup tables](game-data/assets.md#lookup-tables)). StringPathHash lookups try the main table,
 then the initial one. path → hash (`WorldIndex.hashesOf`) decodes the paths of the same length in
 both tables, because the [path hash function](game-data/assets.md#open) isn't ported: the first
-lookup indexes the tables by length (~0.2 s), later ones take about a millisecond.
+lookup indexes the tables by length (under a second), later ones take about a millisecond.
 `world resolve <path|hash>` prints both directions plus the holding bundle and its dependencies.
 code: [string-path-hash.ts](../packages/formats/src/hg/string-path-hash.ts),
 [bundle-manifest.ts](../packages/formats/src/hg/bundle-manifest.ts),
@@ -387,8 +445,7 @@ decoders for the [water data](game-data/water.md):
   through the [MemoryPack schema](#memorypack-data), since `waterVolumes` lies past the interactives
   that `readLevelInteractives`' prefix reader stops after. water-volumes.ts reads each volume and
   the interactives whose component 39 names one (the floaters), skipping a file the schema can't
-  decode whole (only Dijiang's two, whose spaceship data holds a tuple the schema has no wrapper
-  for).
+  decode whole (only Dijiang's, whose spaceship data holds a tuple the schema has no wrapper for).
 - **scripted fills**: water-volume-scripts.ts collects the constant fills the scene's level scripts
   set volumes to, with the fill speed set just before a smooth move, from the scripts the packer
   decoded once for [script groups](extraction/scene-controls.md#script-groups). actions whose volume
@@ -424,8 +481,9 @@ how the cells are stored is in [irradiance cells](package-format.md#irradiance-c
 MemoryPack, decoded by [memory-pack.ts](../packages/formats/src/endfield/memory-pack.ts) with the
 schema read at extract time from the install's IL2CPP metadata and `GameAssembly.dll`
 ([il2cpp/](../packages/formats/src/il2cpp); see [local config and keys](#local-config-and-keys)).
-the formatting rules beyond the wrappers are described in the decoder. every level script and
-interactive template of the client decodes to its exact length.
+the encoding and its rules beyond the wrappers are under
+[level scripts](game-data/scene-states.md#level-scripts). every level script and interactive
+template of the client decodes to its exact length.
 
 LevelData files with populated blackbox settings (factory puzzle scenes) are listed in
 `unsupported-interactives.json` rather than partially read.
@@ -463,14 +521,14 @@ the phases run in this order, and the report times each one:
 | setup                  | check and stage the output directory, open the cache, index the scene: level partition, terrain surface and tile grid, the subset, scene states, chunk files                                                                                  |
 | entities               | read the scene's chunk files with read-ahead, then dynamic structures and the level scripts driving them, interactive facilities, cabins and the prefabs they place; intern draw chains and file every instance by level, visibility and tile |
 | terrain                | encode and store terrain height, surface and splat pages and layer textures, or recall them from the cache                                                                                                                                    |
-| environments and water | plan per-level environment profiles, environment volumes, and water surfaces and sectors, concurrently; then give volumes, water surfaces and lights their visibility groups and add the scene-state controls                                 |
-| irradiance             | store the base and scene-state bakes' irradiance cells, or recall them from the cache                                                                                                                                                         |
+| environments and water | plan per-level environment profiles, environment volumes, and water surfaces and sectors, concurrently                                                                                                                                        |
+| irradiance             | give volumes, water surfaces and lights their visibility groups and add the scene-state controls; store the base and scene-state bakes' irradiance cells, or recall them from the cache, and Dijiang's room bakes (uncached)                  |
 | instances              | encode and store instance blocks, attaching detail and HLOD blocks to the tile tree                                                                                                                                                           |
 | materials              | decode materials and build the shader and material tables; with `--no-assets`, one `assets` phase that only lists pending entries replaces this phase and the next two                                                                        |
 | geometry               | convert meshes                                                                                                                                                                                                                                |
 | textures               | convert textures                                                                                                                                                                                                                              |
 | states                 | build the manifest's levels and scene controls                                                                                                                                                                                                |
-| write                  | build the tree and tables and write the archives, cloning those the replaced package already has                                                                                                                                              |
+| write                  | build the tree and tables and write the archives, linking those the replaced package already has ([reuse](package-format.md#layout))                                                                                                          |
 | debug                  | write `debug/`; the staged package is then renamed into place                                                                                                                                                                                 |
 | cache sweep            | with a cache: record the package and delete what no package uses                                                                                                                                                                              |
 
@@ -485,6 +543,7 @@ does little else; each phase lives in its own module under [pack/](../packages/e
 | [content/](../packages/extractor/src/pack/content/)                                                                                                                                                                                                                                                                                      | the entities phase: one module per content source, run in order by `collectEntities` (`entities.ts`)                       |
 | [environments.ts](../packages/extractor/src/pack/tables/environments.ts), [water.ts](../packages/extractor/src/pack/tables/water.ts), [lights.ts](../packages/extractor/src/pack/tables/lights.ts), [terrain.ts](../packages/extractor/src/pack/tables/terrain.ts), [irradiance.ts](../packages/extractor/src/pack/tables/irradiance.ts) | one core table each: planned, gated (visibility groups and controls), then finished once texture and control ids are known |
 | [instance-blocks.ts](../packages/extractor/src/pack/instances/instance-blocks.ts)                                                                                                                                                                                                                                                        | encodes and stores the collected instance rows ([collector.ts](../packages/extractor/src/pack/instances/collector.ts))     |
+| [particles.ts](../packages/extractor/src/pack/tables/particles.ts)                                                                                                                                                                                                                                                                       | the particles table, interned as the content sources add particle draws                                                    |
 | [states.ts](../packages/extractor/src/pack/states.ts)                                                                                                                                                                                                                                                                                    | the scene's own controls (quests, progressions, stream areas, scene states), finished and indexed                          |
 | [write.ts](../packages/extractor/src/pack/write.ts), [debug.ts](../packages/extractor/src/pack/debug.ts), [report.ts](../packages/extractor/src/pack/report.ts)                                                                                                                                                                          | the core archive from a list of members, `debug/` from a list of files, and the report                                     |
 
@@ -594,7 +653,8 @@ an asset reached both by path hash (static entities) and by object (prefabs) is 
 key, so it gets two table entries and converts twice (`AssetIds` in pack/convert/asset-ids.ts).
 
 `--jobs` defaults to one worker per core but one, capped at 8, since each worker holds its own
-catalogs and block caches (about 150 MB); a cold map02 pack peaks at about 6 GB RSS. `--zstd-level`
+catalogs and block caches (roughly 150–200 MB of catalog entries and cached bundle data, before the
+assets of its jobs in flight); a cold map02 pack peaks at several GB of RSS. `--zstd-level`
 (default 19) applies to geometry, instance blocks and terrain height and splat pages;
 `--texture-zstd-level` (default 9) applies to textures, terrain surface pages and layer textures,
 and is the main lever on cold pack time while barely changing size or decode speed. irradiance cells
@@ -622,15 +682,15 @@ it), implemented in [pack/store/pack-cache.ts](../packages/extractor/src/pack/st
   [material-load.ts](../packages/extractor/src/game/materials/material-load.ts), and used while the
   bundles it read keep their MD5s, like a conversion. shader summaries, most of a load's size and
   shared by thousands of materials, are stored once per shader object and bundle MD5. these memos
-  are V8-serialized rather than JSON, since records hold bigints and non-finite numbers (map02's
-  materials phase: 12.4 s → 1.6 s warm).
+  are V8-serialized rather than JSON, since records hold bigints and non-finite numbers (warm,
+  map02's materials phase drops from over ten seconds to a second or two).
 - `memo/` also holds whole steps whose output depends only on VFS files: terrain
   ([pack/tables/terrain.ts](../packages/extractor/src/pack/tables/terrain.ts)) and irradiance
   ([pack/tables/irradiance.ts](../packages/extractor/src/pack/tables/irradiance.ts)). a step's key
   covers its own module's import graph, its options, the tiles or cells the subset keeps and the
   catalog data MD5 of every file it reads; the memo lists its blobs in commit order plus what else
   the step returns, so a hit commits the cached blobs without reading the terrain or the irradiance
-  payloads (map02: 12 s → 0.3 s and 7 s → 0.1 s).
+  payloads (on map02, each step drops from around ten seconds to a fraction of one).
 - `memo/` also holds the stored form of every blob the packer compresses itself (instance blocks
   above all), keyed by a hash of its raw bytes, the zstd level and node's zstd version: a block that
   encodes to the same bytes as in an earlier pack takes its stored blob without compressing again,
@@ -644,7 +704,7 @@ it), implemented in [pack/store/pack-cache.ts](../packages/extractor/src/pack/st
   process is taken over.
 
 not cached: turning loaded materials into table entries (fast), the entities phase (which re-reads
-every chunk file and places every prefab, ~19 s on map02), and failed conversions and material
+every chunk file and places every prefab, about 20 s on map02), and failed conversions and material
 loads, which are retried on every pack, so a warm pack can still start workers.
 
 ### report and debug outputs
@@ -658,7 +718,7 @@ ignores:
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `assets.json`                   | per geometry and material id: path hash, path, located object and failure reason if any; per material also its shader, why the viewer has no look for it, its undrawn surface keywords and its texture slots whose reference couldn't be followed ([unsupported materials](viewer/materials.md#unsupported-materials)); per texture object: its texture-table id, name, failure reason and the sampler settings WebGPU can't express (Unity's mirror-once wrap, drawn as mirror-repeat) |
 | `instances.jsonl`               | one line per stored instance block: its blob hash and, per row, entity id, entity name and chunk-file index (−1 for dynamic structures and the prefab renderers they place, which get synthetic entity ids)                                                                                                                                                                                                                                                                             |
-| `chains.json`                   | per chain id, its key, which the next pack into the directory keeps the ids of ([phases](#phases)); empty for a free id                                                                                                                                                                                                                                                                                                                                                                 |
+| `chains.json`                   | per chain id, its key, which the next pack into the directory keeps the ids of ([code layout](#code-layout)); empty for a free id                                                                                                                                                                                                                                                                                                                                                       |
 | `chunk-files.json`              | the chunk files read, indexed by `instances.jsonl`                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `environments.json`             | `levels`: per level, the chosen base environment and where each section came from; `problems`: volumes dropped for their shape or an unknown blend mode, volumes kept without a phase (unset or unreadable), references a phase couldn't resolve (left `null`), and resources not found                                                                                                                                                                                                 |
 | `water.json`                    | water surfaces and sectors packed versus present, sectors whose asset names no tile, and assets that failed to load                                                                                                                                                                                                                                                                                                                                                                     |
@@ -669,14 +729,5 @@ ignores:
 | `skipped-entities.json`         | chunk and DynamicStreaming entities that became no instance row, by reason and [component set](game-data/world.md#initchunkdata-layout): a count and a few names each                                                                                                                                                                                                                                                                                                                   |
 
 start from these when something is missing in the viewer: `instances.jsonl` maps a drawn block back
-to entities and chunk files, and `assets.json` says why an asset didn't convert.
-
-## open
-
-- path → hash lookups reverse-scan StringPathHash ([asset resolution](#asset-resolution)).
-- not cached: the entities phase and failed conversions ([pack cache](#pack-cache)); duplicate
-  textures are compressed before they're merged.
-- assets reached both by path hash and by object convert twice
-  ([asset conversion](#asset-conversion-and-workers)).
-- LevelData with populated blackbox settings isn't read ([MemoryPack data](#memorypack-data)).
-- texture formats without a WebGPU equivalent aren't convertible ([texture](#asset-classes)).
+to entities and chunk files, and `assets.json` says why an asset didn't convert. what the extractor
+lacks is listed in [status.md](status.md#packaging).

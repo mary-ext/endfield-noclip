@@ -25,8 +25,7 @@ little-endian, read front to back to EOF:
    GPU's top-level hash is built like the cells' below, keyed `x | y << 10 | z << 20` on cell
    coordinates, and maps each cell to its byte offset in the GPU's cell buffer), then a counted
    table of `(u32 value, u32 state-group hash)` pairs. neither is needed to read cells. the pair
-   table has one entry per level-2 cell record (3898 on map02), so it is probably per-level-2-cell
-   data.
+   table has one entry per level-2 cell record, so it is probably per-level-2-cell data.
 6. the cell directory: `u32` count, each nine `u32`:
 
    | word | meaning                                            |

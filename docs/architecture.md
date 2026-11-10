@@ -4,26 +4,28 @@ endfield-noclip is four workspace packages under `packages/`. the extractor read
 install with the decoders in `formats` and writes a viewer package to disk in the layout
 `package-format` defines; the viewer streams that package in the browser and renders it with WebGPU.
 
-| page                                                         | covers                                                                              |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| [extraction.md](extraction.md)                               | the extractor's commands, keys, container layers and `pack`; per-topic stages below |
-| [package-format.md](package-format.md)                       | the package layout, tables and binary encodings                                     |
-| [viewer/index.md](viewer/index.md)                           | the viewer: loading, streaming, the frame, and how it draws each topic              |
-| [driving-the-viewer.md](driving-the-viewer.md)               | opening, posing, inspecting and profiling the viewer from an agent                  |
-| [status.md](status.md)                                       | the index of known gaps                                                             |
-| [game-data/world.md](game-data/world.md)                     | scenes, maps, levels, chunk files, stream areas, terrain, LOD and HLOD              |
-| [game-data/assets.md](game-data/assets.md)                   | Unity objects, asset resolution, asset classes, prefabs, dynamic structures         |
-| [game-data/interactives.md](game-data/interactives.md)       | interactive placements, templates and models, view states                           |
-| [game-data/animation.md](game-data/animation.md)             | clips and their curves, ACL, scenery Animators, spinning scenery                    |
-| [game-data/scene-states.md](game-data/scene-states.md)       | scene states, load gates, progressions, facility forms, script groups               |
-| [game-data/environment.md](game-data/environment.md)         | environment phases and volumes, blending, weather                                   |
-| [game-data/lighting.md](game-data/lighting.md)               | sun, shadows, ambient, reflections, local lights                                    |
-| [game-data/irradiance.md](game-data/irradiance.md)           | the baked irradiance volume                                                         |
-| [game-data/materials.md](game-data/materials.md)             | HGRP surface shaders                                                                |
-| [game-data/effects.md](game-data/effects.md)                 | `HGRP/Effect/*` scenery effects, particle systems, effect LOD tables                |
-| [game-data/sky-and-fog.md](game-data/sky-and-fog.md)         | atmosphere, clouds, celestial layers, fogs                                          |
-| [game-data/post-processing.md](game-data/post-processing.md) | exposure, light shafts, lens flare, bloom, GTAO, grading                            |
-| [game-data/water.md](game-data/water.md)                     | open-world water, water volumes, foam boxes                                         |
+| page                                                           | covers                                                                              |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [extraction.md](extraction.md)                                 | the extractor's commands, keys, container layers and `pack`; per-topic stages below |
+| [package-format.md](package-format.md)                         | the package layout, tables and binary encodings                                     |
+| [viewer/index.md](viewer/index.md)                             | the viewer: loading, streaming, the frame, and how it draws each topic              |
+| [driving-the-viewer.md](driving-the-viewer.md)                 | opening, posing, inspecting and profiling the viewer from an agent                  |
+| [status.md](status.md)                                         | the index of known gaps                                                             |
+| [game-data/world.md](game-data/world.md)                       | scenes, maps, levels, chunk files, stream areas, terrain, LOD and HLOD              |
+| [game-data/assets.md](game-data/assets.md)                     | Unity objects, asset resolution, asset classes, prefabs, dynamic structures         |
+| [game-data/interactives.md](game-data/interactives.md)         | interactive placements, spawning, templates and models, view states                 |
+| [game-data/animation.md](game-data/animation.md)               | clips and their curves, ACL, scenery Animators, spinning scenery                    |
+| [game-data/scene-states.md](game-data/scene-states.md)         | scene states, load gates, progressions, facility forms, script groups               |
+| [game-data/environment.md](game-data/environment.md)           | environment phases and volumes, blending, weather                                   |
+| [game-data/lighting.md](game-data/lighting.md)                 | sun, shadows, ambient, reflections, local lights                                    |
+| [game-data/irradiance.md](game-data/irradiance.md)             | the baked irradiance volume                                                         |
+| [game-data/materials.md](game-data/materials.md)               | HGRP surface shaders                                                                |
+| [game-data/effects.md](game-data/effects.md)                   | `HGRP/Effect/*` scenery effects, one-shot effects, effect LOD tables                |
+| [game-data/particles.md](game-data/particles.md)               | particle systems and spline movers                                                  |
+| [game-data/sky-and-fog.md](game-data/sky-and-fog.md)           | atmosphere, clouds, celestial layers, fogs                                          |
+| [game-data/post-processing.md](game-data/post-processing.md)   | the pass order, exposure, light shafts, lens flare, bloom, GTAO, grading            |
+| [game-data/water.md](game-data/water.md)                       | open-world water, water volumes, foam boxes                                         |
+| [game-data/quality-settings.md](game-data/quality-settings.md) | quality presets, tiers and per-level render settings                                |
 
 `game-data/` holds only what we know about the game: its formats, its shaders' behaviour and what it
 shows in game, with unchecked facts marked as such. how our code implements any of it lives in the
@@ -95,11 +97,11 @@ and coordinate frame, e.g. `map02`), and every instance carries the level that o
 viewer shows all of a package's levels together, as the game streams map01's and map02's seamless
 levels. a group's owning level is metadata: the current level (the `level` URL parameter, then
 whichever level the camera moves into) picks the base environment, streams right after what's near
-the camera, and orders the scene controls. the viewer once showed one level at a time, after Snowy
-Forest's snow peaks showed over Test Area on map02; that overlap turned out to be stream-area
-content, which the viewer switches by camera, and the levels themselves don't overlap. a package
-holds only its scene's own map's levels, so a level streaming another scene (`dung02_gdg001` on
-map02, `dung02_rdg012` on `dung02_rdg008`) never shares a package with the levels it would overlap.
+the camera, and orders the scene controls. levels don't overlap; content that does (Snowy Forest's
+snow peaks over Test Area on map02) belongs to stream areas, which the viewer switches by camera. a
+package holds only its scene's own map's levels, so a level streaming another scene (`dung02_gdg001`
+on map02, `dung02_rdg012` on `dung02_rdg008`) never shares a package with the levels it would
+overlap.
 
 **czar archives as the package container, with assets shared across levels.** a package is a small
 always-resident `core.czar` plus shard and asset archives (layout in
@@ -109,12 +111,12 @@ any blob without parsing an archive header. blobs are content-addressed, so a me
 by several levels or tiles is stored once.
 
 **a custom WebGPU renderer.** three.js's WebGL renderer has no compute, so culling and LOD would
-stay on the CPU, and its per-object scene graph cost a prototype 15 ms of CPU at 4.2k draws.
-three.js's WebGPU renderer keeps per-object render lists and bind groups and compiles node materials
-per material, so GPU-driven rendering would fight the abstraction. Babylon.js would put HGRP shaders
-through ShaderMaterial in a heavy runtime and still leave GPU culling and LOD to us.
-multi-draw-indirect isn't available in Chrome on macOS, so the draw loop stays replaceable by one
-MDI call without depending on it. WebGL2 is out of scope.
+stay on the CPU, and its per-object scene graph cost a prototype about 15 ms of CPU at a few
+thousand draws. three.js's WebGPU renderer keeps per-object render lists and bind groups and
+compiles node materials per material, so GPU-driven rendering would fight the abstraction.
+Babylon.js would put HGRP shaders through ShaderMaterial in a heavy runtime and still leave GPU
+culling and LOD to us. multi-draw-indirect isn't available in Chrome on macOS, so the draw loop
+stays replaceable by one MDI call without depending on it. WebGL2 is out of scope.
 
 **the repo holds code, never keys or game content.** the game's ToS bans reverse engineering, and
 Hypergryph has had a VFS decryptor removed from GitHub by DMCA. keys are derived from the user's

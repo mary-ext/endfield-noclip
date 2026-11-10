@@ -77,19 +77,26 @@ assumption.
 a volume is repeated in every cell chunk it overlaps; `loadSceneVolumes` dedupes by object id. the
 component is decoded by
 [endfield/environment-volume.ts](../../packages/formats/src/endfield/environment-volume.ts), which
-rotates prism points by the yaw and makes them absolute.
+rotates prism points by the yaw and makes them absolute (the rotation is untested on real data:
+every map02 volume stores zero).
 
 volumes are read from the default stream area's chunk files of every scene state. each is filed
 under a visibility group (its owning level and its loading condition; see
 [scene states](../game-data/environment.md#scene-states)): its states are collected from every chunk
 file it appears in, and any appearance in a state-0 file makes it unconditional. a volume dropped
 for its shape or an unknown blend mode, or kept without a readable phase, is listed in
-`debug/environments.json`. not packed:
+`debug/environments.json`, as are phase references that can't be read, a ray-traced planet without
+its material or textures, and a missing flow noise texture. not packed:
 
 - cylinder volumes (`volumeType` 4): only global, box and prism shapes are understood
-- prefab prism volumes under a placement other than the identity
+- a prefab holding a prism volume under a placement other than the identity: none of that prefab's
+  volumes are packed, and it's listed in `debug/unsupported-prefabs.json`
 - the dynamic `environmentVolumes` of LevelData, which the interactives reader frames but skips
 - local post `Volume`s: read, but only global ones become post profiles
+
+each packed volume with a phase gets an `environmentVolume` scene control that its visibility group
+requires on. it defaults on, except for manual-blend volumes (`blend.kind` `scripted`), whose
+scripts aren't followed ([activation](../game-data/environment.md#activation)).
 
 a scene without levels gets an empty environment plan.
 
@@ -97,9 +104,11 @@ a scene without levels gets an empty environment plan.
 
 the packer finds [prefab volumes](../game-data/environment.md#prefab-volumes) by their components
 (an `HGEnvironmentVolume` MonoBehaviour on an active GameObject), not by the
-`P_lightingDeco_<entity id>_envvolume` name. phases embedded in prefabs are packed like the others.
-the level base vote counts a prefab volume only when its placement's visibility holds under the
-default scene values ([defaults](scene-controls.md#defaults)).
+`P_lightingDeco_<entity id>_envvolume` name. a box volume's transform composes the placement's and
+its ancestors' rotations and scales per axis rather than as matrices, which is exact for the
+unrotated or uniformly scaled hierarchies authored. phases embedded in prefabs are packed like the
+others. the level base vote counts a prefab volume only when its placement's visibility holds under
+the default scene values ([defaults](scene-controls.md#defaults)).
 
 ## the level's base environment
 
@@ -127,8 +136,11 @@ no applying phase sets isn't known. `composeEnvironment` records the same per-se
 debug index.
 
 the post profile is the level's own global `Volume`, else the scene's, highest priority first; its
-`Bloom`, `GTAmbientOcclusion`, `Vignette` and `ScreenSpaceReflectionVolume` components become a
-environment table `posts` entry that `LevelInfo.environment.post` names.
+`Bloom`, `GTAmbientOcclusion`, `Vignette` and `ScreenSpaceReflectionVolume` components become an
+environment table `posts` entry that `LevelInfo.environment.post` names. `toPlainObject` reduces
+each SRP volume parameter to its value and drops its `overrideState`, so a parameter the profile
+doesn't override is packed with its authored value, where the game would take the component's
+default or a lower-priority volume's ([status](../status.md#lighting-and-post-processing)).
 
 the pack report lists each level's base volume, its coverage and where it's shown, and which
 sections were inherited, and `world env` explains the choice over the same chunk and prefab volumes

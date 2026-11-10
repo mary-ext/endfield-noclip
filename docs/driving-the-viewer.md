@@ -78,6 +78,8 @@ applies the budget.
   doesn't mark the frame dirty; this is useful for walking the camera per frame.
 - `viewer.flyToLevel(id)` makes a level current and flies over it; every level shows either way.
   after a flight lands, moving the camera into another level's cells makes that level current.
+  `viewer.flyToPoint([x, y, z], distance)` flies to a view of a point from that far away, and
+  `viewer.controls.flying` is true while a flight runs.
 
 ## inspecting
 
@@ -95,7 +97,9 @@ applies the budget.
   `viewer.manifest.states.controls` (find one with
   `controls.findIndex(({ id }) => id === 'quest:…')`): `viewer.sceneValues` (every control's value),
   `viewer.scenePicks` (a `Map`), `viewer.conditionResults`, `viewer.setSceneValue(index, value)`
-  (`null` drops the pick).
+  (`null` drops the pick), `viewer.setSceneValues(map)` for several at once and
+  `viewer.resetSceneValues()`. `viewer.waterVolumes` lists the gameplay water volumes with their
+  fill.
 - stream areas: `viewer.visibleStreamAreas` (the areas shown at the camera, `null` when every area
   shows) and `viewer.options.streamAreas`. the viewer re-runs the trigger test whenever the camera
   moves and re-evaluates conditions when the set changes. above or below every trigger the game
@@ -104,6 +108,18 @@ applies the budget.
 - look: `viewer.options.exposure` (EV on top of the level's and the auto exposure's),
   `viewer.options.autoExposure`, `viewer.stats.autoExposureEv` and `viewer.options.debugView`
   (`'clouds'` shows the raw cloud panorama).
+- what draws something: `viewer.scene.meshes.selection.buckets` is the last frame's mesh selection
+  (what `MeshSelector.run` returned; `meshes` is `null` for a package without converted geometry).
+  each bucket has its `material` id (its row in the package's `debug/assets.json`), its `look`
+  (`queue`, `unsupported`, `flags`, `textures`, and `params`, laid out by `LookRow` in
+  [`looks/look.ts`](../packages/viewer/src/looks/look.ts): floats 0–2 the linear tint, 3 the
+  alpha-test threshold; effect looks by `EffectRow` in `looks/effects/effect-look.ts`), its
+  `geometry` item and `nearest`, the distance to its nearest instance. a look only says how a
+  material draws, so first check the content is loaded: `viewer.scene.stream.get(blob)` is
+  `undefined` for a blob never requested, and its `resident` is `null` until it's ready
+  (`bucket.geometry.resident`, or a texture's blob). to name the entity behind a draw, search by
+  position with [`world find --near`](extraction.md#finding-assets-and-scenery) or read the
+  package's `debug/instances.jsonl` ([debug outputs](extraction.md#report-and-debug-outputs)).
 - `viewer.stats` (refreshed every 250 ms): draws, triangles, instances, residency, queue and request
   counters, `cpuMs`, `cpuPhases` and `gpuMs`. `viewer.scene.stream.residentByKind()` splits the
   streamed residency by kind (textures, geometry, irradiance, …).
@@ -131,3 +147,14 @@ applies the budget.
   GPU clocks down, and a variant can then read slower than its baseline.
 - large regions at the default budget evict content during a run, so resident content differs
   between runs; compare numbers within one run.
+- `viewer.stats` is smoothed and hides hitches. for per-frame times, import the module in an eval
+  (`await import('/src/viewer/stats.ts')`) and wrap `FrameTimes.prototype.begin` and `span`, with a
+  `requestAnimationFrame` recorder for frame intervals. restart the dev server after any source edit
+  before patching, and don't edit source during a run: once Vite has hot-updated a module it serves
+  it under a `?t=` URL, so the plain import is another module instance and the patch records
+  nothing.
+- to compare two builds, give each its own worktree and dev server
+  (`git worktree add --detach <dir> <commit>`, `pnpm install --offline`,
+  `NOCLIP_PACKAGES=<repo>/out pnpm run dev --port 0`) and alternate runs between them, only while
+  the machine is quiet: an extractor `pack` running beside it makes every CPU span 2–3× longer. GPU
+  timestamps are steadier under load, but not immune.

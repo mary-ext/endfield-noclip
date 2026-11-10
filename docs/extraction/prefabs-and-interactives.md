@@ -149,9 +149,9 @@ id).
 every placed template is decoded whole, through the
 [MemoryPack schema](../extraction.md#memorypack-data), for a model-upgrade component. a template
 that has one places one model per visual form, each under its form's bit of a per-facility control
-([facility visual forms](scene-controls.md#facility-visual-forms)). the four known facilities get
-our own English labels; others are labelled by template id. a model-upgrade component the reader
-can't use is reported in `unsupported-interactives.json`, and the template draws its base model.
+([facility visual forms](scene-controls.md#facility-visual-forms)). the known facilities get our own
+English labels; others are labelled by template id. a model-upgrade component the reader can't use
+is reported in `unsupported-interactives.json`, and the template draws its base model.
 
 ### view-state poses
 
@@ -247,10 +247,10 @@ clips holding their end poses.
   every vertex bone 0 at full weight (`rigidSkin`) and never reads the mesh's own bone weights.
 - a clip the sampler can't read holds its end pose.
 
-the balloon's tube (`int_balloon_postmodel`, 46 bones, 420 frames) and the regional upgrade
-terminal's robot (`int_system_fac_region_upgrade_postmodel`) play skinned; Qingbo Stockade's
-octagonal waterwheels ([scenery animators](../game-data/animation.md#scenery-animators)) play
-rigidly, 44 of their 49 mesh renderers at 1500 frames each.
+the balloon's tube (`int_balloon_postmodel`) and the regional upgrade terminal's robot
+(`int_system_fac_region_upgrade_postmodel`) play skinned; Qingbo Stockade's octagonal waterwheels
+([scenery animators](../game-data/animation.md#scenery-animators)) play rigidly, most of their mesh
+renderers moving, over more than a thousand frames each.
 
 ### scenery animators
 
@@ -291,9 +291,10 @@ transform-track decompression (MIT; its notice is in the file) for the formats t
 or w-dropping rotations, full or variable vectors, any number of segments, stripped keyframes. it
 decodes every stored sample, rebuilding w and range-reducing in float32 as ACL does (near w = 0 the
 rounding decides w), and interpolates stripped samples as ACL plays them; on Wuling City's spinning
-cube it agrees with upstream ACL's decompressor to 5e-6 in translations and 1.3e-4 in rotations. the
-clip then samples between frames like the dense block, wrapping when the buffer does, with tracks
-mapped to bindings through the sub-track masks and constant bindings held at their listed values.
+cube it agrees with upstream ACL's decompressor to about 1e-5 in translations and 1e-4 in rotations.
+the clip then samples between frames like the dense block, wrapping when the buffer does, with
+tracks mapped to bindings through the sub-track masks and constant bindings held at their listed
+values.
 
 ### moving platforms
 

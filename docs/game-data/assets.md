@@ -36,6 +36,34 @@ renderer names. the identities the game uses are hash → bundle → container a
 | `Data/ExtendData/Main/StringPathHash.bin`, `Data/ExtendData/Initial/InitStringPathHash.bin` | hash → path, in a main and an initial table                                                                                        |
 | `Data/Bundles/Windows/manifest.hgmmap`                                                      | hash → `AssetInfo` (bundle index, size, compressed path); bundle → name, direct dependencies and the transitive dependency closure |
 
+both are little-endian stored hash tables with one slot scheme: an array of
+`(u32 offset, u32 count)` slots indexed by the unsigned key mod the slot count, each naming a run of
+fixed-size rows to scan for the key.
+
+`StringPathHash.bin` is `u32 stringsOffset` (= 8 + 24 · count), `u32 count`, `count` slots (absolute
+offsets), `count` 16-byte buckets `(u32 unknown, u64 hash, u32 pathOffset)`, then the paths, each
+`u32 byteLength`, UTF-16LE, `u16 0`, at `stringsOffset + pathOffset`. a hash's buckets usually name
+one path, sometimes repeated.
+
+`manifest.hgmmap` is one Brotli stream over:
+
+- a 156-byte header: `u32 0xFF11FF11` and the build guid, `u32 0xF1F2F3F4` and the manifest's
+  content hash (each a `u32` length in UTF-16 units and the characters), `u32 0`
+- the asset dictionary: `u32 size`, `u32 capacity`, `capacity` slots (offsets relative to the
+  capacity word), `capacity` 24-byte `AssetInfo` rows
+  `(i64 pathHashHead, u32 path, i32 bundleIndex, i32 assetSize, u32 0)`. several rows may share a
+  path hash
+- the bundle dictionary: the same shape over 48-byte bundle rows keyed by `hashName`, their
+  `bundleIndex` stored as 0
+- the bundle array: `u32 size`, `u32 count`, `count` 48-byte rows
+  `(i32 bundleIndex, u32 name, u32 dependencies, u32 directReverseDependencies, u32 directDependencies, u32 bundleFlags, i64 hashName, i64 hashVersion, i32 category, u32 0)`.
+  `hashName` hashes the name (`main/<hex>.ab` or `initial/<hex>.ab`), `hashVersion` folds it with
+  every dependency's name hash, and `category` is the game's `RootCategory`: 0 `Main`, 1 `Initial`,
+  matching the name's prefix
+- a data region the rows point into by offset: `u32 size`, the data, `u32 size` again. a name is
+  `u32 byteLength`, UTF-16LE, `u16 0`; a dependency list `u32 count`, `u32` bundle indices, `u16 0`;
+  an asset's path `u32 length`, Brotli-compressed UTF-16LE, `u16 0`
+
 ### how a reference reaches an object
 
 - **hash → bundle.** the manifest's `AssetInfo` rows for the hash give the bundles holding it.
@@ -71,7 +99,10 @@ data in `m_StreamData` when present.
   vertex). all read as their format says.
 - **compression.** `m_MeshCompression` is only an import setting: a mesh with a non-zero value and
   an empty `m_CompressedMesh` keeps its vertices in the ordinary channels.
-- skinned meshes carry weights, bone indices and bind poses.
+- **collision-only meshes** (`m_CollisionMeshBaked` set) carry cooked PhysX data and leave
+  `m_CompressedMesh` out of their bytes, though the TypeTree lists it unconditionally.
+- skinned meshes carry weights, bone indices and bind poses. a rigid skin (`m_BonesPerVertex` 1)
+  stores bone indices without a weight channel: its one influence weighs 1.
 
 #### built-in meshes
 
@@ -116,7 +147,7 @@ a prefab is a GameObject hierarchy reached through PPtrs, placed by its root.
 - a GameObject draws only if it and all its ancestors are active. an active skinned mesh can use
   bones under an inactive GameObject.
 - enabled `MeshRenderer`s (with a `MeshFilter`'s mesh) and enabled `SkinnedMeshRenderer`s draw, as
-  do particle systems ([particle systems](effects.md#particle-systems)).
+  do particle systems ([particle systems](particles.md#particle-systems)).
 - an enabled `LODGroup` (class 205) picks one of its LODs' renderers at a time, by each LOD's
   `screenRelativeHeight`; in Unity that height is the group's `m_Size` at its
   `m_LocalReferencePoint`, scaled by the quality setting's LOD bias, with an optional cross-fade
@@ -127,8 +158,8 @@ a prefab is a GameObject hierarchy reached through PPtrs, placed by its root.
 - a skinned renderer's pose is each bone's prefab-space matrix times its bind pose.
 
 prefabs can also hold environment volumes ([environment.md](environment.md#prefab-volumes)), and
-effect components: particle systems, spline movers, one-shot effects and effect LOD tables
-([effects.md](effects.md#particle-systems)).
+effect components: particle systems and spline movers ([particles.md](particles.md)), one-shot
+effects and effect LOD tables ([effects.md](effects.md#one-shot-effects)).
 
 ### billboards
 
@@ -172,20 +203,59 @@ a resource group with `logicState` 0 ignores logic state; otherwise bit `n` show
 entity's logic state is `n`. how these masks, gates and scene-state lists decide visibility is in
 [scene-states.md](scene-states.md).
 
+the file's root holds the grids (slot 3) and a string table (slot 4: settlement, POI, level, quest
+and model ids) that records index into. a grid's slot 0 is its id; its other slots are vectors of
+fixed-width records. a `DataGroup` (24 bytes:
+`i32 invalid, i32 type, u32 grid, i32 index, i32 num, i32 total`) is a typed slice of the vector
+`type` selects in grid `grid`, and a `DataIndex` is its first four fields. the records read, by grid
+slot and `DataIndex` type, with byte offsets:
+
+| record                            | slot | type | bytes | fields                                                                                                                    |
+| --------------------------------- | ---- | ---- | ----- | ------------------------------------------------------------------------------------------------------------------------- |
+| `DataIndex`                       | 5    |      | 16    | as above                                                                                                                  |
+| `RootComp`                        | 33   |      | 84    | `u32 entityType` +0, `u32 state` +4, `Comps` DataGroup +8 (the entity's `DataIndex` slice)                                |
+| `ResourceComp`                    | 32   | 30   | 132   | `Res` DataGroup +0 (a slice of resource groups)                                                                           |
+| `ResourceGroupWithStateDesc`      | 12   | 10   | 88    | `Group` DataGroup +0, `u32 sceneState` +24, `u32 logicState` +28, `i32 levelNum` +32, `i32 factoryIndex` +36              |
+| `IdComp`                          | 17   | 15   | 16    | `u64 uniqueId` +0, `u64 overrideId` +8 (0 on every entity seen)                                                           |
+| `SettlementControlComp`           | 29   | 27   | 20    | `i32 settlement` (root string) +0, `bool controlLoad` +4, `i32 compareType` +8, `i32 compareValue` +12, `bool isMain` +16 |
+| `FactoryRegionControlComp`        | 30   | 28   | 8     | `i32 region` (root string, a level id) +0, an i32 +4                                                                      |
+| `PoiControlComp`                  | 55   | 55   | 8     | `i32 poi` (root string) +0, `i32 domainType` +4                                                                           |
+| `MissionControlComp`              | 27   | 25   | 32    | `Conditions` DataGroup +0 (`MissionCondition` rows), `i32 compareType` +24, `i32 toBeTrue` +28                            |
+| `MissionCondition`                | 16   | 14   | 16    | `i32 id` (root string), `i32 isQuest`, `i32 state`, `i32 isSame`                                                          |
+| `GlobalVarControlComp`            | 28   | 26   | 40    | `i32 globalKey` +0, `u8 controlLoad` +4, `i32 compareType` +8, `i64 compareValue` +16, `i32 extra1`–`4` +24               |
+| `MapVarControlComp`               | 52   | 51   | 48    | `i32 mapKey` +0, then as the global one, and `i32 mapId` +40                                                              |
+| `ModelViewStateControllerNewComp` | 37   | 35   | 36    | `i32 modelIdStrId` (root string) +0, `bool useOldVersion` +4, `keyStateToNameMap` DataGroup +8, `i32 keyState` +32        |
+| `ErosionRootComp`                 | 36   | 34   | 48    | `u64 erosionCoreId` +0, `PosList` DataGroup +8, `Vector3 erosionCorePos` +32                                              |
+| `SludgeComp`                      | 44   | 42   | 264   | `Vector3 pos` +96, `u64 coreId` +248                                                                                      |
+| `ExtraSceneComp`                  | 46   | 44   | 40    | `Vector3 minPos` +0, `maxPos` +12, `currentPos` +24, `u32 direction` +36                                                  |
+
+the `ResourceComp` stride and the pairing of `DataIndex` types with grid vectors were measured on
+the client, as was `ErosionRootComp`'s stride (on map01). `SludgeComp`'s offsets follow the field
+order of its IL2CPP class (`FBDynamicSceneSludgeComp`), whose natural alignment gives the measured
+stride.
+
 ### payloads
 
 - **model rows** (type 5, 96 bytes): prefab StringPathHash key, position, Unity Euler rotation and
-  scale. the row places the prefab under that TRS.
-- **effect rows** (type 6, grid vector 8, 144 bytes): Unity position at +12, Euler rotation at +24,
-  scale at +36 and the prefab's StringPathHash key at +48, followed by bounds and the position again
-  at +116. they place their prefab like model rows. on map02 all 8596 name prefabs, among them
-  Wuling City's pillar-array threads.
-- **ECS rows** (type 7): `(sceneIndex, chunk, index)` naming component group `index` of the paired
-  `fb_init_<ss>_<chunk>` / `fb_streaming_<ss>_<chunk>` files. `fb_init` holds the component groups,
-  in InitChunkData's layout ([world.md](world.md#initchunkdata-layout)), and `fb_streaming` the
-  matching entity ids and, in StreamingChunkData's layout, their property tables: rect decals bind
-  their material there under `0xff010000` as in static chunks (all 1786 of map02's, among them
-  Jingyu Valley's cliff moss, 64 materials).
+  scale. the row places the prefab under that TRS. a grid chain is at +52 and the visibility record
+  at +72.
+- **effect rows** (type 6, grid vector 8, 144 bytes): `Dis` at +8 (the prefab's effect LOD table's
+  cull distance, copied at export: 80–500), Unity position at +12, Euler rotation at +24, scale at
+  +36, the prefab's StringPathHash key at +48, a grid chain at +56, `UseBBox` at +85 with `BboxMin`
+  and `BboxMax` at +88 and +100 (the effect's own box moved to the row's position),
+  `UseQualitySetting` at +112 and the visibility record at +116. they place their prefab like model
+  rows. on map02 all of them name prefabs, among them Wuling City's pillar-array threads.
+- **ECS rows** (type 7, 36 bytes): `(sceneIndex, chunk, index)` naming component group `index` of
+  the paired `fb_init_<ss>_<chunk>` / `fb_streaming_<ss>_<chunk>` files. `fb_init` holds the
+  component groups, in InitChunkData's layout ([world.md](world.md#initchunkdata-layout)), and
+  `fb_streaming` the matching entity ids and, in StreamingChunkData's layout, their property tables:
+  rect decals bind their material there under `0xff010000` as in static chunks (all of map02's,
+  among them Jingyu Valley's cliff moss).
+
+every row carries a 24-byte visibility record (`FBDynamicSceneVisibilityInfo`: a centre, a base
+radius, `MinDis` and an importance; at +8 of an ECS row), and model and effect rows a grid chain:
+the ids of a near and a far grid for their LOD proxy. how the game uses both is in
+[dynamic load grids](world.md#dynamic-load-grids).
 
 one model or ECS group can be referenced by several resource groups, and some ECS entities also
 appear in static chunks. ECS renderers with a spin component turn

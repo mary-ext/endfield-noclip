@@ -36,8 +36,11 @@ use.
 alpha, its value outside the band, so colours that glow only in the band are left out and steady
 ones stay. `_EMISSIVE_NOMAP`, which emits only through the band, emits nothing.
 
-the per-draw emission colour isn't known for static scenery, so it's taken as zero and every draw
-uses its material's `_EmissiveColor`.
+the per-draw emission colour isn't known for static scenery, so it's taken as zero and those draws
+use their material's `_EmissiveColor`. a prefab's `AnimationProperties_Emissive` resting colour is
+mixed into its renderers' emission colour at pack time
+([emissive-override.ts](../../packages/extractor/src/game/prefabs/emissive-override.ts)); its
+breathing and albedo tint aren't read.
 
 ## lit layers
 
@@ -95,8 +98,7 @@ lets the opacity only dim what lies behind.
 the [transparent pass](frame.md) draws it with the effects, far to near by instance, over the
 composited scene: its radiance fogged at its own distance, as the game's shader fogs itself, then
 blended over by its opacity. so an effect kilometres behind a pane shows through it, dimmed by the
-pane; the weighted blend the viewer used before let a pane 10 m away swamp it (Dijiang's deck glass
-hid the corroded planet's plume).
+pane (the corroded planet's plume behind Dijiang's deck glass).
 
 ## decals
 

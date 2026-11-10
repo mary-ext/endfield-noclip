@@ -40,14 +40,14 @@ and race scenes checked):
 
 - `cloudConfig.cloudFlowType` is 1 or 2 in most phases with clouds, usually with a nonzero
   `flowSpeed`; type 2 phases also reference a `cloudFlowMap`. presumably they move the panorama.
-- `skyConfig.skyMaterialType` is 1 in three phases (`Env_map01_lv006_art_boss_area_01`, which also
+- `skyConfig.skyMaterialType` is 1 in a few phases (`Env_map01_lv006_art_boss_area_01`, which also
   references a `skyboxCubeMap`, `Env_dung02_rdg008_sword` and `Env_indie_race001_art_bossS1_end2`),
   0 elsewhere; 1 presumably swaps the procedural sky for the cubemap.
 - `skyConfig.reflectionType` is 0 or 1, roughly evenly.
 - `skyConfig.useCustomIVDefaultSH` is set in about a third of phases, with `customIVDefaultSH`
   holding an SH presumably used where the irradiance volume has no coverage
   ([lighting](lighting.md#open)).
-- `heightFogConfig.enableVolumetricFog` is false in 46 phases (among them map02's base
+- `heightFogConfig.enableVolumetricFog` is false in a few dozen phases (among them map02's base
   `Env_map02_lv003_global`), while `volumetricFogConfig.enable` is true wherever that section is
   active; which of the two switches the PC fog path isn't known.
 
@@ -79,29 +79,34 @@ it overlaps. the level tag of the entity id says which level owns it (0 = scene-
 shapes:
 
 - **global**: applies everywhere.
-- **box**: a unit cube under the object's transform (position, Euler rotation, scale). it has no
-  shape blob.
+- **box**: a unit cube under the object's transform (position, Euler rotation, scale), by the
+  placements' scales and names. it has no shape blob.
+- **sphere**: not seen in map02.
 - **prism** (`PolyArea`): the polyline blob is `u32 byteLength`, `f32×3` position, `f32×3` Euler
   rotation, `u32 n`, `n × (x, z)` relative to the position, an edge BVH, then `f32 height` and
   `f32 baseHeightOffset` as the last eight bytes. the points are in the volume's frame: rotated by
-  the yaw and offset by the position, they're in world space. the prism spans
-  `y ∈ [position.y + baseHeightOffset, + height]`; volumes are 3D, so a cave volume under a hill
-  doesn't apply on the hilltop.
+  the yaw and offset by the position, they're in world space (inferred: every map02 volume stores a
+  zero rotation). the prism spans `y ∈ [position.y + baseHeightOffset, + height]`; volumes are 3D,
+  so a cave volume under a hill doesn't apply on the hilltop.
+- **cylinder**: map02's one, a waterfall volume, has no shape blob; where its shape is kept isn't
+  known.
 
 each scene has one global volume (tag 0). each level typically has one broad polygon or box volume
 over most of its ground (usually priority 200, often named `*global*`), under dozens of smaller,
 higher-priority ones for caves, interiors and set pieces. neighbouring levels' volumes overlap a
-level's rectangle.
+level's rectangle. map02 has a few hundred chunk volumes, most naming a phase of their own.
 
-Unity post-processing `Volume`s (component `Volume`: `isGlobal`, priority, blend distance, weight, a
-`VolumeProfile`) share the same rows; local ones carry a `BoxCollider`. every level has its own
-global post volume (on map02 all of them name the same profile, at priority 0), and a few levels add
-local boxes.
+Unity post-processing `Volume`s (component `Volume`, fields 0–4: `isGlobal`, priority, blend
+distance, weight, and in the Streaming half a `VolumeProfile`) share the same rows; local ones carry
+a `BoxCollider` (field 2 its centre, 3 its size). every level has its own global post volume
+(map02's all name the same profile, at priority 0), and a few levels add local boxes with profiles
+of their own (map02: in Marker Stone and Snowy Forest).
 
 ## scene states
 
 a volume present in scene state 0's chunk files always loads; otherwise it loads with any of the
-MapConfig scene states whose files hold it. see [scene-states.md](scene-states.md).
+MapConfig scene states whose files hold it. see [scene-states.md](scene-states.md). all of map02's
+volumes are in state-0 files.
 
 ## prefab volumes
 
@@ -152,7 +157,10 @@ fog's negative `rayleighScatteringScale` (which defers to the atmosphere's) blen
 positive one. the per-section lerps have special cases:
 
 - **clouds**: the cloud panorama crossfades through `cloudFadeAlpha`: the old texture fades out to
-  ½, the new one in after.
+  ½, the new one in after. clouds enabled on one side only fade in by the factor with that side's
+  texture. `drawCloudAfterPlanet` blends as a weight between the two orders. the
+  [cloud shadow](lighting.md#cloud-shadows) crossfades the same way through its alpha when both
+  sides have one and their textures, placement or flow differ, and lerps otherwise.
 - **height-fog flow noise**: its own rule ([flow noise](sky-and-fog.md#flow-noise)).
 - **lens flare**: a flare on one side fades in by the factor with that side's settings, and two
   flares cross through nothing at ½ without blending (unverified).
@@ -170,21 +178,27 @@ is the unit vector `horizontalDirectionAngle` (degrees from +Z toward +X) and
 `verticalDirectionAngle` give. each gameplay update advances the clock by the previous frame's
 intensity times 0.08 times the frame time, so at a steady speed it runs at `speed · 0.02` per
 second, and keeps the previous frame's values (`_LastWindGlobalParams0`) for motion vectors.
-[swaying cloth](materials.md#swaying-cloth) reads it. wind motors (local wind sources the player and
-scripts register) feed other parameters, not described here.
+[swaying cloth](materials.md#swaying-cloth) reads it.
+
+the same update scrolls a wind noise's UV against the direction by the clock's step
+(`_WindGlobalParams2`), and wind motors (local wind sources the player and scripts register) feed
+other parameters; neither is described here.
 
 ## activation
 
-nothing in the default chunk data says whether a volume starts enabled; the stored rows carry no
-enable field. level scripts toggle volumes at runtime (`EnvironmentEnable` actions), and quest-state
-volumes (night, battle, destroyed-town looks) sit in the same lists as permanent ones. their names
-(`night`, `zhandou`, `fight`, …) don't tell them apart: a name filter guesses wrong both ways.
-examples of story-state volumes that outrank a level's regular look:
+nothing in the default chunk data says whether a volume starts enabled: the stored rows carry no
+enable field, and a story-state volume's row has the same fields as a permanent one's. quest-state
+volumes (night, battle, destroyed-town looks) sit in the same lists as permanent ones, and what
+switches them isn't known: the level scripts' `EnvironmentEnable` action loads and unloads
+LevelData's [dynamic volumes](#weather), not chunk volumes. names (`night`, `zhandou`, `fight`, …)
+don't tell them apart: a name filter guesses wrong both ways. examples of story-state volumes that
+outrank a level's regular look:
 
-- map01's The Hub: a night volume covering the whole map and a destruction-state volume with the
-  exact outline of the level's regular volume both outrank it.
-- map02's Snowy Forest: a night-named whole-level volume has a higher priority than the level's
-  global one.
+- map01's The Hub: a night volume covering the whole map (priority 320) and a destruction-state
+  volume (300, time blend) with the exact outline of the level's regular volume (200) both outrank
+  it.
+- map02's Snowy Forest: a night-named whole-level volume (300) outranks the level's global one
+  (200). its phase is a daytime sun with red fog, reported to show only during certain quests.
 
 map02's Si's Painting is several disjoint painting worlds, each with its own priority-200 global
 volume.
@@ -195,8 +209,10 @@ precipitation is part of the environment phase. rain and snow are sections of th
 (`rainConfig`, `snowConfig`), blended with the rest. the game counts it as raining (or snowing)
 while the blended section is enabled, at the section's `intensity`, else at 0; water sensors, for
 one, react to rain only where the sky is exposed. there is no evidence of an independent weather
-schedule: no server or random weather controller has been found, and map02 has no time-of-day
-environment volumes (`HGTimeOfDayEnvironmentVolume`).
+schedule: no server or random weather controller has been found (the client's `ChangeEnvironment`
+entry point does nothing as shipped), and map02 has no time-of-day environment volumes
+(`HGTimeOfDayEnvironmentVolume`). Marker Stone's heavy rain is ordinary rain config, with no storm
+mode or thunder.
 
 field rules, from the authored data:
 
@@ -209,6 +225,23 @@ field rules, from the authored data:
 - art-named phases carry weather too: Marker Stone's dam-area art phases include an enabled
   heavy-rain phase over the lake islet and dry, disabled-rain overrides at the outposts. a phase
   name is no evidence of what its sections hold.
+- beyond `intensity`, `rainConfig` holds the falling rain's look, not described here: a speed, a
+  streak length, a horizontal rain level, a far-rain alpha multiplier, a rain-wave alpha, a
+  screen-drop count and a splash count (5.85, 1.11, 0.22, 0.58, 0.97, 5 and 1000 on the lake islet;
+  6, 0.7 and zeros in `Env_map02_lv003_xiaozuquan_01`, intensity 50).
+
+of the phases map02's chunk volumes name, the rain section is active in over a third, though only a
+couple dozen enable rain, and the snow section in a few dozen, nearly all enabling snow (some at
+intensity 0). for example:
+
+| phase                                | section | enabled | intensity   | volume                                      |
+| ------------------------------------ | ------- | ------- | ----------- | ------------------------------------------- |
+| `env_map02_lv004_daba7_huxindao`     | rain    | yes     | 100         | lake islet, priority 400, distance blend    |
+| `env_map02_lv004_daba7_JUDIAN1`      | rain    | no      | 87.4 stored | outpost, 410, time blend; wetness on at 0.7 |
+| `env_map02_lv004_daba7_banshichunei` | rain    | yes     | 20          |                                             |
+| `Env_map02_lv009_global_bake_2`      | snow    | yes     | 20          | Snowy Forest's global volume, 200           |
+| `Env_map02_lv009_forest_bake`        | snow    | yes     | 60          | forest, 300                                 |
+| `Env_map02_lv009_cave_snowoverride`  | snow    | no      | 40 stored   | two caves, 340                              |
 
 weather appears in two ways:
 
@@ -216,9 +249,20 @@ weather appears in two ways:
   as the Marker Stone lake-islet rain (and the stairs below its dam, where every volume enables
   rain), or Snowy Forest's snow with drier cave overrides.
 - **dynamic volumes**: LevelData carries an environment-volume table (phase path, bounds and
-  transform, priority, blend mode, fades) that `EnvironmentEnable` script actions load and unload.
-  these never appear in chunk data. Marker Stone's outposts have such quest-driven rain volumes at
-  higher priority than the dry outpost phase.
+  transform, priority, blend mode, fades) whose entries `EnvironmentEnable` script actions load and
+  unload by volume id. these never appear in chunk data; several were seen in map02's LevelData
+  files (not a full census).
+
+Marker Stone's dam outpost is the example of a dynamic volume. `map02_lv004_lv_data_sub_f1m19d2`
+holds two over one six-point polygon 100 m tall, both applying
+`DynamicEnvironment/env_map02_lv004_daba7_JUDIAN_rain` (rain on, intensity 25.7) by time, above the
+dry outpost phase's 410: one at priority 420 fading in over 2 s, one at 440 fading in at once, both
+out over 8 s. a level script enables one of them, with the region's rainy audio state, when the
+leader enters a 210 m trigger around the outpost (or a dialog there ends) while quest `f1m19d2_q`'s
+step 10 or 11 runs and the script's `bRainy` property allows it, picking between the two by its
+`bFirstRain` property; a custom event enables the first without the quest check. leaving the trigger
+or a stop event disables both and restores the sunny audio state. the script starts manually, and
+the file sets neither property: what starts it and how they're initialised isn't known.
 
 ### wetness
 
@@ -241,20 +285,23 @@ the blended rain section, whether or not rain falls:
   view depth, and needs the material occlusion to be high.
 
 the game also keeps sheltered surfaces at `baseWetnessLevel` through a rain occlusion map, a depth
-map rendered from above, whose range sits in a presetting asset not yet found. it breaks up the
-coverage edges with jitter noise, adds rain ripples, splashes and water flowing down walls, and also
-floods normal-mapped dips through a geometric-flatness test. Marker Stone's dam-side volumes keep
-wetness on at 0.5–1 in both dry and rainy phases, so its stone floors read wet even without rain.
+map rendered from above (snow requests the same map) over 100 m
+([quality settings](quality-settings.md#values-by-level)). the coverage's range is a field of a rain
+presetting asset not yet found; that it equals the map's 100 m is inferred. it breaks up the
+coverage edges with a 3D jitter noise, adds rain ripples (an animated ripple normal atlas and a wave
+term), splashes and water flowing down walls, and also floods normal-mapped dips through a
+geometric-flatness test. Marker Stone's dam-side volumes keep wetness on at 0.5–1 in both dry and
+rainy phases, so its stone floors read wet even without rain.
 
 ## open
 
-- script activation of chunk volumes, and the starting state of each; which volumes are permanent vs
-  story state.
+- what switches story-state chunk volumes, and the starting state of each; which volumes are
+  permanent vs story state.
 - the falling rain's transition between an enabled and a disabled section.
 - quest-driven weather: what starts the level scripts that load dynamic rain volumes and how their
-  state properties are initialized.
-- where a `volumeType` 4 (cylinder) volume keeps its shape: map02's one, a waterfall volume, has no
-  shape blob.
+  state properties are initialised; whether the lake-islet and Snowy Forest cave boundaries are
+  purely spatial in game.
+- where a `volumeType` 4 (cylinder) volume keeps its shape.
 - the game's order among equal-priority volumes.
 - whether a local post `Volume` replaces the level's global one or layers over it.
 - the plain-field lerp: integers, enums, effect directions and the fog's deferred Rayleigh scale.

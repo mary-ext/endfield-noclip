@@ -6,15 +6,21 @@ reflections are on [lighting.md](lighting.md#screen-space-reflections), the sky 
 [sky-and-fog.md](sky-and-fog.md), and the profile and its blending on
 [environment.md](environment.md).
 
+after lighting, fog and transparents the game runs, in order: light shafts, a `Parafin` pass
+(purpose unknown), depth of field, motion blur, the transparents drawn after depth of field, lens
+flare, temporal antialiasing with upscaling, sharpening, fisheye, the grading LUT, the bloom chain,
+frosted glass, the exposure histogram, cutscene effects and the uber pass.
+
 ## ambient occlusion
 
-the game's GTAO is XeGTAO, and its high tier marches 3 slices × 3 steps. unless
-`ambientOcclusion.custom` is set, the game ignores the volume's march settings for a fixed preset:
-radius 4 m, falloff range 1, sample distribution power 1, thin-occluder compensation 2; only
-`finalValuePower` comes from the volume (6 on map02). thin-occluder compensation scales depth
-differences by `1 + thin` in the falloff distance. the result occludes the ambient part of the
-radiance ([ambient](lighting.md#ambient)). the game reads GBuffer normals and filters the result
-temporally and twice spatially.
+the game's GTAO is XeGTAO at half the render size. the graphics quality setting picks the kernel,
+not the volume's `qualityLevel`: PC high marches 3 slices × 3 steps (low and medium 2 × 2, ultra 9 ×
+3). unless `ambientOcclusion.custom` is set, the game ignores the volume's march settings for a
+fixed preset: radius 4 m, falloff range 1, sample distribution power 1, thin-occluder compensation
+2; only `finalValuePower` comes from the volume (6 on map02). thin-occluder compensation scales
+depth differences by `1 + thin` in the falloff distance. the result occludes the ambient part of the
+radiance ([ambient](lighting.md#ambient)). the game marches over prefiltered depth mips, reads
+GBuffer normals and filters the result temporally and twice spatially before upsampling.
 
 ## light shafts
 
@@ -46,9 +52,9 @@ draws flares for its flare components; the sun's takes its settings from the env
 `lensFlare` section while `enable` is set: the flare asset, intensity, scale, occlusion and whether
 it may show off screen. its direction is the light config's `rotationLensFlare`, its light colour
 the raw `directColor`. with `enable` off the component's own settings apply; those aren't known
-([open](#open)). Origin Lodespring's overview (`Env_map01_lv006_art_entry_overview_01`) turns it on
-while the level's own phase turns the [sun disc](sky-and-fog.md#sun-disc) off, so the flare is the
-sun there.
+([open](#open)), as the sun's flare component is created at runtime rather than stored in the scene.
+Origin Lodespring's overview (`Env_map01_lv006_art_entry_overview_01`) turns it on while the level's
+own phase turns the [sun disc](sky-and-fog.md#sun-disc) off, so the flare is the sun there.
 
 - **the asset.** `LensFlareDataSRP` ships without a TypeTree; its bytes are in SRP core 12's field
   order, every bool padded to four bytes.
@@ -67,8 +73,8 @@ sun there.
   the flare may show off screen. the game compares against the sun's depth at the far plane, which
   everything drawn is in front of.
 
-no flare an environment references in map01, map02 or the 12 dungeon, base and race scenes checked
-uses polygon elements or inverse SDFs.
+no flare an environment references in map01, map02 or the dungeon, base and race scenes checked uses
+polygon elements or inverse SDFs.
 
 ## auto exposure
 
@@ -124,11 +130,14 @@ variant, and what selects it and what the extra fields do isn't read.
 mixer, shadows/midtones/highlights, lift/gamma/gain, split toning, colour curves); each sub-section
 that's off reads as its neutral default. the game bakes grading and curve into a LogC LUT, with its
 HG-specific contrast and its modified-ACES curve (the only tonemapper the game ships besides none;
-every profile sets `tonemappingMode` 5). no shipped profile enables the external lookup texture.
+every profile sets `tonemappingMode` 5, `ACES_modified`, and modes 1–4, `Neutral`, `ACES`, `Custom`
+and `External`, are hidden from the game's inspector), and dithers the output by half an 8-bit step.
+no shipped profile enables the external lookup texture.
 
 ## open
 
 - the vignette's extra mode and fields (above).
+- whether PC runs bloom's compute-shader variant or the pixel-shader one.
 - the flare component's own settings, which apply while the environment's flare is off.
 - unverified: at Origin Lodespring's overview the game's flare seems not to be occluded by the
   crystal mountain behind the sun, as if the mountain weren't in its depth buffer.

@@ -54,14 +54,14 @@ the categories:
 | `tower` | `dungeon_seasontower`                     | season tower                                                        |
 
 the number counts up within an owner and kind; it carries no other meaning. a scene can serve
-several dungeon entries (`indie_tower001` serves 60) and some scenes have none: story quests can
+several dungeon entries (`indie_tower001` serves dozens) and some scenes have none: story quests can
 send the party to a scene directly, and each mission's
 `Data/Json/MissionRuntimeAsset/<mission>.json` names the scenes it uses (`sceneId`, `_mapId`), so
 `e11m5` is how the main story reaches `dung02_rdg008`. a dungeon and a puzzle stage can share a
 display name with a quest (`dung02_cdg005` and quest `e11m7` are both "Homecoming").
 
 a dungeon's id names a level, not necessarily a scene: many operator-story levels stream another
-scene. Liino's six and Gilberta's stream `map01`, Typhoeus's `dung02_rdg009` and `rdg015` stream
+scene. Liino's and Gilberta's stream `map01`, Typhoeus's `dung02_rdg009` and `rdg015` stream
 `map02`, Mi Fu's `rdg006`/`rdg007` stream `rdg004`, and Li Zhiyan's `dung02_rdg012` streams
 `rdg008`. so `rdg` numbers skipped in the scene list (`dung01_rdg002`, `rdg008`–`rdg014`) are still
 dungeons, and only `dung01_rdg006` and `rdg009` have no LevelConfig at all. the `rdg` rows leave
@@ -85,15 +85,15 @@ elsewhere.
 `Data/Json/StringPool/StringPool<n>.byte`, despite its extension. the root has 18 members and
 `defaultState` 3, and the payload ends exactly at EOF. fields with known meaning:
 
-| field                                             | meaning                                                                                                                          |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `id`, `idNum`                                     | string id and the numeric id MapConfig's grid stores                                                                             |
-| `mapId`                                           | the level's map (stored as `mapIdStr`), e.g. `map02`; not always its streaming scene, see above                                  |
-| `defaultState.exportedSceneConfigPath`            | streaming scene asset, e.g. `map02/map02_streaming.asset`                                                                        |
-| `defaultState.sourceSceneName`                    | the level's art sub-scene, e.g. `map02_lv001_art`                                                                                |
-| `levelGrids`                                      | the 128 m cells the level owns                                                                                                   |
-| `levelDataPathHashes`                             | StringPathHash keys (stored as `levelDataPaths`) of the level's LevelData files (interactives, see [assets.md](interactives.md)) |
-| `rectLeftBottom`, `rectRightTop`, `playerInitPos` | the level's playable rect and the player's spawn point                                                                           |
+| field                                             | meaning                                                                                                                                |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `idNum`                                     | string id and the numeric id MapConfig's grid stores                                                                                   |
+| `mapId`                                           | the level's map (stored as `mapIdStr`), e.g. `map02`; not always its streaming scene, see above                                        |
+| `defaultState.exportedSceneConfigPath`            | streaming scene asset, e.g. `map02/map02_streaming.asset`                                                                              |
+| `defaultState.sourceSceneName`                    | the level's art sub-scene, e.g. `map02_lv001_art`                                                                                      |
+| `levelGrids`                                      | the 128 m cells the level owns                                                                                                         |
+| `levelDataPathHashes`                             | StringPathHash keys (stored as `levelDataPaths`) of the level's LevelData files (interactives, see [interactives.md](interactives.md)) |
+| `rectLeftBottom`, `rectRightTop`, `playerInitPos` | the level's playable rect and the player's spawn point                                                                                 |
 
 ### MapConfig and the ownership grid
 
@@ -135,11 +135,11 @@ by id in each cell's chunk. so:
 
 the in-game map's place names are `Data/Json/UILevelMapLoadConfig/<level>.json` static elements of
 type 2: a `textId` (`scene_<level>_…_location_tips_<n>`, through `TextTable`) at a world `position`
-(x, z; y is 0). map01 has 71, map02 109 ("Bridge Approach" in The Hub, "Tianjing Courtyard" in
-Wuling City). a map with `basic.needInverseXZ` set swaps x and z; none of the packed scenes' levels
-were seen to. the same files give interior floor names (`tierNames`, `scene_<level>_layer_tips_<n>`)
-with per-tier bounds (`tierInfos`); how tiers relate to stream areas isn't established. level
-display names are `LevelDescTable.showName`.
+(x, z; y is 0), such as "Bridge Approach" in The Hub and "Tianjing Courtyard" in Wuling City. a map
+with `basic.needInverseXZ` set swaps x and z; none of the packed scenes' levels were seen to. the
+same files give interior floor names (`tierNames`, `scene_<level>_layer_tips_<n>`) with per-tier
+bounds (`tierInfos`); how tiers relate to stream areas isn't established. level display names are
+`LevelDescTable.showName`.
 
 ## static scenery: InitChunkData and StreamingChunkData
 
@@ -181,15 +181,15 @@ column selectors; the ones with established meaning:
 | 8–14  | draw infos for capacity `2^(id − 8)`: count, 24-byte infos (the game's `RendererInfo`: submesh, `renderFlags`), then `(max², min²)` LOD bounds                                                                                                                                                               |
 | 18    | 256-byte instance constants starting with the object-to-world matrix                                                                                                                                                                                                                                         |
 | 21    | 64-byte name prefix (root object names win when present)                                                                                                                                                                                                                                                     |
-| 27    | rect decal constants (160 bytes): matrix, inverse, UV scale and offset, RGBA8 colour, intensity, an angle, flags; material in StreamingChunkData under `0xff010000` ([materials](materials.md#decals))                                                                                                       |
+| 27    | rect decal constants (160 bytes): matrix, inverse, UV scale and offset, RGBA8 colour, intensity, an angle the decal's shaders don't read (270 and 90 seen), flags (0 on every decal seen); material in StreamingChunkData under `0xff010000` ([materials](materials.md#decals))                              |
 | 28    | terrain decal constants in 27's layout (matrix, inverse, params, packed colour); material in StreamingChunkData, `HGRP/TerrainDecalLit`                                                                                                                                                                      |
 | 30    | a water surface placement ([water](water.md#placements-initchunkdata-component-30))                                                                                                                                                                                                                          |
-| 31    | water decal constants (172 bytes, unread); StreamingChunkData names the render pipeline's cube under `0xff000000` and its material under `0xff010000` (map02's `P_waterdecal_01`: 248, all Global)                                                                                                           |
+| 31    | water decal constants (172 bytes, unread); StreamingChunkData names the render pipeline's cube under `0xff000000` and its material under `0xff010000` (map02's `P_waterdecal_01`, all Global)                                                                                                                |
 | 42    | a local light's runtime data, zero-filled in the file (244 bytes); the values are in the object row (below)                                                                                                                                                                                                  |
-| 44    | on collider-only entities (`…_COL1`, `P_box_collider`, `MergedCollider_…`), always with 21 alone (27k on map02); content unread                                                                                                                                                                              |
+| 44    | on collider-only entities (`…_COL1`, `P_box_collider`, `MergedCollider_…`), always with 21 alone (tens of thousands on map02); content unread                                                                                                                                                                |
 | 52    | a constant spin about the entity's own origin (16 bytes): speed (rad/s, non-negative), unit axis (local); only on the originium hub frames ([spinning scenery](animation.md#spinning-scenery))                                                                                                               |
 | 54    | a constant spin (92 bytes): speed (rad/s, non-negative), unit axis, pivot (world), six floats not checked (a local box, by their values), then the stored position, rotation quaternion xyzw and scale; only on Qingbo Stockade's waterwheels' renderers ([spinning scenery](animation.md#spinning-scenery)) |
-| 61    | an oriented box (44 bytes): u32 0, centre xyz, a size xyz (half or full unchecked), rotation quaternion xyzw; with 21 and the 1-byte 62 on map02's 61 `shadowOC_CAVE_*` entities, the only ones seen                                                                                                         |
+| 61    | an oriented box (44 bytes): u32 0, centre xyz, a size xyz (half or full unchecked), rotation quaternion xyzw; with 21 and the 1-byte 62 on map02's `shadowOC_CAVE_*` entities, the only ones seen                                                                                                            |
 | 63    | the same light's settings, zero-filled (448 bytes)                                                                                                                                                                                                                                                           |
 | 67    | LOD ranges: LOD count and cumulative draw count per LOD                                                                                                                                                                                                                                                      |
 | 68–74 | draw refs for capacity `2^(id − 68)`: `(u64 material hash, u64 mesh hash, …)`                                                                                                                                                                                                                                |
@@ -201,15 +201,125 @@ in [environment.md](environment.md) and [water.md](water.md).
 
 local lights are kind-2 entities in groups with columns 42 and 63. their row's slot 3 is a keyed
 property table in kind 1's layout, holding two blobs, a 236-byte runtime block and a 448-byte
-settings block. map01 has 1,025 and map02 2,153; [lighting.md](lighting.md#local-lights) covers how
-they shade.
+settings block. map01 has about a thousand and map02 about two thousand;
+[lighting.md](lighting.md#local-lights) covers how they shade.
+
+the runtime block (key `0xff000000`) is the light as the renderer consumes it:
+
+| offset | type   | content                                                       |
+| ------ | ------ | ------------------------------------------------------------- |
+| 0      | f32×4  | colour, sRGB as authored                                      |
+| 16     | f32    | intensity                                                     |
+| 20     | f32    | colour temperature (K)                                        |
+| 24     | u32    | use temperature                                               |
+| 28     | f32×4  | position, 1                                                   |
+| 44     | f32×4  | direction (the transform's +z), 0                             |
+| 60     | f32×4  | linear colour · intensity · temperature tint (rgb), intensity |
+| 76     | f32    | range (m)                                                     |
+| 80     | f32    | 25 / range²                                                   |
+| 84     | f32    | spot angle (degrees; −1 for point lights)                     |
+| 88     | u32    | Unity `LightType`: 0 spot, 1 directional, 2 point             |
+| 92     | f32×4  | copy of 60                                                    |
+| 108    | f32×16 | object-to-world, column-major                                 |
+| 172    | f32×16 | world-to-object                                               |
+
+the settings block (key `0xff010000`) is the authored settings of HG's light, then its additional
+data:
+
+| offset | type  | content                                                |
+| ------ | ----- | ------------------------------------------------------ |
+| 12     | u32   | type, as in the runtime block                          |
+| 20     | f32   | specular intensity                                     |
+| 24     | f32   | range                                                  |
+| 36     | f32   | spot angle (full cone, degrees)                        |
+| 40     | f32   | inner spot angle                                       |
+| 48     | f32   | cot(spot / 2)                                          |
+| 52     | f32   | 1 / cos(spot / 2)                                      |
+| 80     | u32   | Unity `LightmapBakeType`: 4 realtime, 1 mixed, 2 baked |
+| 91     | u8    | shadow only                                            |
+| 92     | u8    | culling box on                                         |
+| 94     | u8    | culling distance on                                    |
+| 100    | f32×3 | culling box offset                                     |
+| 112    | f32×3 | culling box half extents                               |
+| 124    | f32×3 | culling box rotation (Euler degrees)                   |
+| 136    | f32   | culling box falloff threshold                          |
+| 140    | i32   | priority                                               |
+| 144    | f32   | tube length (−1 or 0: not a tube)                      |
+| 148    | f32   | soft source radius                                     |
+| 152    | f32   | culling distance                                       |
+| 156    | f32   | falloff distance                                       |
+| 160    | u32   | shadows: 0 none, 2 soft                                |
+| 172    | f32   | shadow strength                                        |
+| 436    | u8    | character only                                         |
+| 440    | f32   | volumetric scattering intensity                        |
+| 444    | f32   | falloff exponent (negative: inverse square)            |
+
+both layouts were found by census over map01 and map02: a value per offset against the authored
+properties of Unity's `Light` and their defaults (30° and 21.80208° for the angles, 6570 K for the
+temperature), and the order of the properties of HG's light.
+
+#### render flags
+
+a draw info's `renderFlags` word (the game's `HGRenderFlags`). the shadow bits' meanings are read
+from what the shadow maps draw; the others are taken from the game's names for them, unchecked:
+
+| bit                      | name                   | meaning                                                          |
+| ------------------------ | ---------------------- | ---------------------------------------------------------------- |
+| `0x2`                    | `ShadowTwoSided`       | casts shadows from both faces                                    |
+| `0x10`                   | `AlphaTest`            | alpha-tested material                                            |
+| `0x100`                  | `Opaque`               | set at runtime for opaque-queue materials                        |
+| `0x200`                  | `Transparent`          | transparent material                                             |
+| `0x400`                  | `ShadowOnly`           | casts shadows without drawing (shadow proxies)                   |
+| `0x80000`                | `CastShadow`           | casts shadows at all                                             |
+| `0x100000 << i`, i = 0–3 | `CSMShadowCascade<i>`  | casts into sharp cascade i; all four or none on every chunk draw |
+| `0x1000000`              | `StaticShadowCaster`   | casts into the cached far map                                    |
+| `0x2000000`              | `RealtimeShadowCaster` | casts into the sharp cascades                                    |
+| `0x8000000`              | `RayTracing`           | included in ray tracing                                          |
+| `0x20000000`             | `MaterialTwoSided`     | two-sided material                                               |
+
+map02's chunk draws come in two families: `0x0bf80000` (ray tracing, both caster kinds, every
+cascade, cast) and `0x08080000` (ray tracing and cast only: about ten thousand draws that cast into
+no sun shadow map). which maps a caster reaches is under [shadows](lighting.md#shadows). prefab
+renderers have no such word; their inputs are the renderer's serialized `m_CastShadows`,
+`m_StaticShadowCaster` and `m_RealtimeShadowCaster`, with no per-cascade field.
 
 ### StreamingChunkData
 
 the sibling of each InitChunkData file. it shares the root layout and object ids and adds, per
 object, a keyed property table whose values point at assets by StringPathHash key. keys read as
 `component << 24 | field << 16 | index`. a kind-1 object's properties are split, per component,
-between its Init and Streaming rows.
+between its Init and Streaming rows: Init carries the name and the inline values, Streaming the
+asset references and some nested blobs.
+
+a property table is three parallel vectors in slots 3–5: u32 keys, u8 value types and offsets to the
+values. rows hold them by kind:
+
+| kind | row                                                                                                                                                       |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | 5 slots: 0 the name (Init; empty in Streaming), 1 a u32 of unknown meaning, 3 an inline u64 `StreamingComponentType` mask, 4 a vector of component tables |
+| 2    | 6 slots in Streaming: 3 a property table, 4 sixteen zero bytes, 5 an empty vector. a light's Init row holds its property table in slot 3 too              |
+| 3    | 4 slots: 3 a property table ([foliage grids](#foliage-grids))                                                                                             |
+
+a kind-1 component table is a property table with the component's type, one mask bit, as a u32 in
+slot 0. its keys' component is that bit's index (0 `Transform`, 4 `BoxCollider`, 14
+`HGEnvironmentVolume`, 15 `Volume`, 32 `HGWaterGlobalConfig`), the field is the field's index in its
+class, and the index is the element of a fixed array (matrix rows, curve keys). `0xff` keys are per
+entity archetype, so their meaning depends on the entity's InitChunkData components.
+
+| value type | value                                                                                                                                                       |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1          | bool (u8)                                                                                                                                                   |
+| 2, 3       | i32, u32                                                                                                                                                    |
+| 4          | f32                                                                                                                                                         |
+| 6          | u64                                                                                                                                                         |
+| 9, 10      | f32×3, f32×4                                                                                                                                                |
+| 14         | bounds: centre and extents, f32×3 each                                                                                                                      |
+| 15         | asset: u64 StringPathHash key, then a u32 code for its kind (6 for ScriptableObjects; 1, 3, 4, 7 and 8 seen)                                                |
+| 16         | string: a table whose slot 0 holds the bytes                                                                                                                |
+| 17         | blob: a table holding a table holding the bytes of a struct the client parses itself (polyline shapes, probe data); empty structs leave the inner slots out |
+
+the kind-1 layout was checked against `Env_*` volumes, whose phase keys resolve to
+`EnvParse/Env_*.asset`, and Global Volumes.
 
 ### foliage grids
 
@@ -229,19 +339,21 @@ instantiates itself, serialized into the row's keyed property table:
 | `0xff06xxxx`–`0xff09…` | Streaming | per batch entry: u32 key (value code 3), material, mesh (StringPathHash assets) and submesh |
 
 archetypes reuse the bounds (0–5) and draw-info (8–14) columns, but a draw names a batch entry
-instead of holding asset keys: grass draws (`GrassRendererInfo`) carry the entry's key at byte 4, a
-sparsity at 8 and the renderer flags at 12; tree draws carry the entry's index at 12 and the flags
-at 16. there's no LOD-range column, so a draw's LOD is the rank of its upper threshold. instances
-are a column-major object-to-world matrix and two vec4 parameters (96 bytes): a grass entity is a
-cluster of nearby instances (column `37 + k`: a count and room for `4 · 2^k`), a tree entity one
-instance (column 80). column 6 (20 bytes) starts with a point and a squared size; column 7 (24
-bytes) isn't identified.
+instead of holding asset keys: grass draws (`GrassRendererInfo`) carry a u16 of keywords at byte 0,
+the entry's key at 4, a sparsity at 8 and the renderer flags at 12; tree draws (`RendererInfo`)
+carry a submesh byte at 2, the entry's index at 12 and the flags at 16. there's no LOD-range column,
+so a draw's LOD is the rank of its upper threshold. instances are a column-major object-to-world
+matrix and two vec4 parameters (96 bytes): a grass entity is a cluster of nearby instances (column
+`37 + k`, `GrassClusterK{4,8,16,32}Component`: a count and room for `4 · 2^k`), a tree entity one
+instance (column 80, `HGTreeComponent`). column 6 (20 bytes) starts with a point and a squared size;
+column 7 (24 bytes) isn't identified. the layout comes from a census over map01 and map02, the
+component names from the IL2CPP metadata.
 
-map02 holds about 981k grass and bush instances in 81k clusters and 17k trees, map01 376k grass
-instances and no tree grids. grids repeat in every file they overlap, under one id. the game
-measures a cluster's LOD by `rendererHalfSize` and thins grass by its sparsity at a quality setting;
-the second instance parameter is the grass shader's per-instance colour
-([materials](materials.md#foliage)).
+map02 holds about a million grass and bush instances in tens of thousands of clusters, and under
+twenty thousand trees; map01 a few hundred thousand grass instances and no tree grids. grids repeat
+in every file they overlap, under one id. the game measures a cluster's LOD by `rendererHalfSize`
+and thins grass by its sparsity at a quality setting; the second instance parameter is the grass
+shader's per-instance colour ([materials](materials.md#foliage)).
 
 ## stream areas
 
@@ -249,9 +361,25 @@ the second instance parameter is the grass shader's per-instance colour
 visible by default (`RootVisible`), and trigger volumes: an XZ polygon with a box and height range
 per area. while the streaming centre is inside one or more triggers, the client shows the union of
 those areas' visible slices; otherwise it shows `RootVisible`. area ids are the `<area>` suffix of
-chunk file names and the visibility groups of DynamicStreaming entities. root slots 7–9
-(`HlodUnloadBounds`, `HlodUnloadTriggers`, `HlodUnloadPoints`) are HLOD-unload trigger volumes in
-the same layout.
+chunk file names and the visibility groups of DynamicStreaming entities.
+
+the file is a FlatBuffer whose root (`FBStreamAreaTotalData`) holds:
+
+| slot | content                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------ |
+| 0    | `TotalAreas`: i32 area ids, including 0                                                                      |
+| 1    | `RootVisible`: i32 area ids                                                                                  |
+| 2    | `AreaVisibleGroups`: i32 area ids, sliced by the areas                                                       |
+| 3    | the scene's bounds, inline (24 bytes): min and max (f32 world x, z each), f32 min height, f32 max height     |
+| 4    | areas, 12 bytes each: i32 area id, i32 start and count of its slice of slot 2                                |
+| 5    | triggers, 36 bytes each: i32 area id, i32 start and count of its slice of slot 6 (a closed ring), its bounds |
+| 6    | points, 8 bytes each: f32 world x, z                                                                         |
+
+root slots 7–9 (`HlodUnloadBounds`, `HlodUnloadTriggers`, `HlodUnloadPoints`) are HLOD-unload
+trigger volumes in the same layout, each with an unload mask. while the streaming centre is inside
+one or more of them the game unloads the HLOD the union of their masks selects, on top of the
+[HLOD rings](#streaming-layers); outside them, or in a scene without any, nothing extra unloads.
+what a mask bit selects isn't known.
 
 areas are not interiors only: a level can hold several versions of the same place's backdrop, each
 shown from its own zone. map02's Si's Painting has a cliff and floating-rock backdrop (area
@@ -259,18 +387,18 @@ shown from its own zone. map02's Si's Painting has a cliff and floating-rock bac
 those rocks would stand in front of the inn's view.
 
 of map01, map02, base01_lv001 and base01_lv002, only map02 has static content in non-default areas.
+that content only adds to area 0: none of its entity ids or placements repeat an area-0 entity.
 DynamicStreaming entities carry areas too
-([scene-states.md](scene-states.md#where-states-are-referenced)): on map02, about 600 of their
-11,504 area lists name one of 22 areas other than the default, among them the falls pouring over
-Si's Painting's backdrop cliff.
+([scene-states.md](scene-states.md#where-states-are-referenced)): on map02, about one in twenty of
+their area lists names one of a couple dozen areas other than the default, among them the falls
+pouring over Si's Painting's backdrop cliff.
 
 ## dynamic streaming
 
 `Data/DynamicStreaming/PC/Scene/<scene>/` holds the dynamic ECS scene: `fb_main_<L>_<i>_<j>` grid
-files (grid unique id `L << 16 | i << 8 | j`), paired `fb_init_*`/`fb_streaming_*` ECS chunks and
-the stream-area table. it carries prefab placements, interactives, and scenery gated by progression,
-quests and variables. its format and how structures are selected are in
-[assets.md](assets.md#dynamic-structures).
+files, paired `fb_init_*`/`fb_streaming_*` ECS chunks and the stream-area table. it carries prefab
+placements, interactives, and scenery gated by progression, quests and variables. its format and how
+structures are selected are in [assets.md](assets.md#dynamic-structures).
 
 ### dynamic load grids
 
@@ -285,18 +413,28 @@ the frame.
   loaded.
 - **unload.** a grid stays until the centre leaves a square of side `min(3 · cell + 20, 3.2 · cell)`
   around its cell's centre, about 10 m of hysteresis. the scan reruns when the centre moves 0.1 m.
-- **centre.** the same streaming centre as static streaming, most likely the player.
+- **centre.** the same streaming centre as static streaming, most likely the player; a second centre
+  can load its own blocks (extra streaming at a position).
 - **which level.** a row's level is the grid that stores it, so large or far-reaching content sits
   in coarse grids: Dijiang's corroded planet effect, placed at its deck, is a level-4 row, the
   satellites around the station level 7, and its props level 0. an entity's owner sits in a grid at
-  least as coarse as its rows, so a row's own grid is the binding one.
-- **per-row radius.** each row also stores a visibility record (centre, base radius, a minimum
-  distance and an importance), tested against a radius of at least 181–362 m plus a margin. the
-  shipped base radii reach the far corner of the row's own 3×3 block, so the test almost never hides
-  a row whose grid is loaded.
+  least as coarse as its rows (owners are levels 2–7 on map02 and base01_lv001), so a row's own grid
+  is the binding one.
+- **per-row radius.** each row of a loaded grid also has a [visibility record](assets.md#payloads).
+  importance 3 is always visible and importance 0 isn't tested; any other row shows while a centre
+  is within its radius in XZ: the base radius, or if larger the distance from the centre to the
+  farthest corner of the 3×3 block of 128 m cells around it (181–362 m), plus a margin of a tenth of
+  that, between 2 and 30 m. the shipped base radii reach the far corner of the row's own 3×3 block
+  (within about 1 m on over 99 % of rows, the rest larger), so the test almost never hides a row
+  whose grid is loaded. map02's rows are mostly importance 1, with far fewer at 0 and 3. whether an
+  untested row starts visible, and how far the centre moves before rows are tested again (5 m, by
+  the setting's name), is unchecked.
 - once loaded, a prefab's renderers are culled only by their own LODGroups and effect LOD tables
-  ([effects](effects.md#effect-lod-tables)); the LOD proxies the dynamic scene builds for models and
-  effects switch animator and effect LOD levels, never hide them.
+  ([effects](effects.md#effect-lod-tables)). the LOD proxies the dynamic scene builds for models and
+  effects never hide them: a proxy names a near and a far grid containing the row (the satellites'
+  are a level-3 and a level-5 cell, small effects' levels 0 and 1, the corroded planet's its own
+  grid twice) and sets the animator's or effect's LOD level to the first of them that's loaded, else
+  to 2.
 
 ## terrain
 
@@ -307,9 +445,11 @@ Data/Terrain/PC/<scene>/Terrain_<level>_<x>_<z>_<H|N|T|A|S|C>.bytes
 Data/Terrain/PC/<scene>/Layers/LAYER_<D|N|C>_<index>.bytes
 ```
 
-each file is a u32 clear size and an inverted-LZ4 block (a few are stored raw), and the clear bytes
-are a 20-byte `TRET` header (magic, version 1, width, height, mip count, Unity `GraphicsFormat`,
-payload size) followed by one texture's mip chain, which fills the payload exactly.
+each file is a u32 clear size and an inverted-LZ4 block (a few are stored raw, e.g.
+`dung02_dg005/Layers/LAYER_C_3`), and the clear bytes are a 20-byte little-endian `TRET` header
+(magic, `u32` version 1, `u16` width, height, mip count and Unity `GraphicsFormat`, `u32` payload
+size) followed by one texture's mip chain, which fills the payload exactly. the mip count field is
+inferred from layer files, whose payloads are exactly the sum of their mip chains.
 
 tiles form a quadtree over the scene's terrain square: level `l` splits it into `2^l × 2^l` tiles,
 `x` along +X and `z` along +Z. the finest tiles are 64 m (map02's leaf is level 6, map01's level 5).
@@ -325,7 +465,10 @@ tiles form a quadtree over the scene's terrain square: level `l` splits it into 
 pages are 132² with a 2-texel border around a 128² core that covers the tile edge to edge, and have
 one level. every tile with a height page has all six channels, at every level. layers are per-scene
 material textures addressed by index ([close-up layers](#close-up-layers)): `D` diffuse (BC7 sRGB),
-`N` normal (BC7), `C` cone maps for parallax (R8).
+`N` normal (BC7), `C` cone maps for parallax (R8). the terrain shader binds the tile channels as
+`_HeightmapAtlas` (`H`), `_NormalmapAtlas` (`N`), `_TintColorAtlas` (`T`), `_AlbedoAtlas` (`A`),
+`_SplatCtrlAtlas` (`S`) and `_CliffIndexAtlas` (`C`), and the layers as the texture arrays `_Splats`
+(`D`), `_Normals` (`N`) and `_ConeMaps` (`C`).
 
 the baked `A` and `N` pages are what the game draws where its close-up layer blend doesn't reach:
 
@@ -345,12 +488,16 @@ MonoBehaviour at
   sample
 - `heightScale`: metres spanned by the 15-bit height range
 - `terrainSize`: root edge length, a power-of-two multiple of 64 m
-- `nodeData`: a complete breadth-first quadtree (`index = (4^l − 1)/3 + z·2^l + x`) with per-node
-  min/max height and a `maxHeightError` (metres). despite its name, it isn't the error of drawing
-  the node instead of its children: leaves, with nothing finer, carry up to 295 m on map02, and
-  against the children's samples it runs 1.1–158× the measured error. it follows the node's page's
-  largest step between neighbouring samples (per level, a median of 0.75–0.98 of it, rarely above).
-  what the game uses it for isn't known
+- `nodeData`: a complete breadth-first quadtree (`index = (4^l − 1)/3 + z·2^l + x`) down to the leaf
+  level, whether or not a node has tile files, with per-node `nodeLevel` (0 for the root and for
+  levels above the coarsest tiles), `parent`, `allHole`, min/max height (metres above
+  `terrainPosition.y`) and a `maxHeightError` (metres). on map02 `localMaxHeight` is the maximum of
+  the node's samples with the hole bit masked off, and `localMinHeight` counts holes as 0. despite
+  its name, `maxHeightError` isn't the error of drawing the node instead of its children: leaves,
+  with nothing finer, carry hundreds of metres on map02, and against the children's samples it runs
+  from about equal to over a hundred times the measured error. it follows the node's page's largest
+  step between neighbouring samples (per level, typically most of it, rarely above). what the game
+  uses it for isn't known
 - `layerData`: the close-up material layers by ordinal; see below
 - `sectorSplatInfo`: one u64 per 64 m sector, a bitmask of the layer ordinals the sector uses
   (checked against the index map on map02)
@@ -400,24 +547,25 @@ atlases.
 - **per-entity LOD chains.** every static draw carries its LOD index and a
   `(minSquared, maxSquared]` range of squared screen-relative height, as in Unity's LODGroup.
   `maxSquared` is `FLT_MAX` on the nearest LOD. a negative `minSquared` would read as never culled
-  by size, but every one seen is `−k²` with `k` between 0.005 and 0.05 (−0.000225 on 9,189 map02
+  by size, but every one seen is `−k²` with `k` between 0.005 and 0.05 (−0.000225 on many map02
   draws, −0.0001 on every map02 HLOD cluster, −0.0025 on every indie_dg005 one, −0.0004, −0.000025),
   so they may be ordinary cull heights stored negated.
 - **foliage cards.** imposter card meshes (`…_cardmesh`) appear as ordinary LODs, usually the last
-  but not always: 4,162 map02 card draws are an earlier LOD with a size cull (LOD 3 of 5, 4 of 6).
-- **shadow proxies.** draws with `renderFlags` bit 10 only cast shadows.
+  but not always: thousands of map02 card draws are an earlier LOD with a size cull (LOD 3 of 5, 4
+  of 6).
+- **shadow proxies.** draws with the `ShadowOnly` [render flag](#render-flags) only cast shadows.
 - **HLOD clusters.** auto-generated per-level clusters in three tiers, placed as ordinary entities
   named `HLOD<tier>_<i>_<j>_Cluster_<hash>…`, `i`/`j` being the tier's grid cell, with negative
   coordinates clamped to 0 (west and south of the grid origin every cluster is named on cell 0). one
   large member can stretch a cluster's bounds hundreds of metres past its cell. their draw range is
   unbounded, so HLOD visibility is decided by the HLOD/streaming system, not by LODGroup. they occur
   only in always-loaded (scene state 0) Global chunk files (every scene of the install), and only
-  the `pc` HLOD platform variant ships. Jingyu's tiers hold 469 meshes / 451k triangles (HLOD0), 177
-  / 226k (HLOD1) and 69 / 45k (HLOD2). the number after a cluster's hash (`_250`, `_600`) is its
-  height rounded to 50 m, not a switch distance.
+  the `pc` HLOD platform variant ships. Jingyu's tiers run from a few hundred meshes and about 450k
+  triangles (HLOD0) to a few dozen meshes and about 45k (HLOD2). the number after a cluster's hash
+  (`_250`, `_600`) is its height rounded to 50 m, not a switch distance.
 - **HLOD grids.** each tier's cells double the previous tier's, but the tier-0 cell and the grid
   origin vary by scene, and where the game stores them isn't found. fitted to cluster names (the
-  origin most cluster centres agree with, 95–99.7 % per axis): HLOD0 cells are 64 m with the origin
+  origin most cluster centres agree with, over 95 % per axis): HLOD0 cells are 64 m with the origin
   on the terrain square's corner in map01, map02, indie_dg002, indie_dg016 and the 1024 m dungeons
   except dung02_rdg008, whose origin is (−256, −256) inside its (−512, −512) square. dung02_dg002's
   is (−1664, −832) on a 4096 m square, and indie_dg005's cells are 128 m from (−1728, −832), so its
@@ -448,37 +596,46 @@ layers that read their entities from Global are why HLOD clusters and water deca
 Global chunk files. a lower priority loads first, then the nearer cells. where an entity's layer is
 stored in the chunk files isn't found (the InitChunkData schema is native).
 
-the radii come from the PC settings, by scene detail preset (1000 lowest to 5000 highest, 4000 being
-the high preset and 5000 very high; 2000 takes 1000's; values in brackets are inherited from a lower
-preset, which is assumed):
+the radii come from the settings INI TextAssets (`assets/beyond/initialassets/settings/*.ini` in the
+initial bundles; PC reads `desktopsettings.ini`), sections `[Streaming@<preset>]`, over defaults in
+code. the preset is the scene detail quality: 1000 lowest to 5000 highest, 4000 being the high
+preset and 5000 very high (`windowsplayer_qualitymap.json`; a medium device defaults to 3500). 2000
+has no section and takes 1000's; values in brackets are inherited from a lower preset, which is
+assumed:
 
-| radius, m   | 1000 | 3000 | 4000  | 5000  |
-| ----------- | ---- | ---- | ----- | ----- |
-| chunk files | 128  | 128  | 160   | 256   |
-| `Default`   | 96   | 128  | 160   | 256   |
-| `HLOD0`     | 256  | 384  | 512   | 640   |
-| `HLOD1`     | 1024 | 1024 | 1024  | 1024  |
-| `HLOD2`     | 2048 | 2048 | 2048  | 2048  |
-| `Collider`  | 128  | 128  | 128   | 128   |
-| `Tiny`      | 96   | 128  | (128) | (128) |
-| `Lighting`  | 96   | 128  | (128) | (128) |
+| radius, m   | 1000 | 3000 | 4000  | 5000  | code default |
+| ----------- | ---- | ---- | ----- | ----- | ------------ |
+| chunk files | 128  | 128  | 160   | 256   | 256          |
+| `Default`   | 96   | 128  | 160   | 256   | 128          |
+| `HLOD0`     | 256  | 384  | 512   | 640   | 256          |
+| `HLOD1`     | 1024 | 1024 | 1024  | 1024  | 512          |
+| `HLOD2`     | 2048 | 2048 | 2048  | 2048  | 1024         |
+| `Collider`  | 128  | 128  | 128   | 128   | 128          |
+| `Tiny`      | 96   | 128  | (128) | (128) | 32           |
+| `Lighting`  | 96   | 128  | (128) | (128) | 128          |
 
 `Water` (128 m) and `Audio` (16 m) take code defaults. `RendererWithCollider` uses the larger of
-`Collider` and `Default`. a low-memory device is forced to preset 1000, and on maps that ask for it
-(map02 does, map01 doesn't) to HLOD radii of 256, 1024 and 2048 m.
+`Collider` and `Default`, and a scene can override `Default`'s radius. a low-memory device is forced
+to preset 1000 for streaming, LOD streaming and texture streaming, unloads before it loads, and on
+maps whose streaming config sets `useLowMemoryHLODLoadParameter` (map02 does, map01 doesn't) takes
+HLOD radii of 256, 1024 and 2048 m (256, 512 and 1024 by code default). the mobile INI's preset 1000
+has `Default` 64, `HLOD0` 128, `HLOD1` 896 and `HLOD2` 1280 m.
 
 - **selection.** distances are measured in XZ only. every 128 m file whose square meets the circle
   of the chunk radius is read (with each scene-state and area file that exists for it), plus the
-  Global files; every layer cell whose square meets that layer's circle loads.
+  Global files; every layer cell whose square meets that layer's circle loads (`Persistent` is one
+  cell). a layer can be switched off for the default area. a second source can load around another
+  position (seamless and extra loads).
 - **hysteresis.** cells are added on a pass after the centre has moved 4 m and removed on a pass
-  after 20 m, so a cell unloads at up to 20 m past its radius.
+  after 20 m (12 m by code default and on mobile), so a cell unloads at up to 20 m past its radius.
 - **HLOD rings.** each HLOD tier hides inside the radius of the next finer layer: HLOD0 inside
   `Default`'s, HLOD1 inside HLOD0's, HLOD2 inside HLOD1's. at preset 5000 that's detail to 256 m,
   HLOD0 to 640 m, HLOD1 to 1024 m and HLOD2 to 2048 m, with nothing streamed beyond. what the
   distance is measured to (cluster centre or bounds) and whether a tier waits for the finer one to
   load isn't known.
-- **time budget.** loading gets 1.5 ms and unloading 2.5 ms per frame, scaled by the smoothed frame
-  time over 33.3 ms (0.1–2×), so about 0.75 and 1.25 ms at 60 fps; teleports have no limit.
+- **time budget.** loading gets 1.5 ms and unloading 2.5 ms per frame (3.5 and 0.5 by code default),
+  scaled by the smoothed frame time over 33.3 ms (0.1–2×), so about 0.75 and 1.25 ms at 60 fps;
+  teleports have no limit.
 - **why 128 m** isn't stated anywhere. at the lower presets the chunk radius is one cell, so a few
   files cover the detail radius, while the finer layer grids pick what enters the scene more closely
   than the files are read.
@@ -505,28 +662,50 @@ textures skip one mip on 6 GB cards. Unity's streaming picks each texture's mip 
 using it and, when the wanted mips don't fit the budget, drops mips (Unity's documented behaviour;
 the game's `streamingMipmapsMaxLevelReduction` isn't found in its settings).
 
+## teleport points
+
+teleport destinations are five MemoryPack tables in the JsonData group,
+`Data/Json/GameplayConfig/<source>TeleportValidationDataTable.json` (`TeleportValidationDataTable`:
+id → level id, position, Euler rotation, a reason and a permitted deviation), one per kind of
+caller:
+
+| source        | ids                                                                |
+| ------------- | ------------------------------------------------------------------ |
+| `Map`         | `TpForMap_ent_<interactive id>`: the map's fast-travel points      |
+| `LevelScript` | `TpForLs_…`: level script teleports (not decoded, below)           |
+| `Cinematic`   | `TpForCs_<guid>`: where a cutscene puts the player; often no level |
+| `Guide`       | `TpForGd_<guide group>_…`                                          |
+| `CommonSys`   | `TpForComSys_Mp:/CabinPoints/<room>`: Dijiang's three cabin rooms  |
+
+a `Map` entry's id names the interactive the player travels to, and its position is where they
+arrive, a few metres from it facing the stored yaw: `TpForMap_ent_2100000031` in map01_lv001 is a
+campfire's LevelData id, with the arrival point 4.3 m from the campfire.
+`GameplayConfig/LevelMapMark.json` holds the map marks that point at these ids; it isn't read.
+
 ## open
 
 - terrain: the distance where the close-up layers give way to the baked pages and how they fade; how
   the cliff projection (`C` page) and the cone-map parallax (`LAYER_C`) shade; what `maxHeightError`
   is for
-- the meaning of the `renderFlags` bits other than shadow-only, and of a negative `minSquared`
-  (never culled by size, or culled below `√−minSquared`)
+- the meaning of a negative `minSquared` (never culled by size, or culled below `√−minSquared`)
 - the size the LODGroup thresholds are authored against (the object's bounds, a LODGroup size, …)
 - what an HLOD ring's distance is measured to, and the HLOD generated-material channel layout
 - where a scene's HLOD grid (tier-0 cell and origin) is defined, and why it leaves the terrain
   quadtree in some scenes
 - whether HLOD clusters stand in for Global chunk content: indie_dg005 has every static renderer in
-  its Global chunk (14k, 9k of them inside an HLOD0 cluster's bounds) and none in cell files, so
-  there the clusters can only stand in for Global content
-- where an entity's streaming layer is stored, and what the HLOD-unload volumes
-  ([stream areas](#stream-areas)) unload, and when
-- what effect LOD level 2 turns off inside a prefab, and the dynamic rows' minimum distance, which
-  nothing reads at runtime
+  its Global chunk (most of them inside an HLOD0 cluster's bounds) and none in cell files, so there
+  the clusters can only stand in for Global content
+- where an entity's streaming layer is stored, and what an HLOD-unload volume's mask selects
+  ([stream areas](#stream-areas))
+- what effect LOD level 2 turns off inside a prefab, and the dynamic rows' `Dis` and `MinDis`, which
+  nothing reads at runtime; a third kind of LOD proxy that does cull by the visibility record isn't
+  followed
 - `farmod` far-field assets: ordinary entities (all in the Global chunk on map01 and base01_lv001,
   mixed Global and cell files on map02), not a layer of their own; that they're always loaded is
   unconfirmed
 - what dungeon levels that reuse an open-world scene add of their own: a census of map02's chunk
   files found no tags but 0, 31 and lv001–lv010's, so it can only come from LevelData and
   DynamicStreaming
-- where teleport points are stored: players arrive by teleport, not at `playerInitPos`
+- [teleport points](#teleport-points): the `LevelScript` table (the largest) doesn't decode with the
+  layout the other four share, and which mark of `LevelMapMark.json` uses which destination isn't
+  read

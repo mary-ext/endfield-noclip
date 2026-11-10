@@ -11,8 +11,8 @@ surfaces are resident in the game, so the whole water table is in the core archi
 is always available. each frame the viewer selects the surfaces whose visibility group shows (its
 scene states active, whichever level owns it) and whose geometry entry is ready. each wants its
 geometry blob at a priority falling with horizontal distance from the camera, in view or not, so
-like the game's the shown surfaces stay resident (map02's 1310 share 392 meshes of 0.6 MiB packed);
-resident ones inside the frustum are drawn, up to 4096.
+like the game's the shown surfaces stay resident (map02's thousand or so share a few hundred meshes,
+under 1 MiB packed); resident ones inside the frustum are drawn, up to 4096.
 
 ## surface meshes
 
@@ -101,9 +101,12 @@ it differs from the game in that:
   follow it without lag
 - nothing is triggered: the switches, clocks and quests that move volumes are listed by script id in
   the level labels, not run
-- `ground_distance`, `isPrototype`, the volume's own flow speed and direction, and amount-based
-  transfers aren't read
-- a volume coinciding with a placed surface (five map02 lv006 pools, lv010's 37900010002, several
+- [pumped pools](../game-data/water.md#depletable-pools) offer only empty, authored and full, not
+  the fills between that a pump can stop at; a pool a quest needs drained defaults to empty, the
+  others to their authored fill
+- `ground_distance`, the volume's own flow speed and direction, and transfers between volumes
+  (`WaterVolumeTransfer(All)`, the transferer and switch interactives) aren't read
+- a volume coinciding with a placed surface (some map02 lv006 pools, lv010's 37900010002, several
   lv002/lv003 ones) draws twice; whether the game draws both isn't checked
 - a volume's surface leaves no wetness on the shore
 
@@ -143,5 +146,6 @@ materials with keywords beyond `_BLEND_BASECOLOR`, `_USE_DISTURB`, `_USE_MASK`, 
 [unsupported](materials.md#unsupported-materials). it differs from the game in that the
 per-placement `HGWaterDecalRenderer` values (and so the displacement pass) aren't packed (every
 map02 prefab has the neutral ones), the static boxes of InitChunkData component 31 aren't packed
-(they're counted in `debug/skipped-entities.json`), the soft blend's device depths use the viewer's
-near plane, and the distortion texture's mip bias is left out (its material value is unidentified).
+(they're counted in `debug/skipped-entities.json`; some of them enclose Jingyu's pool falls, which
+show white in game and clear in the viewer), the soft blend's device depths use the viewer's near
+plane, and the distortion texture's mip bias is left out (its material value is unidentified).

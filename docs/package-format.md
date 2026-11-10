@@ -8,11 +8,11 @@ see [extraction](extraction.md#pack) for packing, [loading](viewer/loading.md) f
 the types are the contract: [package-format](../packages/package-format/src/) has one module per
 concern, each holding that concern's types and binary codec (`manifest`, `tiles`, `tree`,
 `instances` for chains and instance blocks, `geometry`, `geometry-table`, `textures`,
-`texture-table`, `materials`, `terrain`, `environment`, `water`, `lights`, `particles`,
-`irradiance`, `states`, `conditions`, `stream-areas`, `story`, `blobs`, `blob-table`, plus shared
-helpers). the packer and the viewer share them, and their JSDoc wins where this page is less
-precise. `package-format` stays free of node APIs and of other workspace packages so both sides can
-import it.
+`texture-table`, `materials`, `surfaces`, `terrain`, `environment`, `environment-volumes`, `water`,
+`lights`, `particles`, `curves`, `irradiance`, `states`, `conditions`, `camera`, `stream-areas`,
+`story`, `blobs`, `blob-table`, plus shared helpers). the packer and the viewer share them, and
+their JSDoc wins where this page is less precise. `package-format` stays free of node APIs and of
+other workspace packages so both sides can import it.
 
 | side   | code                                                                                                                                               |
 | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,7 +50,7 @@ import it.
     blobs/<hash>.mesh                 one mesh
     blobs/<tail>.<i>/<hash>.tex       mip levels of one texture, piece i under its tail's hash
   irradiance/<x>_<z>-<id>.czar        irradiance cells over one 512 m square
-    blobs/<cell key>/<hash>.iv
+    blobs/<cell key>/<hash>.iv        (a room's own bake: blobs/<hash>.iv)
   debug/                              provenance; never loaded by the viewer
 ```
 
@@ -67,7 +67,8 @@ bytes do. `manifest.archives` lists every archive with its `role` (`core`, `shar
 terrain pages and instance blocks share its key (its level, then a Morton code of x and z, so nearby
 tiles sit close), a texture's pieces sort coarse to fine under its tail's hash, and irradiance cells
 by cell key. keys come from content, never from table ids, so a path changes only with what it
-holds. meshes, the core's blobs and terrain layers are read alone and have none.
+holds. meshes, the core's instance blocks, rooms' irradiance bakes and terrain layers are read alone
+and have none.
 
 **parts**: a group whose blobs total more than 1 GiB is split into a power-of-two number of parts by
 the top bits of a hash of each blob's locality set (the key before its first `.`; its own hash
@@ -80,8 +81,9 @@ changes when a group doubles.
 size) the package it replaces already has, instead of streaming it from the blob store again; an
 archive is never written once made, so the link shares its bytes on any file system. where linking
 fails it falls back to a copy-on-write clone (APFS, Btrfs, reflinked XFS), else a plain copy. a warm
-map02 re-pack writes the core and nothing else (20 s → 5 s for the write phase with clones). it also
-means a reader caching archives by name can't pair a stale archive with a newer core.
+map02 re-pack writes the core and nothing else (a write phase of a few seconds with clones, several
+times that streaming every archive). it also means a reader caching archives by name can't pair a
+stale archive with a newer core.
 
 **replacing**: the packer replaces a previous package in its output directory but refuses a
 directory holding anything else, so a mistyped `-o` can't wipe unrelated files. it writes the new
@@ -145,7 +147,7 @@ equal tree keys.
 | `leafLevel`     | 64 m: terrain leaves, detail leaves, HLOD tier 0                   |
 | `cellLevel`     | 128 m: the game's streaming and level-ownership cells, HLOD tier 1 |
 | `hlodLevels[2]` | 256 m: HLOD tier 2                                                 |
-| `shardLevel`    | `leafLevel − 3` (512 m): groups shard archives                     |
+| `shardLevel`    | `leafLevel − 3`, at least 0 (512 m): groups shard archives         |
 
 `hlodLevels[t]` is the level whose tiles are tier `t`'s cells, `leafLevel − t` where HLOD0 cells are
 64 m and one level coarser where they're 128 m (indie_dg005). HLOD cluster names
@@ -175,8 +177,8 @@ refinement, or, with a `reach`, while the camera is inside that world x/z rectan
 blocks the reach where the game would load their [load grid](game-data/world.md#dynamic-load-grids)
 (the 3×3 cells around it, running on to infinity at the game's clamped frame edges), so the viewer
 needs no grid layout. global content (the game's Global chunk scenery) is drawn whenever its group
-shows and never replaced. `geometricError` (`edge / 16`, 64 m leaf → 4 m) now only orders requests.
-which entities become HLOD, detail, global and conditional content is in
+shows and never replaced. `geometricError` (`edge / 16`, 64 m leaf → 4 m) is a placeholder that only
+orders requests. which entities become HLOD, detail, global and conditional content is in
 [extraction.md](extraction.md#how-the-packer-files-instances).
 
 **content refs** (`ContentRef`, `ContentKind`):
@@ -237,8 +239,8 @@ extractor reads it is in [packing environments](extraction/environments.md)):
 - `schema`: per section field, whether it lerps, lerps and rounds, or switches at ½
   ([blend schema](extraction/environments.md#blend-schema)); fields it doesn't list switch.
 - `sections`: per section, every distinct value a phase holds. phases repeat most of each other's
-  sections (map02's 393 phases hold 388 distinct section sets, and 101 distinct lens flares made up
-  5.4 MB of JSON), so they're stored once.
+  sections (map02's lens flares alone made up about 5 MB of JSON across its few hundred phases), so
+  they're stored once.
 - `phases`: every phase a volume applies, uncomposed: its name, the sections it marks active, and
   per section it holds, an index into that section's pool. deduplicated by name.
   `resolveEnvironment` looks the sections up, sharing their objects between phases.
@@ -267,9 +269,9 @@ turns it on. a viewer therefore decides whether a volume applies from its group 
 
 all little-endian, every section 4-byte aligned. the tables share a 16-byte header:
 `u32 magic, u16 version, u16 0, u32 count, u32 count-or-0`. the geometry and texture tables are
-stored as one zstd frame each (`.bin.zst`), the layout below once inflated: on map02 that's 0.63 and
-0.10 MB in place of 1.21 and 0.60 MB raw, and smaller than the JSON tables they replaced; the others
-are stored as they are.
+stored as one zstd frame each (`.bin.zst`), the layout below once inflated: on map02 that about
+halves the geometry table and cuts the texture table to a sixth, from about 2 MB together; the
+others are stored as they are.
 
 | member                      | magic  | layout                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | --------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -286,40 +288,45 @@ included.
 
 **chains** are LOD-chain templates deduplicated across the scene by their ordered draws, thresholds
 compared by f32 bit pattern ([chains.ts](../packages/extractor/src/pack/instances/chains.ts)), with
-ids that carry over between packs ([chain ids](extraction.md#phases)); a chain without draws is a
-free id. a draw shows while `minSquared < s² ≤ maxSquared`, `s` being Unity's LODGroup
-screen-relative height; a negative `minSquared` never culls by size. the viewer measures `s` as
-twice the largest half-extent of the instance's world bounds over its distance, relative to the
-screen height; which size the game's thresholds were authored against is unverified, and rotated
-objects' bounds overstate it. roles: `Lit`, `ShadowOnly` (shadow proxies, from the game's flag bit
-10 or a prefab renderer's shadow casting mode) and `Unsupported` (a [stand-in](#stand-ins) for
-content the viewer can't draw, drawn with its unsupported look); an HLOD cluster's draws are `Lit`,
-the tree ref holding them (`Hlod`) says what they are. a draw's flags (`ChainDrawFlags`) say which
-shadow maps it casts into when its material casts: `CastsCascades` for the sharp cascades,
-`CastsStatic` for the cached far map. the packer reads them from a static draw's renderer flag word,
-as the [game](game-data/lighting.md) does, and sets both on prefab, decal and stand-in draws, which
-have none. `material` is `0xffffffff` for a stand-in whose material isn't known, and `particles`
-indexes the [particles table](#particles) when the draw is a particle system's mesh, else it's
-`0xffffffff`; both decode to `null`. `sortingLayer` and `sortingOrder` are a prefab renderer's
-`m_SortingLayer` and `m_SortingOrder`, which the transparent pass sorts by before distance; static
-draws store 0. prefab renderers under an enabled `LODGroup` get one draw per span of its
-`screenRelativeHeight` thresholds they show at, measured on the row's own bounds rather than the
-LODGroup's size. the chain flags say whether its instances are billboards (`BillboardFacing`,
-`BillboardUpright`): their transform's rotation is then relative to the camera's, and their bounds
-hold every orientation ([billboards](game-data/assets.md#billboards)). `CameraDistance` makes the
-chain's thresholds squared camera distances, in m², instead of screen-relative sizes, measured from
-the chain's distance origin: a point in the instance's frame, which the instance's transform takes
-to the world. the packer sets it on prefab renderers an
-[effect LOD table](game-data/effects.md#effect-lod-tables) switches by distance, with one draw per
-span of distances they show at, and puts the origin on the effect's own GameObject as the game
-measures it (to the millimetre, so placements of a prefab share chains); under a billboard the
-stored rotation turns the offset, not the one the camera gives. it switches without the game's fade.
-the nearest billboard up the hierarchy turns a mesh renderer
-([billboard.ts](../packages/extractor/src/game/prefabs/billboard.ts)): mode 0 flags the chain
-`BillboardFacing`, the others `BillboardUpright` (about the world's vertical, which is their axis on
-upright placements). the packer stores the offset times the renderer's rotation relative to the
-billboard, at the renderer's own position, so a renderer away from the billboard's origin turns in
-place rather than swinging around it.
+ids that carry over between packs ([chain ids](extraction.md#code-layout)); a chain without draws is
+a free id.
+
+- **thresholds**: a draw shows while `minSquared < s² ≤ maxSquared`, `s` being Unity's LODGroup
+  screen-relative height; a negative `minSquared` never culls by size. the viewer measures `s` as
+  twice the largest half-extent of the instance's world bounds over its distance, relative to the
+  screen height; which size the game's thresholds were authored against is unverified, and rotated
+  objects' bounds overstate it. prefab renderers under an enabled `LODGroup` get one draw per span
+  of its `screenRelativeHeight` thresholds they show at, measured on the row's own bounds rather
+  than the LODGroup's size.
+- **roles**: `Lit`, `ShadowOnly` (shadow proxies, from the game's flag bit 10 or a prefab renderer's
+  shadow casting mode) and `Unsupported` (a [stand-in](#stand-ins) for content the viewer can't
+  draw, drawn with its unsupported look). an HLOD cluster's draws are `Lit`; the tree ref holding
+  them (`Hlod`) says what they are.
+- **draw flags** (`ChainDrawFlags`) say which shadow maps a draw casts into when its material casts:
+  `CastsCascades` for the sharp cascades, `CastsStatic` for the cached far map. the packer reads
+  them from a static draw's renderer flag word, as the [game](game-data/lighting.md) does, and sets
+  both on prefab, decal and stand-in draws, which have none.
+- **`material`** is `0xffffffff` for a stand-in whose material isn't known, and **`particles`**
+  indexes the [particles table](#particles) when the draw is a particle system's mesh, else it's
+  `0xffffffff`; both decode to `null`.
+- **`sortingLayer`** and **`sortingOrder`** are a prefab renderer's `m_SortingLayer` and
+  `m_SortingOrder`, which the transparent pass sorts by before distance; static draws store 0.
+- **billboards**: the chain flags `BillboardFacing` and `BillboardUpright` say its instances'
+  rotation is relative to the camera's, and their bounds hold every orientation
+  ([billboards](game-data/assets.md#billboards)). the nearest billboard up the hierarchy turns a
+  mesh renderer ([billboard.ts](../packages/extractor/src/game/prefabs/billboard.ts)): mode 0 flags
+  the chain `BillboardFacing`, the others `BillboardUpright` (about the world's vertical, which is
+  their axis on upright placements). the packer stores the offset times the renderer's rotation
+  relative to the billboard, at the renderer's own position, so a renderer away from the billboard's
+  origin turns in place rather than swinging around it.
+- **`CameraDistance`** makes the chain's thresholds squared camera distances, in m², instead of
+  screen-relative sizes, measured from the chain's distance origin: a point in the instance's frame,
+  which the instance's transform takes to the world. the packer sets it on prefab renderers an
+  [effect LOD table](game-data/effects.md#effect-lod-tables) switches by distance, with one draw per
+  span of distances they show at, and puts the origin on the effect's own GameObject as the game
+  measures it (to the millimetre, so placements of a prefab share chains); under a billboard the
+  stored rotation turns the offset, not the one the camera gives. it switches without the game's
+  fade.
 
 ### asset tables
 
@@ -331,8 +338,8 @@ uses in place. an entry's id is its index, and its status (`EntryStatus`) is 0 r
 entry's other fields are 0, and draws referencing it are skipped. the decoders check every record
 once and build no per-entry objects: `GeometryTable.blob` reads a ready geometry's blob, the one
 field the viewer needs per frame, and `TextureTable.entry` decodes a texture into a `ReadyTexture`
-on first use. map02's 27,464 geometries and 15,321 textures decode in about 0.5 and 1.2 ms, where
-inflating and parsing them as JSON took about 17 and 13 ms (node, first run).
+on first use. map02's tens of thousands of geometries and textures decode in about a millisecond per
+table, where inflating and parsing the same tables as JSON takes over ten (node, first run).
 
 - **geometries**: the `.mesh` blob, local bounds, vertex, index and submesh counts, the attribute
   bitmask (bit `a` set for `VertexAttribute` `a`), the UV set tangents were generated from (`0xff`
@@ -403,11 +410,12 @@ non-uniform scale into them.
 8-byte header: `u32 magic, u16 version, u16 side`, then the `side²` raw u16 samples (rows along +Z)
 as two byte planes (all low bytes, then all high bytes) of zigzag deltas. interior samples are
 predicted by `left + above − aboveLeft`, the first row by its left neighbour, the first column by
-the sample above. arithmetic wraps at 16 bits so the hole bit survives. the gradient predictor beats
-left-only prediction by about 10 % after zstd. the packer ships every level of the game's pyramid,
-not only leaves, so the viewer can run CDLOD from native data. a node's bounds span its page's
-lowest and highest non-hole samples. the game's per-node `maxHeightError` isn't packed: it isn't an
-error bound ([terrain](game-data/world.md#terrain)). a scene with terrain tiles but no
+the sample above, the first sample by 0. arithmetic wraps at 16 bits so the hole bit survives. the
+gradient predictor beats left-only prediction by about 10 % after zstd, and raw samples by about 40
+%: a 65² leaf page of map02 comes to about 2 KB at zstd 19. the packer ships every level of the
+game's pyramid, not only leaves, so the viewer can run CDLOD from native data. a node's bounds span
+its page's lowest and highest non-hole samples. the game's per-node `maxHeightError` isn't packed:
+it isn't an error bound ([terrain](game-data/world.md#terrain)). a scene with terrain tiles but no
 `HGTerrainSurfacesData` fails the pack rather than guessing a placement. `terrainHeight` and
 `isTerrainHole` decode samples: `y = baseHeight + (h & 0x7fff) · heightScale / 32768`.
 
@@ -426,8 +434,8 @@ tile pages as stored, one level each; [world.md](game-data/world.md#terrain) giv
 `TERRAIN_SURFACE_TEXELS` (132) is the side, and the outer `TERRAIN_SURFACE_BORDER` (2) texels of
 each edge lie outside the tile, so world `x` maps to
 `u = border / side + (x − tile.minX) / tile.size · (side − 2 · border) / side`. a tile missing
-either page has no surface ref and is listed in `debug/terrain.json`. on map02 the 3,393 pages are
-118 MB raw and 64 MB stored.
+either page has no surface ref and is listed in `debug/terrain.json`. map02's few thousand pages are
+about 120 MB raw and half that stored.
 
 ### splat page (`.tsl`, `EFSL`) and layer textures (`.tly`)
 
@@ -436,16 +444,17 @@ a leaf's close-up blend inputs, the game's splat control, tint and index pages
 `u32 magic, u16 version, u16 side, u16 cells, u16 0`, then the `S` page's RGBA8 texels (`side²`),
 the `T` page's BC3 sRGB blocks, and `cells²` cells of 4 layer ordinals cut from the scene's index
 map, row-major from the leaf's minimum corner. the images share the surface page's layout. a leaf
-missing either page has no splat ref and is listed in `debug/terrain.json`. map02's 2,492 are 218 MB
+missing either page has no splat ref and is listed in `debug/terrain.json`. map02's are about 220 MB
 raw and 40 MB stored.
 
-`terrain.splat` (`TerrainSplatInfo`) holds the cell size, the layer table (repeats per metre,
-offsets, mean colour, scales and remaps, named rather than the game's packed vectors), and the layer
-textures: one `TerrainLayer` blob per texture and role, raw BC7 levels from `textureSize` down,
-largest first, levels under 4² padded to one block. the packer drops the game's top level (1024²),
-since 512² already gives 57–230 texels per metre; map02's 38 pairs are 22 MB in
-`assets/terrain-layers-<id>.czar`. `splat` is `null` when the scene's layer table, index map or
-textures are missing or disagree (the pack log and `debug/terrain.json`'s `layerProblem` say which).
+`terrain.splat` (`TerrainSplatInfo`) holds the layer table (repeats per metre, offsets, mean colour,
+scales and remaps, named rather than the game's packed vectors), `textureSize` and `textureLevels`,
+and the layer textures: one `TerrainLayer` blob per texture and role, raw BC7 levels from
+`textureSize` down, largest first, levels under 4² padded to one block. the packer drops the game's
+top level (1024²), since 512² already gives upwards of 50 texels per metre; map02's few dozen pairs
+are about 20 MB in `assets/terrain-layers-<id>.czar`. `splat` is `null` when the scene's layer
+table, index map or textures are missing or disagree (the pack log and `debug/terrain.json`'s
+`layerProblem` say which).
 
 ### geometry blob (`.mesh`, `EFGM`)
 
@@ -470,7 +479,7 @@ into the next (the last into the first), and each vertex moves to
 `Σ weight · matrix · bindPosition`. the box `offset + [0, 1]³ · scale` holds every frame's
 positions, so a viewer can quantize them as it does still positions. the table's `bounds` are that
 box, and `animationFrames` says the blob has an animation. matrices are stored as they are: the
-balloon's tube, at 420 frames of 46 bones, takes 0.9 MB per LOD before zstd.
+balloon's tube, a few hundred frames of a few dozen bones, takes about 1 MB per LOD before zstd.
 
 each stream is its own vertex buffer. attributes use Unity's channel numbering (`VertexAttribute`):
 
@@ -489,9 +498,9 @@ for shaders that don't flag theirs, one whose name contains `normal` or `bump`; 
 heuristic. tangents are computed in the game's left-handed frame, so
 `bitangent = cross(n, t) · sign` holds there. the mesh shader multiplies the bitangent sign by the
 object-to-world determinant's sign to handle mirrored instances. vertices whose corners disagree on
-the tangent frame (mirrored UV seams) are split. against `mikktspace` 1.1.1 on 200 meshes (864k
-corners), meshoptimizer's tangents agree to a mean dot product of 0.99978, 99.975 % within 2.5°,
-with matching bitangent signs in 99.998 %.
+the tangent frame (mirrored UV seams) are split. against `mikktspace` 1.1.1 on a sample of a couple
+of hundred meshes, meshoptimizer's tangents agree on all but a few corners in ten thousand (within
+2.5°, with matching bitangent signs).
 
 **swaying geometry**: a mesh drawn with a swaying material (a Lit surface's `sway`,
 [swaying cloth](game-data/materials.md#swaying-cloth)) carries its sway weights in position W, and
@@ -528,11 +537,11 @@ state ([material and shader](game-data/assets.md#material-and-shader), decoded a
 ([surfaces.ts](../packages/package-format/src/surfaces.ts),
 [game/materials/material-describe.ts](../packages/extractor/src/game/materials/material-describe.ts)).
 a surface is one model with its inputs resolved (the Lit model, a matte painting, erosion rock, a
-dithered effect, a texture stack, a lit decal, a water sheet, refraction, mist, a light beam, a
-portal's stencil mask), with Unity property names, keyword rules, colour spaces and the shaders'
-formulas already applied; `undrawn` for materials the game draws nothing visible with; or
-`unsupported` with the reason the viewer can't draw it. the viewer packs a surface into its draw
-parameters without reading Unity properties.
+dithered effect, a texture stack, a lit decal, a water sheet, water foam, refraction, six-way smoke,
+a mist card or volume, a light beam, a portal's stencil mask), with Unity property names, keyword
+rules, colour spaces and the shaders' formulas already applied; `undrawn` for materials the game
+draws nothing visible with; or `unsupported` with the reason the viewer can't draw it. the viewer
+packs a surface into its draw parameters without reading Unity properties.
 
 a texture is a `TextureSlot` (a bound texture-table id with its UV set and `_ST`, which the
 extractor has already replaced where a shader tiles by a property of its own), an `EffectTexture`
@@ -675,10 +684,10 @@ and its bounds cover everywhere a particle reaches, so the row culls like any ot
 system's particles outlive their lifetime until replaced, their age held at its end (while they move
 on) or looping part of it; a texture sheet names the flipbook tile each particle's mesh UVs are
 remapped into. a system's `motion` is `free` (start speed, gravity, the velocity module and the
-Limit Velocity module's drag or speed limit) or a `spline` its particles follow at its speed
+Limit Velocity module's drag, speed limit or both) or a `spline` its particles follow at its speed
 instead.
 
-a [spline mover](game-data/effects.md#spline-movers) packs as such a system
+a [spline mover](game-data/particles.md#spline-movers) packs as such a system
 ([spline-movers.ts](../packages/extractor/src/game/effects/spline-movers.ts)): one entry per
 renderer of each LOD group's first LOD, the mesh index naming the group, all at the mover's
 GameObject. its start lifetime becomes seconds: the clamped fraction times the spline's length over
@@ -686,7 +695,7 @@ the speed. a mover with noise, rotation over lifetime, an alpha fade, another em
 lifetime or speed curve, or more than four groups draws its first group once at its origin as a
 stand-in.
 
-a `ParticleSystemRenderer` ([particle systems](game-data/effects.md#particle-systems)) whose
+a `ParticleSystemRenderer` ([particle systems](game-data/particles.md#particle-systems)) whose
 `ParticleSystem` plays on awake is packed one of three ways. mesh-mode renderers draw their meshes;
 the others (billboard, stretched, horizontal, vertical) draw the render pipeline's unit quad
 (`Packages/com.hg.render-pipelines/Runtime/RenderPipelineResources/Mesh/Quad.fbx`), which the packer
@@ -698,7 +707,7 @@ particle and keeps it past its lifetime (`ringBufferMode` not 0), without a text
 particle takes the renderer's `m_Mesh` and materials at the shape's centre, oriented by world, local
 or (for a box shape, which emits along the emitter's forward axis) velocity alignment, then its
 start rotation (Euler, Z then X then Y) and start size, offset by its
-[pivot](game-data/effects.md#particle-systems) and scaled and placed as its scaling mode sizes and
+[pivot](game-data/particles.md#particle-systems) and scaled and placed as its scaling mode sizes and
 moves played particles (below). random ranges between two constants take their midpoint, since the
 game's draws can't be reproduced; curves and camera-facing alignments disqualify a system.
 
@@ -717,7 +726,7 @@ sizes them unless the mode is Shape. the entry keeps:
   particle cap and simulation speed, and the emission bound: the most one longest lifetime of
   emission holds, the top rate times the lifetime plus each loop's top burst counts times the loops
   that lifetime spans. a system that stores a cap of 0
-  ([particle systems](game-data/effects.md#particle-systems)) gets the bound as its cap
+  ([particle systems](game-data/particles.md#particle-systems)) gets the bound as its cap
 - the start lifetime, speed, size and rotation, gravity modifier and emission rate as
   `MinMaxCurve`s, the bursts, and the start colour and colour over lifetime as `MinMaxGradient`s.
   their curves and gradients are the `AnimationCurve` and `Gradient` of
@@ -727,29 +736,29 @@ sizes them unless the mode is Shape. the entry keeps:
   kind: every kind keeps its placement and random-direction and -position amounts, and only the
   fields it reads of radius and thickness (round kinds), arc (cones, circle, donut), angle (cones),
   length (cone volume) and donut radius. a box is the unit cube its scale stretches, so its bounds
-  take the cube's corners. a [mesh shape](game-data/effects.md#particle-systems) carries its mesh:
+  take the cube's corners. a [mesh shape](game-data/particles.md#particle-systems) carries its mesh:
   positions (to 0.1 mm), normals, the vertex colours as bytes when it uses them, and the primitives
   it emits from (three or two corners each), with its placement, vertex spawn mode, edge spread and
   normal offset. a shape texture, edge placement stepping by Loop or PingPong, and meshes the engine
   refuses or that mix lines and triangles stand in
 - the velocity module (linear, orbital about an offset, radial and speed modifier, as curves too,
-  though a speed modifier curve not alongside drag), and size and rotation over lifetime (curves
-  too)
+  though a speed modifier curve not alongside drag without a speed limit), and size and rotation
+  over lifetime (curves too)
 - the Limit Velocity module as the free motion's `clamp`: its drag when its `dampen` is 0 (the
   amount and whether it scales with the particle's size and its speed squared), or its speed limit
-  when the dampen is above 0 (the `magnitude` curve and the dampen), when it limits the whole speed
-  rather than each axis and the system has no drag. the viewer steps such particles at 30 Hz,
-  applying the limit as [the game does](game-data/effects.md#particle-systems)
+  when the dampen is above 0 (the `magnitude` curve, the dampen and the module's drag, if any), when
+  it limits the whole speed rather than each axis. the viewer steps limited particles at 30 Hz,
+  limiting then dragging as [the game does](game-data/particles.md#particle-systems)
 - the External Forces module as the free motion's `forces`: its multiplier and the sphere fields it
   feels within the same prefab (by list, by layer or both; wind zones and fields elsewhere in the
   scene aren't followed), each with its ranges, gravity focus, swirl tilt, curves and drag flags and
   `fromEmitter`, the emitter's matrix as seen from the field's (the inverse of the field's
   prefab-space matrix times the emitter's). a field of another shape or with a vector field makes
-  the system a stand-in, as do force fields alongside drag; a multiplier scalar of 0 packs no
-  forces, as the engine skips the module. the viewer steps such particles at 30 Hz too
+  the system a stand-in; a multiplier scalar of 0 packs no forces, as the engine skips the module.
+  the viewer steps such particles at 30 Hz too
 - the render alignment (Facing is kept as View; Velocity too) and pivot, in multiples of the
   particle's size: a mesh particle's pivot is first multiplied by the mesh's size
-  ([pivot](game-data/effects.md#particle-systems))
+  ([pivot](game-data/particles.md#particle-systems))
 - the ring buffer mode and `ringBufferLoopRange`
 - the texture sheet: `UVModule` in grid mode, up to 64×64 tiles, the whole sheet or one row (fixed,
   random or by mesh; `rows`, a union on its kind), timed over the lifetime by `frameOverTime` and
@@ -777,14 +786,14 @@ content the game draws but the viewer can't is packed as `Unsupported` draws, so
 where something is missing. each is listed with why in the debug index's `stand-ins.json`
 ([extraction](extraction.md)):
 
-| content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | drawn as                                                                                                                             |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| particle systems the viewer can't play ([above](#particles))                                                                                                                                                                                                                                                                                                                                                                                                                              | the system's mesh or a camera-facing quad at the emitter, scaled as its particles ([scaling](game-data/effects.md#particle-systems)) |
-| skinned meshes whose skeleton can't be posed                                                                                                                                                                                                                                                                                                                                                                                                                                              | the mesh unposed, at its renderer                                                                                                    |
-| skinned meshes with nonzero blend shapes                                                                                                                                                                                                                                                                                                                                                                                                                                                  | the mesh posed without them                                                                                                          |
-| prefabs that can't be read (see `unsupported-prefabs.json`)                                                                                                                                                                                                                                                                                                                                                                                                                               | a 1 m cube on the placement's pivot, scaled with it                                                                                  |
-| interactives whose template is missing or unreadable, or whose model id is unknown                                                                                                                                                                                                                                                                                                                                                                                                        | a 1 m cube on the placement's pivot, scaled with it                                                                                  |
-| prefab renderers and particle systems under GameObjects switched off as saved (a script or view state switches them on; not those a placement's pose switches off, whose states are placed on their own, nor [one-shot effects](game-data/effects.md#one-shot-effects), GameObjects the prefab's own Animator never shows or those an [effect LOD table](game-data/effects.md#effect-lod-tables) lists, its own GameObject included, outside a view state's effects, which aren't packed) | the renderer as it would draw, or the particle stand-in above                                                                        |
+| content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | drawn as                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| particle systems the viewer can't play ([above](#particles))                                                                                                                                                                                                                                                                                                                                                                                                                              | the system's mesh or a camera-facing quad at the emitter, scaled as its particles ([scaling](game-data/particles.md#particle-systems)) |
+| skinned meshes whose skeleton can't be posed                                                                                                                                                                                                                                                                                                                                                                                                                                              | the mesh unposed, at its renderer                                                                                                      |
+| skinned meshes with nonzero blend shapes                                                                                                                                                                                                                                                                                                                                                                                                                                                  | the mesh posed without them                                                                                                            |
+| prefabs that can't be read (see `unsupported-prefabs.json`)                                                                                                                                                                                                                                                                                                                                                                                                                               | a 1 m cube on the placement's pivot, scaled with it                                                                                    |
+| interactives whose template is missing or unreadable, or whose model id is unknown                                                                                                                                                                                                                                                                                                                                                                                                        | a 1 m cube on the placement's pivot, scaled with it                                                                                    |
+| prefab renderers and particle systems under GameObjects switched off as saved (a script or view state switches them on; not those a placement's pose switches off, whose states are placed on their own, nor [one-shot effects](game-data/effects.md#one-shot-effects), GameObjects the prefab's own Animator never shows or those an [effect LOD table](game-data/effects.md#effect-lod-tables) lists, its own GameObject included, outside a view state's effects, which aren't packed) | the renderer as it would draw, or the particle stand-in above                                                                          |
 
 the material still names what the game draws where it's known, and is `0xffffffff` otherwise. cubes
 are a synthetic geometry (`synthetic:cube` in the debug index), a unit cube from −0.5 to 0.5 the
@@ -797,9 +806,9 @@ runtime), sRGB taken from the texture itself rather than from the material. each
 pieces ([textures.ts](../packages/extractor/src/pack/convert/textures.ts)):
 
 - the **tail**: the longest run of smallest levels totalling at most `TEXTURE_TAIL_BYTES` (64 KiB),
-  as one blob. for BC7 that's up to 128², and the next level (256²) is itself 64 KiB, so no streamed
-  piece is much smaller than this (per-request latency dominates below it) and one small read makes
-  any texture drawable.
+  as one blob. for BC7 that's up to 128² (21.8 KB), and the next level (256²) is itself 64 KiB, so
+  no streamed piece is much smaller than this (per-request latency dominates below it) and one small
+  read makes any texture drawable.
 - **each larger level** as its own blob.
 
 inside a piece, levels run largest first, each holding every layer, face and depth slice in
@@ -871,7 +880,7 @@ left out; a set whose alternatives all go never holds.
   files get one alternative per file holding them: the file's `sceneState:<index>` requirement, its
   `area:<id>` requirement, or both. environment volumes come from default-area files only, so they
   have state requirements alone.
-- **interning**: the packer canonicalises and deduplicates sets (`Collector.condition`), so
+- **interning**: the packer canonicalises and deduplicates sets (`ControlRegistry.condition`), so
   equivalent expressions share one index.
 
 ### controls
@@ -998,11 +1007,12 @@ provenance lives there rather than in the manifest, which only identifies the bu
 
 - **3D Tiles / glTF tiles**: each glb re-embeds shared meshes, so tiles can't share them without
   external buffers, and HGRP materials don't map onto glTF loaders. the package keeps the concepts:
-  implicit quadtree, screen-space-error refinement, REPLACE.
+  implicit quadtree and REPLACE refinement.
 - **Draco**: slightly smaller positions than meshopt, but several times slower to decode, a ~300 KB
   wasm decoder, reordered vertices (breaking cache/fetch optimization and index-aligned side data)
-  and nothing for instance tables. for scale, Jingyu's 645 LOD0 meshes are 83.2 MB as f32, 41.6 MB
-  quantized, 19.1 MB after meshopt and 11.1 MB after zstd 19 (brotli 10.7, gzip 12.0).
+  and nothing for instance tables. for scale, Jingyu's several hundred LOD0 meshes are about 83 MB
+  as f32, 42 MB quantized, 19 MB after meshopt and 11 MB after zstd 19 (brotli and gzip land within
+  1 MB of that).
 - **cluster hierarchies (Nanite-style)**: the scenes are instancing-dominated (map02: ~470k
   instances of ~21k meshes, ~5k unique at LOD0) and ship discrete LODs and HLODs; WebGPU lacks mesh
   shaders and 64-bit atomics.
@@ -1014,20 +1024,4 @@ provenance lives there rather than in the manifest, which only identifies the bu
 - **texture arrays or virtual texturing at pack time**: one entry per texture; the viewer builds
   arrays at runtime where it wants them.
 
-## open
-
-- **geometricError** is a placeholder the viewer uses only for request priority; the HLOD rings
-  replaced it for refinement.
-- **instance compression**: meshopt filters or quantized rows could roughly halve instance blobs.
-- **detail placement by centre**: a very large object at a leaf disappears while that leaf shows its
-  HLOD, unless the HLOD covers it, as the game assumes.
-- **tiny shards**: off-square edges produce sub-KB shards that could merge into a neighbour.
-- **common archive size**: global scenery pulls its assets into `common`; placing global content by
-  its own bounds would spread it.
-- **texture size**: textures at native resolution dominate package size; a cap that drops leading
-  levels would make a lite package.
-- **terrain cliffs**: the cliff-index pages and cone maps, which the game's cliff projection and
-  parallax use, aren't packed.
-- **unsupported**: line and point topologies; a looping clip's material values hold their end value;
-  the game's packed tangent bits are undecoded (generated tangents replace them); terrain decals are
-  skipped.
+what the format lacks is listed in [status.md](status.md#packaging).

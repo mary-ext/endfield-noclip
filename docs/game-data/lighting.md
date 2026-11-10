@@ -13,9 +13,9 @@ pre-exposed by a fixed exposure from the profile. emission is authored in those 
 top. the game packs most profile fields into shader constants on the CPU, in native engine code; the
 packings not yet known are listed under [open](#open).
 
-rendering features read their settings per quality tier from INI TextAssets in the game's initial
-bundle (`[Feature@tier]` sections; the highest tier at or below the current one wins). PC's tiers
-run from very low (1000) to very high (5000); these pages describe PC high (4000).
+rendering features read their settings per quality level; these pages describe PC high (4000), and
+[quality settings](quality-settings.md) has how a preset becomes settings and the other levels'
+values.
 
 ## sun
 
@@ -40,8 +40,9 @@ and mode in every shipped phase). art direction often moves these away from the 
 | `lightShaft`                                    | the [light shafts](post-processing.md#light-shafts)             |
 
 the light config's other derived fields are not always current: `forwardDirect` disagrees with
-`directPitchYaw` by 38–145° in 17 shipped phases (map01's lv000 destruction and cave phases,
-indie_race001's boss phases), and `directIntensity` disagrees with `directLux · preExposure` in 16.
+`directPitchYaw` by tens of degrees in over a dozen shipped phases (map01's lv000 destruction and
+cave phases, indie_race001's boss phases), and `directIntensity` disagrees with
+`directLux · preExposure` in about as many.
 
 the sun shades with the same lobe as the [local lights](#local-lights); foliage takes its two-sided
 model ([foliage](materials.md#foliage)).
@@ -61,17 +62,17 @@ walls such renderers stand in for cull their back faces. no Dijiang material cha
   where blockers are close in depth and leaves plain PCF where they're far.
 - unverified: a point uses the first cascade containing it, dithered with the next one over the
   outer tenth of its bounding sphere's radius, and the sharp cascades fade into the far layer before
-  their 80 m reach.
+  their 80 m reach (the settings give a `CSMFadeInnerDistance` of 60 m at PC high).
 - the cached far map is tent-filtered. it's a 16 × 16 grid of 200 m tiles, 256² each (about 0.78 m a
   texel), over the 800 m around the camera; only tiles that changed re-render, up to 8 a frame, and
   the whole cache after the camera moves far enough. it draws only static shadow casters, while the
   cascades, which re-render every frame on PC, draw only realtime ones: a renderer casts into a
-  cascade with the render flags `CastShadow` (0x80000), `RealtimeShadowCaster` (0x2000000) and the
-  cascade's bit (0x100000 << i, all four or none), and into the far map with `CastShadow` and
-  `StaticShadowCaster` (0x1000000). about 9,900 of map02's 72,397 chunk draws have `CastShadow` but
-  neither, and cast into no sun shadow map. alpha-tested foliage isn't excluded from any map. each
-  map also skips casters below a screen size in its own view (0.005, 0.01 and 0.02 for the cascades,
-  0.01 for a far-map tile); the measure is native and not decoded.
+  cascade with the [render flags](world.md#render-flags) `CastShadow`, `RealtimeShadowCaster` and
+  the cascade's bit (all four or none), and into the far map with `CastShadow` and
+  `StaticShadowCaster`. roughly one in seven of map02's chunk draws have `CastShadow` but neither,
+  and cast into no sun shadow map. alpha-tested foliage isn't excluded from any map. each map also
+  skips casters below a screen size in its own view (0.005, 0.01 and 0.02 for the cascades, 0.01 for
+  a far-map tile); the measure is native and not decoded.
 - the game's contact shadows are Bend Studio's screen-space shadows, on from PC low up. they
   multiply the sun's direct light by `mix(1, contact, contactShadowIntensity)` (0.5 in most of
   map02's open world, 0.9–1 in caves and interiors).
@@ -88,7 +89,7 @@ walls such renderers stand in for cull their back faces. no Dijiang material cha
   | `csmRampTexture`                                   | penumbra tint: the sun times `1 − (1 − ramp(v)) · (1 − v)`, black if none |
 
   without a ramp the sun is multiplied by the visibility `v`. on map02, Yinglung Pass's phases tint
-  penumbrae purple, and ten cave and interior volumes keep the sun out entirely.
+  penumbrae purple, and some cave and interior volumes keep the sun out entirely.
 
 ### cloud shadows
 
@@ -97,9 +98,8 @@ with a tiling texture skewed along the sun's light by height. an offset `d` from
 `cloudShadowEnvCenter` becomes `d + l · d.y`, where `l` is `rotationCloudShadow`'s direction divided
 by `|cos(pitch / 360)|` clamped to [0.001, 1], with the pitch (`cloudShadowPitchYaw` with mode 1,
 else `directPitchYaw`) in degrees but the cosine taken in radians. the divisor is therefore within
-1% of 1 at any pitch, so `l` is effectively the unit direction. a true `1 / sin(pitch)` would reach
-1000 at the 0° pitch Wuling City's outdoor phase ships, and its texture would stripe along the
-terrain's contours.
+1% of 1 at any pitch, so `l` is effectively the unit direction, even at the 0° pitch Wuling City's
+outdoor phase ships.
 
 - uv = the skewed offset (x, z) × `0.001 / cloudShadowCoverage` (coverage is the tile's span in
   kilometres), plus `flowDirection · flowSpeed / 1000` per second.
@@ -134,6 +134,8 @@ fog's sky term); its source is [open](#open).
   Jimenez's multi-bounce fit per channel, so bright surfaces darken less. with AO off, material
   occlusion applies alone and linearly.
 - specular ambient gets Lagarde's specular occlusion from the lower of material occlusion and GTAO.
+- baked lightmaps are probably unused: no dynamic-prefab renderer has a lightmap index and all use
+  light probes, and no VFS path names a lightmap. HLOD and terrain are unchecked.
 
 specular ambient samples `sky.reflectionMap` (a BC6H cubemap, prefiltered by roughness across its
 mips) along the roughness-bent reflection vector, weighted by a split-sum environment BRDF and a
@@ -149,7 +151,7 @@ interiors don't mirror the bright sky, and about 1 in the open.
 the game's local reflection probes are octahedral, box-projected and blended by priority over the
 profile's cubemap, binned into screen tiles and depth slices like the [local lights](#local-lights),
 and normalised the same way against their own probe. their textures ship as
-`releasedata/reflectionprobedata/reflectionprobe-*.exr` (Dijiang has at least seven); where their
+`releasedata/reflectionprobedata/reflectionprobe-*.exr` (Dijiang has several); where their
 placements are stored isn't found.
 
 ### screen-space reflections
@@ -160,9 +162,9 @@ a hit is found, its colour replaces the sky reflection by a fade:
 sky term carries the normalisation above and the indirect specular scale. where no hit is found, the
 sky reflection stays.
 
-every pass (march, resolve, temporal filter, fade) runs at half the render size on every PC tier;
-only very high quality upsamples to the full size before lighting. low quality marches 16 steps, and
-very low turns the reflections off.
+every pass (march, resolve, temporal filter, fade) runs at half the render size on every PC tier.
+the other levels' step counts, and which upsamples or turns the reflections off, are in
+[quality settings](quality-settings.md#values-by-level).
 
 - **march.** the mirror ray is projected to the screen and stretched to its edge, then stepped in
   equal steps of uv and device depth, 4 taps per loop: 32 steps (PC high quality's
@@ -199,8 +201,8 @@ the march reads.
 
 the scenes' point, spot and tube lights live in the chunk files
 ([world.md](world.md#initchunkdata-layout)); a point with a positive length is a tube along its
-direction. dynamic structures' ECS groups hold lights in the same layout (map02: 466, such as the
-outposts' per-level lamps), which show with their structure
+direction. dynamic structures' ECS groups hold lights in the same layout (a few hundred on map02,
+such as the outposts' per-level lamps), which show with their structure
 ([dynamic structures](assets.md#dynamic-structures)). prefabs placed by model rows carry lights too,
 as Unity `Light` components with HG's additional light data on the same GameObject: a Dijiang
 cabin's lighting prefab (`lightingdeco_spaceship_*`) holds its room's only lights, six spots in the
@@ -209,9 +211,10 @@ the colour precomputed: the sRGB colour made linear, times intensity and, when t
 the colour temperature's tint from HDRP's published curve fit (pivot 6570 K), which reproduces every
 stored chunk colour. a prefab light's culling box is authored in the prefab's axes (unverified: that
 it turns with the placement, for turned cabins). the scenes also hold directional lights,
-shadow-only lights (12 on map02), which emit nothing but darken the other local lights through their
-shadow maps, and character-only lights (none on map02); how the volumetric fog treats both is under
-[fog](sky-and-fog.md#fog). both bake types on the maps, realtime and mixed, light directly.
+shadow-only lights (a dozen or so on map02), which emit nothing but darken the other local lights
+through their shadow maps, and character-only lights (none on map02); how the volumetric fog treats
+both is under [fog](sky-and-fog.md#fog). both bake types on the maps, realtime and mixed, light
+directly.
 
 | input                                                         | effect                                                                                                                                                                    |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -232,23 +235,23 @@ without (1 − F) on diffuse, so a light adds
 1000 and the sum of all lights to 255, and a multiple-scattering term goes on top.
 
 each frame the game's light list takes the spot and point lights within their culling distance and
-in the view, sorts them by camera distance then priority, and keeps the nearest, up to a quality
-setting's cap (at most 256). compute shaders bin them into 32 px screen tiles and 1 m view-depth
-slices from the near plane (2048 of them), each a 256-bit mask; a pixel walks the lights set in both
-its tile's and its slice's mask. the volumetric fog lights each froxel with the same lists, through
-the fog's Henyey-Greenstein phase times each light's volumetric scattering intensity
-([fog](sky-and-fog.md#fog)).
+in the view, sorts them by camera distance then priority, and keeps the nearest 256 (the cap at
+every PC quality level, [quality settings](quality-settings.md#values-by-level)). compute shaders
+bin them into 32 px screen tiles and 1 m view-depth slices from the near plane (2048 of them), each
+a 256-bit mask; a pixel walks the lights set in both its tile's and its slice's mask. the volumetric
+fog lights each froxel with the same lists, through the fog's Henyey-Greenstein phase times each
+light's volumetric scattering intensity ([fog](sky-and-fog.md#fog)).
 
-972 map02 lights cast shadows. lights can also carry cookies (no map02 light has one), a flicker
-component and [light beams](#light-beams).
+about a thousand map02 lights cast shadows. lights can also carry cookies (no map02 light has one),
+a flicker component and [light beams](#light-beams).
 
 ### light beams
 
 light beams are a modified Volumetric Light Beam (a third-party Unity asset): a renderer on the
-shared `ConeMesh.asset` with a per-beam material of `Hidden/VLB_HGRP_SinglePass` (148 materials
-across the packed scenes, map02 holding 127). Wuling Very Large Rift (dung02_dg005) has the largest,
-781 m across, in script groups that pair each beam with its lights (a dark set on by default, a
-bright set a level script shows).
+shared `ConeMesh.asset` with a per-beam material of `Hidden/VLB_HGRP_SinglePass` (about 150
+materials across the packed scenes, most of them map02's). Wuling Very Large Rift (dung02_dg005) has
+the largest, 781 m across, in script groups that pair each beam with its lights (a dark set on by
+default, a bright set a level script shows).
 
 the cone mesh is 64 sides with z 0 to 1 and a start cap; UV0's u marks the cap and v the outside
 faces (1) against the inside ones (0), so one back-culled draw shows the inside from within. the
@@ -270,9 +273,9 @@ the product of:
 | cap            | caps show only when `_ConeParams1.w` is 1 (0 on every packed beam)                                                                          |
 
 the colour is `_ColorFlat` (LDR) times `_AlphaInside` or `_AlphaOutside`. `_BlendMode` 1 adds it
-(One One, 140 materials); 0 alpha-blends (8). `VLB_NOISE_3D` multiplies by a global 3D noise and
-`VLB_USE_FOG` applies the atmosphere and exponential fog. the shader also scales by a per-renderer
-value and a global tint and saturation whose sources aren't recovered.
+(One One, nearly every material); 0 alpha-blends (a few). `VLB_NOISE_3D` multiplies by a global 3D
+noise and `VLB_USE_FOG` applies the atmosphere and exponential fog. the shader also scales by a
+per-renderer value and a global tint and saturation whose sources aren't recovered.
 
 ## open
 
@@ -282,5 +285,4 @@ value and a global tint and saturation whose sources aren't recovered.
   code.
 - the sun's units: the sun shades with the local lights' lobe (no 1/π on diffuse); whether the CPU
   folds a 1/π into the sun's colour is unknown. phases also carry a `directIntensityDividePi`.
-- the quality setting that caps the local lights per frame isn't recovered.
 - where local reflection probes are placed.

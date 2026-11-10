@@ -19,7 +19,7 @@ own, `/`-joined (`Root/Bone001`), 0 for the Animator's GameObject. a clip loops 
 - **Euler rotations** are in degrees, applied in the Unity `RotationOrder` the binding's
   `customType` holds: 0 XYZ (x first, then y, then z), 1 XZY, 2 YZX, 3 YXZ, 4 ZXY
   (`Quaternion.Euler`'s), 5 ZYX; only 0 and 4 have been seen. the locked chest
-  (`int_trchest_lock_postmodel`) rests in a clip whose 35 Euler bindings are all XYZ; read as ZXY, a
+  (`int_trchest_lock_postmodel`) rests in a clip whose Euler bindings are all XYZ; read as ZXY, a
   third of its bones turn wrong and the chest sinks into the floor.
 - **activity.** a GameObject binding (class 1) whose attribute is the CRC32 of `m_IsActive` switches
   that GameObject on (1) or off (0). effect clips switch whole groups of effects this way; in their
@@ -69,15 +69,16 @@ for track 0, the whole padded to 4 bytes. the k-th position binding (in `generic
 the k-th track whose position bit is set, and likewise for rotations and scales; a Transform with
 only a rotation binding is a track without its position bit. bindings whose index `m_ConstantIndexs`
 lists take their values from `m_ConstantValues` instead (in listing order, three or four values per
-Transform binding, one per other float), and a track can disagree with them: four car clips
+Transform binding, one per other float), and a track can disagree with them: a few car clips
 (`A_actor_car_e2m5_1_007` and kin) hold a different position in the ACL track than the clip's start
 and stop.
 
-checked over the first 3000 ACL clips of the install (in bundle order, of 26.5k AnimationClips):
-decoding every one and sampling it this way gives `m_ValueArrayDelta`'s start and stop values within
-1e-2 for 2977 of them (most within 3e-4), and 23 character run and sprint loops within 0.06 at their
-stop only, where wrapping replaces the last frame with the first. none had Euler bindings. what the
-root motion buffer and `RootPosIndex`, `RootRotIndex` and `RootTrackCount` add isn't traced.
+checked over the first few thousand ACL clips of the install (in bundle order, about a tenth of its
+AnimationClips): decoding every one and sampling it this way gives `m_ValueArrayDelta`'s start and
+stop values within 1e-2 for nearly all of them (most far closer), and a few dozen character run and
+sprint loops within 0.06 at their stop only, where wrapping replaces the last frame with the first.
+none had Euler bindings. what the root motion buffer and `RootPosIndex`, `RootRotIndex` and
+`RootTrackCount` add isn't traced.
 
 ## scenery animators
 
@@ -146,10 +147,10 @@ enable and every tick: an absolute angle from the gameplay clock, so the wheel's
 depend on when it loaded. the renderers' column 54 holds the same spin as `|angleSpeed|` in radians
 per second about ±z, the axis taking the sign, through the hub:
 
-| wheel                                             | hub                                                                    | collider prefab `angleSpeed`                            | column 54               | renderers |
-| ------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------- | --------- |
-| `sfwaterwheel+1_002`, three (owner `23300000004`) | −278.5, 292.9, −1403.6; −233.4, 303.6, −1426.2; −237.2, 300.3, −1359.3 | −3 (`…sfwaterwheel_collider_effect+1_002_01_postmodel`) | 0.0524 about (0, 0, −1) | 151 each  |
-| the large wheel above them (`sfwaterwheel+1_001`) | −233.8, 438.9, −1408.0                                                 | 2 (`p_igroup_map02_sfwaterwheel+1_001_01_col`)          | 0.0349 about (0, 0, 1)  | 569       |
+| wheel                                             | hub                                                                    | collider prefab `angleSpeed`                            | column 54               |
+| ------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------- |
+| `sfwaterwheel+1_002`, three (owner `23300000004`) | −278.5, 292.9, −1403.6; −233.4, 303.6, −1426.2; −237.2, 300.3, −1359.3 | −3 (`…sfwaterwheel_collider_effect+1_002_01_postmodel`) | 0.0524 about (0, 0, −1) |
+| the large wheel above them (`sfwaterwheel+1_001`) | −233.8, 438.9, −1408.0                                                 | 2 (`p_igroup_map02_sfwaterwheel+1_001_01_col`)          | 0.0349 about (0, 0, 1)  |
 
 no other scene's static or dynamic chunks have column 54. the native system that turns column 54
 entities isn't read: that it turns them `speed · gameplayTime` about the axis through the pivot,

@@ -36,12 +36,39 @@ logic) have nothing to draw. a model that is a doodad-group shell draws nothing 
 group level attaches to it instead ([doodad groups](scene-states.md#doodad-groups)). templates carry
 no display name, only their id.
 
-six of the install's 332 interactive templates have a model-upgrade component
+some templates have no data file of their own (the weapon-wall racks, some doors), and some name no
+model.
+
+six of the install's few hundred interactive templates have a model-upgrade component
 (`InteractiveModelLevelUpComponentData`), which lists model ids in visual-form order and contains
 the base model id: `int_system_domain_shop`, `int_system_domain_depot`, `int_doodad_core_recycle`,
 `int_system_kite_station`, `int_system_farm_terminal` (placed in map02_lv002 and map02_lv010) and
 `int_system_simulation_training` (map02_lv006)
 ([facility visual forms](scene-states.md#facility-visual-forms)).
+
+### spawning
+
+the server spawns LevelData interactives: it sends each into view with its saved state, which the
+client joins to the row by logic id. the client spawns only the level's `autoSpawnedInteractives`
+(map02 lists a few dozen logic ids) and level scripts' own interactives itself. no client code was
+found reading a row's `createState` (`CreateState`: −1 `None`, 0 `EnableAndShow`, 1 `Disable`, 2
+`EnableAndHide`, 3 `EnableAndPreload`), which reads as the server's spawn policy: 0 spawned with the
+level, the others enabled later by the server or a level script. LevelConfig lists a level's
+LevelData layers (`levelDataPathHashes`; map02 has a few hundred files) with no condition per layer,
+so a layer named for a mission (`sub_e12m1`) loads with its level and its rows are gated only by
+their own `createState` and scripts.
+
+most rows are at `createState` 0: of map02's and map01's thousands of rows roughly a tenth are at 1,
+and map02 has a few at 2 (`int_switch_waterdrone_floating_target`). state-1 rows are mostly pickups
+and gameplay (ore clusters, chests, collectibles, photo spots, narrative triggers, reading
+terminals); the scenery among them includes `int_move_bamboo`, `int_jumpmachine_xirang`,
+`int_super_pressure_board`, `int_rope_port__bottom_ver2` and `int_painting_scroll*` on map02.
+
+Dijiang's Control Nexus terminal is a row the server creates; its mission condition, `e1m9`
+completed, only locks interaction with it. Dijiang's operator summon point
+(`int_system_spaceship_summon`, in the hall near unity −24, 1, −13) is another: its row is
+`Disable`, no level script, mission or Lua names its id, and its map marker
+(`mark_ss_contact_center`) shows only once the server reports the `SpaceshipSystem` unlock.
 
 ### the variant table
 
@@ -65,8 +92,8 @@ LevelData's `interactiveLockData`, the member after the interactive list, gives 
 gameplay locks: per logic id (`logicIdGlobal`), a list of locks, each with an unlock type
 (`InteractiveUnlockType`: 1 script lock, 2 mini-game, 3 submit, 4 quest, 5 sludge) and its mini-game
 ids, submit id and panel texts. the placement's own `isLocked` flag is separate. across the
-install's decodable LevelData there are 1030 script, 127 mini-game, 19 submit, 57 quest and 58
-sludge locks.
+install's decodable LevelData script locks are by far the commonest (about a thousand), then
+mini-game locks (over a hundred), with a few dozen each of the rest.
 
 a mini-game or submit lock can swap the model's look. the game looks up an `UnlockEffectConfigMono`
 on the model's root GameObject, and when its `useDifferentModel` is set, switches its `lockedModel`
@@ -94,17 +121,18 @@ model's `effectIds` name prefabs its states' `EffectBehavior`s play.
 
 a model whose `ModelTable` row sets `hasModelViewData` and names another model in
 `dependModelViewDataId` has no file of its own and uses that model's view states (the field sits on
-the table's `ModelData` and on the interactive model component). eight rows do: the small campfire
-(`int_campfire_smaller`, the full campfire's prefab at 0.8 scale, placed by the
+the table's `ModelData` and on the interactive model component). a handful of rows do: the small
+campfire (`int_campfire_smaller`, the full campfire's prefab at 0.8 scale, placed by the
 `int_campfire_v2_smaller` variant in Dijiang's central hall at 0, 0.9, 57.1), recycling station
 forms 2–4, the long erosion pops 2–4 and the common chest (`int_trchest_common_normal`, on
 `int_trchest_common_low`'s states). all but the campfire borrow states written for a different
 prefab.
 
 a layer starts in its `isStartingNode` state and takes the first transition whose conditions all
-hold (`comparison` 0 =, 1 >, 2 <, 3 ≥, 4 ≤ against a bool, float, int or trigger value, `isInvert`
-negating it); a transition without conditions is taken when its state's clip ends. a layer comes to
-rest in a state none of whose transitions holds. later layers of one animator override earlier ones.
+hold (`comparison` 0 =, 1 >, 2 <, 3 ≥, 4 ≤ against a value of `type` 0 bool, 1 float, 2 int or 3
+trigger, `isInvert` negating it); a transition without conditions is taken when its state's clip
+ends. a layer comes to rest in a state none of whose transitions holds. later layers of one animator
+override earlier ones.
 
 a settled state's look is its clip's end pose plus its `SetActive` switches, unless the clip loops:
 then it keeps playing, as the balloon's tube sways through its 14 s idle
@@ -131,8 +159,9 @@ fire-and-forget effect (`fireAndForget`) is left to play out on its own. otherwi
 
 so at rest a model plays the persistent effects its states left on and the other effects of the
 states it rests in. an effect whose `EffectSetting`s don't loop has run out by then
-([one-shot effects](effects.md#one-shot-effects)). across the install's view states there are about
-1800 effect behaviours: about 1060 on named GameObjects, 755 persistent and 110 fire-and-forget.
+([one-shot effects](effects.md#one-shot-effects)). across the install's view states there are close
+to two thousand effect behaviours: over half on named GameObjects, about two fifths persistent and a
+small share fire-and-forget.
 
 ### the `state` key
 
@@ -140,8 +169,8 @@ an interactive whose template has a common-perform component (`InteractiveCommon
 always passes its entity's int `state` property to its view states under the same key: once when the
 view controller starts, and again whenever the property changes. the property starts at the
 template's saved property (`saveProperties`), which a variant's `diffProperties` and then the
-placement's own `properties` override (3582 placements in the install set `state` there); the
-server's saved value and level scripts can change it later. some placements set `state` among a
+placement's own `properties` override (thousands of placements in the install set `state` there);
+the server's saved value and level scripts can change it later. some placements set `state` among a
 component's parameters instead; that those reach the entity property too is assumed, since how
 component parameters reach the entity isn't read.
 
@@ -149,10 +178,9 @@ the jump pads are the commonest case. `int_jumpmachine` saves `state` 1, so it s
 `BaseLayer` plays the ring's opening turn (`A_anm_zmdspring+1_001_open_01`, 3.3 s) into a looping
 idle turn, and its `EffectLayer` rests in `On`, which plays `P_common_bouncingplatform_01`. at 0 it
 rests in a one-frame closed idle with no effect. `int_jumpmachine_vertical` and
-`int_jumpmachine_electric` save 0. every jump pad placement in the install sets its own `state`: all
-31 vertical pads and 216 of the 223 plain, free, rock and Xirang pads start at 1, and 12 of the 14
-electric pads at 0. lifters, fans, attack switches, hydrants and ball receivers start at a nonzero
-`state` too.
+`int_jumpmachine_electric` save 0. every jump pad placement in the install sets its own `state`: the
+vertical pads and nearly all plain, free, rock and Xirang pads start at 1, and most electric pads
+at 0. lifters, fans, attack switches, hydrants and ball receivers start at a nonzero `state` too.
 
 apart from its view states, a jump pad (`JumpMachineComponent`) that isn't locked or a free jump
 places a stationary effect named by its `effect` parameter (`P_common_bouncingplatform_arrow_01`, a
@@ -163,12 +191,12 @@ the component's own parameters, which the component reads apart from its entity'
 template component's `propertyList`, overridden by the variant's `componentDiffProperties` entry
 (`Comp_JumpMachine`) and then the placement's parameters under component type 169. the entity's
 `free_jump` property, which variants set alongside, isn't what decides. `int_jumpmachine_free` turns
-it on, but all 13 of its placements turn it back off, so they show an arrow; 4 `int_jumpmachine`
-placements turn it on, and 12 of the 32 rock pads keep the variant's free jump. the effect turns
-about the vertical only, towards its `target_position` property: its rotation looks along the
-horizontal part of the target minus the pad's position. 237 pad placements set their own target. the
-template's (−8.3, 0.6, −0.07) is used as a world position all the same, so pads that keep it point
-towards about the world origin.
+it on, but all of its placements turn it back off, so they show an arrow; a few `int_jumpmachine`
+placements turn it on, and about a third of the rock pads keep the variant's free jump. the effect
+turns about the vertical only, towards its `target_position` property: its rotation looks along the
+horizontal part of the target minus the pad's position. most pad placements set their own target.
+the template's (−8.3, 0.6, −0.07) is used as a world position all the same, so pads that keep it
+point towards about the world origin.
 
 the vertical jump pads (`int_jumpmachine_vertical`, a cave vent rock,
 `P_interactive_cavewell+1_001_01`) have a component of their own (`JumpMachineVerticalComponent`)
@@ -249,9 +277,8 @@ picks the SOS sign by `level`: at 0 it rests in `damage_type_yellow`, the yellow
 `HeadEffects`); above 0 in `damage_type_red`, the red sign (`P_interactive_robotemoji_sos_02`,
 `P_interactive_robotsos_large_01`). both also play `P_fxmap_uninteractive_storehous_01` and
 `P_lv005_smokeblack_small_01` on `Effect`. its base layer lies in `damage_type_01` at `damage_type`
-0 and `damage_type_02` above it; `exit_type` only matters once it's fixed (`state` 1). of the
-install's 91 placements, 43 set `level` 1, including map02_lv010's robot 37900200005 at 491,
-237, 1231.
+0 and `damage_type_02` above it; `exit_type` only matters once it's fixed (`state` 1). about half of
+the install's placements set `level` 1, including map02_lv010's robot 37900200005 at 491, 237, 1231.
 
 ### keys the player sets
 
@@ -283,8 +310,8 @@ feeds it, so it has no offline default and the arm rests closed.
 an interactive's template can set its model's [Animator](animation.md#scenery-animators) parameters
 as it loads: a simple-animator component (`SimpleAnimatorComponentData`) and, in the template's
 action map, an on-start chain (`OnEntityStart`) of `SetAnimatorBool` actions whose value is a
-constant (`paramSource` 0), a config property (200) or a saved property (300). six templates have
-such a chain.
+constant (`paramSource` 0), a config property (200) or a saved property (300). only a few templates
+have such a chain.
 
 The Hub's comm terminal (`int_001_comm_terminal`, row `2100130029` in
 `map01_lv001_lv_data_sub_e1m3`, under the hanging sculpture at −26.4, 98, −373.6) is the only one
@@ -321,7 +348,7 @@ variable ([scene states](scene-states.md)). their `$$ROOT$$` layer `HeartSwitch`
 
 every loop bobs the frame and its pieces 12 cm up and back down (all bones translate together), so
 the heart always moves while it shows. `Dis` can go back to any other state, so it's an off switch,
-not the end of the sequence: three of indie_dg007's seven hearts start a fresh world at 4. no quest,
+not the end of the sequence: some of indie_dg007's hearts start a fresh world at 4. no quest,
 mission or level script sets a heart's `state` (their scripts only play heart sounds and switch
 decorations; changes go through `CallServer`), so the server decides it. map02_lv004's heart
 (interactive 23400083242, at −1248, 284.1, −1220.3) starts a fresh world at 2.
@@ -499,7 +526,7 @@ changes, it plays each name in the `effectsOnActive` list of the fence postmodel
 (`InteractiveElectricFencePostModelMono`) on its model's root while `state` is on (1), attached to
 the entity at no offset, and recycles them at any other `state`. the 4 m gate plays
 `P_interactive_electricfence_03_Variant` and `…_04_Variant`. the template saves `state` 0, and The
-Hub's five placements set 1, so they start shut, beams on.
+Hub's placements set 1, so they start shut, beams on.
 
 a gate is opened through power: its placement's switch (`int_switch_electric`) names the gate in its
 `connected_node_list` (component 134), and the switch can only be used while its `has_power` is set.

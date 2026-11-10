@@ -3,11 +3,11 @@
 everything that decides whether a piece of authored content is visible: MapConfig scene states and
 their quest, mission and variable conditions; the load gates on DynamicStreaming entities;
 progression levels (outposts, POI facilities, factory regions); facility visual forms, Dijiang's
-cabins, doors, telescopic bridges and resource-node groups; script-loaded groups; and quest labels.
-spatial stream areas (interiors, caves, off-map places) are a separate axis, covered in
-[world.md](world.md#stream-areas). the dynamic ECS scene's format is in
-[assets.md](assets.md#dynamic-structures), and the interactives' models and view states in
-[interactives.md](interactives.md).
+cabins, doors, telescopic bridges and resource-node groups; script-loaded groups; the other runtime
+mechanisms that move scenery; and quest labels. spatial stream areas (interiors, caves, off-map
+places) are a separate axis, covered in [world.md](world.md#stream-areas). the dynamic ECS scene's
+format is in [assets.md](assets.md#dynamic-structures), and the interactives' models and view states
+in [interactives.md](interactives.md).
 
 ## the selectors at a glance
 
@@ -64,9 +64,11 @@ condition entry are computed, so a state can be:
 a level script (`SetOverrideSceneState` / `RemoveOverrideSceneState`) or a dialogue timeline can
 override a conditioned state by name. the override is transient: it lasts until that state's own
 condition changes value, the MapConfig changes (entering a dungeon) or the scene is rebuilt, and it
-isn't saved. an override of a condition-less state does nothing. every override found targets a
-conditioned state (dung01_rdg010's platform, map02_lv005's rising fields), forcing it while its
-condition holds.
+isn't saved. an override of a condition-less state does nothing. level scripts use
+`SetOverrideSceneState` a handful of times, each on a state its MapConfig conditions, forcing it
+while the condition holds: `dung01_rdg010` turns `dung01_rdg010_liino_platform` off, `dung02_bdg002`
+and `dung02_dg003` turn `Nefarp_dragon_red` and `Nefarp_human_green` on, and map02_lv005's script
+23200050005 swaps `Map02_lv005_fields_unrise` for `…_rise`.
 
 the client holds no player state: quest and mission states and variable values come from the server.
 
@@ -113,7 +115,10 @@ lv009 day/night pair doesn't: day is map variable `State` = 0, and night has no 
 
 variables are server state, which the server syncs on entering a map. a variable test fails while
 its variable is unset, whatever its operator: a load gate and a MapConfig condition alike (so `≠ 1`
-doesn't hold before the server sets the variable).
+doesn't hold before the server sets the variable). a map variable the server hasn't sent falls back
+to a client-only variable of that name, then to MapConfig's `mapVarClientDefaultValues`, before it
+counts as unset. no level script action writes a map or global variable (scripts read them, and
+their `SetInt`/`SetBool` write script blackboards), so the server sets them all.
 
 map variables are of two kinds:
 
@@ -121,19 +126,22 @@ map variables are of two kinds:
   variables of the current map, and `Data/Json/GameplayConfig/AutoNameMapVarTable.json` lists them
   per map in parallel arrays: the numeric key gates read (`mapVarIntKeyList`), the owning
   interactive's LevelData logic id (`mapVarBelongEntityList`), the property (`state`, rarely
-  `hp_ratio` or `is_enabled`) and a fresh world's value (`mapVarDefaultValueList`). 275 entries over
-  10 maps (map01 51, map02 158), all from the 11 `useMapVar` templates: blight and sludge cores,
+  `hp_ratio` or `is_enabled`) and a fresh world's value (`mapVarDefaultValueList`). a few hundred
+  entries over ten maps, most on map02, all from the `useMapVar` templates: blight and sludge cores,
   anchor-wave cores, Wuling bridges, drawing puzzles, rifts, waterwheels, aqua pipelines, outfalls,
-  monster hearts and the blue sword. other templates save their properties (a door's or a campfire's
-  `state`) per entity where no other content can read them. `AutoNameGlobalVarTable.json`, its
-  global twin, is empty
-- **named variables**: the rest, which MapConfig names (`mapVarNumId2Name`; 241 of map02's 399
+  monster hearts and the blue sword. defaults are 0 but for two map02 sludge cores (1), some drawing
+  puzzles (1), monster hearts (2 or 4), anchor-wave cores (`state` 1, `hp_ratio` 100) and
+  indie_dg007's two 18 m Wuling bridges (1, extended). the server applies those defaults; the client
+  only loads the key maps. the other templates with saved properties (a door's or a campfire's
+  `state`) keep them per entity where no other content can read them. `AutoNameGlobalVarTable.json`,
+  its global twin, is empty, and no template sets `useGlobalVar`
+- **named variables**: the rest, which MapConfig names (`mapVarNumId2Name`; over half of map02's
   keys). the client ships no values for them (map02's `mapVarClientDefaultValues` is empty), so
   their states have no offline value. global variables have no name table in client data
 
 two of map02's named variables only block gateways out of a level while they equal 2: `007to009`
-(#201) loads 39 rocks and props that fill Yinglung Pass's gateway to Snowy Forest near (-402, 258,
-570), and `008go010deco_v1d6` (#388) loads 33 crystal spikes over a North Wuling Exclusion Zone gate
+(#201) loads rocks and props that fill Yinglung Pass's gateway to Snowy Forest near (-402, 258,
+570), and `008go010deco_v1d6` (#388) loads crystal spikes over a North Wuling Exclusion Zone gate
 near (150, 275, 1205). no other content tests either variable, and no client table, level script or
 Lua file names them besides MapConfig, so whether a world has them at 2 is up to the server.
 
@@ -145,7 +153,9 @@ ids.
 
 ## dynamic load gates
 
-every gate on an entity must pass.
+every gate on an entity must pass, unless the entity has a load override, which wins outright: the
+client sets one when an erosion core is destroyed (its patches unload before the variable syncs),
+from cutscene, dialogue and timeline hide settings, and from `ForceShowDecorationWithHandle`.
 
 - **mission gate** (`MissionControlComp`): a list of
   `MissionCondition { id, isQuest, state, isSame }`. a condition holds when the quest/mission state
@@ -161,8 +171,8 @@ every gate on an entity must pass.
 variable keys are numeric client game-variable ids, not root strings. MapConfig's `mapVarName2NumId`
 and `mapVarNumId2Name` map a map's variable names to these ids and back, and a gate's map id is the
 MapConfig's numeric `mapId` (85 for map02), so a MapConfig condition and a gate can read the same
-variable: map02's `map02lv005stateflower` is #125, which 5 dynamic entities gate on. map01's tables
-are empty.
+variable: map02's `map02lv005stateflower` is #125, which a few dynamic entities gate on. map01's
+tables are empty.
 
 ### gates on another map's variable
 
@@ -194,22 +204,33 @@ to 31 becomes the entity's level, which shows its resource groups by their `logi
 progression level does, and the value goes to the state machine's int key `state` (an interactive
 property other than `state`, such as `hp_ratio`, only sets a key of its name). a global variable
 also sets the entity's Animator to the state `State_<value>`. an unset variable does neither, so the
-entity keeps its starting pose. every view-state entity holds exactly one model row with
-`logicState` 0, so a state changes the prefab's pose and switches, never swaps the prefab. by entity
-type (owners on map01 / map02):
+entity keeps its starting pose. the level is the one selector of `logicState` groups: settlements,
+POIs, factory regions, trees and an interactive's power state set it the same way. every view-state
+entity holds exactly one model row with `logicState` 0, so a state changes the prefab's pose and
+switches, never swaps the prefab. by entity type (where its owners are, on map01 and map02):
 
-| type                               | owners   | driver                                                                                                             |
-| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| 3 `MVCByTrigger`                   | 0 / 244  | the entity's own `TriggerComp` box sets the bool `InTrigger`: the lotus leaves' reaction                           |
-| 4 `MVCWithoutIdControlByGlobalVar` | 1 / 0    | a global variable: The Hub → Valley Pass bridge, raised or lowered                                                 |
-| 5 `RefInteractiveState`            | 38 / 1   | an interactive's state (`InteractiveStateComp`), on an old-version controller of its own (`state_off`, `state_on`) |
-| 34 `MVCWithIdControlByGlobalVar`   | 10 / 214 | a global variable; 199 of map02's floor tiles share 21 of them                                                     |
-| 37 `InteractiveMapVarProxy`        | 3 / 116  | one map variable per owner: puzzles, the magic [Wuling bridges](interactives.md#wuling-bridges), rifts, wheels     |
-| 40 `MVCWithIdControlByMapVar`      | 0 / 52   | a map variable: towers, bridges, dreamcatchers, altar rocks                                                        |
+| type                               | owners                              | driver                                                                                                             |
+| ---------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 3 `MVCByTrigger`                   | map02, a couple hundred             | the entity's own `TriggerComp` box sets the bool `InTrigger`: the lotus leaves' reaction                           |
+| 4 `MVCWithoutIdControlByGlobalVar` | map01, one                          | a global variable: The Hub → Valley Pass bridge, raised or lowered                                                 |
+| 5 `RefInteractiveState`            | map01, a few dozen; one on map02    | an interactive's state (`InteractiveStateComp`), on an old-version controller of its own (`state_off`, `state_on`) |
+| 34 `MVCWithIdControlByGlobalVar`   | map02, a couple hundred; map01, few | a global variable; nearly all of map02's are floor tiles sharing a few variables, and map01's are machine doors    |
+| 37 `InteractiveMapVarProxy`        | map02, about a hundred; map01, few  | one map variable per owner: puzzles, the magic [Wuling bridges](interactives.md#wuling-bridges), rifts, wheels     |
+| 40 `MVCWithIdControlByMapVar`      | map02, a few dozen                  | a map variable: towers, bridges, dreamcatchers, altar rocks                                                        |
 
-no level script writes these variables: scripts only read them, and the one view-state writer,
-`SetDecorationViewState`, sets a state by name. so the server sets them. a few owners also set
-`controlLoad` 1, gating their loading on the same variable.
+the server sets these variables; the one view-state writer in level scripts,
+`SetDecorationViewState`, sets a state by name on map02's one type-33 entity
+(`MVCWithIdControlByScript`). a few owners also set `controlLoad` 1, gating their loading on the
+same variable. a type-5 controller's interactive ids (`300002576`–`79`, `2100390192`/`97` on map01)
+aren't LevelData rows of map01 or map02; what they name isn't resolved.
+
+of the roughly hundred models map02's variable-driven owners name, about two thirds switch
+GameObjects by `state`, a quarter change clips and the rest only play effects; the water pipe's
+model has no `state` key. magic bridges go `off`/`on`, drawing puzzles `Off`/`On`, the Maliang
+reveals of Si's Painting (`dyn_Maliang_*`) `Disable`/`Enable` above 0, align patterns
+`Empty`/`Phantom`/`Entity`, the Snowy Forest tower `off`/`light_on`/`on`, floor tiles
+`off_idle`/`on_idle`, progress towers 0–6, rifts `Unsuppressed`…`Filled`, waterwheels
+`Stop`/`Rotating`. indie_dg016's type-40 floor owners name models whose files have no layers.
 
 ### outpost tiers
 
@@ -236,12 +257,15 @@ each patch of clearable blight (the glowing `P_erosion_map01_dynamic…` pieces,
 loading them while the variable ≠ 2. the core is an `int_erosion_core` interactive in level data,
 placed with no condition of its own; its template has an `ErosionCoreComponent`, keeps its `state`
 as a map-saved property (`useMapVar`), and the component names state 0 inactive, 1 active and 2
-destroyed. map01 has 42 erosion roots, each naming a different placed core and gating on a variable
-of its own (map 2, #3–#44; MapConfig names none), so a destroyed core and its cleansed blight go
-together. the variable is the core's `state`: [AutoNameMapVarTable](#variables) gives every root's
-key to the very core its `erosionCoreId` names (42 of 42 on map01, 6 of 6 in dung01_wrdg001), with a
-fresh world's value 0. when a core is destroyed the client unloads its patches at once, before the
-variable syncs. while the variable is unset the blight doesn't load. map02's
+destroyed. map01 has a few dozen erosion roots, each naming a different placed core and gating on a
+variable of its own (map 2, #3–#44; MapConfig names none), so a destroyed core and its cleansed
+blight go together. the variable is the core's `state`: [AutoNameMapVarTable](#variables) gives
+every root's key to the very core its `erosionCoreId` names (for every root of map01 and
+dung01_wrdg001), with a fresh world's value 0. when a core is destroyed the client unloads its
+patches at once, before the variable syncs. while the variable is unset the blight doesn't load. a
+root also lists its pieces' positions, holds smoke effect rows (`P_fxint_s_erosionsmoke_801`) and a
+navmesh-area component, so a patch blocks navigation while present; its stored core position sits a
+few metres from the core's placement, a separate authored point. map02's
 [sludge](#sludge-and-miasma) is paired with its cores the same way, through the sludge component's
 core id.
 
@@ -302,18 +326,8 @@ levels or terminal levels (`KiteStationLevelTable`) map onto the list isn't reco
 every other interactive has one model (its variant's, else its template's; see
 [interactives](interactives.md#placements-and-models)): Dijiang's guest terminal desk and screens,
 for instance. [doors](#doors), [telescopic bridges](#telescopic-bridges) and
-[region walls](#dijiang-region-walls) follow runtime state. the server spawns LevelData
-interactives: it sends each into view with its saved state, which the client joins to the row by
-logic id. the client spawns only the level's `autoSpawnedInteractives` (and level scripts' own
-interactives) itself, and no client code reads a row's `createState`, which reads as the server's
-spawn policy (0 spawned with the level). rows with another `createState` aren't created from client
-data: Dijiang's Control Nexus terminal is one, so the server creates it; its mission condition,
-`e1m9` completed, only locks interaction with it. Dijiang's operator summon point
-(`int_system_spaceship_summon`, in the hall near unity −24, 1, −13) is another: its row is
-`Disable`, no level script, mission or Lua names its id, and its map marker
-(`mark_ss_contact_center`) shows only once the server reports the `SpaceshipSystem` unlock, so the
-server creates it. some templates have no data file of their own (the weapon-wall racks, some
-doors), and some templates name no model.
+[region walls](#dijiang-region-walls) follow runtime state, and whether a placement exists at all is
+the server's call ([spawning](interactives.md#spawning)).
 
 ## event placements
 
@@ -326,35 +340,35 @@ them, so whether a spot exists is the server's call while its event runs. the sp
 `int_activity_snap_shot` (model `int_system_snapshot_postmodel`, a yellow light column; Dijiang has
 one in front of the logo wall at unity 12, 1, −16) and carry the `ActivitySnapshotComponent`
 (component type 2000: `identify`, camera pose, `conflictQuestIds`). every placement with that
-component in the install sits in an event layer: 25 rows in 15 layers. their `progressLockCondition`
-names a main-story mission or quest, which locks interaction, not existence. the layers'
-`int_snapshot_empty` rows are the invisible targets the photos check.
+component in the install sits in an event layer. their `progressLockCondition` names a main-story
+mission or quest, which locks interaction, not existence. the layers' `int_snapshot_empty` rows are
+the invisible targets the photos check.
 
 ## destructible props
 
 map01 and map02's type-20 dynamic destructibles have one resource group with `logicState` 0 and no
 controller. they store the intact model, with no destroyed variant to select; destruction removes
-the prop at runtime. interactive destructibles are separate placements whose scripts can react to
-destruction.
+the prop at runtime. interactive destructibles are separate placements (`int_destructible_*`,
+`int_breakfloor`, `int_steam_blocker`, `int_fire_wall*`, breakable boxes) whose scripts can react to
+destruction (`CheckInteractiveDestroyed`).
 
 ## sludge and miasma
 
-map02's sludge, cleared by spraying it, is 68 DynamicStreaming entities of type 25 with a
-`SludgeComp` and a map variable gate but no resource group. each names one of 65 cores, LevelData
-placements of the `int_erosion_sludge_core` family (some `empty` variants, presumably with no
-visible core), and loads while its core's variable is 0; patches of one core share it. every drawn
-core (40, all with the `int_erosion_sludge_core_official` model) is named by a patch. the core
-template's component (`ErosionSludgeCoreComponent`) has the blight core's states, 0 inactive, 1
-active and 2 destroyed, and the variable is the core's `state`, as on map01 (AutoNameMapVarTable
-gives every patch's key to the core its sludge component names, 68 of 68 on map02 and 7 of 7 in
-indie_dg016). so a patch loads only while its core is inactive and goes once the core is activated,
-before it's destroyed. two map02 cores (#30, #35) start a fresh world at 1, their sludge hidden.
-what an active core looks like in game isn't checked. the surface isn't a mesh: each patch has a
-baked height map (`Slu__<level>__<local id>[__n]`, a 128² BC4 `.png` and a `.json` repeating the
-component's fields, under `Assets/Beyond/DynamicAssets/Gameplay/Sludge/`) that the game builds into
-a voxel heightfield over a `sludgeSize`² grid and draws with `M_sludgeV2` or `M_sludgeV2_high`.
-sprayed sludge grows back (`rebornTime`) unless its core is cleared; the variable is the persistent
-part.
+map02's sludge, cleared by spraying it, is a few dozen DynamicStreaming entities of type 25 with a
+`SludgeComp` and a map variable gate but no resource group. each names a core, a LevelData placement
+of the `int_erosion_sludge_core` family (some `empty` variants, presumably with no visible core),
+and loads while its core's variable is 0; patches of one core share it. every drawn core (all with
+the `int_erosion_sludge_core_official` model) is named by a patch. the core template's component
+(`ErosionSludgeCoreComponent`) has the blight core's states, 0 inactive, 1 active and 2 destroyed,
+and the variable is the core's `state`, as on map01 (AutoNameMapVarTable gives every patch's key to
+the core its sludge component names, for every patch of map02 and indie_dg016). so a patch loads
+only while its core is inactive and goes once the core is activated, before it's destroyed. two
+map02 cores (#30, #35) start a fresh world at 1, their sludge hidden. what an active core looks like
+in game isn't checked. the surface isn't a mesh: each patch has a baked height map
+(`Slu__<level>__<local id>[__n]`, a 128² BC4 `.png` and a `.json` repeating the component's fields,
+under `Assets/Beyond/DynamicAssets/Gameplay/Sludge/`) that the game builds into a voxel heightfield
+over a `sludgeSize`² grid and draws with `M_sludgeV2` or `M_sludgeV2_high`. sprayed sludge grows
+back (`rebornTime`) unless its core is cleared; the variable is the persistent part.
 
 North Wuling Exclusion Zone's blight miasma (map02_lv008) is five type-51 entities whose resource
 groups hold effects (smoke, dust, fog walls, small fires), each loading while its map variable
@@ -371,8 +385,13 @@ cabins and growth chambers). a built cabin's rows go to the slot origin, turned 
 quarter turns of yaw; with that convention each cabin's entrance (the start of its NPC walkway, at
 local +x) meets the slot's door, and the medium slot's box holds the growth chamber exactly.
 
-each slot holds one cabin type (the room tables allow one type per room). one of the small slots has
-no door and no room-table row. a built cabin's room is lit by its own irradiance bake
+each slot holds one cabin type (the room tables allow one type per room). `SpaceshipEmptyRoomTable`
+lists three rooms: `room_a_1` (small) and `room_b_1` (medium) in `construction_area_1`, and
+`room_a_2` (small) in `construction_area_2`. a slot names no room, and its ids collide with
+unrelated LevelData ids, but each room's door names it in its `system_inst_key` parameter, which
+puts `room_a_1` at the small slot near (15, 5, 85), `room_a_2` at the one near (−13, 5, 130) and
+`room_b_1` at the medium slot. the fourth, small slot near (12, 5, 130) has no door and no
+room-table row. a built cabin's room is lit by its own irradiance bake
 ([region bakes](irradiance.md#region-bakes)).
 
 a growth chamber's level unlocks its planting boxes. each box is a model row whose prefab's script
@@ -380,10 +399,12 @@ names a shutter object (`nonTransparentPlate`) that closes the tank's lower half
 once the box is unlocked. `SpaceshipGrowCabinLvTable` lists the planting fields each level unlocks
 (`unlockPlantingField`: 1–3, 4–6, 7–9). unverified: the fields are numbered in the order the cabin
 scene's entity lists the boxes in its resource groups; that order opens the three tanks facing the
-console at level 1, as in game. a planted crop and the box's status bar are player state and runtime
-UI. the room nameplate above a cabin door and the assigned-operator panel beside it are also
-world-space UI, populated from the room's name, level, status and operators; they are not cabin
-scene meshes. manufacturing cabins' levels change only runtime state.
+console at level 1, as in game. `SpaceshipGrowCabinBoxIdToUnlockLevelTable` is the same mapping
+inverted (box ids 1–3 → level 1, 4–6 → 2, 7–9 → 3), so it adds nothing about which box of the scene
+a number names. a planted crop and the box's status bar are player state and runtime UI. the room
+nameplate above a cabin door and the assigned-operator panel beside it are also world-space UI,
+populated from the room's name, level, status and operators; they are not cabin scene meshes.
+manufacturing cabins' levels change only runtime state.
 
 ## Dijiang region walls
 
@@ -397,12 +418,16 @@ and `_4` have no row, so their walls always show in this client.
 ## doors
 
 door poses are in [interactives.md](interactives.md#interactive-doors). the game opens doors by
-gameplay and server state the client doesn't hold (a Power Plateau gate opens when a level script
-hears an event from a mission's cutscene and calls the server).
+gameplay and server state the client doesn't hold. Power Plateau's U.W.S.T. door (2800000227, near
+−80, 175, 626) opens when level script 2800000050 hears the level event `TLCall_e3m3_1`, raised by
+mission e3m3's timeline, and calls the server. a script's links to interactives are in its
+LevelData's `levelScriptBriefDataDict` (`interactiveActiveRiskEntityIdList`,
+`refWorldEntityIdList`), not in the script file.
 
 - a Dijiang cabin's door is open while its slot is built and closed (`unlocked`, its "to be
-  constructed" panel showing) while it's empty. the slots don't name their doors; a small slot's
-  door stands 9 m from its origin, the medium one's 10.2 m
+  constructed" panel `P_fxmap_base01_lv001_ship_door_06_01` showing; `locked` shows `…_08_01`) while
+  it's empty. the slots don't name their doors; a small slot's door stands 9 m from its origin, the
+  medium one's 10.2 m
 - Dijiang's reception room door (`system_inst_key` `guest_room`) opens once the reception room is
   unlocked, and that unlock is server-only. the room's level-1 row in `SpaceshipRoomLvTable` has no
   condition, only the text "Progress through the main story to unlock this cabin"; the Control Nexus
@@ -414,7 +439,8 @@ hears an event from a mission's cutscene and calls the server).
 
 a telescopic bridge ([interactives.md](interactives.md#telescopic-bridges)) is retracted or extended
 by its interactive's `state` property, which starts at 0 (retracted) in the template. what sets it
-in game (a switch, a script, the server) isn't followed. map01 places ten, five in The Hub.
+in game (a switch, a script, the server) isn't followed. map01 places about ten, half of them in The
+Hub.
 
 ## doodad groups
 
@@ -435,8 +461,14 @@ explicitly enable it. the entity's global id (its IdComp `uniqueId`) is what lev
 show and hide it. the client keeps what a script last set per id for the scene's lifetime (a script
 can set it before the entity streams in), and a map reset clears it; until then the group follows
 its flag. its leading digits are the idNum of the level that authored the entity (`228…` for Wuling
-City, `404…` for a racing dungeon), not necessarily the level it stands in. event content such as a
-limited-time race course is among these groups.
+City, `404…` for a racing dungeon), not necessarily the level it stands in.
+
+event content is among these groups. the Runners' Steeplechase (`ActivityTable` `activity_parkour`,
+type 50, mission `a1m15`) runs in four dungeons (`dung02_rcdg001`–`004`) whose MapConfigs stream
+map02 with no scene-state conditions. each course is one script group in Wuling City (a few thousand
+renderers each; 40400000002 Pavilion Hop, 40600000002 Wind Step, 40700000002 Cloud Stroll,
+42100000002 Bastion Trek), authored hidden: its dungeon's level script shows its own course and
+hides the other three, and open-world script 22801170008 hides all four on activation.
 
 ### what sets a script group
 
@@ -478,9 +510,9 @@ shown and hidden by `EntityShow` / `EntityHide` (an `entityPtr`), `EntityShowLis
 `EntityHideList` (an `entityListPtr`) and `SetEntitiesVisibility` (`targetEntities`, with an
 `isVisible` flag, a `resetVisible` flag and a `visibleSource` channel). an entity pointer names a
 LevelData placement by `logicId` (`useSlotId` 0) or a slot of the script's own `interactives`. map01
-and map02 scripts name 195 such targets, 104 of them LevelData interactive rows. a placement has no
-stored hidden flag of its own, so whether an interactive starts hidden before its script runs isn't
-known.
+and map02 scripts name a couple hundred such targets, about half of them LevelData interactive rows.
+a placement has no stored hidden flag of its own, so whether an interactive starts hidden before its
+script runs isn't known.
 
 scripts of other levels can name a scene's group (dungeons reusing the open world, such as the
 racing courses). missions whose objectives check a script (stage, property) drive its activation,
@@ -534,6 +566,62 @@ level scripts and other MemoryPack game data take their schema from the install'
 `<Type>ForMemoryPack` wrappers' setter properties give each object's members in order, and their
 `MemoryPackUnion` attributes the union tags.
 
+an object is a member-count byte (255 for null) followed by its members in the order of the
+wrapper's `__name__` setter properties, base wrapper first. a polymorphic base is a union: a tag
+byte (250 then a u16 for large tags, 255 for null) choosing the subtype. collections are an int32
+count (−1 for null) and their elements; strings are ids into the JsonData string pool. beyond the
+generated wrappers, found by decoding every level script of the client to its exact length:
+
+- unmanaged structs of a few kinds are copied raw at their in-memory size, padding included, except
+  as `List` elements, which go through their wrapper: `*Ptr`, `GameplayTag`,
+  `CameraControlStateInitialParam`, `PosRot`, `NpcBehaviorTag`, `ConditionValue`, `ValueUnion`,
+  `AudioId`, `AbilitySystemData.PlungingAttackData`, `StringPathHash` and `BezierKnot`. the last two
+  were confirmed by decoding every LevelData file but Dijiang's two to its exact length
+- a `Dictionary` of two unmanaged types (primitives, enums, Unity vectors) is copied raw as
+  `KeyValuePair` rows, padding included
+- `Nullable<T>` and `Optional<T>` of an unmanaged `T` are raw: a flag byte, then `T` at its
+  alignment. an `Optional` keeps its value when disabled
+- four types have formatters of their own. `AnimationCurve`: a member count of 3, the pre- and
+  post-wrap modes, then raw 28-byte `Keyframe`s. `SerializeFieldDictionary`: a header byte, 255 for
+  null, 1 for one list of key/value pairs, 2 for a key list then a value list. `SendLuaEvent`,
+  `SendLuaEvent1` and `SendLuaEvent2`: a member count, the id, an inline UTF-8 uid, a bool, the next
+  id, a bool, a `Param<string>` event name, then one inline UTF-8 JSON string per parameter.
+  `AudioBlackScreenBehaviour`: a raw 16-byte struct of a preset byte, a flags byte, a fade-in bool,
+  an f32 in time at +4, a fade-out bool at +8 and an f32 out time at +12
+
+## other runtime state
+
+mechanisms that move or change scenery at runtime besides the selectors above, from a census of the
+DynamicStreaming scenes and every level script of the install (a few thousand). outfalls and
+anchor-wave proxies are ordinary [variable gates](#dynamic-load-gates) on an interactive's `state`;
+a script, the player or the server drives the rest.
+
+| mechanism                  | stored in                                                                                                                                                                                                   | driven by                                                     |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| water pipes                | entity type 30 with a `WaterPipeComp` (initial and target angle, connected, its interactive and the upstream one, heights, outfall flag) and a view-state controller keyed on `waterState`; a few on map02  | a switch chain; `SetWaterPipeRotateState`                     |
+| outfalls                   | entity type 35, loading while its `int_outfall`'s `state` variable is 1 (dung02_cdg004)                                                                                                                     | the pipe chain                                                |
+| anchor-wave cores          | `int_anchor_wave_core` (`state`, `hp_ratio`, `is_enabled` as map variables) with three type-37 proxies loading while `state` ≠ 0 (map01)                                                                    | the player; `RefreshAnchorCoreDecoration`                     |
+| bamboo puzzles             | `int_move_bamboo`'s saved `current_pos_index`; `MoveBambooNext` (a couple hundred uses, nearly all on map02), `SetBambooPosIndex`, `MoveBambooLast`; a `BambooRaftWideConfig` names a raft and its spline   | scripts and the player                                        |
+| rune columns               | script module `RunePuzzleData`; `SetRuneColumnUnstableState`, `SetRuneColumnShowHide`, `MoveRuneColumns…`                                                                                                   | scripts                                                       |
+| entities moved by script   | `EntityMoveToWithDuration` (the commonest, several hundred uses), `SetEntityPosition`, `EntityMoveToWithSpeed`, `SetEntityEulerAngles`, `EntityRotate*`, `EntityAttachToParent`, `AttachEntityToDecoration` | scripts, mostly transient                                     |
+| scripted Animators         | `SetAnimatorInt` and `SetAnimatorTrigger` (a few hundred uses) on interactives, in dungeons only; [decoration animators](animation.md#decoration-animators)                                                 | scripts                                                       |
+| scripted factory buildings | `FacChangeBuildingTemplate` (map01 and map02 alike), `FacPlayBuildEffect`                                                                                                                                   | scripts and quests                                            |
+| conveyors                  | entity types 10, 11 and 12 (belt, box, group with a spline and speed; dozens on map01), the belt's view states scrolling its UVs by the factory `speed`                                                     | always moving                                                 |
+| water look override        | `WaterConfigOverride` (map02_lv010 script 37900070004): swaps water material slot 21 for `Config_water_Map02_29` over 1 s, and releases it                                                                  | a script                                                      |
+| water progress sync        | script module `WaterProgressSyncData` (mostly map02): a decrease ratio and cooldown over listed entities                                                                                                    | runtime                                                       |
+| energy point volumes       | LevelData `environmentVolumes` (`LevelEnvironmentVolume`: `Env_EnergyPoint_<level>`, blend mode 2, a polyline, priority 300; on map01 and map02)                                                            | presumably the energy point's state (`WorldEnergyPointTable`) |
+| Dijiang perform objects    | `SetSpaceshipPerformObjectActive` (base01_lv001 script 9800280001) by `SpaceshipGameLevelObjectType`                                                                                                        | a script                                                      |
+| dynamic occlude areas      | LevelData `dynamicOccludeAreas` (map01 and map02): a quest condition and factory grid lines, which reads as build blocking rather than scenery                                                              | quests                                                        |
+| cutscene hides             | `PlayLevelSequenceAndControlSceneObjects` (the commonest), `PlayDialogAndHideSceneObject`, `StartCutsceneAndControlSceneObject`, `StartCutsceneAndHideSceneObject`                                          | scripts, during the cutscene only                             |
+| extra streaming            | `LoadExtraStreamingAction` and its clear: a position to preload around                                                                                                                                      | scripts                                                       |
+
+what the rune, water progress and Dijiang perform entries do in game wasn't inspected, nor the
+`FogNestControllerData` and `SpecialSightControllerData` script modules on map01. no time-of-day
+volume or weather table exists in these scenes or in the tables: map02_lv009's night is a scene
+state. LevelConfig's `enableFactoryBuildingSnowCoverage` is set on map02_lv009 only, and no level
+sets `isDimensionLevel`. seats (entity type 6) hold no resources, and snowfall trees (types 50
+and 52) only react to the player.
+
 ## quest and mission labels
 
 missions are defined in `Data/Json/MissionRuntimeAsset/<missionId>.json` (plain JSON; a `_meta` file
@@ -577,9 +665,12 @@ state conditions, mission gates and level scripts.
   [event placements](#event-placements)
 - which event photo spots belong to which event: the placements name no activity, only their own
   `identify` key and, for some, the event mission's quests
-- script groups with no client driver: groups whose id equals a level script's own id, ghost-wall
-  module decorations (`GhostWallModuleData.outerEffectDecoId`), and ids that scripts reference only
-  as animator or attach targets; what shows them isn't traced
+- script groups with no client driver: of map01's and map02's several hundred, over a third, in four
+  sets of a few dozen each: those whose id equals a level script's own id, ghost-wall module
+  decorations (`GhostWallModuleData.outerEffectDecoId`), those that scripts reference only as
+  animator or attach targets, and those that nothing in the client names; what shows them isn't
+  traced
+- who enters the steeplechase course dungeons: no client script or mission names them
 - the gameplay-level → visual-form mapping for shops and depots, and the runtime state of other
   interactives
 - meaning of progression bit 0 per controller kind, and which entity's state the server sets

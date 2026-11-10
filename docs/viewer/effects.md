@@ -6,10 +6,10 @@ per family beside the rows they share in `effect-look.ts`, and
 [`effect.wgsl`](../../packages/viewer/src/render/meshes/effect.wgsl)). the extractor reads each
 effect material's properties and keywords into a [surface](../package-format.md#materials)
 ([game/materials/effects/](../../packages/extractor/src/game/materials/effects/), one module per
-shader), or marks it unsupported with the reason; the viewer packs the surface into the look's rows,
-12 of which effect looks have past the mesh looks' 32. effects on particle meshes play through the
-[particles](particles.md#particles), which also carry their [custom data](particles.md#custom-data);
-what's left out is in [status](../status.md).
+shader), or marks it unsupported with the reason; the viewer packs the surface into the look's 44
+rows, all of which effect looks lay out for themselves (mesh looks use the first 35). effects on
+particle meshes play through the [particles](particles.md#particles), which also carry their
+[custom data](particles.md#custom-data); what's left out is in [status](../status.md).
 
 ## VFXBaseV2 and VFXDecal
 
@@ -24,8 +24,7 @@ what's left out is in [status](../status.md).
 - each slot's share of the distortion (`*UseDisturb`) rides in its slot bits above the low byte, in
   1/1024ths (`slotDisturb`).
 - [`_BlendMode` 1](../game-data/effects.md#vfxbasev2) materials add their light, unfogged, as
-  additive mist does; drawn over, the glare at the corroded planet's centre (seen from Dijiang's
-  deck) was a dark square.
+  additive mist does.
 - [opaque](../game-data/effects.md#vfxbasev2) VFXBaseV2 materials shade in the main pass after the
   meshes (`effectOpaque` queue, `fs_effect_opaque`), writing depth, the colour times the alpha as
   their radiance, and nothing for the screen-space reflections, the AO or the decals. the effect
@@ -137,9 +136,10 @@ path ([`special-looks.ts`](../../packages/viewer/src/looks/special-looks.ts), `d
 (`fs_cutout_depth` in `mesh.wgsl`), for materials without `_USE_MAIN2` in the default
 `_DitherAlphaMode`. with `_UseMainTexAsAlpha` the texture only feeds the test: unlit looks bind it
 in the normal slot, lit ones (which may need that slot for their normal map) in the base slot, with
-the tint covering the base colour as an untextured look's does. drawn without the test, Power
-Plateau's `blackspot` was a dark square. the test leaves out the vertex alpha and the near camera
-fade, and `_USE_MAIN2` is drawn only when its second texture masks.
+the tint covering the base colour as an untextured look's does. the test leaves out the vertex alpha
+and the near camera fade. `_USE_MAIN2` is drawn only when its second texture masks
+(`_UseMainTex2AsAlpha` with `_MainTex2BlendMode` 0): the tint is multiplied by `_MainTex2Color`, and
+the surface draws without the test.
 
 unlit VFXDitherAlpha materials with a distortion, a dissolve, a mask or polar or screen UVs draw
 through VFXBaseV2's texture stack (`describeDitherEffect`, `stackLook`), fogged, blended by the
@@ -155,8 +155,7 @@ offset fills the same rows as VFXBaseV2's, leaving out VFXBaseV2's vertex-alpha 
 pull. a vertex offset alone doesn't bring a material onto the stack, and those stay unsupported.
 `_USE_MAIN2` that takes its second texture as alpha and multiplies multiplies the tint by
 `_MainTex2Color`, as the game's colour pass does without sampling the texture; other second-texture
-modes stay unsupported. Wuling City's red-tide walls (`M_fxmap_chichao_06_05`) are such, unchecked
-against an in-game shot.
+modes stay unsupported. Wuling City's red-tide walls (`M_fxmap_chichao_06_05`) are such.
 
 ## waterfalls
 
@@ -187,13 +186,14 @@ holds the same UVs without a texture sheet, and stays unsupported on meshes.
 
 the [mist](../game-data/effects.md#mist) cards and boxes draw by their own entry points in
 `effect.wgsl` (`fs_mist_card`, `fs_mist_volume`). lit cards take the sun over π, at the mesh normal
-rather than the game's normal map, and the cards' own fog (`_USE_FOG`) isn't drawn. boxes draw their
-back faces without a depth test, like the decals, and take the thickness from the nearer of the
-surface behind and the back face; only additive boxes are drawn, without their depth prepass or
-vertex colour. a box's 3D noise is the look's `volumeTexture`, streamed whole and bound beside the
-slots (a zeroed placeholder leaves boxes without it unchanged); the box waits for it like an
-effect's other textures. additive cards and boxes add their light unfogged; premultiplied cards
-blend over and fog themselves ([blending](#blending)).
+rather than the game's normal map, and the cards' own fog (`_USE_FOG`) isn't drawn. a card without a
+noise texture binds white (`MistCardSurface.noise` `null`), and its Fresnel term is
+`MistCardSurface.fresnel`. boxes draw their back faces without a depth test, like the decals, and
+take the thickness from the nearer of the surface behind and the back face; only additive boxes are
+drawn, without their depth prepass or vertex colour. a box's 3D noise is the look's `volumeTexture`,
+streamed whole and bound beside the slots (a zeroed placeholder leaves boxes without it unchanged);
+the box waits for it like an effect's other textures. additive cards and boxes add their light
+unfogged; premultiplied cards blend over and fog themselves ([blending](#blending)).
 
 ## light beams
 

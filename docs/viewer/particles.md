@@ -1,7 +1,8 @@
 # billboards and particles
 
-how the viewer plays the billboards and particle systems that
-[game-data/assets.md](../game-data/effects.md#particle-systems) describes.
+how the viewer plays the [billboards](../game-data/assets.md#billboards) and the
+[particle systems and spline movers](../game-data/particles.md) of the game's prefabs; what's left
+out is in [status](../status.md#effects-and-particles).
 
 ## billboards
 
@@ -59,11 +60,11 @@ system and its index, so any moment can be evaluated on its own:
   spinning by its age, its curves read at their end, as the game goes on stepping it; one replaying
   its loop range replays its path too, where the game's moves on.
 - without a ring buffer, a system whose emissions can outnumber its
-  [cap](../game-data/effects.md#particle-systems) skips the emissions that come while it's full, so
-  which particles live depends on every earlier emission: the emitter plays them forward from where
-  the last frame stopped, and starts afresh from an empty system four lifetimes back when the time
-  steps back or jumps further. the Very Large Rift's ripple rings (one particle, a burst every 0.1
-  s) thus spread for their 6 s instead of restarting every loop.
+  [cap](../game-data/particles.md#particle-systems) skips the emissions that come while it's full,
+  so which particles live depends on every earlier emission: the emitter plays them forward from
+  where the last frame stopped, and starts afresh from an empty system four lifetimes back when the
+  time steps back or jumps further. the Very Large Rift's ripple rings (one particle, a burst every
+  0.1 s) thus spread for their 6 s instead of restarting every loop.
 - start values read their curves at the emission's place in its loop. the shape gives the start
   position and direction (cones towards the matching point of their far end, volumes anywhere up to
   their length, donuts outwards from the tube's centre line), placed by the shape's own transform.
@@ -86,33 +87,35 @@ system and its index, so any moment can be evaluated on its own:
   rest of the motion runs along the orbit's axis.
 - a speed modifier curve (`modifierAt`) takes the place of `m · a` with its integral over the age,
   and the linear, orbital and radial curves are integrated times it, as the game
-  [scales every step](../game-data/effects.md#particle-systems); the fall, built up in the velocity
-  it scales, becomes `∫ g τ m(τ) dτ` (`½ g m a²` for a constant). systems with such a curve and drag
-  stand in.
-- drag slows the start velocity alone, by `k` or `k v²` per second (k the amount, times the
-  cross-section `π (size / 2)²` when it scales with size), and a fall gathers speed at `g − k` (none
-  when drag outweighs gravity) or towards the terminal speed `√(g / k)` under `k v²`; the velocity
-  module's own terms and orbits aren't slowed, and the size is the start size. the speed modifier
-  then scales the slowed launch and fall alike.
+  [scales every step](../game-data/particles.md#particle-systems); the fall, built up in the
+  velocity it scales, becomes `∫ g τ m(τ) dτ` (`½ g m a²` for a constant). systems with such a curve
+  and drag but no speed limit stand in, since the closed form below takes the modifier as a
+  constant.
+- without a speed limit or force fields, drag (`dragged`, `draggedFall` in `motion.ts`) slows the
+  start velocity alone, by `k` or `k v²` per second (k the amount, times the cross-section
+  `π (size / 2)²` when it scales with size), and a fall gathers speed at `g − k` (none when drag
+  outweighs gravity) or towards the terminal speed `√(g / k)` under `k v²`; the velocity module's
+  own terms and orbits aren't slowed, and the size is the start size. the speed modifier then scales
+  the slowed launch and fall alike.
 - under a speed limit or force fields (`steppedPath`) there is no closed form, so the particle is
   stepped to its age at 30 Hz (at most 600 steps, longer ones beyond), from its birth the first time
   it's drawn and from where the previous frame left it after that; a step back in time starts it
   from its birth again. each step adds gravity to its own velocity, lets the force fields change it
   (`applyForces`, from its place and age before the step), limits the whole speed, the velocity
-  module's terms included, as [the game does](../game-data/effects.md#particle-systems), drags it
+  module's terms included, as [the game does](../game-data/particles.md#particle-systems), drags it
   (by the size at the step's age, from the particle's own velocity), and moves it by the whole
   velocity times the speed modifier read at the step's age (the limit sees the velocity without it),
   so the collectible pieces' rings (`ringMid2`) slow as their modifier falls while held near their
-  limit. the fields follow the [game's sphere fields](../game-data/effects.md#particle-systems) term
-  by term, with the viewer's own random values; drag by size reads the particle's x size. the
+  limit. the fields follow the [game's sphere fields](../game-data/particles.md#particle-systems)
+  term by term, with the viewer's own random values; drag by size reads the particle's x size. the
   module's terms, each read at the step's age, are its linear velocity, the orbit's velocity at the
   particle's current place (`ω × r` about the orbit's centre, rather than the closed form's turn of
   the whole path) and the radial push away from that centre. the limit's random value is the
   particle's own, not the game's.
-- a system with a spline ([spline movers](../game-data/effects.md#spline-movers)) ignores the above:
-  a particle lies at the path's point its travelled distance reaches (the speed integrated over its
-  age), plus its start position in the shape, and leaves once that distance passes the path's end.
-  `splinePoint` finds the point as the game does.
+- a system with a spline ([spline movers](../game-data/particles.md#spline-movers)) ignores the
+  above: a particle lies at the path's point its travelled distance reaches (the speed integrated
+  over its age), plus its start position in the shape, and leaves once that distance passes the
+  path's end. `splinePoint` finds the point as the game does.
 
 ### pose and colour
 
@@ -132,13 +135,13 @@ system and its index, so any moment can be evaluated on its own:
   where their rotation rolls them, or along the world's, the emitter's or the velocity's axes),
   vertical ones with its heading, horizontal ones lie flat facing up, and stretched ones run back
   from the particle along its velocity, as the game's legacy
-  [stretching](../game-data/effects.md#particle-systems) does, their width across it as seen from
+  [stretching](../game-data/particles.md#particle-systems) does, their width across it as seen from
   the camera's position (`ParticleView.eye`), flattened onto the view plane, and their normal the
   face's own (the game's at `m_NormalDirection` 1; other values' lean towards the edges isn't
   drawn). like the game's, still streaks and those along the line of sight get no size, and the
   pivot moves the head and the streak as the game's does. the camera's velocity isn't taken off.
 - the transform's scale sizes the particles only when the system is `sizedByScale`, and quads then
-  keep to their [on-screen limits](../game-data/effects.md#particle-systems) (`screenLimited`).
+  keep to their [on-screen limits](../game-data/particles.md#particle-systems) (`screenLimited`).
 - rows that turn with the camera (view-aligned meshes and billboards) or its heading (vertical
   quads) keep their own rotation and set the [billboard](#billboards) bits, so `row_basis` turns
   them on the GPU as it does billboard chains; the others are turned on the CPU.

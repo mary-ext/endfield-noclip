@@ -29,7 +29,7 @@ the transparent pass and screen effects, then `encodeAfterScene`). passes in ord
 | 13  | `light shaft downsample`, `light shaft blur` ×n, `light shaft apply` | `lit`, the environment has light shafts, and the sun is in front of the camera ([`render/post/light-shafts.ts`](../../packages/viewer/src/render/post/light-shafts.ts))                                                                                   |
 | 14  | `lens flare`                                                         | `lit`, the environment has a flare, and the sun is on screen (or the flare allows it off screen) ([`render/post/lens-flare.ts`](../../packages/viewer/src/render/post/lens-flare.ts))                                                                     |
 | 15  | `taa`                                                                | always ([`render/post/temporal-aa.ts`](../../packages/viewer/src/render/post/temporal-aa.ts)); with `antialiasing` off it only scales to the output size                                                                                                  |
-| 16  | `auto exposure histogram` (compute)                                  | `autoExposure` on, `lit`, the profile meters, and a readback buffer is free ([`render/post/auto-exposure.ts`](../../packages/viewer/src/render/post/auto-exposure.ts))                                                                                    |
+| 16  | `auto exposure histogram` (compute)                                  | `autoExposure` on, `lit`, the profile meters, the view is changing or settling (or nothing is metered yet), and a readback buffer is free ([`render/post/auto-exposure.ts`](../../packages/viewer/src/render/post/auto-exposure.ts))                      |
 | 17  | `bloom down` ×n, `bloom up` ×n                                       | `bloom` on, `lit`, and a canvas large enough for the mip chain                                                                                                                                                                                            |
 | 18  | `tonemap`                                                            | always, into the swapchain                                                                                                                                                                                                                                |
 
@@ -51,17 +51,18 @@ what each post pass computes is in [post-processing](post-processing.md) and
   lit surfaces hand the screen-space reflections: the sky reflection the radiance holds
   (`rgba16float`) and the normal, roughness and hit weight packed in `rg32uint`, which fills
   WebGPU's default 32 bytes per sample; depth is stored for post. draw order: the opaque meshes'
-  depth, terrain, meshes (opaque, then alpha-tested, then opaque
-  [effects](effects.md#vfxbasev2-and-vfxdecal), then stencil-only portal masks), instance boxes, box
-  outlines (boxes larger than `outlineMetres`), terrain wireframe.
+  depth and the alpha-tested meshes' cut-out depth, terrain, meshes (opaque, then alpha-tested, both
+  shading at equal depth, then opaque [effects](effects.md#vfxbasev2-and-vfxdecal), then
+  stencil-only portal masks), instance boxes, box outlines (boxes larger than `outlineMetres`),
+  terrain wireframe.
 - **decal relight pass.** lit decals that change only a surface's normal, roughness or occlusion add
   the change in its light to the radiance, reading the depth, packed surface and ambient targets
   ([decals](materials.md#decals)).
 - **transparent pass.** as in the game
-  ([transparent draw order](../game-data/materials.md#transparent-draw-order)), glass and
-  alpha-blended effects draw after the water, straight over the composited scene, far to near:
-  testing the main pass's depth without writing it (the stencil stays writable), each fogs its own
-  colour at its own distance
+  ([transparent draw order](../game-data/materials.md#transparent-draw-order); the pass's steps are
+  under [blending](../game-data/effects.md#blending)), glass and alpha-blended effects draw after
+  the water, straight over the composited scene, far to near: testing the main pass's depth without
+  writing it (the stencil stays writable), each fogs its own colour at its own distance
   ([`render/sky/fog.wgsl`](../../packages/viewer/src/render/sky/fog.wgsl), whose inputs the mesh
   draw group carries) and blends it premultiplied over what's there, additive light with an opacity
   of 0 ([blending](effects.md#blending)). the order is by instance: the selection keeps each
@@ -108,21 +109,21 @@ what each post pass computes is in [post-processing](post-processing.md) and
   quantized to the animation's box. so the prepass, shading and shadow passes need no variants, and
   every placement of a geometry shows the same frame of the viewer's clock. normals and tangents
   turn by the blended matrix itself, as Unity's skinning turns them. a frame that skins one redraws
-  the shadow layers, so with the clock stopped they stay as drawn.
+  the sharp shadow layers, so with the clock stopped they stay as drawn.
 - **post** ([`render/post/post-process.ts`](../../packages/viewer/src/render/post/post-process.ts))
   is fullscreen triangles with `auto` layouts
-  ([`gfx/fullscreen-pass.ts`](../../packages/viewer/src/gfx/fullscreen-pass.ts)); `taa` and the
-  screen-space reflections reproject their histories through the previous camera
+  ([`gfx/fullscreen-pass.ts`](../../packages/viewer/src/gfx/fullscreen-pass.ts)), except the lens
+  flare's instanced quads and the water; `taa` and the screen-space reflections reproject their
+  histories through the previous camera
   ([`render/post/camera-history.ts`](../../packages/viewer/src/render/post/camera-history.ts)).
   composite adds the screen-space reflections ([lighting](lighting.md#screen-space-reflections)),
   then applies AO, sky, atmosphere fog and height fog; `heightFog` and `atmosphereFog` change what
   composite does, not which passes run. water draws over a copy of the composited scene so it can
   refract and reflect it, before anything transparent, as the game lights its water first
   ([`render/water/water-renderer.ts`](../../packages/viewer/src/render/water/water-renderer.ts),
-  [water](water.md)). it's the one post pass with an explicit layout, because it also binds the main
-  pass's frame group for the sun shadow, irradiance volume and sky reflection; its shader moves the
-  post uniforms to group 3
-  ([`render/post/shader-source.ts`](../../packages/viewer/src/render/post/shader-source.ts)). WGSL
+  [water](water.md)). its layout is explicit because it also binds the main pass's frame group for
+  the sun shadow, irradiance volume and sky reflection; its shader moves the post uniforms to group
+  3 ([`render/post/shader-source.ts`](../../packages/viewer/src/render/post/shader-source.ts)). WGSL
   helpers that several shaders share (noise, colour conversions, luminance weights, the screen-space
   projection, the octahedral codec, the reflection surface's packing, the Henyey–Greenstein phase,
   normal-map texels) are in

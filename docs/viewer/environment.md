@@ -19,10 +19,10 @@ are packed but unread: the cloud panorama never moves, and the PC fog path switc
 it fully and no other level's volume does, because neighbours' volumes overlap a level's rectangle.
 
 the viewer blends the chunk and [prefab](../game-data/environment.md#prefab-volumes) volumes the
-package holds. it never sees cylinder volumes, a prefab prism under a non-identity placement, or
-LevelData's dynamic volumes, which the packer leaves out (the first two listed in
-`debug/environments.json`), nor local post `Volume`s: each level takes only its global post profile.
-a scene without levels has no environment.
+package holds, which leaves out some of the game's
+([volumes](../extraction/environments.md#volumes)): cylinder volumes, the volumes of a prefab with a
+prism under a moved placement, LevelData's dynamic volumes and local post `Volume`s, so each level
+takes only its global post profile. a scene without levels has no environment.
 
 ## scene states
 
@@ -43,19 +43,20 @@ the post profile, not a Unity `VolumeProfile`.
   [`viewer/environment-state.ts`](../../packages/viewer/src/viewer/environment-state.ts) re-plans
   only when the eye, the volume settings, the condition results or a fade changed, and hands the
   renderers one derived look (environment, celestial layers, lens flare, wetness) per change.
-- visit volumes in ascending priority, then shape kind (global, box, prism). the game's order among
-  equal priorities isn't known, so this tie-break is an assumption. the order and the shape tests
-  are
+- visit volumes in ascending priority, then shape kind (global, box, prism), then list order. the
+  game's order among equal priorities isn't known, so this tie-break is an assumption. the order and
+  the shape tests are
   [`package-format/environment-volumes.ts`](../../packages/package-format/src/environment-volumes.ts),
   which the extractor's
   [base-environment vote](../extraction/environments.md#the-levels-base-environment) shares.
-- time-mode factors are kept per camera in `EnvironmentFades`.
-- manual volumes stay off unless ticked in the scene-conditions panel, which previews them at full
-  strength, since the scripts that drive them aren't recovered.
+- time-mode factors are kept per camera in `EnvironmentFades`, which snaps them after a move of more
+  than 5 m in a frame.
 - a factor ≥ 1 copies the section. below that, each field blends as the environment table's `schema`
   says ([schema](../extraction/environments.md#blend-schema)): lerp, lerp and round, or switch at ½.
   the cloud panorama, height-fog flow noise, lens flare and rain wetness follow the game's special
-  cases; the falling rain's has no use while rain isn't drawn, and snow isn't packed.
+  cases. the cloud shadow's crossfade isn't followed (its fields lerp or switch by the schema), and
+  `drawCloudAfterPlanet` switches at ½ rather than blending as a weight. the falling rain's case has
+  no use while rain isn't drawn, and snow isn't packed.
 - where the game's lerp of a plain field isn't known
   ([blending](../game-data/environment.md#blending-at-the-camera)), the viewer picks one that keeps
   the value meaningful: the sun's and every effect's direction lerp as pitch and yaw (the yaw the
@@ -76,9 +77,10 @@ and its visibility group's condition holds.
 
 a volume's group requires its `environmentVolume` control on, alongside its scene states, so the
 volume checkboxes are scene controls like any other: picks, "Reset" and level listing work the same
-way. the package defaults scripted volumes (`blend.kind` `scripted`) off and others on; a scripted
-volume that is on applies at full strength inside it. phase pinning goes over either. volume names
-do not establish activation ([activation](../game-data/environment.md#activation)).
+way. the package defaults manual-blend volumes (`blend.kind` `scripted`) off, since the scripts that
+drive their factor aren't followed, and every other volume on; a scripted volume that is on applies
+at full strength inside it. so story-state chunk volumes count as enabled, which is wrong where the
+game keeps them off ([activation](../game-data/environment.md#activation)).
 
 ## weather
 
@@ -90,9 +92,9 @@ aren't extracted. falling rain and snow aren't drawn, and `snowConfig` isn't pac
 
 `rain_wet_surface` ([`frame.wgsl`](../../packages/viewer/src/render/frame/frame.wgsl), fed by
 [`environment/wetness.ts`](../../packages/viewer/src/environment/wetness.ts)) wets the mesh and
-terrain surfaces as the [game's deferred lighting](../game-data/environment.md#wetness) does. the
-one-sided `enableWetness` blend is `lerpRain` in
+terrain surfaces as the [game's deferred lighting](../game-data/environment.md#wetness) does,
+standing water included. the one-sided `enableWetness` blend is `lerpRain` in
 [`environment/blend.ts`](../../packages/viewer/src/environment/blend.ts), where a profile without a
 rain section counts as dry. the rain occlusion map isn't rendered, so every surface counts as open
-to the sky, and its range is taken as 100 m; the coverage edges have no jitter, and walls don't run
-with water nor normal-mapped dips flood.
+to the sky, and the coverage range is the occlusion map's 100 m; the coverage edges have no jitter,
+there are no ripples or splashes, and walls don't run with water nor normal-mapped dips flood.

@@ -26,10 +26,10 @@ scene), so water is resident. the groups holding them have the bounds columns 0�
 
 in every shipped row the mask is nonzero, every value is finite and both bindings are present.
 
-map02's 872 LOD surfaces are its open water; the 431 proxy-only ones are mostly paddy-field pools.
-the wetness offset raises the surface when the game darkens the ground it touches. the 24-byte
-column 7 is the generic render-object info every renderable entity carries: layer mask, flags, scene
-mask, an art tag and a squared sorting distance.
+map02's LOD surfaces are its open water; the proxy-only ones are mostly paddy-field pools. the
+wetness offset raises the surface when the game darkens the ground it touches. the 24-byte column 7
+is the generic render-object info every renderable entity carries: layer mask, flags, scene mask, an
+art tag and a squared sorting distance.
 
 surfaces have no materials of their own: the render pipeline draws them all with its own
 `HGRP/WaterProxy` and `HGRP/WaterRendering` shaders, indexing the configs by material index.
@@ -134,10 +134,10 @@ as a signed 64-bit integer. sector `(x, z)` covers world
 `[center.x + x·sectorSize, +sectorSize) × [center.z + z·sectorSize, +sectorSize)`, the game's own
 sector lookup. each sector MonoBehaviour's `waterSectorTexture0` is a flow tile (256², linear BC7,
 one mip) holding the global flow map's content at `flowmapPrecision`. the data flag doesn't promise
-a tile: some sector assets leave `waterSectorTexture0` empty (8 of map01's 154 sectors with data, 24
-of map02's 284). near the camera the game reads the flow (and most authored foam) from the sector
-tiles, blending to the global map at the edge of a 3 × 3 window of sectors; that lookup assumes 128
-m sectors, map02's size.
+a tile: some sector assets leave `waterSectorTexture0` empty (a handful of map01's sectors with
+data, a couple dozen of map02's). near the camera the game reads the flow (and most authored foam)
+from the sector tiles, blending to the global map at the edge of a 3 × 3 window of sectors; that
+lookup assumes 128 m sectors, map02's size.
 
 ## shading
 
@@ -203,9 +203,9 @@ bend is the grid's or the mesh's ([how surfaces are drawn](#how-surfaces-are-dra
 ## water volumes
 
 besides the surfaces above, levels place gameplay water whose surface moves: LevelData
-`waterVolumes` (and `riftVolumes`, same record). 14 scenes have them: map02 (61 in the levels whose
-map is map02, 13 moved by scripts), Suiming, a race, three dungeons and eight factory puzzle scenes.
-a volume holds:
+`waterVolumes` (and `riftVolumes`, same record). the scenes that have them: map02 (about 60 in the
+levels whose map is map02, about a fifth of them moved by scripts), Suiming, a race, three dungeons
+and the factory puzzle scenes. a volume holds:
 
 | field                                                        | meaning                                                                                                     |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
@@ -240,12 +240,12 @@ a surface prefab is a MeshFilter, MeshCollider and an `HGWaterRendererV2` whose 
 an ordinary surface `WaterConfig` (render type 1, proxy; wetness offset 0.25 m). the game fills the
 MeshFilter with the outline triangulated in x, z, or, when the volume's `meshPathHash` is set, with
 that mesh: the `…/Gameplay/Water/<item type>#<volume id>_WaterSurface.asset` files, the same outline
-triangulated ahead of time around the pivot (30 of map02's 61 volumes). a volume that sets
+triangulated ahead of time around the pivot (about half of map02's volumes). a volume that sets
 `isUseLunaConfig` swaps its own `lunaConfigPathHash` config in over the prefab's. most map02 volumes
-don't (54 of 61, sewage and acid among them). the surface moves vertically as the fill changes and
-is drawn by the water pipeline like any surface. a volume with a flow speed or a direction other
-than the default gets a config slot of its own with its flow applied; the default takes the type's
-shared slot.
+don't (sewage and acid among them). the surface moves vertically as the fill changes and is drawn by
+the water pipeline like any surface. a volume with a flow speed or a direction other than the
+default gets a config slot of its own with its flow applied; the default takes the type's shared
+slot.
 
 level scripts move volumes:
 
@@ -259,11 +259,11 @@ level scripts move volumes:
   freezes a move
 
 what triggers the scripts varies: switches (map02's Marker Stone pit, a one-use
-`int_switch_wltech01` that drains volume 23400080003 from full to half), quests, map variables and
-script stages. in Suiming (`indie_dg016`) a server-side clock drives a round: script 46300000013
-reads the map variable `timer` (minutes since the round started) and lowers the pit (volume
-46300000002, floor y 51.19, 110 m) in stages, each snapping to where the water should be at that
-minute and then receding to the stage's level at a fixed speed:
+`int_switch_wltech01`, 23400083108, whose script 23400083014 drains volume 23400080003 from full to
+half), quests, map variables and script stages. in Suiming (`indie_dg016`) a server-side clock
+drives a round: script 46300000013 reads the map variable `timer` (minutes since the round started)
+and lowers the pit (volume 46300000002, floor y 51.19, 110 m) in stages, each snapping to where the
+water should be at that minute and then receding to the stage's level at a fixed speed:
 
 | minutes | level (y)                  | speed (m/s) | takes |
 | ------- | -------------------------- | ----------- | ----- |
@@ -286,17 +286,62 @@ over river surfaces.
 
 a volume with `isPrototype` false is **factory water**: every map02 volume and the factory puzzle
 scenes' (`blackbox_*`); the dungeons' script-only volumes are prototypes. the server's factory keeps
-a factory volume's liquid and amount, which replace the authored `amountCurrent` once it reports,
-and a map reset doesn't restore them. an infinite one ignores the server's amounts; a finite one is
-a pool the player empties with Fluid Pumps (`pump_1`, `pump_2` for acid too) and fills with Fluid
-Supply Units, which refuse sewage, so a sewage pool only goes down. its amount stays within 0 and
-`amountMax`, the surface following it linearly; no client code refills a pool, and an empty pool's
-surface stays at its pivot (unchecked in game). its `fillSpeed` is in amount units a second, so a
-surface moves at `fillSpeed · heightMax / amountMax` metres a second: 6 m/s in the Test Area's pits,
-0.026 m/s in Wuling City's Tianjing Courtyard pond.
+a factory volume's liquid and amount, which replace the authored `amountCurrent` once it reports; a
+map reset puts only prototype volumes back at their authored amount. an infinite one ignores the
+server's amounts; a finite one is a pool the player empties with Fluid Pumps (`pump_1` for water,
+sewage, plant, xiranite and copper liquids, `pump_2` for acid too; one round a second, the amount
+per round not found) and fills with Fluid Supply Units, which refuse sewage, so a sewage pool only
+goes down. its amount stays within 0 and `amountMax`, the surface following it linearly; no client
+code refills a pool, and an empty pool's surface stays at its pivot (unchecked in game). its
+`fillSpeed` is in amount units a second, so a surface moves at `fillSpeed · heightMax / amountMax`
+metres a second, which animates each reported step (the pump paces the drain): 6 m/s in the Test
+Area's pits, 0.026 m/s in Wuling City's Tianjing Courtyard pond.
+
+a factory volume builds its surface once the server's factory has reported it, and a change to no
+liquid waits until the surface has finished sinking (both read from the client, unchecked in game).
 
 a volume with a `parentId` follows its parent: its surface sits at the parent's, clamped between its
 own pivot and full (basins beside a pool).
+
+besides pumps and supply units, amounts move through:
+
+- `int_water_volume_transferer(_short)` interactives (component 82: `water_volume_from`,
+  `water_volume_to`, `is_do_once`, `progressLockCondition`), which pour one volume into another; the
+  server moves factory water. a transfer fails from an empty source, into a full target, and into a
+  target that holds another liquid
+- `int_water_volume_switch` interactives (component 83, `water_volume_inst_id`): Jingyu's two 0.5 m
+  volumes (10100023001, 10100033001)
+- scripts: `WaterVolumeSetAmount` and `WaterVolumeTransfer(All)`. none of map02's sets an amount;
+  its script moves are all `WaterVolumeInfiniteSetHeight` on infinite volumes
+
+each change raises the level event `OnWaterVolumeChanged` (`water_volume`, `value_old`,
+`value_new`). on map02 only Qingbo's script 23300000064 (after transferer 23300000037 empties
+23300000004 into 23300000005 once, it drops the infinite 23300000001 to 0.2) and Sword Vault Dale's
+rune puzzle script 25000060001 listen.
+
+map02's finite volumes:
+
+| level             | volumes                                                  | role                                                                                                  |
+| ----------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| lv005 Test Area   | 23200010000 (Pool 1), 23200010003 (Pool 2), sewage       | pumped; pivots near −462, 251.4, −464 and −502, full at y 263.4; basins 23200010001, …004 follow them |
+| lv002 Wuling City | 22800060004, water                                       | the Tianjing Courtyard pond, pumped; pivot −797, 240.6, −530; 22800060019 and …020 follow it          |
+| lv002             | 22800060005 (0 of 1000, 28 m deep, under the pond)       | nothing found filling it                                                                              |
+| lv002             | 22800060002, 3, 6–11, 16 (near −830, 268–285, −690…−745) | terrace transferer puzzle, locked until `e5m3_q#3`                                                    |
+| lv002             | 22800330000, 1, 6, 7 (near −1465, 314–320, −165…−195)    | short-transferer puzzle (`e5m3_q#3`)                                                                  |
+| lv002             | 22800060012, …013, …017 (full)                           | no transferer or quest found                                                                          |
+| lv002             | 22800030000 (4 of 45, at −1229, 261.9, 135)              | guide script 22800090011 waits for 5 or more, poured in by a supply unit                              |
+| lv003 Qingbo      | 23300000003 (sewage, 800); 23300000004 → …005 (2000)     | no quest found; the once-only transferer above, after `e7m1`                                          |
+| lv001 Jingyu      | 10100030000–4                                            | transferer puzzles (`e5m1_q#4`, `e5m2_q#22`)                                                          |
+| lv006 Sword Vault | 25000060001, 3, 4, 5, 6 (near 330, 220–226, −1850…−1920) | rune-column short-transferer puzzle (`sm2l6m1_q#14`)                                                  |
+| lv008             | rift volumes (xiranite, 0 of 5000)                       | filled, not drained                                                                                   |
+
+every map02 acid volume is infinite, as is the water of lv004 and lv010. map01 has no volumes. the
+prototype volumes are those of dung02_cdg004, dung02_cdg009, dung02_cdg013, indie_dg016 and
+indie_race001.
+
+the `WaterProgressSync` script modules and `int_switch_water_progress` interactives are the water
+drones' wheel mechanic (component 87), unrelated to volumes although their ids collide with volume
+ids.
 
 missions wait on pools through objective conditions (`CheckFluidVolume`: level, volume, operator,
 amount):
@@ -306,9 +351,14 @@ amount):
 | Tianjing Courtyard pond, Wuling City (22800060004, 40000, 35 m) | `gm02m10` "Treasure Beneath the Pond", q#2: at 800 or less    |
 | Pool 1, Test Area (23200010000, sewage, 4000, 12 m)             | `gm02m14` "Divvy Up the Trouble", q#2 "Drain Pool 1": under 1 |
 
-their beds hold content that's always placed (the pond's gate, statue keys and chests, the Test Area
-pits' valve wheels), submerged until drained. nothing else switches with the drain. Pool 2
-(23200010003) beside Pool 1 drains the same way, but no quest needs it.
+the pond's check is the fallback of q#2 "Connect the Fluid Pump to the pond", which otherwise
+completes when a fluid pump runs in the quest's area. the wait itself is q#3 "Wait for the pond's
+water to be drained", a server-evaluated condition that names no volume and carries the same
+threshold (progress at 800 or less). "Drain Pool 1" also completes on a dialog option or an
+interactive's state. their beds hold content that's always placed (the pond's gate, statue keys and
+chests, the Test Area pits' valve wheels), submerged until drained. nothing else switches with the
+drain: no scene state, script group, load gate or `OnWaterVolumeChanged` listener reads either pool.
+Pool 2 (23200010003) beside Pool 1 drains the same way, but no quest needs it.
 
 ### floaters
 
@@ -331,9 +381,11 @@ height (some sit up to 0.5 m above the surface) is then what keeps them above it
 
 no static InitChunkData renderer uses an `HGRP/WaterProxy` or `HGRP/WaterDecal` material; both
 arrive through prefab content, and WaterDecal boxes also through InitChunkData component 31
-([world](world.md#initchunkdata-layout)), which isn't read. `HGRP/WaterProxy` has only the water
-pipeline's passes (top-down prepass, wetness mask, depth, the water G-buffer), none of which a scene
-renderer draws in the main view; ten map02 river meshes carry it (`M_river_proxy_22`).
+([world](world.md#initchunkdata-layout)): entities without a renderer (a couple hundred on map02),
+each a 172-byte row naming a mesh (the cube), a material, a matrix and animation parameters whose
+meaning isn't recovered. `HGRP/WaterProxy` has only the water pipeline's passes (top-down prepass,
+wetness mask, depth, the water G-buffer), none of which a scene renderer draws in the main view; a
+few map02 river meshes carry it (`M_river_proxy_22`).
 
 ### WaterDecal
 
@@ -382,10 +434,10 @@ binds just before), reconstructs the world position there and moves it into the 
   writes its depth into a copy (`depthWithWater`).
 
 the placement's `HGWaterDecalRenderer` holds `tilling`, `speed`, `opacity`, `brightness`,
-`tintColor` (the values above), `displacement` (the WaterDecalDisplacement pass, for the water's
-tessellated displacement), `enableMovement`, `renderType`, `heightLayer`, `sortingOrder` and
-`waterStreamingType`. every map02 prefab's renderer has tiling, speed, opacity and brightness 1 and
-a white tint; only `displacement` and `enableMovement` vary.
+`tintColor` (the values above), `displacement` (the WaterDecalDisplacement pass, which writes a
+height into the LOD grid's top-down view), `useSH`, `anchorOffset`, `enableMovement`, `renderType`,
+`heightLayer`, `sortingOrder` and `waterStreamingType`. every map02 prefab's renderer has tiling,
+speed, opacity and brightness 1 and a white tint; only `displacement` and `enableMovement` vary.
 
 map02's prefab WaterDecal materials use `_BLEND_BASECOLOR` with `_USE_DISTURB` and `_USE_MASK`, plus
 `_USE_SOFTBLEND`, `_USE_DISSOLVE` or `_USE_WATER_EROSION`; the shader also has

@@ -17,6 +17,8 @@ dissolve and disturb effects; trunks declare no property Lit lacks:
 - **two-basemap layout** (1 or 2, most materials): the normal map holds the normal in RG, roughness
   in B and occlusion in A. metallic is the base colour's alpha with 1, `_Metallic` with 2.
 
+a decoded normal's x and y each snap to 0 below 0.012 in magnitude.
+
 foliage normal maps hold roughness in B the same way. roughness read from a map is remapped between
 `_RoughnessMin` and `_RoughnessMax`, which can be inverted (min 1, max 0, so B holds smoothness).
 the map's roughness and occlusion don't depend on the mesh's tangents, which only the bump uses: the
@@ -45,9 +47,9 @@ tinted by about 0.3. `HGRP/LitHLOD` ignores the tint.
 ## alpha testing
 
 alpha-tested HGRP Lit materials (`_ALPHATEST_ON`) test the alpha `_AlphaMaskChannel` picks against
-`_AlphaClipThreshold`: 0 for the base colour's, 1 for the normal map's. map01 has 26 materials on
-channel 1, all in the two-basemap layout, where the base alpha is metallic; testing that instead
-cuts the Hub's white container walls down to their grime streaks.
+`_AlphaClipThreshold`: 0 for the base colour's, 1 for the normal map's. map01 has a couple dozen
+materials on channel 1, all in the two-basemap layout, where the base alpha is metallic; testing
+that instead cuts the Hub's white container walls down to their grime streaks.
 
 ## emission
 
@@ -81,16 +83,16 @@ white lamp cubes on Wuling's and Marker Stone's towers (`M_module_tylight+1_001_
 about every 3 s. `_EnableEmissiveAnimFlicker` swaps the pulse for random on/off flicker, value noise
 over time hashed per object position; no map02 material sets it.
 
-`_EMISSIVE_ANIM_SWEEP` (88 map02 materials, among them the clearable rocks and the drones' targets)
-lights a band that sweeps up the object along its own y: each emission colour (the main one and G,
-B, A) is multiplied by `mix(1, band, alpha)`, so a colour with alpha 1 glows only inside the band
-and alpha 0 glows steadily. the band is `_EmissiveSweepWidth` wide, with `_EmissiveSweepFalloff`
-sharpening its edge, and moves at `_EmissiveSweepSpeed` from `_EmissiveSweepHeightOffset`, repeating
-every `_EmissiveSweepInterval`, phase-shifted per object by `_EmissiveSweepRandom`; inside it the
-strength follows the albedo's brightness by `_EmissiveSweepAlbedoScale` and a runtime per-draw
-factor. outside the band it is 0. Jingyu's clearable rock
-(`M_interactive_hongshan_obstaclerock+1_001_01`) keeps its red cracks lit (alpha 0) and sweeps a
-grey glow of 2.1 from its emissive map's G (alpha 1), which covers the whole rock.
+`_EMISSIVE_ANIM_SWEEP` (about 90 map02 materials, among them the clearable rocks and the drones'
+targets) lights a band that sweeps up the object along its own y: each emission colour (the main one
+and G, B, A) is multiplied by `mix(1, band, alpha)`, so a colour with alpha 1 glows only inside the
+band and alpha 0 glows steadily. the band is `_EmissiveSweepWidth` wide, with
+`_EmissiveSweepFalloff` sharpening its edge, and moves at `_EmissiveSweepSpeed` from
+`_EmissiveSweepHeightOffset`, repeating every `_EmissiveSweepInterval`, phase-shifted per object by
+`_EmissiveSweepRandom`; inside it the strength follows the albedo's brightness by
+`_EmissiveSweepAlbedoScale` and a runtime per-draw factor. outside the band it is 0. Jingyu's
+clearable rock (`M_interactive_hongshan_obstaclerock+1_001_01`) keeps its red cracks lit (alpha 0)
+and sweeps a grey glow of 2.1 from its emissive map's G (alpha 1), which covers the whole rock.
 
 each draw also carries a runtime emission colour in its per-draw data, which replaces
 `_EmissiveColor` by its alpha. the static scenery's files store it as zero, and the client's known
@@ -156,8 +158,8 @@ detail map tile ×5 over UV set 1.
   `[_ParallaxMinBrightness, 1]`, where `T` is [the clock](#clock) and `x + y + z` is the object's
   world position. with `_ParallaxCharPos` set, `_ParallaxBrightStrength` times a smoothstep from
   `_ParallaxBrightOuterRadius` down to `…InnerRadius` of the distance to the player is added to the
-  pulse. on map01 seven crystal materials use it, mostly with strength 20 within 3–25 m; one stores
-  a glow colour of only 0.75, so it glows almost only near the player. `_ParallaxIgnorePostExposure`
+  pulse. map01's crystal materials use it, mostly with strength 20 within 3–25 m; one stores a glow
+  colour of only 0.75, so it glows almost only near the player. `_ParallaxIgnorePostExposure`
   divides out the post exposure as emission does. the shader declares both maps' default black, and
   many crystals leave the noise map empty (the campfires' crystal `M_interactive_campfire+1_003_02`,
   the display crystal `M_iprop_map01_zmdmachine+1_009_02` and Dijiang's far crystal
@@ -166,9 +168,9 @@ detail map tile ×5 over UV set 1.
 - **`_MATCAP`** (the campfires' crystal, a few Dijiang props): `_MatcapMap`, sampled at the
   view-space normal's `xy · 0.5 + 0.5`, times `_MatcapMapStrength`, is added to the emission, not
   tinted by the albedo. `_MatCapIgnorePostExposure` divides out the post exposure as emission does.
-- **`_LAYERBLEND_TOP`** (moss and sand on rock tops; ~220 map02 materials, 33 on map01): a second
-  material covers the surface by `saturate((up − _TopBlendThreshold) / _TopBlendSmoothness)`, where
-  `up` is the world Y of the vertex normal, blended toward the normal-mapped one by
+- **`_LAYERBLEND_TOP`** (moss and sand on rock tops; ~220 map02 materials, a few dozen on map01): a
+  second material covers the surface by `saturate((up − _TopBlendThreshold) / _TopBlendSmoothness)`,
+  where `up` is the world Y of the vertex normal, blended toward the normal-mapped one by
   `_TopBlendWithBumpMap`. with `_LayerBlendHeight`, the base's height and `_Layer1BaseMap`'s alpha,
   each weighted by its coverage, compete within `_LayerBlendHeightTransition`. the layer's colour is
   desaturated by `_Layer1Saturation`, tinted by `_Layer1TintColor`, brightened by
@@ -181,7 +183,7 @@ detail map tile ×5 over UV set 1.
   `_LayerBlendUVType` (UV set 0, world XZ, or UV set 2), times `_Layer1Tilling` plus
   `_Layer1Offset`, ignoring their `_ST`. no mesh map02 draws with a UV-set-2 layer has that set, and
   the game reads a missing UV set as set 0 (an in-game shot of a Jingyu moss rock shows the moss
-  tiling over UV set 0; see [open](#open)). two all-moss rock materials have no base colour map, so
+  tiling over UV set 0; see [open](#open)). some all-moss rock materials have no base colour map, so
   their base is white and the layer is all they show.
 - **`_LAYERBLEND_MASK`** (~200 map02 materials): the same layer, covering by a mask instead of
   facing up: `_LayerBlendMaskMap`'s R, sampled untiled from UV set 0 (UV set 1 when
@@ -250,12 +252,12 @@ parameter vector's RGB, covering the albedo by its A.
 
 ## glass
 
-`HGRP/LitTransparent` is the glass shader (16 materials on map01: windows and glass walls such as
-the Originium Science Park offices). its materials alpha-blend (`_EnableAlphaBlend`, source alpha
-over one minus source alpha, queue 3000, no depth write) and use Lit's texture layouts; some set the
-source factor to one instead, which suggests premultiplied colour, unchecked against the shader.
-Fresnel opacity (`_UseFresnel`, `_FresnelAffectOpacity`) is off on every map01 material. the shader
-also declares screen refraction (`_IoR`, `_RefractionIntensity`, `_RefractThickness`,
+`HGRP/LitTransparent` is the glass shader (a dozen or so materials on map01: windows and glass walls
+such as the Originium Science Park offices). its materials alpha-blend (`_EnableAlphaBlend`, source
+alpha over one minus source alpha, queue 3000, no depth write) and use Lit's texture layouts; some
+set the source factor to one instead, which suggests premultiplied colour, unchecked against the
+shader. Fresnel opacity (`_UseFresnel`, `_FresnelAffectOpacity`) is off on every map01 material. the
+shader also declares screen refraction (`_IoR`, `_RefractionIntensity`, `_RefractThickness`,
 `_RefractTint`, `_RefractTex`, `_UseProbeRefraction`) and planar reflection
 (`_EnabledPlanarReflection`); how they shade isn't decompiled.
 
@@ -268,7 +270,8 @@ behind it shows through.
 
 ### transparent draw order
 
-glass and effects share one list. the transparent pass copies the opaque scene into its own target,
+glass and effects share one list (the pass's full step order is under
+[blending](effects.md#blending)). the transparent pass copies the opaque scene into its own target,
 then draws decals, then every queue 2900–3100 renderer (both the static ECS scenery and GameObject
 renderers such as prefab effects, whose shaders are all `LightMode` `ForwardOnly`) in one order:
 each side is sorted back to front (sorting layer, render queue, then distance, then renderer
@@ -286,7 +289,7 @@ by (bounds centre, most likely) isn't traced.
 
 `HGRP/DecalLit` is the scenery's projected decal: moss, sand, stains, cracks and tyre tracks laid
 over floors and rocks (the green floor of Power Plateau's grass cave, map01_lv007 near unity −102,
-147, 524, is nine moss decals over grey concrete). each is a rect decal entity
+147, 524, is moss decals over grey concrete). each is a rect decal entity
 ([world](world.md#initchunkdata-layout)): a box whose matrix maps a unit cube, the decal's material,
 and per placement a UV scale and offset, an RGBA8 colour and an intensity. the game draws the box
 into its GBuffer after the opaque scenery, overlapping decals in their `_DrawOrder`. each covered
@@ -383,11 +386,12 @@ that is until their core is destroyed ([blight and its cores](scene-states.md#dy
 ## swaying cloth
 
 `HGRP/Lit` materials with `_SIMPLE_VERTEXANIM` and `_SIMPLE_VERTEXANIM_CLOTH` (map02's kites, flags,
-canvases and logos; 26 materials in the scenes surveyed) sway in the wind in the vertex stage of
-every pass. the offset is added in world space after the object-to-world transform, and only when
-`_SimpleVertexAnimationWindIntensity + _NoiseOffsetIntensity` is non-zero and the vertex colour's
-alpha `a` is. with `I` the intensity, `F` `_SimpleVertexAnimationWindFreq`, `S` the soft factor, `T`
-`_DirectionTendency`, `t` [the wind clock](environment.md#wind) and `x₀` the object's world X:
+canvases and logos; a couple dozen materials in the scenes surveyed) sway in the wind in the vertex
+stage of every pass. the offset is added in world space after the object-to-world transform, and
+only when `_SimpleVertexAnimationWindIntensity + _NoiseOffsetIntensity` is non-zero and the vertex
+colour's alpha `a` is. with `I` the intensity, `F` `_SimpleVertexAnimationWindFreq`, `S` the soft
+factor, `T` `_DirectionTendency`, `t` [the wind clock](environment.md#wind) and `x₀` the object's
+world X:
 
 - `_Kite` non-zero: `s = sin(t · F + lerp(0, y · S − a · π, _Kite) + x₀) · y` with `y` the
   object-space height, and amplitude `I · 0.05`
@@ -418,6 +422,7 @@ erosion flow advance 0.05 × their speed per tick of the shader clock. that HGRP
 - the detail map's channels per `_DetailMode` (roughness from B in mode 1, from the alpha in mode
   0), unchecked against a shot
 - the layers' UV set 2 read as set 0, on the strength of map02's meshes and one in-game shot
-- what sets the per-draw emission colour of static scenery (the [tower lamps](#emission))
+- whether anything sets a per-draw [emission](#emission) colour on static scenery; no drawn object
+  needs one
 - whether premultiplied [glass](#glass) multiplies its colour by its alpha, and how glass refracts
 - what the game does with the bump on meshes without tangents

@@ -39,18 +39,20 @@ layer to the 832 m around the camera (the game's 800 m plus its grid cell) with 
 to a 32 m grid along the light's axes, all snapped to world texels so edges don't crawl
 ([`render/shadows/shadow-map.ts`](../../packages/viewer/src/render/shadows/shadow-map.ts)). turning
 the camera doesn't change a sphere's fit. the layers are fitted once per frame, to the render size's
-aspect, before the mesh selection groups casters by layer. casters are what the main pass draws that
-frame, plus instances outside the view within 250 m whose shadows can reach it: the view frustum's
-planes are swept 250 m towards the sun, and instances inside the swept planes draw into the shadow
-layers only. off-screen casters smaller than 16 px (as if on screen) are skipped, and terrain
-outside the view doesn't cast. shadow-only renderers draw into the shadow layers only, in view or
-not. they cull back faces like any material, which is enough for Dijiang's roof; `_ShadowCullMode`
-isn't read. a draw casts into the sharp cascades only with its `CastsCascades` flag and into the far
-layer only with `CastsStatic` ([chains](../package-format.md#binary-encodings)). listed rows (the
-CPU path) can't leave the far layer out, so a realtime-only caster there also casts into it. at a
-dense Jingyu view this left 4.6k of 6.9k draws. which layers each caster draws into and when the
-layers redraw is in [frame](frame.md).
+aspect, before the mesh selection groups casters by layer. which layers each caster draws into and
+when the layers redraw is in [frame](frame.md).
 
+- casters are what the main pass draws that frame, plus instances outside the view within 250 m
+  whose shadows can reach it: the view frustum's planes are swept 250 m towards the sun, and
+  instances inside the swept planes draw into the shadow layers only. off-screen casters smaller
+  than 16 px (as if on screen) are skipped, the viewer's only size cull, and terrain outside the
+  view doesn't cast.
+- shadow-only renderers draw into the shadow layers only, in view or not. they cull back faces like
+  any material, which is enough for Dijiang's roof; `_ShadowCullMode` isn't read.
+- a draw casts into the sharp cascades only with its `CastsCascades` flag and into the far layer
+  only with `CastsStatic` ([chains](../package-format.md#binary-encodings)); at a dense Jingyu view
+  about two thirds of the shadow draws remain. listed rows (the CPU path) can't leave the far layer
+  out, so a realtime-only caster there also casts into it.
 - a point uses the first cascade sphere containing it, dithered with the next one over the outer
   tenth of the sphere's radius.
 - the sharp cascades filter like the game's, in the game's 2 × 2 atlas uv.
@@ -93,13 +95,12 @@ the viewer runs the game's screen-space reflections
 [`screen-space-reflections.ts`](../../packages/viewer/src/render/post/screen-space-reflections.ts),
 as fullscreen passes rather than compute kernels. like the game at PC high quality, every pass
 (march, temporal filter, pyramid, resolve) runs at half the render size, reading the main pass's
-targets at the pixel under each texel's centre, and the composite upsamples the result bilinearly;
-at 2560×1600 this took the reflections from 1.35 to 0.46 ms. it reprojects through the depth buffer
-and the previous camera instead of motion vectors (the scenery is static), and needs no rain-wetness
-variant: the viewer's surfaces already carry the wet roughness
-([wetness](../game-data/environment.md#wetness)), so only the variant's ripple normals are missing.
-reflection-only effects don't draw into the march's inputs. off the screen the sky reflection stays,
-as in the game.
+targets at the pixel under each texel's centre, and the composite upsamples the result bilinearly
+(about half a millisecond at 2560×1600). it reprojects through the depth buffer and the previous
+camera instead of motion vectors (the scenery is static), and needs no rain-wetness variant: the
+viewer's surfaces already carry the wet roughness ([wetness](../game-data/environment.md#wetness)),
+so only the variant's ripple normals are missing. reflection-only effects don't draw into the
+march's inputs. off the screen the sky reflection stays, as in the game.
 
 ## irradiance volume
 
@@ -153,7 +154,6 @@ box turns with its placement.
 
 each frame `local-lights.ts` takes the lights whose condition holds, that are within their culling
 distance and in the view, sorts them by camera distance then priority and keeps the nearest 256, the
-game's hard maximum; its quality-dependent cap is unknown. it bins them into the game's tiles and
-slices using conservative bounding spheres on the CPU, and keeps the last upload while the camera,
-render size and shown lights stay the same. the volumetric fog lights each froxel with the same
-lists.
+game's cap on PC. it bins them into the game's tiles and slices using conservative bounding spheres
+on the CPU, and keeps the last upload while the camera, render size and shown lights stay the same.
+the volumetric fog lights each froxel with the same lists.

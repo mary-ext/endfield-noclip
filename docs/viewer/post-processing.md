@@ -11,7 +11,9 @@ pass is a module beside its shader that builds its own pipelines and sizes its o
 [`post-uniforms.ts`](../../packages/viewer/src/render/post/post-uniforms.ts) packs the `Post`
 uniforms they share, the environment's lanes when it changes and the frame's each frame. toggles and
 debug views change rendering without changing the profile
-([`settings.ts`](../../packages/viewer/src/render/post/settings.ts)).
+([`settings.ts`](../../packages/viewer/src/render/post/settings.ts)). of the
+[game's passes](../game-data/post-processing.md), depth of field, motion blur, sharpening, fisheye,
+frosted glass and cutscene effects aren't drawn.
 
 ## ambient occlusion
 
@@ -21,8 +23,9 @@ with `custom` set it takes the volume's radius (times `radiusMultiplier`), fallo
 distribution power and thin-occluder compensation. the composite applies the result to the ambient
 part of the radiance; specular occlusion doesn't take it ([ambient](lighting.md#ambient)).
 
-the viewer derives normals from depth and filters with one depth-aware blur while upsampling, where
-the game reads GBuffer normals and filters temporally and twice spatially.
+the viewer marches the half-resolution depth without mips, derives normals from depth and filters
+with one depth-aware blur while upsampling, where the game marches depth mips, reads GBuffer normals
+and filters temporally and twice spatially.
 
 ## light shafts
 

@@ -72,7 +72,9 @@ and fed from the phase's `celestial` and `star` sections. in the game's order:
   point-sampled) and its cloud shadows, URP's minimal GGX, a soft terminator
   `1 / (1 + e^(−20 n·l))`, a rim and a flat ambient. a three-sample single-scattering atmosphere
   runs over it, with the sun's transmittance from the material's lookup texture. it's lit from
-  `_CustomLightDir` when `_CustomLightDirection` is set, and its disc replaces the sky behind.
+  `_CustomLightDir` when `_CustomLightDirection` is set, by the directional light's colour or the
+  material's own with `_CustomLightColorPla`; the rim and flat ambient take no light colour. its
+  disc replaces the sky behind.
 - **sky planets** (`planetConfig`, `talosAlphaConfig`, when `drawPlanetInSkydome`): spheres seen
   from `moonConfig.orbitRadius − moonConfig.radius` (the moon is the body the map stands on) in the
   direction of `skydomeDrawer.pitchYaw`, lit from `incidentLightingPitchYaw`. the body's frame is
@@ -103,7 +105,8 @@ placed effects instead, which a level script swaps by where the player is
 ## fog
 
 two analytic fogs and the volumetric fog in front of them, applied to opaque surfaces, the sky and
-water in this order: the atmosphere fog first, then the height fog over it, then the froxels.
+water in this order: the atmosphere fog first, then the height fog over it, then the froxels. glass
+and fogged effects apply the same fog to themselves, at their own distance.
 
 - **atmosphere fog** (`fogConfig`, when `enable`): single scattering in a medium thinning
   exponentially with height, from `startDistance`. Rayleigh and Mie scattering come from the fog
@@ -132,8 +135,9 @@ water in this order: the atmosphere fog first, then the height fog over it, then
     size, so large views get a near-constant grid. slices are spaced logarithmically: slice
     `s = log2(z · B + O) · S` at view depth z, the first starting 0.095 m past the near plane or the
     start distance (whichever is farther) and the last at `volumetricFogDistance`, S slices per
-    doubling of depth. the pixel size, grid cap, S, jitter scales and history weight come from
-    quality presets that aren't recovered.
+    doubling of depth. the pixel size, grid cap and slice count are per quality level
+    ([quality settings](quality-settings.md#values-by-level)); S, the jitter scales and the history
+    weight aren't recovered.
   - while it's on, the height fog integrates only the part of each ray past `volumetricFogDistance`
     of view depth, though its start and cutoff ramps and opacity cap still measure the whole ray.
     nothing nearer than the start distance is fogged.
@@ -142,7 +146,8 @@ water in this order: the atmosphere fog first, then the height fog over it, then
   - each froxel is lit at a point that moves through its cell from frame to frame (a Halton sequence
     shared by every froxel), and is blended with the last frame's lit medium (scattered light and
     extinction) reprojected to the froxel's centre. where the last frame's grid didn't cover the
-    froxel, a preset number (up to 16) of jittered samples are averaged instead.
+    froxel, several jittered samples are averaged instead (the count is per
+    [quality level](quality-settings.md#values-by-level)).
 
 the volumetric fog scatters the [local lights](lighting.md#local-lights) too, except character-only
 lights; a shadow-only light adds nothing and multiplies the local lights' sum by its shadow. it also
@@ -173,8 +178,12 @@ its outskirts' phase sets.
 ## open
 
 - the procedural sky's global colour adjustment (`_VFXParams1`).
-- the volumetric fog's quality presets (cell size, grid cap, depth distribution, history weight) and
-  the native diffuse-ambient scale on its sky term; its local fog volumes' shader.
+- whether `cloudFadeAlpha` reaches the cloud's alpha without `brightnessAffectCloudAlpha`: the game
+  has two code paths that differ, and which runs on PC is unchecked.
+- which phases draw the moon's ring, and where it falls among the layers; which light a space level
+  gives the ray-traced planet.
+- the volumetric fog's slices per doubling, jitter scales and history weight, and the native
+  diffuse-ambient scale on its sky term; its local fog volumes' shader.
 - the [flow noise](#flow-noise)'s blend in the volumetric section's height-fog set: read for the
   height-fog section's and assumed the same.
 - whether the height fog's flow noise also reaches the sky, water and forward-shaded surfaces (only
