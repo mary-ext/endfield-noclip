@@ -1,7 +1,7 @@
 Endfield's game levels in the browser: an offline extractor turns a local game install into a
 package, and a WebGPU viewer streams that package one level at a time.
 
-Last verified: 2026-10-31
+Last verified: 2026-11-10
 
 ## layout
 
@@ -92,6 +92,10 @@ Last verified: 2026-10-31
 - omit boilerplate and obvious restatements in documentation and user-facing messages. keep shared
   explanations in one place; link instead of repeating
 - comment only non-trivial code; explain why
+- counts and measurements taken from the game data or a run (how many materials a gap affects, a
+  phase's time) go stale as the game patches and the code changes. give one only where its scale
+  informs a decision, rounded ("about 90 map02 materials"); format constants and the game's authored
+  values are exact
 - add JSDoc to new publicly exported functions, methods, classes, fields, and enums:
   - `@param` for parameters (no dashes after param names)
   - `@returns` for return values

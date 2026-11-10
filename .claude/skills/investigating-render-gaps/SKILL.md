@@ -37,11 +37,9 @@ someone else's work. while others are active:
 
 ## 2. orient
 
-1. copy any pasted reference shot to `.research/reference/in-game/` straight away (naming in
-   `.research/look-vs-in-game.md`); pasted images don't stay on disk.
-2. read `.research/README.md`, `docs/status.md` and the `docs/` page for the area. if status already
+1. read `.research/README.md`, `docs/status.md` and the `docs/` page for the area. if status already
    lists the gap, start from what it names as missing.
-3. get a position. the user's shot or the viewer's camera readout gives Unity coordinates; cells are
+2. get a position. the user's shot or the viewer's camera readout gives Unity coordinates; cells are
    128 m (`floor(x / 128)`, `floor(z / 128)`).
 
 ## 3. locate offline
@@ -116,9 +114,9 @@ pnpm run dev --port 0
 mise exec -- agent-browser --session <task> open 'http://localhost:<port>/?package=<scene>&level=<level>'
 ```
 
-how to bisect materials on screen is in `.research/README.md` ("investigating a view"). when done,
-turn off `continuous` and any debug view, then close the session
-(`agent-browser --session <task> close`) and stop the dev server you started.
+how to find what draws something on screen is in that page's "inspecting" section. when done, turn
+off `continuous` and any debug view, then close the session (`agent-browser --session <task> close`)
+and stop the dev server you started.
 
 ## 9. record and finish
 
@@ -126,8 +124,9 @@ turn off `continuous` and any debug view, then close the session
   or `package-format.md`, and whatever remains in `docs/status.md`, in the same commit. decompiled
   code, paraphrases of it and addresses stay in `.research/`.
 - leads that aren't settled go in the topic's `.research/` note, with the date, the ids and
-  coordinates involved and what's still unverified, so the next investigation starts from them.
-  delete scratch probes; the note records what they found.
+  coordinates involved and what's still unverified, so the next investigation starts from them. a
+  pasted shot isn't saved: record what it shows and its pose. delete scratch probes; the note
+  records what they found.
 - one commit per logical change, per CLAUDE.md.
 - report what was verified and what wasn't. a gap that stays open is fine once status lists it.
 - send peers a completion message: commits, packages repacked (so they reload), files freed.
