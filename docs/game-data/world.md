@@ -522,10 +522,16 @@ world Y of a sample is `position.y + (h & 0x7fff) · heightScale / 32768`. bit 1
 map01 and map02 about 95% of holes have no height (their low bits are 0, the terrain's base); only
 some beside solid ground keep one. holes are cut per vertex: the terrain's vertex shader gives a
 vertex on a hole sample no position, so every triangle touching it is dropped whole, and a solid
-sample ringed by holes draws nothing. the game's subdivision passes (`TerrainDepthOnlySubdivision`
-and its like) instead read the four samples around a vertex, drop it only when all four are holes,
-and take its height from the solid ones alone; which of the two the PC build draws close up isn't
-traced.
+sample ringed by holes draws nothing. the pass draws patches of 16 × 16 quads cut along alternating
+diagonals: a quad whose x + z in the patch is even is cut from its minimum corner to its maximum
+corner, an odd one across. so of a quad with one hole corner, the triangle away from that corner
+draws only if the diagonal doesn't end on the hole. that a patch's quads fall on its page's samples
+with the page's parity (16 samples a patch, pages being 64 quads wide) is inferred, not traced.
+
+the game's subdivision passes (`TerrainDepthOnlySubdivision` and its like) instead read the four
+samples around a vertex, drop it only when all four are holes, and take its height from the solid
+ones alone. the pipeline turns them on only while terrain deformation is enabled; which scenes
+enable it isn't surveyed.
 
 ### close-up layers
 

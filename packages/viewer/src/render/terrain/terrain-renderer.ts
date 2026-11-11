@@ -85,23 +85,20 @@ const gridIndices = (): { fill: Uint16Array; wire: Uint16Array } => {
 	const wire: number[] = [];
 	for (let z = 0; z < GRID - 1; z++) {
 		for (let x = 0; x < GRID - 1; x++) {
+			const a = vertexAt(x, z);
+			const b = vertexAt(x + 1, z);
+			const c = vertexAt(x, z + 1);
+			const d = vertexAt(x + 1, z + 1);
+			// the game's patch cuts its quads along alternating diagonals, which decides the triangles a hole
+			// vertex takes with it. a quadrant starts on an even sample, so its parity is the page's.
 			// clockwise seen from above in Unity's frame, i.e. front-facing like Unity geometry
-			fill.push(
-				vertexAt(x, z),
-				vertexAt(x, z + 1),
-				vertexAt(x + 1, z),
-				vertexAt(x + 1, z),
-				vertexAt(x, z + 1),
-				vertexAt(x + 1, z + 1),
-			);
-			wire.push(
-				vertexAt(x, z),
-				vertexAt(x + 1, z),
-				vertexAt(x, z),
-				vertexAt(x, z + 1),
-				vertexAt(x + 1, z),
-				vertexAt(x, z + 1),
-			);
+			if (((x + z) & 1) === 0) {
+				fill.push(a, c, d, d, b, a);
+				wire.push(a, b, a, c, a, d);
+			} else {
+				fill.push(b, a, c, c, d, b);
+				wire.push(a, b, a, c, b, c);
+			}
 		}
 	}
 	for (let i = 0; i < GRID - 1; i++) {

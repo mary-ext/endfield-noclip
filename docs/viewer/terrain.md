@@ -19,6 +19,11 @@ solid vertices gives. no share of such a triangle may be kept: most holes sit at
 height, hundreds of metres down, so even a hundredth of one hangs a curtain several metres tall
 below every edge of solid ground. the triangles are still rasterized before they're discarded.
 
+which triangles a hole takes depends on how the quads are cut, so the patch grid (`gridIndices` in
+[`terrain-renderer.ts`](../../packages/viewer/src/render/terrain/terrain-renderer.ts)) alternates
+its diagonals by the page's sample parity as the game's patch does; stray solid samples among holes
+then draw the same odd triangles as in the game, and no others.
+
 ### close-up layers
 
 on leaves whose splat page and the package's layer textures are resident, `detail_surface` blends
