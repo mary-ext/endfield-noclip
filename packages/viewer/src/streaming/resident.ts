@@ -1,4 +1,4 @@
-import type { RowFloaters, RowSpins } from '../content/instance-rows.ts';
+import type { RowFloaters, RowRides, RowSpins } from '../content/instance-rows.ts';
 import type { RangeAllocation } from '../gfx/range-allocator.ts';
 import type { UvTransform } from '../package/decode-protocol.ts';
 import type {
@@ -66,6 +66,8 @@ export interface ResidentInstances {
 	spins: RowSpins | null;
 	/** the rows floating on water volumes, which follow their surfaces; `null` when none does */
 	floaters: RowFloaters | null;
+	/** the rows riding paths, which move {@link rowsF32} in place by the clock; `null` when none does */
+	rides: RowRides | null;
 }
 
 /** GPU residency of a geometry */

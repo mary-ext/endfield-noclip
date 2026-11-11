@@ -2,7 +2,7 @@ import type { GeometryTable } from '@endfield-noclip/package-format/geometry-tab
 import type { Chain } from '@endfield-noclip/package-format/instances';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { CULL_FLOATS, ROW_WORDS } from '../content/instance-rows.ts';
+import { CULL_FLOATS, movingRows, ROW_WORDS } from '../content/instance-rows.ts';
 import { alphaTextureOf } from '../looks/look.ts';
 import type { LazyMaterialLooks } from '../looks/material-looks.ts';
 import type { ParticleField, ParticleView } from '../particles/particle-rows.ts';
@@ -459,7 +459,7 @@ export class MeshSelector {
 						rowsF32: instances.rowsF32,
 						cull: instances.cull,
 						runs: instances.runs,
-						moving: instances.spins?.rows ?? null,
+						moving: movingRows(instances.spins, instances.rides),
 					},
 					(chain) => this.#reach(chain),
 				),

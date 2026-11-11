@@ -13,6 +13,7 @@ import {
 	type ChainDraw,
 	ChainFlags,
 	DrawRole,
+	type RowPath,
 } from '@endfield-noclip/package-format/instances';
 import { ContentKind } from '@endfield-noclip/package-format/tree';
 
@@ -21,7 +22,7 @@ import { fromFileHandle } from '@mary-ext/czar/node';
 
 import { ChainTable } from './instances/chains.ts';
 import { type HlodSample, hlodCandidates, layoutHlodGrid, pickHlodTile } from './instances/hlod-cells.ts';
-import { InstanceBlockBuilder } from './instances/instances.ts';
+import { InstanceBlockBuilder, rowReach } from './instances/instances.ts';
 import { TileTreeBuilder } from './instances/tile-tree.ts';
 import { BlobDir } from './store/blob-file.ts';
 import { BlobStore, tileLocality } from './store/blob-store.ts';
@@ -327,6 +328,31 @@ describe('InstanceBlockBuilder', () => {
 		assert.deepEqual([...order], [1, 2, 0, 3]);
 		assert.deepEqual([...block.floaters.rows], [1, 2]);
 		assert.deepEqual([...block.floaters.values], [0, 4]);
+	});
+
+	it('stores each path its rows ride once, in the order they first ride it, and reaches along it', () => {
+		const rows = new InstanceBlockBuilder();
+		const up = { frameRate: 15, offsets: Float32Array.of(0, 0, 0, 0, 6, 0) };
+		const along = { frameRate: 15, offsets: Float32Array.of(-2, 0, 0, 4, 0, 0) };
+		const bounds: Aabb = { center: [0, 0, 0], extents: [1, 1, 1] };
+		const row = (chain: number, entityId: number, ride?: RowPath) => ({
+			chain,
+			entityId,
+			matrix: matrix(0, 0, 0),
+			bounds,
+			ride,
+		});
+		rows.add(row(1, 0, up), 0);
+		rows.add(row(0, 1), 0);
+		rows.add(row(0, 2, along), 0);
+		rows.add(row(1, 3, up), 0);
+		const { block, order } = rows.toBlock([0, 0, 0], Uint32Array.of(0, 1), new Map());
+		assert.deepEqual([...order], [1, 2, 0, 3]);
+		assert.deepEqual([...block.rides.rows], [1, 2, 3]);
+		assert.deepEqual([...block.rides.values], [0, 1, 1]);
+		assert.deepEqual(block.paths, [along, up]);
+		assert.deepEqual(rowReach(row(0, 2, along)), { center: [1, 0, 0], extents: [4, 1, 1] });
+		assert.deepEqual(rowReach(row(1, 0, up)), { center: [0, 3, 0], extents: [1, 4, 1] });
 	});
 });
 

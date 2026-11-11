@@ -16,9 +16,9 @@ how to measure is in [driving the viewer](../driving-the-viewer.md#profiling).
   anyway and stops when they do. it all reads one animation clock that advances by the frame time
   only on rendered frames (and only with the `animate` option on), so it resumes where it stopped
   instead of jumping by the time the view idled. frames that only settle or adapt reuse the last
-  selection, unless it drew particles or spinning rows and `animate` is on, which are re-evaluated
-  so they keep moving until the view idles. it traverses without rendering while streaming is in
-  progress (`!stream.idle`) or a saturated stream may still raise its
+  selection, unless it drew particles or spinning or riding rows and `animate` is on, which are
+  re-evaluated so they keep moving until the view idles. it traverses without rendering while
+  streaming is in progress (`!stream.idle`) or a saturated stream may still raise its
   [texture reduction](streaming.md#residency-and-budgets), and does nothing at all when the view is
   still and streaming is idle. replaying the last traversal's requests on frames where nothing was
   uploaded or evicted would save nothing: over several map02 teleports, every loading frame had
@@ -124,8 +124,9 @@ what the game's settings say it does is in [quality settings](../game-data/quali
   (count, prefix sum, write) would leave the CPU one item per row group instead of per segment.
 - GPU culling leaves the buckets it picked empty in draws the CPU still encodes. flying over Jingyu,
   preparing and encoding draws took nearly half the CPU frame before geometry was pooled.
-- settle frames re-run the whole selection while particles or spinning rows are in view; giving
-  emitters fixed row spans and spinning rows rotation-proof bounds would let them reuse it.
+- settle frames re-run the whole selection while particles or spinning or riding rows are in view;
+  giving emitters fixed row spans and moving rows bounds that hold their whole motion would let them
+  reuse it.
 - cache shadow layers across new selections when their fit and casters are unchanged. the game
   doesn't cache its cascades on PC, but caches its far map in 200 m tiles and redraws only the ones
   that changed, at most 8 a frame, where the viewer redraws the whole far layer when its casters or

@@ -8,7 +8,7 @@ import {
 	trsMatrix,
 	unityEulerQuaternion,
 } from '@endfield-noclip/formats/unity/transform';
-import { type ChainDraw, DrawRole } from '@endfield-noclip/package-format/instances';
+import { type ChainDraw, DrawRole, type RowPath } from '@endfield-noclip/package-format/instances';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
@@ -127,9 +127,14 @@ export const placePrefabs = async (
 			);
 			continue;
 		}
-		const floatsOn = placement.logicId === undefined ? undefined : floaterVolume.get(placement.logicId);
+		const { ride } = placement;
+		// a spline sets a riding placement's height, so it doesn't float as well
+		const floatsOn =
+			ride !== undefined || placement.logicId === undefined
+				? undefined
+				: floaterVolume.get(placement.logicId);
 		for (const renderer of read) {
-			placeRenderer(content, renderer, { rootMatrix, owner, floatsOn });
+			placeRenderer(content, renderer, { rootMatrix, owner, floatsOn, ride });
 		}
 	}
 };
@@ -142,12 +147,15 @@ const placeRenderer = (
 		rootMatrix,
 		owner,
 		floatsOn,
+		ride,
 	}: {
 		/** the placement's transform */
 		rootMatrix: Float32Array;
 		owner: { tag: number; visibility: StructureModel['visibility']; loadGrid: number | null };
 		/** the id of the water volume the placement floats on */
 		floatsOn: string | undefined;
+		/** the path the placement rides */
+		ride: RowPath | undefined;
 	},
 ): void => {
 	let matrix = multiplyMatrices(rootMatrix, renderer.matrix);
@@ -184,6 +192,7 @@ const placeRenderer = (
 			bounds,
 			entityId,
 			floatsOn,
+			ride,
 		},
 		{ ...owner, name: renderer.name },
 	);

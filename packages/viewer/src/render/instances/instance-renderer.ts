@@ -265,6 +265,7 @@ export class InstanceRenderer {
 			cull: decoded.cull,
 			spins: decoded.spins,
 			floaters: decoded.floaters,
+			rides: decoded.rides,
 		};
 	}
 

@@ -418,6 +418,15 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 								built.spins.runs.buffer,
 							]),
 					...(built.floaters === null ? [] : [built.floaters.rows.buffer, built.floaters.volumes.buffer]),
+					...(built.rides === null
+						? []
+						: [
+								built.rides.rows.buffer,
+								built.rides.pathOf.buffer,
+								built.rides.base.buffer,
+								built.rides.runs.buffer,
+								...built.rides.paths.map((path) => path.offsets.buffer),
+							]),
 				],
 			};
 		}

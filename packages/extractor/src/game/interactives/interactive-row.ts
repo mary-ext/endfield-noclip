@@ -1,5 +1,6 @@
 import type { LevelInteractive } from '@endfield-noclip/formats/endfield/level-interactives';
 import { trsMatrix, unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
+import type { RowPath } from '@endfield-noclip/package-format/instances';
 
 import type { StructureModel } from '../dynamic/dynamic-structures.ts';
 import type { PrefabPose } from '../prefabs/prefab.ts';
@@ -13,8 +14,7 @@ import {
 } from '../state/scene-control.ts';
 
 import type { Hang } from './cranes.ts';
-import type { FacilitySources, PrefabHashes } from './facility-sources.ts';
-import { type Ride, ridePose } from './moving-platforms.ts';
+import type { PrefabHashes } from './facility-sources.ts';
 import type { PlacedInteractive } from './placed-interactives.ts';
 import type { SettledLook } from './rest-looks.ts';
 import type { RestingEffects } from './resting-effects.ts';
@@ -150,29 +150,27 @@ export class InteractiveRow {
 	readonly template: AuthoredTemplate;
 	/** what turns a look's visibility into its placement's */
 	readonly gate: (visibility: Visibility) => Visibility;
-	readonly #sources: FacilitySources;
 	readonly #prefabs: PrefabHashes;
 	readonly #models: StructureModel[];
 	readonly #effects: RestingEffects;
-	readonly #ride: Ride | null;
+	readonly #ride: RowPath | null;
 	readonly #hang: Hang | undefined;
 	readonly #locked: boolean;
 
 	/**
 	 * @param fields the row, its template and gate, what modifies all its placements, and where they go
-	 * @param fields.ride the spline it rides from its start, `null` when it stays put
+	 * @param fields.ride the path it rides from its start, `null` when it stays put
 	 * @param fields.hang where a crane tower hangs it instead of its placement
 	 * @param fields.locked whether its gameplay lock shows its locked look
 	 */
 	constructor(fields: {
-		sources: FacilitySources;
 		prefabs: PrefabHashes;
 		models: StructureModel[];
 		effects: RestingEffects;
 		placed: PlacedInteractive;
 		template: AuthoredTemplate;
 		gate: (visibility: Visibility) => Visibility;
-		ride: Ride | null;
+		ride: RowPath | null;
 		hang: Hang | undefined;
 		locked: boolean;
 	}) {
@@ -181,7 +179,6 @@ export class InteractiveRow {
 		this.source = `${fields.placed.path}#${fields.placed.row.id}`;
 		this.template = fields.template;
 		this.gate = fields.gate;
-		this.#sources = fields.sources;
 		this.#prefabs = fields.prefabs;
 		this.#models = fields.models;
 		this.#effects = fields.effects;
@@ -211,36 +208,21 @@ export class InteractiveRow {
 	 */
 	place(model: { prefab: string; scale: number }, shown: Visibility, pose: PrefabPose | null): void {
 		const { row, source } = this;
-		const visibility = this.gate(shown);
-		const scales = this.scaleOf(model);
-		let posed = pose;
-		if (this.#ride !== null) {
-			const riding = ridePose(
-				this.#ride,
-				trsMatrix(row.position, unityEulerQuaternion(row.rotation), scales),
-				pose,
-				source,
-			);
-			if ('reason' in riding) {
-				this.#sources.report(source, riding.reason);
-			} else {
-				posed = riding;
-			}
-		}
 		const hang = this.#hang;
 		this.#models.push({
 			model: {
 				pathHash: this.#prefabs.hashOf(model.prefab),
 				position: hang?.position ?? row.position,
 				rotation: hang?.rotation ?? row.rotation,
-				scale: scales,
+				scale: this.scaleOf(model),
 			},
 			levelTag: this.placed.levelTag,
 			source,
 			logicId: row.id.toString(),
-			visibility,
-			pose: posed,
+			visibility: this.gate(shown),
+			pose,
 			locked: this.#locked,
+			ride: this.#ride ?? undefined,
 		});
 	}
 
@@ -264,6 +246,7 @@ export class InteractiveRow {
 				frame,
 				on: { prefab: model.prefab, pose: look.pose, rest },
 				followRotation: rest.followRotation,
+				ride: this.#ride ?? undefined,
 			});
 		}
 	}

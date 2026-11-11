@@ -1,5 +1,6 @@
 import type { Rotator } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
+import type { RowPath } from '@endfield-noclip/package-format/instances';
 import type { Bounds, Rect } from '@endfield-noclip/package-format/values';
 
 /** @returns the min/max form of a centre/extents box */
@@ -47,6 +48,23 @@ export const sweptBounds = (bounds: Aabb, spin: Pick<Rotator, 'axis' | 'pivot'>)
 		center: [pivot[0] + mid * axis[0], pivot[1] + mid * axis[1], pivot[2] + mid * axis[2]],
 		extents: [extent(0), extent(1), extent(2)],
 	};
+};
+
+/**
+ * @param bounds a box where it's placed
+ * @param ride the path it rides
+ * @returns a box holding it at every frame of the path
+ */
+export const riddenBounds = (bounds: Aabb, { offsets }: RowPath): Aabb => {
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	for (let i = 0; i < offsets.length; i++) {
+		min[i % 3] = Math.min(min[i % 3], offsets[i]);
+		max[i % 3] = Math.max(max[i % 3], offsets[i]);
+	}
+	const axis = (i: number): number => bounds.center[i] + (min[i] + max[i]) / 2;
+	const reach = (i: number): number => bounds.extents[i] + (max[i] - min[i]) / 2;
+	return { center: [axis(0), axis(1), axis(2)], extents: [reach(0), reach(1), reach(2)] };
 };
 
 /** @returns whether an x/z square overlaps a rect; touching edges don't count */

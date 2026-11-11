@@ -1,6 +1,7 @@
 import type { DynamicModel } from '@endfield-noclip/formats/endfield/dynamic-resources';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { multiplyMatrices, quaternionUnityEuler } from '@endfield-noclip/formats/unity/transform';
+import type { RowPath } from '@endfield-noclip/package-format/instances';
 
 import type { StructureModel } from '../dynamic/dynamic-structures.ts';
 import { isOneShotEffect } from '../effects/view-state-effects.ts';
@@ -22,6 +23,8 @@ export interface PendingEffect {
 	/** the model and pose whose GameObject the effect plays on, `null` when placed at {@link frame} itself */
 	on: { prefab: string; pose: PrefabPose; rest: RestingEffect } | null;
 	followRotation: boolean;
+	/** the path its interactive rides, which it rides too; absent on one that stays put */
+	ride?: RowPath;
 }
 
 /**
@@ -167,6 +170,7 @@ export class RestingEffects {
 				source: `${effect.source}:${effect.effect}`,
 				visibility: effect.visibility,
 				pose: null,
+				ride: effect.ride,
 			});
 		}
 	}

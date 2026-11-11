@@ -27,6 +27,7 @@ import {
 	RECT_DECAL_MATERIAL_KEY,
 } from '@endfield-noclip/formats/endfield/streaming-chunk-data';
 import { unpackHgPayload } from '@endfield-noclip/formats/hg/payload';
+import type { RowPath } from '@endfield-noclip/package-format/instances';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
@@ -86,6 +87,11 @@ export interface StructureModel {
 	locked?: boolean;
 	/** the `fb_main` grid storing the row, whose level sets its load distance; absent for other placements */
 	grid?: number;
+	/**
+	 * the path the placement rides as a whole (an auto-moving platform and the effects on it), as offsets from
+	 * where it's placed; absent for one that stays put
+	 */
+	ride?: RowPath;
 }
 
 /** an ECS entity of a dynamic structure */

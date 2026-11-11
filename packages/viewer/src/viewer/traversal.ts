@@ -1,4 +1,4 @@
-import { ROW_BYTES, ROW_WORDS, turnRows } from '../content/instance-rows.ts';
+import { rideRows, ROW_BYTES, ROW_WORDS, turnRows } from '../content/instance-rows.ts';
 import type { FrameSettings } from '../render/frame/frame-graph.ts';
 import { offscreenCasters } from '../render/shadows/shadow-map.ts';
 import type { Camera, Plane } from '../scene/camera.ts';
@@ -34,9 +34,9 @@ export interface TraversalInput {
 }
 
 /**
- * one frame's selection and streaming: walks the tile tree, turns spinning rows, selects mesh LODs, requests
- * sky, water and irradiance textures, updates the stream, and when the frame renders, writes the selection
- * for the renderers
+ * one frame's selection and streaming: walks the tile tree, moves spinning and riding rows, selects mesh
+ * LODs, requests sky, water and irradiance textures, updates the stream, and when the frame renders, writes
+ * the selection for the renderers
  */
 export class Traversal {
 	/** the stream version as the last traversal began; a later one means content changed since */
@@ -45,14 +45,17 @@ export class Traversal {
 	visited = 0;
 	/** whether the last mesh selection drew particles, which frames of a still view re-evaluate */
 	particlesShown = false;
-	/** whether the last selection held spinning rows, which turn by the clock while the view holds still */
-	spinsShown = false;
+	/**
+	 * whether the last selection held spinning or riding rows, which move by the clock while the view holds
+	 * still
+	 */
+	movingShown = false;
 	/** lowers material texture resolution while the stream budget is full */
 	readonly textureReduction = new TextureReduction();
 	/** the frustum planes, rewritten each traversal */
 	readonly #planes: Plane[] = [];
-	/** the clock each resident block's spinning rows were last turned to */
-	readonly #spinTimes = new WeakMap<ResidentInstances, number>();
+	/** the clock each resident block's spinning and riding rows were last moved to */
+	readonly #movedTimes = new WeakMap<ResidentInstances, number>();
 	readonly #renderer: Renderer;
 
 	/** @param renderer the renderers the selection is written for */
@@ -95,8 +98,8 @@ export class Traversal {
 			input.focusCells,
 		);
 		this.visited = selection.visited;
-		// spinning rows turn before instances are culled and listed by where they are
-		this.spinsShown = this.#turnSpinningRows(selection.instances, input.time);
+		// spinning and riding rows move before instances are culled and listed by where they are
+		this.movingShown = this.#moveRows(selection.instances, input.time);
 		times.span('tree');
 		// per-instance LOD selection also requests geometry, so it runs before the stream update; it groups
 		// instances by the shadow layers they reach, as fitted for this frame
@@ -170,36 +173,50 @@ export class Traversal {
 	}
 
 	/**
-	 * turns the spinning rows of the selected blocks to the clock and rewrites them
+	 * turns the spinning rows of the selected blocks, and moves their riding rows, to the clock and rewrites
+	 * them
 	 *
 	 * @param ranges the selected instance ranges
 	 * @param time the animation clock, s
-	 * @returns whether any selected block has spinning rows
+	 * @returns whether any selected block has spinning or riding rows
 	 */
-	#turnSpinningRows(ranges: readonly InstanceRange[], time: number): boolean {
+	#moveRows(ranges: readonly InstanceRange[], time: number): boolean {
 		let shown = false;
 		for (const { item } of ranges) {
 			const resident = item.resident;
-			if (resident?.kind !== 'instances' || resident.spins === null) {
+			if (resident?.kind !== 'instances' || (resident.spins === null && resident.rides === null)) {
 				continue;
 			}
 			shown = true;
-			if (this.#spinTimes.get(resident) === time) {
+			if (this.#movedTimes.get(resident) === time) {
 				continue;
 			}
-			this.#spinTimes.set(resident, time);
-			turnRows(resident.rowsF32, resident.spins, time);
-			const runs = resident.spins.runs;
-			for (let r = 0; r < runs.length; r += 2) {
-				const first = runs[r];
-				const count = runs[r + 1] - first;
-				this.#renderer.instances.writeRows(
-					resident.alloc.start + first,
-					new Uint32Array(resident.rowsF32.buffer, first * ROW_BYTES, count * ROW_WORDS),
-					count,
-				);
+			this.#movedTimes.set(resident, time);
+			if (resident.spins !== null) {
+				turnRows(resident.rowsF32, resident.spins, time);
+				this.#writeRuns(resident, resident.spins.runs);
+			}
+			if (resident.rides !== null) {
+				rideRows(resident.rowsF32, resident.rides, time);
+				this.#writeRuns(resident, resident.rides.runs);
 			}
 		}
 		return shown;
+	}
+
+	/**
+	 * @param resident a block whose rows changed on the CPU
+	 * @param runs (first, end) pairs of the row ranges to upload
+	 */
+	#writeRuns(resident: ResidentInstances, runs: Uint32Array): void {
+		for (let r = 0; r < runs.length; r += 2) {
+			const first = runs[r];
+			const count = runs[r + 1] - first;
+			this.#renderer.instances.writeRows(
+				resident.alloc.start + first,
+				new Uint32Array(resident.rowsF32.buffer, first * ROW_BYTES, count * ROW_WORDS),
+				count,
+			);
+		}
 	}
 }

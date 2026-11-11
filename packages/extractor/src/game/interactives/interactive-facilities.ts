@@ -166,7 +166,7 @@ export const loadInteractiveFacilities = async (
 		const { path, levelId, levelTag, row } = entry;
 		const gate = rowGate(switches.of(entry), erosionCores.get(row.id.toString()));
 		// oxlint-disable-next-line no-await-in-loop -- splines are read once per level
-		const ride = await platforms.rideOf(row, levelId);
+		const ride = await platforms.rideOf(entry);
 		// oxlint-disable-next-line no-await-in-loop -- locks are read once per level
 		const locked = await extras.isLocked(levelId, row.id);
 		const template = authored.get(row.template);
@@ -187,7 +187,6 @@ export const loadInteractiveFacilities = async (
 			continue;
 		}
 		const placer = new InteractiveRow({
-			sources,
 			prefabs,
 			models,
 			effects,

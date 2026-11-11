@@ -313,10 +313,12 @@ measures them with a 30-sample arc-length table per curve. it then simulates one
 there and back) in 1/240 s steps, with the trip's speed ramp and its knot waits, and samples it at
 15 frames per second from where the initial phase puts the platform; the loop's length is within a
 step per trip of the game's. a knot that waits for the player ends the simulation and parks the
-platform there (a two-frame still path). each frame is the prefab root's translation in the
-placement's space, the pose's `path`; `poseFrames` poses the hierarchy on those frames, so every
-mesh renderer gets a `rigid` motion and skinned ones a `skinned` one, as for
-[looping clips](#looping-clips). a platform that turns along the curve, varies its speed by segment
+platform there (a one-frame path). each frame is the platform's offset from its placement along the
+world's axes, the placement's `ride` (`StructureModel.ride`), which every row of its renderers
+carries into its block's [rides](../package-format.md#instance-block-inst-efin); the prefab itself
+is read as for a placement that stays put, so its own Animators and view states play on. the looping
+effects its look leaves on it ([effects at rest](#effects-at-rest)) are placed with the same ride.
+its lights stay at the placement. a platform that turns along the curve, varies its speed by segment
 or curve, or stops at its target (mode 0) is reported in `unsupported-interactives.json` and stays
 at its placement.
 

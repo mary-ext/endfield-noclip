@@ -3,10 +3,11 @@ import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import {
 	DECAL_PLACEMENT_FLOATS,
 	type InstanceBlock,
+	type RowPath,
 	SPIN_FLOATS,
 } from '@endfield-noclip/package-format/instances';
 
-import { sweptBounds } from './bounds.ts';
+import { riddenBounds, sweptBounds } from './bounds.ts';
 
 /** one placed instance, in world space */
 export interface InstanceInput {
@@ -22,14 +23,22 @@ export interface InstanceInput {
 	spin?: Rotator;
 	/** the game id of the water volume the instance floats on; absent on rows that don't float */
 	floatsOn?: string;
+	/**
+	 * the path the instance rides, as offsets from {@link matrix}'s translation; absent on rows that stay put.
+	 * rows of one block that share a path object share its stored path
+	 */
+	ride?: RowPath;
 }
 
 /**
  * @param row an instance
- * @returns the box it reaches while drawn: its bounds, swept about its spin's axis when it has one
+ * @returns the box it reaches while drawn: its bounds, swept about its spin's axis when it has one and along
+ *   its ride when it has one
  */
-export const rowReach = (row: InstanceInput): Aabb =>
-	row.spin === undefined ? row.bounds : sweptBounds(row.bounds, row.spin);
+export const rowReach = (row: InstanceInput): Aabb => {
+	const turned = row.spin === undefined ? row.bounds : sweptBounds(row.bounds, row.spin);
+	return row.ride === undefined ? turned : riddenBounds(turned, row.ride);
+};
 
 /** growable struct-of-arrays rows, encoded into an {@link InstanceBlock} at the end */
 export class InstanceBlockBuilder {
@@ -44,6 +53,8 @@ export class InstanceBlockBuilder {
 	readonly #spins = new Map<number, Rotator>();
 	/** by insertion index, the floating rows' water volume ids */
 	readonly #floatsOn = new Map<number, string>();
+	/** by insertion index, the riding rows' paths */
+	readonly #rides = new Map<number, RowPath>();
 
 	/** number of rows */
 	get length(): number {
@@ -79,6 +90,9 @@ export class InstanceBlockBuilder {
 		if (row.floatsOn !== undefined) {
 			this.#floatsOn.set(this.#chains.length - 1, row.floatsOn);
 		}
+		if (row.ride !== undefined) {
+			this.#rides.set(this.#chains.length - 1, row.ride);
+		}
 		return this.#chains.length - 1;
 	}
 
@@ -110,6 +124,10 @@ export class InstanceBlockBuilder {
 		const spins = new Float32Array(this.#spins.size * SPIN_FLOATS);
 		const floaterRows: number[] = [];
 		const floaterVolumes: number[] = [];
+		const rideRows: number[] = [];
+		const ridePaths: number[] = [];
+		/** the block's paths, in the order its rows first ride them */
+		const paths = new Map<RowPath, number>();
 		let decals = 0;
 		let spinning = 0;
 		for (let out = 0; out < count; out++) {
@@ -149,6 +167,11 @@ export class InstanceBlockBuilder {
 				floaterRows.push(out);
 				floaterVolumes.push(volume);
 			}
+			const ride = this.#rides.get(i);
+			if (ride !== undefined) {
+				rideRows.push(out);
+				ridePaths.push(paths.getOrInsertComputed(ride, () => paths.size));
+			}
 		}
 		return {
 			block: {
@@ -159,6 +182,8 @@ export class InstanceBlockBuilder {
 				decals: { rows: decalRows, values: placements },
 				spins: { rows: spinRows, values: spins },
 				floaters: { rows: Uint32Array.from(floaterRows), values: Uint32Array.from(floaterVolumes) },
+				rides: { rows: Uint32Array.from(rideRows), values: Uint32Array.from(ridePaths) },
+				paths: [...paths.keys()],
 			},
 			order,
 		};

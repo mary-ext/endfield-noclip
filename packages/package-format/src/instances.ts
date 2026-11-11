@@ -130,7 +130,48 @@ export interface InstanceBlock {
 	 * volume they float on
 	 */
 	floaters: RowSection<Uint32Array>;
+	/** the rows riding a path and, one each, the index into {@link paths} of the path they ride */
+	rides: RowSection<Uint32Array>;
+	/** the paths the block's {@link rides} name */
+	paths: RowPath[];
 }
+
+/**
+ * a looping path rows ride as a whole, keeping their rotation and scale. at time `t` a riding row's
+ * translation and bounds centre are its stored ones plus the offset at frame `t · frameRate`, wrapped to the
+ * loop and blended linearly between neighbouring frames (the last towards the first). its stored transform
+ * and bounds are those off the path, where the game places it before it sets off
+ */
+export interface RowPath {
+	/** frames per second, above 0 */
+	frameRate: number;
+	/** 3 floats per frame, at least one frame: the offset from the stored translation, m along the world's axes */
+	offsets: Float32Array;
+}
+
+/**
+ * @param path a path rows ride
+ * @param time seconds
+ * @param out where the offset goes
+ * @returns `out`, holding the path's offset at that time
+ */
+export const pathOffset = (
+	path: RowPath,
+	time: number,
+	out: [x: number, y: number, z: number],
+): [x: number, y: number, z: number] => {
+	const { offsets } = path;
+	const count = offsets.length / 3;
+	const at = (((time * path.frameRate) % count) + count) % count;
+	const frame = Math.min(Math.floor(at), count - 1);
+	const blend = at - frame;
+	const a = frame * 3;
+	const b = ((frame + 1) % count) * 3;
+	for (let axis = 0; axis < 3; axis++) {
+		out[axis] = offsets[a + axis] + (offsets[b + axis] - offsets[a + axis]) * blend;
+	}
+	return out;
+};
 
 /** values some rows of an instance block carry */
 export interface RowSection<Values extends Float32Array | Uint32Array = Float32Array> {
@@ -159,6 +200,7 @@ const ROW_SECTIONS = [
 	{ key: 'decals', words: DECAL_PLACEMENT_FLOATS },
 	{ key: 'spins', words: SPIN_FLOATS },
 	{ key: 'floaters', words: 1 },
+	{ key: 'rides', words: 1 },
 ] as const satisfies readonly { key: keyof InstanceBlock; words: number }[];
 
 const CHAIN_SIZE = 8;
@@ -166,7 +208,11 @@ const DRAW_SIZE = 32;
 const ORIGIN_SIZE = 12;
 /** a `null` reference, as encoded */
 const NONE = 0xff_ff_ff_ff;
-const INSTANCE_HEADER_SIZE = 24 + ROW_SECTIONS.length * 4;
+/** where the header's path count is, after the row sections' counts */
+const PATH_COUNT_AT = 24 + ROW_SECTIONS.length * 4;
+const INSTANCE_HEADER_SIZE = PATH_COUNT_AT + 4;
+/** bytes of a path before its frames: `f32 frameRate, u32 frameCount` */
+const PATH_HEADER_SIZE = 8;
 /** bytes per instance row across the per-row sections */
 const INSTANCE_ROW_SIZE = 4 + 48 + 24;
 
@@ -180,7 +226,7 @@ const CHAINS_HEADER: HeaderShape = {
 /** 'EFIN' */
 const INSTANCES_HEADER: HeaderShape = {
 	magic: 0x4e_49_46_45,
-	version: 6,
+	version: 7,
 	size: INSTANCE_HEADER_SIZE,
 	label: 'instance block',
 };
@@ -316,8 +362,8 @@ export const decodeChains = (data: Uint8Array): Chain[] => {
  *
  * @param block rows
  * @returns the encoded block
- * @throws {RangeError} if the sections disagree in length, or a row section's rows aren't ascending rows of
- *   the block
+ * @throws {RangeError} if the sections disagree in length, a row section's rows aren't ascending rows of the
+ *   block, a ride names no path, or a path has no whole frame or no frame rate above 0
  */
 export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 	const count = block.chains.length;
@@ -333,11 +379,20 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 			throw new RangeError(`instance block ${key} rows must be ascending rows of the block`);
 		}
 	}
+	if (block.rides.values.some((path) => path >= block.paths.length)) {
+		throw new RangeError('an instance block ride names a path the block lacks');
+	}
+	for (const { frameRate, offsets } of block.paths) {
+		if (offsets.length === 0 || offsets.length % 3 !== 0 || !(frameRate > 0)) {
+			throw new RangeError('an instance block path needs whole frames and a frame rate above 0');
+		}
+	}
+	const sectionsEnd = sectionsSize(
+		count,
+		ROW_SECTIONS.map(({ key }) => block[key].rows.length),
+	);
 	const out = new Uint8Array(
-		instanceBlockSize(
-			count,
-			ROW_SECTIONS.map(({ key }) => block[key].rows.length),
-		),
+		sectionsEnd + block.paths.reduce((sum, path) => sum + PATH_HEADER_SIZE + path.offsets.byteLength, 0),
 	);
 	const view = viewOf(out);
 	writeHeader(view, INSTANCES_HEADER);
@@ -350,10 +405,18 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 		view.setUint32(24 + i * 4, block[key].rows.length, true);
 		parts.push(block[key].rows, block[key].values);
 	}
+	view.setUint32(PATH_COUNT_AT, block.paths.length, true);
 	let at = INSTANCE_HEADER_SIZE;
-	for (const part of parts) {
+	const put = (part: Uint32Array | Float32Array): void => {
 		out.set(new Uint8Array(part.buffer, part.byteOffset, part.byteLength), at);
 		at += part.byteLength;
+	};
+	parts.forEach(put);
+	for (const { frameRate, offsets } of block.paths) {
+		view.setFloat32(at, frameRate, true);
+		view.setUint32(at + 4, offsets.length / 3, true);
+		at += PATH_HEADER_SIZE;
+		put(offsets);
 	}
 	return out;
 };
@@ -361,7 +424,8 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 const areAscendingRows = (rows: Uint32Array, count: number): boolean =>
 	rows.every((row, i) => row < count && (i === 0 || row > rows[i - 1]));
 
-const instanceBlockSize = (count: number, sectionRows: readonly number[]): number =>
+/** @returns the bytes of an instance block up to its paths */
+const sectionsSize = (count: number, sectionRows: readonly number[]): number =>
 	INSTANCE_HEADER_SIZE +
 	count * INSTANCE_ROW_SIZE +
 	ROW_SECTIONS.reduce((sum, { words }, i) => sum + sectionRows[i] * (4 + words * 4), 0);
@@ -369,15 +433,19 @@ const instanceBlockSize = (count: number, sectionRows: readonly number[]): numbe
 /**
  * @param data an instance block
  * @returns its rows, copied into aligned arrays
- * @throws {PackageFormatError} on a bad header or length, or a row section whose rows aren't ascending rows
- *   of the block
+ * @throws {PackageFormatError} on a bad header or length, a row section whose rows aren't ascending rows of
+ *   the block, a ride naming no path, or a path without frames or a frame rate above 0
  */
 export const decodeInstanceBlock = (data: Uint8Array): InstanceBlock => {
 	const view = viewOf(data);
 	checkHeader(view, INSTANCES_HEADER);
 	const count = view.getUint32(8, true);
 	const sectionRows = ROW_SECTIONS.map((_, i) => view.getUint32(24 + i * 4, true));
-	checkLength(data, instanceBlockSize(count, sectionRows), 'instance block');
+	const pathCount = view.getUint32(PATH_COUNT_AT, true);
+	const sectionsEnd = sectionsSize(count, sectionRows);
+	if (data.byteLength < sectionsEnd) {
+		throw new PackageFormatError(`instance block is ${data.byteLength} bytes, shorter than its rows`);
+	}
 
 	let at = INSTANCE_HEADER_SIZE;
 	const chains = u32Section(data, at, count);
@@ -406,6 +474,25 @@ export const decodeInstanceBlock = (data: Uint8Array): InstanceBlock => {
 	const decals = readSection(f32Section);
 	const spins = readSection(f32Section);
 	const floaters = readSection(u32Section);
+	const rides = readSection(u32Section);
+	const paths: RowPath[] = [];
+	for (let p = 0; p < pathCount; p++) {
+		if (at + PATH_HEADER_SIZE > data.byteLength) {
+			throw new PackageFormatError('instance block paths run past its end');
+		}
+		const frameRate = view.getFloat32(at, true);
+		const frames = view.getUint32(at + 4, true);
+		at += PATH_HEADER_SIZE;
+		if (frames === 0 || !(frameRate > 0) || at + frames * 12 > data.byteLength) {
+			throw new PackageFormatError(`instance block path ${p} is malformed`);
+		}
+		paths.push({ frameRate, offsets: f32Section(data, at, frames * 3) });
+		at += frames * 12;
+	}
+	checkLength(data, at, 'instance block');
+	if (rides.values.some((path) => path >= pathCount)) {
+		throw new PackageFormatError('an instance block ride names a path the block lacks');
+	}
 	return {
 		origin: [view.getFloat32(12, true), view.getFloat32(16, true), view.getFloat32(20, true)],
 		chains,
@@ -414,5 +501,7 @@ export const decodeInstanceBlock = (data: Uint8Array): InstanceBlock => {
 		decals,
 		spins,
 		floaters,
+		rides,
+		paths,
 	};
 };

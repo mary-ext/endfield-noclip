@@ -4,7 +4,6 @@ import { describe, it } from 'node:test';
 import { levelInteractiveFromValue } from '@endfield-noclip/formats/endfield/level-interactives';
 import { readLevelSplines } from '@endfield-noclip/formats/endfield/level-splines';
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
-import { multiplyMatrices, transformPoint, trsMatrix } from '@endfield-noclip/formats/unity/transform';
 
 import { curveMoveOf, curvePath, isAutoMovePlatform } from './curve-move.ts';
 
@@ -154,20 +153,19 @@ describe('auto-moving platforms', () => {
 	it('loops round the whole spline from its start knot at its speed, keeping its rotation', () => {
 		const row = levelInteractiveFromValue(scriptRow('int_platform_automove_5m_5m', curve), 1n);
 		const move = curveMoveOf(template, row)!;
-		const placement = trsMatrix(row.position, [0, Math.SQRT1_2, 0, Math.SQRT1_2], [2, 2, 2]);
-		const result = curvePath(spline, move, placement);
+		const result = curvePath(spline, move, row.position);
 		assert.ok('path' in result);
-		const { matrices, frameRate } = result.path;
+		const { offsets, frameRate } = result.path;
+		const frames = offsets.length / 3;
 		// 15 + 7 + 15 + 7 metres at 4 m/s, to within a simulation step (1/240 s) per trip
-		near([matrices.length / frameRate], [11], 'period', 0.01);
-		const world = (frame: number) => transformPoint(multiplyMatrices(placement, matrices[frame]), [0, 0, 0]);
+		near([frames / frameRate], [11], 'period', 0.01);
+		// the offsets are from the placement, along the world's axes
+		const world = (frame: number) => row.position.map((value, axis) => value + offsets[frame * 3 + axis]);
 		// knot 2, (0, 7, -15) turned a quarter about y
 		near(world(0), [-116.736, 144.5, 275.756], 'start');
 		// 15 m on, along the top edge to knot 3, then down towards knot 0
-		near(world(Math.round((15 / 44) * matrices.length)), [-101.736, 144.5, 275.756], 'knot 3', STEP);
-		near(world(Math.round((18.5 / 44) * matrices.length)), [-101.736, 141, 275.756], 'half way down', STEP);
-		// the path moves the root only
-		near([matrices[1][0], matrices[1][5], matrices[1][10]], [1, 1, 1], 'unturned');
+		near(world(Math.round((15 / 44) * frames)), [-101.736, 144.5, 275.756], 'knot 3', STEP);
+		near(world(Math.round((18.5 / 44) * frames)), [-101.736, 141, 275.756], 'half way down', STEP);
 	});
 
 	it('goes back and forth between different knots in mode 2', () => {
@@ -181,13 +179,14 @@ describe('auto-moving platforms', () => {
 			1n,
 		);
 		const move = curveMoveOf(template, row)!;
-		const result = curvePath(spline, move, trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]));
+		const result = curvePath(spline, move, [0, 0, 0]);
 		assert.ok('path' in result);
-		const { matrices, frameRate } = result.path;
-		near([matrices.length / frameRate], [7.5], 'period');
-		const at = (frame: number) => [matrices[frame][12], matrices[frame][13], matrices[frame][14]];
-		near(at(Math.round(matrices.length / 2)), [-116.736, 137.5, 275.756], 'target knot', STEP);
-		near(at(Math.round(matrices.length / 4)), [-109.236, 137.5, 275.756], 'midway', STEP);
+		const { offsets, frameRate } = result.path;
+		const frames = offsets.length / 3;
+		near([frames / frameRate], [7.5], 'period');
+		const at = (frame: number) => [...offsets.subarray(frame * 3, frame * 3 + 3)];
+		near(at(Math.round(frames / 2)), [-116.736, 137.5, 275.756], 'target knot', STEP);
+		near(at(Math.round(frames / 4)), [-109.236, 137.5, 275.756], 'midway', STEP);
 	});
 
 	// map02's floating towers (10200030295 and its neighbours) set these: back and forth, a 1 m ramp and 1 s at
@@ -212,17 +211,17 @@ describe('auto-moving platforms', () => {
 			{ node: 1, forNearby: false, time: 1 },
 		]);
 		assert.equal(move.ramp, 1);
-		const result = curvePath(spline, move, trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]));
+		const result = curvePath(spline, move, [0, 0, 0]);
 		assert.ok('path' in result);
-		const { matrices, frameRate } = result.path;
+		const { offsets, frameRate } = result.path;
 		// a 15 m trip: 1 m from 0.1 to 4 m/s (ln 40 / 3.9 s), 13 m at 4 m/s, then down to 0.1 m/s over 0.975 m
 		// (ln 40 / 4 s) and the last 0.025 m at 0.1 m/s; two trips and four 1 s waits
 		const trip = Math.log(40) / 3.9 + 13 / 4 + Math.log(40) / 4 + 0.25;
 		const period = 2 * trip + 4;
-		near([matrices.length / frameRate], [period], 'period', 0.05);
+		near([offsets.length / 3 / frameRate], [period], 'period', 0.05);
 		const at = (seconds: number) => {
-			const m = matrices[Math.round(seconds * frameRate)];
-			return [m[12], m[13], m[14]];
+			const frame = Math.round(seconds * frameRate);
+			return [...offsets.subarray(frame * 3, frame * 3 + 3)];
 		};
 		near(at(0.5), [-101.736, 137.5, 275.756], 'waiting at knot 0', 1e-2);
 		// cruising: 1 m of ramp, then 4 m/s
@@ -233,15 +232,9 @@ describe('auto-moving platforms', () => {
 
 	it('parks at a knot that waits for the player', () => {
 		const row = levelInteractiveFromValue(scriptRow('int_platform_automove_5m_5m', floatingTower(1)), 1n);
-		const result = curvePath(
-			spline,
-			curveMoveOf(template, row)!,
-			trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]),
-		);
+		const result = curvePath(spline, curveMoveOf(template, row)!, [0, 0, 0]);
 		assert.ok('path' in result);
-		for (const m of result.path.matrices) {
-			near([m[12], m[13], m[14]], [-116.736, 137.5, 275.756], 'parked at knot 1');
-		}
+		near([...result.path.offsets], [-116.736, 137.5, 275.756], 'parked at knot 1');
 	});
 
 	it("reports what it can't draw", () => {
@@ -249,11 +242,7 @@ describe('auto-moving platforms', () => {
 			scriptRow('int_platform_automove_5m_5m', [param('spline_id', 3, 25002)]),
 			1n,
 		);
-		const result = curvePath(
-			spline,
-			curveMoveOf(template, row)!,
-			trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]),
-		);
+		const result = curvePath(spline, curveMoveOf(template, row)!, [0, 0, 0]);
 		assert.deepEqual(result, { reason: 'curve move speed is not above 0' });
 	});
 });

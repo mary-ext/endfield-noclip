@@ -379,12 +379,12 @@ exactly while the cabin shows.
 
 ### instance block (`.inst`, `EFIN`)
 
-36-byte header: `u32 magic, u16 version, u16 0, u32 count, f32×3 origin`, then a `u32` row count per
-row section (decals, spins, floaters). then struct-of-arrays sections of `count` elements:
-`u32 chain`, `f32×12 transform` (rows3x4, translation relative to origin), `f32×6 bounds` (world
-AABB centre relative to origin, then half-extents, as the game stores them). then each **row
-section**, values only some rows carry: its ascending `u32 row`s, then a fixed number of 32-bit
-values per row (`RowSection`, one codec for all of them):
+44-byte header: `u32 magic, u16 version, u16 0, u32 count, f32×3 origin`, then a `u32` row count per
+row section (decals, spins, floaters, rides) and a `u32` path count. then struct-of-arrays sections
+of `count` elements: `u32 chain`, `f32×12 transform` (rows3x4, translation relative to origin),
+`f32×6 bounds` (world AABB centre relative to origin, then half-extents, as the game stores them).
+then each **row section**, values only some rows carry: its ascending `u32 row`s, then a fixed
+number of 32-bit values per row (`RowSection`, one codec for all of them):
 
 - **decals**: `f32×8` rect decal placements (the RGBA8 colour, used as stored, with RGB times the
   intensity, then the UV scale and offset of the box's `local.xz + 0.5`).
@@ -396,6 +396,17 @@ values per row (`RowSection`, one codec for all of them):
 - **floaters** ([floaters](game-data/water.md#floaters)): a `u32` per row, the index into the water
   table's `volumes` of the volume the row floats on. the row follows that volume's surface up and
   down by as much as it moves from its packed fill ([water](#water)).
+- **rides** ([auto-moving platforms](game-data/interactives.md#auto-moving-platforms)): a `u32` per
+  row, the index of the block's path the row rides. a riding row doesn't float or spin.
+
+the block's **paths** follow (`RowPath`), each `f32 frameRate, u32 frameCount`, then `f32×3` per
+frame: the offset from a riding row's stored translation, in metres along the world's axes. at time
+`t` the row's translation and bounds centre are the stored ones plus the offset at frame
+`t · frameRate`, wrapped to the loop and blended linearly between neighbouring frames
+(`pathOffset`); its rotation and scale stay. the stored transform is where the game places the row
+before it sets off, which needn't lie on the path. every renderer of a riding placement, and of the
+effects mounted on it, rides the same path, stored once per block; the tile tree's bounds hold each
+riding row's box along its whole path, and the row is filed under the leaf at that reach's middle.
 
 origin is the leaf's minimum corner (y 0) for detail blocks and the tree origin for core blocks.
 rows are sorted by (HLOD node, chain), so equal chains form instanced ranges. who owns a row and
@@ -676,7 +687,7 @@ packing rules:
   on it. the entity pass records the volume's game id on each of their rows, and the instance
   blocks, written after the table is planned, store it as the volume's table index in their
   [floaters section](#instance-block-inst-efin). a row whose volume was left out of the table is
-  stored as not floating.
+  stored as not floating, as is one that rides a path, whose spline sets its height.
 
 ### particles
 

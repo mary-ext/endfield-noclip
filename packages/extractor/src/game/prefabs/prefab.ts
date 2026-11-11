@@ -21,7 +21,6 @@ import type { ParticleSystemInfo } from '@endfield-noclip/package-format/particl
 import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
 import { particleReach } from '../effects/particle-system.ts';
 import type { DistanceRange } from '../effects/view-state-effects.ts';
-import type { RootPath } from '../interactives/curve-move.ts';
 
 import { animatorDefaultPose } from './animator-defaults.ts';
 import type { PrefabBillboard } from './billboard.ts';
@@ -162,11 +161,6 @@ export interface PrefabPose {
 	 * what it leaves switched off never shows instead of drawing as stand-ins
 	 */
 	closed?: boolean;
-	/**
-	 * the root's matrices in the placement's space at evenly spaced times of a loop, for a prefab that moves as
-	 * a whole (an auto-moving platform); absent for one that stays at its placement
-	 */
-	path?: RootPath;
 }
 
 /** what one Animator's clip leaves its subtree at */

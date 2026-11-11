@@ -102,8 +102,8 @@ export const poseSkin = async (
 };
 
 /**
- * poses the prefab's Transforms at each frame of the pose's root path, else of its first looping clip that
- * moves any; the pose's other clips hold their end poses, and its looping clips play on those frames
+ * poses the prefab's Transforms at each frame of the pose's first looping clip that moves any; the pose's
+ * other clips hold their end poses, and its looping clips play on those frames
  *
  * @param nodes the walk's Transforms, parents first
  * @param pose the pose the walk drew
@@ -113,17 +113,11 @@ export const poseFrames = (nodes: readonly PosedNode[], pose: PrefabPose): PoseF
 	const playing = pose.clips.find(
 		(clip) => clip.motion !== null && clip.motion.loops && clip.motion.paths.length > 0,
 	)?.motion;
-	let frameRate: number;
-	let frameCount: number;
-	if (pose.path !== undefined) {
-		frameRate = pose.path.frameRate;
-		frameCount = pose.path.matrices.length;
-	} else if (playing !== undefined && playing !== null && playing.duration > 0 && playing.sampleRate > 0) {
-		frameRate = playing.sampleRate;
-		frameCount = Math.max(Math.round(playing.duration * frameRate), 1);
-	} else {
+	if (playing === undefined || playing === null || playing.duration <= 0 || playing.sampleRate <= 0) {
 		return null;
 	}
+	const frameRate = playing.sampleRate;
+	const frameCount = Math.max(Math.round(playing.duration * frameRate), 1);
 	const matrices: Map<string, Float32Array>[] = [];
 	for (let frame = 0; frame < frameCount; frame++) {
 		const time = frame / frameRate;
@@ -134,8 +128,8 @@ export const poseFrames = (nodes: readonly PosedNode[], pose: PrefabPose): PoseF
 		for (const node of nodes) {
 			const parent = node.parent === null ? undefined : posed.get(node.parent);
 			if (parent === undefined) {
-				// the root keeps the caller's placement, moved along its path if it has one
-				posed.set(node.key, pose.path?.matrices[frame] ?? trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]));
+				// the root keeps the caller's placement
+				posed.set(node.key, trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]));
 				continue;
 			}
 			const local = posedLocal(node.saved, sampled, node.below);

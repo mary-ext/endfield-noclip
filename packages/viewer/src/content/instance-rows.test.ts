@@ -8,6 +8,8 @@ import {
 	BLOCK_SLOT_BITS,
 	buildInstanceRows,
 	markBillboardRows,
+	movingRows,
+	rideRows,
 	ROW_WORDS,
 	RowBillboard,
 	RowKind,
@@ -25,6 +27,8 @@ const block = (chains: number[], decalRows: number[] = []): InstanceBlock => ({
 	},
 	spins: { rows: new Uint32Array(0), values: new Float32Array(0) },
 	floaters: { rows: new Uint32Array(0), values: new Uint32Array(0) },
+	rides: { rows: new Uint32Array(0), values: new Uint32Array(0) },
+	paths: [],
 });
 
 it('marks the rows of billboard chains, keeping the rest of their info words', () => {
@@ -82,6 +86,49 @@ it('turns spinning rows about their pivot as Unity turns, from their stored tran
 		Array.from(f32.subarray(0, 12)),
 		Array.from({ length: 12 }, () => 0),
 	);
+});
+
+it('moves riding rows along their paths from their stored place, leaving their rotation', () => {
+	const riding = block([0, 0, 0]);
+	// rows 1 and 2: turned a quarter about y, at (2, 0, 0) and (5, 1, 0), on two paths
+	for (const [row, x, y] of [
+		[1, 2, 0],
+		[2, 5, 1],
+	]) {
+		riding.transforms.set([0, 0, 1, x, 0, 1, 0, y, -1, 0, 0, 0], row * 12);
+		riding.bounds.set([x, y + 1, 0, 0.5, 0.5, 0.5], row * 6);
+	}
+	riding.rides = { rows: Uint32Array.of(1, 2), values: Uint32Array.of(1, 0) };
+	riding.paths = [
+		{ frameRate: 1, offsets: Float32Array.of(0, 0, 3) },
+		{ frameRate: 1, offsets: Float32Array.of(0, 0, 0, 0, 4, 0) },
+	];
+	const built = buildInstanceRows(riding, RowKind.Detail);
+	const f32 = new Float32Array(built.rows.buffer);
+	const row = (index: number): number[] =>
+		Array.from(f32.subarray(index * ROW_WORDS, index * ROW_WORDS + 15));
+	assert.deepEqual([...built.rides!.runs], [1, 3]);
+	rideRows(f32, built.rides!, 0.5);
+	assert.deepEqual(row(1), [0, 0, 1, 2, 0, 1, 0, 2, -1, 0, 0, 0, 2, 3, 0]);
+	assert.deepEqual(row(2), [0, 0, 1, 5, 0, 1, 0, 1, -1, 0, 0, 3, 5, 2, 3]);
+	// moving again starts from the stored place
+	rideRows(f32, built.rides!, 1);
+	assert.deepEqual(row(1), [0, 0, 1, 2, 0, 1, 0, 4, -1, 0, 0, 0, 2, 5, 0]);
+	assert.deepEqual(
+		row(0),
+		Array.from({ length: 15 }, () => 0),
+	);
+});
+
+it('lists the rows that spin or ride, ascending', () => {
+	const moving = block(Array.from({ length: 8 }, () => 0));
+	moving.spins = { rows: Uint32Array.of(1, 6), values: new Float32Array(14) };
+	assert.deepEqual([...movingRows(buildInstanceRows(moving, RowKind.Detail).spins, null)!], [1, 6]);
+	moving.rides = { rows: Uint32Array.of(0, 4, 7), values: new Uint32Array(3) };
+	moving.paths = [{ frameRate: 1, offsets: new Float32Array(3) }];
+	const built = buildInstanceRows(moving, RowKind.Detail);
+	assert.deepEqual([...movingRows(built.spins, built.rides)!], [0, 1, 4, 6, 7]);
+	assert.equal(movingRows(null, null), null);
 });
 
 it('rewrites spinning rows in runs that bridge short gaps of rows holding still', () => {

@@ -203,15 +203,15 @@ export class PackContent {
 	// #region rows
 
 	/**
-	 * files a row of placed content (dynamic structures, interactives, prefabs) under its leaf; no HLOD stands
-	 * in for it
+	 * files a row of placed content (dynamic structures, interactives, prefabs) under the leaf at the middle of
+	 * where it reaches; no HLOD stands in for it
 	 */
 	addStructure(row: InstanceInput, { tag, name, visibility, loadGrid }: RowOwner): void {
 		const { grid } = this.scene;
-		const [x, , z] = row.bounds.center;
-		const key = tileAt(grid, grid.leafLevel, x, z);
+		const reach = rowReach(row);
+		const key = tileAt(grid, grid.leafLevel, reach.center[0], reach.center[2]);
 		this.collector.addConditional({ tag, key, row, name, file: -1, visibility, grid: loadGrid });
-		this.collector.noteOwner(tag, rowReach(row));
+		this.collector.noteOwner(tag, reach);
 		this.uses.note(row.chain, key);
 		this.count('dynamicRenderers');
 	}

@@ -9,6 +9,8 @@ import {
 	type Chain,
 	ChainFlags,
 	type InstanceBlock,
+	pathOffset,
+	type RowPath,
 	SPIN_FLOATS,
 } from '@endfield-noclip/package-format/instances';
 
@@ -165,21 +167,38 @@ export interface RowSpins {
 	/** {@link SPIN_BASE_FLOATS} per row: what the rows hold at time 0 */
 	base: Float32Array<ArrayBuffer>;
 	/**
-	 * (first, end) pairs of row ranges that hold every spinning row, across gaps of up to {@link SPIN_RUN_GAP}
-	 * rows: what's rewritten after {@link turnRows}
+	 * (first, end) pairs of row ranges that hold every spinning row, across gaps of up to
+	 * {@link MOVING_RUN_GAP} rows: what's rewritten after {@link turnRows}
 	 */
 	runs: Uint32Array<ArrayBuffer>;
 }
 
-/** rows that hold still between two spinning rows rewritten together rather than in two writes */
-const SPIN_RUN_GAP = 8;
+/** f32 per riding row in {@link RowRides.base}: its stored translation (3) and bounds centre (3) */
+const RIDE_BASE_FLOATS = 6;
 
-/** @returns {@link RowSpins.runs} of ascending spinning rows */
-const spinRuns = (rows: Uint32Array): Uint32Array<ArrayBuffer> => {
+/** a block's rows riding paths, which {@link rideRows} moves by the clock. a row doesn't both spin and ride */
+export interface RowRides {
+	/** the rows, ascending */
+	rows: Uint32Array<ArrayBuffer>;
+	/** per row, the index into {@link paths} of the path it rides */
+	pathOf: Uint32Array<ArrayBuffer>;
+	/** {@link RIDE_BASE_FLOATS} per row: what the rows hold off their paths */
+	base: Float32Array<ArrayBuffer>;
+	/** (first, end) pairs of row ranges that hold every riding row, as {@link RowSpins.runs} */
+	runs: Uint32Array<ArrayBuffer>;
+	/** the block's paths */
+	paths: RowPath[];
+}
+
+/** rows that hold still between two moving rows rewritten together rather than in two writes */
+const MOVING_RUN_GAP = 8;
+
+/** @returns the (first, end) runs of ascending moving rows, across gaps of up to {@link MOVING_RUN_GAP} rows */
+const movingRuns = (rows: Uint32Array): Uint32Array<ArrayBuffer> => {
 	const runs: number[] = [];
 	for (const row of rows) {
 		const last = runs.length - 1;
-		if (last > 0 && row - runs[last] <= SPIN_RUN_GAP) {
+		if (last > 0 && row - runs[last] <= MOVING_RUN_GAP) {
 			runs[last] = row + 1;
 		} else {
 			runs.push(row, row + 1);
@@ -204,6 +223,8 @@ export interface InstanceRows {
 	spins: RowSpins | null;
 	/** the block's rows floating on a water volume, or `null` when none does */
 	floaters: RowFloaters | null;
+	/** the block's rows riding paths, or `null` when none does */
+	rides: RowRides | null;
 }
 
 /** a block's rows floating on water volumes, which follow their volume's surface up and down */
@@ -291,7 +312,26 @@ export const buildInstanceRows = (block: InstanceBlock, kinds: RowKinds): Instan
 			rows: spinRows,
 			values: new Float32Array(block.spins.values),
 			base,
-			runs: spinRuns(spinRows),
+			runs: movingRuns(spinRows),
+		};
+	}
+	let rides: RowRides | null = null;
+	if (block.rides.rows.length > 0) {
+		const riding = new Uint32Array(block.rides.rows);
+		const base = new Float32Array(riding.length * RIDE_BASE_FLOATS);
+		for (let s = 0; s < riding.length; s++) {
+			const at = riding[s] * ROW_WORDS;
+			base.set(
+				[f32[at + 3], f32[at + 7], f32[at + 11], f32[at + 12], f32[at + 13], f32[at + 14]],
+				s * RIDE_BASE_FLOATS,
+			);
+		}
+		rides = {
+			rows: riding,
+			pathOf: new Uint32Array(block.rides.values),
+			base,
+			runs: movingRuns(riding),
+			paths: block.paths.map(({ frameRate, offsets }) => ({ frameRate, offsets: new Float32Array(offsets) })),
 		};
 	}
 	return {
@@ -306,7 +346,20 @@ export const buildInstanceRows = (block: InstanceBlock, kinds: RowKinds): Instan
 			block.floaters.rows.length === 0
 				? null
 				: { rows: new Uint32Array(block.floaters.rows), volumes: new Uint32Array(block.floaters.values) },
+		rides,
 	};
+};
+
+/**
+ * @param spins a block's spinning rows
+ * @param rides its riding rows
+ * @returns the rows either moves, ascending, or `null` when every row holds still
+ */
+export const movingRows = (spins: RowSpins | null, rides: RowRides | null): Uint32Array | null => {
+	if (spins === null || rides === null) {
+		return spins?.rows ?? rides?.rows ?? null;
+	}
+	return Uint32Array.from(new Set([...spins.rows, ...rides.rows])).toSorted();
 };
 
 /**
@@ -319,6 +372,35 @@ export const assignBlockSlot = (rows: Uint32Array, slot: number): void => {
 	const keep = ~(BLOCK_SLOTS - 1);
 	for (let at = RowWord.block; at < rows.length; at += ROW_WORDS) {
 		rows[at] = ((rows[at] & keep) | slot) >>> 0;
+	}
+};
+
+/** {@link rideRows}' offset, kept so moving allocates nothing */
+const OFFSET: [number, number, number] = [0, 0, 0];
+
+/**
+ * moves a block's riding rows to where they are at `time`: each row's translation and bounds centre are its
+ * stored ones plus its path's offset then
+ *
+ * @param rows the block's rows, as f32; the riding rows' translation and centre words are overwritten
+ * @param rides the block's riding rows
+ * @param time seconds of the viewer's clock
+ */
+export const rideRows = (rows: Float32Array, rides: RowRides, time: number): void => {
+	const { rows: riding, pathOf, base, paths } = rides;
+	let path = -1;
+	for (let s = 0; s < riding.length; s++) {
+		// neighbouring rows mostly ride one path
+		if (pathOf[s] !== path) {
+			path = pathOf[s];
+			pathOffset(paths[path], time, OFFSET);
+		}
+		const b = s * RIDE_BASE_FLOATS;
+		const at = riding[s] * ROW_WORDS;
+		for (let axis = 0; axis < 3; axis++) {
+			rows[at + axis * 4 + 3] = base[b + axis] + OFFSET[axis];
+			rows[at + 12 + axis] = base[b + 3 + axis] + OFFSET[axis];
+		}
 	}
 };
 

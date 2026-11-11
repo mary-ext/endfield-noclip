@@ -40,7 +40,10 @@ export interface GroupedRows {
 	cull: Float32Array;
 	/** (chain, first, count) runs */
 	runs: Uint32Array;
-	/** rows whose transform changes after the groups are built (spinning rows), ascending; never culled by group */
+	/**
+	 * rows whose transform changes after the groups are built (spinning and riding rows), ascending; never
+	 * culled by group
+	 */
 	moving: ArrayLike<number> | null;
 }
 
@@ -223,7 +226,7 @@ export const buildRowGroups = (rows: GroupedRows, reachOf: (chain: number) => nu
 			rowRadius = Math.max(rowRadius, r);
 			groupReach = Math.max(groupReach, reach[i]);
 		}
-		// a moving row can be anywhere its turning takes it
+		// a moving row can be anywhere its turning or its path takes it
 		if (moving !== null) {
 			while (next < moving.length && moving[next] < first) {
 				next++;

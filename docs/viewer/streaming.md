@@ -5,7 +5,7 @@ each frame whose view or content changed runs one traversal (`Traversal.run` in
 antialiasing or exposure reuse the last selection. the stream's "frames" below count traversals.
 
 1. `Selector.run` walks the tile tree for terrain patches and instance row ranges, and the selected
-   blocks' spinning rows are turned ([per-instance LOD](#per-instance-lod)).
+   blocks' spinning and riding rows are moved ([per-instance LOD](#per-instance-lod)).
 2. `MeshSelector.run` culls and LOD-selects instances in those ranges and buckets them for drawing.
 3. sky textures, water surfaces and irradiance cells are requested.
 4. `StreamManager.update` cancels, dispatches, uploads and evicts; `TextureReduction.update` adjusts
@@ -103,6 +103,13 @@ bridge gaps of up to 8 still rows) are written to the GPU again. while any selec
 spinning rows, frames that render traverse again, as with particles, so the shadows follow. every
 wheel starts from its stored pose at the clock's zero; the game's phase is its gameplay clock's.
 
+the blocks' [riding rows](../package-format.md#instance-block-inst-efin) move the same way
+(`rideRows`): each row's translation and bounds centre are its stored ones plus its path's offset at
+the clock, so everything that reads a row follows it, the mesh and effect shaders' instance origin,
+billboards, a particle emitter's frame (its live particles move with it, world-space ones included)
+and the row's cull sphere. an auto-moving platform, the effects mounted on it and their particles
+thus ride as one. every platform starts its loop at the clock's zero.
+
 [`streaming/mesh-selection.ts`](../../packages/viewer/src/streaming/mesh-selection.ts) runs on the
 CPU over the selected row ranges, with the sphere and shadow layer tests of
 [`instance-culling.ts`](../../packages/viewer/src/streaming/instance-culling.ts) and the chain slots
@@ -112,7 +119,7 @@ tests each group of 32 consecutive rows of a block
 selection) against the same rules with the group's bounds: its sphere, its largest row radius and
 its farthest LOD reach. a group that fails one has no row that passes it, so it's skipped whole.
 rows are in placement order, which keeps a group's rows close together (a median radius of about 20
-m on map02); groups holding spinning rows are never skipped. per instance it:
+m on map02); groups holding spinning or riding rows are never skipped. per instance it:
 
 1. culls by projected bounding-sphere radius (`minBoxPixels`, default 1.5 px) and by frustum planes;
 2. computes Unity's LODGroup metric (object size relative to screen height, the size being twice the
@@ -163,10 +170,10 @@ bucket has no room in skips its draw.
 
 segments stay on the CPU path when their chain draws particles, has a `CameraDistance` band or a
 slot outside the opaque and alpha-tested queues, when a LOD they reach has no resident stand-in and
-the chain draws boxes, and when their group holds spinning rows. picking slots by a segment's range
-leaves some buckets empty: at a dense Jingyu view about half as many draws again as on the CPU path,
-whose extra encoding costs a fraction of what the mesh selection saves. the in-view instance and
-triangle stats of GPU-culled buckets are read back a few frames late.
+the chain draws boxes, and when their group holds spinning or riding rows. picking slots by a
+segment's range leaves some buckets empty: at a dense Jingyu view about half as many draws again as
+on the CPU path, whose extra encoding costs a fraction of what the mesh selection saves. the in-view
+instance and triangle stats of GPU-culled buckets are read back a few frames late.
 
 with `occlusionCulling` on too (the default), rows in view hidden behind what the main pass drew
 last frame skip it, while still casting shadows. before culling, `depth pyramid` reduces the depth

@@ -6,7 +6,7 @@ import {
 	splineCurves,
 } from '@endfield-noclip/formats/endfield/level-splines';
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
-import { inverseTransformPoint, trsMatrix } from '@endfield-noclip/formats/unity/transform';
+import type { RowPath } from '@endfield-noclip/package-format/instances';
 
 import { type ComponentKeys, componentOf, componentParams } from './component-params.ts';
 
@@ -100,12 +100,6 @@ export const curveMoveOf = (template: MemoryPackValue, row: LevelInteractive): C
 	};
 };
 
-/** a prefab root's matrices, in its placement's space, at evenly spaced times of a loop */
-export interface RootPath {
-	frameRate: number;
-	matrices: Float32Array[];
-}
-
 /** samples per curve of the arc-length table, as many as Unity Splines' default */
 const LUT_SAMPLES = 30;
 
@@ -192,14 +186,14 @@ const speedAt = (move: CurveMove, length: number, travelled: number): number => 
  *
  * @param spline the spline it rides
  * @param move its curve move parameters
- * @param placement its placement matrix (position, rotation, scale)
- * @returns its root's matrices in its placement's space, or why its motion isn't drawn
+ * @param position where it's placed
+ * @returns its offsets from its placement at evenly spaced times of the loop, or why its motion isn't drawn
  */
 export const curvePath = (
 	spline: LevelSpline,
 	move: CurveMove,
-	placement: Float32Array,
-): { path: RootPath } | { reason: string } => {
+	position: readonly [x: number, y: number, z: number],
+): { path: RowPath } | { reason: string } => {
 	if (move.speed <= 0) {
 		return { reason: 'curve move speed is not above 0' };
 	}
@@ -251,7 +245,7 @@ export const curvePath = (
 	if (trips[0].length <= 0) {
 		return { reason: `spline ${spline.id} has no length` };
 	}
-	const pointOf = (trip: Trip, travelled: number): Float32Array => {
+	const offsetOf = (trip: Trip, travelled: number): [number, number, number] => {
 		let distance = trip.offset + trip.direction * travelled;
 		distance = wraps ? ((distance % total) + total) % total : Math.min(Math.max(distance, 0), total);
 		let curve = 0;
@@ -260,7 +254,7 @@ export const curvePath = (
 			curve++;
 		}
 		const point = pointAlong(tables[curve], distance);
-		return trsMatrix(inverseTransformPoint(placement, point), [0, 0, 0, 1], [1, 1, 1]);
+		return [point[0] - position[0], point[1] - position[1], point[2] - position[2]];
 	};
 	// one simulated step per entry: which trip, and how far into it as the step begins
 	const steps: { trip: number; travelled: number }[] = [];
@@ -271,8 +265,8 @@ export const curvePath = (
 			while (next < trip.stops.length && trip.stops[next].distance <= travelled) {
 				const { wait } = trip.stops[next];
 				if (wait.forNearby) {
-					const parked = pointOf(trip, trip.stops[next].distance);
-					return { path: { frameRate: 1, matrices: [parked, parked] } };
+					const parked = offsetOf(trip, trip.stops[next].distance);
+					return { path: { frameRate: 1, offsets: Float32Array.from(parked) } };
 				}
 				for (let held = Math.round(wait.time / STEP); held > 0; held--) {
 					steps.push({ trip: index, travelled });
@@ -300,10 +294,10 @@ export const curvePath = (
 			: 0;
 	const period = steps.length * STEP;
 	const frameCount = Math.max(Math.round(period * PATH_FRAME_RATE), 2);
-	const matrices: Float32Array[] = [];
+	const offsets = new Float32Array(frameCount * 3);
 	for (let frame = 0; frame < frameCount; frame++) {
 		const step = steps[(first + Math.floor((frame * steps.length) / frameCount)) % steps.length];
-		matrices.push(pointOf(trips[step.trip], step.travelled));
+		offsets.set(offsetOf(trips[step.trip], step.travelled), frame * 3);
 	}
-	return { path: { frameRate: frameCount / period, matrices } };
+	return { path: { frameRate: frameCount / period, offsets } };
 };

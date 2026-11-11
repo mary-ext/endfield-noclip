@@ -20,6 +20,7 @@ import {
 	decodeInstanceBlock,
 	encodeChains,
 	encodeInstanceBlock,
+	pathOffset,
 	type Chain,
 	ChainDrawFlags,
 	ChainFlags,
@@ -378,9 +379,54 @@ describe('instance blocks', () => {
 			rows: Uint32Array.from({ length: Math.max(count - 1, 0) }, (_, i) => i + 1),
 			values: Uint32Array.from({ length: Math.max(count - 1, 0) }, (_, i) => i * 5),
 		},
+		// the last row riding the second of two paths
+		rides: {
+			rows: count === 0 ? new Uint32Array(0) : Uint32Array.of(count - 1),
+			values: count === 0 ? new Uint32Array(0) : Uint32Array.of(1),
+		},
+		paths:
+			count === 0
+				? []
+				: [
+						{ frameRate: 15, offsets: Float32Array.of(0, 0, 0) },
+						{ frameRate: 7.5, offsets: Float32Array.of(0, 0, 0, 1, 2, 3, 4, 5, 6) },
+					],
 	});
 
-	it('round-trips any count, with its decal placements, spins and floaters', () => {
+	it('finds a path’s offset at a time, blending frames and wrapping to the loop', () => {
+		const path = { frameRate: 2, offsets: Float32Array.of(0, 0, 0, 4, 0, 0, 4, 2, 0) };
+		const at = (time: number) => pathOffset(path, time, [0, 0, 0]);
+		assert.deepEqual(at(0), [0, 0, 0]);
+		assert.deepEqual(at(0.25), [2, 0, 0]);
+		assert.deepEqual(at(0.5), [4, 0, 0]);
+		// the last frame blends back towards the first
+		assert.deepEqual(at(1.25), [2, 1, 0]);
+		assert.deepEqual(at(1.75), [2, 0, 0]);
+		assert.deepEqual(at(-1.25), [2, 0, 0]);
+	});
+
+	it('rejects rides naming no path, and paths without whole frames or a frame rate', () => {
+		const ride = { rows: Uint32Array.of(0), values: Uint32Array.of(2) };
+		assert.throws(() => encodeInstanceBlock({ ...block(3), rides: ride }), RangeError);
+		const paths = (path: { frameRate: number; offsets: Float32Array }) => ({
+			...block(3),
+			paths: [path, path],
+		});
+		assert.throws(
+			() => encodeInstanceBlock(paths({ frameRate: 15, offsets: new Float32Array(0) })),
+			RangeError,
+		);
+		assert.throws(
+			() => encodeInstanceBlock(paths({ frameRate: 15, offsets: new Float32Array(4) })),
+			RangeError,
+		);
+		assert.throws(
+			() => encodeInstanceBlock(paths({ frameRate: 0, offsets: new Float32Array(3) })),
+			RangeError,
+		);
+	});
+
+	it('round-trips any count, with its decal placements, spins, floaters, rides and paths', () => {
 		for (const count of [0, 1, 3, 4, 5]) {
 			assert.deepEqual(decodeInstanceBlock(encodeInstanceBlock(block(count))), block(count));
 		}

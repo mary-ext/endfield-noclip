@@ -674,10 +674,10 @@ export class Viewer {
 			this.#time += dt;
 			this.#windClock += windClockRate(look.environment.wind) * dt;
 		}
-		// frames that only settle or adapt reuse the last selection, unless it holds particles or spinning rows,
-		// which move by the clock while it runs. with nothing rendering and nothing loading, the traversal would
-		// repeat the last frame's
-		const moving = options.animate && (traversal.particlesShown || traversal.spinsShown);
+		// frames that only settle or adapt reuse the last selection, unless it holds particles or spinning or
+		// riding rows, which move by the clock while it runs. with nothing rendering and nothing loading, the
+		// traversal would repeat the last frame's
+		const moving = options.animate && (traversal.particlesShown || traversal.movingShown);
 		const traverse =
 			scene !== null &&
 			((render && (changed || moving)) || !scene.stream.idle || traversal.textureReduction.raising);
