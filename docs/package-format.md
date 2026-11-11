@@ -150,14 +150,13 @@ equal tree keys.
 | `shardLevel`    | `leafLevel − 3`, at least 0 (512 m): groups shard archives         |
 
 `hlodLevels[t]` is the level whose tiles are tier `t`'s cells, `leafLevel − t` where HLOD0 cells are
-64 m and one level coarser where they're 128 m (indie_dg005). HLOD cluster names
-(`HLOD<tier>_<i>_<j>_Cluster_…`) give the tier and the cell on the scene's
-[HLOD grid](game-data/world.md#lod-and-hlod), which the packer fits to the names (the pack report
-prints it, and fails the pack when no grid explains 80 % of them) and snaps to tree tiles within 8
-m. it attaches each cluster to the tile of its named cell rather than to its bounds centre, because
-clusters overhang their cells. two cases leave several candidate tiles, and the packer picks the one
-with the most always-loaded detail instances inside the cluster's bounds (the candidate nearest the
-centre without any):
+64 m and one level coarser where they're 128 m. HLOD cluster names (`HLOD<tier>_<i>_<j>_Cluster_…`)
+give the tier and the cell on the scene's [HLOD grid](game-data/world.md#lod-and-hlod), which the
+packer fits to the names (the pack report prints it, and fails the pack when no grid explains 80 %
+of them) and snaps to tree tiles within 8 m. it attaches each cluster to the tile of its named cell
+rather than to its bounds centre, because clusters overhang their cells. two cases leave several
+candidate tiles, and the packer picks the one with the most always-loaded detail instances inside
+the cluster's bounds (the candidate nearest the centre without any):
 
 - names clamp negative coordinates to 0, so along an axis named 0 the candidates are the named tile
   and each spanned tile west or south of it.

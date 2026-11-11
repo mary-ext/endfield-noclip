@@ -608,8 +608,8 @@ area can be shown or hidden as a whole:
 
 | destination | what goes there                                                                                                                                                | where it lives                           |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| HLOD        | scene-state-0 entities whose name matches the HLOD pattern, gated by their stream areas; attached to their named cell's tile at `hlodLevels[t]`                | one block per group, in the core archive |
-| global      | other entities of `Global` chunks, with their files' condition                                                                                                 | one block per group, in the core archive |
+| HLOD        | scene-state-0 HLOD clusters (named as one, with children linked to them), gated by their stream areas; attached to their named cell's tile at `hlodLevels[t]`  | one block per group, in the core archive |
+| global      | other entities of `Global` chunks, clusters nothing links to among them, with their files' condition                                                           | one block per group, in the core archive |
 | detail      | other scene-state-0 entities, gated by their stream areas, filed under the 64 m leaf containing their bounds centre; HLOD clusters of the same area stand in   | one block per (leaf, group)              |
 | conditional | entities of scene-state cell files, plus dynamic structures and facilities, with a visibility expression; dynamic rows keep the `fb_main` grid that loads them | one block per (leaf, group, grid)        |
 
@@ -623,11 +623,16 @@ tiles touching its cells. the packer keeps the game's
 
 - per-entity LOD chains are kept whole, thresholds included. foliage cards are ordinary chain draws,
   not told apart.
-- HLOD clusters: setup reads the Global chunks' clusters and fits the scene's HLOD grid to their
-  names; the pack report gives the grid, how many names it explains, and how many clusters' bounds
-  centres lie in the tile they're filed under. a cluster whose name leaves several tiles (a clamped
-  coordinate, or a cell straddling tiles) is filed under the one whose detail instances it contains
-  most often ([hlod-cells.ts](../packages/extractor/src/pack/instances/hlod-cells.ts),
+- HLOD clusters: an entity is one when it's named as a cluster and its
+  [HLOD link](game-data/world.md#lod-and-hlod) counts children. one without children is never hidden
+  in the game, so it packs as the global scenery it is (indie_dg005's city backdrop). the links
+  themselves aren't packed: the viewer swaps clusters and detail by tile
+  ([instance selection](viewer/streaming.md#instance-selection)). setup reads the Global chunks'
+  clusters and fits the scene's HLOD grid to their names; the pack report gives the grid, how many
+  names it explains, and how many clusters' bounds centres lie in the tile they're filed under. a
+  cluster whose name leaves several tiles (a clamped coordinate, or a cell straddling tiles) is
+  filed under the one whose detail instances it contains most often
+  ([hlod-cells.ts](../packages/extractor/src/pack/instances/hlod-cells.ts),
   [tile tree](package-format.md#tile-tree)).
 - [foliage grids](game-data/world.md#foliage-grids): each grass and tree instance is an ordinary row
   with its cluster's bounds, so a cluster culls and changes LOD as a whole.

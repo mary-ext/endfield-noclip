@@ -137,6 +137,7 @@ export const indexScene = async (
 		await hlodSamples(
 			world,
 			files.filter((file) => file.cell === null),
+			partition,
 		),
 		terrainGrid,
 	);
@@ -197,14 +198,20 @@ const treeGrid = (surface: TerrainSurfacesData | undefined): TreeInfo => {
 /**
  * @param world the world index
  * @param files chunk files to read
+ * @param partition the scene's partition, or `undefined` for scenes without levels
  * @returns the HLOD clusters among their entities, once each
  */
-const hlodSamples = async (world: WorldIndex, files: readonly ChunkFile[]): Promise<HlodSample[]> => {
+const hlodSamples = async (
+	world: WorldIndex,
+	files: readonly ChunkFile[],
+	partition: LevelPartition | undefined,
+): Promise<HlodSample[]> => {
 	const samples: HlodSample[] = [];
 	const seen = new Set<number>();
-	for (const entities of await Promise.all(files.map((file) => world.readChunk(file, undefined)))) {
+	const chunks = await Promise.all(files.map((file) => world.readChunkContent(file, partition)));
+	for (const { entities, hlodClusters } of chunks) {
 		for (const entity of entities) {
-			const name = HLOD_NAME.exec(entity.name);
+			const name = hlodClusters.has(entity.id) ? HLOD_NAME.exec(entity.name) : null;
 			if (name === null || entity.bounds === null || seen.has(entity.id)) {
 				continue;
 			}

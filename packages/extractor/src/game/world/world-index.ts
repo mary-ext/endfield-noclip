@@ -8,6 +8,7 @@ import {
 import {
 	parseInitChunk,
 	readChunkEntities,
+	StreamingLayer,
 	type ChunkEntity,
 	type InitChunk,
 } from '@endfield-noclip/formats/endfield/init-chunk-data';
@@ -24,8 +25,10 @@ import { parseMissionRuntime, type MissionRuntime } from '@endfield-noclip/forma
 import { parseStreamAreas, type StreamAreaTable } from '@endfield-noclip/formats/endfield/stream-area';
 import {
 	assetProperty,
+	hlodLink,
 	parseStreamingChunk,
 	RECT_DECAL_MATERIAL_KEY,
+	type HlodLink,
 } from '@endfield-noclip/formats/endfield/streaming-chunk-data';
 import type { BundleManifest } from '@endfield-noclip/formats/hg/bundle-manifest';
 import { unpackHgPayload } from '@endfield-noclip/formats/hg/payload';
@@ -413,12 +416,15 @@ export class WorldIndex {
 	}
 
 	/**
-	 * like {@link readChunk}, with the chunk's local lights, foliage grids and rect decal materials too
+	 * like {@link readChunk}, with the chunk's local lights, foliage grids, rect decal materials and HLOD
+	 * clusters too
 	 *
 	 * @param file chunk file
 	 * @param partition the scene's partition, or `undefined` for scenes without levels
-	 * @returns its entities, lights, grass and tree grids, and each rect decal's material key by entity id
-	 * @throws {Error} if the chunk has foliage grids or decals but no StreamingChunkData sibling
+	 * @returns its entities, lights, grass and tree grids, each rect decal's material key by entity id, and the
+	 *   link of each entity on an HLOD layer that other entities name as their parent, by entity id
+	 * @throws {Error} if the chunk has foliage grids, decals or HLOD-layer entities but no StreamingChunkData
+	 *   sibling
 	 */
 	async readChunkContent(
 		file: ChunkFile,
@@ -428,6 +434,7 @@ export class WorldIndex {
 		lights: ChunkLight[];
 		foliage: FoliageGrid[];
 		decalMaterials: Map<number, bigint>;
+		hlodClusters: Map<number, HlodLink>;
 	}> {
 		const data = await this.readInitPayload(file);
 		const chunk = parseInitChunk(data);
@@ -435,24 +442,37 @@ export class WorldIndex {
 		const entities = indexEntities(chunk, file, partition);
 		const foliaged = hasFoliageGrids(data);
 		const decals = entities.some((entity) => entity.decal !== null);
+		// clusters load on the HLOD layers; the links of their children, in the cell files, aren't read
+		const hlodLayers = new Set(
+			entities.filter((entity) => isHlodLayer(entity.layer)).map((entity) => entity.id),
+		);
 		let streaming: Uint8Array | null = null;
-		if (foliaged || decals) {
+		if (foliaged || decals || hlodLayers.size > 0) {
 			streaming = await this.readStreamingPayload(file);
 			if (streaming === null) {
-				throw new Error(`${file.name} has foliage grids or decals but no StreamingChunkData`);
+				throw new Error(
+					`${file.name} has foliage grids, decals or HLOD-layer entities but no StreamingChunkData`,
+				);
 			}
 		}
 		const foliage = foliaged && streaming !== null ? readFoliageGrids(data, streaming) : [];
 		const decalMaterials = new Map<number, bigint>();
-		if (decals && streaming !== null) {
+		const hlodClusters = new Map<number, HlodLink>();
+		if ((decals || hlodLayers.size > 0) && streaming !== null) {
 			for (const record of parseStreamingChunk(streaming).records) {
 				const material = assetProperty(record, RECT_DECAL_MATERIAL_KEY);
 				if (material !== undefined) {
 					decalMaterials.set(record.id, material);
 				}
+				if (hlodLayers.has(record.id)) {
+					const link = hlodLink(record);
+					if (link !== null && link.childCount > 0) {
+						hlodClusters.set(record.id, link);
+					}
+				}
 			}
 		}
-		return { entities, lights, foliage, decalMaterials };
+		return { entities, lights, foliage, decalMaterials, hlodClusters };
 	}
 
 	/**
@@ -548,6 +568,9 @@ export class WorldIndex {
 		return this.vfs.readFile(group, name);
 	}
 }
+
+const isHlodLayer = (layer: number): boolean =>
+	layer === StreamingLayer.HLOD0 || layer === StreamingLayer.HLOD1 || layer === StreamingLayer.HLOD2;
 
 /** decodes a chunk's entities, classified against the map's partition when it has one */
 const indexEntities = (

@@ -49,7 +49,7 @@ interface StaticRows {
 	file: number;
 	/** from a Global chunk file */
 	global: boolean;
-	/** the HLOD name match, or `null` for other renderers */
+	/** an HLOD cluster's name match, or `null` for other renderers */
 	hlod: RegExpExecArray | null;
 }
 
@@ -227,7 +227,8 @@ export const collectStaticChunks = async (world: WorldIndex, content: PackConten
 						name: entity.name,
 						file: fileIndex,
 						global: file.cell === null,
-						hlod: HLOD_NAME.exec(entity.name),
+						// an entity named as a cluster that nothing links to is never hidden: plain scenery
+						hlod: read.hlodClusters.has(entity.id) ? HLOD_NAME.exec(entity.name) : null,
 					},
 					file,
 				);

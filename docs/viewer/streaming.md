@@ -39,7 +39,10 @@ what's near the camera, and has its controls listed first in the
 
 [`streaming/selection.ts`](../../packages/viewer/src/streaming/selection.ts) uses 3D Tiles-style
 REPLACE refinement on the game's [HLOD rings](../game-data/world.md#streaming-layers), by the
-distance from the camera to the node's bounds (`hlodRing`):
+distance from the camera to the node's bounds (`hlodRing`). the game swaps each cluster on its own,
+once the last of its [linked children](../game-data/world.md#lod-and-hlod) has loaded; the package
+doesn't carry the links, so the viewer swaps a tile's clusters together at the ring those loads
+produce:
 
 - a node holding HLOD tier 0 refines within `detailDistance` (default 160 m, the game's at its high
   PC preset, 4000), tier 1 within HLOD0's radius (512 m) and tier 2 within HLOD1's (1024 m), each
@@ -48,9 +51,9 @@ distance from the camera to the node's bounds (`hlodRing`):
   within `detailDistance`. a node refined on the last traversal stays refined until 20 m past its
   ring, the game's unload hysteresis, so a camera hovering at a ring doesn't swap and refetch the
   two representations every frame.
-- with `detail` on, a leaf refines into its detail blocks, even when it has none: some clusters
-  stand for scenery filed under neighbouring leaves or as global scenery, which draws anyway, so
-  keeping the cluster would overlay it.
+- with `detail` on, a leaf refines into its detail blocks, even when it has none: a cluster's
+  children can all be filed under neighbouring leaves, where they draw anyway, so keeping the
+  cluster would overlay them.
 - the package's geometric error (1/16 of a node's edge) only orders requests
   ([priority](#priority)): refining on its screen-space error would draw detail several times as far
   out as the game does.
@@ -64,9 +67,9 @@ distance from the camera to the node's bounds (`hlodRing`):
   (`TileTree.reached`), tested every frame a reach at a time (about 0.1 ms per traversal over
   map02's couple of thousand grids). the rest, scene-state content and facilities, draw within
   `detailDistance` of their tile.
-- the tree's global refs are pinned and drawn whenever they're resident, never requested. they have
-  no tile to refine, so where an HLOD cluster covers global scenery both draw until the cluster's
-  tile refines.
+- the tree's global refs are pinned and drawn whenever they're resident, never requested. no cluster
+  stands in for them: in the game they're never hidden either, only loaded within their layer's
+  radius, which the viewer doesn't apply.
 - every ref is drawn only while its visibility group shows. the viewer evaluates `groupsShown` (see
   [package-format.md](../package-format.md#visibility-groups)) whenever a scene value or the stream
   areas at the camera change, and hands the same array to the selector, the water, the local lights

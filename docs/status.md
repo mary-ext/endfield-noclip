@@ -396,30 +396,25 @@ packs or renders correctly.
 
 - separate scenes (interiors, offices, arenas) are unvalidated
 - the game's HLOD-unload volumes (`FBStreamArea` root slots 7–9) aren't decoded or applied
-  ([world](game-data/world.md#stream-areas)). the viewer follows the game's HLOD rings at its high
-  preset (4000) but measures them in 3D from the camera to the tile's bounds rather than in XZ from
-  the player, keeps HLOD2 drawn past 2048 m, and doesn't apply the other layers' radii (`Tiny`,
-  `Lighting`, …), since an entity's layer isn't known
-  ([instance selection](viewer/streaming.md#instance-selection),
-  [streaming layers](game-data/world.md#streaming-layers))
+  ([world](game-data/world.md#stream-areas))
+- clusters and detail swap per tile at a ring, not per cluster by its
+  [HLOD links](game-data/world.md#lod-and-hlod), which aren't packed. so a cluster whose children
+  span several leaves swaps as soon as its own tile is in range instead of when its farthest child
+  is, a child filed under another leaf than its cluster's can draw with the cluster or be missing
+  with it (large objects most visibly), and a cluster whose child never loads hides anyway. the
+  rings are the game's at its high preset (4000), measured in 3D from the camera to the tile's
+  bounds rather than in XZ from the player to the layer's cells, and HLOD2 stays drawn past 2048 m
+  ([instance selection](viewer/streaming.md#instance-selection))
+- an entity's [streaming layer](game-data/world.md#streaming-layers) is read but not applied: detail
+  on `Tiny` or `Lighting` draws to the `Default` radius, and global scenery on an HLOD layer draws
+  at any distance instead of within that tier's radius
 - dynamic structures load by their game grid's block around the camera rather than the player,
   without the ~10 m unload hysteresis or the per-row radius test (which the shipped radii almost
   never fail); facilities and Dijiang's cabin scenes, which no `fb_main` grid stores, still draw
   within `detailDistance` of their tile
   ([dynamic load grids](game-data/world.md#dynamic-load-grids))
-- HLOD clusters never stand in for global content, which always draws, so wherever a cluster covers
-  global scenery both draw until its tile refines
-  ([instance selection](viewer/streaming.md#instance-selection)); in indie_dg005 every static
-  renderer is global. making it refinable needs each entity's streaming layer, whose storage isn't
-  found ([LOD and HLOD](game-data/world.md#lod-and-hlod)). HLOD tiers whose grid sits half a cell
-  off the tile tree (indie_dg005, dung02_dg002's HLOD1) are filed under one of the two tiles each
-  cell straddles ([tile tree](package-format.md#tile-tree))
-- a refined leaf drops its HLOD cluster even when it has no detail to show for it, so scenery that
-  exists only as clusters disappears within the detail distance: indie_dg005's Wuling City backdrop
-  opens a hole in front of the office window. whether the game hides a cluster whose members aren't
-  loaded is unknown ([streaming layers](game-data/world.md#streaming-layers)). likewise a very large
-  object filed under one leaf by its centre disappears while that leaf shows its HLOD, unless the
-  cluster covers it
+- HLOD tiers whose grid sits half a cell off the tile tree (dung02_dg002's HLOD1) are filed under
+  one of the two tiles each cell straddles ([tile tree](package-format.md#tile-tree))
 - billboards turn only mesh renderers; skinned meshes and particle systems under a `VFXBillBoard`
   stay as authored; a renderer away from the `VFXBillBoard`'s origin turns in place instead of
   swinging around it, and modes 2–3 turn about the world's vertical rather than their own up, so
@@ -647,9 +642,7 @@ packs or renders correctly.
 
 ## open unknowns
 
-- what the game measures an HLOD ring's distance to, and the HLOD material/atlas mapping
-  ([LOD and HLOD](game-data/world.md#lod-and-hlod),
-  [streaming layers](game-data/world.md#streaming-layers))
+- the HLOD material/atlas mapping ([LOD and HLOD](game-data/world.md#lod-and-hlod))
 - per-controller meaning of progression bit 0 ("unbuilt" versus "level 1";
   [progressions](game-data/scene-states.md#progressions))
 - runtime: BC texture support in Safari, the texture-array layer limit on Apple GPUs
