@@ -68,9 +68,9 @@ unshadowed. it slices depth as the game does, on a fixed 160 × 90 × 64 grid, w
 follows the view up to 240 × 135 × 128 at PC high and 320 × 180 × 128 at very high
 ([quality settings](../game-data/quality-settings.md#values-by-level)). the slices per doubling (32)
 and the history weight (90 %) are Unreal's defaults, the game's not being recovered. its sky term
-takes the ambient probe without the native diffuse-ambient scale. local fog volumes and the
-volumetric light's flow noise aren't drawn. rays the grid doesn't hold (reflections) take the height
-fog all the way.
+takes the ambient probe, which carries `indirectDiffuseFactor`. local fog volumes and the volumetric
+light's flow noise aren't drawn. rays the grid doesn't hold (reflections) take the height fog all
+the way.
 
 - the height fog's start distance and inscatter colour belong to the far fog while the volumetric
   fog is on; drawn alone with them, the height fog would put a hard, bright fog wall at the start

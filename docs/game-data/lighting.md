@@ -117,12 +117,17 @@ the alpha to 1, as Marker Stone's cave volumes do, fog under a dark patch gets n
 ## ambient
 
 diffuse ambient comes from the [irradiance volume](irradiance.md) where it reaches, and the
-**ambient probe** elsewhere. one CPU-set scalar then scales all diffuse ambient (and the volumetric
-fog's sky term); its source is [open](#open).
+**ambient probe** elsewhere. all diffuse ambient (and the volumetric fog's sky term) is then scaled
+by the blended phase's `light.indirectDiffuseFactor`, which the pipeline's managed code packs as
+`_EnvironmentGlobalParams0.x`, with `light.indirectSpecularFactor` as `.y`.
 
 - the ambient probe comes from `sky.skyAmbientSH` (Unity `SphericalHarmonicsL2`, 27 floats
-  channel-major). the profile also carries `light.indirectDiffuseFactor` and the irradiance volume's
-  default SH (`customIVDefaultSH`); how the CPU combines them is [open](#open).
+  channel-major). the irradiance volume's default SH (`skyAmbientSH` or `customIVDefaultSH`) is set
+  natively; which, and how it's scaled, is [open](#open).
+- the irradiance volume's probes are used as stored: neither the clipmap update nor the lighting
+  scales them, so they are already pre-exposed, and the phase's bake fields
+  (`skyBakedIndirectIntensity`, `bakedIndirectMultiplier`, `giSkyMultiplier`,
+  `giBakedIndirectMultiplier`) don't apply at runtime through them.
 - the irradiance volume's L1 probes are sampled from three camera-centred clipmaps filled from its
   cells ([cells and probes](irradiance.md#cells-and-probes)). the levels reach ±29, ±116 and ±464 m
   horizontally and ±13, ±52 and ±208 m vertically from their centres, each fading over its last 2, 8
@@ -139,9 +144,10 @@ fog's sky term); its source is [open](#open).
 
 specular ambient samples `sky.reflectionMap` (a BC6H cubemap, prefiltered by roughness across its
 mips) along the roughness-bent reflection vector, weighted by a split-sum environment BRDF and a
-CPU-set scale presumed to be `light.indirectSpecularFactor`. a profile's cubemap can be black:
-Dijiang's (`T_reflectionprobe_envdefault0`) is, so its metal reflects only what local reflection
-probes give it.
+scale of `light.indirectSpecularFactor` (the feature constant beside it,
+`_GraphicsFeaturesGlobalParam0`, is AO on, SSR on, 1, 1, so it adds nothing). a profile's cubemap
+can be black: Dijiang's (`T_reflectionprobe_envdefault0`) is, so its metal reflects only what local
+reflection probes give it.
 
 the reflection is scaled by how the surface's diffuse light compares with the sky probe's: with `d`
 the luminance of the diffuse irradiance (above) and `p` the ambient probe's luminance L1 along the
@@ -316,10 +322,8 @@ per-renderer value and a global tint and saturation whose sources aren't recover
 
 ## open
 
-- the CPU packing of the ambient scales: the scalar on all diffuse ambient, the specular ambient's
-  scale (presumed `indirectSpecularFactor`), and the irradiance volume's default SH (`skyAmbientSH`
-  vs `customIVDefaultSH`, and where `indirectDiffuseFactor` applies). these live in native engine
-  code.
+- the irradiance volume's default SH (`skyAmbientSH` vs `customIVDefaultSH`, and its scale), packed
+  in native engine code.
 - the sun's units: the sun shades with the local lights' lobe (no 1/π on diffuse); whether the CPU
   folds a 1/π into the sun's colour is unknown. phases also carry a `directIntensityDividePi`.
 - where local reflection probes are placed.

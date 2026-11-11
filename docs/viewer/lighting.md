@@ -74,9 +74,10 @@ over places where a phase sets the alpha to 1, such as Marker Stone's caves, rea
 ## ambient
 
 - the ambient probe is `sky.skyAmbientSH` scaled by `light.indirectDiffuseFactor`, converted to
-  Unity's `ShadeSH9` vectors (`shaderSh`) and stored pre-exposed. the scaling is an assumption, so
-  ambient brightness is approximate ([open](../game-data/lighting.md#open)); the native scalar on
-  all diffuse ambient is left out, and `useCustomIVDefaultSH` and `customIVDefaultSH` aren't read.
+  Unity's `ShadeSH9` vectors (`shaderSh`) and stored pre-exposed. the irradiance volume's samples
+  take `indirectDiffuseFactor` in the shader, so it scales all diffuse ambient once, as the game's
+  does. the volume's default SH is taken to be this probe; `useCustomIVDefaultSH` and
+  `customIVDefaultSH` aren't read ([open](../game-data/lighting.md#open)).
 - the [irradiance volume](#irradiance-volume) is sampled in `ambient_irradiance`, blended between
   levels near each level's edge as the game's are, with its validity fill-in and vertical correction
   term, but without its jitter or forward-shifted centres.

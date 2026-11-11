@@ -42,14 +42,13 @@ packs or renders correctly.
 
 ## lighting and post-processing
 
-- ambient ([ambient](viewer/lighting.md#ambient)): GI brightness is unchecked against in-game shots;
-  the native scalar on all diffuse ambient, the specular ambient's scale (taken as
-  `indirectSpecularFactor`) and the volume's default SH aren't recovered
-  ([open](game-data/lighting.md#open)); the lookup has no jitter or forward-shifted clipmap centres;
-  the AO multi-bounce fit uses the albedo's luminance rather than each channel; specular occlusion
-  takes no GTAO; the specular ambient falls back to the ambient probe until the reflection cubemap
-  streams in; local reflection probes aren't drawn (placements not found). next: compare GPU clipmap
-  samples with the bake at one point, and check clipmap seams (L0 repeats, L1 clamps)
+- ambient ([ambient](viewer/lighting.md#ambient)): checked against an in-game shot only at Jingyu's
+  cave arch; the volume's default SH isn't recovered ([open](game-data/lighting.md#open)); the
+  lookup has no jitter or forward-shifted clipmap centres; the AO multi-bounce fit uses the albedo's
+  luminance rather than each channel; specular occlusion takes no GTAO; the specular ambient falls
+  back to the ambient probe until the reflection cubemap streams in; local reflection probes aren't
+  drawn (placements not found). next: compare GPU clipmap samples with the bake at one point, and
+  check clipmap seams (L0 repeats, L1 clamps)
 - irradiance volume ([irradiance volume](viewer/lighting.md#irradiance-volume)): levels refill whole
   rather than partially; room bakes reach only the finest clipmap; which scene-state bake applies is
   inferred from the bakes, not read from the game's native selection; the index's pair table,
@@ -153,10 +152,10 @@ packs or renders correctly.
   flow noise (`enableVLFlowNoise`) aren't drawn, the grid is a fixed 160 × 90 × 64 against the
   game's up to 240 × 135 × 128 at PC high ([quality settings](game-data/quality-settings.md)), the
   slices per doubling and history weight are Unreal's defaults (the game's aren't recovered), a
-  froxel the history misses takes one sample rather than the game's 16, and its sky term lacks the
-  native diffuse-ambient scale. the height fog's [flow noise](viewer/sky-and-fog.md#flow-noise) is
-  drawn on opaque surfaces only (the game's is unchecked on the sky, water and glass), and its
-  volume blend is read from the height-fog section's and assumed for the volumetric one
+  froxel the history misses takes one sample rather than the game's 16. the height fog's
+  [flow noise](viewer/sky-and-fog.md#flow-noise) is drawn on opaque surfaces only (the game's is
+  unchecked on the sky, water and glass), and its volume blend is read from the height-fog section's
+  and assumed for the volumetric one
 
 ## surfaces and terrain
 

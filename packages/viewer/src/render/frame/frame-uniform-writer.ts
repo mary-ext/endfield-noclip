@@ -172,6 +172,7 @@ export const writeFrameUniforms = (f32: Float32Array, u32: Uint32Array, inputs: 
 	f32[FrameOffsets.params] = options.outlineMetres;
 	// below the output size, textures sample as sharp as the output needs; the history gathers the detail
 	f32[FrameOffsets.params + 1] = Math.log2(height / outputHeight);
+	f32[FrameOffsets.params + 2] = environment.indirectDiffuse;
 	const shadowMap = inputs.shadowMap;
 	shadowMap.layers.forEach((layer, i) => {
 		f32.set(layer.sample, FrameOffsets.shadowMatrices + i * 16);

@@ -198,6 +198,12 @@ export interface Environment {
 	skyIlluminance: Vec3;
 	/** Unity shader form of the ambient probe (SHAr, SHAg, SHAb, SHBr, SHBg, SHBb, SHC), 28 floats */
 	sh: Float32Array;
+	/**
+	 * `light.indirectDiffuseFactor`, the game's scale on all diffuse ambient (`_EnvironmentGlobalParams0.x`);
+	 * {@link sh} already carries it, the irradiance volume doesn't
+	 */
+	indirectDiffuse: number;
+	/** `light.indirectSpecularFactor`, the game's scale on the sky reflection (`_EnvironmentGlobalParams0.y`) */
 	indirectSpecular: number;
 	/** texture-table id of the sky reflection cubemap, or `null` */
 	reflection: number | null;

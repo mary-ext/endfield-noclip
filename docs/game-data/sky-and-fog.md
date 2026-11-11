@@ -128,9 +128,9 @@ and fogged effects apply the same fog to themselves, at their own distance.
   shadow-map comparison times the [cloud shadow](lighting.md#cloud-shadows), then the shadow's
   sun-off override and strength, with a Henyey-Greenstein phase of
   `volumetricFogScatteringDistribution` towards the atmosphere's sun direction) and the ambient
-  probe's linear part (times `volumetricFogSkyLightingScatteringIntensity` / π and a native
-  diffuse-ambient scale that isn't recovered), and adds `volumetricFogEmissive` / 1000 per metre. a
-  column is integrated front to back, fading in over `volumetricFogNearFadeInDistance`.
+  probe's linear part (times `volumetricFogSkyLightingScatteringIntensity` / π and
+  `indirectDiffuseFactor`, [ambient](lighting.md#ambient)), and adds `volumetricFogEmissive` / 1000
+  per metre. a column is integrated front to back, fading in over `volumetricFogNearFadeInDistance`.
   - the grid's cells are at least a preset number of pixels across, and the grid at most a preset
     size, so large views get a near-constant grid. slices are spaced logarithmically: slice
     `s = log2(z · B + O) · S` at view depth z, the first starting 0.095 m past the near plane or the

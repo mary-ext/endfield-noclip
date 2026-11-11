@@ -39,7 +39,9 @@ struct Frame {
 	// cloud panorama, is lit here and shown by the post chain), z, w reserved
 	flags: vec4u,
 	// boxes larger than x metres (max half extent) draw as outlines only; y = material texture mip bias (log2 of
-	// the render scale, so upsampled frames sample at the output's density); z, w reserved
+	// the render scale, so upsampled frames sample at the output's density); z = `indirectDiffuseFactor`, the
+	// game's scale on all diffuse ambient, applied here to the irradiance volume (`sh` already carries it); w
+	// reserved
 	params: vec4f,
 	// #endregion
 	// #region shadows
@@ -440,7 +442,8 @@ fn ambient_irradiance(world: vec3f, n: vec3f) -> vec3f {
 	let valid = clamp(validity * 2.0 - 1.0, 0.0, 1.0);
 	let band = valid - outside;
 	let fallback = (valid + outside) * 0.5;
-	let sh = array<vec4f, 3>(r, g, b);
+	let k = frame.params.z;
+	let sh = array<vec4f, 3>(r * k, g * k, b * k);
 	var c = vec3f(0.0);
 	for (var i = 0; i < 3; i++) {
 		let d = frame.sh[i];

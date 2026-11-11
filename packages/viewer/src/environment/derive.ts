@@ -347,6 +347,7 @@ export const deriveEnvironment = (profile: EnvironmentInput | null): Environment
 		skySunDirection,
 		skyIlluminance: skyViewScale(light, sky, atmosphere),
 		sh: shaderSh(sky.skyAmbientSH, light.indirectDiffuseFactor),
+		indirectDiffuse: light.indirectDiffuseFactor,
 		indirectSpecular: light.indirectSpecularFactor,
 		reflection: sky.reflectionMap,
 		atmosphere: {
