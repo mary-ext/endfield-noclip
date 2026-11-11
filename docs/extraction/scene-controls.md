@@ -340,8 +340,10 @@ test with one trigger per volume, the values its enter and leave crossings set, 
 flag as the default until the camera crosses one. each volume's shapes become world-frame shapes as
 the game tests them ([volume shapes](../game-data/scene-states.md#trigger-volume-shapes)); a group
 isn't followed when a volume has a shape it doesn't understand (a polyline turned off the vertical,
-points beyond its box), shapes that only count for leaving, or one crossing that both shows and
-hides it. the script is assumed to be running. the pack report counts these groups
+points beyond its box), shapes that only count for leaving, a trigger count limit (a one-off event
+such as the Very Large Rift's video, not a swap by where the player stands; following it would apply
+part of the event as soon as the camera started inside), or one crossing that both shows and hides
+it. the script is assumed to be running. the pack report counts these groups
 (`scriptGroupsByVolume`).
 
 ### following quest checks on activation

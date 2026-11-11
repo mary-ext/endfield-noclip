@@ -552,6 +552,14 @@ over the planet (group 36100010036, `p_fxmap_map02_lv009_aurora_02`) and hides t
 reverse; entering 80003, high ground to the north-east (y 252 to 407), hides both. both groups are
 authored hidden, so neither shows before the player enters one.
 
+a volume's `triggerCountLimit` is 0 in these swaps and positive in one-off events, which by the name
+fire only that many times (the code reading it isn't decompiled). Wuling Very Large Rift
+(dung02_dg005) has one: script 37000020007's volume 80005, a 150 m sphere around the arena at unity
+19.9, 100, 0 with a limit of 1, plays the video `cs_video_e11m7_3` and, behind a black screen, hides
+the rift's portal and black hole (group 37000020003), swaps the dark lights and beams for bright
+ones (37000020002 off, 37000020001 on) and shows 37000020006. before that the rift is dark and the
+portal shows.
+
 ### following quest checks on activation
 
 some scripts set a group from quest state each time they run: Power Plateau's fortress gate scripts

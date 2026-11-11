@@ -723,11 +723,21 @@ const triggerShape = (shape: Node): TriggerShape | null => {
 	}
 };
 
-/** @returns the volume's shapes, or `null` when one isn't understood or some shapes only count for leaving */
+/**
+ * @returns the volume's shapes, or `null` when one isn't understood, some shapes only count for leaving, or
+ *   the volume fires only a limited number of times
+ */
 const volumeShapes = (script: Script, slot: MemoryPackValue): TriggerShape[] | null => {
 	const volume = entry(script.data.triggerVolumes, slot);
 	const shapes = asList(volume?.shapeList);
-	if (volume === null || shapes.length === 0 || volume.exitShapeStartIndex !== -1) {
+	// a volume with a count limit is a one-off story beat (the Very Large Rift's plays a video), not a swap by
+	// where the player stands, so its group keeps its stored flag
+	if (
+		volume === null ||
+		shapes.length === 0 ||
+		volume.exitShapeStartIndex !== -1 ||
+		volume.triggerCountLimit !== 0
+	) {
 		return null;
 	}
 	const out: TriggerShape[] = [];

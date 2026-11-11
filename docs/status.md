@@ -29,8 +29,8 @@ packs or renders correctly.
   variable-driven view states on dynamic entities and the decoration animator values scripts set as
   they start. script groups list what sets them in game (quests, switches, areas, dungeons), from
   the level scripts, follow the quests their scripts check when they run, and follow the camera's
-  path where a script sets them only as the player crosses its trigger volumes; so do looks that the
-  player's presence changes ([scene states](game-data/scene-states.md),
+  path where a script sets them only as the player crosses its repeatable trigger volumes; so do
+  looks that the player's presence changes ([scene states](game-data/scene-states.md),
   [scene controls](extraction/scene-controls.md))
 - environment profiles and volume blending, spatial rain, water, post-processing, baked irradiance
   with its scene-state bakes (plus the bakes of Dijiang's rooms with a cabin built) and local point,

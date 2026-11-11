@@ -212,7 +212,11 @@ test('finds groups one script sets only as the player crosses its trigger volume
 		shapeType: 2,
 		size: [3, 3, 3],
 	});
-	const volume = (shapes: MemoryPackValue[]) => ({ exitShapeStartIndex: -1, shapeList: shapes });
+	const volume = (shapes: MemoryPackValue[], triggerCountLimit = 0) => ({
+		exitShapeStartIndex: -1,
+		shapeList: shapes,
+		triggerCountLimit,
+	});
 	const label = async (id: string) => ({ id, mission: null, name: null });
 	const context = {
 		ownLevels: new Set(['lv1']),
@@ -248,9 +252,16 @@ test('finds groups one script sets only as the player crosses its trigger volume
 		headers: [edge(1, true, 1)],
 		actions: [decoration(2, 'once', true)],
 	});
-	const { volumes: caveVolumes } = await linkScripts([cave, once], {
+	// as the Very Large Rift's portal: a volume that fires once, for a story video, isn't followed
+	const story = script(
+		'37000020007',
+		'lv1',
+		{ headers: [edge(1, true, 80005)], actions: [decoration(2, 'portal', false)] },
+		{ triggerVolumes: [[80005, volume([sphere([19.9, 100, 0], 150)], 1)]] },
+	);
+	const { volumes: caveVolumes } = await linkScripts([cave, once, story], {
 		...context,
-		entities: new Set(['rocks', 'inner', 'once']),
+		entities: new Set(['rocks', 'inner', 'once', 'portal']),
 	});
 	assert.deepEqual(Object.fromEntries(caveVolumes), {
 		rocks: {
