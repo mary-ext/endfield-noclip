@@ -148,37 +148,6 @@ const weightedSegment = (
 };
 
 /**
- * @returns a value of keys at `time`: blended between neighbours, or held from the next key in fixed mode;
- *   empty without keys
- */
-const evaluateKeys = <T extends { time: number }>(
-	keys: readonly T[],
-	time: number,
-	value: (key: T) => number[],
-	fixed: boolean,
-): number[] => {
-	if (keys.length === 0) {
-		return [];
-	}
-	if (time <= keys[0].time) {
-		return value(keys[0]);
-	}
-	for (let i = 1; i < keys.length; i++) {
-		const b = keys[i];
-		if (time <= b.time) {
-			if (fixed) {
-				return value(b);
-			}
-			const a = keys[i - 1];
-			const t = (time - a.time) / Math.max(b.time - a.time, 1e-6);
-			const from = value(a);
-			return value(b).map((to, c) => from[c] + (to - from[c]) * t);
-		}
-	}
-	return value(keys.at(-1)!);
-};
-
-/**
  * @param gradient a `Gradient`
  * @param time where to read it, 0–1
  * @returns its colour and alpha there, as authored (white without keys)
@@ -186,9 +155,74 @@ const evaluateKeys = <T extends { time: number }>(
 export const evaluateGradient = (
 	gradient: Gradient,
 	time: number,
+): [r: number, g: number, b: number, a: number] => evaluateGradientInto([1, 1, 1, 1], gradient, time);
+
+/**
+ * @param keys keys in time order
+ * @param time where to read them
+ * @returns the index of the first key at or past `time` and how far `time` lies from the key before it
+ *   towards it (1 at the first key, or in fixed mode, where a key's value holds until its time); the last
+ *   key's index and 1 past the last. -1 without keys
+ */
+const keyAt = (
+	keys: readonly { time: number }[],
+	time: number,
+	fixed: boolean,
+): [index: number, t: number] => {
+	keySpan[0] = keys.length - 1;
+	keySpan[1] = 1;
+	for (let i = 0; i < keys.length; i++) {
+		if (time <= keys[i].time) {
+			keySpan[0] = i;
+			if (i > 0 && !fixed) {
+				const before = keys[i - 1].time;
+				keySpan[1] = (time - before) / Math.max(keys[i].time - before, 1e-6);
+			}
+			break;
+		}
+	}
+	return keySpan;
+};
+
+/** {@link keyAt}'s result, reused */
+const keySpan: [index: number, t: number] = [0, 1];
+
+/**
+ * {@link evaluateGradient} into an array of the caller's, for per-particle reads: between two keys it blends
+ * them, or in fixed mode holds the later one's value
+ *
+ * @param out where the colour and alpha go
+ * @param gradient a `Gradient`
+ * @param time where to read it, 0–1
+ * @returns `out`
+ */
+export const evaluateGradientInto = (
+	out: [r: number, g: number, b: number, a: number],
+	gradient: Gradient,
+	time: number,
 ): [r: number, g: number, b: number, a: number] => {
-	const { fixed } = gradient;
-	const [r = 1, g = 1, b = 1] = evaluateKeys(gradient.colorKeys, time, ({ color }) => [...color], fixed);
-	const [a = 1] = evaluateKeys(gradient.alphaKeys, time, ({ alpha }) => [alpha], fixed);
-	return [r, g, b, a];
+	const { colorKeys, alphaKeys, fixed } = gradient;
+	out[0] = 1;
+	out[1] = 1;
+	out[2] = 1;
+	out[3] = 1;
+	{
+		const [i, t] = keyAt(colorKeys, time, fixed);
+		if (i >= 0) {
+			const to = colorKeys[i].color;
+			const from = t < 1 ? colorKeys[i - 1].color : to;
+			out[0] = from[0] + (to[0] - from[0]) * t;
+			out[1] = from[1] + (to[1] - from[1]) * t;
+			out[2] = from[2] + (to[2] - from[2]) * t;
+		}
+	}
+	{
+		const [i, t] = keyAt(alphaKeys, time, fixed);
+		if (i >= 0) {
+			const to = alphaKeys[i].alpha;
+			const from = t < 1 ? alphaKeys[i - 1].alpha : to;
+			out[3] = from + (to - from) * t;
+		}
+	}
+	return out;
 };

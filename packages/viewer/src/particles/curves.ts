@@ -1,4 +1,4 @@
-import { evaluateCurve, evaluateGradient } from '@endfield-noclip/package-format/curves';
+import { evaluateCurve, evaluateGradientInto } from '@endfield-noclip/package-format/curves';
 import {
 	CurveMode,
 	GradientMode,
@@ -41,28 +41,52 @@ export const evaluateMinMaxGradient = (
 	gradient: MinMaxGradientInfo,
 	time: number,
 	r: number,
-): [number, number, number, number] => {
-	const between = (a: readonly number[], b: readonly number[]): [number, number, number, number] => [
-		a[0] + (b[0] - a[0]) * r,
-		a[1] + (b[1] - a[1]) * r,
-		a[2] + (b[2] - a[2]) * r,
-		a[3] + (b[3] - a[3]) * r,
-	];
+): [number, number, number, number] => evaluateMinMaxGradientInto([0, 0, 0, 0], gradient, time, r);
+
+type Rgba = [number, number, number, number];
+
+/** the upper gradient of two, read before blending ({@link evaluateMinMaxGradientInto}) */
+const upper: Rgba = [0, 0, 0, 0];
+
+/** sets `out` to the colour `r` of the way from `a` to `b` @returns `out` */
+const between = (out: Rgba, a: readonly number[], b: readonly number[], r: number): Rgba => {
+	for (let c = 0; c < 4; c++) {
+		out[c] = a[c] + (b[c] - a[c]) * r;
+	}
+	return out;
+};
+
+/**
+ * {@link evaluateMinMaxGradient} into an array of the caller's, for per-particle reads
+ *
+ * @param out where the colour and alpha go
+ * @param gradient a MinMaxGradient
+ * @param time where gradients are read, 0–1
+ * @param r the random value choosing between the two ends, or along a random colour's gradient, 0–1
+ * @returns `out`
+ */
+export const evaluateMinMaxGradientInto = (
+	out: Rgba,
+	gradient: MinMaxGradientInfo,
+	time: number,
+	r: number,
+): Rgba => {
 	switch (gradient.mode) {
 		case GradientMode.Color: {
-			return [...gradient.color];
+			return between(out, gradient.color, gradient.color, 0);
 		}
 		case GradientMode.Gradient: {
-			return evaluateGradient(gradient.gradient, time);
+			return evaluateGradientInto(out, gradient.gradient, time);
 		}
 		case GradientMode.TwoColors: {
-			return between(gradient.min, gradient.max);
+			return between(out, gradient.min, gradient.max, r);
 		}
 		case GradientMode.TwoGradients: {
-			return between(evaluateGradient(gradient.min, time), evaluateGradient(gradient.max, time));
+			evaluateGradientInto(upper, gradient.max, time);
+			return between(out, evaluateGradientInto(out, gradient.min, time), upper, r);
 		}
 		case GradientMode.RandomColor: {
-			return evaluateGradient(gradient.gradient, r);
+			return evaluateGradientInto(out, gradient.gradient, r);
 		}
 	}
 };

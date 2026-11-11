@@ -18,7 +18,7 @@ import { eulerQuaternion, eulerQuaternionInto, type Quat, rotateByInto, rotateIn
 import { normalizeOrZInto } from '../math/vec3.ts';
 
 import { type DrawnCurve, integrateOverAge } from './curve-integrals.ts';
-import { evaluateMinMax, evaluateMinMaxGradient, livedAt, meanOf, upperBound } from './curves.ts';
+import { evaluateMinMax, evaluateMinMaxGradientInto, livedAt, meanOf, upperBound } from './curves.ts';
 import { applyForces, type ForceRandoms, type PreparedField, prepareField } from './forces.ts';
 import { meshShapePoint, type PreparedMeshShape, prepareMeshShape } from './mesh-shape.ts';
 import { dragged, draggedFall, type SteppedState, splinePoint, steppedPath, travelled } from './motion.ts';
@@ -204,7 +204,14 @@ const path: PathStart = {
 	growth: 0,
 };
 /** where the path puts the particle and how it moves there (`#freePath`, `#steppedPath`, `#place`) */
-const placed = { position: vec3(), moving: vec3(), angles: vec3(), rotation: quat() };
+const placed = {
+	position: vec3(),
+	moving: vec3(),
+	angles: vec3(),
+	rotation: quat(),
+	/** the start colour, then the colour over lifetime, each read before the next is written */
+	color: [0, 0, 0, 0] as [number, number, number, number],
+};
 /** `#freePath`'s velocity module terms */
 const free = { linear: vec3(), linearNow: vec3(), outward: vec3(), turn: vec3(), around: vec3() };
 /** `#steppedPath`'s per-particle inputs and the per-step terms of its extra velocity and forces */
@@ -1091,14 +1098,20 @@ export class ParticleSimulation {
 		for (let k = 0; k < 4; k++) {
 			out[at + ParticleFloat.rotation + k] = rotation[k];
 		}
-		const color = evaluateMinMaxGradient(info.startColor, u, random(seed, id, Channel.Color));
+		const color = evaluateMinMaxGradientInto(
+			placed.color,
+			info.startColor,
+			u,
+			random(seed, id, Channel.Color),
+		);
 		const shapeTint = begin.tint;
 		let red = color[0] * shapeTint[0];
 		let green = color[1] * shapeTint[1];
 		let blue = color[2] * shapeTint[2];
 		let alpha = color[3] * shapeTint[3];
 		if (info.colorOverLifetime !== null) {
-			const tint = evaluateMinMaxGradient(
+			const tint = evaluateMinMaxGradientInto(
+				placed.color,
 				info.colorOverLifetime,
 				Math.min(lived, 1),
 				random(seed, id, Channel.ColorOverLifetime),
