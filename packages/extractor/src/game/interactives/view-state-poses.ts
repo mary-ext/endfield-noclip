@@ -11,6 +11,7 @@ import { booleanField, objectField } from '@endfield-noclip/formats/unity/values
 
 import type { Context } from '../../context.ts';
 import { VfsGroup } from '../../hg/vfs.ts';
+import { type EmissiveConfig, readEmissiveConfig, ROOT_EMISSIVE } from '../prefabs/emissive-override.ts';
 import type { PoseClip, PrefabPose } from '../prefabs/prefab.ts';
 
 // model view states (`ModelViewStateControllerData`) and the poses they settle in.
@@ -309,6 +310,35 @@ export const restingLengths = (
 };
 
 /**
+ * the emissive configs a layer's emissive behaviours leave on their GameObjects'
+ * `AnimationProperties_Emissive`, in the order the layer enters its states: a config stays once its state is
+ * left, and a blend ends on its config. an empty name means the animator's own GameObject
+ *
+ * @param animator the GameObject the layer's animator drives, `null` for the prefab root
+ * @param path the states the layer enters ({@link settledPath})
+ * @returns each config's path hash, by GameObject name ({@link ROOT_EMISSIVE} for the root)
+ */
+export const restingEmissives = (
+	animator: string | null,
+	path: readonly ViewStateRecord[],
+): Map<string, bigint> => {
+	const configs = new Map<string, bigint>();
+	for (const state of path) {
+		for (const behavior of records(state.behaviors)) {
+			const hash = behavior.emissiveConfigHash;
+			if (!text(behavior.$type)?.endsWith('_MVSCEmissiveBehaviorDataForMemoryPack')) {
+				continue;
+			}
+			const node = text(behavior.emissiveNodeName) || (animator ?? ROOT_EMISSIVE);
+			if (typeof hash === 'string' || typeof hash === 'number') {
+				configs.set(node, BigInt.asUintN(64, BigInt(hash)));
+			}
+		}
+	}
+	return configs;
+};
+
+/**
  * a settled state's looping clip keeps playing; any other rests on its end pose
  *
  * @param clip an AnimationClip
@@ -411,6 +441,33 @@ export const statesPose = async (
 
 /**
  * @param context bundle and path readers
+ * @param states the model's view states, for errors
+ * @param hashes emissive configs' path hashes, by GameObject name ({@link restingEmissives})
+ * @returns the configs, by GameObject name
+ * @throws {FormatError} if a config isn't in StringPathHash or can't be read
+ */
+const emissiveConfigs = async (
+	context: Pick<Context, 'world' | 'resolver'>,
+	states: ViewStates,
+	hashes: ReadonlyMap<string, bigint>,
+): Promise<Map<string, EmissiveConfig>> => {
+	const [resolver, pathOf] = await Promise.all([context.resolver(), context.world.pathLookup()]);
+	const configs = new Map<string, EmissiveConfig>();
+	for (const [node, hash] of hashes) {
+		const path = pathOf(hash);
+		if (path === undefined) {
+			throw new FormatError(`${states.path}: emissive config ${hash} isn't in StringPathHash`);
+		}
+		// oxlint-disable-next-line no-await-in-loop -- one or two configs per model
+		const ref = await resolver.findUnique({ hash, path }, UnityClass.MonoBehaviour);
+		// oxlint-disable-next-line no-await-in-loop -- as above
+		configs.set(node, await readEmissiveConfig(resolver, ref));
+	}
+	return configs;
+};
+
+/**
+ * @param context bundle and path readers
  * @param states the model's view states
  * @param key tells this pose apart from the model's others, for caching
  * @param blackboard the values the state machines test
@@ -426,6 +483,7 @@ export const settledPose = async (
 ): Promise<{ pose: PrefabPose; states: string[]; effects: RestingEffect[] }> => {
 	const effects: RestingEffect[] = [];
 	const lengths = new Map<string, number>();
+	const emissiveHashes = new Map<string, bigint>();
 	const settled = records(states.data.modelAnimatorDatas).map((animator) => {
 		const name = text(animator.modelName);
 		const driven = name === '$$ROOT$$' ? null : name;
@@ -435,19 +493,27 @@ export const settledPose = async (
 			for (const [node, length] of restingLengths(path, blackboard)) {
 				lengths.set(node, length);
 			}
+			for (const [node, hash] of restingEmissives(driven, path)) {
+				emissiveHashes.set(node, hash);
+			}
 		}
 		return { animator: driven, states: paths.map((path) => path[path.length - 1]) };
 	});
-	const pose = await statesPose(context, states, key, settled);
+	let pose = await statesPose(context, states, key, settled);
 	if (pose.hidden === true) {
 		// effects playing under a switched-off root don't show
 		effects.length = 0;
 	}
+	if (lengths.size > 0) {
+		pose = { ...pose, key: `${pose.key} lengths ${JSON.stringify([...lengths])}`, lengths };
+	}
+	if (emissiveHashes.size > 0) {
+		const emissive = await emissiveConfigs(context, states, emissiveHashes);
+		const keyed = [...emissiveHashes].map(([node, hash]) => [node, String(hash)]);
+		pose = { ...pose, key: `${pose.key} emissive ${JSON.stringify(keyed)}`, emissive };
+	}
 	return {
-		pose:
-			lengths.size === 0
-				? pose
-				: { ...pose, key: `${pose.key} lengths ${JSON.stringify([...lengths])}`, lengths },
+		pose,
 		states: settled.flatMap(({ states: layerStates }) =>
 			layerStates.map((state) => text(state.stateName) ?? ''),
 		),

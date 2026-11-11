@@ -224,6 +224,36 @@ component's ratio `length / presetLength`:
 a `PositionFollower` moves its GameObject to its `source` Transform's world position every frame,
 keeping its own rotation and scale, which is how something hangs off a stretched part's end.
 
+### emission view states set
+
+a state's emissive behaviour (`MVSCEmissiveBehaviorData`) applies an `InteractiveEmissiveConfig`
+(the asset `emissiveConfigHash` names, under
+`Assets/Beyond/DynamicAssets/Gameplay/Interactives/InteractiveEmissiveConfig/`) to the
+`AnimationProperties_Emissive` on the GameObject `emissiveNodeName` names. the name is looked up as
+`SetActive`'s is: empty means the animator's own GameObject, else that GameObject if it bears the
+name, else the first descendant that does. the config stays once its state is left; `isBlend` fades
+to it over `blendTime`, ending on the same values. applying it replaces the component's saved fields
+([emission](materials.md#emission)):
+
+- `emissiveColor` becomes the colour asset's (`colorConfig`, required)
+- `emissiveAlbedoColor` becomes the base colour asset's (`baseColorConfig`) with its alpha, or white
+  at alpha 0 without one, which tints nothing
+- unless its cycle asset (`cycleConfig`) is constant, the emission breathes once per `cycleDuration`
+  seconds
+
+Wuling's interactives share two configs. `IntEmissiveConfig_Disabled_Wuling` sets a pale teal (1.11,
+1.84, 1.59) over a dark teal albedo tint (0.15, 0.25, 0.27, alpha 1); `IntEmissiveConfig_On_Wuling`
+a bright green (0, 7.34, 2.70) over a green tint (0, 0.55, 0.24). both cycles are constant. the
+water hydrants (`int_water_hydrant_postmodel`) rest in `off`, which applies the disabled config to
+their root, and their working states the other.
+
+the xiranite hydrants (`int_xiranite_hydrant_postmodel`) apply the disabled config to their pillar
+(`P_igroup_map02_pool+1_003_02`) as their `Idle` state starts, and the on config while working.
+every placement in map02 sets `state` 0, so they rest locked: `broken` then `locked_Idle` switch the
+`fixed` pool, pillar included, off, leaving the saved `abandoned` pool (an overgrown basin and an
+unlit pillar) and playing `P_fxint_l_hydrantbase_xirang_lowlight_801`, a green glow around the
+pillar. `state` 1 unlocks them: `unlocked_Idle` swaps the pools back.
+
 ### vertical rope lifts
 
 a vertical rope lift is two placements of `int_rope_port`: the top port (`int_rope_port_top_right`

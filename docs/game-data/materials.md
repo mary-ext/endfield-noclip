@@ -106,9 +106,11 @@ material. `_EmissiveColor`'s own alpha still sets the pulse or sweep depth. the 
 `M_anm_map02_machine+1_003_02` and glow green (0, 1, 0.17, alpha 1) from their emissive map's R
 through the component; their G channel only lights inside the sweep band. the component also sets an
 albedo tint where R is at least 0.1, weighted by `emissiveAlbedoColor`'s alpha (0 on the targets),
-and a breathing pulse (`breathFrequency`, `breathIntensity`; 0 on the targets). the white lamp cubes
-on Wuling's and Marker Stone's towers (`M_module_tylight+1_001_03`) don't take a colour from it:
-they emit white, and the green and red glow over them comes from one effect prefab per tower, placed
+and a breathing pulse (`breathFrequency`, `breathIntensity`; 0 on the targets). an interactive's
+view states can replace these fields with an emissive config
+([emission view states set](interactives.md#emission-view-states-set)). the white lamp cubes on
+Wuling's and Marker Stone's towers (`M_module_tylight+1_001_03`) don't take a colour from it: they
+emit white, and the green and red glow over them comes from one effect prefab per tower, placed
 always ([pull towards the camera](effects.md#vertex-offset-and-brightening)). Wuling's
 (`P_fxmap_map02_lv002_citywall_lighting_02`) emits a round glow and a 40 × 5 m horizontal streak at
 each lamp from a mesh of their positions, both teal (`_TintColor` 0.45, 0.84, 0.75), added; Marker

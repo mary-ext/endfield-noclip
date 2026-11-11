@@ -79,12 +79,12 @@ packs or renders correctly.
   read a little paler than the game's. [light beams](viewer/effects.md#light-beams) lack their 3D
   noise, a per-renderer scale and a global tint, and aren't checked against an in-game shot
 - surface shading that shows most indoors: per-draw emission colours other than prefabs'
-  `AnimationProperties_Emissive` resting colour aren't known ([emission](#surfaces-and-terrain));
-  meshes without tangents draw their normal map flat (what the game's bump does there is unchecked);
-  normals are transformed by the model matrix rather than its inverse transpose; every material but
-  leaves without `_TwoSidedNormal` lights the side facing the camera; the packed tangent frame isn't
-  decoded, so tangents are generated (MikkTSpace) from a UV set
-  ([geometry](package-format.md#binary-encodings))
+  `AnimationProperties_Emissive` resting colour (or their view states' emissive config) aren't known
+  ([emission](#surfaces-and-terrain)); meshes without tangents draw their normal map flat (what the
+  game's bump does there is unchecked); normals are transformed by the model matrix rather than its
+  inverse transpose; every material but leaves without `_TwoSidedNormal` lights the side facing the
+  camera; the packed tangent frame isn't decoded, so tangents are generated (MikkTSpace) from a UV
+  set ([geometry](package-format.md#binary-encodings))
 - screen-space reflections
   ([screen-space reflections](viewer/lighting.md#screen-space-reflections)): the rain wetness
   variant's ripple normals aren't drawn, and reflection-only effects don't write the march's inputs
@@ -164,9 +164,9 @@ packs or renders correctly.
   steady ones glow), so `_EMISSIVE_NOMAP` emits nothing; flicker and the emissive map's scroll
   (`_EmissiveSpeed`; Dijiang's shaft cargo rings) are drawn still, the pulse stops on looks with a
   parallax glow or layer, and the emission Fresnel term is left out. of the per-draw emission
-  overrides, only prefabs' `AnimationProperties_Emissive` resting colour is read: its breathing,
-  albedo tint and an `EntityRenderHelper` target aren't, nor are overrides other scripts set at
-  runtime
+  overrides, only prefabs' `AnimationProperties_Emissive` resting colour, or the emissive config
+  their view states leave on it, is read: its breathing, albedo tint and an `EntityRenderHelper`
+  target aren't, nor are overrides other scripts set at runtime
 - glass ([glass](game-data/materials.md#glass)): refraction, Fresnel opacity, planar reflections and
   subsurface scattering aren't drawn; premultiplied glass is read from the blend state, and whether
   the game lets glass cast shadows is unchecked

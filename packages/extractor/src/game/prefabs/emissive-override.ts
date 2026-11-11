@@ -1,3 +1,4 @@
+import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	arrayField,
@@ -5,9 +6,10 @@ import {
 	numberField,
 	objectField,
 	type PPtr,
+	pptrField,
 } from '@endfield-noclip/formats/unity/values';
 
-import type { ObjectRef } from '../assets/assets.ts';
+import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 
 export type Rgba = [number, number, number, number];
 
@@ -55,6 +57,51 @@ export const readEmissiveOverride = (data: TypeTreeObject): EmissiveOverride => 
 	renderers: arrayField(data, 'affectRenderers').map((pointer) => asPPtr(pointer)),
 	color: rgba(objectField(data, 'emissiveColor')),
 });
+
+/**
+ * an `InteractiveEmissiveConfig`, which an interactive's view states apply to an
+ * `AnimationProperties_Emissive` in place of its saved fields
+ * ([emission](../../../../docs/game-data/materials.md#emission))
+ */
+export interface EmissiveConfig {
+	/** the component's new `emissiveColor`: HDR, linear */
+	color: Rgba;
+	/** its new `emissiveAlbedoColor`: the base colour with its alpha, or white at alpha 0 without one */
+	albedo: Rgba;
+}
+
+/**
+ * the GameObject name a pose's emissive configs give the prefab root, which a root animator's empty name
+ * means
+ */
+export const ROOT_EMISSIVE = '';
+
+/** what an `InteractiveEmissiveConfig` leaves `emissiveAlbedoColor` at without a base colour */
+const NO_ALBEDO: Rgba = [1, 1, 1, 0];
+
+/**
+ * reads an `InteractiveEmissiveConfig` and the colour assets it points to. its cycle, which breathes the
+ * emission unless it's constant, isn't read
+ *
+ * @param resolver bundle reader
+ * @param ref the config's MonoBehaviour
+ * @returns what it sets on the component
+ * @throws {FormatError} if it has no colour asset, which the game requires
+ */
+export const readEmissiveConfig = async (
+	resolver: AssetResolver,
+	ref: ObjectRef,
+): Promise<EmissiveConfig> => {
+	const config = await resolver.read(ref);
+	const colorRef = await resolver.resolve(ref, pptrField(config, 'colorConfig'));
+	if (colorRef === null) {
+		throw new FormatError(`emissive config ${ref.info.pathId} has no colour config`);
+	}
+	const color = rgba(objectField(await resolver.read(colorRef), 'emissiveColor'));
+	const baseRef = await resolver.resolve(ref, pptrField(config, 'baseColorConfig'));
+	const albedo = baseRef === null ? NO_ALBEDO : rgba(objectField(await resolver.read(baseRef), 'baseColor'));
+	return { color, albedo };
+};
 
 /**
  * the emission colour a Lit draw ends up with under a per-draw override, as the shader mixes it: the

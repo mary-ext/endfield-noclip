@@ -28,7 +28,12 @@ import {
 	readAdjustLength,
 } from './adjust-length.ts';
 import { isBillboardType, type PrefabBillboard, readBillboard } from './billboard.ts';
-import { isEmissiveOverrideType, readEmissiveOverride, type Rgba } from './emissive-override.ts';
+import {
+	isEmissiveOverrideType,
+	readEmissiveOverride,
+	type Rgba,
+	ROOT_EMISSIVE,
+} from './emissive-override.ts';
 import type { ScaledTiling } from './material-values.ts';
 import { bindingKey, type ClipPaths, clipPaths, posedLocal } from './pose-paths.ts';
 import type { PlacedPrefabNode, PrefabComponent, PrefabNode, PrefabVisitor } from './prefab-walk.ts';
@@ -364,7 +369,7 @@ const readUnlockConfig: ComponentReader = {
 /** `AnimationProperties_Emissive`: the emission colour it writes to its renderers */
 const readEmissiveOverrideComponent: ComponentReader = {
 	accepts: behaviourOf(isEmissiveOverrideType),
-	async read(walk, _, state, component) {
+	async read(walk, node, state, component) {
 		// it starts playing when enabled, so only an active, enabled one sets the colour at rest
 		if (state.off !== null) {
 			return;
@@ -373,7 +378,11 @@ const readEmissiveOverrideComponent: ComponentReader = {
 		if (!booleanField(data, 'm_Enabled')) {
 			return;
 		}
-		const { renderers, color } = readEmissiveOverride(data);
+		const { renderers, color: saved } = readEmissiveOverride(data);
+		// a config the pose's view states apply replaces the saved colour
+		const configs = walk.pose?.emissive;
+		const config = (node.isRoot ? configs?.get(ROOT_EMISSIVE) : undefined) ?? configs?.get(node.name);
+		const color = config?.color ?? saved;
 		for (const pointer of renderers) {
 			const renderer = await walk.resolver.resolve(component.ref, pointer);
 			if (renderer !== null) {

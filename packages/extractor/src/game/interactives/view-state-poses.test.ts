@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { ROOT_EMISSIVE } from '../prefabs/emissive-override.ts';
+
 import {
 	restingEffects,
+	restingEmissives,
 	restingLengths,
 	settledPath,
 	stateSwitches,
@@ -145,6 +148,41 @@ test("the rope lift's length outlasts set_rope, from RopeLength plus its deviati
 		[...restingLengths([state('s', [length(rope, { val: 2, deviation: 0.5 })], null)], new Map())],
 		[[rope, 2.5]],
 	);
+});
+
+const emissive = (emissiveNodeName: string, emissiveConfigHash: bigint): ViewStateRecord => ({
+	$type: 'Beyond_Gameplay_Core_ModelViewStateController_MVSCEmissiveBehaviorDataForMemoryPack',
+	emissiveNodeName,
+	// longs decode as decimal strings
+	emissiveConfigHash: String(emissiveConfigHash),
+	isBlend: false,
+	blendTime: 0,
+});
+
+test('a locked hydrant keeps the disabled emissive config its starting state applied', () => {
+	// int_xiranite_hydrant_postmodel's BaseLayer at `state` 0: Idle → broken → locked_Idle; Idle applies
+	// IntEmissiveConfig_Disabled_Wuling, the working states IntEmissiveConfig_On_Wuling
+	const pillar = 'P_igroup_map02_pool+1_003_02';
+	const disabled = 45_509_677_811_683_174n;
+	const on = 367_726_622_296_899_561n;
+	const locked = [
+		state('Idle', [emissive(pillar, disabled)], 'broken'),
+		state('broken', [setActive('fixed', false)], 'locked_Idle'),
+		state('locked_Idle', [effect('P_fxint_l_hydrantbase_xirang_lowlight_801')], null),
+	];
+	assert.deepEqual([...restingEmissives(null, locked)], [[pillar, disabled]]);
+	const working = [
+		state('Idle', [emissive(pillar, disabled)], 'working'),
+		state('working', [emissive(pillar, on)], null),
+	];
+	assert.deepEqual([...restingEmissives(null, working)], [[pillar, on]]);
+});
+
+test("an empty emissive name means the animator's own GameObject", () => {
+	// int_water_hydrant_postmodel's root layer starts in `off`, which applies a config without a name
+	const off = [state('off', [emissive('', 45_509_677_811_683_174n)], null)];
+	assert.deepEqual([...restingEmissives(null, off)], [[ROOT_EMISSIVE, 45_509_677_811_683_174n]]);
+	assert.deepEqual([...restingEmissives('TempRoot', off)], [['TempRoot', 45_509_677_811_683_174n]]);
 });
 
 test('the values a state machine tests on an int key are listed once, ascending', () => {
