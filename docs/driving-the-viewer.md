@@ -138,6 +138,14 @@ applies the budget.
 - `cpuMs` includes waiting on the GPU (backpressure lands in `writeBuffer`), so when GPU-bound a CPU
   saving shows up as less waiting rather than a shorter frame; compare busy CPU time from a profile
   (`agent-browser profiler`).
+- with the frame rate uncapped (the Linux flags above) and frames of a few milliseconds, the page
+  submits faster than the GPU process takes them, and now and then one GPU call (a `writeBuffer`, a
+  draw) blocks for 20–50 ms in whichever span it falls in. those frames aren't hitches a vsynced
+  viewer has: they went away when the same flight ran at two thirds of the frame rate. judge hitches
+  by the span that's long across runs, or by timing the call itself.
+- queue writes of a megabyte or more do stall the main thread
+  ([staged writes](viewer/gpu-resources.md)); time `queue.writeTexture` and `queue.writeBuffer` by
+  wrapping `GPUQueue.prototype` when a stream span is long with few uploads.
 - JS heap readings after a navigation include the previous page held in the back/forward cache, and
   readings over 1 GB while streaming are uncollected garbage; measure the heap from a fresh browser
   after a GC.

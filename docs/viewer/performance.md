@@ -90,6 +90,12 @@ how to measure is in [driving the viewer](../driving-the-viewer.md#profiling).
 - **cached work.** the transmittance and multiple-scattering LUTs render once per environment;
   irradiance clipmaps update only on re-centre or new cells; local lights are selected, binned and
   uploaded only when the camera, render size or shown lights change, not on settle frames.
+- **large uploads staged.** streamed data of 128 KiB or more goes through a
+  [staging buffer](gpu-resources.md) instead of a queue write, which stalled the main thread for
+  15–30 ms per megabyte-sized texture level while streaming.
+- **particle integrals tabulated.** how far a velocity curve has carried a particle is read from a
+  table built once per curve ([motion](particles.md#motion)), and colours are read without
+  allocating.
 - **no per-frame allocation on hot paths.** selections (their arrays and the instance range, terrain
   patch and surface objects in them), buckets and plane arrays are reused across frames, and texture
   requests per bucket allocate nothing. the stream manager evicts from a set of its ready, unpinned
@@ -116,12 +122,49 @@ of that machine, package and build, something to compare a new run against, not 
 the hitches while flying (a few frame times long) are bursts of mesh selection and draw preparation,
 not uploads, instance block builds or material derivations.
 
+walks at eye height through a level's streets and plazas, at 12 m/s, and crossings from level to
+level at 60–80 m/s and 40 m up, same machine and size, 2026-11-11 (frame times with the frame rate
+uncapped, so the long tail includes [backpressure](../driving-the-viewer.md#profiling)):
+
+| route                                        | frame, median/p95 | `mesh select`, median | GPU    |
+| -------------------------------------------- | ----------------- | --------------------- | ------ |
+| Wuling City walk                             | 12/27 ms          | 6 ms                  | 7 ms   |
+| Jingyu Valley walk                           | 14/29 ms          | 7 ms                  | 8 ms   |
+| Qingbo Stockade walk                         | 11/25 ms          | 6 ms                  | 8 ms   |
+| Si's Painting walk                           | 5/14 ms           | 1.5 ms                | 5 ms   |
+| map02 crossing, eight levels                 | 17/34 ms          | 6 ms                  | 7 ms   |
+| map01 walks (Hub, Lodespring, Power Plateau) | 4–5/9–12 ms       | 1.5–2.5 ms            | 3–6 ms |
+| map01 crossing, six levels                   | 5/14 ms           | 2 ms                  | 5 ms   |
+
+map02's walks are bound by the CPU. in Wuling City's streets about a third of `mesh select` is
+placing particles (a few thousand live ones across about a hundred emitters), and the rest the
+per-segment bookkeeping of nine thousand or so row segments. every route ends with the stream budget
+full: on the Wuling City walk about 40% of the texture bytes and half the geometry bytes uploaded
+were of blobs evicted earlier in the walk, half of them within 7 s.
+
+at 2560×1600 the allocations that don't stream take about 520 MiB before any content: the main
+targets 200 MiB, the post passes' 165 MiB, the sun's and the local lights' shadow maps 64 MiB each
+and the volumetric fog 21 MiB.
+
 ## optimization candidates
 
 what the game's settings say it does is in [quality settings](../game-data/quality-settings.md).
 
 - mesh selection is the largest CPU cost: picking LOD slots and making room in buckets on the GPU
   (count, prefix sum, write) would leave the CPU one item per row group instead of per segment.
+- particles are placed on the CPU from their age alone, every frame, about a microsecond each. what
+  a particle starts with (its place in the shape, direction, start size, speed, rotation and colour,
+  and its random values) doesn't change over its life and could be kept per particle rather than
+  hashed and read again each frame; placing them in a worker or in compute would take them off the
+  frame altogether.
+- content evicted under a full budget is often wanted again seconds later (the baseline's walk
+  figures). keeping integrated texture levels half a mip level past the size that needs them cut
+  repeated texture uploads by a third on the Wuling City walk, but raised what's in use enough to
+  saturate the stream and start the texture reduction, so it wasn't kept. untried: evicting textures
+  before geometry (a seventh of the bytes, and the costlier to bring back), and a budget that
+  follows the device.
+- the local lights' shadow atlas is `depth32float` like the sun's map, 64 MiB; its tiles hold
+  perspective depth over a short range, so 16 bits need a near plane well away from the light.
 - GPU culling leaves the buckets it picked empty in draws the CPU still encodes. flying over Jingyu,
   preparing and encoding draws took nearly half the CPU frame before geometry was pooled.
 - settle frames re-run the whole selection while particles or spinning or riding rows are in view;
