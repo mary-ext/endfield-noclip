@@ -8,6 +8,7 @@ import {
 } from '@endfield-noclip/package-format/particles';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
+import { type DrawnCurve, integrateOverAge } from './curve-integrals.ts';
 import { evaluateMinMax, livedAt } from './curves.ts';
 
 /** the drag's deceleration (m/s², or per unit of speed squared), for a particle of a size */
@@ -163,30 +164,15 @@ export const steppedPath = (path: {
 	};
 };
 
-/** sample pairs {@link integrateAge} takes */
-const TRAVEL_STEPS = 8;
-
-/**
- * @param f a rate at an age, s
- * @param age the age to integrate it up to, s
- * @returns its integral from birth to `age` (Simpson's rule)
- */
-export const integrateAge = (f: (age: number) => number, age: number): number => {
-	const n = TRAVEL_STEPS * 2;
-	const h = age / n;
-	let sum = f(0) + f(age);
-	for (let i = 1; i < n; i++) {
-		sum += f(i * h) * (i % 2 === 1 ? 4 : 2);
-	}
-	return (sum * h) / 3;
-};
+/** {@link travelled}'s velocity, reused */
+const moving: DrawnCurve = { curve: { mode: CurveMode.Constant, scalar: 0 }, r: 0 };
 
 /**
  * @param curve a velocity, m/s, read at the particle's age over its lifetime
  * @param age the particle's age, s
  * @param life its lifetime, s
  * @param r its random value for the velocity
- * @param scale a factor on the velocity at an age, s, such as a speed modifier curve; none when omitted
+ * @param scale a factor on the velocity read the same way, such as a speed modifier curve; none when omitted
  * @returns how far the velocity has carried it, m
  */
 export const travelled = (
@@ -194,12 +180,14 @@ export const travelled = (
 	age: number,
 	life: number,
 	r: number,
-	scale?: (age: number) => number,
+	scale?: DrawnCurve,
 ): number => {
 	if (scale === undefined && (curve.mode === CurveMode.Constant || curve.mode === CurveMode.TwoConstants)) {
 		return evaluateMinMax(curve, 0, r) * age;
 	}
-	return integrateAge((a) => evaluateMinMax(curve, livedAt(a, life), r) * (scale?.(a) ?? 1), age);
+	moving.curve = curve;
+	moving.r = r;
+	return integrateOverAge(moving, scale ?? null, 0, age, life);
 };
 
 /**

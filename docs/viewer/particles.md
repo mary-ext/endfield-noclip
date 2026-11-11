@@ -82,9 +82,14 @@ system and its index, so any moment can be evaluated on its own:
   velocity module's speed modifier and a world-space linear velocity is first turned into the
   emitter's frame, plus `½ g m a²` down the world's y (Unity's gravity, 9.81 m/s² times the gravity
   modifier) and the radial push times `m`, then turned about the orbit's centre by `ω · m · a`.
-  linear, orbital and radial curves are integrated over the age (Simpson's rule), so Jingyu's
-  drifting petals turn through their spin-up's integral. turning the whole path is exact when the
-  rest of the motion runs along the orbit's axis.
+  linear, orbital and radial curves are integrated over the age, so Jingyu's drifting petals turn
+  through their spin-up's integral. turning the whole path is exact when the rest of the motion runs
+  along the orbit's axis. the integrals are read from tables built once per curve
+  ([`curve-integrals.ts`](../../packages/viewer/src/particles/curve-integrals.ts)): a `MinMaxCurve`
+  is a sum of at most two terms, each a factor holding the particle's random value times a curve of
+  its age over its lifetime, so its integral, alone or times a speed modifier curve, is a sum of
+  factors times integrals of the curves alone. summing samples per particle each frame took about a
+  third of the time particles are placed in.
 - a speed modifier curve (`modifierAt`) takes the place of `m · a` with its integral over the age,
   and the linear, orbital and radial curves are integrated times it, as the game
   [scales every step](../game-data/particles.md#particle-systems); the fall, built up in the

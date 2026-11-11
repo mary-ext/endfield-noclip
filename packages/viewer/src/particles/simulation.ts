@@ -17,18 +17,11 @@ import { srgbToLinear } from '../math/color.ts';
 import { eulerQuaternion, eulerQuaternionInto, type Quat, rotateByInto, rotateInto } from '../math/quat.ts';
 import { normalizeOrZInto } from '../math/vec3.ts';
 
+import { type DrawnCurve, integrateOverAge } from './curve-integrals.ts';
 import { evaluateMinMax, evaluateMinMaxGradient, livedAt, meanOf, upperBound } from './curves.ts';
 import { applyForces, type ForceRandoms, type PreparedField, prepareField } from './forces.ts';
 import { meshShapePoint, type PreparedMeshShape, prepareMeshShape } from './mesh-shape.ts';
-import {
-	dragged,
-	draggedFall,
-	integrateAge,
-	type SteppedState,
-	splinePoint,
-	steppedPath,
-	travelled,
-} from './motion.ts';
+import { dragged, draggedFall, type SteppedState, splinePoint, steppedPath, travelled } from './motion.ts';
 import { Channel, hash2, random } from './random.ts';
 import { sheetTile } from './texture-sheet.ts';
 import { unitVectorInto } from './vector-math.ts';
@@ -159,6 +152,8 @@ interface PathStart {
 	 * drag
 	 */
 	modifierAt: ((age: number) => number) | null;
+	/** the curve {@link modifierAt} reads and the particle's random value for it, set when it is */
+	modifierCurve: DrawnCurve;
 	/** m/s² down the world's y */
 	gravity: number;
 	/** seconds */
@@ -201,6 +196,7 @@ const path: PathStart = {
 	speed: 0,
 	modifier: 1,
 	modifierAt: null,
+	modifierCurve: { curve: { mode: CurveMode.Constant, scalar: 1 }, r: 0 },
 	gravity: 0,
 	age: 0,
 	life: 0,
@@ -828,21 +824,22 @@ export class ParticleSimulation {
 		const seed = this.#seed;
 		const down = this.#down;
 		const { id, start, direction, speed, modifier, modifierAt, gravity, startSize, age, life } = motion;
+		const scale = modifierAt === null ? undefined : motion.modifierCurve;
 		// a ring buffer's paused particle moves on past its lifetime with its curves at their end
 		const lived = livedAt(age, life);
 		// the game moves a particle by its whole velocity times the speed modifier: `scaledAge` is the modifier's
 		// integral over the age, which a constant velocity moves by, and `scaleNow` its value now
-		const scaledAge = modifierAt === null ? age : integrateAge(modifierAt, age);
+		const scaledAge = scale === undefined ? age : integrateOverAge(scale, null, 0, age, life);
 		const scaleNow = modifierAt === null ? 1 : modifierAt(age);
 		let launch: number, launchSpeed: number, fall: number, fallSpeed: number;
 		if (drag === null) {
 			launch = speed * modifier * scaledAge;
 			launchSpeed = speed * modifier * scaleNow;
 			// gravity builds up in the velocity the modifier scales, so the fall is ∫ g·τ·m(τ) dτ
-			if (modifierAt === null) {
+			if (scale === undefined) {
 				fall = 0.5 * gravity * modifier * age * age;
 			} else {
-				fall = gravity * integrateAge((t) => t * modifierAt(t), age);
+				fall = gravity * integrateOverAge(scale, null, 1, age, life);
 			}
 			fallSpeed = gravity * age * modifier * scaleNow;
 		} else {
@@ -863,7 +860,6 @@ export class ParticleSimulation {
 		if (velocity === null) {
 			return;
 		}
-		const scale = modifierAt ?? undefined;
 		const { linear, linearNow, outward, turn, around } = free;
 		for (let axis = 0; axis < 3; axis++) {
 			const r = random(seed, id, Channel.VelocityX + axis);
@@ -1056,6 +1052,8 @@ export class ParticleSimulation {
 				} else {
 					// the game reads it each step at the particle's age over its lifetime, as linear velocities
 					modifierAt = (a) => evaluateMinMax(curve, livedAt(a, life), r);
+					path.modifierCurve.curve = curve;
+					path.modifierCurve.r = r;
 				}
 			}
 			path.id = id;
