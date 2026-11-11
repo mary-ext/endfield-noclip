@@ -76,10 +76,9 @@ packs or renders correctly.
   far-layer casters at the camera's LODs rather than culled for the light's view and its culling
   box, with the sun passes' bias and a 3 × 3 filter for the game's 5 × 5 tent, and redrawn as
   casters stream in, which the game doesn't need; they go off with the sun's shadows. checked
-  against in-game shots at Jingyu's cherry-tree pit and cave arch only, where lit blossoms and the
-  arch's bark still read paler than the game's (the bark by its ambient).
-  [light beams](viewer/effects.md#light-beams) lack their 3D noise, a per-renderer scale and a
-  global tint, and aren't checked against an in-game shot
+  against in-game shots at Jingyu's cherry-tree pit and cave arch only, where lit blossoms still
+  read a little paler than the game's. [light beams](viewer/effects.md#light-beams) lack their 3D
+  noise, a per-renderer scale and a global tint, and aren't checked against an in-game shot
 - surface shading that shows most indoors: per-draw emission colours other than prefabs'
   `AnimationProperties_Emissive` resting colour aren't known ([emission](#surfaces-and-terrain));
   meshes without tangents draw their normal map flat (what the game's bump does there is unchecked);

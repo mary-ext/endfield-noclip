@@ -105,6 +105,9 @@ const EFFECT = 268435456u;
 // `_USE_VERTOFFSET` (`vertexOffsetParams` in lit-look.ts): the parallax slots hold the vertex offset's texture
 // and its mask, which the vertex stage samples
 const VERTEX_OFFSET = 536870912u;
+// `HGRP/Foliage/Trunk`'s `_FOLIAGE_TRUNK` (`trunkParams` in lit-look.ts): the canopy rows hold its vertex AO
+// and ramp
+const TRUNK = 1073741824u;
 // `_LAYERBLEND_TOP` or `_LAYERBLEND_MASK` (`layerBlendParams` in lit-look.ts): the parallax slots and rows hold
 // the layer, and a mask map sits in the emissive slot
 const LAYER_BLEND = 2147483648u;
@@ -778,8 +781,7 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		} else {
 			s = grass_surface(s, look, in, select(1.0, packed.a, has_normal));
 		}
-	} else if (look.tint.w >= 0.0) {
-		// not a dithered look, whose dither sits in the trunk's row
+	} else if ((flags & TRUNK) != 0u) {
 		s = trunk_surface(s, look, in, base_a);
 	}
 	// the game wets what its deferred lighting shades, so not the forward-shaded glass

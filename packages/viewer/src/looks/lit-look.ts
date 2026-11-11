@@ -278,8 +278,7 @@ const emissivePulseParams = (look: MaterialLook, pulse: NonNullable<LitEmission[
 
 /**
  * where a trunk's `_FOLIAGE_TRUNK` inputs go: rows only leaves use otherwise (a trunk doesn't sway, so the
- * sway's direction row is free). mesh.wgsl reads them on every look that isn't foliage, where zeros change
- * nothing
+ * sway's direction row is free). mesh.wgsl reads them on looks with {@link LookFlags.Trunk}
  */
 export const TrunkRow = {
 	/** the ramp's range and transition range, `_TrunkVertexAoStrength`, the ramp's intensity (0 without one) */
@@ -291,6 +290,7 @@ export const TrunkRow = {
 /** a trunk's vertex AO and ramp (docs/game-data/materials.md#foliage) */
 const trunkParams = (look: MaterialLook, trunk: TrunkInputs): void => {
 	const ramp = trunk.ramp;
+	look.flags |= LookFlags.Trunk;
 	look.params.set(
 		[ramp?.range ?? 0, ramp?.transition ?? 0, trunk.vertexAo, ramp?.intensity ?? 0],
 		TrunkRow.shape,

@@ -417,9 +417,12 @@ test("a trunk's vertex AO and ramp fill the rows leaves keep their canopy ramp i
 	assert.deepEqual(row(bark, TrunkRow.shape), [0, 0, 0.9, 0].map(Math.fround));
 	assert.deepEqual(row(ramped, TrunkRow.shape), [0.2, 0.1, 1, 0.75].map(Math.fround));
 	assert.deepEqual(row(ramped, TrunkRow.color), [0.5, 0.25, 0.125, 0]);
-	// zeros leave other surfaces as they are
 	assert.deepEqual([...row(plain, TrunkRow.shape), ...row(plain, TrunkRow.color)], [0, 0, 0, 0, 0, 0, 0, 0]);
 	assert.equal(bark.flags & LookFlags.Foliage, 0);
+	// the flag, not the alpha-test threshold, tells the shader to read the rows: the bark is opaque
+	assert.equal(bark.params[LookRow.tint + 3], -1);
+	assert.notEqual(bark.flags & LookFlags.Trunk, 0);
+	assert.equal(plain.flags & LookFlags.Trunk, 0);
 });
 
 test('foliage: leaves and grass fill the foliage rows, and surfaces keeping lit decals off set their bit', () => {

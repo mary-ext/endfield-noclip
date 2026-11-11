@@ -76,7 +76,8 @@ and on every other material, the viewer turns the normal towards the camera wher
 rather than by the face that shows. the grass takes `h` as the vertex's object-space height. the
 grass card LOD takes neither the bend nor the masks, since its normal decoding isn't read.
 `HGRP/Foliage/Trunk` takes Lit's texture layout plus its `_FOLIAGE_TRUNK` vertex AO and ramp (the
-surface's `trunk`, packed by `trunkParams` into rows leaves use otherwise), and
+surface's `trunk`, packed by `trunkParams` into rows leaves use otherwise and marked by the look's
+`Trunk` flag, since those rows hold the dither on dithered looks), and
 `HGRP/Foliage/TreeFoliageCardMeshLod` draws as plain alpha-tested foliage.
 
 ## swaying cloth

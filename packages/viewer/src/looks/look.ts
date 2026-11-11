@@ -77,7 +77,8 @@ export const LookFlags = {
 	 * and the vertex stage samples them (`vertexOffsetParams` in lit-look.ts)
 	 */
 	VertexOffset: 1 << 29,
-	// bit 30 is free
+	/** `HGRP/Foliage/Trunk`'s `_FOLIAGE_TRUNK`: the canopy rows hold its vertex AO and ramp (`TrunkRow`) */
+	Trunk: 1 << 30,
 	/**
 	 * `_LAYERBLEND_TOP` or `_LAYERBLEND_MASK`: the parallax slots and rows hold the layer (`layerBlendParams`).
 	 * the sign bit, so the value is negative; `words` in mesh-renderer.ts store it unsigned
