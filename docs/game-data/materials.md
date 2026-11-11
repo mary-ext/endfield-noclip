@@ -104,10 +104,13 @@ playing when enabled and then writes its `emissiveColor` into that colour on eac
 material. `_EmissiveColor`'s own alpha still sets the pulse or sweep depth. the water drone targets
 (`int_waterdrone_floating_target_postmodel`) keep a black `_EmissiveColor` on
 `M_anm_map02_machine+1_003_02` and glow green (0, 1, 0.17, alpha 1) from their emissive map's R
-through the component; their G channel only lights inside the sweep band. the component also sets an
-albedo tint where R is at least 0.1, weighted by `emissiveAlbedoColor`'s alpha (0 on the targets),
-and a breathing pulse (`breathFrequency`, `breathIntensity`; 0 on the targets). an interactive's
-view states can replace these fields with an emissive config
+through the component; their G channel only lights inside the sweep band. the component also writes
+`emissiveAlbedoColor`, an albedo tint: where the emission's strength (the remapped mask channel, or
+the emissive map's R) is at least 0.1, the albedo is multiplied by `mix(1, rgb, w)`, w its alpha
+(times `_EnableEmissiveAlbedo` in the emissive map variants; 0 on the targets). emission that
+follows the albedo (`_AlbedoAffectEmissive` 0) takes the tinted one. it also writes a breathing
+pulse (`breathFrequency`, `breathIntensity`; 0 on the targets). an interactive's view states can
+replace these fields with an emissive config
 ([emission view states set](interactives.md#emission-view-states-set)). the white lamp cubes on
 Wuling's and Marker Stone's towers (`M_module_tylight+1_001_03`) don't take a colour from it: they
 emit white, and the green and red glow over them comes from one effect prefab per tower, placed

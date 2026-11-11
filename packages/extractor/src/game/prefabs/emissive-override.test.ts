@@ -19,10 +19,12 @@ const TARGET = {
 };
 
 describe('readEmissiveOverride', () => {
-	it('reads the listed renderers and the resting colour', () => {
+	it('reads the listed renderers and the resting colours', () => {
 		const read = readEmissiveOverride(TARGET);
 		assert.equal(read.renderers.length, 2);
-		assert.deepEqual(read.color, [0, 1, 0.16790390014648438, 1]);
+		assert.deepEqual(read.colors.color, [0, 1, 0.16790390014648438, 1]);
+		// at alpha 0 the albedo tint tints nothing
+		assert.deepEqual(read.colors.albedo, [1, 0.04339611530303955, 0.04339611530303955, 0]);
 	});
 });
 

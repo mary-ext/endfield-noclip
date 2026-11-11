@@ -13,7 +13,13 @@ import type {
 } from '@endfield-noclip/package-format/surfaces';
 import type { Rgb } from '@endfield-noclip/package-format/values';
 
-import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
+import {
+	linearRgb,
+	type MaterialReader,
+	PER_DRAW_EMISSIVE_ALBEDO,
+	scaleRgb,
+	unsupported,
+} from '../material-values.ts';
 
 import { grassInputsOf, leafInputsOf, trunkInputsOf } from './foliage.ts';
 import { layerOf, parallaxGlowOf } from './lit-overlays.ts';
@@ -150,6 +156,9 @@ export const describeLit = (reader: MaterialReader): LitSurface | UnsupportedSur
 					channels = added;
 				}
 			}
+			// the per-draw albedo tint (HDR, as stored); the map variants also scale it by `_EnableEmissiveAlbedo`
+			const albedo = color(PER_DRAW_EMISSIVE_ALBEDO);
+			const weight = (albedo?.[3] ?? 0) * (source === 'map' ? float('_EnableEmissiveAlbedo', 0) : 1);
 			emission = {
 				// HDR, authored linear: as stored
 				color: resting(emissive, 1),
@@ -158,6 +167,8 @@ export const describeLit = (reader: MaterialReader): LitSurface | UnsupportedSur
 				channels,
 				albedoAffect: float('_AlbedoAffectEmissive', 1),
 				ignorePostExposure: float('_IgnorePostExposure', 1),
+				albedoTint:
+					albedo !== undefined && weight !== 0 ? { color: [albedo[0], albedo[1], albedo[2]], weight } : null,
 				// `_EnableEmissiveAnimFlicker`'s noise isn't drawn: those emitters keep still
 				pulse:
 					lit && has('_EMISSIVE_ANIM') && float('_EnableEmissiveAnimFlicker', 0) <= 0.5

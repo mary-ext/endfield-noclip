@@ -171,6 +171,7 @@ test('pulsing emission takes the free parallax rows; a surface with a glow keeps
 		channels: null,
 		albedoAffect: 1,
 		ignorePostExposure: 1,
+		albedoTint: null,
 		pulse: { rate: 1 / Math.PI, phase: 0, interval: 1, minimum: 0, depth: 1 },
 	};
 	const glow = {
@@ -238,6 +239,7 @@ test("the emissive map's G, B and A colours take the rows effect looks keep for 
 						],
 						albedoAffect: 1,
 						ignorePostExposure: 1,
+						albedoTint: null,
 						pulse: null,
 					},
 				}),
@@ -252,6 +254,39 @@ test("the emissive map's G, B and A colours take the rows effect looks keep for 
 		[0, 0, 1],
 		[0, 0, 0],
 	]);
+});
+
+test('a per-draw albedo tint takes its own row; without one the row tints nothing', () => {
+	const slot = (texture: number): TextureSlot => ({ texture, uv: 0, scale: [1, 1], offset: [0, 0] });
+	const emission = {
+		color: [1.11, 1.84, 1.59] as [number, number, number],
+		source: 'mask' as const,
+		maskChannel: 3,
+		channels: null,
+		albedoAffect: 0,
+		ignorePostExposure: 1,
+		pulse: null,
+	};
+	const textures = { base: slot(1), normal: null, mro: null, emissive: null };
+	// a water hydrant's lamps under IntEmissiveConfig_Disabled_Wuling
+	const [tinted, plain] = materialLooks({
+		entries: [
+			described(
+				litSurface({
+					textures,
+					emission: { ...emission, albedoTint: { color: [0.15, 0.25, 0.27], weight: 1 } },
+				}),
+			),
+			described(litSurface({ textures, emission: { ...emission, albedoTint: null } })),
+		],
+	});
+	const row = (look: typeof tinted) =>
+		Array.from(
+			look.params.subarray(LookRow.emissiveAlbedo, LookRow.emissiveAlbedo + 4),
+			(v) => Math.round(v * 100) / 100,
+		);
+	assert.deepEqual(row(tinted), [0.15, 0.25, 0.27, 1]);
+	assert.deepEqual(row(plain), [0, 0, 0, 0]);
 });
 
 test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot except under an MRO map, detail', () => {

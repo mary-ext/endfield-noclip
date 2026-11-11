@@ -129,6 +129,9 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 		emission.channels?.forEach((rgb, i) => {
 			params.set(rgb, LookRow.emissiveChannels + i * 4);
 		});
+		if (emission.albedoTint !== null) {
+			params.set([...emission.albedoTint.color, emission.albedoTint.weight], LookRow.emissiveAlbedo);
+		}
 	}
 
 	if (triChannel !== null) {

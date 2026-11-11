@@ -11,7 +11,7 @@ import { booleanField, objectField } from '@endfield-noclip/formats/unity/values
 
 import type { Context } from '../../context.ts';
 import { VfsGroup } from '../../hg/vfs.ts';
-import { type EmissiveConfig, readEmissiveConfig, ROOT_EMISSIVE } from '../prefabs/emissive-override.ts';
+import { type EmissiveColors, readEmissiveConfig, ROOT_EMISSIVE } from '../prefabs/emissive-override.ts';
 import type { PoseClip, PrefabPose } from '../prefabs/prefab.ts';
 
 // model view states (`ModelViewStateControllerData`) and the poses they settle in.
@@ -450,9 +450,9 @@ const emissiveConfigs = async (
 	context: Pick<Context, 'world' | 'resolver'>,
 	states: ViewStates,
 	hashes: ReadonlyMap<string, bigint>,
-): Promise<Map<string, EmissiveConfig>> => {
+): Promise<Map<string, EmissiveColors>> => {
 	const [resolver, pathOf] = await Promise.all([context.resolver(), context.world.pathLookup()]);
-	const configs = new Map<string, EmissiveConfig>();
+	const configs = new Map<string, EmissiveColors>();
 	for (const [node, hash] of hashes) {
 		const path = pathOf(hash);
 		if (path === undefined) {

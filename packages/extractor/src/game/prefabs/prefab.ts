@@ -25,7 +25,7 @@ import type { RootPath } from '../interactives/curve-move.ts';
 
 import { animatorDefaultPose } from './animator-defaults.ts';
 import type { PrefabBillboard } from './billboard.ts';
-import type { EmissiveConfig } from './emissive-override.ts';
+import type { EmissiveColors } from './emissive-override.ts';
 import { posedMaterialValues } from './material-values.ts';
 import { walkPrefab } from './prefab-walk.ts';
 import { moveFollowers, resolveForces } from './renderer-passes.ts';
@@ -156,7 +156,7 @@ export interface PrefabPose {
 	 * emissive configs the states leave on GameObjects' `AnimationProperties_Emissive`, by GameObject name;
 	 * absent when none
 	 */
-	emissive?: ReadonlyMap<string, EmissiveConfig>;
+	emissive?: ReadonlyMap<string, EmissiveColors>;
 	/**
 	 * set when nothing but this pose switches the prefab's GameObjects (no view state and no component), so
 	 * what it leaves switched off never shows instead of drawing as stand-ins

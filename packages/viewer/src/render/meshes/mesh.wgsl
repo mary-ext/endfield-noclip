@@ -77,7 +77,9 @@ struct Look {
 	// the HDR colours the emissive map's G, B and A add (rgb); effect looks use these rows and the rest for
 	// their own (`EffectRow` in effects/effect-look.ts)
 	emissive_channels: array<vec4f, 3>,
-	effect_only: array<vec4f, 9>,
+	// the per-draw albedo tint where the emission's strength is at least 0.1: linear colour, w = weight
+	emissive_albedo: vec4f,
+	effect_only: array<vec4f, 8>,
 }
 
 const BASE_MAP = 1u;
@@ -741,16 +743,22 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	}
 
 	var emission = vec3f(0.0);
+	// the emission's strength: the map's R or the remapped mask channel
+	var strength = 0.0;
 	if ((flags & EMISSIVE_MAP) != 0u && !layer_mask_map) {
 		// R scales the emissive colour; G, B and A add colours of their own (zero unless `_EmissiveType` is set)
 		let channels = look.emissive_channels;
+		strength = glow.r;
 		emission = look.emissive.rgb * glow.r + channels[0].rgb * glow.g + channels[1].rgb * glow.b
 			+ channels[2].rgb * glow.a;
 	}
 	if ((flags & EMISSIVE_MASK) != 0u) {
-		emission = look.emissive.rgb
-			* saturate((map_channel(flags, look.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
+		strength = saturate((map_channel(flags, look.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
+		emission = look.emissive.rgb * strength;
 	}
+	// a per-draw albedo tint darkens or tints the emitting parts, and so the emission that follows the albedo
+	let tinted = look.emissive_albedo.w * step(0.1, strength);
+	s.albedo *= vec3f(1.0 - tinted) + look.emissive_albedo.rgb * tinted;
 	// emission is in the light's pre-exposed units already; emitters that ignore the post exposure divide it out
 	// (docs/game-data/materials.md#emission)
 	let tint = mix(s.albedo, vec3f(1.0), look.emissive2.x);

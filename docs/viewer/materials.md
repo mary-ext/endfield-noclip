@@ -37,10 +37,11 @@ alpha, its value outside the band, so colours that glow only in the band are lef
 ones stay. `_EMISSIVE_NOMAP`, which emits only through the band, emits nothing.
 
 the per-draw emission colour isn't known for static scenery, so it's taken as zero and those draws
-use their material's `_EmissiveColor`. a prefab's `AnimationProperties_Emissive` resting colour, or
-the emissive config its view states leave on it, is mixed into its renderers' emission colour at
-pack time ([emissive-override.ts](../../packages/extractor/src/game/prefabs/emissive-override.ts));
-its breathing and albedo tint aren't read.
+use their material's `_EmissiveColor`. a prefab's `AnimationProperties_Emissive` resting colours, or
+the emissive config its view states leave on it, are mixed into its renderers' emission colour at
+pack time ([emissive-override.ts](../../packages/extractor/src/game/prefabs/emissive-override.ts)),
+and its albedo tint travels as `LitEmission.albedoTint`, which `mesh.wgsl` applies to the albedo
+before the emission takes it. its breathing isn't read.
 
 ## lit layers
 

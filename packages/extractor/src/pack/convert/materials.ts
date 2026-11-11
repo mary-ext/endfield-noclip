@@ -7,7 +7,12 @@ import {
 import type { TextureSlot } from '@endfield-noclip/package-format/materials';
 
 import type { MaterialClassification } from '../../game/materials/material-classify.ts';
-import type { MaterialValues, ShaderEntry, ShaderFamily } from '../../game/materials/material-values.ts';
+import {
+	type MaterialValues,
+	PER_DRAW_EMISSIVE_ALBEDO,
+	type ShaderEntry,
+	type ShaderFamily,
+} from '../../game/materials/material-values.ts';
 
 // converted materials, which the surface describers read: a shader table holding each shader's declared
 // property defaults, and per material only what differs from them. Unity keeps stale properties from earlier
@@ -143,7 +148,7 @@ export const convertMaterial = (
 	const colors: Record<string, Vec4> = {};
 	const vectors: Record<string, Vec4> = {};
 	for (const [name, value] of Object.entries(record.colors)) {
-		if (declaresNothing) {
+		if (declaresNothing || name === PER_DRAW_EMISSIVE_ALBEDO) {
 			colors[name] = value;
 		} else if (Object.hasOwn(defaults.colors, name)) {
 			if (!sameVector(defaults.colors[name], value)) {

@@ -164,9 +164,11 @@ packs or renders correctly.
   steady ones glow), so `_EMISSIVE_NOMAP` emits nothing; flicker and the emissive map's scroll
   (`_EmissiveSpeed`; Dijiang's shaft cargo rings) are drawn still, the pulse stops on looks with a
   parallax glow or layer, and the emission Fresnel term is left out. of the per-draw emission
-  overrides, only prefabs' `AnimationProperties_Emissive` resting colour, or the emissive config
-  their view states leave on it, is read: its breathing, albedo tint and an `EntityRenderHelper`
-  target aren't, nor are overrides other scripts set at runtime
+  overrides, only prefabs' `AnimationProperties_Emissive` resting colours, or the emissive config
+  their view states leave on it, are read: its breathing (and a config's cycle) and an
+  `EntityRenderHelper` target aren't, nor are overrides other scripts set at runtime; the albedo
+  tint applies after the tri-channel mask and detail blends, where the game tints the base colour
+  before them
 - glass ([glass](game-data/materials.md#glass)): refraction, Fresnel opacity, planar reflections and
   subsurface scattering aren't drawn; premultiplied glass is read from the blend state, and whether
   the game lets glass cast shadows is unchecked

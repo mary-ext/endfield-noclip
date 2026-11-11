@@ -110,7 +110,7 @@ export const SLOT_FLAGS = [
 
 /**
  * floats of a material's draw parameters (`Look` in mesh.wgsl, one per look table slot), 44 rows: mesh looks
- * use the first 35 ({@link LookRow}), effect looks all of them for their own (`EffectRow` in
+ * use the first 36 ({@link LookRow}), effect looks all of them for their own (`EffectRow` in
  * effects/effect-look.ts)
  */
 export const LOOK_FLOATS = 176;
@@ -285,6 +285,11 @@ export const LookRow = {
 	 * these rows for their own (`EffectRow` in effects/effect-look.ts)
 	 */
 	emissiveChannels: 128,
+	/**
+	 * the per-draw albedo tint where the emission's strength is at least 0.1 (`LitEmission.albedoTint`): linear
+	 * colour, weight
+	 */
+	emissiveAlbedo: 140,
 } as const;
 
 /**

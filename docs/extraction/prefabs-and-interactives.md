@@ -66,8 +66,10 @@ and looping-clip frames are in
   renderers get a material variant, like a pose's material values. an emissive config the pose's
   settled view states leave on the component
   ([emission view states set](../game-data/interactives.md#emission-view-states-set)) replaces the
-  saved colour: `settledPose` reads the configs each layer's path applies, last one winning. its
-  breathing and albedo tint aren't read.
+  saved colours: `settledPose` reads the configs each layer's path applies, last one winning. an
+  albedo tint that tints anything joins the variant's colours as `perDraw.emissiveAlbedoColor`
+  (`PER_DRAW_EMISSIVE_ALBEDO`), which the converter keeps though no shader declares it and the Lit
+  describer turns into `LitEmission.albedoTint`. its breathing isn't read.
 - **resolution**: the packer resolves a prefab from its StringPathHash key, which must name exactly
   one manifest path.
 - **what else a prefab holds**: its environment volumes

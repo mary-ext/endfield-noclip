@@ -106,6 +106,12 @@ export interface MaterialValues {
 	vectors: Record<string, Vec4>;
 }
 
+/**
+ * the colour name a renderer's per-draw `emissiveAlbedoColor` takes among its material variant's
+ * {@link MaterialValues.colors}: per-draw data, not a property, so no shader declares it
+ */
+export const PER_DRAW_EMISSIVE_ALBEDO = 'perDraw.emissiveAlbedoColor';
+
 /** a material's properties, resolved against its shader's defaults */
 export interface MaterialReader {
 	readonly material: MaterialValues;

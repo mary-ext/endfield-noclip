@@ -31,7 +31,7 @@ import { isBillboardType, type PrefabBillboard, readBillboard } from './billboar
 import {
 	isEmissiveOverrideType,
 	readEmissiveOverride,
-	type Rgba,
+	type EmissiveColors,
 	ROOT_EMISSIVE,
 } from './emissive-override.ts';
 import type { ScaledTiling } from './material-values.ts';
@@ -129,8 +129,8 @@ export interface RendererWalk {
 	lengthScales: Map<string, [number, number, number]>;
 	/** by renderer, the textures whose tiling follows a length the pose sets */
 	lengthTilings: Map<string, ScaledTiling[]>;
-	/** by renderer, the emission colour an enabled `AnimationProperties_Emissive` writes to it */
-	emissiveOverrides: Map<string, Rgba>;
+	/** by renderer, the emission colours an enabled `AnimationProperties_Emissive` writes to it */
+	emissiveOverrides: Map<string, EmissiveColors>;
 	/** by `PositionFollower` Transform, the Transform whose position it takes */
 	followers: Map<string, string>;
 	/** by component, the active and enabled force fields */
@@ -366,11 +366,11 @@ const readUnlockConfig: ComponentReader = {
 	},
 };
 
-/** `AnimationProperties_Emissive`: the emission colour it writes to its renderers */
+/** `AnimationProperties_Emissive`: the emission colours it writes to its renderers */
 const readEmissiveOverrideComponent: ComponentReader = {
 	accepts: behaviourOf(isEmissiveOverrideType),
 	async read(walk, node, state, component) {
-		// it starts playing when enabled, so only an active, enabled one sets the colour at rest
+		// it starts playing when enabled, so only an active, enabled one sets the colours at rest
 		if (state.off !== null) {
 			return;
 		}
@@ -378,15 +378,14 @@ const readEmissiveOverrideComponent: ComponentReader = {
 		if (!booleanField(data, 'm_Enabled')) {
 			return;
 		}
-		const { renderers, color: saved } = readEmissiveOverride(data);
-		// a config the pose's view states apply replaces the saved colour
+		const { renderers, colors: saved } = readEmissiveOverride(data);
+		// a config the pose's view states apply replaces the saved colours
 		const configs = walk.pose?.emissive;
 		const config = (node.isRoot ? configs?.get(ROOT_EMISSIVE) : undefined) ?? configs?.get(node.name);
-		const color = config?.color ?? saved;
 		for (const pointer of renderers) {
 			const renderer = await walk.resolver.resolve(component.ref, pointer);
 			if (renderer !== null) {
-				walk.emissiveOverrides.set(objectKey(renderer), color);
+				walk.emissiveOverrides.set(objectKey(renderer), config ?? saved);
 			}
 		}
 	},

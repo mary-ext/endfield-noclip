@@ -14,15 +14,27 @@ import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 export type Rgba = [number, number, number, number];
 
 /**
- * an `AnimationProperties_Emissive` component: a VFX playable that starts playing when enabled and writes its
- * colour into the per-draw emission override of the renderers it lists
+ * what an `AnimationProperties_Emissive` writes into the per-draw data of its renderers
  * ([emission](../../../../docs/game-data/materials.md#emission))
+ */
+export interface EmissiveColors {
+	/** `emissiveColor`: HDR, linear; its alpha is how far it replaces the material's `_EmissiveColor` */
+	color: Rgba;
+	/**
+	 * `emissiveAlbedoColor`: HDR, linear; its alpha is how strongly it tints the albedo where the emission's
+	 * strength is at least 0.1
+	 */
+	albedo: Rgba;
+}
+
+/**
+ * an `AnimationProperties_Emissive` component: a VFX playable that starts playing when enabled and writes its
+ * colours into the per-draw data of the renderers it lists
  */
 export interface EmissiveOverride {
 	/** the renderers it writes to */
 	renderers: PPtr[];
-	/** HDR, linear; its alpha is how far it replaces the material's `_EmissiveColor` */
-	color: Rgba;
+	colors: EmissiveColors;
 }
 
 /**
@@ -47,28 +59,18 @@ const rgba = (value: TypeTreeObject): Rgba => [
 ];
 
 /**
- * reads the resting emission colour of an `AnimationProperties_Emissive`. its breathing and its albedo tint
- * aren't read
+ * reads the resting colours of an `AnimationProperties_Emissive`. its breathing isn't read
  *
  * @param data the component's fields (see {@link isEmissiveOverrideType})
- * @returns the renderers it lists and the colour it gives them
+ * @returns the renderers it lists and the colours it gives them
  */
 export const readEmissiveOverride = (data: TypeTreeObject): EmissiveOverride => ({
 	renderers: arrayField(data, 'affectRenderers').map((pointer) => asPPtr(pointer)),
-	color: rgba(objectField(data, 'emissiveColor')),
+	colors: {
+		color: rgba(objectField(data, 'emissiveColor')),
+		albedo: rgba(objectField(data, 'emissiveAlbedoColor')),
+	},
 });
-
-/**
- * an `InteractiveEmissiveConfig`, which an interactive's view states apply to an
- * `AnimationProperties_Emissive` in place of its saved fields
- * ([emission](../../../../docs/game-data/materials.md#emission))
- */
-export interface EmissiveConfig {
-	/** the component's new `emissiveColor`: HDR, linear */
-	color: Rgba;
-	/** its new `emissiveAlbedoColor`: the base colour with its alpha, or white at alpha 0 without one */
-	albedo: Rgba;
-}
 
 /**
  * the GameObject name a pose's emissive configs give the prefab root, which a root animator's empty name
@@ -80,18 +82,20 @@ export const ROOT_EMISSIVE = '';
 const NO_ALBEDO: Rgba = [1, 1, 1, 0];
 
 /**
- * reads an `InteractiveEmissiveConfig` and the colour assets it points to. its cycle, which breathes the
- * emission unless it's constant, isn't read
+ * reads an `InteractiveEmissiveConfig`, which an interactive's view states apply to an
+ * `AnimationProperties_Emissive` in place of its saved colours, and the colour assets it points to. its
+ * cycle, which breathes the emission unless it's constant, isn't read
  *
  * @param resolver bundle reader
  * @param ref the config's MonoBehaviour
- * @returns what it sets on the component
+ * @returns the colours it sets on the component: its base colour asset's as the albedo tint, or white at
+ *   alpha 0 without one
  * @throws {FormatError} if it has no colour asset, which the game requires
  */
 export const readEmissiveConfig = async (
 	resolver: AssetResolver,
 	ref: ObjectRef,
-): Promise<EmissiveConfig> => {
+): Promise<EmissiveColors> => {
 	const config = await resolver.read(ref);
 	const colorRef = await resolver.resolve(ref, pptrField(config, 'colorConfig'));
 	if (colorRef === null) {

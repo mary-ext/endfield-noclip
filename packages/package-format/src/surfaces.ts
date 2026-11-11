@@ -235,6 +235,12 @@ export interface LitEmission {
 	albedoAffect: Weight;
 	/** emission keeps its brightness whatever the exposure (`_IgnorePostExposure`) */
 	ignorePostExposure: Weight;
+	/**
+	 * the albedo tint a per-draw `emissiveAlbedoColor` sets where the emission's strength (the remapped mask,
+	 * or the map's R) is at least 0.1: the albedo, and so the emission that follows it, is multiplied by
+	 * `mix(1, color, weight)`. `null` without one
+	 */
+	albedoTint: { color: Rgb; weight: Weight } | null;
 	/** `_EMISSIVE_ANIM`'s pulse, `null` when still */
 	pulse: {
 		/** cycles per second */
