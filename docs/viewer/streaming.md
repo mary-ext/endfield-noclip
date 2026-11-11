@@ -267,10 +267,12 @@ the renderers and stores that own the GPU side; their residency shapes are in
 - **uploading.** pinned first, then by priority, until the frame has uploaded 24 MiB or spent 2 ms
   on unpinned uploads (at least one a frame). the cost is per upload more than per byte: a frame
   fits hundreds of average geometry blobs in 24 MiB, and flying over map02 bursts of dozens of
-  uploads landed on the worst frames. the game spends 1.5 ms a frame loading
-  ([streaming layers](../game-data/world.md#streaming-layers)). decoded content nobody has wanted
-  for 30 frames is dropped instead. a full pool evicts up to 16 resident, unpinned blobs of the same
-  kind that weren't used this frame and have no higher priority, oldest first, and retries.
+  uploads landed on the worst frames. large uploads go through a [staging buffer](gpu-resources.md),
+  since a queue write of a megabyte stalls the main thread for longer than the whole budget. the
+  game spends 1.5 ms a frame loading ([streaming layers](../game-data/world.md#streaming-layers)).
+  decoded content nobody has wanted for 30 frames is dropped instead. a full pool evicts up to 16
+  resident, unpinned blobs of the same kind that weren't used this frame and have no higher
+  priority, oldest first, and retries.
 - **budget.** resident bytes of all kinds count against `budgetMiB` (default 768, since the densest
   views, such as Wuling City at street level, want up to about 700 MiB). over budget, the least
   recently used unpinned blobs not used this frame are evicted. if the budget is still exceeded by

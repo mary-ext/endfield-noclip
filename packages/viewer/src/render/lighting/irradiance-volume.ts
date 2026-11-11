@@ -5,6 +5,7 @@ import { createUniformBuffer } from '../../gfx/buffers.ts';
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
+import { writeBufferStaged } from '../../gfx/staged-write.ts';
 import { vec3From } from '../../math/vec3.ts';
 import type { DecodedIrradiance } from '../../package/decode-protocol.ts';
 import type { ResidentIrradiance } from '../../streaming/resident.ts';
@@ -286,7 +287,7 @@ export class IrradianceVolume {
 		if (alloc === null) {
 			return null;
 		}
-		this.#device.queue.writeBuffer(this.#buffer.buffer, alloc.start * 4, decoded.data);
+		writeBufferStaged(this.#device, this.#buffer.buffer, alloc.start * 4, decoded.data);
 		return { kind: 'irradiance', bytes: decoded.data.byteLength, alloc };
 	}
 

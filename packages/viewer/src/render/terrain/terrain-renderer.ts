@@ -14,6 +14,7 @@ import { freeSlots } from '../../gfx/free-slots.ts';
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, LINEAR_REPEAT_MIPMAPPED, sampler } from '../../gfx/samplers.ts';
+import { type TexelWrite, writeTexturesStaged } from '../../gfx/staged-write.ts';
 import type {
 	DecodedSplat,
 	DecodedHeights,
@@ -400,25 +401,29 @@ export class TerrainRenderer {
 		}
 		const { textureSize, textureLevels } = layers.info;
 		let bytes = 0;
+		const writes: TexelWrite[] = [];
+		const data = new Uint8Array(decoded.data);
 		for (const target of targets) {
 			let offset = 0;
 			for (let level = 0; level < textureLevels; level++) {
 				const size = Math.max(1, textureSize >> level);
 				const blocks = Math.ceil(size / 4);
 				const levelBytes = bc7LevelBytes(size);
-				if (offset + levelBytes > decoded.data.byteLength) {
+				if (offset + levelBytes > data.byteLength) {
 					throw new Error(`terrain layer blob ${blob} is shorter than its ${textureLevels} levels`);
 				}
-				this.#device.queue.writeTexture(
-					{ texture: target.texture, mipLevel: level, origin: [0, 0, target.layer] },
-					decoded.data,
-					{ offset, bytesPerRow: blocks * 16, rowsPerImage: blocks },
-					[blocks * 4, blocks * 4, 1],
-				);
+				writes.push({
+					destination: { texture: target.texture, mipLevel: level, origin: [0, 0, target.layer] },
+					data: data.subarray(offset, offset + levelBytes),
+					bytesPerRow: blocks * 16,
+					rowsPerImage: blocks,
+					size: [blocks * 4, blocks * 4, 1],
+				});
 				offset += levelBytes;
 			}
 			bytes += offset;
 		}
+		writeTexturesStaged(this.#device, writes);
 		layers.uploaded.add(blob);
 		return { kind: 'layer', bytes };
 	}

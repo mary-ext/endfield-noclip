@@ -6,6 +6,7 @@ import {
 } from '@endfield-noclip/package-format/textures';
 
 import { sampler } from '../../gfx/samplers.ts';
+import { type TexelWrite, writeTexturesStaged } from '../../gfx/staged-write.ts';
 import type { DecodedTexture } from '../../package/decode-protocol.ts';
 import type { ResidentTexture } from '../../streaming/resident.ts';
 
@@ -349,24 +350,28 @@ export class TextureStore {
 		const next = this.#create(state, top);
 		this.#replace(state, next, top);
 		const info = TEXTURE_FORMATS[state.entry.format];
+		const writes: TexelWrite[] = [];
 		for (const data of pieces) {
 			const piece = state.entry.pieces[state.integrated];
 			let at = 0;
 			for (let level = piece.firstLevel; level < piece.firstLevel + piece.levelCount; level++) {
 				const layout = textureLevelLayout(state.entry, level);
-				this.#device.queue.writeTexture(
-					{ texture: next, mipLevel: level - top },
-					data.subarray(at, at + layout.byteLength),
-					{ bytesPerRow: layout.bytesPerRow, rowsPerImage: layout.rowsPerImage },
-					[
+				writes.push({
+					destination: { texture: next, mipLevel: level - top },
+					data: data.subarray(at, at + layout.byteLength),
+					bytesPerRow: layout.bytesPerRow,
+					rowsPerImage: layout.rowsPerImage,
+					size: [
 						blockAligned(layout.width, info.blockWidth),
 						blockAligned(layout.height, info.blockHeight),
 						layout.depthOrArrayLayers,
 					],
-				);
+				});
 				at += layout.byteLength;
 			}
 			state.integrated++;
 		}
+		// the large levels in one staging buffer: written straight to the queue, they stall the main thread
+		writeTexturesStaged(this.#device, writes);
 	}
 }

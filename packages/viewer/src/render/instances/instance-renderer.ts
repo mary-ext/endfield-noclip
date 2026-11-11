@@ -22,6 +22,7 @@ import { freeSlots } from '../../gfx/free-slots.ts';
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import type { RangeAllocation } from '../../gfx/range-allocator.ts';
+import { writeBufferStaged } from '../../gfx/staged-write.ts';
 import type { DecodedInstances } from '../../package/decode-protocol.ts';
 import type { GpuRows } from '../../streaming/gpu-cull-work.ts';
 import type { ResidentInstances } from '../../streaming/resident.ts';
@@ -240,7 +241,7 @@ export class InstanceRenderer {
 		}
 		assignBlockSlot(decoded.rows, slot);
 		if (alloc.count > 0) {
-			this.#device.queue.writeBuffer(this.#pool.buffer, alloc.start * ROW_BYTES, decoded.rows);
+			writeBufferStaged(this.#device, this.#pool.buffer, alloc.start * ROW_BYTES, decoded.rows);
 		}
 		if (placements.count > 0) {
 			this.#device.queue.writeBuffer(

@@ -102,6 +102,16 @@
   with data (index buffers, configs, fixed per-pass uniforms) are filled mapped at creation rather
   than through a queue write; a pass's own uniform block is a `UNIFORM | COPY_DST` buffer it
   rewrites with `writeBuffer`.
+- **staged writes** ([`gfx/staged-write.ts`](../../packages/viewer/src/gfx/staged-write.ts)):
+  streamed data of 128 KiB or more (texture levels, terrain layer textures, large geometry streams,
+  instance blocks and irradiance cells) is copied from a staging buffer mapped at creation rather
+  than written with `queue.writeTexture` or `queue.writeBuffer`. Chrome hands a queue write's bytes
+  to the GPU process inside the call, in pieces it waits on once they pass about a megabyte: a 1 MiB
+  `writeTexture` took about 2 ms of the main thread on an idle device and 15–30 ms while streaming,
+  where filling a mapped buffer and copying from it takes about 0.1 ms. a texture level goes through
+  the buffer only when its row pitch is a multiple of 256 bytes, as `copyBufferToTexture` requires
+  (every BC level at least 64 texels wide); a texture's large levels share one buffer and one
+  submit.
 - **texture sets** ([`gfx/texture-set.ts`](../../packages/viewer/src/gfx/texture-set.ts)): each post
   pass (and the water's foam) keeps its targets for the current render size in one set, which it
   destroys and refills on resize; the set counts its bytes from the formats and mip levels, which

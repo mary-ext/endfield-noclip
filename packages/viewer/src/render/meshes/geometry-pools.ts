@@ -6,6 +6,7 @@
  */
 
 import { type RangeAllocation, RangeAllocator } from '../../gfx/range-allocator.ts';
+import { writeBufferStaged } from '../../gfx/staged-write.ts';
 
 import { UV_FORMATS, type UvFormat } from './pipeline-variants.ts';
 
@@ -353,19 +354,15 @@ export class GeometryPools {
 			pool.free(vertices);
 			return null;
 		}
-		const queue = this.#device.queue;
+		const device = this.#device;
 		for (const stream of pool.stored) {
 			const buffer = pool.buffer(stream);
 			const bytes = strideOf(stream, geometry.uvFormat);
 			const offset = vertices.start * bytes;
 			const data = streams[stream] ?? (stream === 'uv1' ? streams.uv0 : null);
-			if (data === null) {
-				queue.writeBuffer(buffer, offset, this.#zeroes(geometry.vertexCount * bytes));
-			} else {
-				queue.writeBuffer(buffer, offset, data);
-			}
+			writeBufferStaged(device, buffer, offset, data ?? this.#zeroes(geometry.vertexCount * bytes));
 		}
-		queue.writeBuffer(indexPool.indices.buffer, indices.start * 4, geometry.indices);
+		writeBufferStaged(device, indexPool.indices.buffer, indices.start * 4, geometry.indices);
 		return {
 			vertices: pool.vertices,
 			indices: indexPool.indices,
@@ -390,7 +387,7 @@ export class GeometryPools {
 	}
 
 	/** @returns `bytes` zeros, a view of a buffer shared across calls */
-	#zeroes(bytes: number): Uint8Array {
+	#zeroes(bytes: number): Uint8Array<ArrayBuffer> {
 		if (this.#zeros.byteLength < bytes) {
 			this.#zeros = new Uint8Array(bytes);
 		}
