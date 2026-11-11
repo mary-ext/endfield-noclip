@@ -89,6 +89,13 @@ fn height_of(raw: u32) -> f32 {
 	return frame.terrain.x + f32(raw & (hole_bit() - 1u)) * frame.terrain.y;
 }
 
+// whether a fragment's triangle touches a hole vertex. the game drops such a triangle whole, and so must this:
+// most holes sit at height 0, so any share of one kept below a solid edge is a curtain metres tall. the
+// interpolated flag is exactly 0 only where all three vertices are solid
+fn in_hole(hole: f32) -> bool {
+	return hole > 0.0;
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VertexOut {
 	let p = patches[ii];
@@ -291,7 +298,7 @@ fn fs_main(in: VertexOut) -> Shaded {
 	let bias = exp2(frame.params.y);
 	f.dx = dpdx(in.world) * bias;
 	f.dy = dpdy(in.world) * bias;
-	if (in.hole > 0.01) {
+	if (in_hole(in.hole)) {
 		discard;
 	}
 	var s: Surface;
@@ -332,7 +339,7 @@ fn fs_main(in: VertexOut) -> Shaded {
 
 @fragment
 fn fs_wire(in: VertexOut) -> Shaded {
-	if (in.hole > 0.01) {
+	if (in_hole(in.hole)) {
 		discard;
 	}
 	return unlit(mix(vec3f(0.02), hue(f32(in.level) * 0.17) * 0.6, 0.5));
@@ -340,7 +347,7 @@ fn fs_wire(in: VertexOut) -> Shaded {
 
 @fragment
 fn fs_shadow(in: VertexOut) {
-	if (in.hole > 0.01) {
+	if (in_hole(in.hole)) {
 		discard;
 	}
 }

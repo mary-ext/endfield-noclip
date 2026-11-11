@@ -12,7 +12,7 @@ export const TERRAIN_LEAF_METRES = 64;
 /** samples per height page edge; pages share their edge samples with neighbours */
 export const TERRAIN_PAGE_SAMPLES = 65;
 
-/** a raw height sample's hole flag; the other 15 bits are the height, which holes keep */
+/** a raw height sample's hole flag; the other 15 bits are the height, which is 0 on most holes */
 export const TERRAIN_HOLE_BIT = 0x80_00;
 
 /** texels per surface and splat page edge, border included */
@@ -87,7 +87,8 @@ export interface TerrainLayerInfo {
 
 /**
  * @param sample a raw height sample
- * @returns whether the sample is flagged as a hole; holes still carry a usable height
+ * @returns whether the sample is flagged as a hole; most holes' heights are 0, so don't draw or interpolate
+ *   with one
  */
 export const isTerrainHole = (sample: number): boolean => {
 	return (sample & TERRAIN_HOLE_BIT) !== 0;

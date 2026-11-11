@@ -9,8 +9,15 @@ describes. which pages a frame selects and streams is in
 
 the baked surface pages ([terrain](../game-data/world.md#terrain)) are drawn as stored: albedo,
 normal, roughness and occlusion; the `A` page's subsurface curvature isn't drawn. patches without a
-resident surface page get a stand-in colour by slope, and holes are discarded. rain wetness applies
-on top, as on other surfaces ([wetness](environment.md#wetness)).
+resident surface page get a stand-in colour by slope. rain wetness applies on top, as on other
+surfaces ([wetness](environment.md#wetness)).
+
+[holes](../game-data/world.md#terrain) are cut as the game's base terrain pass cuts them: a triangle
+touching a hole vertex isn't drawn at all. each vertex passes a hole flag on, and a fragment is
+discarded unless the interpolated flag is exactly 0 (`in_hole`), which only a triangle of three
+solid vertices gives. no share of such a triangle may be kept: most holes sit at the terrain's base
+height, hundreds of metres down, so even a hundredth of one hangs a curtain several metres tall
+below every edge of solid ground. the triangles are still rasterized before they're discarded.
 
 ### close-up layers
 

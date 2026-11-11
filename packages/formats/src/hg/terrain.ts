@@ -320,8 +320,8 @@ export const TERRAIN_LEAF_SIZE = 64;
 
 /**
  * the hole flag of a height sample, which also makes the full 15-bit range: world Y is `position.y + (h &
- * 0x7fff) · heightScale / 32768`. holes keep a plausible height in their low bits, which suits skirts and
- * morphing but not rendering.
+ * 0x7fff) · heightScale / 32768`. most holes have no height (their low bits are 0); only some beside solid
+ * ground keep one, so a hole's height is never one to draw or interpolate with.
  */
 export const TERRAIN_HEIGHT_HOLE = 0x80_00;
 

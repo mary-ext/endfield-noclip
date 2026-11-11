@@ -230,6 +230,11 @@ packs or renders correctly.
   curvature aren't drawn; the fade distances are the viewer's own and the blend's GPU cost is
   unprofiled. terrain LOD uses the viewer's own sample-spacing rule, since what the game uses
   `maxHeightError` for isn't known ([streaming](viewer/streaming.md#terrain-selection))
+- terrain holes ([terrain](viewer/terrain.md#terrain)) follow the game's base pass, where one hole
+  vertex drops its triangles; if the PC build draws its subdivision passes close up
+  ([terrain](game-data/world.md#terrain), untraced), solid ground reaches up to a sample further
+  into holes there than the viewer draws it. triangles touching a hole are rasterized and then
+  discarded, though they can span the screen
 - puddles ([terrain](viewer/terrain.md#puddles)) stop past the leaf splat pages' load distance,
   ignore the parallax layers' height, and have no ripples
 - HLOD/detail, LOD and mip swaps pop without cross-fade; ground-blend and decal meshes z-fight

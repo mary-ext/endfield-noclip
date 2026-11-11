@@ -518,8 +518,14 @@ MonoBehaviour at
 - `sectorSplatInfo`: one u64 per 64 m sector, a bitmask of the layer ordinals the sector uses
   (checked against the index map on map02)
 
-world Y of a sample is `position.y + (h & 0x7fff) · heightScale / 32768`. bit 15 marks a hole, whose
-low bits still hold a plausible height.
+world Y of a sample is `position.y + (h & 0x7fff) · heightScale / 32768`. bit 15 marks a hole. on
+map01 and map02 about 95% of holes have no height (their low bits are 0, the terrain's base); only
+some beside solid ground keep one. holes are cut per vertex: the terrain's vertex shader gives a
+vertex on a hole sample no position, so every triangle touching it is dropped whole, and a solid
+sample ringed by holes draws nothing. the game's subdivision passes (`TerrainDepthOnlySubdivision`
+and its like) instead read the four samples around a vertex, drop it only when all four are holes,
+and take its height from the solid ones alone; which of the two the PC build draws close up isn't
+traced.
 
 ### close-up layers
 
