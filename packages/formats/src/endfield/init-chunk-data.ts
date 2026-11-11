@@ -13,7 +13,8 @@ import { levelTagOf } from './level-partition.ts';
 //   0 u32 version (47, 49)        1 i32×2 chunk origin (x·128, z·128); Global stores (INT32_MAX, INT32_MIN)
 //   2 [row]   empty in Init   3 [u32] object ids     4 [u8] object kinds     5 [table] object rows
 //   6 [table{[u32]}] per-group entity ids             7 [table] component groups, parallel to 6
-// object rows are a union vector: slot 4 is the tag, and each row's field 0 is the full object name.
+// object rows are a union vector: slot 4 is the tag, each row's field 0 is the full object name and field 1
+// its streaming layer.
 // component group, 5 slots:
 //   0 128-bit descriptor-id mask   1 u32 count   2 f32×6 group AABB (centre, extents; zero = unset)
 //   3 [(u16 component id, u16 stride, u32 0)]   4 table{[u8]} component-major blob of count·Σstride bytes
@@ -29,7 +30,27 @@ export interface ChunkObject {
 	/** union tag of the row: a {@link ChunkObjectKind} value, or another the game has */
 	kind: number;
 	name: string;
+	/** a {@link StreamingLayer} value: the layer whose grid and radius load the object */
+	layer: number;
 }
+
+/**
+ * the game's `StreamingLayer`: each has its own grid and load radius
+ * (docs/game-data/world.md#streaming-layers)
+ */
+export const StreamingLayer = {
+	Default: 0,
+	Persistent: 1,
+	HLOD0: 2,
+	HLOD1: 3,
+	HLOD2: 4,
+	Collider: 5,
+	Tiny: 6,
+	Water: 7,
+	Lighting: 8,
+	Audio: 9,
+	RendererWithCollider: 10,
+} as const;
 
 /** {@link ChunkObject.kind} values with a decoder; what each holds is by name census */
 export const ChunkObjectKind = {
@@ -108,6 +129,8 @@ export interface ChunkEntity {
 	/** `id >>> 27`: the owning level's namespace; 0 is the map-wide shared set */
 	levelTag: number;
 	name: string;
+	/** a {@link StreamingLayer} value, from the entity's object row; `Default` without a row */
+	layer: number;
 	/** 4×4 column-major object-to-world matrix, when the entity has one */
 	matrix: Float32Array | null;
 	/** world bounds, when present */
@@ -273,10 +296,13 @@ const parseChunk = (fb: FlatBuffer, idsFb: FlatBuffer): InitChunk => {
 		}
 		for (let i = 0; i < ids.length; i++) {
 			const row = fb.tableAt(rows.start, i);
+			// left out of the row when it's the default, 0
+			const layerAt = fb.field(row, 1);
 			objects.push({
 				id: fb.u32(ids.start + i * 4),
 				kind: fb.u8(kinds.start + i),
 				name: textDecoder.decode(fb.byteVector(row, 0)),
+				layer: layerAt === undefined ? StreamingLayer.Default : fb.u8(layerAt),
 			});
 		}
 	}
@@ -354,8 +380,10 @@ const parseChunk = (fb: FlatBuffer, idsFb: FlatBuffer): InitChunk => {
  */
 export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 	const names = new Map<number, string>();
+	const layers = new Map<number, number>();
 	for (const object of chunk.objects) {
 		names.set(object.id, object.name);
+		layers.set(object.id, object.layer);
 	}
 
 	const entities: ChunkEntity[] = [];
@@ -423,6 +451,7 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 				id,
 				levelTag: levelTagOf(id),
 				name,
+				layer: layers.get(id) ?? StreamingLayer.Default,
 				matrix,
 				bounds,
 				renderer,

@@ -75,7 +75,8 @@ gates each row. `--kind` picks sources (default all):
 
 visibility prints as the scene controls the package would carry, under the default game state:
 alternatives joined by `|`, requirements by `&`, each `control=values` with the values that satisfy
-it (`always` when nothing gates the row).
+it (`always` when nothing gates the row). a `static` row also names its
+[streaming layer](game-data/world.md#streaming-layers).
 
 - `--name` matches entity names, mesh and material paths, prefab paths and row sources.
 - `--near x,y,z --radius n` keeps rows whose world bounds (else pivot or placement position) lie

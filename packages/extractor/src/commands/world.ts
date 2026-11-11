@@ -3,7 +3,7 @@ import { basename } from 'node:path/posix';
 import { parseArgs } from 'node:util';
 
 import type { EnvironmentVolume } from '@endfield-noclip/formats/endfield/environment-volume';
-import type { ChunkEntity } from '@endfield-noclip/formats/endfield/init-chunk-data';
+import { StreamingLayer, type ChunkEntity } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import {
 	cellKey,
 	levelOfTag,
@@ -471,7 +471,7 @@ async function* staticCandidates(
 					level: entity.membership.level?.id ?? entity.membership.bucket,
 					visibility,
 					source: basename(entity.source.name),
-					summary: drawSummary(entity, names),
+					summary: `${drawSummary(entity, names)}  layer ${layerName(entity.layer)}`,
 					standIns: reasons,
 					json: {
 						kind: 'static',
@@ -1084,6 +1084,7 @@ const entityJson = (
 		placement: entity.membership.placement,
 		cellOwner: entity.membership.cellOwner?.id ?? null,
 		name: entity.name,
+		layer: layerName(entity.layer),
 		source: entity.source.name,
 		sceneState: entity.source.sceneState,
 		area: entity.source.area,
@@ -1091,6 +1092,10 @@ const entityJson = (
 		...chunkEntityJson(entity, names),
 	};
 };
+
+/** @returns a streaming layer's name in the game's `StreamingLayer`, or its number when it has none */
+const layerName = (layer: number): string =>
+	Object.entries(StreamingLayer).find(([, value]) => value === layer)?.[0] ?? String(layer);
 
 /** the fields every decoded entity has, wherever it was read from */
 const chunkEntityJson = (entity: ChunkEntity, { pathOf, bundleOf }: AssetNames): object => {

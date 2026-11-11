@@ -11,6 +11,7 @@ import {
 	parseDynamicChunk,
 	parseInitChunk,
 	readChunkEntities,
+	StreamingLayer,
 } from './init-chunk-data.ts';
 
 // #region synthetic chunk
@@ -44,8 +45,12 @@ const buildChunk = (
 	const rows = w.vector(4, ids.length);
 	w.link(table.fields[5], rows.at);
 	names.forEach((name, i) => {
-		const row = w.table([4]);
+		// the rock leaves its layer out (Default); the tree is on Tiny
+		const row = w.table(i === 0 ? [4] : [4, 1]);
 		w.link(rows.start + i * 4, row.at);
+		if (i !== 0) {
+			w.bytes[row.fields[1]] = StreamingLayer.Tiny;
+		}
 		const bytes = encoder.encode(name);
 		// FlatBuffers strings: the length excludes the trailing NUL
 		const vector = w.vector(1, bytes.length);
@@ -192,6 +197,7 @@ test('readChunkEntities decodes transforms, bounds, names and draws', () => {
 	assert.equal(first.levelTag, 1);
 	assert.equal(second.levelTag, 2);
 	assert.equal(first.name, 'P_rock#1_123');
+	assert.deepEqual([first.layer, second.layer], [StreamingLayer.Default, StreamingLayer.Tiny]);
 	assert.deepEqual(first.bounds, { center: [0, 1, 2], extents: [3, 4, 5] });
 	assert.deepEqual(second.bounds?.center, [10, 11, 12]);
 	assert.deepEqual([first.matrix?.[12], first.matrix?.[14]], [100, -200]);

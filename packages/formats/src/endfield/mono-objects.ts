@@ -37,6 +37,8 @@ export type MonoValue =
 	| { type: 'uint64'; value: bigint }
 	| { type: 'vector3'; value: [x: number, y: number, z: number] }
 	| { type: 'vector4'; value: [x: number, y: number, z: number, w: number] }
+	/** four i32; only seen as an entity's HLOD link (`streaming-chunk-data.ts`) */
+	| { type: 'int4'; value: [a: number, b: number, c: number, d: number] }
 	| { type: 'bounds'; center: [x: number, y: number, z: number]; extents: [x: number, y: number, z: number] }
 	/** a StringPathHash key of an asset, plus a code for its kind (6 for ScriptableObjects, 1, 3, 4, 7, 8 seen) */
 	| { type: 'asset'; hash: bigint; kind: number }
@@ -81,6 +83,7 @@ export const ValueCode = {
 	Uint64: 6,
 	Vector3: 9,
 	Vector4: 10,
+	Int4: 13,
 	Bounds: 14,
 	Asset: 15,
 	String: 16,
@@ -263,6 +266,9 @@ const readValue = (fb: FlatBuffer, code: number, at: number): MonoValue => {
 		case ValueCode.Vector4: {
 			const [x, y, z, w] = floats(4);
 			return { type: 'vector4', value: [x, y, z, w] };
+		}
+		case ValueCode.Int4: {
+			return { type: 'int4', value: [fb.i32(at), fb.i32(at + 4), fb.i32(at + 8), fb.i32(at + 12)] };
 		}
 		case ValueCode.Bounds: {
 			const v = floats(6);

@@ -155,9 +155,9 @@ the suffixes are the game's `GridIdentifier` fields (`pos`, `sceneStateId`, `are
 calls the 128 m cell a grid.
 
 - `<x>_<z>` is the cell. most entity pivots fall inside their file's cell; large objects are filed
-  by bounds and repeat in each cell they touch. the `Global` file has no cell; that its content is
-  always resident is unchecked, since it also holds the HLOD clusters the game streams by distance
-  ([LOD and HLOD](#lod-and-hlod)).
+  by bounds and repeat in each cell they touch. the `Global` file has no cell: it holds the entities
+  of the [streaming layers](#streaming-layers) that don't load by file (`Persistent`, the three HLOD
+  layers and `Water`), so only its `Persistent` entities are always resident.
 - `<sceneState>` is 0 for always-loaded content and `n` for content shown only while MapConfig scene
   state `n − 1` is active (see [scene-states.md](scene-states.md)).
 - `<area>` is a stream-area id from `FBStreamArea` (below); 0 is the default area.
@@ -169,7 +169,8 @@ FlatBuffer.
 
 the root table has 8 slots: version (47 and 49 seen), the chunk origin (`x·128, z·128`; Global
 stores `INT32_MAX, INT32_MIN`), the object rows (ids, union kinds and tables, each row's field 0
-being the full object name), and parallel vectors of per-group entity ids and **component groups**.
+being the full object name and field 1 its [streaming layer](#streaming-layers), a `StreamingLayer`
+byte left out for `Default`), and parallel vectors of per-group entity ids and **component groups**.
 
 a component group is an ECS archetype stored column-major: a descriptor list of
 `(component id, stride)` and one blob of `count · Σ stride` bytes. component ids are anonymous
@@ -306,11 +307,11 @@ asset references and some nested blobs.
 a property table is three parallel vectors in slots 3–5: u32 keys, u8 value types and offsets to the
 values. rows hold them by kind:
 
-| kind | row                                                                                                                                                       |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | 5 slots: 0 the name (Init; empty in Streaming), 1 a u32 of unknown meaning, 3 an inline u64 `StreamingComponentType` mask, 4 a vector of component tables |
-| 2    | 6 slots in Streaming: 3 a property table, 4 sixteen zero bytes, 5 an empty vector. a light's Init row holds its property table in slot 3 too              |
-| 3    | 4 slots: 3 a property table ([foliage grids](#foliage-grids))                                                                                             |
+| kind | row                                                                                                                                                  |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | 5 slots: 0 the name (Init; empty in Streaming), 1 the streaming layer, 3 an inline u64 `StreamingComponentType` mask, 4 a vector of component tables |
+| 2    | 6 slots in Streaming: 3 a property table, 4 sixteen zero bytes, 5 an empty vector. a light's Init row holds its property table in slot 3 too         |
+| 3    | 4 slots: 3 a property table ([foliage grids](#foliage-grids))                                                                                        |
 
 a kind-1 component table is a property table with the component's type, one mask bit, as a u32 in
 slot 0. its keys' component is that bit's index (0 `Transform`, 4 `BoxCollider`, 14
@@ -325,6 +326,7 @@ entity archetype, so their meaning depends on the entity's InitChunkData compone
 | 4          | f32                                                                                                                                                         |
 | 6          | u64                                                                                                                                                         |
 | 9, 10      | f32×3, f32×4                                                                                                                                                |
+| 13         | i32×4; only seen as a renderer entity's [HLOD link](#lod-and-hlod) under `0xff000000`                                                                       |
 | 14         | bounds: centre and extents, f32×3 each                                                                                                                      |
 | 15         | asset: u64 StringPathHash key, then a u32 code for its kind (6 for ScriptableObjects; 1, 3, 4, 7 and 8 seen)                                                |
 | 16         | string: a table whose slot 0 holds the bytes                                                                                                                |
@@ -389,9 +391,11 @@ the file is a FlatBuffer whose root (`FBStreamAreaTotalData`) holds:
 
 root slots 7–9 (`HlodUnloadBounds`, `HlodUnloadTriggers`, `HlodUnloadPoints`) are HLOD-unload
 trigger volumes in the same layout, each with an unload mask. while the streaming centre is inside
-one or more of them the game unloads the HLOD the union of their masks selects, on top of the
-[HLOD rings](#streaming-layers); outside them, or in a scene without any, nothing extra unloads.
-what a mask bit selects isn't known.
+one or more of them the game unloads the meshes of the HLOD clusters the union of their masks
+selects, whether or not the clusters are [hidden](#lod-and-hlod), which leaves them nothing to draw;
+outside them, or in a scene without any, nothing extra unloads. a mask bit selects the clusters
+carrying that index in a per-cluster byte, a sub-scene by the mask's name; where the byte is stored
+isn't found.
 
 areas are not interiors only: a level can hold several versions of the same place's backdrop, each
 shown from its own zone. map02's Si's Painting has a cliff and floating-rock backdrop (area
@@ -570,11 +574,29 @@ atlases.
   named `HLOD<tier>_<i>_<j>_Cluster_<hash>…`, `i`/`j` being the tier's grid cell, with negative
   coordinates clamped to 0 (west and south of the grid origin every cluster is named on cell 0). one
   large member can stretch a cluster's bounds hundreds of metres past its cell. their draw range is
-  unbounded, so HLOD visibility is decided by the HLOD/streaming system, not by LODGroup. they occur
-  only in always-loaded (scene state 0) Global chunk files (every scene of the install), and only
-  the `pc` HLOD platform variant ships. Jingyu's tiers run from a few hundred meshes and about 450k
+  unbounded, so HLOD visibility is decided by the HLOD links below, not by LODGroup. they occur only
+  in Global chunk files, on the [streaming layer](#streaming-layers) of their tier, and only the
+  `pc` HLOD platform variant ships. Jingyu's tiers run from a few hundred meshes and about 450k
   triangles (HLOD0) to a few dozen meshes and about 45k (HLOD2). the number after a cluster's hash
   (`_250`, `_600`) is its height rounded to 50 m, not a switch distance.
+- **HLOD links.** a renderer entity's StreamingChunkData row holds its place in the HLOD tree under
+  `0xff000000` (the game's `HLODInfo`): its own entity id, its parent cluster's id (0 without one),
+  how many children name it as their parent, and its index among its parent's children (−1 without
+  one); all zero for an entity outside every tree. an HLOD2 cluster's children are HLOD1 clusters,
+  an HLOD1's are HLOD0 clusters, and an HLOD0's are the renderers it was built from, in the cell
+  files on the `Default` and `RendererWithCollider` layers. top tiers are missing where a scene has
+  none (map01 has no HLOD2), and a few clusters have no parent. the game counts each cluster's
+  loaded children as entities enter and leave the scene:
+  - a cluster hides once every one of its children is loaded, and shows again when one unloads
+  - a child hides while its parent is loaded and one of its siblings isn't; with the parent not
+    loaded it shows
+  - so a child that never loads (a few HLOD1 clusters count more children than the files hold, and
+    children in a scene-state or area file load only with it) keeps its cluster shown and its
+    siblings hidden
+- **unlinked clusters.** an entity named as a cluster whose link is zero is never hidden: it's
+  ordinary scenery on its layer. indie_dg005's are all like that, about 240 HLOD0 clusters on the
+  `Persistent` layer that are Wuling City seen from the office windows, with the buildings they were
+  built from not shipped; map02 and dung02_rdg008 have a handful on their tier's layer.
 - **HLOD grids.** each tier's cells double the previous tier's, but the tier-0 cell and the grid
   origin vary by scene, and where the game stores them isn't found. fitted to cluster names (the
   origin most cluster centres agree with, over 95 % per axis): HLOD0 cells are 64 m with the origin
@@ -605,8 +627,13 @@ HLOD tier an HLOD level.
 | `Tiny`                 | 32 m  | cell               | 10       |
 
 layers that read their entities from Global are why HLOD clusters and water decals occur only in
-Global chunk files. a lower priority loads first, then the nearer cells. where an entity's layer is
-stored in the chunk files isn't found (the InitChunkData schema is native).
+Global chunk files. a lower priority loads first, then the nearer cells. an entity's layer is a byte
+in its [object row](#initchunkdata-layout), and the HLOD layers hold more than clusters: scenery
+meant to show as far as a tier does sits on that tier's layer without a link, so it loads within the
+tier's radius and never hides. that's about 17 thousand map02 entities across the three HLOD layers
+(most of its `farmod` far-field assets among them, the rest being `Persistent` or `Default`) and
+nearly every static renderer of indie_dg005, on `HLOD1`. `Tiny` holds about 70 thousand of map02's
+small renderers.
 
 the radii come from the settings INI TextAssets (`assets/beyond/initialassets/settings/*.ini` in the
 initial bundles; PC reads `desktopsettings.ini`), sections `[Streaming@<preset>]`, over defaults in
@@ -640,11 +667,17 @@ has `Default` 64, `HLOD0` 128, `HLOD1` 896 and `HLOD2` 1280 m.
   position (seamless and extra loads).
 - **hysteresis.** cells are added on a pass after the centre has moved 4 m and removed on a pass
   after 20 m (12 m by code default and on mobile), so a cell unloads at up to 20 m past its radius.
-- **HLOD rings.** each HLOD tier hides inside the radius of the next finer layer: HLOD0 inside
-  `Default`'s, HLOD1 inside HLOD0's, HLOD2 inside HLOD1's. at preset 5000 that's detail to 256 m,
-  HLOD0 to 640 m, HLOD1 to 1024 m and HLOD2 to 2048 m, with nothing streamed beyond. what the
-  distance is measured to (cluster centre or bounds) and whether a tier waits for the finer one to
-  load isn't known.
+- **HLOD rings.** no distance hides a cluster: the [HLOD links](#lod-and-hlod) do, once all its
+  children are loaded, so the rings follow from the layers' radii. a cluster's children load within
+  the next finer layer's radius, which puts HLOD0 clusters out from about `Default`'s radius, HLOD1
+  from HLOD0's and HLOD2 from HLOD1's: at preset 5000 detail to 256 m, HLOD0 to 640 m, HLOD1 to 1024
+  m and HLOD2 to 2048 m, with nothing streamed beyond. the swap is per cluster and waits for the
+  last child, so a cluster whose children span several cells shows until the farthest one is in
+  range, hiding its nearer children meanwhile.
+- **HLOD resources.** separately, a hidden cluster's meshes unload while the camera (in 3D, to a
+  point stored per cluster) is within the next finer layer's radius, and load again beyond it; a
+  cluster that isn't hidden keeps them. the [HLOD-unload volumes](#stream-areas) unload them
+  regardless.
 - **time budget.** loading gets 1.5 ms and unloading 2.5 ms per frame (3.5 and 0.5 by code default),
   scaled by the smoothed frame time over 33.3 ms (0.1–2×), so about 0.75 and 1.25 ms at 60 fps;
   teleports have no limit.
@@ -701,20 +734,14 @@ campfire's LevelData id, with the arrival point 4.3 m from the campfire.
   is for
 - the meaning of a negative `minSquared` (never culled by size, or culled below `√−minSquared`)
 - the size the LODGroup thresholds are authored against (the object's bounds, a LODGroup size, …)
-- what an HLOD ring's distance is measured to, and the HLOD generated-material channel layout
-- where a scene's HLOD grid (tier-0 cell and origin) is defined, and why it leaves the terrain
-  quadtree in some scenes
-- whether HLOD clusters stand in for Global chunk content: indie_dg005 has every static renderer in
-  its Global chunk (most of them inside an HLOD0 cluster's bounds) and none in cell files, so there
-  the clusters can only stand in for Global content
-- where an entity's streaming layer is stored, and what an HLOD-unload volume's mask selects
+- the HLOD generated-material channel layout
+- where a scene's HLOD grid (the cell and origin cluster names count on) is defined, why it leaves
+  the terrain quadtree in some scenes, and how it relates to the HLOD layers' own grids
+- where a cluster's sub-scene index is stored, which an HLOD-unload volume's mask selects
   ([stream areas](#stream-areas))
 - what effect LOD level 2 turns off inside a prefab, and the dynamic rows' `Dis` and `MinDis`, which
   nothing reads at runtime; a third kind of LOD proxy that does cull by the visibility record isn't
   followed
-- `farmod` far-field assets: ordinary entities (all in the Global chunk on map01 and base01_lv001,
-  mixed Global and cell files on map02), not a layer of their own; that they're always loaded is
-  unconfirmed
 - what dungeon levels that reuse an open-world scene add of their own: a census of map02's chunk
   files found no tags but 0, 31 and lv001–lv010's, so it can only come from LevelData and
   DynamicStreaming

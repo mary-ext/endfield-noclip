@@ -48,8 +48,24 @@ export interface StreamingChunk {
 
 // #endregion
 
+/**
+ * an entity's place in the HLOD tree (the game's `HLODInfo`): a cluster hides once every child is loaded, and
+ * a child hides while its parent is loaded and a sibling isn't (docs/game-data/world.md#lod-and-hlod)
+ */
+export interface HlodLink {
+	/** the entity id of the parent cluster, or `null` at the top of a tree */
+	parent: number | null;
+	/** how many entities name this one as their parent; 0 for an entity that isn't a cluster */
+	childCount: number;
+	/** the entity's index among its parent's children, or -1 without a parent */
+	index: number;
+}
+
 /** the property key of a rect decal entity's (InitChunkData component 27) material */
 export const RECT_DECAL_MATERIAL_KEY = 0xff010000;
+
+/** the property key of a renderer entity's {@link HlodLink} (the key is a mesh asset on other archetypes) */
+const HLOD_LINK_KEY = 0xff000000;
 
 /**
  * parses a decoded StreamingChunkData FlatBuffer
@@ -86,6 +102,29 @@ export const parseStreamingChunk = (data: Uint8Array): StreamingChunk => {
 		return { id, kind: tag, properties };
 	});
 	return { version, records };
+};
+
+/**
+ * @param record a streamed object
+ * @returns the entity's HLOD link, or `null` for an object outside every HLOD tree (no link, or a zeroed one)
+ * @throws {FormatError} if the link's id isn't the object's
+ */
+export const hlodLink = (record: StreamingRecord): HlodLink | null => {
+	for (const { key, value } of record.properties) {
+		if (key !== HLOD_LINK_KEY || value.type !== 'int4') {
+			continue;
+		}
+		const [id, parent, childCount, index] = value.value;
+		if (id === 0) {
+			return null;
+		}
+		// the link's own id is the entity id, which is how children name their parent
+		if (id >>> 0 !== record.id) {
+			throw new FormatError(`object ${record.id} has an HLOD link of id ${id >>> 0}`);
+		}
+		return { parent: parent === 0 ? null : parent >>> 0, childCount, index };
+	}
+	return null;
 };
 
 /**
