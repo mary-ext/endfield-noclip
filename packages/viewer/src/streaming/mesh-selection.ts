@@ -3,10 +3,11 @@ import type { Chain } from '@endfield-noclip/package-format/instances';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { CULL_FLOATS, movingRows, ROW_WORDS } from '../content/instance-rows.ts';
-import { alphaTextureOf } from '../looks/look.ts';
+import { alphaTextureOf, LookFlags, type MaterialLook, UV1_SHIFT } from '../looks/look.ts';
 import type { LazyMaterialLooks } from '../looks/material-looks.ts';
 import type { ParticleField, ParticleView } from '../particles/particle-rows.ts';
 import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../render/shadows/shadow-map.ts';
+import type { MipSteps } from '../render/textures/mip-feedback.ts';
 import type { TextureStore } from '../render/textures/texture-store.ts';
 import type { Plane } from '../scene/camera.ts';
 
@@ -87,6 +88,12 @@ export interface MeshView {
 	particles: ParticleView;
 	/** leave the rows of groups whose LODs are all resident for the GPU to cull ({@link GpuCullWork}) */
 	gpuCulling: boolean;
+	/**
+	 * how finely the last frames sampled each material's textures, by material id, which the textures of
+	 * materials drawn in the main pass stream by; `null` streams every texture by its instances' size on
+	 * screen
+	 */
+	mips: MipSteps | null;
 }
 
 /** what the selector reads */
@@ -126,6 +133,19 @@ const LOOSE_SEGMENT = 0.25;
  */
 const bandPixels = (slot: ChainSlot, viewportHeight: number): number =>
 	Math.sqrt(slot.maxSquared) * viewportHeight;
+
+/**
+ * the texture slots the main pass samples by the mesh's UV sets alone, which its mip feedback covers: base
+ * colour, normal, mask, emissive and detail. the parallax slots also hold layers mapped by world position
+ */
+const FEEDBACK_SLOTS = 5;
+
+/**
+ * @param look a material's look
+ * @returns whether the main pass's mesh shader shades its draws in view, and so reports their mips
+ */
+const sampledInMainPass = (look: MaterialLook): boolean =>
+	(look.queue === 'opaque' || look.queue === 'cutout') && (look.flags & LookFlags.Effect) === 0;
 
 /** @returns a number standing for the view options {@link slotHidden} reads */
 const slotFilterKey = (view: MeshView): number =>
@@ -416,14 +436,28 @@ export class MeshSelector {
 						alpha,
 						bucket.pixels * texturePixels,
 						look.uvScales[look.textures.indexOf(alpha)],
+						bucket.pixels,
 					);
 				}
 				continue;
 			}
+			// the main pass reports how finely it samples the materials it shades
+			const mips = sampledInMainPass(look) ? view.mips : null;
 			for (let i = 0; i < look.textures.length; i++) {
 				const texture = look.textures[i];
-				if (texture !== null) {
-					this.#textures.forPixels(texture, bucket.pixels * texturePixels, look.uvScales[i]);
+				if (texture === null) {
+					continue;
+				}
+				if (mips === null || i >= FEEDBACK_SLOTS) {
+					this.#textures.forPixels(texture, bucket.pixels * texturePixels, look.uvScales[i], bucket.pixels);
+					continue;
+				}
+				const steps = mips.steps(bucket.material, (look.flags >> (UV1_SHIFT + i)) & 1);
+				if (steps < 0) {
+					// no pixel of it was read: hidden, or about to show
+					this.#textures.forUnseen(texture, bucket.pixels * texturePixels, look.uvScales[i], bucket.pixels);
+				} else {
+					this.#textures.forFootprint(texture, steps, look.uvScales[i], view.textureBias, bucket.pixels);
 				}
 			}
 			if (look.volumeTexture !== null) {

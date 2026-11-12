@@ -333,6 +333,9 @@ export const encodeFrame = (
 		pass.end();
 	}
 	const scene = targets.scene;
+	if (settings.scene && scene.mipFeedback !== null) {
+		meshes.encodeMipFeedback(encoder, { view: scene.mipFeedback, width, height }, context.index);
+	}
 	if (sceneFrame !== null) {
 		const pass = beginPass(
 			encoder,

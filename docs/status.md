@@ -87,7 +87,10 @@ packs or renders correctly.
   set ([geometry](package-format.md#binary-encodings))
 - screen-space reflections
   ([screen-space reflections](viewer/lighting.md#screen-space-reflections)): the rain wetness
-  variant's ripple normals aren't drawn, and reflection-only effects don't write the march's inputs
+  variant's ripple normals aren't drawn, and reflection-only effects don't write the march's inputs.
+  thin emissive strips reflect as stable white speckles on glossy floors (Dijiang's deck, under its
+  light strips): only some of the half-resolution rays hit a strip a pixel or two wide, and the
+  temporal filter keeps each hit at full brightness. untraced beyond that
 - ambient occlusion ([ambient occlusion](viewer/post-processing.md#ambient-occlusion)): normals come
   from depth, one depth-aware blur stands in for the game's temporal and two spatial filters, there
   are no depth mips, and the reach is capped at 48 half-resolution pixels
@@ -611,10 +614,13 @@ packs or renders correctly.
   ([GPU resources](viewer/gpu-resources.md))
 - the terrain's close-up blending and the timestamp queries' own overhead are unprofiled; large
   regions at the default budget evict content during a flight
-- texture mips are picked from an instance's screen size as if its texture spanned it once; Unity's
-  streaming uses each mesh's UV density, which the packer doesn't store. the viewer's one budget
-  holds textures and meshes together, where the game budgets textures alone, so dense views fall
-  back on the [texture reduction](viewer/streaming.md#residency-and-budgets)
+- texture mips follow what the main pass samples ([mip feedback](viewer/streaming.md#mip-feedback)),
+  so a surface coming out from behind something, or seen first, is blurred for the moment its levels
+  take to load, where the game's CPU estimate has them loaded. glass, scene effects, shadow-only
+  casters and the parallax and layer slots still take their mips from the instance's screen size, as
+  if the texture spanned it once, as does everything on a device without room for the feedback
+  target. the viewer's one budget holds textures and meshes together, where the game budgets
+  textures alone
 - temporal antialiasing has no sharpening (the game sharpens by 0.3), and reprojects by depth and
   camera alone, so moving content reprojects as if it stood still ([frame](viewer/frame.md))
 

@@ -10,7 +10,15 @@ export interface GfxFeatures {
 	timestampQuery: boolean;
 	/** the `depth32float-stencil8` format, which gives the main pass a stencil buffer */
 	depth32floatStencil8: boolean;
+	/**
+	 * a render pass's colour targets may take {@link MIP_FEEDBACK_TARGET_BYTES} a sample, over WebGPU's default
+	 * of 32, which gives the main pass its mip feedback target
+	 */
+	mipFeedbackTarget: boolean;
 }
+
+/** bytes per sample of the main pass's colour targets with the mip feedback target (`MAIN_TARGETS`) */
+const MIP_FEEDBACK_TARGET_BYTES = 36;
 
 /** a ready device plus what it supports */
 export interface GfxDevice {
@@ -48,6 +56,7 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 		indirectFirstInstance: has('indirect-first-instance'),
 		timestampQuery: has('timestamp-query'),
 		depth32floatStencil8: has('depth32float-stencil8'),
+		mipFeedbackTarget: adapter.limits.maxColorAttachmentBytesPerSample >= MIP_FEEDBACK_TARGET_BYTES,
 	};
 	const requiredFeatures: GPUFeatureName[] = [];
 	if (features.textureCompressionBc) {
@@ -77,6 +86,9 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 			// the effect pipelines bind 19 sampled textures to their fragment stage, over the default 16
 			// (docs/viewer/gpu-resources.md)
 			maxSampledTexturesPerShaderStage: limits.maxSampledTexturesPerShaderStage,
+			...(features.mipFeedbackTarget
+				? { maxColorAttachmentBytesPerSample: MIP_FEEDBACK_TARGET_BYTES }
+				: undefined),
 		},
 	});
 	device.lost

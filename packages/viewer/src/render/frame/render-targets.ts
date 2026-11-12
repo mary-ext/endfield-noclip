@@ -1,4 +1,5 @@
 import { KEEP, PREMULTIPLIED_OVER } from '../../gfx/blend.ts';
+import { MIP_FEEDBACK_FORMAT } from '../textures/mip-feedback.ts';
 
 /**
  * reversed-Z depth: 1 at the near plane, 0 at infinity; cleared to 0 and tested with `greater`. with a
@@ -46,6 +47,12 @@ const MAIN_TARGETS: GPUColorTargetState[] = [
 ];
 
 /**
+ * {@link MAIN_TARGETS} and the meshes' mip feedback (`Shaded.mip_feedback` in frame.wgsl), where the device
+ * takes 36 bytes per sample; without the target, pipelines drop that output
+ */
+const MAIN_TARGETS_WITH_FEEDBACK: GPUColorTargetState[] = [...MAIN_TARGETS, { format: MIP_FEEDBACK_FORMAT }];
+
+/**
  * the transparent pass's colour target: the composited scene, which each transparent draw blends over, far to
  * near, as the game draws its transparent queue. shaders write fogged premultiplied colour and their opacity
  * (0 for additive light), and the scene's alpha stays as the composite left it
@@ -86,6 +93,11 @@ export interface SceneTextures {
 	depth: GPUTextureView;
 	/** the nearest water surface's depth in front of the scene, {@link WATER_DEPTH_FORMAT}; 0 where there's none */
 	waterDepth: GPUTextureView;
+	/**
+	 * the meshes' mip feedback (`pack_mip_feedback` in frame.wgsl), or `null` where the device has no room for
+	 * it
+	 */
+	mipFeedback: GPUTextureView | null;
 	/** bumped whenever the views or the output size change (resize, render scale) */
 	version: number;
 }
@@ -126,13 +138,24 @@ export class RenderTargets {
 	 * @param device the device
 	 * @param canvas the canvas to present to; observed for size changes
 	 * @param colorFormat swapchain format
-	 * @param stencil whether depth gets a stencil buffer; needs the `depth32float-stencil8` feature
+	 * @param features `stencil` gives depth a stencil buffer, which needs the `depth32float-stencil8` feature;
+	 *   `mipFeedback` gives the main pass its mip feedback target, which needs 36 bytes per sample of colour
+	 *   targets
 	 */
-	constructor(device: GPUDevice, canvas: HTMLCanvasElement, colorFormat: GPUTextureFormat, stencil: boolean) {
+	constructor(
+		device: GPUDevice,
+		canvas: HTMLCanvasElement,
+		colorFormat: GPUTextureFormat,
+		{ stencil, mipFeedback }: { stencil: boolean; mipFeedback: boolean },
+	) {
 		this.#device = device;
 		this.#canvas = canvas;
 		this.colorFormat = colorFormat;
-		this.format = { targets: MAIN_TARGETS, depth: stencil ? DEPTH_STENCIL_FORMAT : DEPTH_FORMAT, stencil };
+		this.format = {
+			targets: mipFeedback ? MAIN_TARGETS_WITH_FEEDBACK : MAIN_TARGETS,
+			depth: stencil ? DEPTH_STENCIL_FORMAT : DEPTH_FORMAT,
+			stencil,
+		};
 		const context = canvas.getContext('webgpu');
 		if (context === null) {
 			throw new Error(`couldn't get a WebGPU canvas context`);
@@ -216,6 +239,11 @@ export class RenderTargets {
 				usage,
 			}),
 		];
+		if (this.format.targets.length > MAIN_TARGETS.length) {
+			this.#colors.push(
+				create({ label: 'mip feedback', size: [width, height], format: MIP_FEEDBACK_FORMAT, usage }),
+			);
+		}
 		this.#waterDepth = create({
 			label: 'water depth',
 			size: [width, height],
@@ -234,6 +262,7 @@ export class RenderTargets {
 			reflectionSurface: this.#colors[3].createView(),
 			depth: this.#depth.createView({ aspect: 'depth-only' }),
 			waterDepth: this.#waterDepth.createView(),
+			mipFeedback: this.#colors[MAIN_TARGETS.length]?.createView() ?? null,
 			version: this.#version,
 		};
 		return true;
@@ -243,7 +272,10 @@ export class RenderTargets {
 	get bytes(): number {
 		// depth with stencil is commonly stored as 8 bytes
 		const depth = this.format.stencil ? 8 : 4;
-		return this.width * this.height * (depth + 8 * 4 + 4) + this.outputWidth * this.outputHeight * 4 * 2;
+		const feedback = this.format.targets.length > MAIN_TARGETS.length ? 4 : 0;
+		return (
+			this.width * this.height * (depth + 8 * 4 + 4 + feedback) + this.outputWidth * this.outputHeight * 4 * 2
+		);
 	}
 
 	/** @returns the main pass's outputs */

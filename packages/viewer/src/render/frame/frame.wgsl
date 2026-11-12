@@ -261,6 +261,36 @@ struct Shaded {
 	// what the screen-space reflections need of the surface (`pack_reflection_surface` in
 	// shaders/common/reflection-surface.wgsl); 0 where none
 	@location(3) reflection_surface: vec2u,
+	// which material drew the pixel and how finely it samples its UV sets (`pack_mip_feedback`), which texture
+	// streaming reads back; 0 where no mesh reports. dropped where the main pass has no target for it
+	@location(4) mip_feedback: u32,
+}
+
+// a mesh pixel's report to the texture streaming (`MipFeedback`, mip-feedback.wgsl): the material's slot in the
+// look table (bits 0–16), then per UV set (bits 17–23 and 24–30) how many quarter mip levels below one UV unit
+// per pixel its footprint is, rounded towards finer and at most `MIP_FEEDBACK_STEPS`, and bit 31 to tell a
+// report from none. `uv` holds UV sets 0 and 1 as the textures are sampled with, before their slots'
+// transforms, `rel` the surface's position and `bias` the mip bias the textures are sampled with. call in
+// uniform control flow
+const MIP_FEEDBACK_STEPS = 126.0;
+// a UV unit spread over more surface than this, m, is a face pinned to a texel or two of a colour swatch,
+// which looks the same at any level; no mesh spreads a texture that far (the largest backdrops span a few km)
+const MIP_FEEDBACK_SWATCH_METRES = 32768.0;
+fn pack_mip_feedback(look: u32, uv: vec4f, rel: vec3f, bias: f32) -> u32 {
+	let dx = dpdx(uv);
+	let dy = dpdy(uv);
+	let px = dpdx(rel);
+	let py = dpdy(rel);
+	// the longer axis of a pixel's footprint, as the mip level is picked by
+	let squared = vec2f(max(dot(dx.xy, dx.xy), dot(dy.xy, dy.xy)), max(dot(dx.zw, dx.zw), dot(dy.zw, dy.zw)));
+	let metres_squared = max(dot(px, px), dot(py, py));
+	// −log2 of the footprint, in quarter levels
+	let levels = -(0.5 * log2(max(squared, vec2f(1e-30))) + bias);
+	let steps = vec2u(clamp(ceil(levels * 4.0), vec2f(0.0), vec2f(MIP_FEEDBACK_STEPS)));
+	// a swatch asks for nothing
+	let swatch = squared * (MIP_FEEDBACK_SWATCH_METRES * MIP_FEEDBACK_SWATCH_METRES) <= vec2f(metres_squared);
+	let q = select(steps, vec2u(0u), swatch);
+	return 0x80000000u | (look & 0x1ffffu) | (q.x << 17u) | (q.y << 24u);
 }
 
 // what a material family hands to the lighting

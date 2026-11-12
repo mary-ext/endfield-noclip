@@ -115,6 +115,7 @@ export class Traversal {
 				unsupportedMaterials: options.unsupportedMaterials,
 				missingContent: options.missingContent,
 				gpuCulling: options.gpuCulling && meshes.gpuCulling,
+				mips: options.mipFeedback && targets.scene.mipFeedback !== null ? meshes.mips : null,
 				casters: view.casters,
 				shadowLayers: shadows ? renderer.shadows.volumes : null,
 				// particles move by the clock the effects' shaders scroll by

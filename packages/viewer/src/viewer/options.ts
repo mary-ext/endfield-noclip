@@ -39,6 +39,12 @@ export interface ViewerOptions {
 	 */
 	occlusionCulling: boolean;
 	/**
+	 * stream opaque materials' textures down to the mip levels the main pass sampled, read back from the GPU;
+	 * off (or where the main pass has no room for the feedback target) streams them by their instances' size on
+	 * screen
+	 */
+	mipFeedback: boolean;
+	/**
 	 * detail and conditional scenery draw within this distance of the camera, m; past it, HLOD clusters in the
 	 * game's rings. 160 is the game's at its high scene detail on PC (256 at very high, 96 at its lowest)
 	 */
@@ -113,6 +119,7 @@ export const DEFAULT_OPTIONS: ViewerOptions = {
 	missingContent: false,
 	gpuCulling: true,
 	occlusionCulling: true,
+	mipFeedback: true,
 	detailDistance: 160,
 	terrainPixels: 3,
 	minBoxPixels: 1.5,

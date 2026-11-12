@@ -16,6 +16,7 @@ the transparent pass and screen effects, then `encodeAfterScene`). passes in ord
 | 2b  | `local light shadow`                                                 | `shadows` and `localLights` on, and a [shadow tile](lighting.md#local-light-shadows) waits to be drawn: one tile a frame                                                                                                                                  |
 | 3   | `volumetric fog` (compute)                                           | `heightFog` on, a package loaded, `lit`, and the environment's volumetric fog on ([`render/sky/volumetric-fog.ts`](../../packages/viewer/src/render/sky/volumetric-fog.ts))                                                                               |
 | 4   | `main`                                                               | always (empty without a package)                                                                                                                                                                                                                          |
+| 4a  | `mip feedback` (compute)                                             | a package loaded, the device has room for the feedback target, and a readback buffer is free ([mip feedback](streaming.md#mip-feedback))                                                                                                                  |
 | 4b  | `decal relight`                                                      | a package loaded                                                                                                                                                                                                                                          |
 | 6   | `transmittance lut`, `multiple scattering lut`                       | once per environment                                                                                                                                                                                                                                      |
 | 7   | `sky view lut`                                                       | `sky` on                                                                                                                                                                                                                                                  |
@@ -51,11 +52,14 @@ what each post pass computes is in [post-processing](post-processing.md) and
 - **main pass.** one sample per pixel into radiance and its ambient part (`rgba16float`), plus what
   lit surfaces hand the screen-space reflections: the sky reflection the radiance holds
   (`rgba16float`) and the normal, roughness and hit weight packed in `rg32uint`, which fills
-  WebGPU's default 32 bytes per sample; depth is stored for post. draw order: the opaque meshes'
-  depth and the alpha-tested meshes' cut-out depth, terrain, meshes (opaque, then alpha-tested, both
-  shading at equal depth, then opaque [effects](effects.md#vfxbasev2-and-vfxdecal), then
-  stencil-only portal masks), instance boxes, box outlines (boxes larger than `outlineMetres`),
-  terrain wireframe.
+  WebGPU's default 32 bytes per sample. where the device takes 36
+  (`maxColorAttachmentBytesPerSample`), a fifth `r32uint` target holds the meshes'
+  [mip feedback](streaming.md#mip-feedback); every main pass shader returns the one `Shaded` struct,
+  and a pipeline without that target drops the output. depth is stored for post. draw order: the
+  opaque meshes' depth and the alpha-tested meshes' cut-out depth, terrain, meshes (opaque, then
+  alpha-tested, both shading at equal depth, then opaque
+  [effects](effects.md#vfxbasev2-and-vfxdecal), then stencil-only portal masks), instance boxes, box
+  outlines (boxes larger than `outlineMetres`), terrain wireframe.
 - **decal relight pass.** lit decals that change only a surface's normal, roughness or occlusion add
   the change in its light to the radiance, reading the depth, packed surface and ambient targets
   ([decals](materials.md#decals)).

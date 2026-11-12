@@ -11,6 +11,7 @@ import type { MainPassFormat } from '../frame/render-targets.ts';
 import { LIST_CAPACITY, type ListedSpan } from '../instances/instance-renderer.ts';
 import { CAMERA_HISTORY_FLOATS, CameraHistory } from '../post/camera-history.ts';
 import { SHADOW_LAYERS } from '../shadows/shadow-map.ts';
+import { MIP_FEEDBACK_LOOKS, MipFeedback, type MipSteps } from '../textures/mip-feedback.ts';
 import type { TextureStore } from '../textures/texture-store.ts';
 
 import { DepthPyramid } from './depth-pyramid.ts';
@@ -54,8 +55,8 @@ const MAX_DRAWS = 16_384;
 const LOOK_BYTES = LOOK_FLOATS * 4;
 /** look table slots to start with: a view draws a few thousand materials */
 const INITIAL_LOOKS = 4096;
-/** look table slots at most, more than a package has materials */
-const MAX_LOOKS = 1 << 17;
+/** look table slots at most, more than a package has materials, and as many as the mip feedback can name */
+const MAX_LOOKS = MIP_FEEDBACK_LOOKS;
 /**
  * how far the eye may move between frames for last frame's depth to still stand for what hides rows, m; past
  * it (a jump), every row in view draws
@@ -153,6 +154,20 @@ export class MeshRenderer {
 	#looks: GrowableBuffer;
 	/** per material id, its slot in {@link #looks} plus 1, 0 until it's written */
 	#lookSlots = new Uint32Array(0);
+	/** slots of {@link #looks} handed out so far: they're handed out in order */
+	#lookCount = 0;
+	/** which mip levels the main pass sampled of each look slot's textures */
+	#mips: MipFeedback;
+	/**
+	 * how finely the frames just drawn sampled a material's textures, by material id; -1 for a material the
+	 * main pass drew no pixel of
+	 */
+	readonly mips: MipSteps = {
+		steps: (material, set) => {
+			const slot = this.#lookSlots[material] ?? 0;
+			return slot === 0 ? -1 : this.#mips.steps(slot - 1, set);
+		},
+	};
 	/** the parameters of the materials first drawn this frame and their slots, uploaded by {@link #flushLooks} */
 	#newLooks: Float32Array[] = [];
 	#newLookSlots: number[] = [];
@@ -273,6 +288,7 @@ export class MeshRenderer {
 			? new InstanceCuller(device, pipelines, () => ({ ...instances.buffers, drawIds: this.#drawIds }))
 			: null;
 		this.#pyramid = new DepthPyramid(device, pipelines);
+		this.#mips = new MipFeedback(device, pipelines);
 		const { describers, materialLayout, effectLayout } = prepareMeshPipelines(
 			device,
 			layouts,
@@ -317,6 +333,8 @@ export class MeshRenderer {
 		this.#looks.destroy();
 		this.#looks = createLookTable(this.#device);
 		this.#lookSlots = new Uint32Array(0);
+		this.#lookCount = 0;
+		this.#mips.reset();
 		this.#drawGroup = this.#createDrawGroup();
 	}
 
@@ -350,7 +368,8 @@ export class MeshRenderer {
 			this.#drawIds.size +
 			this.#vertexBindings.bytes +
 			(this.#culler?.bytes ?? 0) +
-			this.#pyramid.bytes
+			this.#pyramid.bytes +
+			this.#mips.bytes
 		);
 	}
 
@@ -372,6 +391,7 @@ export class MeshRenderer {
 		this.#materials.release();
 		this.#culler?.destroy();
 		this.#pyramid.destroy();
+		this.#mips.destroy();
 	}
 
 	/** forgets the camera last frame's depth was drawn with, so the next cull tests nothing against it (a cut) */
@@ -434,6 +454,27 @@ export class MeshRenderer {
 			culler.encode(encoder, occlusion);
 		}
 		this.#history.advance();
+	}
+
+	/**
+	 * reduces the mip feedback the main pass's meshes wrote, which {@link mips} reports a few frames later;
+	 * encode after the main pass, and call {@link afterSubmit} once the frame is submitted
+	 *
+	 * @param encoder the frame's encoder
+	 * @param feedback the main pass's mip feedback target and its size
+	 * @param frame the frame counter
+	 */
+	encodeMipFeedback(
+		encoder: GPUCommandEncoder,
+		feedback: { view: GPUTextureView; width: number; height: number },
+		frame: number,
+	): void {
+		this.#mips.encode(encoder, feedback, this.#lookCount, frame);
+	}
+
+	/** starts the readbacks of the frame just submitted */
+	afterSubmit(): void {
+		this.#mips.afterSubmit();
 	}
 
 	// #endregion
@@ -602,6 +643,7 @@ export class MeshRenderer {
 			return -1;
 		}
 		this.#lookSlots[material] = allocation.start + 1;
+		this.#lookCount = Math.max(this.#lookCount, allocation.start + 1);
 		this.#newLooks.push(params);
 		this.#newLookSlots.push(allocation.start);
 		return allocation.start;

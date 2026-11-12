@@ -92,6 +92,8 @@ export class TextureStore {
 	version = 0;
 	/** by texture id: the {@link version} its binding last changed at */
 	#changed = new Map<number, number>();
+	/** by texture id: {@link blendsLevels}, once asked */
+	#blends = new Map<number, boolean>();
 
 	/**
 	 * @param device the device
@@ -129,6 +131,21 @@ export class TextureStore {
 			return null;
 		}
 		return entry;
+	}
+
+	/**
+	 * @param id texture id
+	 * @returns whether the texture's sampler blends neighbouring mip levels (Unity's trilinear filtering)
+	 *   rather than taking the nearest; `true` for a texture that isn't in the table
+	 */
+	blendsLevels(id: number): boolean {
+		let blends = this.#blends.get(id);
+		if (blends === undefined) {
+			const entry = this.#table.entry(id);
+			blends = entry?.status !== 'ready' || this.#table.samplers[entry.sampler]?.mipmapFilter !== 'nearest';
+			this.#blends.set(id, blends);
+		}
+		return blends;
 	}
 
 	/**

@@ -492,10 +492,13 @@ fn layer_surface(
 
 @fragment
 fn fs_opaque(in: VertexOut) -> Shaded {
+	let look = look_slot(draws[in.draw]);
+	let feedback = pack_mip_feedback(look, in.uv, in.rel, frame.params.y);
 	var out = shade(in, true);
-	if (looks[look_slot(draws[in.draw])].detail2.w > 0.5) {
+	if (looks[look].detail2.w > 0.5) {
 		out.reflection_surface.y |= SURFACE_NO_LIT_DECALS;
 	}
+	out.mip_feedback = feedback;
 	return out;
 }
 

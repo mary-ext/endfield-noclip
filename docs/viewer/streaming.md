@@ -196,11 +196,47 @@ materials the game draws nothing visible with are dropped from the chain once, w
 (the rest draw, the ones the viewer can't as [unsupported](materials.md#unsupported-materials)), as
 are shadow-only draws whose material casts no shadow; the other shadow-only draws go to cast-only
 buckets even for instances in view. textures are then requested per bucket, every piece at once,
-down to the mip that gives about one texel per pixel across the largest on-screen use, scaled by the
-UV tiling, then `textureBias` levels coarser (0 by default; each level quarters the textures'
-memory). sky and water textures and effect materials' 3D textures are streamed whole
-(`streamWholeTexture`; both ways are in
+down to the mip level the view needs, then `textureBias` levels coarser (0 by default; each level
+quarters the textures' memory): by [mip feedback](#mip-feedback) for the materials the main pass
+shades, and for the rest (glass, scene effects, cast-only buckets, the parallax and layer slots) by
+size on screen, the mip that gives about one texel per pixel across the largest on-screen use,
+scaled by the UV tiling, as if the texture spanned the instance once. sky and water textures and
+effect materials' 3D textures are streamed whole (`streamWholeTexture`; all three ways are in
 [`texture-requests.ts`](../../packages/viewer/src/streaming/texture-requests.ts)).
+
+### mip feedback
+
+an instance's size on screen says little about the mips its textures are sampled at: the camera
+stands inside the bounds of the hulls and buildings that carry the largest textures, an atlas spans
+several meshes, a trim sheet repeats along one, and most of a street is hidden behind its nearest
+walls. by that rule the textures in use at street level in Wuling City came to about 450 MiB, and
+every package filled the stream budget with textures. measuring each submesh's UV density in the
+packer, the way Unity's streaming estimates it, asked for more still (atlases at a distance), so it
+wasn't kept.
+
+instead the GPU reports what it samples
+([`render/textures/mip-feedback.ts`](../../packages/viewer/src/render/textures/mip-feedback.ts)).
+the mesh shader's opaque and alpha-tested shading writes, per pixel, its material's slot in the look
+table and how finely each of its two UV sets is sampled there: the longer axis of the pixel's
+footprint in UV units, as the GPU picks the level by, in quarter levels (`pack_mip_feedback` in
+frame.wgsl), into a fifth main pass target. shading runs at equal depth, so only visible surfaces
+report. a face pinned to a texel or two of a colour swatch (a UV unit spread over more than 32 km of
+surface) reports nothing, since it looks the same at any level. after the main pass a compute pass
+reads one pixel of every 4 × 4 block, a different one each frame, and keeps the finest footprint per
+material and UV set; the result is read back a few frames later and kept over two windows of at
+least 16 readbacks and 0.4 s, so every pixel has been read and a material that leaves the view stops
+asking within about a second.
+
+a texture is then requested down to the level that footprint samples, `log2(texels · tiling)` less
+the footprint's levels, rounded as its sampler does (most of the game's take the nearest level
+rather than blend two). the base colour, normal, mask, emissive and detail slots stream this way; a
+material drawn but not reported (hidden, or about to show) gets its textures two levels coarser than
+its size on screen asks for and no larger than 256 texels, so what comes into sight has something to
+show while its levels load. levels that fall out of use stay resident until the budget needs their
+room. at the Wuling City stops this brought the textures in use to 150–250 MiB.
+
+without room for the target (`mipFeedbackTarget` in the stats panel's features) or with the
+`mipFeedback` option off, every texture streams by size on screen.
 
 the CPU path's output (a visible row list plus per-bucket ranges) has the shape the GPU cull pass
 writes.

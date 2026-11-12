@@ -105,12 +105,10 @@ export class Renderer {
 	constructor(gfx: GfxDevice, canvas: HTMLCanvasElement, look: EnvironmentLook, near: number) {
 		const device = gfx.device;
 		this.device = device;
-		this.targets = new RenderTargets(
-			device,
-			canvas,
-			gfx.presentationFormat,
-			gfx.features.depth32floatStencil8,
-		);
+		this.targets = new RenderTargets(device, canvas, gfx.presentationFormat, {
+			stencil: gfx.features.depth32floatStencil8,
+			mipFeedback: gfx.features.mipFeedbackTarget,
+		});
 		this.#layouts = createBindLayouts(device);
 		this.pipelines = new PipelineCache(device);
 		// the main pass's frame, one per shadow layer and one for a local light's shadow tile
@@ -309,6 +307,7 @@ export class Renderer {
 		this.device.queue.submit([encoder.finish()]);
 		this.profiler.afterSubmit();
 		this.post.afterSubmit();
+		this.meshes.afterSubmit();
 		times.span('submit');
 		return draws;
 	}

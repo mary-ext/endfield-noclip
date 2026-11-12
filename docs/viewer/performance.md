@@ -90,6 +90,13 @@ how to measure is in [driving the viewer](../driving-the-viewer.md#profiling).
 - **cached work.** the transmittance and multiple-scattering LUTs render once per environment;
   irradiance clipmaps update only on re-centre or new cells; local lights are selected, binned and
   uploaded only when the camera, render size or shown lights change, not on settle frames.
+- **textures stream what's sampled.** the main pass reports the mip levels it samples per material
+  and textures load down to those ([mip feedback](streaming.md#mip-feedback)), which cut the
+  textures in use at street-level and interior stops by a third to two thirds. over the routes below
+  it cut what's downloaded by a quarter to two fifths; on map02's Wuling City and Jingyu walks the
+  frame's median/p95 went from about 15/34 ms to 12/23 ms and the frames over 50 ms (a few dozen a
+  walk, stalls in `prepare` and `encode` while uploads kept the GPU process busy) went away. the
+  target costs 4 bytes a pixel; the compute pass's and the readback's own cost isn't measured.
 - **large uploads staged.** streamed data of 128 KiB or more goes through a
   [staging buffer](gpu-resources.md) instead of a queue write, which stalled the main thread for
   15–30 ms per megabyte-sized texture level while streaming.
@@ -123,8 +130,9 @@ the hitches while flying (a few frame times long) are bursts of mesh selection a
 not uploads, instance block builds or material derivations.
 
 walks at eye height through a level's streets and plazas, at 12 m/s, and crossings from level to
-level at 60–80 m/s and 40 m up, same machine and size, 2026-11-11 (frame times with the frame rate
-uncapped, so the long tail includes [backpressure](../driving-the-viewer.md#profiling)):
+level at 60–80 m/s and 40 m up, same machine and size, 2026-11-11, before
+[mip feedback](streaming.md#mip-feedback) (frame times with the frame rate uncapped, so the long
+tail includes [backpressure](../driving-the-viewer.md#profiling)):
 
 | route                                        | frame, median/p95 | `mesh select`, median | GPU    |
 | -------------------------------------------- | ----------------- | --------------------- | ------ |
@@ -136,14 +144,20 @@ uncapped, so the long tail includes [backpressure](../driving-the-viewer.md#prof
 | map01 walks (Hub, Lodespring, Power Plateau) | 4–5/9–12 ms       | 1.5–2.5 ms            | 3–6 ms |
 | map01 crossing, six levels                   | 5/14 ms           | 2 ms                  | 5 ms   |
 
+with mip feedback, 2026-11-12, the same routes: Wuling City 12/24 ms, Jingyu Valley 12/23 ms, Qingbo
+Stockade 10/19 ms, Si's Painting 5/14 ms, the map02 crossing 16/34 ms, map01 unchanged within a
+millisecond; `mesh select` is what it was. every route still ends with the budget full, now partly
+of levels kept past their use, and a walk still downloads 1–3 GB: what a moving camera newly sees,
+which no one has broken down yet.
+
 map02's walks are bound by the CPU. in Wuling City's streets about a third of `mesh select` is
 placing particles (a few thousand live ones across about a hundred emitters), and the rest the
 per-segment bookkeeping of nine thousand or so row segments. every route ends with the stream budget
 full: on the Wuling City walk about 40% of the texture bytes and half the geometry bytes uploaded
 were of blobs evicted earlier in the walk, half of them within 7 s.
 
-at 2560×1600 the allocations that don't stream take about 520 MiB before any content: the main
-targets 200 MiB, the post passes' 165 MiB, the sun's and the local lights' shadow maps 64 MiB each
+at 2560×1600 the allocations that don't stream take about 540 MiB before any content: the main
+targets 215 MiB, the post passes' 165 MiB, the sun's and the local lights' shadow maps 64 MiB each
 and the volumetric fog 21 MiB.
 
 ## optimization candidates

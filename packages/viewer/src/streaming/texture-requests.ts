@@ -7,6 +7,9 @@ import type { StreamManager } from './stream-manager.ts';
 /** what texture requests ask of the stream */
 export type TextureStream = Pick<StreamManager, 'want' | 'markUsed' | 'isReady' | 'discard'>;
 
+/** what texture requests ask of the texture store */
+export type RequestedTextures = Pick<TextureStore, 'streamable' | 'integrated' | 'waiting' | 'blendsLevels'>;
+
 /** how a texture is bound */
 export type TextureKind = '2d' | 'cube' | '2d-array' | '3d';
 
@@ -18,7 +21,7 @@ export type TextureKind = '2d' | 'cube' | '2d-array' | '3d';
  */
 const requestPieces = (
 	stream: TextureStream,
-	textures: TextureStore,
+	textures: RequestedTextures,
 	texture: { id: number; entry: ReadyTexture },
 	level: number,
 	priority: number,
@@ -43,16 +46,21 @@ const requestPieces = (
 	}
 };
 
+/** mip levels an unseen material's textures stop short of what its size on screen asks for */
+const UNSEEN_LEVELS = 2;
+/** the largest level an unseen material's textures load, texels a side */
+const UNSEEN_TEXELS = 256;
+
 /** requests textures of one texture store, without allocating per request */
 export class TextureRequests {
 	#stream: TextureStream;
-	#textures: TextureStore;
+	#textures: RequestedTextures;
 
 	/**
 	 * @param stream residency
 	 * @param textures the texture store the textures integrate into
 	 */
-	constructor(stream: TextureStream, textures: TextureStore) {
+	constructor(stream: TextureStream, textures: RequestedTextures) {
 		this.#stream = stream;
 		this.#textures = textures;
 	}
@@ -62,10 +70,11 @@ export class TextureRequests {
 	 * texel per pixel across the object, scaled by how often the UVs tile
 	 *
 	 * @param id texture id
-	 * @param pixels the use's on-screen size, px; also the priority
+	 * @param pixels the use's on-screen size, px
 	 * @param uvScale how often the UVs tile across the object
+	 * @param priority the priority
 	 */
-	forPixels(id: number, pixels: number, uvScale: number): void {
+	forPixels(id: number, pixels: number, uvScale: number, priority: number): void {
 		const entry = this.#textures.streamable(id, '2d');
 		if (entry === null) {
 			return;
@@ -75,7 +84,59 @@ export class TextureRequests {
 			entry.mipCount - 1,
 			Math.max(0, Math.floor(Math.log2(texels / Math.max(pixels, 1)))),
 		);
-		requestPieces(this.#stream, this.#textures, { id, entry }, level, pixels);
+		requestPieces(this.#stream, this.#textures, { id, entry }, level, priority);
+	}
+
+	/**
+	 * requests the coarse levels of a 2D texture whose material is drawn but had no pixel read back (hidden
+	 * behind something, or about to show): {@link UNSEEN_LEVELS} coarser than {@link forPixels} would, and no
+	 * level over {@link UNSEEN_TEXELS} a side, so that what comes into sight isn't a smear while its levels
+	 * load
+	 *
+	 * @param id texture id
+	 * @param pixels the use's on-screen size, px
+	 * @param uvScale how often the UVs tile across the object
+	 * @param priority the priority
+	 */
+	forUnseen(id: number, pixels: number, uvScale: number, priority: number): void {
+		const entry = this.#textures.streamable(id, '2d');
+		if (entry === null) {
+			return;
+		}
+		const side = Math.max(entry.width, entry.height);
+		const level = Math.min(
+			entry.mipCount - 1,
+			Math.max(
+				0,
+				Math.floor(Math.log2((side * uvScale) / Math.max(pixels, 1))) + UNSEEN_LEVELS,
+				Math.ceil(Math.log2(side / UNSEEN_TEXELS)),
+			),
+		);
+		requestPieces(this.#stream, this.#textures, { id, entry }, level, priority);
+	}
+
+	/**
+	 * requests a 2D texture's pieces coarse to fine, up to the finest level the frames just drawn sampled
+	 *
+	 * @param id texture id
+	 * @param steps how many quarter mip levels below one UV unit per pixel the finest sample's footprint was
+	 *   (`MipSteps.steps`)
+	 * @param uvScale how often the material tiles the texture across a UV unit
+	 * @param bias mip levels coarser than sampled to stop at
+	 * @param priority the priority
+	 */
+	forFootprint(id: number, steps: number, uvScale: number, bias: number, priority: number): void {
+		const entry = this.#textures.streamable(id, '2d');
+		if (entry === null) {
+			return;
+		}
+		// the level of detail the GPU computes: the footprint in texels of the longer side, which also holds for
+		// the shorter
+		const lod = Math.log2(Math.max(entry.width, entry.height) * uvScale) - steps / 4;
+		// a sampler that blends neighbouring levels reads the finer of the two; one that doesn't rounds
+		const sampled = Math.floor(this.#textures.blendsLevels(id) ? lod : lod + 0.5);
+		const level = Math.min(entry.mipCount - 1, Math.max(0, sampled + Math.ceil(bias)));
+		requestPieces(this.#stream, this.#textures, { id, entry }, level, priority);
 	}
 
 	/**
