@@ -760,8 +760,9 @@ sizes them unless the mode is Shape. the entry keeps:
 - the duration, looping, start delay (a constant or two; a curve makes the system a stand-in),
   particle cap and simulation speed, and the emission bound: the most one longest lifetime of
   emission holds, the top rate times the lifetime plus each loop's top burst counts times the loops
-  that lifetime spans. a system that stores a cap of 0
-  ([particle systems](game-data/particles.md#particle-systems)) gets the bound as its cap
+  that lifetime spans. a cap of 0 ([particle systems](game-data/particles.md#particle-systems))
+  stays 0 with a looping ring buffer, whose particles each live once; on other systems, where the
+  engine emits nothing, it becomes the bound until no such system is found to show in game
 - the start lifetime, speed, size and rotation, gravity modifier and emission rate as `MinMaxCurve`s
   (a rate curve is read at the system's time over its duration), the bursts, and the start colour
   and colour over lifetime as `MinMaxGradient`s. their curves and gradients are the `AnimationCurve`

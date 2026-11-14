@@ -23,9 +23,9 @@ stretched 1, horizontal 2, vertical 3.
   and the skipped ones aren't made up later. live particles are never cut short to make room. the
   Very Large Rift's ripple rings (`wenli_02` and the others in
   `p_fxmap_dung02_dg005_boss_semicircle_ripple_01`) rely on this: a burst every 0.1 s loop with a
-  cap of 1 lets in one ring per 6 s lifetime. some systems store a cap of 0 yet show in game, such
-  as the tilted torch flames (`P_fxmap_common_tiltedflame_2501`), though the engine reads 0 as no
-  particles; why isn't traced.
+  cap of 1 lets in one ring per 6 s lifetime. a cap of 0 emits nothing, except with a looping ring
+  buffer, which doesn't cap emission and replaces each particle as it's emitted, so each lives its
+  lifetime once (below): the tilted torch flames (`P_fxmap_common_tiltedflame_2501`) show so.
 - **ring buffer.** `ringBufferMode` 1 holds a particle's age at its end until a newer one replaces
   it, 2 replays `ringBufferLoopRange` (its position goes on integrating while the age loops). a held
   particle isn't frozen: every module goes on moving and turning it, reading its curves at their

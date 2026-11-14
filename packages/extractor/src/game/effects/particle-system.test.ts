@@ -318,8 +318,8 @@ test('a ring-buffered flipbook particle keeps its sheet and how it outlives its 
 	assert.equal(row({ rowMode: 0, timeMode: 2 })?.frameOverTime, null);
 });
 
-test('a cap of 0 becomes what one lifetime of emission holds', () => {
-	// one particle per 1.6 s loop living 1.6 s, as the tilted torch flame
+test('a cap of 0 stays on a looping ring buffer, and otherwise becomes what one lifetime of emission holds', () => {
+	// one particle per 1.6 s loop living 1.6 s, as the tilted torch flame, whose ring buffer lets each live once
 	const flame = readParticleSystem(
 		system(
 			{
@@ -338,7 +338,7 @@ test('a cap of 0 becomes what one lifetime of emission holds', () => {
 		renderer(),
 	);
 	assert.ok(flame !== null && 'info' in flame);
-	assert.equal(flame.info.maxParticles, 1);
+	assert.equal(flame.info.maxParticles, 0);
 	// 1.1 per second for 80 s
 	const steady = readParticleSystem(system({}, { maxNumParticles: 0 }), renderer());
 	assert.ok(steady !== null && 'info' in steady);

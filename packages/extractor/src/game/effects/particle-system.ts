@@ -917,9 +917,10 @@ export const readParticleSystem = (
 	const startLifetime = curve(initial, 'startLifetime');
 	const bound = emissionBound(rate, bursts, startLifetime, duration);
 	let maxParticles = numberField(initial, 'maxNumParticles');
-	if (maxParticles === 0) {
-		// systems storing a cap of 0 still show in game (docs/game-data/particles.md#emission-and-lifetime). take
-		// the most one lifetime's emission can hold, which also keeps a ring buffer from piling up
+	if (maxParticles === 0 && ringBuffer?.loop !== true) {
+		// a looping ring buffer with a cap of 0 plays each particle once, which the viewer follows from the cap
+		// itself; for the rest the engine emits nothing, but take the most one lifetime's emission can hold
+		// until a system that shows in game anyway is ruled out (docs/game-data/particles.md#emission-and-lifetime)
 		maxParticles = bound;
 	}
 	const delay = curve(system, 'startDelay');
