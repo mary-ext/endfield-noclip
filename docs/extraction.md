@@ -41,7 +41,7 @@ resolver on first use.
 | `bundle`   | inspects bundles: header and per-class counts, objects as JSON, an object's stream data, searching container paths and individually addressable class objects in main or initial bundles                                                                                                                                                                                  |
 | `asset`    | decodes one mesh, texture or material by bundle and path id or by asset path, follows an entity's draws, or exports a cell as glTF                                                                                                                                                                                                                                        |
 | `terrain`  | lists terrain scenes and tiles, and exports heightmaps as PNG                                                                                                                                                                                                                                                                                                             |
-| `water`    | lists water surfaces by map, level or cell, counts them, and dumps water configs                                                                                                                                                                                                                                                                                          |
+| `water`    | lists water surfaces by map, level or cell and gameplay water volumes, counts them, and dumps water configs                                                                                                                                                                                                                                                               |
 
 only `init` and `pack` are needed to produce a package; the others are for research and debugging,
 and each one's usage text lists its subcommands and flags. `asset`'s glTF exports (`export/`) mirror
@@ -454,9 +454,11 @@ decoders for the [water data](game-data/water.md):
   (`waterScriptActionsComputed`). `WaterVolumeSetAmount` is listed as moving the surface at the
   volume's speed, a guess: whether it moves or snaps isn't recovered.
 
-`water surfaces|census|config` ([commands/water.ts](../packages/extractor/src/commands/water.ts))
-dumps placements, counts per level, chunk file, mask, mesh and config, and single config assets. how
-`pack` turns all of this into the water table is in [water](package-format.md#water).
+`water surfaces|volumes|census|config`
+([commands/water.ts](../packages/extractor/src/commands/water.ts)) dumps placements, the gameplay
+water volumes with their liquid, depth and authored surface height (`--json` adds the outlines),
+counts per level, chunk file, mask, mesh and config, and single config assets. how `pack` turns all
+of this into the water table is in [water](package-format.md#water).
 
 ### irradiance
 

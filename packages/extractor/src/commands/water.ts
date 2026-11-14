@@ -12,6 +12,8 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import type { PPtr } from '@endfield-noclip/formats/unity/values';
 
+import { definite } from '@mary-ext/array-fns';
+
 import {
 	hashText as hex,
 	jsonReplacer,
@@ -30,6 +32,7 @@ import {
 	readSceneWater,
 	type SourcedWaterSurface,
 } from '../game/water/water-source.ts';
+import { readWaterVolumes } from '../game/water/water-volumes.ts';
 import type { WorldIndex } from '../game/world/world-index.ts';
 import { mapPool } from '../pool.ts';
 
@@ -43,6 +46,9 @@ export const usage = `usage:
   water surfaces <map> [<level> | <x> <z>] [--resolve] [--json]
                               water surfaces of a map, of one level (by id tag) or overlapping one cell;
                               --resolve loads each distinct mesh and config
+  water volumes <map> [<level>] [--json]
+                              gameplay water volumes: liquid, config, pivot, depth, authored surface height,
+                              outline bounds and what they follow; --json adds the outlines
   water census <map>          surface counts by level, chunk file, render mask, mesh and config
   water config <path|hash>    a surface WaterConfig or a Global_Water_Config as JSON; the global one also
                               resolves its textures and surface configs`;
@@ -68,6 +74,10 @@ export const run = async (args: string[]): Promise<void> => {
 					json: values.json,
 					resolve: values.resolve,
 				});
+				break;
+			}
+			case 'volumes': {
+				await listVolumes(context, need(rest[0], 'map'), rest[1] ?? null, values.json);
 				break;
 			}
 			case 'census': {
@@ -216,6 +226,67 @@ const resolveAsset = async (
 		return { object: objectKey(ref), name: config.name, materialIndex: config.values.materialIndex ?? null };
 	} catch (error) {
 		return { error: errorText(error) };
+	}
+};
+
+// #endregion
+
+// #region volumes
+
+const range = (values: number[]): string =>
+	`${Math.min(...values).toFixed(1)}..${Math.max(...values).toFixed(1)}`;
+
+const listVolumes = async (
+	context: Context,
+	mapId: string,
+	level: string | null,
+	json: boolean,
+): Promise<void> => {
+	const { world } = context;
+	const { volumes, unsupported } = await readWaterVolumes(
+		context,
+		mapId,
+		level,
+		await world.partition(mapId),
+	);
+	const lookup = await world.pathLookup();
+	if (json) {
+		console.log(JSON.stringify({ volumes, unsupported }, jsonReplacer, '\t'));
+		return;
+	}
+	console.log(`${volumes.length} water volumes`);
+	console.log(
+		'         id  level         liquid               pivot (x,y,z)          depth  fill  surface  x range        z range        notes',
+	);
+	for (const volume of volumes) {
+		const xs = volume.points.map(([x]) => x);
+		const zs = volume.points.map(([, z]) => z);
+		const notes = definite([
+			volume.infinite && 'infinite',
+			volume.factory && 'factory',
+			volume.parent !== null && `follows ${volume.parent}`,
+			volume.configHash !== null && shortPath(lookup(volume.configHash) ?? hex(volume.configHash)),
+		]);
+		console.log(
+			[
+				volume.id.padStart(11),
+				volume.levelId.padEnd(12),
+				volume.itemType.padEnd(20),
+				volume.pivot
+					.map((v) => v.toFixed(1))
+					.join(',')
+					.padEnd(22),
+				volume.heightMax.toFixed(1).padStart(5),
+				volume.fraction.toFixed(2).padStart(5),
+				(volume.pivot[1] + volume.heightMax * volume.fraction).toFixed(1).padStart(7),
+				range(xs).padEnd(14),
+				range(zs).padEnd(14),
+				notes.join(', '),
+			].join('  '),
+		);
+	}
+	for (const { path, reason } of unsupported) {
+		console.log(`unread: ${path}: ${reason}`);
 	}
 };
 
