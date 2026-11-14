@@ -138,7 +138,17 @@ particle by the whole velocity times the speed modifier.
   Local the system's own transform's, and Shape none, where the scale moves particles but leaves
   their size. effects stretch a spawn box this way: Jingyu Valley's bird flock
   (`p_fxmap_map_bird_03`) sits under a parent scaled 363 × 150 × 148 m, in Shape mode, so its birds
-  stay their start size.
+  stay their start size. the engine builds the emitter's matrix by mode too: Hierarchy takes the
+  Transform's whole world matrix, while Local and Shape take its world position and world rotation
+  (the product of the local rotations above it) and scale that by the system's own scale (Local) or
+  nothing, scaling the shape by the lossy scale instead (Shape). under a non-uniform parent scale,
+  then, only Hierarchy's axes are sheared, and Hierarchy sizes particles by the lossy scale (each
+  world-rotation axis projected onto the matrix's), not by the sheared axes' lengths. Jingyu
+  Valley's big waterwheel (`int_big_wheel_postmodel`, near −630, 246, −1251) carries
+  `P_fxint_s_bambootube_waterfall_2501_variant` on each of its eight scoops, under a parent scaled
+  0.1 × 1 × 1 and turned 90° about y: its Hierarchy splashes (`water001 (3)`, `water001 (6)`) shoot
+  along the wheel's axle out of its side, sized about 0.13 wide and 1.2 tall, so they show as thin
+  streaks spinning at random.
 - **pivot.** the renderer's `m_Pivot` offsets each particle's mesh from the particle's position, in
   the particle's turned frame, in multiples of the particle's size. in mesh mode it is also measured
   in the mesh's own size, per axis twice the farthest its bounds reach from the origin

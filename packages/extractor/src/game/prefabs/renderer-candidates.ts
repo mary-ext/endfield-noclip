@@ -34,7 +34,7 @@ import {
 } from '../effects/particle-system.ts';
 import { isSplineMoverType, splineMoverRenderers } from '../effects/spline-movers.ts';
 
-import type { PlacedPrefabNode, PrefabComponent } from './prefab-walk.ts';
+import { parentFrame, type PlacedPrefabNode, type PrefabComponent } from './prefab-walk.ts';
 import type { NodeStep, RendererCandidate, RendererNode, RendererWalk } from './renderer-walk.ts';
 
 // what a drawn GameObject of the renderer walk draws, in the order its renderers are kept: LODGroup heights
@@ -191,7 +191,7 @@ const frozenParticles = async (
 		return null;
 	}
 	const meshSize = particleMeshSize(aabbField(await walk.resolver.read(mesh), 'm_LocalAABB'));
-	const placed = frozenParticleMatrix(system.data, rendererData, node.parentMatrix, state.local, meshSize);
+	const placed = frozenParticleMatrix(system.data, rendererData, parentFrame(node), state.local, meshSize);
 	return placed === null ? null : { matrix: placed, mesh };
 };
 
@@ -235,7 +235,7 @@ const collectParticles: NodeStep = async (walk, node, state) => {
 		return;
 	}
 	const system = { ref: systemComponent.ref, data: await systemComponent.read() };
-	const parent = node.parentMatrix;
+	const parent = parentFrame(node);
 	const local = state.local;
 	const rendererData = posedPivot(renderer.data, state.posedRenderer);
 	// the placement's scale sizes stand-in and frozen particles only where the scaling mode keeps the scale

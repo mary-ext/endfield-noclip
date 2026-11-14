@@ -410,7 +410,9 @@ packs or renders correctly.
     delay (when the game's count restarts isn't traced); cones and circles ignore the arc's mode and
     spread (about 20 map02 systems set one), sphere and hemisphere arcs aren't applied; stretched
     quads ignore the camera's velocity (no map02 system scales by it), the freeform mode and an
-    `m_NormalDirection` below 1
+    `m_NormalDirection` below 1; Hierarchy-mode particles under a sheared matrix are sized by its
+    axes' lengths rather than the game's lossy scale (the package carries no separate scale), so
+    Jingyu's big waterwheel splashes draw about a third wider than in game
   - limits: at most 1024 live particles per emitter (a couple of map01 systems can hold slightly
     more), bounds that a ring-buffered particle moving far past its lifetime can outrun, colours
     clamped to 1 (RGBA8), custom data in colour mode isn't packed (no map02 system uses it)
@@ -551,10 +553,9 @@ packs or renders correctly.
   moves [play along](viewer/particles.md#moving-emitters), but a world-simulated one's velocity
   module and force fields keep the end pose's frame, a local one feels gravity in the frame the clip
   has now rather than gathering it step by step, and one the clip ends scaled to nothing holds that
-  end pose. of
-  [ACL-compressed clips](game-data/animation.md#acl-compressed-clips) only the Transform tracks
-  play: float tracks and root motion aren't decoded, and buffers with a database, non-trivial
-  default values or Euler bindings hold their end pose. blend-tree states, additive or
+  end pose. of [ACL-compressed clips](game-data/animation.md#acl-compressed-clips) only the
+  Transform tracks play: float tracks and root motion aren't decoded, and buffers with a database,
+  non-trivial default values or Euler bindings hold their end pose. blend-tree states, additive or
   partial-weight layers, override controllers and the Animators of models with view states hold
   their saved pose. of the [decoration animator](game-data/animation.md#decoration-animators) values
   level scripts set, only those set on script start (constant or by one saved property) are read;

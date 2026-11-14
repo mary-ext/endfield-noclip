@@ -6,7 +6,12 @@
  * @module
  */
 
-import { multiplyMatrices, trsMatrix, unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
+import {
+	multiplyMatrices,
+	multiplyQuaternions,
+	trsMatrix,
+	unityEulerQuaternion,
+} from '@endfield-noclip/formats/unity/transform';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	type Aabb,
@@ -34,46 +39,89 @@ export interface LocalTransform {
 	scale: readonly number[];
 }
 
+/** where a Transform's parent puts it: the parent's world matrix and world rotation (xyzw) */
+export interface ParentFrame {
+	matrix: Float32Array;
+	/** the product of the local rotations above, Unity's `Transform.rotation` whatever the scales between */
+	rotation: readonly number[];
+}
+
 /**
- * the matrix a played particle system's particles move in: its whole world matrix, except under the `Local`
- * scaling mode, which drops the parents' scale. the `Shape` mode keeps the hierarchy's scale here, since that
- * scale still moves its particles; only their size ignores it.
+ * the matrix a played particle system's particles move in ([scaling](docs/game-data/particles.md)): under
+ * `Hierarchy` its whole world matrix; under `Local` and `Shape` its world position and rotation, scaled by
+ * its own scale (`Local`) or the hierarchy's lossy scale (`Shape`, whose scale still moves its particles;
+ * only their size ignores it). a parent's non-uniform scale thus leaves those two modes' axes square to each
+ * other
  *
- * @param parent the parent's world matrix
+ * @param parent the parent's frame
  * @param local the system's local transform
  * @param scalingMode `ParticleSystem.scalingMode`
  * @returns the emitter's world matrix
  */
 export const particleEmitterMatrix = (
-	parent: Float32Array,
+	parent: ParentFrame,
 	local: LocalTransform,
 	scalingMode: number,
-): Float32Array =>
-	scalingMode === ScalingMode.Local
-		? particleStandInMatrix(parent, local, ScalingMode.Local)
-		: multiplyMatrices(parent, trsMatrix(local.position, local.rotation, local.scale));
+): Float32Array => {
+	const full = multiplyMatrices(parent.matrix, trsMatrix(local.position, local.rotation, local.scale));
+	switch (scalingMode) {
+		case ScalingMode.Hierarchy: {
+			return full;
+		}
+		case ScalingMode.Local: {
+			return particleStandInMatrix(parent, local, scalingMode);
+		}
+		default: {
+			const rotation = multiplyQuaternions(parent.rotation, local.rotation);
+			return trsMatrix([full[12], full[13], full[14]], rotation, lossyScale(full, rotation));
+		}
+	}
+};
 
 /**
  * where a particle system the viewer can't play stands in: at its transform, sized as the game sizes its
  * particles ({@link ScalingMode}), so a system whose parent stretches a wide spawn box doesn't stand in as a
  * quad as wide as the box.
  *
- * @param parent the parent's world matrix
+ * @param parent the parent's frame
  * @param local the system's local transform
  * @param scalingMode `ParticleSystem.scalingMode`
  * @returns the stand-in's world matrix
  */
 export const particleStandInMatrix = (
-	parent: Float32Array,
+	parent: ParentFrame,
 	local: LocalTransform,
 	scalingMode: number,
 ): Float32Array => {
+	const full = multiplyMatrices(parent.matrix, trsMatrix(local.position, local.rotation, local.scale));
 	if (scalingMode === ScalingMode.Hierarchy) {
-		return multiplyMatrices(parent, trsMatrix(local.position, local.rotation, local.scale));
+		return full;
 	}
-	const matrix = multiplyMatrices(parent, trsMatrix(local.position, local.rotation, [1, 1, 1]));
-	// rescaling each axis to the system's own scale drops the parents' scale and keeps where the axes point
-	return withAxisLengths(matrix, scalingMode === ScalingMode.Shape ? [1, 1, 1] : local.scale);
+	// the engine builds the other modes' matrix from the world position and rotation alone, then scales it
+	const rotation = multiplyQuaternions(parent.rotation, local.rotation);
+	return trsMatrix(
+		[full[12], full[13], full[14]],
+		rotation,
+		scalingMode === ScalingMode.Shape ? [1, 1, 1] : local.scale,
+	);
+};
+
+/**
+ * Unity's `lossyScale`: the scale along each axis of a rotation that a sheared matrix comes closest to
+ *
+ * @param matrix a column-major world matrix
+ * @param rotation the Transform's world rotation, xyzw
+ * @returns per axis, the matrix's axis projected onto the rotation's
+ */
+const lossyScale = (matrix: Float32Array, rotation: readonly number[]): Vec3 => {
+	const turned = trsMatrix([0, 0, 0], rotation, [1, 1, 1]);
+	const scale: Vec3 = [0, 0, 0];
+	for (let axis = 0; axis < 3; axis++) {
+		for (let i = 0; i < 3; i++) {
+			scale[axis] += turned[axis * 4 + i] * matrix[axis * 4 + i];
+		}
+	}
+	return scale;
 };
 
 /**
@@ -149,7 +197,7 @@ const midpoints = (curves: readonly MinMaxCurveInfo[]): number[] | null => {
  *
  * @param system the emitter's `ParticleSystem`
  * @param renderer its `ParticleSystemRenderer`
- * @param parent the emitter's parent's world matrix
+ * @param parent the emitter's parent's frame
  * @param emitter the emitter's local transform
  * @param meshSize the particle mesh's {@link particleMeshSize}
  * @returns the particle mesh's world matrix, or `null` when the system doesn't keep a single mesh particle
@@ -159,7 +207,7 @@ const midpoints = (curves: readonly MinMaxCurveInfo[]): number[] | null => {
 export const frozenParticleMatrix = (
 	system: TypeTreeObject,
 	renderer: TypeTreeObject,
-	parent: Float32Array,
+	parent: ParentFrame,
 	emitter: LocalTransform,
 	meshSize: readonly number[],
 ): Float32Array | null => {

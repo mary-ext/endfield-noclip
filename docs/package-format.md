@@ -752,9 +752,10 @@ game's draws can't be reproduced; curves and camera-facing alignments disqualify
 **a played system**, mesh or quad, when a viewer can play it from the package alone
 ([particle-system.ts](../packages/extractor/src/game/effects/particle-system.ts)): the renderer
 becomes an emitter whose draw names a particles-table entry, its matrix the emitter's world
-transform (with only its own scale, not its parents', when `scalingMode` is Local) and its bounds a
-box around everywhere a particle can reach. the matrix's scale moves the particles in every mode and
-sizes them unless the mode is Shape. the entry keeps:
+transform as its [scaling mode](game-data/particles.md#size-and-pose) builds it (the whole matrix
+under Hierarchy; its world position and rotation with its own scale under Local, or the hierarchy's
+lossy scale under Shape) and its bounds a box around everywhere a particle can reach. the matrix's
+scale moves the particles in every mode and sizes them unless the mode is Shape. the entry keeps:
 
 - the render mode, a stretched quad's length scale and velocity scale, a quad's on-screen size
   limits (`screenSize`, fractions of the viewport's width at its depth), and whether the matrix's

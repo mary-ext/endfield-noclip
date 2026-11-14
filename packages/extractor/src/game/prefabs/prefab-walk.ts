@@ -1,7 +1,7 @@
 /* oxlint-disable no-await-in-loop -- walks in authored order with bounded bundle residency */
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import { isTransformClass, UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
-import { multiplyMatrices, trsMatrix } from '@endfield-noclip/formats/unity/transform';
+import { multiplyMatrices, multiplyQuaternions, trsMatrix } from '@endfield-noclip/formats/unity/transform';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	arrayField,
@@ -15,10 +15,12 @@ import {
 } from '@endfield-noclip/formats/unity/values';
 
 import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
-import type { LocalTransform } from '../effects/particle-mesh.ts';
+import type { LocalTransform, ParentFrame } from '../effects/particle-mesh.ts';
 
 // the traversal every prefab reader shares: a GameObject's components, its Transform and its children, in
 // authored order. readers supply what to do at each GameObject as a {@link PrefabVisitor}.
+
+const IDENTITY_ROTATION: readonly number[] = [0, 0, 0, 1];
 
 /** a component of a walked GameObject */
 export interface PrefabComponent {
@@ -65,7 +67,23 @@ export interface PlacedPrefabNode extends PrefabNode {
 	parentMatrix: Float32Array;
 	/** the Transform's matrix relative to the root, column-major; the identity on the root */
 	matrix: Float32Array;
+	/**
+	 * the Transform's rotation relative to the root (xyzw): the product of the local rotations, which is
+	 * Unity's `Transform.rotation` whatever the scales between. under a non-uniform parent scale it differs
+	 * from where {@link matrix}'s sheared axes point
+	 */
+	rotation: readonly number[];
 }
+
+/**
+ * @param node a placed GameObject
+ * @returns its parent's {@link PlacedPrefabNode.matrix} and {@link PlacedPrefabNode.rotation}, the identity
+ *   on the root
+ */
+export const parentFrame = (node: PlacedPrefabNode): ParentFrame => ({
+	matrix: node.parentMatrix,
+	rotation: node.parent?.rotation ?? IDENTITY_ROTATION,
+});
 
 /** returned by {@link PrefabVisitor.enter} to leave a GameObject and its subtree out of the walk */
 export const PRUNE: unique symbol = Symbol('prune');
@@ -232,7 +250,13 @@ export const walkPrefab = async <State extends Parent, Parent = State>(
 		}
 		let placed: PlacedPrefabNode;
 		if (parent === null) {
-			placed = { ...node, local: identityLocal(), parentMatrix: identity, matrix: identity };
+			placed = {
+				...node,
+				local: identityLocal(),
+				parentMatrix: identity,
+				matrix: identity,
+				rotation: IDENTITY_ROTATION,
+			};
 		} else {
 			const local = visitor.local?.(node, state) ?? node.saved;
 			placed = {
@@ -240,6 +264,7 @@ export const walkPrefab = async <State extends Parent, Parent = State>(
 				local,
 				parentMatrix: parent.matrix,
 				matrix: multiplyMatrices(parent.matrix, trsMatrix(local.position, local.rotation, local.scale)),
+				rotation: multiplyQuaternions(parent.rotation, local.rotation),
 			};
 		}
 		await visitor.visit?.(placed, state);

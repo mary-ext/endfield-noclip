@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { multiplyMatrices, trsMatrix } from '@endfield-noclip/formats/unity/transform';
+import { multiplyMatrices, trsMatrix, unityEulerQuaternion } from '@endfield-noclip/formats/unity/transform';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 
 import {
@@ -10,6 +10,7 @@ import {
 	meshParticlePivot,
 	particleEmitterMatrix,
 	particleMeshSize,
+	type ParentFrame,
 	particleStandInMatrix,
 	withAxisLengths,
 } from './particle-mesh.ts';
@@ -53,7 +54,13 @@ const emitter = { position: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [2, 1, 1] 
 
 const round = (v: number) => Math.round(v * 1000) / 1000 + 0;
 
-const identity = trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]);
+/** a parent frame whose rotation is the matrix's, as for a parent without shear */
+const frame = (matrix: Float32Array, rotation: readonly number[] = [0, 0, 0, 1]): ParentFrame => ({
+	matrix,
+	rotation,
+});
+
+const identity = frame(trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]));
 
 test('a frozen mesh particle sits at the emitter with its start size, scaled by the emitter, and its mid start rotation', () => {
 	const m = frozenParticleMatrix(system(), renderer(4), identity, emitter, UNIT_MESH);
@@ -119,7 +126,7 @@ test('mesh particles that die, multiply, face the camera, follow curves or flip 
 
 test('a stand-in takes the scale the game sizes particles by, not a parent that stretches the spawn box', () => {
 	// the Jingyu bird flock's parent scales its box shape 363 × 150 × 148 m
-	const parent = trsMatrix([-19.6, 0, 93.2], [0, 0, 0, 1], [363, 150, 148]);
+	const parent = frame(trsMatrix([-19.6, 0, 93.2], [0, 0, 0, 1], [363, 150, 148]));
 	const local = { position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] };
 	const axes = (m: Float32Array) => [m[0], m[5], m[10]].map(round);
 	const shape = particleStandInMatrix(parent, local, 2);
@@ -134,7 +141,7 @@ test('a placement scale moves a stand-in sized on its own without sizing it', ()
 	// valley, and their Shape scaling keeps each petal its own size
 	const placement = trsMatrix([-925, 183, -1733], [0, 0, 0, 1], [52, 52, 52]);
 	const standIn = particleStandInMatrix(
-		trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]),
+		identity,
 		{ position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
 		2,
 	);
@@ -144,7 +151,7 @@ test('a placement scale moves a stand-in sized on its own without sizing it', ()
 });
 
 test('a frozen particle under a scaled parent is sized and placed as its scaling mode sizes and moves particles', () => {
-	const parent = trsMatrix([10, 0, 0], [0, 0, 0, 1], [4, 4, 4]);
+	const parent = frame(trsMatrix([10, 0, 0], [0, 0, 0, 1], [4, 4, 4]));
 	const shape = { enabled: true, type: 5, m_Position: { x: 1, y: 0, z: 0 } };
 	const unrotated = { startRotation: constant(0) };
 	const placed = (scalingMode: number) =>
@@ -165,7 +172,8 @@ test('a frozen particle under a scaled parent is sized and placed as its scaling
 });
 
 test('world-aligned frozen particles keep the world axes under a turned parent', () => {
-	const turned = trsMatrix([0, 0, 0], [0, 0, Math.SQRT1_2, Math.SQRT1_2], [1, 1, 1]);
+	const quarter = [0, 0, Math.SQRT1_2, Math.SQRT1_2];
+	const turned = frame(trsMatrix([0, 0, 0], quarter, [1, 1, 1]), quarter);
 	const m = frozenParticleMatrix(
 		system({ initial: { startRotation: constant(0) } }),
 		renderer(1),
@@ -177,11 +185,28 @@ test('world-aligned frozen particles keep the world axes under a turned parent',
 });
 
 test('a played Local-mode emitter drops the parent scale, others keep the whole hierarchy scale', () => {
-	const parent = trsMatrix([0, 0, 0], [0, 0, 0, 1], [3, 3, 3]);
+	const parent = frame(trsMatrix([0, 0, 0], [0, 0, 0, 1], [3, 3, 3]));
 	const local = { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 2] };
 	assert.equal(round(particleEmitterMatrix(parent, local, 0)[0]), 6);
 	assert.equal(round(particleEmitterMatrix(parent, local, 1)[0]), 2);
 	assert.equal(round(particleEmitterMatrix(parent, local, 2)[0]), 6);
+});
+
+test('Local and Shape emitters under a non-uniform parent point where their rotation does, unsheared', () => {
+	// Jingyu's big waterwheel pours from `water001 (6)`, turned −83.9° about y under a parent scaled 0.1 × 1 × 1
+	// (int_big_wheel_postmodel's P_fxint_s_bambootube_waterfall_2501_variant): the game sends its cone along the
+	// turned +z, nearly the parent's −x, where the sheared matrix squashes it onto the parent's +z
+	const parent = frame(trsMatrix([0, 0, 0], [0, 0, 0, 1], [0.1, 1, 1]));
+	const local = { position: [0, 0, 0], rotation: unityEulerQuaternion([0, -83.9, 0]), scale: [1, 1, 1] };
+	const forward = (m: Float32Array) => {
+		const length = Math.hypot(m[8], m[9], m[10]);
+		return [m[8] / length, m[9] / length, m[10] / length].map((v) => Math.round(v * 100) / 100 + 0);
+	};
+	assert.deepEqual(forward(particleEmitterMatrix(parent, local, 1)), [-0.99, 0, 0.11]);
+	assert.deepEqual(forward(particleEmitterMatrix(parent, local, 2)), [-0.99, 0, 0.11]);
+	assert.deepEqual(forward(particleStandInMatrix(parent, local, 1)), [-0.99, 0, 0.11]);
+	// Hierarchy keeps the whole matrix, shear and all, as the engine does
+	assert.deepEqual(forward(particleEmitterMatrix(parent, local, 0)), [-0.68, 0, 0.73]);
 });
 
 test('a mesh particle pivot is measured in the mesh size, twice its bounds reach from the origin', () => {
