@@ -192,6 +192,8 @@ export const GAPS_FLOAT = 144;
  *   drawn by the decal relight pass into the main pass's radiance
  * - `screenMultiply`, `refract`: drawn over the composited scene, because they multiply what lies behind or
  *   sample it
+ * - `refractOpaque`: a VFXRefract layer that replaces what lies behind with its refracted copy, writing depth,
+ *   drawn before the `refract` layers from the same copy
  * - `waterFoam`, `waterFoamBehind`, `waterFoamThrough`: WaterDecal boxes drawn into the water's foam before the
  *   water draws, depth-tested in front of the scene, behind it, or not at all
  */
@@ -209,6 +211,7 @@ export type LookQueue =
 	| 'decalRelight'
 	| 'screenMultiply'
 	| 'refract'
+	| 'refractOpaque'
 	| 'waterFoam'
 	| 'waterFoamBehind'
 	| 'waterFoamThrough';

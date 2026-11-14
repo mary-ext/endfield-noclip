@@ -40,9 +40,15 @@ const REFRACT_KEYWORDS = new Set([
  */
 export const describeRefract = (reader: MaterialReader): RefractSurface | UnsupportedSurface => {
 	const { float, colorOrVector: color, has } = reader;
-	const undrawn = undrawnBlend(reader, ['alphaBlend']) ?? undrawnKeywords(reader, REFRACT_KEYWORDS);
+	const undrawn = undrawnBlend(reader, ['alphaBlend', 'opaque']) ?? undrawnKeywords(reader, REFRACT_KEYWORDS);
 	if (undrawn !== null) {
 		return undrawn;
+	}
+	// an opaque blend state writes the refracted colour outright, and the game draws these in the distortion
+	// pass's opaque list, ahead of the blended ones (docs/game-data/effects.md#refraction)
+	const opaque = reader.material.blend === 'opaque';
+	if (opaque && !reader.material.zWrite) {
+		return unsupported('opaque blending without depth writes');
 	}
 	/** a slot on UV0, turned by its rotation property in degrees */
 	const uv0Texture = (
@@ -145,6 +151,7 @@ export const describeRefract = (reader: MaterialReader): RefractSurface | Unsupp
 	}
 	return {
 		kind: 'refract',
+		opaque,
 		refraction,
 		mask,
 		direction: [dir[0], dir[1]],

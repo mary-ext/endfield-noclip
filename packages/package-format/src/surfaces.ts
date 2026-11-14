@@ -1268,6 +1268,12 @@ export interface RefractTexture extends EffectTexture {
 /** `HGRP/Effect/VFXRefract`, the scene behind seen at an offset (`docs/game-data/effects.md#refraction`) */
 export interface RefractSurface {
 	kind: 'refract';
+	/**
+	 * an opaque blend state (`_SrcBlend` One, `_DstBlend` Zero, depth-writing): the refracted colour replaces
+	 * what's behind, whatever the alpha, drawn before the blended refractions; otherwise blended over by its
+	 * alpha
+	 */
+	opaque: boolean;
 	refraction: RefractTexture;
 	/** red is the alpha (`_UseMaskTexAsAlpha`) */
 	mask: { texture: RefractTexture; redAlpha: boolean } | null;

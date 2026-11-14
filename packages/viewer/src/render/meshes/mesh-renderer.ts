@@ -871,6 +871,9 @@ export class MeshRenderer {
 	 *   hold the water surface's depth in place of the scene's
 	 * - `multiply` multiplies the composited scene, into a pass whose only colour attachment is the composited
 	 *   scene, kept (`load`), with the main pass's depth attached read-only
+	 * - `refractOpaque` replaces the composited scene with refracting effects' colour, into a pass as
+	 *   `multiply`'s but with the main pass's depth writable; `inputs` must have the composited scene's copy as
+	 *   their `background`, and their depth is ignored, since the pass writes it
 	 * - `refract` blends refracting effects over the composited scene, into a pass as `multiply`'s; `inputs` must
 	 *   have the composited scene's copy as their `background`
 	 *
@@ -880,7 +883,11 @@ export class MeshRenderer {
 	 * @returns draw calls issued
 	 */
 	encodeEffectPass(which: EffectPass, pass: GPURenderPassEncoder, inputs: EffectInputs): number {
-		this.#bindEffectGroups(which, inputs);
+		// a pass can't sample the depth it writes; an opaque refraction's alpha, which is all the depth feeds, is
+		// thrown away
+		const read =
+			which === 'refractOpaque' ? { ...inputs, depth: this.#materials.mainPassStandIns.depth } : inputs;
+		this.#bindEffectGroups(which, read);
 		return this.#encode(which, pass, -1);
 	}
 

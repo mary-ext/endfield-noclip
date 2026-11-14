@@ -41,6 +41,7 @@ export const DRAW_RANGES: readonly DrawRangeInfo[] = [
 	{ range: 'litDecal', order: 'bindings', effect: true },
 	{ range: 'decalRelight', order: 'bindings', effect: true },
 	{ range: 'screenMultiply', order: 'bindings', effect: true },
+	{ range: 'refractOpaque', order: 'pipelineThenNearest', effect: true },
 	{ range: 'refract', order: 'bindings', effect: true },
 	{ range: 'waterFoam', order: 'bindings', effect: true },
 	{ range: 'waterFoamBehind', order: 'bindings', effect: true },
@@ -103,6 +104,7 @@ export const PHASES = {
 	decalRelight: shading('mesh/decal-relight', 'decalRelight'),
 	screenMultiply: shading('mesh/effect-multiply', 'screenMultiply'),
 	refract: shading('mesh/refract', 'refract'),
+	refractOpaque: shading('mesh/refract-opaque', 'refractOpaque'),
 	waterFoam: shading('mesh/water-foam', 'waterFoam'),
 	waterFoamBehind: shading('mesh/water-foam-behind', 'waterFoamBehind'),
 	waterFoamThrough: shading('mesh/water-foam-through', 'waterFoamThrough'),
@@ -123,7 +125,14 @@ export type MeshPass = SurfacePass | EffectPass | 'shadow';
 export type SurfacePass = 'prepass' | 'main';
 
 /** passes of scene effects, which read the main pass's outputs */
-export type EffectPass = 'relight' | 'decals' | 'transparent' | 'multiply' | 'refract' | 'waterFoam';
+export type EffectPass =
+	| 'relight'
+	| 'decals'
+	| 'transparent'
+	| 'multiply'
+	| 'refractOpaque'
+	| 'refract'
+	| 'waterFoam';
 
 /** each pass's phases, in the order they draw */
 export const PASS_PHASES: Record<MeshPass, readonly DrawPhase[]> = {
@@ -140,7 +149,10 @@ export const PASS_PHASES: Record<MeshPass, readonly DrawPhase[]> = {
 	transparent: [PHASES.transparent, PHASES.effect, PHASES.effectDecal, PHASES.mist, PHASES.mistVolume],
 	// effects that multiply the composited scene, drawn over it
 	multiply: [PHASES.screenMultiply],
-	// effects that sample a copy of the composited scene, drawn over it after the multiplies
+	// effects that sample a copy of the composited scene, drawn over it after the multiplies: those that replace
+	// it and write depth, then those that blend over it, as the game's distortion pass draws its opaque list
+	// before its transparent one. the first pass writes the depth the second binds, so they're separate
+	refractOpaque: [PHASES.refractOpaque],
 	refract: [PHASES.refract],
 	// WaterDecal boxes, drawn into the water's foam before the water draws: those the game depth-tests in front
 	// of the scene, then those it tests behind it, then those it doesn't test

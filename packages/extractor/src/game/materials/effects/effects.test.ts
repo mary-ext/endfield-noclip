@@ -1516,6 +1516,32 @@ describe('VFXRefract', () => {
 		);
 	});
 
+	it('replaces what lies behind under an opaque blend state, when it writes depth', () => {
+		// the Hub's technology ball and logo screens (`M_fx_technologyballpanel_862`)
+		const panel = (zWrite: boolean) =>
+			describeMaterial(
+				material({
+					blend: 'opaque',
+					blendFactors: null,
+					zWrite,
+					keywords: ['_USE_RBOFFSET'],
+					slots: { _RefractTex: slot(2, [7, 0.1]) },
+					floats: { _Intensity: 0.2, _TintColorAlpha: 0.01 },
+					vectors: { _RBOffset: [0.25, 0.55, 0, 0] },
+				}),
+				refract(),
+			);
+		const opaque = ofKind(panel(true), 'refract');
+		assert.equal(opaque.opaque, true);
+		assert.ok(opaque.colorOffsets !== null);
+		assert.equal(panel(false).kind, 'unsupported');
+		const blended = describeMaterial(
+			material({ blend: 'alphaBlend', blendFactors: [5, 10], slots: { _RefractTex: slot(2) } }),
+			refract(),
+		);
+		assert.equal(ofKind(blended, 'refract').opaque, false);
+	});
+
 	it('tints by its blend layer and sweeps its cover by the spread', () => {
 		// the fire column's haze at Valley Pass (`M_fx_common_smoke_01_02_03_1`)
 		const haze = ofKind(

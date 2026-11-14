@@ -428,12 +428,30 @@ export const encodeFrame = (
 			draws += meshes.encodeEffectPass('multiply', pass, scene);
 			pass.end();
 		}
-		if (meshes.has('refract')) {
-			// refraction samples the scene as the multiplies left it
+		const opaqueRefract = meshes.has('refractOpaque');
+		if (opaqueRefract || meshes.has('refract')) {
+			// refraction samples the scene as the multiplies left it; as the game's distortion pass, both lists
+			// sample the one copy
 			post.copyComposite(encoder, scene);
-			const pass = beginPass(encoder, over('effect refract'), sceneFrame);
-			draws += meshes.encodeEffectPass('refract', pass, { ...scene, background: scene.radiance });
-			pass.end();
+			const inputs = { ...scene, background: scene.radiance };
+			if (opaqueRefract) {
+				const pass = beginPass(
+					encoder,
+					{
+						label: 'effect refract opaque',
+						colorAttachments: [{ view: composited.target, loadOp: 'load', storeOp: 'store' }],
+						depthStencilAttachment: targets.writableDepthAttachment(),
+					},
+					sceneFrame,
+				);
+				draws += meshes.encodeEffectPass('refractOpaque', pass, inputs);
+				pass.end();
+			}
+			if (meshes.has('refract')) {
+				const pass = beginPass(encoder, over('effect refract'), sceneFrame);
+				draws += meshes.encodeEffectPass('refract', pass, inputs);
+				pass.end();
+			}
 		}
 	}
 	post.encodeAfterScene(encoder, {

@@ -104,7 +104,7 @@ unsupported. the reveal's brightening colour is linearized as the tint is.
 
 effects whose blending the transparent pass's targets can't hold draw after compositing (and after
 the water), into the composited scene with the main pass's depth attached read-only
-(`MaterialLook.queue`, the `multiply` and `refract` passes in
+(`MaterialLook.queue`, the `multiply`, `refractOpaque` and `refract` passes in
 [`draw-ranges.ts`](../../packages/viewer/src/render/meshes/draw-ranges.ts)):
 
 - `_BlendMode` 2 VFXBaseV2 layers multiply the scene (`fs_effect_multiply`). they have no stencil
@@ -117,6 +117,10 @@ the water), into the composited scene with the main pass's depth attached read-o
   layer takes slot 3 and the spread slot 4, their rows on the stack's vertex offset and edge colour
   rows, which only VFXBaseV2 reads (`RefractRow`). custom data comes only from particles, so a
   mesh's second UV set, which the game's shader reads in its place, isn't.
+- opaque VFXRefract layers (`RefractSurface.opaque`) draw from the same copy just before them, in a
+  pass of their own that replaces the colour (`One Zero`) and writes the main pass's depth, so they
+  hide each other and the blended layers behind them. a pass can't sample the depth it writes, so
+  their effect group binds a stand-in depth; only the discarded alpha reads it.
 
 ## reflection-only effects
 

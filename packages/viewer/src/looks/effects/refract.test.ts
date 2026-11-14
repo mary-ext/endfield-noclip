@@ -22,6 +22,7 @@ const texture = (id: number, overrides: Partial<EffectTexture> = {}): EffectText
 test('a refraction draws over the composited scene, its mask red as alpha, with its colour offsets', () => {
 	const refract: RefractSurface = {
 		kind: 'refract',
+		opaque: false,
 		refraction: { ...texture(2, { scroll: [0, 0.1] }), source: 'uv0' },
 		mask: { texture: { ...texture(1, { rotation: [-1, 0] }), source: 'polar' }, redAlpha: true },
 		direction: [1, 1],
@@ -73,6 +74,7 @@ test('a refraction draws over the composited scene, its mask red as alpha, with 
 test('a refraction packs its blend layer in slot 3 and its spread in slot 4, off the vertex stage’s rows', () => {
 	const refract: RefractSurface = {
 		kind: 'refract',
+		opaque: false,
 		refraction: { ...texture(2), source: 'uv0' },
 		mask: null,
 		direction: [1, 1],

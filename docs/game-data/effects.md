@@ -447,15 +447,22 @@ checked against the game.
 
 ## refraction
 
-`HGRP/Effect/VFXRefract` draws in a pass of its own after the transparent effects, from a copy of
-the scene drawn so far. each pixel shows that copy at its own screen position plus an offset:
-`_RefractDir · r · _Intensity · _TintColorAlpha · vertex alpha`, in screen UVs, where r is
-`_RefractTex`'s red remapped by `_Bi_Refract` (with `_RefractIsNormal`, the texture's xy as a normal
-instead). `_MaskTex` (`_USE_MASK`) multiplies it, and its alpha, or its red under the default
-`_UseMaskTexAsAlpha`, blends it over the scene (`Blend SrcAlpha OneMinusSrcAlpha`), faded by the
-near camera fade. the vertex alpha scales only the offset, so a mesh whose particle fades out stops
-distorting but still covers. both textures scroll by their `*UVSpeed`, rotate by `*UVRotate` degrees
-and take UV0, or polar UVs with `_USE_POLARUV` and their `*SwitchUV` set.
+`HGRP/Effect/VFXRefract` draws in a pass of its own after the transparent effects (LightMode
+`Distortion`), from a copy of the scene drawn so far. each pixel shows that copy at its own screen
+position plus an offset: `_RefractDir · r · _Intensity · _TintColorAlpha · vertex alpha`, in screen
+UVs, where r is `_RefractTex`'s red remapped by `_Bi_Refract` (with `_RefractIsNormal`, the
+texture's xy as a normal instead). `_MaskTex` (`_USE_MASK`) multiplies it, and its alpha, or its red
+under the default `_UseMaskTexAsAlpha`, blends it over the scene (most materials set
+`Blend SrcAlpha OneMinusSrcAlpha`), faded by the near camera fade. the vertex alpha scales only the
+offset, so a mesh whose particle fades out stops distorting but still covers. the blend state is the
+material's (`_SrcBlend`, `_DstBlend`, `_ZWrite`, `_ZTest`), and the pass draws an opaque-queue list
+of these objects before the transparent one, both sampling the one copy. a material in the opaque
+queue with `One Zero` blending and depth writes, as the Hub's technology-ball panels and logo
+screens (`M_fx_technologyballpanel_862`, map01_lv001 near unity −21, 104, −382 and −52, 105, −367),
+replaces the scene with the refracted colour outright: the shader's colour isn't premultiplied, and
+its alpha (the mask, spread and near fade) is discarded. both textures scroll by their `*UVSpeed`,
+rotate by `*UVRotate` degrees and take UV0, or polar UVs with `_USE_POLARUV` and their `*SwitchUV`
+set.
 
 `_USE_RBOFFSET` splits colours: the copy is sampled again at a further offset,
 `_RBOffset.xy · 0.01 · _Intensity · vertex alpha` (times r, or the normal offset's length, under

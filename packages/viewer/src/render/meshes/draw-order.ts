@@ -62,6 +62,7 @@ export const drawRangeOf = (
 		case 'decalRelight':
 		case 'screenMultiply':
 		case 'refract':
+		case 'refractOpaque':
 		case 'waterFoam':
 		case 'waterFoamBehind':
 		case 'waterFoamThrough': {

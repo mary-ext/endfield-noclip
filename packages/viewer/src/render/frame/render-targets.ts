@@ -138,6 +138,7 @@ export class RenderTargets {
 	#mainAttachments: PassAttachments | null = null;
 	#transparentDepth: GPURenderPassDepthStencilAttachment | null = null;
 	#readOnlyDepth: GPURenderPassDepthStencilAttachment | null = null;
+	#writableDepth: GPURenderPassDepthStencilAttachment | null = null;
 	#version = 0;
 
 	/**
@@ -266,6 +267,7 @@ export class RenderTargets {
 		this.#mainAttachments = null;
 		this.#transparentDepth = null;
 		this.#readOnlyDepth = null;
+		this.#writableDepth = null;
 		this.#scene = {
 			radiance: this.#colors[0].createView(),
 			radianceTexture: this.#colors[0],
@@ -351,6 +353,29 @@ export class RenderTargets {
 			depth.stencilStoreOp = 'discard';
 		}
 		this.#transparentDepth = depth;
+		return depth;
+	}
+
+	/**
+	 * @returns the main pass's depth, kept and writable, its stencil read-only, for opaque effects drawn over
+	 *   the composited scene; the same object until the next resize
+	 */
+	writableDepthAttachment(): Readonly<GPURenderPassDepthStencilAttachment> {
+		if (this.#depth === null) {
+			throw new Error('render targets used before update()');
+		}
+		if (this.#writableDepth !== null) {
+			return this.#writableDepth;
+		}
+		const depth: GPURenderPassDepthStencilAttachment = {
+			view: this.#depth.createView(),
+			depthLoadOp: 'load',
+			depthStoreOp: 'store',
+		};
+		if (this.format.stencil) {
+			depth.stencilReadOnly = true;
+		}
+		this.#writableDepth = depth;
 		return depth;
 	}
 

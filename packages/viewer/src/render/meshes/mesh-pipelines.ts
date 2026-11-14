@@ -297,6 +297,22 @@ export const prepareMeshPipelines = (
 		],
 		DEPTH_COMPARE,
 	);
+	// under an opaque blend state the refracted colour replaces the scene's whatever its alpha
+	describeEffect(
+		PHASES.refractOpaque,
+		'fs_refract',
+		[
+			{
+				format: HDR_FORMAT,
+				blend: {
+					color: { srcFactor: 'one', dstFactor: 'zero', operation: 'add' },
+					alpha: KEEP,
+				},
+			},
+		],
+		DEPTH_COMPARE,
+		{ writesDepth: true },
+	);
 	// WaterDecal boxes write the foam colour over the water's own: rgb adds the box's premultiplied colour to
 	// what's there times one minus its alpha, and alpha keeps the product of those factors, so the water pass
 	// can apply them over its own foam. the main pass's depth, attached read-only, tests them as the game's

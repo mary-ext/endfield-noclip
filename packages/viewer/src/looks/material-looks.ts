@@ -255,7 +255,7 @@ const surfaceLook = (entry: ReadyMaterial): MaterialLook => {
 		}
 		case 'refract': {
 			return effectMaterialLook(refractLook(surface), {
-				queue: 'refract',
+				queue: surface.opaque ? 'refractOpaque' : 'refract',
 				cull: entry.cull,
 			});
 		}
