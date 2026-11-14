@@ -15,6 +15,7 @@ import { mapDefined } from '@mary-ext/array-fns';
 import { formatErrorOnly } from '../../errors.ts';
 import type { AssetResolver, ObjectRef } from '../../game/assets/assets.ts';
 import { RENDER_PIPELINE_QUAD_PATH } from '../../game/assets/builtin-resources.ts';
+import { gridIdReach } from '../../game/dynamic/dynamic-grids.ts';
 import type { StructureModel } from '../../game/dynamic/dynamic-structures.ts';
 import { axisLengths, withAxisLengths } from '../../game/effects/particle-mesh.ts';
 import { billboardPlacement } from '../../game/prefabs/billboard.ts';
@@ -24,7 +25,7 @@ import { readPrefabRenderers, type PrefabRenderer } from '../../game/prefabs/pre
 import type { WorldIndex } from '../../game/world/world-index.ts';
 
 import { onPivot } from './interactives.ts';
-import { chainDraw, FLT_MAX, type PackContent } from './pack-content.ts';
+import { chainDraw, FLT_MAX, type PackContent, type RowOwner } from './pack-content.ts';
 
 // every prefab the scene places, whatever placed it (dynamic structures, facilities, cabins): its lights and
 // renderers, once per prefab and pose, then placed per placement. a prefab that can't be read stands in as a
@@ -116,7 +117,11 @@ export const placePrefabs = async (
 			}
 		}
 		const rootMatrix = trsMatrix(model.position, rotation, model.scale);
-		const owner = { tag: levelTag, visibility: placement.visibility, loadGrid: placement.grid ?? null };
+		const owner = {
+			tag: levelTag,
+			visibility: placement.visibility,
+			loadReach: placement.grid === undefined ? null : gridIdReach(placement.grid),
+		};
 		// oxlint-disable-next-line no-await-in-loop -- stable asset ids and bounded bundle cache
 		const { label, read } = await prefab;
 		if (read instanceof FormatError) {
@@ -151,7 +156,7 @@ const placeRenderer = (
 	}: {
 		/** the placement's transform */
 		rootMatrix: Float32Array;
-		owner: { tag: number; visibility: StructureModel['visibility']; loadGrid: number | null };
+		owner: Omit<RowOwner, 'name'>;
 		/** the id of the water volume the placement floats on */
 		floatsOn: string | undefined;
 		/** the path the placement rides */

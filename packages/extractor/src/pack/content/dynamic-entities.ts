@@ -1,5 +1,6 @@
 import { transformBounds } from '@endfield-noclip/formats/unity/transform';
 
+import { gridIdReach } from '../../game/dynamic/dynamic-grids.ts';
 import type { DynamicStructures } from '../../game/dynamic/dynamic-structures.ts';
 
 import { decalPlacement, type PackContent, UNIT_CUBE_BOUNDS } from './pack-content.ts';
@@ -21,12 +22,12 @@ export const placeDynamicEntities = (
 	for (const { light, visibility } of lights) {
 		content.addLight(light, visibility);
 	}
-	for (const { entity, decalMaterial, visibility, grid: loadGrid } of entities) {
+	for (const { entity, decalMaterial, visibility, grid } of entities) {
 		if (seen.has(entity.id)) {
 			continue;
 		}
 		seen.add(entity.id);
-		const owner = { tag: entity.levelTag, name: entity.name, visibility, loadGrid };
+		const owner = { tag: entity.levelTag, name: entity.name, visibility, loadReach: gridIdReach(grid) };
 		if (entity.matrix === null) {
 			content.skipped.add('dynamic', 'no matrix', entity);
 			continue;

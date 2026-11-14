@@ -8,6 +8,7 @@ import { transformBounds } from '@endfield-noclip/formats/unity/transform';
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import { type ChainDraw, DrawRole } from '@endfield-noclip/package-format/instances';
 import { tileAt } from '@endfield-noclip/package-format/tiles';
+import type { Rect } from '@endfield-noclip/package-format/values';
 
 import type { Visibility } from '../../game/state/scene-control.ts';
 import type { WorldIndex } from '../../game/world/world-index.ts';
@@ -51,8 +52,8 @@ export interface RowOwner {
 	/** entity or renderer name, for the debug index */
 	name: string;
 	visibility: Visibility;
-	/** the DynamicStreaming grid that loads the row, or `null` to draw it within the detail distance */
-	loadGrid: number | null;
+	/** where the streaming centre draws the row, or `null` to draw it within the detail distance */
+	loadReach: Rect | null;
 }
 
 /**
@@ -206,11 +207,11 @@ export class PackContent {
 	 * files a row of placed content (dynamic structures, interactives, prefabs) under the leaf at the middle of
 	 * where it reaches; no HLOD stands in for it
 	 */
-	addStructure(row: InstanceInput, { tag, name, visibility, loadGrid }: RowOwner): void {
+	addStructure(row: InstanceInput, { tag, name, visibility, loadReach }: RowOwner): void {
 		const { grid } = this.scene;
 		const reach = rowReach(row);
 		const key = tileAt(grid, grid.leafLevel, reach.center[0], reach.center[2]);
-		this.collector.addConditional({ tag, key, row, name, file: -1, visibility, grid: loadGrid });
+		this.collector.addConditional({ tag, key, row, name, file: -1, visibility, reach: loadReach });
 		this.collector.noteOwner(tag, reach);
 		this.uses.note(row.chain, key);
 		this.count('dynamicRenderers');

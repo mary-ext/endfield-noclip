@@ -60,3 +60,9 @@ export const dynamicGridReach = (grid: DynamicGrid): Rect => {
 	const [minZ, maxZ] = axis(grid.z);
 	return { minX, minZ, maxX, maxZ };
 };
+
+/**
+ * @param id an `fb_main` grid id
+ * @returns {@link dynamicGridReach} of the grid it names
+ */
+export const gridIdReach = (id: number): Rect => dynamicGridReach(decodeDynamicGrid(id));

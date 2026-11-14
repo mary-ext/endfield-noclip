@@ -1,6 +1,6 @@
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 import { type TileKey, tileId } from '@endfield-noclip/package-format/tiles';
-import { type Bounds, unionBounds } from '@endfield-noclip/package-format/values';
+import { type Bounds, type Rect, unionBounds } from '@endfield-noclip/package-format/values';
 
 import type { Visibility } from '../../game/state/scene-control.ts';
 import type { ControlRegistry } from '../control-registry.ts';
@@ -18,15 +18,15 @@ export interface Group {
 	bounds: Bounds | null;
 }
 
-/** a block of detail rows: one leaf, one visibility group, one game load grid */
+/** a block of detail rows: one leaf, one visibility group, one reach */
 export interface DetailGroup extends Group {
 	key: TileKey;
 	/** index into the visibility groups */
 	visibility: number;
 	/** whether HLODs don't stand in for the rows (scene-state and dynamic content) */
 	conditional: boolean;
-	/** the DynamicStreaming grid that loads the rows, or `null` for rows drawn within the detail distance */
-	grid: number | null;
+	/** where the streaming centre draws the rows, or `null` for rows drawn within the detail distance */
+	reach: Rect | null;
 }
 
 /** an instance row and where it came from */
@@ -42,7 +42,7 @@ export interface CollectedRow {
 
 /** gathers instances by destination while the entity pass runs */
 export class Collector {
-	/** detail rows by `tileId/visibility/grid` */
+	/** detail rows by `tileId/visibility/reach` */
 	readonly detail = new Map<string, DetailGroup>();
 	/** HLOD rows by visibility group */
 	readonly hlod = new Map<number, Group>();
@@ -69,7 +69,7 @@ export class Collector {
 	 */
 	addDetail({ condition, key, ...entry }: CollectedRow & { condition: number | null; key: TileKey }): void {
 		this.#addDetail(
-			{ visibility: this.#controls.group(entry.tag, condition), conditional: false, grid: null },
+			{ visibility: this.#controls.group(entry.tag, condition), conditional: false, reach: null },
 			key,
 			entry,
 		);
@@ -81,17 +81,17 @@ export class Collector {
 	 *
 	 * @param entry.key the leaf it's filed under
 	 * @param entry.visibility when it loads
-	 * @param entry.grid the DynamicStreaming grid that loads the row, or `null` to draw it within the detail
+	 * @param entry.reach where the streaming centre draws the row, or `null` to draw it within the detail
 	 *   distance
 	 */
 	addConditional({
 		key,
 		visibility,
-		grid,
+		reach,
 		...entry
-	}: CollectedRow & { key: TileKey; visibility: Visibility; grid: number | null }): void {
+	}: CollectedRow & { key: TileKey; visibility: Visibility; reach: Rect | null }): void {
 		this.#addDetail(
-			{ visibility: this.#controls.groupOf(entry.tag, visibility), conditional: true, grid },
+			{ visibility: this.#controls.groupOf(entry.tag, visibility), conditional: true, reach },
 			key,
 			entry,
 		);
@@ -99,16 +99,17 @@ export class Collector {
 	}
 
 	#addDetail(
-		{ visibility, conditional, grid }: Pick<DetailGroup, 'visibility' | 'conditional' | 'grid'>,
+		{ visibility, conditional, reach }: Pick<DetailGroup, 'visibility' | 'conditional' | 'reach'>,
 		key: TileKey,
 		entry: CollectedRow,
 	): void {
-		const group = this.detail.getOrInsertComputed(`${tileId(key)}/${visibility}/${grid ?? ''}`, () => ({
+		const reachKey = reach === null ? '' : `${reach.minX},${reach.minZ},${reach.maxX},${reach.maxZ}`;
+		const group = this.detail.getOrInsertComputed(`${tileId(key)}/${visibility}/${reachKey}`, () => ({
 			...newGroup(),
 			key,
 			visibility,
 			conditional,
-			grid,
+			reach,
 		}));
 		push(group, entry, 0);
 	}

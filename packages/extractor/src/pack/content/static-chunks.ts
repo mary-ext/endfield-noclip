@@ -121,7 +121,7 @@ export const collectStaticChunks = async (world: WorldIndex, content: PackConten
 		}
 		const key = tileAt(grid, grid.leafLevel, row.bounds.center[0], row.bounds.center[2]);
 		if (stateGated && visibility !== null) {
-			collector.addConditional({ ...entry, key, visibility, grid: null });
+			collector.addConditional({ ...entry, key, visibility, reach: null });
 		} else {
 			collector.addDetail({ ...entry, condition, key });
 			detailBounds.getOrInsertComputed(`${tileId(key)}/${tag}`, () => []).push(row.bounds);

@@ -195,7 +195,7 @@ export const collectInteractives = async (
 				matrix: onPivot(trsMatrix(standIn.position, unityEulerQuaternion(standIn.rotation), standIn.scale)),
 				tag: standIn.levelTag,
 				visibility: standIn.visibility,
-				loadGrid: null,
+				loadReach: null,
 			},
 			{ path: standIn.source, name: standIn.template, reason: standIn.reason },
 		);

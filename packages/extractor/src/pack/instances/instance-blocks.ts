@@ -4,7 +4,6 @@ import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 import { tileFootprint } from '@endfield-noclip/package-format/tiles';
 import { ContentKind, type ContentRef, type TreeInfo } from '@endfield-noclip/package-format/tree';
 
-import { decodeDynamicGrid, dynamicGridReach } from '../../game/dynamic/dynamic-grids.ts';
 import { type ArchiveLayout, compressedBlob } from '../archives.ts';
 import type { DebugLog } from '../debug.ts';
 import { type BlobStore, tileLocality } from '../store/blob-store.ts';
@@ -71,7 +70,7 @@ export const packInstances = async (
 				blob: blobs[i],
 				first: 0,
 				count: group.rows.length,
-				reach: group.grid === null ? null : builder.reach(dynamicGridReach(decodeDynamicGrid(group.grid))),
+				reach: group.reach === null ? null : builder.reach(group.reach),
 			});
 			builder.extend(group.key, group.bounds!);
 			// oxlint-disable-next-line no-await-in-loop -- lines go out in block order
