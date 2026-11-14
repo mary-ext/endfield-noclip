@@ -74,13 +74,16 @@ throws on a page of any other size, which fails that blob.
 
 [`package/decode-pool.ts`](../../packages/viewer/src/package/decode-pool.ts) runs 2–4 module workers
 (half the hardware threads, clamped) and hands each job to the least busy one. each worker holds at
-most four jobs at once; the rest wait in the pool, so the jobs of an unloaded package that no worker
-has taken yet are dropped instead of keeping the workers busy.
+most 64 jobs at once; the rest wait in the pool, so the jobs of an unloaded package that no worker
+has taken yet are dropped instead of keeping the workers busy. a worker's answers reach the main
+thread only between its frames, so the jobs in hand are what a frame can take in: with four per
+worker the pool turned over a few dozen blobs a frame while the workers idled, which bounded
+loading (a map02 teleport took 2.4 s to settle, and 0.9 s with 64).
 
 a job is a range of a `SharedBytes` buffer: a whole coalesced range read, or a core blob copied out
 of the core's bytes (which stay on the main thread). the pool transfers the buffer to the worker
 that takes its first job, uncopied, and sends the buffer's later jobs to that worker too, so a full
-worker can hold them back while another idles; decoding isn't what bounds loading (see
+worker can hold them back while another idles; the workers' time isn't what bounds loading (see
 [decoding](streaming.md#residency-and-budgets)), so this costs little. the buffer counts its jobs
 not yet posted: the stream manager releases the ones it drops instead of decoding, and once none is
 left the worker frees the buffer. until then the whole read stays in memory, gaps included, for its

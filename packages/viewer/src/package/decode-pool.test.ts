@@ -3,7 +3,7 @@ import { after, before, it } from 'node:test';
 
 import { BlobCodec } from '@endfield-noclip/package-format/blobs';
 
-import { DecodePool, SharedBytes } from './decode-pool.ts';
+import { DecodePool, POSTED_PER_WORKER, SharedBytes } from './decode-pool.ts';
 import type { WorkerMessage } from './decode-protocol.ts';
 
 /** records what the pool posts, and answers when told to */
@@ -102,21 +102,22 @@ it('keeps a job for a full worker queued while others go to idle workers', () =>
 	const pool = new DecodePool(2);
 	const [first, second] = FakeWorker.made;
 	const signal = new AbortController().signal;
-	const read = new SharedBytes(new ArrayBuffer(16 * 6), 6);
+	const jobs = POSTED_PER_WORKER + 1;
+	const read = new SharedBytes(new ArrayBuffer(16 * (jobs + 1)), jobs + 1);
 
-	for (let i = 0; i < 5; i++) {
+	for (let i = 0; i < jobs; i++) {
 		pool.run(job(read, i * 16, 16), signal);
 	}
 	const other = new SharedBytes(new ArrayBuffer(16), 1);
 	pool.run(job(other, 0, 16), signal);
-	// four posted to the first worker, one waiting for it; the other read went to the idle worker
-	assert.equal(types(first).filter((type) => type === 'decode').length, 4);
+	// a worker's fill posted to the first worker, one waiting for it; the other read went to the idle worker
+	assert.equal(types(first).filter((type) => type === 'decode').length, POSTED_PER_WORKER);
 	assert.deepEqual(types(second), ['buffer', 'decode']);
 
 	const posted = first.posted[1].message;
 	assert.ok(posted.type === 'decode');
 	first.answer(posted.request.id);
-	assert.equal(types(first).filter((type) => type === 'decode').length, 5);
+	assert.equal(types(first).filter((type) => type === 'decode').length, jobs);
 	pool.release(read);
 	assert.equal(types(first).at(-1), 'release');
 	pool.destroy();

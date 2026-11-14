@@ -47,10 +47,11 @@ export type DecodeJob = DistributiveOmit<DecodeRequest, keyof StoredBlob | 'id' 
 
 /**
  * jobs posted to a worker at most at once; the rest wait in the pool, where they can still be cancelled. a
- * worker's answer waits for the main thread, which is busy for most of a frame while streaming, so a worker
- * with one job in hand would idle between them
+ * worker's answers wait for the main thread, which is busy for most of a frame while streaming, so the jobs
+ * it has in hand are what a frame can take in: with 4, a few dozen blobs a frame got through while the
+ * workers idled
  */
-const POSTED_PER_WORKER = 4;
+export const POSTED_PER_WORKER = 64;
 
 interface Queued {
 	request: DecodeJob;

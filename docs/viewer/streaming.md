@@ -306,8 +306,11 @@ the renderers and stores that own the GPU side; their residency shapes are in
   than 2 frames are aborted; queued blobs not wanted this frame return to idle. no new reads start
   while 384 blobs (`MAX_UNDECODED`) are fetched or being read and not yet decoding.
 - **decoding.** fetched blobs wait in the stream manager, not in the decode pool, and each slot that
-  frees on a worker (4 per worker, since a worker's answer waits for a busy main thread) takes the
-  most wanted one; blobs nobody has wanted for 30 frames are dropped first. queued in the pool in
+  frees on a worker (64 per worker: a worker's answers wait for a busy main thread, so its jobs in
+  hand are what a frame can take in, see [decode workers](loading.md#decode-workers-and-zstd)) takes
+  the most wanted one; blobs nobody has wanted for 30 frames are dropped first. no decode starts
+  while 64 MiB of raw blobs are being decoded or wait decoded for an upload (one blob always may):
+  the workers outrun the frames' upload budget, and decoded content waits in memory. queued in the pool in
   arrival order instead, thousands of blobs wait at once flying across map02, so what comes into
   view waits behind what the camera has left while the workers sit idle nearly all the time.
 - **uploading.** pinned first, then by priority, until the frame has uploaded 24 MiB or spent 2 ms

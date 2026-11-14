@@ -52,6 +52,11 @@ export interface StreamOptions {
  * camera moved on, while the ones it wants now wait behind them
  */
 const MAX_UNDECODED = 384;
+/**
+ * raw bytes being decoded or decoded and waiting to upload at most (but always one blob): a few frames of the
+ * upload budget. the workers decode faster than frames upload, and what's decoded sits in memory until then
+ */
+const DECODED_BACKLOG_BYTES = 64 * 2 ** 20;
 /** fetched or decoded blobs nobody has wanted for this many frames are dropped instead of decoded or uploaded */
 const STALE_FRAMES = 30;
 /**
@@ -150,6 +155,8 @@ export class StreamManager {
 	#decodes = new AbortController();
 	/** core reads and decodes under way */
 	#working = 0;
+	/** raw bytes of the blobs being decoded */
+	#decodingBytes = 0;
 	#frame = 0;
 	/**
 	 * the budget is full of content still in use: unpinned fetches and uploads pause until something falls out
@@ -615,7 +622,12 @@ export class StreamManager {
 	 */
 	#startDecodes(): void {
 		const fetched = this.#fetched;
-		while (fetched.size > 0 && this.#pool.free > 0) {
+		// decoded blobs wait for the frames' upload budget; past the backlog the workers would only fill memory
+		let waiting = 0;
+		for (const item of this.#uploads) {
+			waiting += this.#package.blobs[item.blob].rawLength;
+		}
+		while (fetched.size > 0 && this.#pool.free > 0 && waiting + this.#decodingBytes < DECODED_BACKLOG_BYTES) {
 			let best: ContentItem | null = null;
 			for (const [item, bytes] of fetched) {
 				// while saturated, unpinned content would only be dropped once decoded
@@ -656,6 +668,7 @@ export class StreamManager {
 		const job = this.#pool.run(decodeJob(this.#handlers, kind, item.blob, stored), this.#decodes.signal);
 		item.state = 'decoding';
 		this.#working++;
+		this.#decodingBytes += record.rawLength;
 		this.stats.decoding++;
 		job
 			.then((decoded) => {
@@ -674,6 +687,7 @@ export class StreamManager {
 			})
 			.finally(() => {
 				this.#working--;
+				this.#decodingBytes -= record.rawLength;
 				this.stats.decoding--;
 				this.#startDecodes();
 			});

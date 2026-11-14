@@ -100,6 +100,12 @@ how to measure is in [driving the viewer](../driving-the-viewer.md#profiling).
 - **large uploads staged.** streamed data of 128 KiB or more goes through a
   [staging buffer](gpu-resources.md) instead of a queue write, which stalled the main thread for
   15–30 ms per megabyte-sized texture level while streaming.
+- **a frame's worth of decode jobs in hand.** the decode workers' answers reach the main thread only
+  between frames, so the jobs posted to them are what a frame can take in. with four per worker
+  about 16 blobs got through a frame while the workers idled, which bounded all loading; with 64
+  ([decode workers](loading.md#decode-workers-and-zstd)) a map02 teleport settles in about a second
+  rather than 2.5, and the page in a little over 2 s rather than 5. what's decoded and waiting to
+  upload is held to 64 MiB, so the workers don't run ahead of the frames' upload budget.
 - **several reads a request.** what's wanted of one archive goes out as the ranges of one request
   where the server answers multi-range requests ([fetching](streaming.md#residency-and-budgets)),
   which halved the requests of a map02 flight.
@@ -152,6 +158,14 @@ Stockade 10/19 ms, Si's Painting 5/14 ms, the map02 crossing 16/34 ms, map01 unc
 millisecond; `mesh select` is what it was. every route still ends with the budget full, now partly
 of levels kept past their use, and a walk still downloads 1–3 GB: what a moving camera newly sees,
 which no one has broken down yet.
+
+with a request carrying several reads and 64 decode jobs in hand per worker, 2026-11-14, the first
+table's run again (one run each, before and after, the same day): the page loads to idle in 2.2 s
+rather than 5.2, a teleport to the Jingyu or lv008 overview settles in 1.0 s rather than 2.6, and
+over the flight the frame's median/p95 goes from 6.9/18 ms to 6.3/16 ms, its requests from about
+18,000 to 8,000, and the 95th percentile of the wait from wanting a mesh to having it from 400 ms
+to 110 ms (textures 340 to 140 ms). at a teleport meshes still wait longest, a median of about half
+a second against the textures' tenth: what bounds them now isn't looked into.
 
 map02's walks are bound by the CPU. in Wuling City's streets about a third of `mesh select` is
 placing particles (a few thousand live ones across about a hundred emitters), and the rest the
