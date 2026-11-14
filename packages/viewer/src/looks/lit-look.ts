@@ -23,12 +23,19 @@ import {
 } from './look.ts';
 
 /**
+ * the float of a look's parameters that is 1 when the tri-channel mask sits in the emissive slot, under an
+ * MRO map in the mask slot: the fourth of the mask offsets' row, which has three channels
+ */
+export const TRI_CHANNEL_IN_EMISSIVE_SLOT = LookRow.maskOffset + 3;
+
+/**
  * the Lit model ({@link LitSurface}). slots are shared where materials rarely use both (`SLOTS`): the MRO
- * layout's map takes the tri-channel mask's slot, which therefore isn't drawn there, and a mask layer's mask
- * map the emissive map's, so mask layers on emissive-mapped materials aren't drawn. `_EMISSIVE_ANIM`'s pulse
- * keeps its inputs in the parallax rows, so it stays still on surfaces with a parallax glow or a layer. a
- * vertex offset's textures take the parallax slots, so it isn't drawn on those surfaces either, nor on ones
- * that aren't alpha-tested or that offset along the normal (docs/viewer/materials.md#vertex-offset)
+ * layout's map takes the tri-channel mask's slot, so the mask moves to the emissive slot there and isn't
+ * drawn when that's taken too, and a mask layer's mask map takes the emissive map's, so mask layers on
+ * emissive-mapped materials aren't drawn. `_EMISSIVE_ANIM`'s pulse keeps its inputs in the parallax rows, so
+ * it stays still on surfaces with a parallax glow or a layer. a vertex offset's textures take the parallax
+ * slots, so it isn't drawn on those surfaces either, nor on ones that aren't alpha-tested or that offset
+ * along the normal (docs/viewer/materials.md#vertex-offset)
  *
  * @param surface the surface
  * @param cull the faces the material culls
@@ -38,20 +45,32 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 	const look = emptyLook({ drawn: true });
 	look.cull = cull;
 	const params = look.params;
-	const { textures, emission } = surface;
-	const triChannel = surface.layout === 'mro' ? null : surface.triChannel;
+	const { textures, emission, overlay } = surface;
 	if (textures.base !== null) {
 		setTexture(look, Slot.Base, textures.base);
 	}
 	if (textures.normal !== null) {
 		setTexture(look, Slot.Normal, textures.normal);
 	}
-	const mask = textures.mro ?? triChannel?.mask ?? null;
-	if (mask !== null) {
-		setTexture(look, Slot.Mask, mask);
+	if (textures.mro !== null) {
+		setTexture(look, Slot.Mask, textures.mro);
 	}
 	if (textures.emissive !== null) {
 		setTexture(look, Slot.Emissive, textures.emissive);
+	}
+	// the tri-channel mask takes the mask slot, or under an MRO map the emissive slot, unless an emissive map
+	// or a mask layer's mask map holds that
+	let triChannel: LitSurface['triChannel'] = null;
+	if (surface.triChannel !== null) {
+		const maskLayer = overlay?.kind === 'layer' && overlay.coverage.kind === 'maskMap';
+		if (textures.mro === null) {
+			triChannel = surface.triChannel;
+			setTexture(look, Slot.Mask, triChannel.mask);
+		} else if (textures.emissive === null && !maskLayer) {
+			triChannel = surface.triChannel;
+			setTexture(look, Slot.Emissive, triChannel.mask);
+			params[TRI_CHANNEL_IN_EMISSIVE_SLOT] = 1;
+		}
 	}
 	if (surface.detail !== null) {
 		setTexture(look, Slot.Detail, surface.detail.texture);
@@ -154,7 +173,6 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 
 	// the glow and the layer take the parallax rows, which the pulse has otherwise
 	let parallaxRowsFree = true;
-	const { overlay } = surface;
 	switch (overlay?.kind) {
 		case 'parallax': {
 			parallaxParams(look, overlay);

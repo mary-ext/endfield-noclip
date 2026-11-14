@@ -187,12 +187,13 @@ packs or renders correctly.
   instance at the cluster's LOD, without the game's sparsity thinning; the cluster LOD measure
   (`rendererHalfSize`), the per-instance parameters and column 7 aren't read
 - Lit layers ([lit layers](viewer/materials.md#lit-layers)): `HGRP/LitEffect` (about 100 map02
-  materials) draws as Lit without dissolve and disturb; the tri-channel mask on MRO-layout
-  materials, G and B of its switch-texture variants, `_UseMaskRUVSetAndTilingScale`, the parallax
-  glow's separate mask (`_UseParallaxMask`; those don't glow), global highlight and world-space, PBR
-  and deform variants, matcaps (the campfires' crystal glows without its sheen), mask layers on
-  emissive-mapped materials and with noise or parallax, the top layer's `_BaseHeightMap` (read as
-  grey) and `_TERRAIN_BLEND`'s fade into the terrain aren't drawn
+  materials) draws as Lit without dissolve and disturb; the tri-channel mask on MRO-layout materials
+  that also have an emissive map or a mask layer's map (the banners' emblem, drawn, is unchecked
+  against an in-game shot), G and B of its switch-texture variants, `_UseMaskRUVSetAndTilingScale`,
+  the parallax glow's separate mask (`_UseParallaxMask`; those don't glow), global highlight and
+  world-space, PBR and deform variants, matcaps (the campfires' crystal glows without its sheen),
+  mask layers on emissive-mapped materials and with noise or parallax, the top layer's
+  `_BaseHeightMap` (read as grey) and `_TERRAIN_BLEND`'s fade into the terrain aren't drawn
 - other surface keywords the viewer ignores, listed per material in `debug/assets.json`
   ([unsupported materials](viewer/materials.md#unsupported-materials)), on map02:
   `_MACRO_NORMAL_MAP` (about 90 materials), `_SUBSURFACE*`, `_FAKE*` (glints, cracks, dust, volume,

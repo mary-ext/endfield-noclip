@@ -5,9 +5,10 @@ import type { TextureRef } from '@endfield-noclip/package-format/textures';
 /**
  * the texture slots the mesh shader samples, in binding order. the frame group leaves seven sampled textures
  * of WebGPU's default sixteen, so slots are shared where materials rarely use both: the third holds `_MROMap`
- * in the MRO layout and the tri-channel `_MaskMap` otherwise ({@link LookFlags.TriChannelMask}), and looks
- * with {@link LookFlags.LayerBlend} put the layer's `_Layer1BaseMap` and `_Layer1BumpMap` in the parallax
- * slots (no map02 material has both keywords) and its `_LayerBlendMaskMap` in the emissive slot. looks with
+ * in the MRO layout and the tri-channel `_MaskMap` otherwise ({@link LookFlags.TriChannelMask}), which under
+ * an MRO map moves to the emissive slot (`TRI_CHANNEL_IN_EMISSIVE_SLOT` in lit-look.ts), and looks with
+ * {@link LookFlags.LayerBlend} put the layer's `_Layer1BaseMap` and `_Layer1BumpMap` in the parallax slots
+ * (no map02 material has both keywords) and its `_LayerBlendMaskMap` in the emissive slot. looks with
  * {@link LookFlags.VertexOffset} put `_OffsetTex` and `_OffsetMaskTex` in the parallax slots
  */
 export const SLOTS = [
@@ -59,7 +60,7 @@ export const LookFlags = {
 	Unlit: 1 << 12,
 	/** the alpha test reads the normal map's alpha instead of the base colour's (`_AlphaMaskChannel` 1) */
 	AlphaNormal: 1 << 13,
-	/** the mask slot holds the tri-channel `_MaskMap` rather than an MRO map */
+	/** the tri-channel `_MaskMap` is bound: in the mask slot, or under an MRO map in the emissive slot */
 	TriChannelMask: 1 << 14,
 	DetailMap: 1 << 15,
 	ParallaxMap: 1 << 16,
@@ -231,7 +232,7 @@ export const LookRow = {
 	maskMetallic: 64,
 	/** per channel, the mask's contrast (`_Mask*Scale`) */
 	maskScale: 68,
-	/** per channel, the mask's offset (`_Mask*Offset`) */
+	/** per channel, the mask's offset (`_Mask*Offset`); then 1 when the mask sits in the emissive slot */
 	maskOffset: 72,
 	/** `_DetailMode` (0 colour overlay, 1 PBR), `_DetailMaskMode`, normal intensity, PBR intensity */
 	detail: 76,

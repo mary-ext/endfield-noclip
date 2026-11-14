@@ -47,9 +47,11 @@ before the emission takes it. its breathing isn't read.
 
 `HGRP/LitEffect` is drawn as Lit, without its dissolve and disturb effects.
 
-- **`_TRI_CHANNEL_MASK`**: the mask shares the MRO map's slot, so MRO-layout materials draw without
-  it. of the switch-texture variants only R blends, since their G and B textures have no slot.
-  `_UseMaskRUVSetAndTilingScale` isn't read.
+- **`_TRI_CHANNEL_MASK`**: the mask shares the MRO map's slot, so on MRO-layout materials it takes
+  the emissive slot instead (Sword Vault Dale's banners print their emblem this way, over UV set 1),
+  sampled with the base colour's sampler, and isn't drawn where an emissive map or a mask layer's
+  mask map holds that slot. of the switch-texture variants only R blends, since their G and B
+  textures have no slot. `_UseMaskRUVSetAndTilingScale` isn't read.
 - **`_PARALLAX_MAP`**: the [pulse](../game-data/materials.md#lit-layers) moves only while frames
   render ([performance](performance.md); the `continuous` option keeps it moving), and the
   brightening near the player puts the player at the camera. a glow without a noise map binds only

@@ -15,6 +15,7 @@ import {
 	LayerSource,
 	LeafBlendRow,
 	SwayRow,
+	TRI_CHANNEL_IN_EMISSIVE_SLOT,
 	TrunkRow,
 	VertexOffsetRow,
 } from './lit-look.ts';
@@ -289,7 +290,7 @@ test('a per-draw albedo tint takes its own row; without one the row tints nothin
 	assert.deepEqual(row(plain), [0, 0, 0, 0]);
 });
 
-test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot except under an MRO map, detail', () => {
+test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot or under an MRO map the emissive one, detail', () => {
 	const slot = (texture: number, uv = 0, scale = 1): TextureSlot => ({
 		texture,
 		uv,
@@ -320,10 +321,19 @@ test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot except und
 		overlayCover: 0,
 	};
 	const textures = { base: slot(1, 1, 5), normal: slot(2), mro: null, emissive: null };
-	const [crystal, mro] = materialLooks({
+	const mroTextures = { ...textures, mro: slot(3) };
+	const [crystal, mro, glowing] = materialLooks({
 		entries: [
 			described(litSurface({ textures, triChannel, detail })),
-			described(litSurface({ layout: 'mro', textures: { ...textures, mro: slot(3) }, triChannel })),
+			// M_cloth_map02_sfcanvas+1_001_01: a banner's emblem, masked over UV set 1
+			described(
+				litSurface({
+					layout: 'mro',
+					textures: mroTextures,
+					triChannel: { ...triChannel, mask: slot(4, 1) },
+				}),
+			),
+			described(litSurface({ layout: 'mro', textures: { ...mroTextures, emissive: slot(6) }, triChannel })),
 		],
 	});
 	assert.deepEqual(crystal.textures, [1, 2, 4, null, 5, null, null]);
@@ -334,10 +344,17 @@ test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot except und
 	const row = (at: number) => Array.from(crystal.params.subarray(at, at + 4));
 	assert.deepEqual(row(LookRow.maskAlbedo), [1, 0.214, 0, 0.5].map(Math.fround));
 	assert.equal(crystal.params[LookRow.maskAlbedo + 4 + 3], 0);
-	// the MRO map takes the mask slot, so the tri-channel mask isn't drawn
-	assert.equal(mro.textures[2], 3);
-	assert.equal(mro.flags & LookFlags.TriChannelMask, 0);
+	assert.equal(crystal.params[TRI_CHANNEL_IN_EMISSIVE_SLOT], 0);
+	// the MRO map takes the mask slot, so the tri-channel mask moves to the emissive slot
+	assert.deepEqual(mro.textures, [1, 2, 3, 4, null, null, null]);
+	assert.notEqual(mro.flags & LookFlags.TriChannelMask, 0);
+	assert.equal(mro.params[TRI_CHANNEL_IN_EMISSIVE_SLOT], 1);
+	assert.equal((mro.flags >> UV1_SHIFT) & 0x7f, 0b01001);
 	assert.notEqual(mro.flags & LookFlags.NormalRag, 0);
+	// an emissive map keeps its slot, and the mask isn't drawn
+	assert.deepEqual(glowing.textures, [1, 2, 3, 6, null, null, null]);
+	assert.equal(glowing.flags & LookFlags.TriChannelMask, 0);
+	assert.equal(glowing.params[TRI_CHANNEL_IN_EMISSIVE_SLOT], 0);
 });
 
 /** a layer map, tiled and offset by the layer's own values */

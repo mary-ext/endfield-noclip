@@ -33,7 +33,8 @@ struct Look {
 	// the tri-channel mask's R, G and B: linear colour, strength. leaves: `_BLEND_COLOR` (`LeafBlendRow` in
 	// lit-look.ts)
 	mask_albedo: array<vec4f, 3>,
-	// per mask channel (xyz): the roughness and metallic it blends toward, its contrast and offset
+	// per mask channel (xyz): the roughness and metallic it blends toward, its contrast and offset.
+	// `mask_offset.w` is 1 when the mask sits in the emissive slot
 	mask_roughness: vec4f,
 	mask_metallic: vec4f,
 	mask_scale: vec4f,
@@ -728,7 +729,10 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	if ((flags & (NORMAL_MAP | NORMAL_OCCLUSION)) == (NORMAL_MAP | NORMAL_OCCLUSION)) {
 		s.occlusion = mix(1.0, packed.a, look.surface2.x);
 	}
-	let mro = (flags & (MASK_MAP | TRI_CHANNEL_MASK)) == MASK_MAP;
+	// the tri-channel mask sits in the mask slot, or under an MRO map in the emissive slot
+	// (`TRI_CHANNEL_IN_EMISSIVE_SLOT` in lit-look.ts)
+	let tri_in_glow = look.mask_offset.w > 0.5;
+	let mro = has_mro(flags, look);
 	if (mro) {
 		s.metallic = mask.r;
 		s.roughness = mix(look.surface.x, look.surface.y, mask.g);
@@ -740,10 +744,12 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		s.roughness = mix(s.roughness, mix(detail.a, detail.b, look.detail.x), detail_pbr);
 		s.occlusion *= mix(1.0, mix(1.0, detail.a, look.detail.x), detail_pbr);
 	}
-	if ((flags & (MASK_MAP | TRI_CHANNEL_MASK)) == (MASK_MAP | TRI_CHANNEL_MASK)) {
+	let tri_flags = TRI_CHANNEL_MASK | select(MASK_MAP, EMISSIVE_MAP, tri_in_glow);
+	if ((flags & tri_flags) == tri_flags) {
 		// each channel, remapped by its contrast and offset, blends toward its own surface, B first and R last
 		let scale = look.mask_scale.xyz;
-		let w = saturate(scale * 0.5 + mix(-scale, vec3f(1.0), mask.rgb + look.mask_offset.xyz)) *
+		let tri = select(mask.rgb, glow.rgb, tri_in_glow);
+		let w = saturate(scale * 0.5 + mix(-scale, vec3f(1.0), tri + look.mask_offset.xyz)) *
 			vec3f(look.mask_albedo[0].w, look.mask_albedo[1].w, look.mask_albedo[2].w);
 		let roughnesses = look.mask_roughness;
 		let metallics = look.mask_metallic;
@@ -758,7 +764,7 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	var emission = vec3f(0.0);
 	// the emission's strength: the map's R or the remapped mask channel
 	var strength = 0.0;
-	if ((flags & EMISSIVE_MAP) != 0u && !layer_mask_map) {
+	if ((flags & EMISSIVE_MAP) != 0u && !layer_mask_map && !tri_in_glow) {
 		// R scales the emissive colour; G, B and A add colours of their own (zero unless `_EmissiveType` is set)
 		let channels = look.emissive_channels;
 		strength = glow.r;
@@ -766,7 +772,7 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 			+ channels[2].rgb * glow.a;
 	}
 	if ((flags & EMISSIVE_MASK) != 0u) {
-		strength = saturate((map_channel(flags, look.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
+		strength = saturate((map_channel(flags, mro, look.emissive2.y, base_a, packed, mask) - 0.05) / 0.9);
 		emission = look.emissive.rgb * strength;
 	}
 	// a per-draw albedo tint darkens or tints the emitting parts, and so the emission that follows the albedo
@@ -785,7 +791,7 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	// the glow needs its pattern; without a noise map it marches a flat height field
 	if ((flags & (PARALLAX_MAP | LAYER_BLEND | VERTEX_OFFSET)) == PARALLAX_MAP && in.tangent.w != 0.0) {
 		// the glow's mask uses the same channel numbering as the emission mask, one lower
-		let glow_mask = map_channel(flags, look.parallax_color.w + 1.0, base_a, packed, mask);
+		let glow_mask = map_channel(flags, mro, look.parallax_color.w + 1.0, base_a, packed, mask);
 		if (glow_mask > 0.01) {
 			let v = normalize(-in.rel);
 			let has_noise = (flags & PARALLAX_NOISE_MAP) != 0u;
@@ -902,16 +908,21 @@ fn grass_surface(surface: Surface, look: Look, in: VertexOut, mask: f32) -> Surf
 
 // a mask channel of the material's own maps, numbered like `_EmissiveMaskChannel`: 1 the base colour's alpha;
 // in the two-basemap layout 2 the normal map's B and 3 its alpha, with an MRO map 2 the base alpha and 3 the
-// MRO map's alpha. maps still streaming read 0
-fn map_channel(flags: u32, channel: f32, base_a: f32, packed: vec4f, mask: vec4f) -> f32 {
+// MRO map's alpha (`mro`: whether the mask slot holds one, `has_mro`). maps still streaming read 0
+fn map_channel(flags: u32, mro: bool, channel: f32, base_a: f32, packed: vec4f, mask: vec4f) -> f32 {
 	if ((flags & NORMAL_OCCLUSION) != 0u) {
 		let has_normal = (flags & NORMAL_MAP) != 0u;
 		let b = select(0.0, packed.b, has_normal);
 		let a = select(0.0, packed.a, has_normal);
 		return mix(mix(base_a, b, saturate(channel - 1.0)), a, saturate(channel - 2.0));
 	}
-	let mro = (flags & (MASK_MAP | TRI_CHANNEL_MASK)) == MASK_MAP;
 	return mix(base_a, select(0.0, mask.a, mro), saturate(channel - 2.0));
+}
+
+// whether the mask slot holds a bound MRO map rather than the tri-channel mask, which under an MRO map sits in
+// the emissive slot
+fn has_mro(flags: u32, look: Look) -> bool {
+	return (flags & MASK_MAP) != 0u && ((flags & TRI_CHANNEL_MASK) == 0u || look.mask_offset.w > 0.5);
 }
 
 // `_EMISSIVE_ANIM`'s pulse (`EmissivePulseRow` in lit-look.ts, docs/game-data/materials.md#emission): each cycle
