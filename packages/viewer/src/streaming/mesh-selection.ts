@@ -2,7 +2,7 @@ import type { GeometryTable } from '@endfield-noclip/package-format/geometry-tab
 import type { Chain } from '@endfield-noclip/package-format/instances';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { CULL_FLOATS, movingRows, ROW_WORDS } from '../content/instance-rows.ts';
+import { CULL_FLOATS, ROW_WORDS } from '../content/instance-rows.ts';
 import { alphaTextureOf, LookFlags, type MaterialLook, UV1_SHIFT } from '../looks/look.ts';
 import type { LazyMaterialLooks } from '../looks/material-looks.ts';
 import type { ParticleField, ParticleView } from '../particles/particle-rows.ts';
@@ -46,10 +46,8 @@ import {
 	GroupFloat,
 	SEGMENT_FLOATS,
 	SegmentFloat,
-	buildRowGroups,
 	chainReach,
-	groupSegmentsOf,
-	mirroredRows,
+	setGroupReaches,
 } from './row-groups.ts';
 import type { CasterVolume, InstanceRange } from './selection.ts';
 import type { StreamManager } from './stream-manager.ts';
@@ -175,7 +173,7 @@ const casterLayerBits = (slot: ChainSlot, first: number): number => {
 
 /** what a resident block's selection reuses from frame to frame */
 interface SelectedBlock {
-	/** its row groups' bounds, from `buildRowGroups` */
+	/** its row groups' bounds, from `buildRowGroups`, their reaches set */
 	groups: Float32Array;
 	/** 1 per mirrored row */
 	mirrored: Uint8Array;
@@ -484,19 +482,11 @@ export class MeshSelector {
 				boxes[r] = this.#buckets.drawsBox(chain) ? 1 : 0;
 				origins.push(this.#chains[chain].distanceOrigin);
 			}
-			const rowCount = instances.cull.length / CULL_FLOATS;
-			const mirrored = mirroredRows(instances.rowsF32, rowCount);
-			const { segments, groupSegments } = groupSegmentsOf(instances.rowsF32, runs, instances.cull, mirrored);
+			// the worker bounded the rows; how far each group draws takes the chains' slots, which only this has
+			const { groups, mirrored, segments, groupSegments } = instances.bounds;
+			setGroupReaches(instances.bounds, runs, (chain) => this.#reach(chain));
 			return {
-				groups: buildRowGroups(
-					{
-						rowsF32: instances.rowsF32,
-						cull: instances.cull,
-						runs: instances.runs,
-						moving: movingRows(instances.spins, instances.rides),
-					},
-					(chain) => this.#reach(chain),
-				),
+				groups,
 				mirrored,
 				allSlots,
 				slots: allSlots,

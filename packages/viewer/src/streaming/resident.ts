@@ -8,6 +8,8 @@ import type {
 } from '../render/meshes/geometry-pools.ts';
 import type { ResidentSkin } from '../render/meshes/skin-animation.ts';
 
+import type { RowBounds } from './row-groups.ts';
+
 /** GPU residency of a height page */
 export interface ResidentHeights {
 	kind: 'heights';
@@ -62,6 +64,8 @@ export interface ResidentInstances {
 	rowsF32: Float32Array<ArrayBuffer>;
 	/** per-row cull data, see {@link InstanceRows.cull} */
 	cull: Float32Array;
+	/** what the mesh selection culls the rows by, as the decode worker built it */
+	bounds: RowBounds;
 	/** the spinning rows, which turn {@link rowsF32} in place by the clock; `null` when every row holds still */
 	spins: RowSpins | null;
 	/** the rows floating on water volumes, which follow their surfaces; `null` when none does */

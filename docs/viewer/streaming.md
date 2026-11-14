@@ -115,9 +115,12 @@ CPU over the selected row ranges, with the sphere and shadow layer tests of
 [`instance-culling.ts`](../../packages/viewer/src/streaming/instance-culling.ts) and the chain slots
 and buckets of [`mesh-buckets.ts`](../../packages/viewer/src/streaming/mesh-buckets.ts). it first
 tests each group of 32 consecutive rows of a block
-([`row-groups.ts`](../../packages/viewer/src/streaming/row-groups.ts), built on a block's first
-selection) against the same rules with the group's bounds: its sphere, its largest row radius and
-its farthest LOD reach. a group that fails one has no row that passes it, so it's skipped whole.
+([`row-groups.ts`](../../packages/viewer/src/streaming/row-groups.ts)) against the same rules with
+the group's bounds: its sphere, its largest row radius and its farthest LOD reach. the decode worker
+builds the groups, the [segments](#gpu-culling) and the rows' handedness beside the rows
+(`buildRowBounds`), and the selection only fills in each group's reach on the block's first
+selection, since that takes the chains' drawn slots. a group that fails a rule has no row that
+passes it, so it's skipped whole.
 rows are in placement order, which keeps a group's rows close together (a median radius of about 20
 m on map02); groups holding spinning or riding rows are never skipped. per instance it:
 

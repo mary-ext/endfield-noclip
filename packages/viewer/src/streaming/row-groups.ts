@@ -71,7 +71,7 @@ export const chainReach = (minSquared: number | null, measuredByDistance: boolea
  * @param count how many rows
  * @returns 1 per row whose transform mirrors it (a negative determinant), else 0; turning never changes it
  */
-export const mirroredRows = (rowsF32: Float32Array, count: number): Uint8Array => {
+export const mirroredRows = (rowsF32: Float32Array, count: number): Uint8Array<ArrayBuffer> => {
 	const mirrored = new Uint8Array(count);
 	for (let i = 0; i < count; i++) {
 		const at = i * ROW_WORDS;
@@ -123,7 +123,7 @@ export const groupSegmentsOf = (
 	runs: Uint32Array,
 	cull: Float32Array,
 	mirrored: Uint8Array,
-): { segments: Float32Array; groupSegments: Uint32Array } => {
+): { segments: Float32Array<ArrayBuffer>; groupSegments: Uint32Array<ArrayBuffer> } => {
 	const count = cull.length / CULL_FLOATS;
 	const groupCount = Math.ceil(count / GROUP_ROWS);
 	const groupSegments = new Uint32Array(groupCount + 1);
@@ -176,21 +176,70 @@ export const groupSegmentsOf = (
 };
 
 /**
- * @param rows the block's rows
- * @param reachOf a chain's reach per metre of size, from {@link chainReach}
- * @returns {@link GROUP_FLOATS} floats per group of {@link GROUP_ROWS} rows, the last group possibly shorter
+ * what the mesh selection culls a block's rows by, derived from the rows alone, so the decode worker builds
+ * it beside them
  */
-export const buildRowGroups = (rows: GroupedRows, reachOf: (chain: number) => number): Float32Array => {
-	const { rowsF32: f32, cull, runs, moving } = rows;
+export interface RowBounds {
+	/** {@link GROUP_FLOATS} per group of {@link GROUP_ROWS} rows, from {@link buildRowGroups} */
+	groups: Float32Array<ArrayBuffer>;
+	/** 1 per mirrored row, from {@link mirroredRows} */
+	mirrored: Uint8Array<ArrayBuffer>;
+	/** each group's rows split by chain run, from {@link groupSegmentsOf} */
+	segments: Float32Array<ArrayBuffer>;
+	/** per group, where its segments start; one more entry ends the last */
+	groupSegments: Uint32Array<ArrayBuffer>;
+}
+
+/**
+ * @param rows the block's rows
+ * @returns the block's {@link RowBounds}, its groups reaching any distance until {@link setGroupReaches}
+ */
+export const buildRowBounds = (rows: GroupedRows): RowBounds => {
+	const mirrored = mirroredRows(rows.rowsF32, rows.cull.length / CULL_FLOATS);
+	return {
+		groups: buildRowGroups(rows),
+		mirrored,
+		...groupSegmentsOf(rows.rowsF32, rows.runs, rows.cull, mirrored),
+	};
+};
+
+/**
+ * sets each group's {@link GroupFloat.reach}, the largest reach of a row of it, which only the chains' drawn
+ * slots tell
+ *
+ * @param bounds the block's bounds; the reach of each of its groups is overwritten
+ * @param runs the block's (chain, first, count) runs
+ * @param reachOf a chain's reach per metre of size, from {@link chainReach}
+ */
+export const setGroupReaches = (
+	bounds: RowBounds,
+	runs: Uint32Array,
+	reachOf: (chain: number) => number,
+): void => {
+	const { groups, segments, groupSegments } = bounds;
+	for (let g = 0; g + 1 < groupSegments.length; g++) {
+		// a segment's largest row reaches farthest of its rows, which share its chain
+		let reach = 0;
+		for (let s = groupSegments[g]; s < groupSegments[g + 1]; s++) {
+			const at = s * SEGMENT_FLOATS;
+			reach = Math.max(
+				reach,
+				reachOf(runs[segments[at + SegmentFloat.run] * 3]) * segments[at + SegmentFloat.maxSize],
+			);
+		}
+		groups[g * GROUP_FLOATS + GroupFloat.reach] = reach;
+	}
+};
+
+/**
+ * @param rows the block's rows
+ * @returns {@link GROUP_FLOATS} floats per group of {@link GROUP_ROWS} rows, the last group possibly shorter,
+ *   each with an infinite {@link GroupFloat.reach}
+ */
+export const buildRowGroups = (rows: GroupedRows): Float32Array<ArrayBuffer> => {
+	const { rowsF32: f32, cull, moving } = rows;
 	const count = cull.length / CULL_FLOATS;
 	const groups = new Float32Array(Math.ceil(count / GROUP_ROWS) * GROUP_FLOATS);
-	const reach = new Float64Array(count);
-	for (let r = 0; r < runs.length; r += 3) {
-		const perSize = reachOf(runs[r]);
-		for (let i = runs[r + 1]; i < runs[r + 1] + runs[r + 2]; i++) {
-			reach[i] = perSize * cull[i * CULL_FLOATS + 1];
-		}
-	}
 	let next = 0;
 	for (let g = 0; g * GROUP_ROWS < count; g++) {
 		const first = g * GROUP_ROWS;
@@ -216,7 +265,6 @@ export const buildRowGroups = (rows: GroupedRows, reachOf: (chain: number) => nu
 		let centers = 0;
 		let radius = 0;
 		let rowRadius = 0;
-		let groupReach = 0;
 		for (let i = first; i < end; i++) {
 			const at = i * ROW_WORDS;
 			const d = Math.hypot(f32[at + 12] - cx, f32[at + 13] - cy, f32[at + 14] - cz);
@@ -224,7 +272,6 @@ export const buildRowGroups = (rows: GroupedRows, reachOf: (chain: number) => nu
 			centers = Math.max(centers, d);
 			radius = Math.max(radius, d + r);
 			rowRadius = Math.max(rowRadius, r);
-			groupReach = Math.max(groupReach, reach[i]);
 		}
 		// a moving row can be anywhere its turning or its path takes it
 		if (moving !== null) {
@@ -244,7 +291,7 @@ export const buildRowGroups = (rows: GroupedRows, reachOf: (chain: number) => nu
 		groups[out + GroupFloat.centersRadius] = centers + 0.01;
 		groups[out + GroupFloat.radius] = radius + 0.01;
 		groups[out + GroupFloat.rowRadius] = rowRadius;
-		groups[out + GroupFloat.reach] = groupReach;
+		groups[out + GroupFloat.reach] = Infinity;
 	}
 	return groups;
 };

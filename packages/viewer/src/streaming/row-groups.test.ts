@@ -9,10 +9,12 @@ import {
 	GroupFloat,
 	SEGMENT_FLOATS,
 	SegmentFloat,
+	buildRowBounds,
 	buildRowGroups,
 	chainReach,
 	groupSegmentsOf,
 	mirroredRows,
+	setGroupReaches,
 } from './row-groups.ts';
 
 /** rows at the given bounds centres, each with a bounding radius and LODGroup size */
@@ -32,7 +34,11 @@ it('bounds each group of rows and its farthest LOD', () => {
 	const { rowsF32, cull } = rowsAt(centers, 1, 2);
 	// chain 0 covers the first group, chain 1 (never culled by size) the two rows of the second
 	const runs = new Uint32Array([0, 0, GROUP_ROWS, 1, GROUP_ROWS, 2]);
-	const groups = buildRowGroups({ rowsF32, cull, runs, moving: null }, (chain) =>
+	const bounds = buildRowBounds({ rowsF32, cull, runs, moving: null });
+	const groups = bounds.groups;
+	// until the chains' slots are known, no group is out of reach
+	assert.equal(groups[GroupFloat.reach], Infinity);
+	setGroupReaches(bounds, runs, (chain) =>
 		chain === 0 ? chainReach(0.01, false) : chainReach(-0.0001, false),
 	);
 	assert.equal(groups.length, 2 * GROUP_FLOATS);
@@ -55,9 +61,7 @@ it('never rejects a group holding a moving row', () => {
 		1,
 		1,
 	);
-	const groups = buildRowGroups({ rowsF32, cull, runs: new Uint32Array([0, 0, 2]), moving: [1] }, () =>
-		chainReach(0.01, false),
-	);
+	const groups = buildRowGroups({ rowsF32, cull, runs: new Uint32Array([0, 0, 2]), moving: [1] });
 	assert.equal(groups[GroupFloat.radius], Infinity);
 	assert.equal(groups[GroupFloat.centersRadius], Infinity);
 });

@@ -1,6 +1,7 @@
 import type { BlobCodec } from '@endfield-noclip/package-format/blobs';
 
 import type { InstanceRows, RowKinds } from '../content/instance-rows.ts';
+import type { RowBounds } from '../streaming/row-groups.ts';
 
 /** how a blob's stored bytes are encoded */
 export interface BlobEncoding {
@@ -80,6 +81,8 @@ export interface DecodedLayer {
 export interface DecodedInstances extends InstanceRows {
 	id: number;
 	kind: 'instances';
+	/** what the mesh selection culls the rows by, built here to keep it off the main thread */
+	bounds: RowBounds;
 }
 
 /** a decoded geometry blob: the vertex streams the viewer draws with, the indices and any animation */

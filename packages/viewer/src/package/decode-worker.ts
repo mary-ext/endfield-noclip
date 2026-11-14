@@ -19,7 +19,8 @@ import {
 
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
 
-import { buildInstanceRows } from '../content/instance-rows.ts';
+import { buildInstanceRows, movingRows } from '../content/instance-rows.ts';
+import { buildRowBounds } from '../streaming/row-groups.ts';
 
 import type {
 	DecodedGeometry,
@@ -402,9 +403,19 @@ const handle = (request: DecodeRequest): { response: DecodeResponse; transfer: T
 		}
 		case 'instances': {
 			const built = buildInstanceRows(decodeInstanceBlock(raw), request.rowKinds ?? []);
+			const bounds = buildRowBounds({
+				rowsF32: new Float32Array(built.rows.buffer),
+				cull: built.cull,
+				runs: built.runs,
+				moving: movingRows(built.spins, built.rides),
+			});
 			return {
-				response: { id: request.id, kind: 'instances', ...built },
+				response: { id: request.id, kind: 'instances', ...built, bounds },
 				transfer: [
+					bounds.groups.buffer,
+					bounds.mirrored.buffer,
+					bounds.segments.buffer,
+					bounds.groupSegments.buffer,
 					built.rows.buffer,
 					built.cull.buffer,
 					built.runs.buffer,

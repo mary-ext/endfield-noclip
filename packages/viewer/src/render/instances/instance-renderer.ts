@@ -264,6 +264,7 @@ export class InstanceRenderer {
 			runs: decoded.runs,
 			rowsF32: new Float32Array(decoded.rows.buffer),
 			cull: decoded.cull,
+			bounds: decoded.bounds,
 			spins: decoded.spins,
 			floaters: decoded.floaters,
 			rides: decoded.rides,
