@@ -27,6 +27,7 @@ const STATIC_COUNTS = [
 	'noBounds',
 	'excluded',
 	'packed',
+	'clothSimulated',
 	'foliageGrids',
 	'foliageInstances',
 ];
@@ -201,6 +202,10 @@ export const collectStaticChunks = async (world: WorldIndex, content: PackConten
 					continue;
 				}
 				content.count('packed');
+				// drawn as its mesh stands: the simulation isn't run (docs/status.md)
+				if (entity.clothHash !== null) {
+					content.count('clothSimulated');
+				}
 				let draws: ChainDraw[] = [];
 				if (renderer !== null) {
 					draws = renderer.draws.map((draw) => content.rendererDraw(draw));

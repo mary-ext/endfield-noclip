@@ -695,7 +695,7 @@ describe('the Lit model', () => {
 		assert.equal(noise.overlay, null);
 	});
 
-	it("sways HGRP/Lit cloth by its own direction or the wind's, but not GPU cloth or other shaders", () => {
+	it("sways HGRP/Lit cloth by its own direction or the wind's, GPU cloth too, but not other shaders", () => {
 		// M_prop_map02_kite+1_001_01a's values
 		const shader = shaderEntry({
 			name: 'HGRP/Lit',
@@ -738,7 +738,9 @@ describe('the Lit model', () => {
 		assert.ok(Math.abs(swung.direction[0]) < 1e-9 && swung.direction[1] === 1);
 		assert.equal(sway(cloth, { ...kite, _Use_Custom_WindDir: 0 })?.direction, null);
 		assert.equal(sway(cloth, { ...kite, _SimpleVertexAnimationWindIntensity: 0 }), null);
-		assert.equal(sway([...cloth, '_GPU_CLOTH'], kite), null);
+		// M_cloth_map02_sfcanvas+1_001_01's keywords: the banner has no simulation and sways like any cloth
+		assert.deepEqual(sway([...cloth, '_GPU_CLOTH'], kite), swung);
+		assert.deepEqual(keywordsNotDrawn('HGRP/Lit', [...cloth, '_GPU_CLOTH']), []);
 		assert.equal(sway(['_SIMPLE_VERTEXANIM', '_SIMPLE_VERTEXANIM_PENDULUM'], kite), null);
 		assert.equal(
 			sway(cloth, kite, { ...shader, name: 'HGRP/LitTransparent', family: 'litTransparent' }),

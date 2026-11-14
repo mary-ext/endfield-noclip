@@ -146,6 +146,11 @@ export interface ChunkEntity {
 	 * entities that hold still
 	 */
 	rotator: Rotator | null;
+	/**
+	 * the hash of the cloth simulation that moves the entity's vertices (component 60), which a cloth group
+	 * proxy of its cell holds; `null` for entities drawn as their mesh stands
+	 */
+	clothHash: number | null;
 	/** descriptor ids present on the entity */
 	components: number[];
 }
@@ -211,6 +216,8 @@ export const Component = {
 	 * the stored position, rotation quaternion (xyzw) and scale
 	 */
 	Rotator: 54,
+	/** `u32`: the hash of the entity's cloth simulation */
+	ClothHash: 60,
 	/** 24 bytes: `u8 lodCount`, …, at 16 `u8[8]` cumulative draw count per LOD */
 	LodRanges: 67,
 	/** 8 + 40·2ⁿ bytes for n = id − 68: `u64 count`, 2ⁿ × `(u64 material, u64 mesh, 24 bytes)` */
@@ -397,6 +404,10 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 		const matrixColumn = column(Component.InstanceData) ?? decalColumn;
 		const rotatorColumn = column(Component.Rotator);
 		const localSpinColumn = column(Component.LocalSpin);
+		const clothColumn = column(Component.ClothHash);
+		if (clothColumn !== undefined && clothColumn.stride !== 4) {
+			throw new FormatError(`a group has a ${clothColumn.stride}-byte cloth hash`);
+		}
 		const nameOf = groupNames(group, names);
 		const lodColumn = column(Component.LodRanges);
 		const refColumns = group.columns.filter(
@@ -457,6 +468,7 @@ export const readChunkEntities = (chunk: InitChunk): ChunkEntity[] => {
 				renderer,
 				decal: decalColumn === undefined ? null : readRectDecal(blobView, decalColumn, i, id),
 				rotator,
+				clothHash: clothColumn === undefined ? null : blobView.getUint32(clothColumn.offset + i * 4, true),
 				components: ids,
 			});
 		}

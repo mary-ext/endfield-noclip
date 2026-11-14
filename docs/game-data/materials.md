@@ -470,10 +470,31 @@ vectors, uses the previous wind clock. a per-pass `_DisableAnimateVert` scales t
 `1 − value`; what each pass sets it to isn't known. `_NoiseOffsetIntensity` enters only the gate in
 this variant.
 
-`_SIMPLE_VERTEXANIM_PENDULUM`, `_SIMPLE_VERTEXANIM_ROPE` and `_GPU_CLOTH` are other branches of the
-same family, not described here; the cloth materials that also enable `_GPU_CLOTH` are simulated
-rather than swayed. the [vertex offset](#vertex-offset) is a separate keyword, and a material with
+`_SIMPLE_VERTEXANIM_PENDULUM` and `_SIMPLE_VERTEXANIM_ROPE` are other branches of the same family,
+not described here. the [vertex offset](#vertex-offset) is a separate keyword, and a material with
 both adds the two offsets.
+
+### cloth simulation
+
+`_GPU_CLOTH` (map02's canvases, flags and banners, alongside the sway's keywords) lets a draw take
+its vertices from a cloth simulation. the keyword alone changes nothing: the variant computes the
+sway as above and adds it to the vertex either way, and replaces the object-space position only when
+a global switch is on and the draw's per-draw data names a slot in the simulation's skeleton buffer.
+the game fills that slot for entities that carry a cloth hash
+([InitChunkData component 60](world.md#initchunkdata-layout)); an entity without one, such as Sword
+Vault Dale's red banner `P_cloth_map02_sfcanvas+1_001_01` under the scaffold bridge, only sways,
+though the canvases beside it are simulated.
+
+a simulated vertex is its rest position through a 3 × 4 matrix of the skeleton buffer, which holds
+this step's and the previous step's matrix per bone. the vertex colour picks the bone: R and G
+(× 255) are two bone indices blended by B, or `R · 256 + G` one index when the draw's data says its
+cloth has a single skeleton. the alpha stays the sway's weight.
+
+the simulation's input ships per 128 m cell as [cloth groups](world.md#cloth-groups): per cloth its
+iteration count, damping, wind factors and transform, and per node its rest position, normal and
+tangent, up to two anchors and eight neighbours with their rest distances. how the game steps it
+(its compute shaders `ClothSingleDispatchCS` and `ClothDataUploadCS`, a fixed 1/60 · 1.4 s step, up
+to four capsule colliders at the characters) isn't read.
 
 ## vertex offset
 

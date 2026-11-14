@@ -30,6 +30,9 @@ const DRAWN_KEYWORDS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
 			...LIT_KEYWORDS,
 			'_SIMPLE_VERTEXANIM',
 			'_SIMPLE_VERTEXANIM_CLOTH',
+			// changes nothing on its own: the simulation it allows runs per entity, and the pack counts the
+			// entities that have one (`clothSimulated`)
+			'_GPU_CLOTH',
 			'_USE_VERTOFFSET',
 			'_USE_VERTOFFSETMASK',
 		],

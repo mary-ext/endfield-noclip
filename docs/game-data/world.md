@@ -190,6 +190,7 @@ column selectors; the ones with established meaning:
 | 44    | on collider-only entities (`…_COL1`, `P_box_collider`, `MergedCollider_…`), always with 21 alone (tens of thousands on map02); content unread                                                                                                                                                                |
 | 52    | a constant spin about the entity's own origin (16 bytes): speed (rad/s, non-negative), unit axis (local); only on the originium hub frames ([spinning scenery](animation.md#spinning-scenery))                                                                                                               |
 | 54    | a constant spin (92 bytes): speed (rad/s, non-negative), unit axis, pivot (world), six floats not checked (a local box, by their values), then the stored position, rotation quaternion xyzw and scale; only on Qingbo Stockade's waterwheels' renderers ([spinning scenery](animation.md#spinning-scenery)) |
+| 60    | a cloth hash (u32): the entity's vertices follow the [cloth](#cloth-groups) with that hash ([cloth simulation](materials.md#cloth-simulation))                                                                                                                                                               |
 | 61    | an oriented box (44 bytes): u32 0, centre xyz, a size xyz (half or full unchecked), rotation quaternion xyzw; with 21 and the 1-byte 62 on map02's `shadowOC_CAVE_*` entities, the only ones seen                                                                                                            |
 | 63    | the same light's settings, zero-filled (448 bytes)                                                                                                                                                                                                                                                           |
 | 67    | LOD ranges: LOD count and cumulative draw count per LOD                                                                                                                                                                                                                                                      |
@@ -368,6 +369,36 @@ twenty thousand trees; map01 a few hundred thousand grass instances and no tree 
 in every file they overlap, under one id. the game measures a cluster's LOD by `rendererHalfSize`
 and thins grass by its sparsity at a quality setting; the second instance parameter is the grass
 shader's per-instance colour ([materials](materials.md#foliage)).
+
+### cloth groups
+
+the input of the game's [cloth simulation](materials.md#cloth-simulation) sits in kind-3 proxy
+objects named `ClothGroupInfo_<group hash>#<level tag>_<id>` (`ProxyEntityType` 8) in the cell files
+of the cloths' entities. a group holds up to four cloths, 512 nodes in all, as blobs in the row's
+keyed property table (the Streaming row holds only the group hash, under `0xff050000`):
+
+| key          | content                                                                                                                             |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `0xff000000` | the group (80 bytes): cloth count, group hash, world XZ, then four each of cloth hashes, node counts, batch counts and cache counts |
+| `0xff010000` | 176 bytes per cloth, below                                                                                                          |
+| `0xff020000` | 192 bytes per node, below, the group's cloths one after another                                                                     |
+| `0xff030000` | batch records, 4 × i32 each (all zero in the cells read)                                                                            |
+| `0xff040000` | batch cache records, 4 × i32 each (all zero in the cells read)                                                                      |
+
+a cloth: its node range in the group (u32 start, end), u32 first batch, u32 iterations (3 seen),
+then f32 damping, wind frequency factor, wind balance factor and wind intensity scale; 4 × i32 the
+game fills at runtime; a vec4 whose x is the longest anchor distance; the cloth's normal; and the
+rows of its 3 × 4 local-to-world and world-to-local matrices.
+
+a node, in world space: two anchor node indices (−1 for none) and their rest distances; its UV; two
+floats of a collision plane; the rest position (w a weight that grows down the cloth from its
+anchors), normal and tangent; the previous and current positions and the current normal, which start
+at rest; and eight neighbour node indices (−1 for none) with their rest distances (1e7 for none).
+
+an entity's [component 60](#initchunkdata-layout) holds its cloth's hash, one of the group's four.
+the layouts follow the game's `ClothGroupMeta`, `ClothMetaData` and `ClothNodeData` structs, checked
+against one Sword Vault Dale cell, whose node positions lie on its canvases; what the batch records
+and the unnamed fields hold isn't read.
 
 ## stream areas
 
@@ -751,8 +782,8 @@ states). a volume whose specific data is a `SceneToastUIData` names a place:
 - `mainTitle`, `subTitle` and `depthText` are TextTable keys
   (`scene_map02_lv002_regiontoast_tips_8`). the main title is the level's name, the subtitle the
   place's and the depth text a flavour line ("Depth: 0.0461±0.0057")
-- `priority` 1 volumes are the places. each open-world level also has one priority 0 volume over
-  all of it, titled with the region and the level ("Wuling · Test Area"), which shows where no place
+- `priority` 1 volumes are the places. each open-world level also has one priority 0 volume over all
+  of it, titled with the region and the level ("Wuling · Test Area"), which shows where no place
   does
 - the shape is a box (`shapeType` 1: `size` about `postion`, turned by `euler`) or a polygon (3:
   `posList`, x and z relative to `postion`). the range gives the height span, so places stack
@@ -769,8 +800,8 @@ name.
 
 LevelData also says where the ground people use is: `worldWayPointData` is the graph ambient NPCs
 walk (points with links to their neighbours; Wuling City and the Marker Stone have several hundred
-each), and NPCs, interactives, enemy spawners and patrol points stand on it. air walls
-(`airWalls`, polylines with a height range) fence it.
+each), and NPCs, interactives, enemy spawners and patrol points stand on it. air walls (`airWalls`,
+polylines with a height range) fence it.
 
 ## open
 

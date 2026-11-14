@@ -23,7 +23,13 @@ const encoder = new TextEncoder();
  * (bounds), 18 (instance data, or 27 with `decal`), 21 (name), 67 (lod ranges), 9 + 69 (two draws)
  */
 const buildChunk = (
-	options: { version?: number; drawCount?: number; decal?: boolean; localSpin?: boolean } = {},
+	options: {
+		version?: number;
+		drawCount?: number;
+		decal?: boolean;
+		localSpin?: boolean;
+		cloth?: boolean;
+	} = {},
 ): Uint8Array => {
 	const w = new Writer();
 	const ids = [(1 << 27) | 0x123, (2 << 27) | 0x456];
@@ -87,6 +93,7 @@ const buildChunk = (
 		[9, 4 + 32 * 2],
 		[69, 8 + 40 * 2],
 		...(options.localSpin ? [[Component.LocalSpin, 16] as [number, number]] : []),
+		...(options.cloth ? [[Component.ClothHash, 4] as [number, number]] : []),
 	];
 	const descriptorVector = w.vector(8, descriptors.length);
 	w.link(group.fields[3], descriptorVector.at);
@@ -157,6 +164,11 @@ const buildChunk = (
 				case Component.LocalSpin: {
 					// 3.5° per second about local +y, as the hub frames store it
 					[0.0610865, 0, 1, 0].forEach((v, k) => w.view.setFloat32(at + k * 4, v, true));
+					break;
+				}
+				case Component.ClothHash: {
+					// a Sword Vault Dale canvas's
+					w.view.setUint32(at, 2363270034 + e, true);
 					break;
 				}
 				case 69: {
@@ -238,6 +250,16 @@ test('readChunkEntities turns a local spin into a world spin through the entity 
 	assert.ok(Math.abs(first.rotator.speed - (3.5 * Math.PI) / 180) < 1e-6);
 	assert.deepEqual(first.rotator.axis, [0, 0, -1]);
 	assert.deepEqual(first.rotator.pivot, [100, 0, -200]);
+});
+
+test("readChunkEntities reads a simulated cloth's hash", () => {
+	const [plain] = readChunkEntities(parseInitChunk(buildChunk()));
+	assert.equal(plain.clothHash, null);
+	const cloths = readChunkEntities(parseInitChunk(buildChunk({ cloth: true })));
+	assert.deepEqual(
+		cloths.map((entity) => entity.clothHash),
+		[2363270034, 2363270035],
+	);
 });
 
 test('parseInitChunk rejects unknown versions', () => {

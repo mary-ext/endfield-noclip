@@ -199,8 +199,12 @@ packs or renders correctly.
   refraction), interior parallax and mapping, `_ZWRITE_OFF`, and vertex animation other than
   `HGRP/Lit`'s [swaying cloth](viewer/materials.md#swaying-cloth) and
   [vertex offset](viewer/materials.md#vertex-offset) (`_SIMPLE_VERTEXANIM_PENDULUM`, `…_ROPE`,
-  `HGRP/LitTransparent`'s cloth, `_VAT_*`, `_COMMONVAT_*`, `_GPU_CLOTH`, `_MOVING_BAMBOO`). the
-  cloth sway is unchecked against an in-game shot
+  `HGRP/LitTransparent`'s cloth, `_VAT_*`, `_COMMONVAT_*`, `_MOVING_BAMBOO`). the cloth sway is
+  unchecked against an in-game shot
+- the [cloth simulation](game-data/materials.md#cloth-simulation) isn't run: entities with a cloth
+  hash (canvases, flags; counted by `pack` as `clothSimulated`) draw their mesh at rest with the
+  sway alone. its input, the [cloth groups](game-data/world.md#cloth-groups), is located but has no
+  reader, and the game's compute step isn't read
 - Lit's vertex offset (`_USE_VERTOFFSET`) is drawn only on alpha-tested materials, which all four on
   map02 are: an opaque one keeps still, as does one that offsets along the vertex normal, sits on a
   surface with a parallax glow or a layer, or weighs the offset by vertex alpha on an animated mesh.

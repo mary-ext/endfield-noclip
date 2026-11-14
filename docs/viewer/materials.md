@@ -93,7 +93,9 @@ environment's [wind](../game-data/environment.md#wind) rate, so the sway moves o
 render, every placement swings from one clock rather than the game's running one, and no environment
 means still air. each pass's `_DisableAnimateVert` is taken as 0. the viewer draws no motion
 vectors, so the previous frame's offset isn't needed. skinned geometry drops the weight, so a
-swaying material on an animated mesh keeps still, and `_GPU_CLOTH` materials keep still too.
+swaying material on an animated mesh keeps still. the game's
+[cloth simulation](../game-data/materials.md#cloth-simulation) isn't run: a simulated entity draws
+its mesh at rest, with the sway alone, and `pack` counts those entities (`clothSimulated`).
 
 ## vertex offset
 

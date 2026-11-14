@@ -3,8 +3,9 @@ import type { LitSway, LitVertexOffset } from '@endfield-noclip/package-format/s
 import type { MaterialReader } from '../material-values.ts';
 
 /**
- * `_SIMPLE_VERTEXANIM_CLOTH`'s sway (`docs/game-data/materials.md#swaying-cloth`). `_GPU_CLOTH` materials are
- * left still: their cloth simulation isn't decoded
+ * `_SIMPLE_VERTEXANIM_CLOTH`'s sway (`docs/game-data/materials.md#swaying-cloth`). `_GPU_CLOTH` materials
+ * sway too: that keyword only lets an entity with a cloth simulation replace the position the sway is added
+ * to
  *
  * @param reader an `HGRP/Lit` material's properties
  * @returns its sway, or `null` when it keeps still
@@ -14,7 +15,7 @@ export const swayOf = (reader: MaterialReader): LitSway | null => {
 	const intensity = float('_SimpleVertexAnimationWindIntensity', 0);
 	// the shader skips the sway when this sum is zero; the noise offset itself moves nothing in this variant
 	const enabled = intensity + float('_NoiseOffsetIntensity', 0) !== 0;
-	if (!has('_SIMPLE_VERTEXANIM') || !has('_SIMPLE_VERTEXANIM_CLOTH') || has('_GPU_CLOTH') || !enabled) {
+	if (!has('_SIMPLE_VERTEXANIM') || !has('_SIMPLE_VERTEXANIM_CLOTH') || !enabled) {
 		return null;
 	}
 	let direction: LitSway['direction'] = null;
