@@ -208,6 +208,20 @@ describe('dithered effects', () => {
 			{ texture: surface.dither?.mask?.texture.texture, redAlpha: surface.dither?.mask?.redAlpha },
 			{ texture: 11, redAlpha: true },
 		);
+		// without a main texture the shader's white is masked, so the mask alone is tested and the tint is the
+		// albedo: Yinglung Pass's falling camphor leaves (`M_fxmap_common_camphor_leaves_07`)
+		const leaf = reed({
+			slots: {
+				_MaskTex: { texture: 11, uv: 0, scale: [1, 1], offset: [0, 0] },
+				_NormalMap: { texture: 12, uv: 0, scale: [1, 1], offset: [0, 0] },
+			},
+		});
+		assert.ok(leaf.kind === 'dithered');
+		assert.equal(leaf.baseMap, null);
+		assert.deepEqual(
+			{ texture: leaf.dither?.texture.texture, redAlpha: leaf.dither?.redAlpha, mask: leaf.dither?.mask },
+			{ texture: 11, redAlpha: true, mask: null },
+		);
 		// the depth pass draws the mask still
 		assert.equal(reed({ vectors: { _MaskTexUVSpeed: [0, 0.5, 0, 0] } }).kind, 'unsupported');
 		// unlit, the mask makes it an effect variant, blended by the masked alpha

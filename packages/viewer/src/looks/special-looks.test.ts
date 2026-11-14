@@ -182,6 +182,43 @@ test('a dithered surface tests its mask from the noise slot, which its shading n
 	assert.deepEqual(Array.from(reed.params.subarray(LookRow.uv + 24, LookRow.uv + 28)), [3, 2, 0, 0]);
 });
 
+test('a lit dithered surface without a base map tests its texture from the base slot, coloured by the tint', () => {
+	// a lone mask tested by its alpha, as Yinglung Pass's camphor leaves are by their mask's red
+	const slot = (texture: number): TextureSlot => ({ texture, uv: 0, scale: [1, 1], offset: [0, 0] });
+	const [leaf] = materialLooks({
+		entries: [
+			described(
+				{
+					kind: 'dithered',
+					baseMap: null,
+					normalMap: slot(12),
+					color: [4.7, 4.7, 4.7],
+					dither: {
+						texture: slot(11),
+						redAlpha: false,
+						alphaScale: 1,
+						exponent: 15,
+						tiling: 15,
+						vertexAlpha: true,
+						near: null,
+						mask: null,
+					},
+					lighting: { roughness: 1, metallic: 0.5, normalScale: 1.5, subsurface: null },
+					ignorePostExposure: 1,
+				},
+				'none',
+			),
+		],
+	});
+	assert.equal(leaf.queue, 'cutout');
+	assert.deepEqual(leaf.textures.slice(0, 2), [11, 12]);
+	assert.equal(leaf.flags & LookFlags.AlphaNormal, 0);
+	// the tested texture doesn't colour the surface
+	assert.deepEqual(Array.from(leaf.params.subarray(LookRow.tint, LookRow.tint + 4)), [1, 1, 1, -1]);
+	assert.equal(leaf.params[LookRow.emissive + 3], 1);
+	assert.equal(leaf.params[DitherRow.dither + 3], DitherFlags.VertexAlpha);
+});
+
 test('dithered effects with subsurface lighting scatter by their metallic and are never metals', () => {
 	const splash = (metallic: number) =>
 		materialLooks({

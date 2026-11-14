@@ -165,13 +165,13 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 	}
 	const { dither } = surface;
 	if (dither !== null) {
-		// the main texture's red is the alpha alone, so it can't colour the surface: an unlit look tests it through
-		// the normal slot, and a lit one, which may need that slot for its normal map, through the base slot, its
-		// albedo taken from the tint alone (below)
-		if (dither.redAlpha && surface.lighting === null) {
+		// a tested texture that isn't the base map (the main texture's red as the alpha alone, or a lone mask)
+		// can't colour the surface: an unlit look tests it through the normal slot, and a lit one, which may need
+		// that slot for its normal map, through the base slot, its albedo taken from the tint alone (below)
+		if (surface.baseMap === null && surface.lighting === null) {
 			setTexture(look, Slot.Normal, dither.texture);
 			look.flags |= LookFlags.AlphaNormal;
-		} else if (dither.redAlpha) {
+		} else if (surface.baseMap === null) {
 			setTexture(look, Slot.Base, dither.texture);
 		}
 		let flags =

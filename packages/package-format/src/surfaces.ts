@@ -473,9 +473,12 @@ export interface DitheredSurface {
 	color: Rgb;
 	/** the depth pass's dithered alpha test, `null` without it */
 	dither: {
-		/** the main texture, whose alpha (or red) is tested */
+		/**
+		 * the texture whose alpha (or red) is tested: the main texture, or the `_USE_MASK` texture of a material
+		 * that leaves the main one unset (`baseMap` is `null` then)
+		 */
 		texture: TextureSlot;
-		/** the red is the alpha (`_UseMainTexAsAlpha`) */
+		/** the red is the alpha (`_UseMainTexAsAlpha`, or the lone mask's `_UseMaskTexAsAlpha`) */
 		redAlpha: boolean;
 		/** the tint's alpha times `_TintColorAlpha` */
 		alphaScale: number;

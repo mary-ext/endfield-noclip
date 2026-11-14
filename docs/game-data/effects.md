@@ -407,7 +407,10 @@ of the rift's ripples are such ([below](#the-very-large-rifts-ripples)).
 its red under the default `_UseMaskTexAsAlpha`, and doesn't colour the surface. its UVs scroll,
 rotate and take the distortion (`_MaskTexUseDisturb`) like the main texture's. the faint blue band
 around the Very Large Rift's portal (`glow_04_line` in `p_fxmap_dung02_dg005_boss_semicircle_01`) is
-a mask-only material.
+a mask-only material. Yinglung Pass's falling camphor leaves (`M_fxmap_common_camphor_leaves_07` in
+`p_fxmap_map02_lv007_camphor_leaves_01`, near unity −816, 286, 613) are lit ones that leave
+`_MainTex` unset: the shader's white default stands in, so the mask's red alone cuts the leaf shape
+and the tint (white, times 4.7) is the albedo.
 
 `_USE_VERTOFFSET` moves the vertices as VFXBaseV2's does, in both passes, without the vertex alpha's
 weight and the pull towards the camera. the rift's escaping trails

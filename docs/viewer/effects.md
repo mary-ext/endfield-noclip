@@ -146,7 +146,11 @@ is [`_USE_MASK`](../game-data/effects.md#solid-effects) stays on this path
 (`DitheredSurface.dither.mask`): the test multiplies in the mask from the noise slot, bound without
 the slot's flag so the shading never reads it, and only a still mask on UV set 0 is drawn. the reeds
 and bamboo leaves blowing through Qingbo Stockade (`M_fx_map_common_bigwind_reed_01`, `…_leaves_02`,
-lit mesh particles with a normal map) are such.
+lit mesh particles with a normal map) are such. where such a material leaves `_MainTex` unset, the
+mask is the whole alpha, so the describer packs it as the tested texture (`dither.texture`, no
+`mask`) and the look binds it like a red-alpha main texture, the tint alone colouring the surface:
+Yinglung Pass's falling camphor leaves (`M_fxmap_common_camphor_leaves_07`), unchecked against an
+in-game shot.
 
 `_SUBSURFACE` surfaces take the game's [subsurface model](../game-data/materials.md#subsurface) for
 the sun and the ambient light (`subsurface_sun` and `Surface.scatter` in `frame.wgsl`): the look

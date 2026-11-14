@@ -114,21 +114,27 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 	// the depth pass's dithered alpha test, drawn for the main texture's alpha (or red, as the alpha alone) in
 	// the default dither mode
 	let dither: DitheredSurface['dither'] = null;
-	if (main !== undefined && !has('_USE_MAIN2') && float('_DitherAlphaMode', 0) === 0) {
+	if (!has('_USE_MAIN2') && float('_DitherAlphaMode', 0) === 0) {
 		const mask = has('_USE_MASK') ? stillMaskOf(reader) : null;
 		if (mask !== null && isUnsupported(mask)) {
 			return mask;
 		}
-		dither = {
-			texture: main,
-			redAlpha,
+		const test = {
 			alphaScale: (color('_TintColor') ?? [1, 1, 1, 1])[3] * float('_TintColorAlpha', 1),
 			exponent: float('_DitherAlphaExp', 1),
 			tiling: float('_DitherTilling', 1),
 			vertexAlpha: float('_DisableVertColor', 0) === 0,
 			near: nearFadeOf(reader),
-			mask,
 		};
+		if (main !== undefined) {
+			dither = { texture: main, redAlpha, ...test, mask };
+		} else if (mask !== null) {
+			// an unset main texture samples the shader's default, so over a white one the mask is the alpha
+			if (reader.shader.textures['_MainTex'] !== 'white') {
+				return unsupported('a mask over an unset main texture that does not default to white');
+			}
+			dither = { texture: mask.texture, redAlpha: mask.redAlpha, ...test, mask: null };
+		}
 	} else if (has('_USE_MASK')) {
 		return unsupported('a mask without the dithered test it scales');
 	}
