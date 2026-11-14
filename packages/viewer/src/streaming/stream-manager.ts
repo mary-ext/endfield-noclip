@@ -60,6 +60,22 @@ const STALE_FRAMES = 30;
  */
 const UPLOAD_MS = 2;
 
+/**
+ * ranges one request reads at most: a queue of thousands of blobs spread over an archive is bound by the
+ * round trips, not the bytes, and a source that can answer several ranges at once takes one for all of them
+ */
+const REQUEST_RANGES = 32;
+/** bytes one request reads at most (but always a whole range), so what's most wanted isn't held up behind it */
+const REQUEST_BYTES = 2 * 1024 * 1024;
+
+/** one request: ranges of one archive, each covering the blobs of a coalesced read */
+interface RangeRequest {
+	shard: ShardRange;
+	reads: { start: number; end: number; members: ContentItem[] }[];
+	/** bytes the ranges total */
+	bytes: number;
+}
+
 /** a fetched blob's stored bytes: a range of its read's bytes */
 interface FetchedBytes {
 	bytes: SharedBytes;
@@ -454,15 +470,31 @@ export class StreamManager {
 			priorities[blobs.length] = item.priority;
 			blobs.push(item.blob);
 		}
-		const reads = this.#coalescer.reads(
-			blobs,
-			priorities,
-			this.#isQueued,
-			this.options.maxRequests - this.#inFlight.size,
-		);
+		const slots = this.options.maxRequests - this.#inFlight.size;
+		const reads = this.#coalescer.reads(blobs, priorities, this.#isQueued, slots * REQUEST_RANGES);
+		// the reads come most wanted first. each joins the request open on its archive, or opens one while a
+		// slot is free; one that fits neither stays queued
+		const open = new Map<number, RangeRequest>();
+		const requests: RangeRequest[] = [];
+		let undecoded = this.#fetched.size + this.#fetching;
 		for (const read of reads) {
-			if (this.#fetched.size + this.#fetching >= MAX_UNDECODED) {
+			if (undecoded >= MAX_UNDECODED) {
 				break;
+			}
+			const shard = this.#shardRange(read.members[0]);
+			const bytes = read.end - read.start;
+			let request = open.get(shard.archive);
+			if (
+				request === undefined ||
+				request.reads.length >= REQUEST_RANGES ||
+				request.bytes + bytes > REQUEST_BYTES
+			) {
+				if (requests.length >= slots) {
+					continue;
+				}
+				request = { shard, reads: [], bytes: 0 };
+				open.set(shard.archive, request);
+				requests.push(request);
 			}
 			const members: ContentItem[] = [];
 			for (const blob of read.members) {
@@ -471,7 +503,12 @@ export class StreamManager {
 				this.#queued.delete(item);
 				members.push(item);
 			}
-			this.#fetch(this.#shardRange(read.members[0]), read.start, read.end, members);
+			request.reads.push({ start: read.start, end: read.end, members });
+			request.bytes += bytes;
+			undecoded += members.length;
+		}
+		for (const request of requests) {
+			this.#fetch(request);
 		}
 	}
 
@@ -486,34 +523,38 @@ export class StreamManager {
 		return range;
 	}
 
-	/**
-	 * @param shard the range of a blob in the archive to read
-	 * @param start the read's byte range, `[start, end)`
-	 * @param members the blobs it covers
-	 */
-	#fetch(shard: ShardRange, start: number, end: number, members: ContentItem[]): void {
+	/** reads an archive's ranges in one request */
+	#fetch({ shard, reads }: RangeRequest): void {
+		// a multi-range request lists its ranges in file order
+		reads.sort((a, b) => a.start - b.start);
+		const members = reads.flatMap((read) => read.members);
 		const request = { items: members, abort: new AbortController() };
 		this.#inFlight.add(request);
 		this.#fetching += members.length;
 		this.stats.requests++;
 		this.#package.source
-			.readRange(
+			.readRanges(
 				shard.path,
-				{ offset: start, length: end - start, fileSize: shard.archiveSize },
+				reads.map(({ start, end }) => ({ offset: start, length: end - start, fileSize: shard.archiveSize })),
 				request.abort.signal,
 			)
-			.then((bytes) => {
-				this.stats.downloadedBytes += bytes.byteLength;
-				const received = members.filter((item) => item.state === 'fetching');
-				// the read goes to one worker whole, which decodes each member from it
-				const shared = new SharedBytes(bytes.buffer, received.length);
-				for (const item of received) {
-					const member = this.#shardRange(item.blob);
-					this.#received(item, {
-						bytes: shared,
-						offset: bytes.byteOffset + member.start - start,
-						length: member.end - member.start,
-					});
+			.then((parts) => {
+				for (const [i, bytes] of parts.entries()) {
+					this.stats.downloadedBytes += bytes.byteLength;
+					const received = reads[i].members.filter((item) => item.state === 'fetching');
+					if (received.length === 0) {
+						continue;
+					}
+					// each range goes to one worker whole, which decodes each member from it
+					const shared = new SharedBytes(bytes.buffer, received.length);
+					for (const item of received) {
+						const member = this.#shardRange(item.blob);
+						this.#received(item, {
+							bytes: shared,
+							offset: bytes.byteOffset + member.start - reads[i].start,
+							length: member.end - member.start,
+						});
+					}
 				}
 				this.#startDecodes();
 			})

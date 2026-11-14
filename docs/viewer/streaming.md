@@ -292,7 +292,14 @@ the renderers and stores that own the GPU side; their residency shapes are in
   between frames, and wider coalescing gain little or nothing. queued blobs seed reads by priority,
   and each seed coalesces neighbours in the same archive (gaps ≤ 64 KiB, span ≤ 2 MiB, ≤ 96 blobs)
   into one range read ([`streaming/coalesce.ts`](../../packages/viewer/src/streaming/coalesce.ts)).
-  every blob's place in byte order is sorted once when the stream opens (a few tens of milliseconds
+  a request then carries up to 32 such reads of one archive, 2 MiB in all (always one whole read),
+  as the ranges of one multi-range request where the [source](loading.md#sources) can answer one.
+  meshes and textures shared across a map sit far apart in their archives, so few of them coalesce:
+  the blobs in use at the Jingyu overview could have come in half as many reads as blobs at best,
+  and grouping each archive's meshes and textures by the tiles using them brought that down by only
+  a quarter, since no order suits what's shared map-wide. carrying several reads a request halved a
+  map02 flight's requests and took a quarter to a third off the 95th percentile of its waits from
+  wanting a mesh, texture or instance block to having it. every blob's place in byte order is sorted once when the stream opens (a few tens of milliseconds
   for map02's hundred thousand or so blobs), so a dispatch heapifies the queue and walks neighbours
   instead of sorting it twice, which took milliseconds once thousands of blobs were queued. core
   blobs are read from memory without a request slot. requests whose blobs nobody wanted for more

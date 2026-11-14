@@ -100,6 +100,9 @@ how to measure is in [driving the viewer](../driving-the-viewer.md#profiling).
 - **large uploads staged.** streamed data of 128 KiB or more goes through a
   [staging buffer](gpu-resources.md) instead of a queue write, which stalled the main thread for
   15–30 ms per megabyte-sized texture level while streaming.
+- **several reads a request.** what's wanted of one archive goes out as the ranges of one request
+  where the server answers multi-range requests ([fetching](streaming.md#residency-and-budgets)),
+  which halved the requests of a map02 flight.
 - **particle integrals tabulated.** how far a velocity curve has carried a particle is read from a
   table built once per curve ([motion](particles.md#motion)), and colours are read without
   allocating.

@@ -4,13 +4,22 @@
 
 a package is read through a `PackageSource`
 ([`package/package-source.ts`](../../packages/viewer/src/package/package-source.ts)), which offers
-whole-file reads and byte-range reads:
+whole-file reads, byte-range reads and reads of several ranges of one file at once:
 
-| source            | used for                                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `httpSource`      | the dev/preview server, or any static host; one HTTP range request per read, tolerating servers that ignore `Range` |
-| `directorySource` | a folder picked with the File System Access API (`showDirectoryPicker`), or a package copied into OPFS              |
-| `fileListSource`  | a `<input webkitdirectory>` fallback where `showDirectoryPicker` is missing                                         |
+| source            | used for                                                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `httpSource`      | the dev/preview server, or any static host; one HTTP range request per read or per several, tolerating servers that ignore `Range`    |
+| `directorySource` | a folder picked with the File System Access API (`showDirectoryPicker`), or a package copied into OPFS                                 |
+| `fileListSource`  | a `<input webkitdirectory>` fallback where `showDirectoryPicker` is missing                                                           |
+
+`httpSource` reads several ranges with one multi-range request (`Range: bytes=a-b,c-d,…`), which a
+server answers as `multipart/byteranges`, a part per range; `parseByteRanges` cuts the body by each
+part's `Content-Range`, and takes a range from whichever part holds it, since a server may reorder
+or merge them. some hosts answer such a request with the whole file or one range instead (Amazon S3
+documents that it does; nginx and Apache answer in parts; other hosts aren't surveyed): the first
+answer that isn't in parts is dropped unread, and from then on the source issues a request per
+range. a cross-origin host must also allow the `Range` request header in its CORS preflight, which
+only a single range goes without.
 
 every range read passes the archive's size from the manifest. a source whose file has another size
 throws `PackageChangedError`; the stream manager stops fetching shards, keeps resident content
@@ -35,6 +44,8 @@ the repo's `out/`; set `NOCLIP_PACKAGES=/path` to point it elsewhere
 - files are served as a static host would, by `sirv`: `Range` support, `ETag` and `Last-Modified`
   validators and `cache-control: no-cache`. deployments need range support and revalidation for
   `core.czar`, whose name is fixed. other archives have content-derived names.
+- a `GET` for several explicit ranges (`bytes=a-b,c-d,…`), which `sirv` doesn't answer, gets
+  `multipart/byteranges` from the plugin itself, the parts in the order asked.
 - `GET /packages/index.json` lists subdirectories that hold a core archive, with its size, skipping
   hidden directories (the packer's staging and replaced packages). it's the one dev-only addition;
   the package panel reads it through `fetchDevPackages`

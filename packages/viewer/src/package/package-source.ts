@@ -19,6 +19,21 @@ export interface PackageSource {
 	 * @throws {Error} if the file is shorter than the range
 	 */
 	readRange(path: string, range: ByteRange, signal?: AbortSignal): Promise<Uint8Array<ArrayBuffer>>;
+	/**
+	 * reads several ranges of one file at once, in one round trip where the source can
+	 *
+	 * @param path package-relative path
+	 * @param ranges the bytes to read: ascending, apart from one another, each with the file's size
+	 * @param signal aborts the read; local sources ignore it
+	 * @returns each range's bytes, in the order given, each in a buffer of its own
+	 * @throws {PackageChangedError} if the file's size differs from the ranges' `fileSize`
+	 * @throws {Error} if the file is shorter than a range
+	 */
+	readRanges(
+		path: string,
+		ranges: readonly ByteRange[],
+		signal?: AbortSignal,
+	): Promise<Uint8Array<ArrayBuffer>[]>;
 }
 
 /** a byte range of a package file */
@@ -50,9 +65,85 @@ const checkSize = (path: string, actual: number, expected: number): void => {
 
 // #region http
 
+/** a part of a `multipart/byteranges` body: the file's bytes from `offset`, and the file's size if stated */
+interface RangePart {
+	offset: number;
+	bytes: Uint8Array<ArrayBuffer>;
+	fileSize: number | null;
+}
+
+const CR = 0x0d;
+const LF = 0x0a;
+
+const malformed = (): Error => new Error('malformed multipart/byteranges body');
+
+/**
+ * splits a `multipart/byteranges` body (RFC 9110 §14.6) into its parts. each part's length comes from its
+ * `Content-Range`, so the binary bodies are never searched for the boundary
+ *
+ * @param body the response body
+ * @param boundary the boundary parameter of the response's content type
+ * @returns the parts in body order, as views of `body`
+ * @throws {Error} on a body that isn't laid out as byte range parts
+ */
+export const parseByteRanges = (body: Uint8Array<ArrayBuffer>, boundary: string): RangePart[] => {
+	const parts: RangePart[] = [];
+	const latin1 = new TextDecoder('latin1');
+	/** @returns the line starting at `at`, without its line break, and where the next one starts */
+	const line = (at: number): { text: string; next: number } => {
+		if (at >= body.length) {
+			throw malformed();
+		}
+		let end = at;
+		while (end < body.length && body[end] !== LF) {
+			end++;
+		}
+		const text = latin1.decode(body.subarray(at, end > at && body[end - 1] === CR ? end - 1 : end));
+		return { text, next: end + 1 };
+	};
+	const open = `--${boundary}`;
+	const close = `--${boundary}--`;
+	let at = 0;
+	for (;;) {
+		// a preamble, and the line break after each part's body, come before a delimiter
+		let delimiter = line(at);
+		while (delimiter.text !== open && delimiter.text !== close) {
+			delimiter = line(delimiter.next);
+		}
+		if (delimiter.text === close) {
+			return parts;
+		}
+		at = delimiter.next;
+		let range: RegExpExecArray | null = null;
+		for (;;) {
+			const header = line(at);
+			at = header.next;
+			if (header.text === '') {
+				break;
+			}
+			range ??= /^content-range:\s*bytes\s+(\d+)-(\d+)\/(\d+|\*)$/i.exec(header.text.trim());
+		}
+		if (range === null) {
+			throw malformed();
+		}
+		const offset = Number(range[1]);
+		const end = at + Number(range[2]) - offset + 1;
+		if (end > body.length) {
+			throw malformed();
+		}
+		parts.push({
+			offset,
+			bytes: body.subarray(at, end),
+			fileSize: range[3] === '*' ? null : Number(range[3]),
+		});
+		at = end;
+	}
+};
+
 /**
  * @param baseUrl the package directory's URL; a trailing slash is added if missing
- * @returns a source issuing one HTTP range request per read
+ * @returns a source issuing one HTTP range request per read, or per several where the server answers
+ *   multi-range requests
  */
 export const httpSource = (baseUrl: string): PackageSource => {
 	const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
@@ -63,11 +154,67 @@ export const httpSource = (baseUrl: string): PackageSource => {
 		}
 		return response;
 	};
-	return {
+	/**
+	 * whether the server answers a request for several ranges with one part each. some hosts answer with the
+	 * whole file, one range or an error instead, and a cross-origin one that doesn't allow the header fails the
+	 * request: the first request settles it
+	 */
+	let multiRange: 'untried' | 'answered' | 'refused' = 'untried';
+	const source: PackageSource = {
 		label: base,
 		async readFile(path, signal) {
 			const response = await fetchOk(path, { signal });
 			return new Uint8Array(await response.arrayBuffer());
+		},
+		async readRanges(path, ranges, signal) {
+			const single = (): Promise<Uint8Array<ArrayBuffer>[]> =>
+				Promise.all(ranges.map((range) => source.readRange(path, range, signal)));
+			if (multiRange === 'refused' || ranges.length < 2) {
+				return single();
+			}
+			const response = await fetch(new URL(path, new URL(base, location.href)), {
+				signal,
+				headers: {
+					range: `bytes=${ranges.map(({ offset, length }) => `${offset}-${offset + length - 1}`).join(',')}`,
+				},
+			}).catch((err: unknown) => {
+				// from a server that has answered in parts, a failure is the network's
+				if (multiRange === 'answered' || signal?.aborted === true) {
+					throw err;
+				}
+				return null;
+			});
+			const boundary =
+				response?.status === 206
+					? /^multipart\/byteranges;.*\bboundary="?([^";]+)"?/i.exec(
+							response.headers.get('content-type') ?? '',
+						)
+					: null;
+			if (response === null || boundary === null) {
+				if (multiRange === 'answered' && response?.ok === false) {
+					throw new Error(`${path}: HTTP ${response.status}`);
+				}
+				if (multiRange === 'untried') {
+					multiRange = 'refused';
+				}
+				// the whole file, or one range of it: not worth reading to its end. the single reads report
+				// whatever is really wrong
+				void response?.body?.cancel();
+				return single();
+			}
+			multiRange = 'answered';
+			const parts = parseByteRanges(new Uint8Array(await response.arrayBuffer()), boundary[1]);
+			return ranges.map(({ offset, length, fileSize }) => {
+				// a server may send the ranges in another order, or merge neighbours into one part
+				const part = parts.find((p) => p.offset <= offset && offset + length <= p.offset + p.bytes.length);
+				if (part === undefined) {
+					throw new Error(`${path}: no part of the response holds ${length} bytes at ${offset}`);
+				}
+				if (part.fileSize !== null) {
+					checkSize(path, part.fileSize, fileSize);
+				}
+				return part.bytes.slice(offset - part.offset, offset - part.offset + length);
+			});
 		},
 		async readRange(path, { offset, length, fileSize }, signal) {
 			const response = await fetchOk(path, {
@@ -89,6 +236,7 @@ export const httpSource = (baseUrl: string): PackageSource => {
 			return view.byteOffset === 0 && view.byteLength === bytes.byteLength ? bytes : view.slice();
 		},
 	};
+	return source;
 };
 
 // #endregion
@@ -140,6 +288,10 @@ export const directorySource = (root: FileSystemDirectoryHandle): PackageSource 
 		async readRange(path, range) {
 			return sliceFile(await open(path), path, range);
 		},
+		async readRanges(path, ranges) {
+			const file = await open(path);
+			return Promise.all(ranges.map((range) => sliceFile(file, path, range)));
+		},
 	};
 };
 
@@ -177,6 +329,9 @@ export const fileListSource = (files: Iterable<File>): PackageSource => {
 		},
 		readRange(path, range) {
 			return sliceFile(get(path), path, range);
+		},
+		readRanges(path, ranges) {
+			return Promise.all(ranges.map((range) => sliceFile(get(path), path, range)));
 		},
 	};
 };
