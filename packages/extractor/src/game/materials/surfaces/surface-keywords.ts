@@ -1,4 +1,9 @@
-/** the keywords the surface describers read, for listing the ones a surface is drawn without */
+/**
+ * what a surface is drawn without: the keywords the surface describers don't read, and the property values
+ * they read past
+ */
+
+import type { MaterialReader } from '../material-values.ts';
 
 /** keywords every surface reads: the alpha test and both emission sources */
 const SURFACE_KEYWORDS = ['_ALPHATEST_ON', '_EMISSIVE_MAP', '_EMISSIVE_MASK'];
@@ -9,9 +14,6 @@ const LIT_KEYWORDS = [
 	'_TWO_BASEMAP',
 	'_EMISSIVE_ANIM',
 	'_TRI_CHANNEL_MASK',
-	// only the R channel blends (docs/status.md)
-	'_TRI_CHANNEL_MASK_SWITCH_TEXTURE',
-	'_TRI_CHANNEL_MASK_SWITCH_TEXTURE_GWITHNORMAL',
 	'_DETAIL_MAP',
 	'_PARALLAX_MAP',
 	'_LAYERBLEND_TOP',
@@ -63,4 +65,42 @@ const DRAWN_KEYWORDS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
 export const keywordsNotDrawn = (shader: string, keywords: readonly string[]): string[] => {
 	const drawn = DRAWN_KEYWORDS.get(shader);
 	return drawn === undefined ? [] : keywords.filter((keyword) => !drawn.has(keyword));
+};
+
+/**
+ * property values that switch on something a describer reads past, under a keyword it does read: the
+ * property, the keyword its variant needs, and the value that leaves the feature off
+ */
+const PROPERTY_GAPS: readonly { property: string; keyword: string; off: number }[] = [
+	// a parallax glow masked by a texture of its own, which has no slot: the glow isn't drawn
+	{ property: '_UseParallaxMask', keyword: '_PARALLAX_MAP', off: 0 },
+	// the pulse's random flicker: drawn steady
+	{ property: '_EnableEmissiveAnimFlicker', keyword: '_EMISSIVE_ANIM', off: 0 },
+	// the mask's R on a UV set and tiling of its own
+	{ property: '_UseMaskRUVSetAndTilingScale', keyword: '_TRI_CHANNEL_MASK', off: 0 },
+];
+
+/** the shaders whose describer reads {@link PROPERTY_GAPS}' keywords */
+const PROPERTY_GAP_SHADERS = new Set(['HGRP/Lit', 'HGRP/LitEffect']);
+
+/**
+ * what the game draws of a material that its surface leaves out, for the viewer's gaps view: the keywords
+ * {@link keywordsNotDrawn} lists, then the properties whose value asks for something the describer reads
+ * past
+ *
+ * @param reader the properties of a material drawn as a surface
+ * @returns the keywords and property names, empty when the surface holds all the game draws as far as is
+ *   known; always empty for effect shaders
+ */
+export const surfaceGaps = (reader: MaterialReader): string[] => {
+	const shader = reader.shader.name;
+	const gaps = keywordsNotDrawn(shader, reader.material.keywords);
+	if (PROPERTY_GAP_SHADERS.has(shader)) {
+		for (const { property, keyword, off } of PROPERTY_GAPS) {
+			if (reader.has(keyword) && reader.float(property, off) !== off) {
+				gaps.push(property);
+			}
+		}
+	}
+	return gaps;
 };

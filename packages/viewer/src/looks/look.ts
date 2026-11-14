@@ -140,7 +140,19 @@ export interface MaterialLook {
 	params: Float32Array;
 	/** the stencil test and write of effects that mask each other, or `null` for the rest */
 	stencil: LookStencil | null;
+	/**
+	 * what the game draws of the material that this look leaves out, for the gaps view: the package's
+	 * (`ReadyMaterial.gaps`: keywords and properties the extractor reads past), then what the look's builder
+	 * dropped for want of a slot or a row. empty when nothing is known to be missing
+	 */
+	gaps: string[];
 }
+
+/**
+ * the float of a mesh look's parameters that is 1 when it has {@link MaterialLook.gaps}, which the gaps view
+ * stripes (`shade` in mesh.wgsl): the first past the rows mesh looks use. effect looks use it for their own
+ */
+export const GAPS_FLOAT = 144;
 
 /**
  * the draws a look's meshes join ({@link MaterialLook.queue}):
@@ -337,6 +349,7 @@ export const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => ({
 	...emptySlots(),
 	flags: 0,
 	stencil: null,
+	gaps: [],
 });
 
 /**

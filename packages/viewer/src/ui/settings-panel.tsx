@@ -6,7 +6,7 @@ import type { ViewerOptions } from '../viewer/options.ts';
 import type { Viewer } from '../viewer/viewer.ts';
 
 import { Checkbox } from './controls.tsx';
-import { useViewerEnvironment, useViewerState } from './use-viewer.ts';
+import { useViewerEnvironment, useViewerState, useViewerStats } from './use-viewer.ts';
 
 const HLOD_TIERS = [0, 1, 2] as const;
 
@@ -151,6 +151,31 @@ const EnvironmentControls = ({ viewer }: { viewer: Viewer }) => {
 	);
 };
 
+/** how many gaps {@link GapsLegend} lists */
+const GAPS_LISTED = 12;
+
+/**
+ * the gaps view's legend: what the striped meshes in view are drawn without, nearest first, refreshed with
+ * the stats
+ */
+const GapsLegend = ({ viewer }: { viewer: Viewer }) => {
+	useViewerStats(viewer);
+	const gaps = viewer.gapsInView();
+	if (gaps.length === 0) {
+		return <p className="applied-volumes">no drawn material has a known gap</p>;
+	}
+	return (
+		<ol className="applied-volumes">
+			{gaps.slice(0, GAPS_LISTED).map(({ gap, materials, nearest }) => (
+				<li key={gap} title={`${materials} materials in view`}>
+					{gap} · {Math.max(Math.round(nearest), 0)} m
+				</li>
+			))}
+			{gaps.length > GAPS_LISTED ? <li>and {gaps.length - GAPS_LISTED} more</li> : null}
+		</ol>
+	);
+};
+
 /** layer toggles and quality sliders */
 export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 	useViewerState(viewer);
@@ -207,6 +232,7 @@ export const SettingsPanel = ({ viewer }: { viewer: Viewer }) => {
 			/>
 			<Choice viewer={viewer} name="tonemapper" label="tonemapper" choices={TONEMAPPERS} />
 			<Choice viewer={viewer} name="debugView" label="show" choices={DEBUG_VIEWS} />
+			{viewer.options.debugView === 'gaps' ? <GapsLegend viewer={viewer} /> : null}
 			<fieldset>
 				<legend>HLOD tiers</legend>
 				{HLOD_TIERS.map((tier) => (

@@ -19,6 +19,12 @@ export interface ReadyMaterial {
 	cull: MaterialCull;
 	/** what the material draws, interpreted by the extractor */
 	surface: MaterialSurface;
+	/**
+	 * what the game draws of the material that `surface` leaves out, as far as the extractor knows: the shader
+	 * keywords its describer doesn't read and the properties it reads past, by name. empty for a surface that
+	 * holds everything, and for unsupported and undrawn ones, whose reason says what's missing
+	 */
+	gaps: string[];
 }
 
 /** a texture bound to a material slot */

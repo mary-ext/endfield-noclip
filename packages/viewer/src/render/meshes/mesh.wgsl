@@ -569,6 +569,15 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let layer_dx = dpdx(layer_uv) * gradient_scale;
 	let layer_dy = dpdy(layer_uv) * gradient_scale;
 
+	// the gaps view (`DEBUG_VIEWS` in debug-views.ts): a material drawn without something the game draws
+	// (`GAPS_FLOAT` in look.ts) shows amber and black stripes, 25 cm wide in world space, over its base map's
+	// brightness
+	if (frame.flags.y == 6u && look.effect_only[0].x > 0.5) {
+		let world = in.rel + frame.eye.xyz;
+		let stripe = fract((world.x + world.y + world.z) * 2.0) < 0.5;
+		let shape = select(1.0, dot(base.rgb, LUMINANCE_ROUNDED), (flags & BASE_MAP) != 0u);
+		return unlit(select(vec3f(0.02), vec3f(1.0, 0.5, 0.0), stripe) * (0.5 + 0.5 * shape));
+	}
 	if ((flags & UNLIT) != 0u) {
 		// matte paintings (`mattePaintingLook` in special-looks.ts): the tinted texture brightened above a threshold,
 		// in pre-exposed units unless it ignores the post exposure

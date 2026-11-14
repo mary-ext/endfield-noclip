@@ -540,7 +540,7 @@ material is ready or an `UnconvertedEntry`, as in the [asset tables](#asset-tabl
 
 | table       | contents                                                                                                                                                                                                                                                                                                              |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `materials` | `entries`: `ReadyMaterial` with its cull mode and its `surface` ([materials](#materials))                                                                                                                                                                                                                             |
+| `materials` | `entries`: `ReadyMaterial` with its cull mode, `surface` and `gaps` ([materials](#materials))                                                                                                                                                                                                                         |
 | `water`     | see [water](#water)                                                                                                                                                                                                                                                                                                   |
 | `lights`    | `LightEntry`: kind (spot, point), entity id, visibility group, position, direction, final linear colour, range, cone angles, tube length, soft source radius, falloff exponent, specular and volumetric scattering intensity, priority, camera-distance fade, culling box as a rows3x4 inverse; see [lights](#lights) |
 | `particles` | see [particles](#particles)                                                                                                                                                                                                                                                                                           |
@@ -558,6 +558,11 @@ a mist card or volume, a light beam, a portal's stencil mask), with Unity proper
 rules, colour spaces and the shaders' formulas already applied; `undrawn` for materials the game
 draws nothing visible with; or `unsupported` with the reason the viewer can't draw it. the viewer
 packs a surface into its draw parameters without reading Unity properties.
+
+a material also lists its `gaps`: what the game draws of it that the surface leaves out, by the name
+of the shader keyword the describer doesn't read or the property it reads past
+([surface-keywords.ts](../packages/extractor/src/game/materials/surfaces/surface-keywords.ts)). the
+viewer shows them in its [gaps view](viewer/materials.md#gaps).
 
 a texture is a `TextureSlot` (a bound texture-table id with its UV set and `_ST`, which the
 extractor has already replaced where a shader tiles by a property of its own), an `EffectTexture`

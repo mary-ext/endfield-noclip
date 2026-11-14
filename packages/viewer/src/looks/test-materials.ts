@@ -11,4 +11,5 @@ export const described = (surface: ReadyMaterial['surface'], cull: MaterialCull 
 	status: 'ready',
 	cull,
 	surface,
+	gaps: [],
 });

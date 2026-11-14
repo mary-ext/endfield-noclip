@@ -19,7 +19,7 @@ import {
 	TrunkRow,
 	VertexOffsetRow,
 } from './lit-look.ts';
-import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
+import { GAPS_FLOAT, LookFlags, LookRow, UV1_SHIFT } from './look.ts';
 import { materialLooks } from './material-looks.ts';
 import { described } from './test-materials.ts';
 
@@ -327,7 +327,12 @@ test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot or under a
 					triChannel: { ...triChannel, mask: slot(4, 1) },
 				}),
 			),
-			described(litSurface({ layout: 'mro', textures: { ...mroTextures, emissive: slot(6) }, triChannel })),
+			{
+				...described(
+					litSurface({ layout: 'mro', textures: { ...mroTextures, emissive: slot(6) }, triChannel }),
+				),
+				gaps: ['_TERRAIN_BLEND'],
+			},
 		],
 	});
 	assert.deepEqual(crystal.textures, [1, 2, 4, null, 5, null, null]);
@@ -349,6 +354,10 @@ test('Lit slots: UV set 1 maps, the tri-channel mask in the mask slot or under a
 	assert.deepEqual(glowing.textures, [1, 2, 3, 6, null, null, null]);
 	assert.equal(glowing.flags & LookFlags.TriChannelMask, 0);
 	assert.equal(glowing.params[TRI_CHANNEL_IN_EMISSIVE_SLOT], 0);
+	// which the gaps view shows, after what the package says the surface leaves out
+	assert.deepEqual(glowing.gaps, ['_TERRAIN_BLEND', 'tri-channel mask: no free slot']);
+	assert.equal(glowing.params[GAPS_FLOAT], 1);
+	assert.deepEqual([mro.gaps, mro.params[GAPS_FLOAT]], [[], 0]);
 });
 
 /** a layer map, tiled and offset by the layer's own values */

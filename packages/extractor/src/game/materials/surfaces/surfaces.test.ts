@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { describeMaterial } from '../material-describe.ts';
-import type { MaterialValues, ShaderEntry } from '../material-values.ts';
+import { type MaterialValues, readerOf, type ShaderEntry } from '../material-values.ts';
 
-import { keywordsNotDrawn } from './surface-keywords.ts';
+import { keywordsNotDrawn, surfaceGaps } from './surface-keywords.ts';
 
 /** a shader entry declaring only the overrides' properties */
 const shaderEntry = (
@@ -910,5 +910,29 @@ describe('the Lit model', () => {
 		const shader = shaderEntry({ name: 'HGRP/Lit', family: 'lit' });
 		const surface = describeMaterial(values({ slots: { _BaseColorMap: slot(1, 2) } }), shader);
 		assert.deepEqual(surface, { kind: 'unsupported', reason: '_BaseColorMap on UV set 2' });
+	});
+
+	it('lists the keywords it does not read and the properties it reads past as gaps', () => {
+		const shader = shaderEntry({
+			name: 'HGRP/Lit',
+			family: 'lit',
+			floats: { _UseParallaxMask: 0, _EnableEmissiveAnimFlicker: 0, _UseMaskRUVSetAndTilingScale: 0 },
+		});
+		const gaps = (keywords: string[], floats: Record<string, number> = {}, entry = shader) =>
+			surfaceGaps(readerOf(values({ keywords, floats }), entry));
+		assert.deepEqual(gaps(['_TWO_BASEMAP', '_DETAIL_MAP', '_GPU_CLOTH']), []);
+		assert.deepEqual(gaps(['_TERRAIN_BLEND', '_TRI_CHANNEL_MASK', '_TRI_CHANNEL_MASK_SWITCH_TEXTURE']), [
+			'_TERRAIN_BLEND',
+			'_TRI_CHANNEL_MASK_SWITCH_TEXTURE',
+		]);
+		const read = ['_PARALLAX_MAP', '_EMISSIVE_ANIM', '_TRI_CHANNEL_MASK'];
+		const on = { _UseParallaxMask: 1, _EnableEmissiveAnimFlicker: 1, _UseMaskRUVSetAndTilingScale: 1 };
+		assert.deepEqual(gaps(read), []);
+		assert.deepEqual(gaps(read, on), Object.keys(on));
+		// a property only counts under the keyword whose variant reads it
+		assert.deepEqual(gaps([], on), []);
+		// effect describers turn what they can't draw unsupported instead
+		const effect = shaderEntry({ name: 'HGRP/Effect/VFXBaseV2', family: 'vfxBase' });
+		assert.deepEqual(gaps(['_USE_DISSOLVE'], on, effect), []);
 	});
 });

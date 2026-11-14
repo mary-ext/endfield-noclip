@@ -29,8 +29,8 @@ import {
 	locatedObject,
 	locateMaterial,
 } from '../../game/materials/material-load.ts';
-import type { MaterialValues as ConvertedMaterial } from '../../game/materials/material-values.ts';
-import { keywordsNotDrawn } from '../../game/materials/surfaces/surface-keywords.ts';
+import { type MaterialValues as ConvertedMaterial, readerOf } from '../../game/materials/material-values.ts';
+import { keywordsNotDrawn, surfaceGaps } from '../../game/materials/surfaces/surface-keywords.ts';
 import type { MaterialValues } from '../../game/prefabs/prefab.ts';
 import { orderedPool } from '../../pool.ts';
 import { PhaseTimer } from '../phase-timer.ts';
@@ -486,7 +486,13 @@ const describeSurfaces = (
 			unsupported[key] = (unsupported[key] ?? 0) + 1;
 			materials.debug[id].unsupported = surface.reason;
 		}
-		return { status: 'ready', cull: material.cull, surface };
+		const drawn = surface.kind !== 'unsupported' && surface.kind !== 'undrawn';
+		return {
+			status: 'ready',
+			cull: material.cull,
+			surface,
+			gaps: drawn ? surfaceGaps(readerOf(material, shader)) : [],
+		};
 	});
 	return { entries, unsupported };
 };

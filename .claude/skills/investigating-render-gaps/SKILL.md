@@ -50,6 +50,7 @@ someone else's work. while others are active:
 | an entity's draws, meshes and materials         | `pnpm extract asset entity <map> <x> <z> <index or id>`                                          |
 | a material's shader, keywords and properties    | `pnpm extract asset material <asset path>`; `bundle dump` for the raw record                     |
 | why something didn't pack or became a stand-in  | `out/<scene>/debug/{assets,stand-ins,unsupported-*}.json`                                        |
+| what a material that draws is drawn without     | its `gaps` in `out/<scene>/tables/materials.json.zst`; `keywordsNotDrawn` in `debug/assets.json` |
 | which drawn block came from which entity        | `out/<scene>/debug/instances.jsonl` with `chunk-files.json`                                      |
 | stream areas and progressions                   | `pnpm extract variants`                                                                          |
 
@@ -90,6 +91,11 @@ intended" isn't a finding.
 - draw what the viewer can't render yet as unsupported (the magenta checker) or as a
   [stand-in](../../../docs/package-format.md#stand-ins), never hidden: a missing object is harder to
   notice than a marked one. hiding or skipping content needs the user's agreement first.
+- a surface drawn without part of what the game draws records that as a
+  [gap](../../../docs/viewer/materials.md#gaps), so the viewer's `gaps` view stripes it: a keyword
+  left unread stays off the describer's drawn list, a case skipped by a property's value goes in
+  `PROPERTY_GAPS`, and a feature the look's builder drops is pushed to `look.gaps`. a partial
+  implementation that drops the rest silently looks finished to the next reader.
 - when offering choices, recommend the one that matches the game; a cheaper option is a fallback.
 - bump the package version on any incompatible format change, then repack every package in `out/`.
 

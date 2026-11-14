@@ -70,6 +70,8 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 			triChannel = surface.triChannel;
 			setTexture(look, Slot.Emissive, triChannel.mask);
 			params[TRI_CHANNEL_IN_EMISSIVE_SLOT] = 1;
+		} else {
+			look.gaps.push('tri-channel mask: no free slot');
 		}
 	}
 	if (surface.detail !== null) {
@@ -184,6 +186,8 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 			if (overlay.coverage.kind !== 'maskMap' || textures.emissive === null) {
 				layerBlendParams(look, overlay, LAYER_SOURCES[overlay.coverage.kind]);
 				parallaxRowsFree = false;
+			} else {
+				look.gaps.push('mask layer: the emissive map holds its mask map’s slot');
 			}
 			break;
 		}
@@ -191,8 +195,12 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 			break;
 		}
 	}
-	if (parallaxRowsFree && emission?.pulse != null) {
-		emissivePulseParams(look, emission.pulse);
+	if (emission?.pulse != null) {
+		if (parallaxRowsFree) {
+			emissivePulseParams(look, emission.pulse);
+		} else {
+			look.gaps.push('emission pulse: a glow or layer holds its rows');
+		}
 	}
 	if (surface.keepsLitDecalsOff) {
 		params[LookRow.detail2 + 3] = 1;
@@ -206,14 +214,17 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 	// the offset's textures take the parallax slots, and only the alpha-tested depth and shadow passes read
 	// the UV sets and textures it needs; their vertex stages don't read the normal
 	const { vertexOffset } = surface;
-	if (
-		vertexOffset !== null &&
-		vertexOffset.space !== 'normal' &&
-		surface.foliage === null &&
-		parallaxRowsFree &&
-		look.queue === 'cutout'
-	) {
-		vertexOffsetParams(look, vertexOffset);
+	if (vertexOffset !== null) {
+		if (
+			vertexOffset.space !== 'normal' &&
+			surface.foliage === null &&
+			parallaxRowsFree &&
+			look.queue === 'cutout'
+		) {
+			vertexOffsetParams(look, vertexOffset);
+		} else {
+			look.gaps.push('vertex offset: not alpha-tested, along the normal, or its slots are held');
+		}
 	}
 	return look;
 };

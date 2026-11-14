@@ -110,10 +110,14 @@ applies the budget.
 - look: `viewer.options.exposure` (EV on top of the level's and the auto exposure's),
   `viewer.options.autoExposure`, `viewer.stats.autoExposureEv` and `viewer.options.debugView`
   (`'clouds'` shows the raw cloud panorama).
+- what's drawn incompletely: `viewer.setOptions({ debugView: 'gaps' })` stripes every mesh whose
+  material is drawn without something the game draws ([gaps](viewer/materials.md#gaps)), and
+  `viewer.gapsInView()` lists what's missing among the meshes drawn last frame (`gap`, `materials`,
+  `nearest` in metres), nearest first. check it at a pose before concluding a material is complete.
 - what draws something: `viewer.scene.meshes.selection.buckets` is the last frame's mesh selection
   (what `MeshSelector.run` returned; `meshes` is `null` for a package without converted geometry).
   each bucket has its `material` id (its row in the package's `debug/assets.json`), its `look`
-  (`queue`, `unsupported`, `flags`, `textures`, and `params`, laid out by `LookRow` in
+  (`queue`, `unsupported`, `gaps`, `flags`, `textures`, and `params`, laid out by `LookRow` in
   [`looks/look.ts`](../packages/viewer/src/looks/look.ts): floats 0–2 the linear tint, 3 the
   alpha-test threshold; effect looks by `EffectRow` in `looks/effects/effect-look.ts`), its
   `geometry` item and `nearest`, the distance to its nearest instance. a look only says how a

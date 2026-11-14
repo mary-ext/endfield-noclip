@@ -233,8 +233,34 @@ draw (`keywordsNotDrawn`, from
 [game/materials/surfaces/surface-keywords.ts](../../packages/extractor/src/game/materials/surfaces/surface-keywords.ts),
 beside the describers that read them) and the texture slots whose reference couldn't be followed
 (`slotErrors`). a surface shader draws without the keywords it doesn't read rather than showing the
-checker.
+checker: most of such a material is right, and hundreds of them would checker whole scenes. the
+[gaps view](#gaps) marks them instead.
 
 only materials the game draws nothing visible with aren't drawn: `HGRP/WaterProxy`, whose passes all
 feed the water pipeline ([water](../game-data/water.md#waterproxy-and-waterdecal)), and lit decals
 that write nothing the viewer draws.
+
+## gaps
+
+a surface material that draws, but without something the game draws, looks finished: a still banner
+or a blank one reads as intended. the `gaps` choice of the "show" setting marks those: surfaces turn
+grey, and every mesh whose material has a known gap shows amber and black stripes, with a legend
+under the setting naming what's missing in view, nearest first. `viewer.gapsInView()` returns the
+legend's rows and a selection bucket's `look.gaps` one material's
+([driving the viewer](../driving-the-viewer.md#inspecting)).
+
+a look's gaps (`MaterialLook.gaps`) come from two places:
+
+- the package's [`gaps`](../package-format.md#materials): the keywords the surface's describer
+  doesn't read (`keywordsNotDrawn`) and the properties it reads past (`PROPERTY_GAPS` in
+  [surface-keywords.ts](../../packages/extractor/src/game/materials/surfaces/surface-keywords.ts)).
+  a describer that starts reading a keyword adds it to that module's list; one that reads a keyword
+  but skips a case of it by a property's value adds the property there
+- the look's builder, where a feature loses its texture slot or parameter rows to another
+  ([`lit-look.ts`](../../packages/viewer/src/looks/lit-look.ts) pushes one each for the tri-channel
+  mask, a mask layer, the emission pulse and the vertex offset)
+
+the view only knows what those two record. it doesn't mark what a describer reads wrongly, effect
+materials (their describers turn what they can't draw unsupported), the terrain, water, or gaps of
+an entity rather than its material: content the packer drops, runtime per-draw values, and the
+[cloth simulation](#swaying-cloth), which `pack` only counts.

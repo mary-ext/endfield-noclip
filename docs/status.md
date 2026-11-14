@@ -194,11 +194,11 @@ packs or renders correctly.
   world-space, PBR and deform variants, matcaps (the campfires' crystal glows without its sheen),
   mask layers on emissive-mapped materials and with noise or parallax, the top layer's
   `_BaseHeightMap` (read as grey) and `_TERRAIN_BLEND`'s fade into the terrain aren't drawn
-- other surface keywords the viewer ignores, listed per material in `debug/assets.json`
-  ([unsupported materials](viewer/materials.md#unsupported-materials)), on map02:
-  `_MACRO_NORMAL_MAP` (about 90 materials), `_SUBSURFACE*`, `_FAKE*` (glints, cracks, dust, volume,
-  refraction), interior parallax and mapping, `_ZWRITE_OFF`, and vertex animation other than
-  `HGRP/Lit`'s [swaying cloth](viewer/materials.md#swaying-cloth) and
+- other surface keywords the viewer ignores, listed per material in `debug/assets.json` and striped
+  by the viewer's [gaps view](viewer/materials.md#gaps), which doesn't cover effects, terrain, water
+  or per-entity gaps, on map02: `_MACRO_NORMAL_MAP` (about 90 materials), `_SUBSURFACE*`, `_FAKE*`
+  (glints, cracks, dust, volume, refraction), interior parallax and mapping, `_ZWRITE_OFF`, and
+  vertex animation other than `HGRP/Lit`'s [swaying cloth](viewer/materials.md#swaying-cloth) and
   [vertex offset](viewer/materials.md#vertex-offset) (`_SIMPLE_VERTEXANIM_PENDULUM`, `…_ROPE`,
   `HGRP/LitTransparent`'s cloth, `_VAT_*`, `_COMMONVAT_*`, `_MOVING_BAMBOO`). the cloth sway is
   unchecked against an in-game shot

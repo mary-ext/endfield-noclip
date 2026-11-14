@@ -36,7 +36,8 @@ struct Frame {
 	// terrain: zero-sample height relative to the eye, metres per height unit, hole bit (u32 bits), 0
 	terrain: vec4f,
 	// x = wireframe, y = debug view (0 lit, 1 albedo, 2 normals, 3 roughness, 4 ambient only; 5, the raw
-	// cloud panorama, is lit here and shown by the post chain), z, w reserved
+	// cloud panorama, is lit here and shown by the post chain; 6 gaps: grey surfaces, striped where a mesh's
+	// material is drawn with something missing), z, w reserved
 	flags: vec4u,
 	// boxes larger than x metres (max half extent) draw as outlines only; y = material texture mip bias (log2 of
 	// the render scale, so upsampled frames sample at the output's density); z = `indirectDiffuseFactor`, the
@@ -897,6 +898,13 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		case 4u: {
 			out.radiance = vec4f(ambient, albedo_luminance);
 			out.ambient = vec4f(diffuse_ambient, s.occlusion);
+			return out;
+		}
+		// the gaps view: surfaces in grey, so the stripes of those drawn with something missing (`shade` in
+		// mesh.wgsl) stand out
+		case 6u: {
+			out.radiance = vec4f(vec3f(dot(s.albedo, LUMINANCE_ROUNDED)), 1.0);
+			out.ambient = vec4f(0.0);
 			return out;
 		}
 		default: {}

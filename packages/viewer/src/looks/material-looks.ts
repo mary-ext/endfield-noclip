@@ -1,4 +1,9 @@
-import type { MaterialCull, MaterialEntry, MaterialTable } from '@endfield-noclip/package-format/materials';
+import type {
+	MaterialCull,
+	MaterialEntry,
+	MaterialTable,
+	ReadyMaterial,
+} from '@endfield-noclip/package-format/materials';
 import type {
 	EffectStackSurface,
 	EffectStencil,
@@ -18,6 +23,7 @@ import { waterSheetLook } from './effects/water-sheet.ts';
 import { litLook } from './lit-look.ts';
 import {
 	emptyLook,
+	GAPS_FLOAT,
 	LookFlags,
 	type LookQueue,
 	LookRow,
@@ -102,6 +108,17 @@ const materialLook = (entry: MaterialEntry): MaterialLook => {
 	if (entry.status !== 'ready') {
 		return unsupportedLook();
 	}
+	const look = surfaceLook(entry);
+	look.gaps.unshift(...entry.gaps);
+	// effect looks keep the float for their own; their describers turn what they can't draw unsupported
+	if (look.gaps.length > 0 && (look.flags & LookFlags.Effect) === 0) {
+		look.params[GAPS_FLOAT] = 1;
+	}
+	return look;
+};
+
+/** a new look for a converted material's surface, with the gaps its builder leaves */
+const surfaceLook = (entry: ReadyMaterial): MaterialLook => {
 	const surface = entry.surface;
 	switch (surface.kind) {
 		case 'undrawn': {
@@ -267,4 +284,5 @@ const effectMaterialLook = (
 	flags: LookFlags.Effect,
 	params: effect.params,
 	stencil,
+	gaps: [],
 });

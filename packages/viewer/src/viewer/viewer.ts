@@ -349,6 +349,26 @@ export class Viewer {
 	}
 
 	/** @returns the environment volumes applied at the camera, in order */
+	/**
+	 * what the meshes drawn last frame are drawn without, for the gaps view's legend
+	 *
+	 * @returns each gap among the drawn materials' looks (`MaterialLook.gaps`), with how many materials have it
+	 *   and the distance to the nearest instance of one, nearest first
+	 */
+	gapsInView(): { gap: string; materials: number; nearest: number }[] {
+		const rows = new Map<string, { gap: string; materials: Set<number>; nearest: number }>();
+		for (const bucket of this.scene?.meshes?.selection.buckets ?? []) {
+			for (const gap of bucket.look.gaps) {
+				const row = rows.getOrInsertComputed(gap, () => ({ gap, materials: new Set(), nearest: Infinity }));
+				row.materials.add(bucket.material);
+				row.nearest = Math.min(row.nearest, bucket.nearest);
+			}
+		}
+		return [...rows.values()]
+			.map(({ gap, materials, nearest }) => ({ gap, materials: materials.size, nearest }))
+			.toSorted((a, b) => a.nearest - b.nearest);
+	}
+
 	get appliedVolumes(): readonly AppliedVolume[] {
 		return this.#environment.applied;
 	}
