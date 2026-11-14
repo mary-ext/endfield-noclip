@@ -481,7 +481,8 @@ the frame.
   effects never hide them: a proxy names a near and a far grid containing the row (the satellites'
   are a level-3 and a level-5 cell, small effects' levels 0 and 1, the corroded planet's its own
   grid twice) and sets the animator's or effect's LOD level to the first of them that's loaded, else
-  to 2.
+  to 2. an effect's level is the band its root's LOD table shows, the same index (High, Mid, Low);
+  the camera's distance and the table's cull distance play no part.
 
 ## terrain
 
@@ -815,9 +816,8 @@ polylines with a height range) fence it.
   the terrain quadtree in some scenes, and how it relates to the HLOD layers' own grids
 - where a cluster's sub-scene index is stored, which an HLOD-unload volume's mask selects
   ([stream areas](#stream-areas))
-- what effect LOD level 2 turns off inside a prefab, and the dynamic rows' `Dis` and `MinDis`, which
-  nothing reads at runtime; a third kind of LOD proxy that does cull by the visibility record isn't
-  followed
+- the dynamic rows' `Dis` and `MinDis`, which nothing reads at runtime; a third kind of LOD proxy
+  that does cull by the visibility record isn't followed
 - what dungeon levels that reuse an open-world scene add of their own: a census of map02's chunk
   files found no tags but 0, 31 and lv001–lv010's, so it can only come from LevelData and
   DynamicStreaming

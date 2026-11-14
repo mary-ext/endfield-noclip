@@ -14,11 +14,13 @@ import {
 	type DistanceRange,
 	effectDistanceLod,
 	effectLodNodes,
+	effectProxyBands,
 	intersectRanges,
 	isEffectSettingType,
 	isOneShotEffect,
 	isViewStateControllerType,
 	playedEffectNodes,
+	PROXY_LEVELS,
 } from '../effects/view-state-effects.ts';
 
 import {
@@ -37,7 +39,7 @@ import {
 import type { ScaledTiling } from './material-values.ts';
 import { bindingKey, type ClipPaths, clipPaths, posedLocal } from './pose-paths.ts';
 import type { PlacedPrefabNode, PrefabComponent, PrefabNode, PrefabVisitor } from './prefab-walk.ts';
-import type { DistanceBands, PrefabPose, SizeRange } from './prefab.ts';
+import type { DistanceBands, EffectLodSource, PrefabPose, SizeRange } from './prefab.ts';
 import { CANDIDATE_SOURCES } from './renderer-candidates.ts';
 import type { PosedNode } from './skin-pose.ts';
 
@@ -48,6 +50,8 @@ import type { PosedNode } from './skin-pose.ts';
 // it needs its own matrix, or one candidate source when it draws.
 
 // #region state
+
+const ALL_PROXY_LEVELS = (1 << PROXY_LEVELS) - 1;
 
 /** a renderer the walk found, before its materials, bounds and pose are resolved */
 export interface RendererCandidate {
@@ -65,6 +69,7 @@ export interface RendererCandidate {
 	/** the pose's looping clips that keep changing the renderer's material values */
 	playedMaterials: readonly PlayedMaterials[];
 	distances: DistanceBands | null;
+	proxyLevels: number | null;
 }
 
 /** a looping clip's material values on one renderer */
@@ -104,6 +109,8 @@ export interface RendererWalk {
 	particleQuad: ObjectRef | null;
 	/** whether the placement starts locked ({@link readUnlockConfig}) */
 	locked: boolean;
+	/** what picks the effect LOD tables' bands */
+	effectLod: EffectLodSource;
 	/** in walk order, which the renderers keep */
 	candidates: RendererCandidate[];
 	/** by Transform, its prefab-space matrix */
@@ -132,6 +139,8 @@ export interface RendererWalk {
 	 * GameObject
 	 */
 	distanceSwitched: Map<string, { ranges: DistanceRange[]; setting: string }>;
+	/** by GameObject, the LOD proxy levels the root's effect LOD table leaves it on at, as a mask */
+	proxySwitched: Map<string, number>;
 	/**
 	 * by GameObject with a distance LOD, its position in prefab space: where the camera's distance is measured
 	 * from
@@ -158,7 +167,7 @@ export interface RendererWalk {
  */
 export const createRendererWalk = (
 	resolver: AssetResolver,
-	options: { pose: PrefabPose | null; particleQuad: ObjectRef | null; locked: boolean },
+	options: Pick<RendererWalk, 'pose' | 'particleQuad' | 'locked' | 'effectLod'>,
 ): RendererWalk => ({
 	resolver,
 	...options,
@@ -173,6 +182,7 @@ export const createRendererWalk = (
 	lockModels: new Map(),
 	movingOnly: new Set(),
 	distanceSwitched: new Map(),
+	proxySwitched: new Map(),
 	settingOrigins: new Map(),
 	lengthScales: new Map(),
 	lengthTilings: new Map(),
@@ -210,6 +220,8 @@ export interface RendererScope {
 	scopes: readonly AnimatorScope[];
 	/** the distances it shows at, `null` for any */
 	distances: DistanceBands | null;
+	/** the LOD proxy levels it shows at, as a mask; `null` for any */
+	proxyLevels: number | null;
 }
 
 /** a GameObject's state in the renderer walk */
@@ -241,6 +253,7 @@ export const ABOVE_ROOT: RendererScope = {
 	paths: [],
 	scopes: [],
 	distances: null,
+	proxyLevels: null,
 };
 
 // #endregion
@@ -449,13 +462,21 @@ const readViewStateController: ComponentReader = {
 	},
 };
 
-/** `EffectSetting`: what its LOD table switches, and by what camera distance */
+/** `EffectSetting`: what its LOD table switches, and by what camera distance or LOD proxy level */
 const readEffectSetting: ComponentReader = {
 	accepts: behaviourOf(isEffectSettingType),
 	async read(walk, node, state, component) {
 		const data = await component.read();
 		for (const switched of await effectLodNodes(walk.resolver, component.ref, data)) {
 			walk.lodSwitched.add(switched);
+		}
+		if (walk.effectLod === 'proxy') {
+			// the dynamic scene drives only the root's setting, by its LOD proxy
+			const byLevel = node.isRoot ? await effectProxyBands(walk.resolver, component.ref, data) : null;
+			for (const [switched, levels] of byLevel ?? []) {
+				walk.proxySwitched.set(switched, levels);
+			}
+			return;
 		}
 		const byDistance = await effectDistanceLod(walk.resolver, component.ref, data);
 		if (byDistance === null) {
@@ -577,12 +598,18 @@ const enterNode = async (
 		paths,
 		scopes,
 		distances: parent.distances,
+		proxyLevels: parent.proxyLevels,
 		local: node.saved,
 		...posedRendererValues(walk.pose, paths),
 		distanceOrigin: false,
 	};
 	for (const component of node.components) {
 		await COMPONENT_READERS.find((reader) => reader.accepts(component))?.read(walk, node, state, component);
+	}
+	// after the readers, since the root's table can list the root
+	const levels = walk.proxySwitched.get(node.key);
+	if (levels !== undefined) {
+		state.proxyLevels = (state.proxyLevels ?? ALL_PROXY_LEVELS) & levels;
 	}
 	// after the readers, since a VFXAdjustLength can scale its own Transform
 	state.local = localTransform(walk, node, paths);

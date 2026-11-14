@@ -11,6 +11,12 @@ export interface DynamicModel {
 	scale: [number, number, number];
 }
 
+/** a stored dynamic effect placement */
+export interface DynamicEffect extends DynamicModel {
+	/** the grid ids its LOD proxy follows: a near grid, then a far grid */
+	lodGrids: [near: number, far: number];
+}
+
 /** one component-group ordinal in a paired dynamic ECS chunk */
 export interface DynamicEcs {
 	chunk: number;
@@ -36,7 +42,7 @@ export interface DynamicResourceGrid {
 	id: number;
 	models: DynamicModel[];
 	/** effect prefab placements, stored apart from models */
-	effects: DynamicModel[];
+	effects: DynamicEffect[];
 	ecs: DynamicEcs[];
 }
 
@@ -110,7 +116,13 @@ export const readDynamicResources = (
 				if (vec3(at + 116).some((value, axis) => value !== position[axis])) {
 					throw new FormatError(`unexpected dynamic effect row layout in grid ${id}`);
 				}
-				return { pathHash: fb.u64(at + 48), position, rotation: vec3(at + 24), scale: vec3(at + 36) };
+				return {
+					pathHash: fb.u64(at + 48),
+					position,
+					rotation: vec3(at + 24),
+					scale: vec3(at + 36),
+					lodGrids: [fb.u32(at + 56), fb.u32(at + 60)],
+				};
 			}),
 			ecs: Array.from({ length: ecs.length }, (_, n) => {
 				const at = ecs.start + n * 36;

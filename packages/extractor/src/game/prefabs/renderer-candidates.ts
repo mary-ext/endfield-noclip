@@ -61,13 +61,17 @@ const enabledData = async (component: PrefabComponent): Promise<TypeTreeObject |
 const candidateOf = (
 	node: PlacedPrefabNode,
 	state: RendererNode,
-	fields: Omit<RendererCandidate, 'name' | 'posedMaterials' | 'playedMaterials' | 'distances'>,
+	fields: Omit<
+		RendererCandidate,
+		'name' | 'posedMaterials' | 'playedMaterials' | 'distances' | 'proxyLevels'
+	>,
 ): RendererCandidate => ({
 	...fields,
 	name: node.name,
 	posedMaterials: state.posedMaterials,
 	playedMaterials: state.playedMaterials,
 	distances: state.distances,
+	proxyLevels: state.proxyLevels,
 });
 
 /** an enabled LODGroup's renderers, with the screen-relative heights it shows each at */
@@ -350,6 +354,7 @@ const collectSplineMovers: NodeStep = async (walk, node, state) => {
 				posedMaterials: [],
 				playedMaterials: [],
 				distances: state.distances,
+				proxyLevels: state.proxyLevels,
 			});
 		}
 	}

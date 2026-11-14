@@ -715,13 +715,24 @@ map02 there's one such prefab: `p_fxmap_lv002_fangyuzhenlie_middle_01`, ungated 
 particles and stream meshes along Wuling City's pillar array, beside the drawn `_high_03`,
 `_middle_02` and `_middle_03` streams.
 
-with `isUseDistanceLod` set, the setting picks a distance band from the camera's distance to its own
-GameObject, whenever either moves. `distanceLodCfgList` holds each band's `distance`; the band is
-the last one whose distance the camera is beyond (strictly), else the first, and each listed
-GameObject is on in band `i` while its `_distanceLodInfos[i].isActive` is 1. an entry switches its
-whole GameObject, so its subtree with it. past `cullDis` the setting stops picking bands, and with
-`_isCullDisable` set it switches its own GameObject off, hiding the whole effect, until the camera
-comes back within it. `lodFadeTime` fades between bands.
+`distanceLodCfgList` holds the bands, and each listed GameObject is on in band `i` while its
+`_distanceLodInfos[i].isActive` is 1. an entry switches its whole GameObject, so its subtree with
+it. what picks the band depends on what placed the effect:
+
+- **by the camera.** an effect the game wraps in an effect instance (scene effects, factory effects,
+  battle effects) has its setting's band picked from the main camera's 3D distance to the setting's
+  own GameObject, whenever either moves, if `isUseDistanceLod` is set: the last band whose
+  `distance` the camera is beyond (strictly), else the first. past `cullDis` the setting stops
+  picking bands, and with `_isCullDisable` set it switches its own GameObject off, hiding the whole
+  effect, until the camera comes back within it. `lodFadeTime` fades between bands.
+- **by a LOD proxy.** an effect a [dynamic structure](world.md#dynamic-load-grids) places is never
+  measured against the camera and never culled by `cullDis`, whatever `isUseDistanceLod` says. its
+  root's setting is switched on and shown band `i` when its LOD proxy sets level `i`: 0 while the
+  proxy's near grid is loaded, 1 while only its far grid is, 2 while neither is. a level with no
+  band leaves the table as it was. settings below the root aren't driven. so indie_ccdg002's green
+  light beam (`p_fxmap_map02_lv002_dragonball_lightbeam_01`, `cullDis` 150 m) shows from the battle
+  arena 225 m away: its near grid is unloaded there, its far grid loaded, and band 1 keeps the beam
+  on with two of its five layers off.
 
 the collectible marker (`int_collection_common_postmodel`, whose view states only switch it off once
 collected) is one: bands from 0, 30 and 60 m, culled at 80 m. within 30 m it shows everything: the

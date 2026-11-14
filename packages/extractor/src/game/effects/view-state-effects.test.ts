@@ -5,7 +5,7 @@ import type { PPtr } from '@endfield-noclip/formats/unity/values';
 
 import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 
-import { effectDistanceLod, intersectRanges } from './view-state-effects.ts';
+import { effectDistanceLod, effectProxyBands, intersectRanges } from './view-state-effects.ts';
 
 /** a resolver whose objects are only their path ids, keyed `CAB-test:<id>` */
 const resolver = {
@@ -56,6 +56,26 @@ test('effect distance bands turn into the camera distances each GameObject shows
 		{ near: 0, far: 30 },
 		{ near: 60, far: 80 },
 	]);
+});
+
+test('a LOD proxy picks the band by its level, with no cull distance', async () => {
+	// as the dynamic scene drives it: whether the setting switches by distance doesn't matter
+	const levels = await effectProxyBands(resolver, setting, { ...marker, isUseDistanceLod: 0 });
+	assert.deepEqual(Object.fromEntries(levels ?? []), {
+		'CAB-test:1': 0b111,
+		'CAB-test:2': 0b001,
+		'CAB-test:3': 0b011,
+		'CAB-test:4': 0b110,
+		'CAB-test:5': 0b101,
+	});
+	// with two bands, the level past them keeps the last
+	const two = await effectProxyBands(resolver, setting, {
+		...marker,
+		distanceLodCfgList: marker.distanceLodCfgList.slice(0, 2),
+	});
+	assert.equal(two?.get('CAB-test:4'), 0b110);
+	assert.equal(two?.get('CAB-test:5'), 0b001);
+	assert.equal(await effectProxyBands(resolver, setting, { ...marker, distanceLodCfgList: [] }), null);
 });
 
 test("an effect that doesn't switch by distance, or keeps itself on past its cull distance, says so", async () => {

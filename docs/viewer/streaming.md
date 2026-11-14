@@ -63,7 +63,9 @@ produce:
   with a [reach](../package-format.md#tile-tree) draws while the camera, standing in for the game's
   streaming centre, is inside that rectangle: dynamic structures' blocks reach as far as their game
   grid loads them, so Dijiang's corroded planet and satellites show from its deck, though their
-  renderers sit hundreds of metres to kilometres from it. those blocks are listed by reach
+  renderers sit hundreds of metres to kilometres from it. an effect layer shown at only some of its
+  LOD proxy's levels sits in blocks reaching where the proxy is at them
+  ([chains](../package-format.md#binary-encodings)). those blocks are listed by reach
   (`TileTree.reached`), tested every frame a reach at a time (about 0.1 ms per traversal over
   map02's couple of thousand grids). the rest, scene-state content and facilities, draw within
   `detailDistance` of their tile.

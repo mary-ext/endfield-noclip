@@ -92,6 +92,11 @@ export interface PrefabRenderer {
 	/** where the effect LOD tables above the renderer show it by camera distance; `null` when nothing does */
 	distances: DistanceBands | null;
 	/**
+	 * under `effectLod: 'proxy'`, a mask of the LOD proxy levels (bit `i` for level `i`) the root's effect LOD
+	 * table shows the renderer at; `null` when it shows it at all of them
+	 */
+	proxyLevels: number | null;
+	/**
 	 * where an enabled LODGroup shows the renderer, ascending by LOD; `null` outside any. the heights are
 	 * measured on the LODGroup's own size in the game
 	 */
@@ -106,6 +111,12 @@ export interface SizeRange {
 	min: number;
 	max: number;
 }
+
+/**
+ * what drives a placed effect's LOD tables (docs/game-data/effects.md#effect-lod-tables): the camera's
+ * distance, or for an effect a dynamic scene places, its LOD proxy
+ */
+export type EffectLodSource = 'camera' | 'proxy';
 
 /** the camera distances an effect's distance LOD shows something at */
 export interface DistanceBands {
@@ -201,6 +212,9 @@ const IDENTITY = trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]);
  * @param options.particleQuad the unit quad billboard particle systems draw, or `null` to skip them
  * @param options.locked whether the placement starts locked by a mini-game or submit lock, which switches a
  *   root `UnlockEffectConfigMono`'s locked model on and its unlocked model off
+ * @param options.effectLod what picks the effect LOD tables' bands: `camera`, every table by the camera's
+ *   distance ({@link PrefabRenderer.distances}); `proxy`, for a dynamic scene's effect row, the root's table
+ *   by its LOD proxy's level ({@link PrefabRenderer.proxyLevels}) and the others never
  * @returns enabled mesh renderers relative to the prefab root; the caller supplies the root placement. those
  *   under GameObjects switched off as saved are stand-ins ({@link PrefabRenderer.unsupported}); those the
  *   pose or lock switches off are left out
@@ -209,12 +223,17 @@ const IDENTITY = trsMatrix([0, 0, 0], [0, 0, 0, 1], [1, 1, 1]);
 export const readPrefabRenderers = async (
 	resolver: AssetResolver,
 	root: ObjectRef,
-	options: { viewPose: PrefabPose | null; particleQuad: ObjectRef | null; locked: boolean },
+	options: {
+		viewPose: PrefabPose | null;
+		particleQuad: ObjectRef | null;
+		locked: boolean;
+		effectLod: EffectLodSource;
+	},
 ): Promise<PrefabRenderer[]> => {
-	const { viewPose, particleQuad, locked } = options;
+	const { viewPose, particleQuad, locked, effectLod } = options;
 	// view states drive their model's Animators; only a prefab without them plays its controllers' defaults
 	const pose = viewPose ?? (await animatorDefaultPose(resolver, root));
-	const walk = createRendererWalk(resolver, { pose, particleQuad, locked });
+	const walk = createRendererWalk(resolver, { pose, particleQuad, locked, effectLod });
 	await walkPrefab(resolver, root, rendererVisitor(walk), ABOVE_ROOT);
 	moveFollowers(walk);
 	await resolveForces(walk);
@@ -317,6 +336,7 @@ const assembleRenderer = async (
 		materials,
 		materialValues,
 		distances: candidate.distances,
+		proxyLevels: candidate.proxyLevels,
 		sizes: walk.lodSizes.get(key)?.map(({ lod, min, max }) => ({ lod, min, max })) ?? null,
 		submeshes: arrayField(mesh, 'm_SubMeshes').length,
 		// Unity's ShadowCastingMode: 3 ShadowsOnly, 4 ShadowsOnlyTwoSided

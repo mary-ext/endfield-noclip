@@ -4,6 +4,7 @@ import {
 	dynamicResourceSlice,
 	readDynamicResources,
 	type DynamicEcs,
+	type DynamicEffect,
 	type DynamicModel,
 	type DynamicResourceEntity,
 	type DynamicResourceGrid,
@@ -87,6 +88,11 @@ export interface StructureModel {
 	locked?: boolean;
 	/** the `fb_main` grid storing the row, whose level sets its load distance; absent for other placements */
 	grid?: number;
+	/**
+	 * for an effect row, the near and far grids its LOD proxy follows, which pick its effect LOD band; absent
+	 * for other placements
+	 */
+	lodGrids?: [near: number, far: number];
 	/**
 	 * the path the placement rides as a whole (an auto-moving platform and the effects on it), as offsets from
 	 * where it's placed; absent for one that stays put
@@ -725,7 +731,10 @@ class OwnerPass {
 		const { ref, grid, tag, alternatives, owned } = rows;
 		const { game } = this.#scene;
 		const effect = ref.type === 6;
-		const models = dynamicResourceSlice(effect ? grid.effects : grid.models, ref);
+		const models: (DynamicModel | DynamicEffect)[] = dynamicResourceSlice(
+			effect ? grid.effects : grid.models,
+			ref,
+		);
 		if (effect) {
 			this.result.counts.effects += models.length;
 		}
@@ -765,6 +774,7 @@ class OwnerPass {
 						visibility: { alternatives: [] },
 						pose,
 						grid: ref.grid,
+						...('lodGrids' in model && { lodGrids: model.lodGrids }),
 					}))
 					.visibility.alternatives.push(...allOf(alternatives, when));
 			}

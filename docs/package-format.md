@@ -325,7 +325,10 @@ a free id.
   span of distances they show at, and puts the origin on the effect's own GameObject as the game
   measures it (to the millimetre, so placements of a prefab share chains); under a billboard the
   stored rotation turns the offset, not the one the camera gives. it switches without the game's
-  fade.
+  fade. an effect a dynamic structure places takes its band from its LOD proxy instead, so its
+  renderers have no distance chain: a renderer its root's table shows at only some proxy levels is
+  placed once per rectangle of where the streaming centre puts the proxy at them, each copy in a
+  block with that rectangle as its [reach](#tile-tree).
 
 ### asset tables
 

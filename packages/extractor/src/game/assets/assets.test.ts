@@ -284,7 +284,7 @@ test('prefab selection follows active hierarchy and LOD references, preserving m
 			file: owner,
 			info: objects[0],
 		},
-		{ viewPose: null, particleQuad: null, locked: false },
+		{ viewPose: null, particleQuad: null, locked: false, effectLod: 'camera' },
 	);
 	assert.equal(rows.length, 4);
 	assert.equal(rows[3].pose?.[0][12], 10);
@@ -378,7 +378,7 @@ test('skinned prefab meshes resolve bones under inactive GameObjects, whose rend
 			file: owner,
 			info: objects[0],
 		},
-		{ viewPose: null, particleQuad: null, locked: false },
+		{ viewPose: null, particleQuad: null, locked: false, effectLod: 'camera' },
 	);
 	assert.deepEqual(
 		rows.map((row) => [row.name, row.unsupported !== null]),
@@ -456,7 +456,7 @@ test('a root UnlockEffectConfigMono draws the locked model of a locked placement
 			await readPrefabRenderers(
 				resolver([owner]),
 				{ bundleIndex: 0, file: owner, info: objects[0] },
-				{ viewPose: null, particleQuad: null, locked },
+				{ viewPose: null, particleQuad: null, locked, effectLod: 'camera' },
 			)
 		).map((row) => [row.name, row.unsupported !== null]);
 	assert.deepEqual(await read(true), [['Broken', false]]);
@@ -529,7 +529,7 @@ test('a raft post-model draws nothing for its wakes, which show only while it mo
 	const rows = await readPrefabRenderers(
 		resolver([owner]),
 		{ bundleIndex: 0, file: owner, info: objects[0] },
-		{ viewPose: null, particleQuad: null, locked: false },
+		{ viewPose: null, particleQuad: null, locked: false, effectLod: 'camera' },
 	);
 	assert.deepEqual(
 		rows.map((row) => [row.name, row.unsupported !== null]),

@@ -17,11 +17,12 @@ import type { AssetResolver, ObjectRef } from '../../game/assets/assets.ts';
 import { RENDER_PIPELINE_QUAD_PATH } from '../../game/assets/builtin-resources.ts';
 import { gridIdReach } from '../../game/dynamic/dynamic-grids.ts';
 import type { StructureModel } from '../../game/dynamic/dynamic-structures.ts';
+import { proxyLevelReaches } from '../../game/dynamic/proxy-reach.ts';
 import { axisLengths, withAxisLengths } from '../../game/effects/particle-mesh.ts';
 import { billboardPlacement } from '../../game/prefabs/billboard.ts';
 import { placePrefabLight, readPrefabLights, type PrefabLight } from '../../game/prefabs/prefab-lights.ts';
 import type { PrefabRoots } from '../../game/prefabs/prefab-root.ts';
-import { readPrefabRenderers, type PrefabRenderer } from '../../game/prefabs/prefab.ts';
+import { type EffectLodSource, readPrefabRenderers, type PrefabRenderer } from '../../game/prefabs/prefab.ts';
 import type { WorldIndex } from '../../game/world/world-index.ts';
 
 import { onPivot } from './interactives.ts';
@@ -67,16 +68,23 @@ export const placePrefabs = async (
 			continue;
 		}
 		const locked = placement.locked ?? false;
+		// a dynamic scene's effect rows have their LOD band set by a LOD proxy instead of the camera
+		const { lodGrids } = placement;
+		const effectLod: EffectLodSource = lodGrids === undefined ? 'camera' : 'proxy';
 		const found = roots.root(model.pathHash);
-		const prefab = prefabs.getOrInsertComputed(`${model.pathHash}:${pose?.key ?? ''}:${locked}`, async () => {
+		const key = `${model.pathHash}:${pose?.key ?? ''}:${locked}:${effectLod}`;
+		const prefab = prefabs.getOrInsertComputed(key, async () => {
 			const { label, root } = await found;
 			if (root instanceof FormatError) {
 				content.unsupportedPrefab({ path: label, reason: root.message });
 				return { label, read: root };
 			}
-			const read = await readPrefabRenderers(resolver, root, { viewPose: pose, particleQuad, locked }).catch(
-				formatErrorOnly,
-			);
+			const read = await readPrefabRenderers(resolver, root, {
+				viewPose: pose,
+				particleQuad,
+				locked,
+				effectLod,
+			}).catch(formatErrorOnly);
 			if (read instanceof FormatError) {
 				content.unsupportedPrefab({ path: label, reason: read.message });
 				return { label, read };
@@ -139,7 +147,15 @@ export const placePrefabs = async (
 				? undefined
 				: floaterVolume.get(placement.logicId);
 		for (const renderer of read) {
-			placeRenderer(content, renderer, { rootMatrix, owner, floatsOn, ride });
+			const { proxyLevels } = renderer;
+			if (proxyLevels === null || lodGrids === undefined || placement.grid === undefined) {
+				placeRenderer(content, renderer, { rootMatrix, owner, floatsOn, ride });
+				continue;
+			}
+			// a renderer shown at some proxy levels draws where the streaming centre puts the proxy at them
+			for (const loadReach of proxyLevelReaches(placement.grid, lodGrids, proxyLevels)) {
+				placeRenderer(content, renderer, { rootMatrix, owner: { ...owner, loadReach }, floatsOn, ride });
+			}
 		}
 	}
 };

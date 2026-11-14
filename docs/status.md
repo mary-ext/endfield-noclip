@@ -377,7 +377,13 @@ packs or renders correctly.
   the game's fade; a billboarded renderer's offset from the effect's origin doesn't turn with the
   camera; only prefab renderers take them (whether static scenery has banded effects is unchecked);
   the quality half of an entry (`settingLodLevel`, `platformLayer`) is ignored, as for the highest
-  preset; a band an entry has no info for is read as on (unchecked)
+  preset; a band an entry has no info for is read as on (unchecked). outside dynamic structures,
+  every setting in a prefab is banded by the camera, where the game's effect instance drives one
+  setting (which one, and what drives the rest, isn't traced), and interactives' and dynamic models'
+  effects are assumed camera-driven. dynamic structures' effects follow their LOD proxy's level
+  without its grids' unload hysteresis, a level with no band takes the last band rather than the one
+  shown before, and a root saved off but not listed in its own table stays off where the game's
+  proxy switches it on
 - particles ([particle systems](game-data/particles.md#particle-systems),
   [viewer](viewer/particles.md#particles)):
   - frozen mesh particles lose their start colour and their drift and spin over lifetime (a held

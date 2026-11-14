@@ -200,21 +200,10 @@ export const effectDistanceLod = async (
 		return { near: i === 0 ? 0 : distance, far: Math.min(Infinity, ...later) };
 	});
 	const nodes = new Map<string, DistanceRange[]>();
-	for (const entry of arrayField(data, 'lodSetting')) {
-		if (!isObject(entry)) {
-			throw new FormatError('invalid effect LOD entry');
-		}
-		const node = await resolver.resolve(setting, pptrField(entry, 'gameobject'));
-		if (node === null) {
-			continue;
-		}
-		const infos = arrayField(entry, '_distanceLodInfos');
+	for (const [node, active] of await lodEntryBands(resolver, setting, data, bands.length)) {
 		const on: DistanceRange[] = [];
 		for (const [i, band] of bands.entries()) {
-			const info = infos[i];
-			// a band the entry has no info for is assumed on (what the game fills in is unchecked)
-			const active = info === undefined || (isObject(info) && numberField(info, 'isActive') !== 0);
-			if (!active || band.near >= band.far) {
+			if (!active[i] || band.near >= band.far) {
 				continue;
 			}
 			const previous = on.at(-1);
@@ -224,12 +213,80 @@ export const effectDistanceLod = async (
 				on.push({ ...band });
 			}
 		}
-		const known = nodes.get(objectKey(node));
-		nodes.set(objectKey(node), known === undefined ? on : intersectRanges(known, on));
+		nodes.set(node, on);
 	}
 	// past the cull distance the game switches the whole effect off, when `_isCullDisable` asks it to
 	const cull = numberField(data, '_isCullDisable') !== 0 ? numberField(data, 'cullDis') : Infinity;
 	return { self: [{ near: 0, far: cull }], nodes };
+};
+
+/** the LOD levels a dynamic scene's LOD proxy sets: its near grid loaded, only its far grid, or neither */
+export const PROXY_LEVELS = 3;
+
+/**
+ * a dynamic scene's effect row shows the band its LOD proxy's level names, never by the camera's distance or
+ * past a cull distance (docs/game-data/effects.md#effect-lod-tables)
+ *
+ * @param resolver bundle reader
+ * @param setting the `EffectSetting` on the prefab's root (see {@link isEffectSettingType})
+ * @param data its fields
+ * @returns by GameObject key its LOD entries list, a mask of the proxy levels (bit `i` for level `i`) it's on
+ *   at; `null` when the setting has no bands, so its table is never applied
+ * @throws {FormatError} on a malformed LOD entry
+ */
+export const effectProxyBands = async (
+	resolver: AssetResolver,
+	setting: ObjectRef,
+	data: TypeTreeObject,
+): Promise<Map<string, number> | null> => {
+	const count = arrayField(data, 'distanceLodCfgList').length;
+	if (count === 0) {
+		return null;
+	}
+	const nodes = new Map<string, number>();
+	for (const [node, active] of await lodEntryBands(resolver, setting, data, count)) {
+		let mask = 0;
+		for (let level = 0; level < PROXY_LEVELS; level++) {
+			// a level past the last band leaves the table as it was, which coming from nearer is the last band
+			if (active[Math.min(level, count - 1)]) {
+				mask |= 1 << level;
+			}
+		}
+		nodes.set(node, mask);
+	}
+	return nodes;
+};
+
+/**
+ * @returns by GameObject key an `EffectSetting`'s LOD entries list, whether its entries leave it on in each
+ *   of `count` bands; a GameObject several entries list is on where all of them are
+ * @throws {FormatError} on a malformed LOD entry
+ */
+const lodEntryBands = async (
+	resolver: AssetResolver,
+	setting: ObjectRef,
+	data: TypeTreeObject,
+	count: number,
+): Promise<Map<string, boolean[]>> => {
+	const nodes = new Map<string, boolean[]>();
+	for (const entry of arrayField(data, 'lodSetting')) {
+		if (!isObject(entry)) {
+			throw new FormatError('invalid effect LOD entry');
+		}
+		const node = await resolver.resolve(setting, pptrField(entry, 'gameobject'));
+		if (node === null) {
+			continue;
+		}
+		const infos = arrayField(entry, '_distanceLodInfos');
+		const active = Array.from({ length: count }, (_, i) => {
+			const info = infos[i];
+			// a band the entry has no info for is assumed on (what the game fills in is unchecked)
+			return info === undefined || (isObject(info) && numberField(info, 'isActive') !== 0);
+		});
+		const known = nodes.get(objectKey(node));
+		nodes.set(objectKey(node), known === undefined ? active : known.map((on, i) => on && active[i]));
+	}
+	return nodes;
 };
 
 /**
