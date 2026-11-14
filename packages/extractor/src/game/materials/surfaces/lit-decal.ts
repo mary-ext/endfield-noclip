@@ -14,6 +14,7 @@ const LIT_DECAL_KEYWORDS = new Set([
 	'_BLEND_WATER_FLOW',
 	'_BLEND_EMISSIVE',
 	'_BLEND_SLUDGE_EROSION',
+	'_BLEND_WETNESS',
 ]);
 
 /** Unity's `ColorWriteMask` bits */
@@ -59,6 +60,17 @@ export const describeLitDecal = (
 		};
 	}
 	const relight = (float('_ColorMask3', 0) & WRITE_RED) === 0;
+	let wetness: LitDecalSurface['wetness'] = null;
+	if (has('_BLEND_WETNESS')) {
+		// the game compiles the wetness only with the PBR map
+		if (waterFlow || emissive || sludge !== null || has('_NORMAL_ANGLE_BLEND')) {
+			return unsupported('_BLEND_WETNESS with a water flow, emission, sludge or an angle fade');
+		}
+		if (relight) {
+			return unsupported('_BLEND_WETNESS without an albedo to darken');
+		}
+		wetness = float('_Wetness', 0);
+	}
 	const surfaceMask = float('_ColorMask2', 0);
 	if (relight && !emissive && (surfaceMask & (WRITE_RED | WRITE_GREEN | WRITE_BLUE)) === 0) {
 		return invisible;
@@ -122,6 +134,7 @@ export const describeLitDecal = (
 				}
 			: null,
 		sludge,
+		wetness,
 		emission: emissive
 			? {
 					color: [emission[0], emission[1], emission[2]],

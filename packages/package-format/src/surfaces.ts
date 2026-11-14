@@ -1197,6 +1197,12 @@ export interface LitDecalSurface {
 	 */
 	sludge: { texture: number; scale: Vec2; alphaScale: number; heightFalloff: number } | null;
 	/**
+	 * `_BLEND_WETNESS`: `_Wetness`, how far the decal's alpha darkens the albedo beneath. its normal and
+	 * roughness then lay over by the alpha without `opacity`, which scales only the decal's own albedo,
+	 * metallic and occlusion; `null` without the keyword. such a decal writes albedo (`relight` is false)
+	 */
+	wetness: number | null;
+	/**
 	 * `_BLEND_EMISSIVE`: `channel` is `_EmissiveChannel` (0–3 the PBR map's R–A, 4 the base map's alpha;
 	 * fractional values blend between neighbours)
 	 */

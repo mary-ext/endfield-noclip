@@ -33,9 +33,10 @@ test('a lit decal draws its maps through the placement or the PBR map’s own tr
 		affectNormal: 0,
 		waterFlow: null,
 		sludge: null,
+		wetness: null,
 		emission: { color: [1, 1, 1], channel: 3, albedoAffect: 0, ignorePostExposure: 1 },
 	};
-	const [look, water, sludged] = materialLooks({
+	const [look, water, sludged, wet] = materialLooks({
 		entries: [
 			described(decal),
 			described({
@@ -56,8 +57,22 @@ test('a lit decal draws its maps through the placement or the PBR map’s own tr
 				sludge: { texture: 4, scale: [2, 3], alphaScale: 3, heightFalloff: 5.75 },
 				emission: null,
 			}),
+			described({ ...decal, opacity: 0, wetness: 0.3, emission: null }),
 		],
 	});
+	// a wetness decal writes albedo but changes the surface's own, so it relights; its opacity leaves the tint
+	assert.equal(wet.queue, 'decalRelight');
+	assert.equal(wet.params[EffectRow.tint + 3], 1);
+	assert.deepEqual(
+		[...wet.params.subarray(DecalLitRow.pbrPlaced, DecalLitRow.pbrPlaced + 4)].map(
+			(v) => Math.round(v * 1000) / 1000,
+		),
+		[1, 1, 0.3, 0],
+	);
+	assert.deepEqual(
+		[...look.params.subarray(DecalLitRow.pbrPlaced + 1, DecalLitRow.pbrPlaced + 4)],
+		[0, 0, 0],
+	);
 	assert.deepEqual([look.flags, look.cull, look.queue], [LookFlags.Effect, 'front', 'litDecal']);
 	assert.deepEqual(look.textures.slice(0, 2), [1, 2]);
 	// the placement's colour and UV transform are the row's: the look holds the opacity, and that the PBR map

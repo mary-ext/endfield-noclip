@@ -50,8 +50,9 @@ export const DecalLitRow = {
 	 */
 	emissiveMask: 100,
 	/**
-	 * 1 when the PBR map takes the placement's UV transform rather than its own (`FX_UV` + 1), then 0, 0, 0.
-	 * the base map always takes the placement's
+	 * 1 when the PBR map takes the placement's UV transform rather than its own (`FX_UV` + 1); the base map
+	 * always takes the placement's. then `_BLEND_WETNESS`: 1 when on, `_Wetness`, and `_DecalOpacity`, which
+	 * the tint's alpha leaves out for these
 	 */
 	pbrPlaced: 104,
 	/**
@@ -92,7 +93,14 @@ export const litDecalLook = (decal: LitDecalSurface): EffectLook => {
 			setSlot(look, DECAL_PBR_SLOT, { ...still(decal.pbr.texture), ...own }, ROLE_NONE);
 		}
 	}
-	params.set([1, 1, 1, decal.opacity], EffectRow.tint);
+	const { waterFlow, sludge, wetness, emission } = decal;
+	if (wetness === null) {
+		params.set([1, 1, 1, decal.opacity], EffectRow.tint);
+	} else {
+		// the alpha that lays the normal and roughness over leaves the opacity out
+		params.set([1, 1, 1, 1], EffectRow.tint);
+		params.set([1, wetness, decal.opacity], DecalLitRow.pbrPlaced + 1);
+	}
 	params.set([...decal.roughness, decal.normalScale, decal.angleFade], DecalLitRow.surface);
 	params.set(
 		[decal.writesNormal ? 1 : 0, decal.writesRoughness ? 1 : 0, decal.blendSceneNormal],
@@ -106,7 +114,6 @@ export const litDecalLook = (decal: LitDecalSurface): EffectLook => {
 		[decal.pbrBase ? 1 : 0, decal.metallicChannel, decal.occlusionChannel, decal.affectNormal],
 		DecalLitRow.channels,
 	);
-	const { waterFlow, sludge, emission } = decal;
 	if (sludge !== null) {
 		setSlot(look, DECAL_SLUDGE_SLOT, { ...still(sludge.texture), scale: sludge.scale }, ROLE_NONE);
 		params.set([1, sludge.alphaScale, sludge.heightFalloff], DecalLitRow.sludge);

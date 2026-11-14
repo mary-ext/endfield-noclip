@@ -437,7 +437,7 @@ describe('lit decals', () => {
 			levelFade: 0.1,
 		});
 		assert.equal(water.sludge, null);
-		assert.equal(placed({ keywords: ['_BLEND_WETNESS'] }).kind, 'unsupported');
+		assert.equal(placed({ keywords: ['_UV_NOISE'] }).kind, 'unsupported');
 		// writes no albedo, and has no map to change the surface with
 		assert.equal(placed({ floats: { ...floats, _ColorMask3: 0 } }).kind, 'undrawn');
 	});
@@ -460,6 +460,27 @@ describe('lit decals', () => {
 		assert.equal(sludged({ slots: { _BaseColorMap: slot(1) } }).kind, 'unsupported');
 		// no variant of the game's has both
 		assert.equal(sludged({ keywords: ['_BLEND_SLUDGE_EROSION', '_BLEND_WATER_FLOW'] }).kind, 'unsupported');
+	});
+
+	it('reads how far _BLEND_WETNESS darkens the albedo beneath', () => {
+		// Yinglung Pass's puddles (`M_rdecal_com_ground_puddle+1_002_04`), which have no opacity of their own
+		const puddle = (overrides: Partial<MaterialValues>) =>
+			describeMaterial(
+				material({
+					keywords: ['_BLEND_WETNESS', '_COMPLETE_PBR'],
+					slots: { _BaseColorMap: slot(1), _SampleTex1: slot(2) },
+					floats: { ...floats, _ColorMask2: 14, _DecalOpacity: 0, _Wetness: 0.3 },
+					...overrides,
+				}),
+				litDecal,
+			);
+		const decal = ofKind(puddle({}), 'litDecal');
+		assert.deepEqual([decal.wetness, decal.opacity, decal.relight], [0.3, 0, false]);
+		assert.deepEqual([decal.writesNormal, decal.writesRoughness], [true, true]);
+		// no variant of the game's has both
+		assert.equal(puddle({ keywords: ['_BLEND_WETNESS', '_NORMAL_ANGLE_BLEND'] }).kind, 'unsupported');
+		// without the albedo it darkens, there's nothing for the wetness to do
+		assert.equal(puddle({ floats: { ...floats, _ColorMask3: 0, _Wetness: 0.3 } }).kind, 'unsupported');
 	});
 
 	it('glows by its PBR map channel with _BLEND_EMISSIVE', () => {

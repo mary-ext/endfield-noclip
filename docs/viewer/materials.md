@@ -184,11 +184,20 @@ drawn.
 an emissive decal's glow is part of the decal's own shading when it's laid over; a relit one adds
 it, times its alpha, on top of the surface's emission rather than replacing it.
 `_BLEND_SLUDGE_EROSION`'s wall texture is the look's third slot, its UV row holding the scale, read
-through the texture's own sampler (the game's is a shared one). lit decals with keywords past
-`_COMPLETE_PBR`, `_NORMAL_ANGLE_BLEND`, `_BLEND_WATER_FLOW`, `_BLEND_EMISSIVE` and
-`_BLEND_SLUDGE_EROSION` (wetness, footprints, UV noise, arcs), a sludge decal without its texture or
-with a water flow or emission, are [unsupported](#unsupported-materials): drawn by the opaque path,
-their box would show as a solid block.
+through the texture's own sampler (the game's is a shared one).
+
+`_BLEND_WETNESS` decals write albedo but go through the relight pass, since they darken the
+surface's own colour, which only that pass estimates. there the surface's inputs blend as the game's
+targets do (`LitDecalSurface.wetness`, the look's `DecalLitRow.pbrPlaced` row): the estimated colour
+is darkened and laid over by the decal's, the normal and roughness mix by the alpha without the
+opacity, and the difference in light is added whole rather than times the alpha. the puddles'
+reflections stay the surface's own, as for other relit decals.
+
+lit decals with keywords past `_COMPLETE_PBR`, `_NORMAL_ANGLE_BLEND`, `_BLEND_WATER_FLOW`,
+`_BLEND_EMISSIVE`, `_BLEND_SLUDGE_EROSION` and `_BLEND_WETNESS` (footprints, UV noise, arcs), a
+sludge decal without its texture or with a water flow or emission, and a wetness decal with another
+blend keyword or without an albedo write, are [unsupported](#unsupported-materials): drawn by the
+opaque path, their box would show as a solid block.
 
 ## matte paintings
 

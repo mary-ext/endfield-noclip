@@ -1830,6 +1830,21 @@ fn fs_decal_relight(in: EffectOut) -> @location(0) vec4f {
 	var after = before;
 	after.normal = d.normal;
 	after.roughness = d.roughness;
+	let wet = fx_row(in.look, LD_PBR_PLACED);
+	if (wet.y > 0.5) {
+		// `_BLEND_WETNESS`: the alpha (without the opacity) lays the normal and roughness over and darkens the
+		// surface's albedo by `_Wetness`; the decal's own albedo and occlusion lay over by the alpha times the
+		// opacity. each input blends as the game's G-buffer targets do, so the change is added whole
+		let covered = d.alpha * wet.w;
+		after.albedo = diffuse * (1.0 - wet.z * d.alpha) * (1.0 - covered) + saturate(d.albedo) * covered;
+		after.normal = normalize(mix(n, d.normal, d.alpha));
+		after.roughness = mix(before.roughness, d.roughness, d.alpha);
+		if (d.writes_occlusion) {
+			after.occlusion = mix(before.occlusion, d.occlusion, covered);
+		}
+		let wetted = shade_surface(after, rel, in.position.xy).radiance.rgb - shade_surface(before, rel, in.position.xy).radiance.rgb;
+		return vec4f(wetted, 0.0);
+	}
 	if (d.writes_occlusion) {
 		after.occlusion = d.occlusion;
 	}

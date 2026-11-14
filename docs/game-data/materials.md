@@ -408,6 +408,18 @@ and `_NORMAL_ANGLE_BLEND`, and changes only the albedo and the alpha:
 the sludge texture is read through a sampler of the pipeline's rather than its own; which one isn't
 traced.
 
+`_BLEND_WETNESS` is the puddle (Yinglung Pass's gate floor, map02_lv007 near unity −841, 261, 258;
+`M_rdecal_com_ground_puddle+1_002_03` and `…_04`). it compiles only with `_COMPLETE_PBR`, and splits
+the alpha in two: `a`, the base map's alpha × the colour's alpha, and `o = a · _DecalOpacity`.
+
+- normal and roughness lay over by `a`, so they don't fade with the opacity
+- metallic and occlusion lay over by `o`
+- albedo: the surface's × `(1 − _Wetness · a) · (1 − o)`, plus the decal's × `o`. the wetness
+  darkens what's beneath, and the decal's own colour shows only by its opacity
+
+the puddles have `_DecalOpacity` 0 and `_Wetness` 0.3: they colour nothing, darken the floor by up
+to 30% and replace its normal and roughness with their own smooth ones.
+
 ## matte paintings
 
 `HGRP/MattePainting` draws the painted mountain ranges on the horizon: a few alpha-tested ring
