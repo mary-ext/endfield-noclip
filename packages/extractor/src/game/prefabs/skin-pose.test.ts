@@ -59,4 +59,14 @@ describe('emitterMotion', () => {
 		);
 		assert.equal(still, null);
 	});
+
+	it('is null when the clip ends the emitter scaled to nothing', () => {
+		const placed = trsMatrix([-10, 0, 0], [0, 0, 0, 1], [0, 0, 0]);
+		const shrunk = emitterMotion(
+			frames([0, 90]),
+			{ transform: 'emitter', placed, matrix: placed, inWorld: true },
+			reach,
+		);
+		assert.equal(shrunk, null);
+	});
 });

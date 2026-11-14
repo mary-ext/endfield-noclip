@@ -206,7 +206,7 @@ const EMITTER_FRAME_RATE = 30;
  *   pose), the emitter matrix its draw is placed with, and whether its particles are simulated in the world
  * @param reach the bounds its particles reach, in the emitter's frame
  * @returns the emitter's motion relative to its draw's frame and the bounds its particles reach in that frame
- *   over the whole clip, or `null` when the clip doesn't move it
+ *   over the whole clip, or `null` when the clip doesn't move it or ends it scaled to nothing
  */
 export const emitterMotion = (
 	frames: PoseFrames,
@@ -216,8 +216,18 @@ export const emitterMotion = (
 	const step = Math.max(Math.round(frames.frameRate / EMITTER_FRAME_RATE), 1);
 	// the emitter matrix is the Transform's times a fixed correction (a scaling mode dropping the parents'
 	// scale), so the Transform's motion, seen from the emitter's frame, is the emitter's
-	const toEmitter = inverseAffine(emitter.matrix);
-	const fromPlaced = multiplyMatrices(inverseAffine(emitter.placed), emitter.matrix);
+	let toEmitter: Float32Array;
+	let fromPlaced: Float32Array;
+	try {
+		toEmitter = inverseAffine(emitter.matrix);
+		fromPlaced = multiplyMatrices(inverseAffine(emitter.placed), emitter.matrix);
+	} catch (error) {
+		// an emitter the clip ends scaled to nothing has no frame to move from, so it holds its end pose
+		if (error instanceof RangeError) {
+			return null;
+		}
+		throw error;
+	}
 	const values: number[] = [];
 	const min = [Infinity, Infinity, Infinity];
 	const max = [-Infinity, -Infinity, -Infinity];

@@ -549,8 +549,9 @@ packs or renders correctly.
   [above](#interactives-and-animation)), and each moving renderer stores every frame (Qingbo's
   octagonal waterwheels: dozens of renderers over more than a thousand frames). particle emitters it
   moves [play along](viewer/particles.md#moving-emitters), but a world-simulated one's velocity
-  module and force fields keep the end pose's frame, and a local one feels gravity in the frame the
-  clip has now rather than gathering it step by step. of
+  module and force fields keep the end pose's frame, a local one feels gravity in the frame the clip
+  has now rather than gathering it step by step, and one the clip ends scaled to nothing holds that
+  end pose. of
   [ACL-compressed clips](game-data/animation.md#acl-compressed-clips) only the Transform tracks
   play: float tracks and root motion aren't decoded, and buffers with a database, non-trivial
   default values or Euler bindings hold their end pose. blend-tree states, additive or
