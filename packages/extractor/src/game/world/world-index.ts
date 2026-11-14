@@ -520,6 +520,37 @@ export class WorldIndex {
 	}
 
 	/**
+	 * {@link sceneEntities} with each rect decal's material. slower: materials live in the StreamingChunkData
+	 * siblings, read for every selected file with decals, foliage grids or HLOD-layer entities
+	 *
+	 * @param scene streaming scene, e.g. `map02`
+	 * @param filter optional chunk-file predicate
+	 * @returns each unique entity with its decal material's path hash (`null` for other entities, and for a
+	 *   decal without one)
+	 * @throws {Error} if such a file has no StreamingChunkData sibling
+	 */
+	async *sceneEntitiesWithDecals(
+		scene: string,
+		filter?: (file: ChunkFile) => boolean,
+	): AsyncGenerator<{ entity: IndexedEntity; decalMaterial: bigint | null }> {
+		const partition = await this.partition(scene);
+		const seen = new Set<number>();
+		for (const file of await this.chunkFiles()) {
+			if (file.scene !== scene || (filter && !filter(file))) {
+				continue;
+			}
+			// oxlint-disable-next-line no-await-in-loop -- entities stream out a file at a time
+			const { entities, decalMaterials } = await this.readChunkContent(file, partition);
+			for (const entity of entities) {
+				if (!seen.has(entity.id)) {
+					seen.add(entity.id);
+					yield { entity, decalMaterial: decalMaterials.get(entity.id) ?? null };
+				}
+			}
+		}
+	}
+
+	/**
 	 * every entity a level owns (by tag), wherever it's placed
 	 *
 	 * @param level a level of the partition

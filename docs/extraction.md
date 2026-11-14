@@ -76,9 +76,11 @@ gates each row. `--kind` picks sources (default all):
 visibility prints as the scene controls the package would carry, under the default game state:
 alternatives joined by `|`, requirements by `&`, each `control=values` with the values that satisfy
 it (`always` when nothing gates the row). a `static` row also names its
-[streaming layer](game-data/world.md#streaming-layers).
+[streaming layer](game-data/world.md#streaming-layers), and a rect decal its material, which
+`asset material` takes.
 
-- `--name` matches entity names, mesh and material paths, prefab paths and row sources.
+- `--name` matches entity names, mesh and material paths (a rect decal's too), prefab paths and row
+  sources.
 - `--near x,y,z --radius n` keeps rows whose world bounds (else pivot or placement position) lie
   within `n` m, in Unity coordinates, sorted nearest first and, among rows whose bounds hold the
   point, smallest first. `--max-size n` drops rows whose bounds' longest side exceeds `n` m, such as

@@ -447,7 +447,7 @@ async function* staticCandidates(
 	const cell =
 		near === undefined ? null : { x: Math.floor(near[0] / CELL_SIZE), z: Math.floor(near[2] / CELL_SIZE) };
 	const reach = radius === undefined ? 0 : Math.ceil(radius / CELL_SIZE) + 1;
-	for await (const entity of world.sceneEntities(
+	for await (const { entity, decalMaterial } of world.sceneEntitiesWithDecals(
 		scene,
 		(file) =>
 			(options.sceneState === undefined || file.sceneState === options.sceneState) &&
@@ -457,10 +457,12 @@ async function* staticCandidates(
 				(Math.abs(file.cell.x - cell.x) <= reach && Math.abs(file.cell.z - cell.z) <= reach)),
 	)) {
 		const position = entity.pivot === null ? null : [entity.pivot.x, entity.pivot.y, entity.pivot.z];
+		// a rect decal's material says which decal it is: placements of one name can differ only by it
+		const decal = decalMaterial === null ? null : (names.pathOf(decalMaterial) ?? hashText(decalMaterial));
 		yield {
 			bounds: entity.bounds,
 			position,
-			labels: [entity.name, ...drawLabels(entity, names)],
+			labels: [entity.name, ...drawLabels(entity, names), ...(decal === null ? [] : [decal])],
 			row: (distance) => {
 				const visibility = describeAlternatives(sourceVisibility([entity.source])?.alternatives ?? [[]]);
 				const reasons = standIns.atEntity(entity.name, position);
@@ -471,11 +473,12 @@ async function* staticCandidates(
 					level: entity.membership.level?.id ?? entity.membership.bucket,
 					visibility,
 					source: basename(entity.source.name),
-					summary: `${drawSummary(entity, names)}  layer ${layerName(entity.layer)}`,
+					summary: `${drawSummary(entity, names)}${decal === null ? '' : `  ${decal}`}  layer ${layerName(entity.layer)}`,
 					standIns: reasons,
 					json: {
 						kind: 'static',
 						...entityJson(entity, partition, names),
+						...(decal === null ? {} : { decalMaterial: decal }),
 						visibility,
 						standIns: reasons,
 						distance,
