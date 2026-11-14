@@ -728,9 +728,8 @@ an entry when it's done or ruled out.
   `interactive-model.ts`; `present(VertexAttribute.BlendIndices)` called twice in `decodeMesh`;
   `stream-area.test.ts` has its own FlatBuffer writer; `level-config.test.ts` holds a string pool
   test
-- viewer: the `described` helper copied into nine look test files; `fx_smoothstep` (`effect.wgsl`)
-  against `hermite` (`mesh.wgsl`); the reflection march duplicated between `water/ssr-trace.wgsl`
-  and `fs_march` in `post/ssr.wgsl`
+- viewer: `fx_smoothstep` (`effect.wgsl`) against `hermite` (`mesh.wgsl`); the reflection march
+  duplicated between `water/ssr-trace.wgsl` and `fs_march` in `post/ssr.wgsl`
 - the [materials](package-format.md#materials) section of the package-format page restates the
   `surfaces.ts` module header
 

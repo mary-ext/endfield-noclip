@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { ReadyMaterial } from '@endfield-noclip/package-format/materials';
 import type {
 	EffectSoftBody,
 	EffectStackSurface,
@@ -11,15 +10,10 @@ import type {
 
 import { LOOK_FLOATS, LookFlags } from '../look.ts';
 import { materialLooks } from '../material-looks.ts';
+import { described } from '../test-materials.ts';
 
 import { EffectKind, EffectRole, EffectRow, ROLE_NONE, SLOT_NO_BASE, SlotSource } from './effect-look.ts';
 import { NO_WATER_BLEND, OFFSET_SLOT, VertexMotion } from './stack.ts';
-
-/** a ready material drawing `surface` */
-const described = (
-	surface: ReadyMaterial['surface'],
-	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 const texture = (id: number, overrides: Partial<EffectTexture> = {}): EffectTexture => ({
 	texture: id,

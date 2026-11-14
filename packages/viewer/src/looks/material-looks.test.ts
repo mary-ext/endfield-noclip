@@ -1,17 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { MaterialCull, ReadyMaterial } from '@endfield-noclip/package-format/materials';
-
 import { LookFlags, LookRow } from './look.ts';
 import { materialLooks } from './material-looks.ts';
-
-/** a ready material drawing `surface` */
-const described = (surface: ReadyMaterial['surface'], cull: MaterialCull = 'back'): ReadyMaterial => ({
-	status: 'ready',
-	cull,
-	surface,
-});
+import { described } from './test-materials.ts';
 
 test('undrawn surfaces are not drawn, and unsupported ones show an unlit, shadowless, two-sided magenta checker', () => {
 	const [undrawn, unsupported] = materialLooks({

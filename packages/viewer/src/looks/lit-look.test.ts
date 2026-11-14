@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { MaterialCull, ReadyMaterial, TextureSlot } from '@endfield-noclip/package-format/materials';
+import type { TextureSlot } from '@endfield-noclip/package-format/materials';
 import type {
 	LitLayer,
 	LitSurface,
@@ -21,13 +21,7 @@ import {
 } from './lit-look.ts';
 import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
 import { materialLooks } from './material-looks.ts';
-
-/** a ready material drawing `surface` */
-const described = (surface: ReadyMaterial['surface'], cull: MaterialCull = 'back'): ReadyMaterial => ({
-	status: 'ready',
-	cull,
-	surface,
-});
+import { described } from './test-materials.ts';
 
 test('glass is transparent and shadowless with its blending flag', () => {
 	const [blended, premultiplied] = materialLooks({

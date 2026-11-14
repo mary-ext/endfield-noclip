@@ -1,18 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { MaterialCull, ReadyMaterial, TextureSlot } from '@endfield-noclip/package-format/materials';
+import type { TextureSlot } from '@endfield-noclip/package-format/materials';
 
 import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
 import { materialLooks } from './material-looks.ts';
 import { DitherFlags, DitherRow, ErosionRow } from './special-looks.ts';
-
-/** a ready material drawing `surface` */
-const described = (surface: ReadyMaterial['surface'], cull: MaterialCull = 'back'): ReadyMaterial => ({
-	status: 'ready',
-	cull,
-	surface,
-});
+import { described } from './test-materials.ts';
 
 test('matte paintings are unlit, cast no shadows and test the texture alpha against their threshold', () => {
 	const entry = described({

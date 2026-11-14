@@ -1,20 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { ReadyMaterial } from '@endfield-noclip/package-format/materials';
 import type { LitDecalSurface } from '@endfield-noclip/package-format/surfaces';
 
 import { LookFlags } from '../look.ts';
 import { materialLooks } from '../material-looks.ts';
+import { described } from '../test-materials.ts';
 
 import { EffectKind, EffectRow } from './effect-look.ts';
 import { DecalLitRow } from './lit-decal.ts';
-
-/** a ready material drawing `surface` */
-const described = (
-	surface: ReadyMaterial['surface'],
-	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 test('a lit decal draws its maps through the placement or the PBR map’s own transform, and relights without albedo', () => {
 	const decal: LitDecalSurface = {

@@ -1,19 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { ReadyMaterial } from '@endfield-noclip/package-format/materials';
 import type { MistCardSurface, MistVolumeSurface } from '@endfield-noclip/package-format/surfaces';
 
 import { LookFlags } from '../look.ts';
 import { materialLooks } from '../material-looks.ts';
+import { described } from '../test-materials.ts';
 
 import { MistRow } from './mist.ts';
-
-/** a ready material drawing `surface` */
-const described = (
-	surface: ReadyMaterial['surface'],
-	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 test('mist: cards and boxes draw in the mist rows; boxes by their back faces, with their noise as the volume texture', () => {
 	const card: MistCardSurface = {

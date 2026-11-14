@@ -1,20 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { ReadyMaterial } from '@endfield-noclip/package-format/materials';
 import type { LightBeamSurface } from '@endfield-noclip/package-format/surfaces';
 
 import { LookFlags } from '../look.ts';
 import { materialLooks } from '../material-looks.ts';
+import { described } from '../test-materials.ts';
 
 import { EffectKind, EffectRow } from './effect-look.ts';
 import { BeamRow } from './light-beam.ts';
-
-/** a ready material drawing `surface` */
-const described = (
-	surface: ReadyMaterial['surface'],
-	cull: ReadyMaterial['cull'] = 'back',
-): ReadyMaterial => ({ status: 'ready', cull, surface });
 
 test('a light beam is a shadowless effect with its cone, falloff and colour in the beam rows', () => {
 	// dung02_dg005's `VLB_5006340546849160366`, one of the Wuling rift's two great beams
