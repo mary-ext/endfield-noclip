@@ -115,7 +115,6 @@ describe('dithered effects', () => {
 				alphaScale: 0.75,
 				exponent: 1,
 				tiling: 1,
-				vertexAlpha: true,
 				near: null,
 				mask: null,
 			},
@@ -130,7 +129,6 @@ describe('dithered effects', () => {
 				alphaScale: 0.5,
 				exponent: 14,
 				tiling: 0.1,
-				vertexAlpha: true,
 				near: null,
 				mask: null,
 			},
@@ -173,7 +171,6 @@ describe('dithered effects', () => {
 				alphaScale: 2,
 				exponent: 2,
 				tiling: 1,
-				vertexAlpha: true,
 				near: null,
 				mask: null,
 			},
@@ -245,7 +242,7 @@ describe('dithered effects', () => {
 		const dam = splash({ _Metallic: 0 }, [0.577, 0.577, 0.577, 1]);
 		assert.ok(dam.kind === 'dithered');
 		assert.deepEqual(dam.lighting?.subsurface, [0, 0, 0.577, 1]);
-		// its particles fade by their colour's alpha, and with the camera's distance
+		// its particles take their colour and fade by its alpha, and with the camera's distance
 		const faded = splash(
 			{
 				_UseNearCameraFade: 1,
@@ -257,10 +254,10 @@ describe('dithered effects', () => {
 			[0.577, 0.577, 0.577, 1],
 		);
 		assert.ok(faded.kind === 'dithered');
-		assert.deepEqual([faded.dither?.vertexAlpha, faded.dither?.near], [true, [1, 2, 120, 80]]);
+		assert.deepEqual([faded.vertexColor, faded.dither?.near], [true, [1, 2, 120, 80]]);
 		const still = splash({ _DisableVertColor: 1 }, [0.577, 0.577, 0.577, 1]);
 		assert.ok(still.kind === 'dithered');
-		assert.deepEqual([still.dither?.vertexAlpha, still.dither?.near], [false, null]);
+		assert.deepEqual([still.vertexColor, still.dither?.near], [false, null]);
 		assert.equal(dam.lighting?.metallic, 0);
 		const teal = splash({ _SubsurfaceIndirect: 0.5 }, [0.25, 1, 0.75, 1]);
 		assert.ok(teal.kind === 'dithered');
@@ -298,7 +295,6 @@ describe('dithered effects', () => {
 				alphaScale: 1,
 				exponent: 1,
 				tiling: 1,
-				vertexAlpha: true,
 				near: null,
 				mask: null,
 			},

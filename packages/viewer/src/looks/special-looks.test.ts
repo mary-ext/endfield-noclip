@@ -35,6 +35,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 					baseMap: { ...main, texture: 3, scale: [4, 4] },
 					normalMap: { ...main, texture: 5, scale: [1, 1] },
 					color: [10, 2.14, 0],
+					vertexColor: false,
 					dither: null,
 					lighting: { roughness: 1, metallic: 0, normalScale: 1.5, subsurface: null },
 					ignorePostExposure: 1,
@@ -46,13 +47,13 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 				baseMap: main,
 				normalMap: null,
 				color: [0.2, 0.2, 0.2],
+				vertexColor: false,
 				dither: {
 					texture: main,
 					redAlpha: false,
 					alphaScale: 0.75,
 					exponent: 1,
 					tiling: 1,
-					vertexAlpha: false,
 					near: null,
 					mask: null,
 				},
@@ -64,13 +65,13 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 				baseMap: null,
 				normalMap: null,
 				color: [0.2, 0.2, 0.2],
+				vertexColor: false,
 				dither: {
 					texture: main,
 					redAlpha: true,
 					alphaScale: 0.5,
 					exponent: 14,
 					tiling: 0.1,
-					vertexAlpha: false,
 					near: null,
 					mask: null,
 				},
@@ -87,7 +88,14 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 	assert.equal(spot.queue, 'cutout');
 	assert.notEqual(spot.flags & LookFlags.Unlit, 0);
 	assert.equal(spot.params[LookRow.tint + 3], -1);
-	assert.deepEqual(Array.from(spot.params.subarray(DitherRow.dither, DitherRow.dither + 4)), [0.75, 1, 1, 0]);
+	// a surface without the test still flags its row for the shading
+	assert.equal(rock.params[DitherRow.dither + 3], DitherFlags.Surface);
+	assert.deepEqual(Array.from(spot.params.subarray(DitherRow.dither, DitherRow.dither + 4)), [
+		0.75,
+		1,
+		1,
+		DitherFlags.Surface,
+	]);
 	assert.deepEqual(mask.textures.slice(0, 2), [null, 6]);
 	assert.equal(mask.flags & (LookFlags.BaseMap | LookFlags.AlphaNormal), LookFlags.AlphaNormal);
 	assert.deepEqual(Array.from(mask.params.subarray(LookRow.uv + 4, LookRow.uv + 8)), [2, 2, 0, 0]);
@@ -95,7 +103,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 		0.5,
 		14,
 		Math.fround(0.1),
-		1,
+		DitherFlags.RedAlpha | DitherFlags.Surface,
 	]);
 });
 
@@ -110,14 +118,14 @@ test('lit dithered effects with a red alpha dither through the base slot and tak
 					baseMap: null,
 					normalMap: { ...main, texture: 9 },
 					color: [50, 50, 50],
-					// its particles fade by their colour's alpha and with the camera's distance
+					// its particles take their colour, and fade by its alpha and with the camera's distance
+					vertexColor: true,
 					dither: {
 						texture: main,
 						redAlpha: true,
 						alphaScale: 2,
 						exponent: 2,
 						tiling: 1,
-						vertexAlpha: true,
 						near: [1, 2, 120, 80],
 						mask: null,
 					},
@@ -136,10 +144,14 @@ test('lit dithered effects with a red alpha dither through the base slot and tak
 	assert.equal(splash.queue, 'cutout');
 	assert.deepEqual(splash.textures.slice(0, 2), [8, 9]);
 	assert.equal(splash.flags & LookFlags.AlphaNormal, 0);
-	// the saturated tint covers the base map's colour (`emissive.w`)
-	assert.deepEqual(Array.from(splash.params.subarray(LookRow.tint, LookRow.tint + 4)), [1, 1, 1, -1]);
+	// the tint covers the base map's colour (`emissive.w`), unclamped: the shader saturates it after the vertex
+	// colour
+	assert.deepEqual(Array.from(splash.params.subarray(LookRow.tint, LookRow.tint + 4)), [50, 50, 50, -1]);
 	assert.equal(splash.params[LookRow.emissive + 3], 1);
-	assert.equal(splash.params[DitherRow.dither + 3], DitherFlags.RedAlpha | DitherFlags.VertexAlpha);
+	assert.equal(
+		splash.params[DitherRow.dither + 3],
+		DitherFlags.RedAlpha | DitherFlags.VertexColor | DitherFlags.Surface,
+	);
 	assert.deepEqual(Array.from(splash.params.subarray(DitherRow.near, DitherRow.near + 4)), [1, 2, 120, 80]);
 });
 
@@ -154,13 +166,13 @@ test('a dithered surface tests its mask from the noise slot, which its shading n
 					baseMap: slot(10),
 					normalMap: slot(12),
 					color: [2, 2, 2],
+					vertexColor: true,
 					dither: {
 						texture: slot(10),
 						redAlpha: false,
 						alphaScale: 2,
 						exponent: 1,
 						tiling: 1,
-						vertexAlpha: true,
 						near: null,
 						mask: { texture: { ...slot(11), scale: [3, 2] }, redAlpha: true },
 					},
@@ -177,7 +189,7 @@ test('a dithered surface tests its mask from the noise slot, which its shading n
 	assert.equal(reed.flags & LookFlags.ParallaxNoiseMap, 0);
 	assert.equal(
 		reed.params[DitherRow.dither + 3],
-		DitherFlags.VertexAlpha | DitherFlags.Mask | DitherFlags.MaskRed,
+		DitherFlags.VertexColor | DitherFlags.Mask | DitherFlags.MaskRed | DitherFlags.Surface,
 	);
 	assert.deepEqual(Array.from(reed.params.subarray(LookRow.uv + 24, LookRow.uv + 28)), [3, 2, 0, 0]);
 });
@@ -193,13 +205,13 @@ test('a lit dithered surface without a base map tests its texture from the base 
 					baseMap: null,
 					normalMap: slot(12),
 					color: [4.7, 4.7, 4.7],
+					vertexColor: true,
 					dither: {
 						texture: slot(11),
 						redAlpha: false,
 						alphaScale: 1,
 						exponent: 15,
 						tiling: 15,
-						vertexAlpha: true,
 						near: null,
 						mask: null,
 					},
@@ -214,9 +226,11 @@ test('a lit dithered surface without a base map tests its texture from the base 
 	assert.deepEqual(leaf.textures.slice(0, 2), [11, 12]);
 	assert.equal(leaf.flags & LookFlags.AlphaNormal, 0);
 	// the tested texture doesn't colour the surface
-	assert.deepEqual(Array.from(leaf.params.subarray(LookRow.tint, LookRow.tint + 4)), [1, 1, 1, -1]);
+	const tint = Math.fround(4.7);
+	assert.deepEqual(Array.from(leaf.params.subarray(LookRow.tint, LookRow.tint + 4)), [tint, tint, tint, -1]);
 	assert.equal(leaf.params[LookRow.emissive + 3], 1);
-	assert.equal(leaf.params[DitherRow.dither + 3], DitherFlags.VertexAlpha);
+	// each leaf takes its particle's colour
+	assert.equal(leaf.params[DitherRow.dither + 3], DitherFlags.VertexColor | DitherFlags.Surface);
 });
 
 test('dithered effects with subsurface lighting scatter by their metallic and are never metals', () => {
@@ -228,6 +242,7 @@ test('dithered effects with subsurface lighting scatter by their metallic and ar
 					baseMap: null,
 					normalMap: null,
 					color: [1, 1, 1],
+					vertexColor: false,
 					dither: null,
 					// a half-saturated green at half value, a quarter of it into the ambient light
 					lighting: { roughness: 0.5, metallic, normalScale: 1, subsurface: [1 / 3, 0.5, 0.5, 0.25] },

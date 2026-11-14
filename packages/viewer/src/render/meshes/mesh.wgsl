@@ -72,7 +72,7 @@ struct Look {
 	// the ramp starts at the top
 	foliage2: vec4f,
 	// leaves: canopy ramp range, transition range, colour brighter scale, colour cover. dithered VFXDitherAlpha
-	// (`DitherRow` in special-looks.ts): alpha scale, exponent, dither tiling, 1 when the alpha is the texture's red.
+	// (`DitherRow` in special-looks.ts): alpha scale, exponent, dither tiling, its `DitherFlags`.
 	// trunks (`TrunkRow` in lit-look.ts): the ramp's range and transition range, vertex AO strength, ramp intensity
 	canopy: vec4f,
 	// leaves: canopy ramp colour (linear), then 1 for `_TwoSidedNormal`. trunks: the ramp's colour (linear)
@@ -128,9 +128,10 @@ const HAS_COLORS = 67108864u;
 
 // the bits of a dithered look's `canopy.w` (`DitherFlags` in special-looks.ts)
 const DITHER_RED_ALPHA = 1u;
-const DITHER_VERTEX_ALPHA = 2u;
+const DITHER_VERTEX_COLOR = 2u;
 const DITHER_MASK = 4u;
 const DITHER_MASK_RED = 8u;
+const DITHER_SURFACE = 16u;
 
 const BASE_SLOT = 0u;
 const NORMAL_SLOT = 1u;
@@ -541,6 +542,18 @@ fn fs_transparent(in: VertexOut) -> @location(0) vec4f {
 	return vec4f(fog_premultiplied(color, alpha, in.rel, uv), alpha);
 }
 
+// a VFXDitherAlpha look's `DitherFlags`, 0 on other looks: only leaves and trunks, which have their own flags,
+// fill the canopy row otherwise
+fn dither_bits(look: Look, flags: u32) -> u32 {
+	return select(u32(look.canopy.w), 0u, (flags & (FOLIAGE | FOLIAGE_LEAF | TRUNK)) != 0u);
+}
+
+// what multiplies a VFXDitherAlpha look's colour: the vertex colour, a particle's, under
+// `DitherFlags.VertexColor`; 1 on other looks
+fn dither_vertex_color(look: Look, flags: u32, color: vec4f) -> vec3f {
+	return select(vec3f(1.0), color.rgb, (dither_bits(look, flags) & DITHER_VERTEX_COLOR) != 0u);
+}
+
 fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let draw = draws[in.draw];
 	let flags = bitcast<u32>(draw.offset.w);
@@ -587,6 +600,7 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		if ((flags & BASE_MAP) != 0u) {
 			c *= base.rgb;
 		}
+		c *= dither_vertex_color(look, flags, in.color);
 		// materials the viewer can't draw (`unsupportedLook` in material-looks.ts): a world-space checker of the tint
 		// and black
 		if (look.surface.z > 0.0) {
@@ -611,6 +625,11 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		albedo = vec3f(1.0);
 	}
 	albedo = mix(albedo, look.tint.rgb, look.emissive.w);
+	if ((dither_bits(look, flags) & DITHER_SURFACE) != 0u) {
+		// VFXDitherAlpha's albedo saturates only after the tint, the texture and the vertex colour multiply
+		let texel = select(vec3f(1.0), base.rgb, (flags & BASE_MAP) != 0u && look.emissive.w < 0.5);
+		albedo = saturate(look.tint.rgb * texel * dither_vertex_color(look, flags, in.color));
+	}
 	let base_a = select(0.0, base.a, (flags & BASE_MAP) != 0u);
 	let has_normal = (flags & NORMAL_MAP) != 0u;
 
@@ -1161,7 +1180,7 @@ fn fs_cutout_depth(in: CutoutDepthVaryings) {
 		let dither = look.canopy;
 		let bits = u32(dither.w);
 		var scaled = select(texel.a, texel.r, (bits & DITHER_RED_ALPHA) != 0u) * dither.x;
-		if ((bits & DITHER_VERTEX_ALPHA) != 0u) {
+		if ((bits & DITHER_VERTEX_COLOR) != 0u) {
 			scaled *= in.color.a;
 		}
 		if ((bits & DITHER_MASK) != 0u) {

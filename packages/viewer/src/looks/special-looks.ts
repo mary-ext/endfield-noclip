@@ -127,12 +127,14 @@ export const DitherRow = {
 export const DitherFlags = {
 	/** the alpha is the red of the texture (`_UseMainTexAsAlpha`) rather than its alpha */
 	RedAlpha: 1,
-	/** the instance colour's alpha scales the alpha */
-	VertexAlpha: 2,
+	/** the vertex colour multiplies the colour, and its alpha the tested alpha */
+	VertexColor: 2,
 	/** the texture in {@link Slot.ParallaxNoise} scales the alpha (`_USE_MASK`) */
 	Mask: 4,
 	/** by its red (`_UseMaskTexAsAlpha`) rather than its alpha */
 	MaskRed: 8,
+	/** set on every dithered look, so the shading can tell its row from an empty one */
+	Surface: 16,
 } as const;
 
 /** a hue (0–1) as a fully saturated colour */
@@ -164,6 +166,8 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 		setTexture(look, Slot.Normal, surface.normalMap);
 	}
 	const { dither } = surface;
+	// read by the shading too, so set with or without the test
+	let flags = DitherFlags.Surface | (surface.vertexColor ? DitherFlags.VertexColor : 0);
 	if (dither !== null) {
 		// a tested texture that isn't the base map (the main texture's red as the alpha alone, or a lone mask)
 		// can't colour the surface: an unlit look tests it through the normal slot, and a lit one, which may need
@@ -174,8 +178,7 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 		} else if (surface.baseMap === null) {
 			setTexture(look, Slot.Base, dither.texture);
 		}
-		let flags =
-			(dither.redAlpha ? DitherFlags.RedAlpha : 0) | (dither.vertexAlpha ? DitherFlags.VertexAlpha : 0);
+		flags |= dither.redAlpha ? DitherFlags.RedAlpha : 0;
 		if (dither.mask !== null) {
 			// only the depth pass samples the mask, so it takes a slot the surface's shading leaves alone, without
 			// the slot's flag: unloaded, the slot binds white and the test runs unmasked
@@ -187,6 +190,8 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 			params.set(dither.near, DitherRow.near);
 		}
 		look.queue = 'cutout';
+	} else {
+		params[DitherRow.dither + 3] = flags;
 	}
 	const { color, lighting } = surface;
 	if (lighting === null) {
@@ -197,9 +202,9 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 		return look;
 	}
 	look.flags |= LookFlags.NormalRag;
-	// untextured, the tint is the albedo, which the G-buffer saturates
+	// untextured, the tint is the albedo. the shader saturates it as the G-buffer does, after the vertex colour
 	const untextured = surface.baseMap === null;
-	params.set([...(untextured ? color.map((c) => Math.min(c, 1)) : color), -1], LookRow.tint);
+	params.set([...color, -1], LookRow.tint);
 	const { subsurface } = lighting;
 	// the game's subsurface lighting has no metals: the metallic scales the scattering instead
 	const metallic = subsurface === null ? lighting.metallic : 0;

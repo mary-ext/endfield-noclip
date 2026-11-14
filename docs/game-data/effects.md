@@ -353,11 +353,13 @@ transparent layer and draw a second layer only where it didn't (`NotEqual`).
 `HGRP/Effect/VFXDitherAlpha` writes the G-buffer like an opaque surface, for effect meshes that are
 solid, such as the rocks floating over Origin Lodespring's crater
 ([mesh particles](particles.md#examples)). the colour is `_TintColor · _TintColorIntensity` times
-`_MainTex` (the tint alone with `_UseMainTexAsAlpha`), times `_MainTex2Color` when `_USE_MAIN2`
-takes `_MainTex2` as alpha (`_UseMainTex2AsAlpha`) and multiplies (`_MainTex2BlendMode` 0); the
-G-buffer pass then doesn't sample `_MainTex2` at all, and the depth pass has no `_USE_MAIN2`
-variant, so the texture changes neither the colour nor the dithered alpha. with `_UseLighting` the
-colour is the albedo, saturated as the G-buffer stores it, else emitted. `_NORMAL_MAP` adds a
+the vertex colour (a particle's colour; left out with `_DisableVertColor`) and `_MainTex` (without
+the texture under `_UseMainTexAsAlpha`), times `_MainTex2Color` when `_USE_MAIN2` takes `_MainTex2`
+as alpha (`_UseMainTex2AsAlpha`) and multiplies (`_MainTex2BlendMode` 0); the G-buffer pass then
+doesn't sample `_MainTex2` at all, and the depth pass has no `_USE_MAIN2` variant, so the texture
+changes neither the colour nor the dithered alpha. with `_UseLighting` the colour is the albedo,
+saturated as the G-buffer stores it, else emitted; either way `_IgnorePostExposure` first multiplies
+it by an unnamed per-material value, taken as the inverse post exposure. `_NORMAL_MAP` adds a
 tangent-space normal map (`_NormalScale`; x from alpha times red, as Unity unpacks it); roughness
 and metallic are `_Roughness` and `_Metallic`. the shader has no shadow caster pass. the rocks'
 material multiplies a gold mask by a tint twelve times over, so the saturated albedo is black rock
@@ -409,8 +411,9 @@ rotate and take the distortion (`_MaskTexUseDisturb`) like the main texture's. t
 around the Very Large Rift's portal (`glow_04_line` in `p_fxmap_dung02_dg005_boss_semicircle_01`) is
 a mask-only material. Yinglung Pass's falling camphor leaves (`M_fxmap_common_camphor_leaves_07` in
 `p_fxmap_map02_lv007_camphor_leaves_01`, near unity −816, 286, 613) are lit ones that leave
-`_MainTex` unset: the shader's white default stands in, so the mask's red alone cuts the leaf shape
-and the tint (white, times 4.7) is the albedo.
+`_MainTex` unset: the shader's white default stands in, so the mask's red alone cuts the leaf shape,
+and the albedo is the tint (white, times 4.7) times each particle's start colour, a random one
+between a brown and a dull gold, so the leaves fall orange to yellow.
 
 `_USE_VERTOFFSET` moves the vertices as VFXBaseV2's does, in both passes, without the vertex alpha's
 weight and the pull towards the camera. the rift's escaping trails

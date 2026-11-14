@@ -330,15 +330,16 @@ packs or renders correctly.
     mask that scrolls or turns, since the dithered G-buffer path draws only still textures (Marker
     Stone Interiors' ink patterns `p_fxmap_map02_lv004_inkpattern_801` and `…_802`); a lit surface
     with a still mask is drawn (Qingbo's wind-blown reeds and leaves and Yinglung Pass's falling
-    camphor leaves, unchecked against an in-game shot); the plain variant's dither leaves out a
-    mesh's own vertex alpha (a particle's is drawn) and moves by the viewer's jitter phase where the
-    game's frame value is unread, and `_USE_MAIN2` draws only where its second texture masks, as its
-    colour times the tint, and on the plain variant without the dither (Wuling City's red-tide
-    walls, unchecked in game). the NoLighting variant goes through the G-buffer path without its
-    colour's extra factor of the alpha, so it's fogged and its soft edges are brighter than the
-    game's; its effect variants stay unsupported (Si's Painting's ink sheet
-    `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very Large Rift's escaping trails
-    are unchecked in game
+    camphor leaves, unchecked against an in-game shot); a lit surface's albedo leaves out the
+    post-exposure factor the game multiplies in before saturating it under `_IgnorePostExposure`;
+    the plain variant's dither leaves out a mesh's own vertex alpha (a particle's is drawn) and
+    moves by the viewer's jitter phase where the game's frame value is unread, and `_USE_MAIN2`
+    draws only where its second texture masks, as its colour times the tint, and on the plain
+    variant without the dither (Wuling City's red-tide walls, unchecked in game). the NoLighting
+    variant goes through the G-buffer path without its colour's extra factor of the alpha, so it's
+    fogged and its soft edges are brighter than the game's; its effect variants stay unsupported
+    (Si's Painting's ink sheet `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very
+    Large Rift's escaping trails are unchecked in game
   - [VFXWaterDitherAlpha](game-data/effects.md#solid-effects) splashes draw as VFXDitherAlpha's
     plain variant, `_SUBSURFACE` ones with the game's
     [subsurface lighting](game-data/materials.md#subsurface) from the sun and the ambient light but

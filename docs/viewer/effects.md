@@ -152,6 +152,13 @@ mask is the whole alpha, so the describer packs it as the tested texture (`dithe
 Yinglung Pass's falling camphor leaves (`M_fxmap_common_camphor_leaves_07`), unchecked against an
 in-game shot.
 
+the colour takes the vertex colour as the game's does (`DitheredSurface.vertexColor`,
+`DitherFlags.VertexColor`): the row's colour, a particle's, times the mesh's own where it has one,
+multiplied into the tint and the texture before the albedo saturates, so the look keeps its tint
+unclamped. every dithered look sets `DitherFlags.Surface` in its row, which tells the shading the
+row is a dithered look's (`dither_bits` in `mesh.wgsl`); a mesh's vertex colours are taken as
+linear, unchecked.
+
 `_SUBSURFACE` surfaces take the game's [subsurface model](../game-data/materials.md#subsurface) for
 the sun and the ambient light (`subsurface_sun` and `Surface.scatter` in `frame.wgsl`): the look
 packs the scattered colour times its amount in `DitherRow.subsurface` and zeroes the metallic. local

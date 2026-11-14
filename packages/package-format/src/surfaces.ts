@@ -469,8 +469,13 @@ export interface DitheredSurface {
 	baseMap: TextureSlot | null;
 	/** on UV set 0, with `_NORMAL_MAP` */
 	normalMap: TextureSlot | null;
-	/** the tint times its intensity (and the second texture's colour), linear */
+	/** the tint times its intensity (and the second texture's colour), linear and unclamped */
 	color: Rgb;
+	/**
+	 * the vertex colour multiplies the colour, and its alpha the tested alpha (`_DisableVertColor` off): a
+	 * particle's colour and fade
+	 */
+	vertexColor: boolean;
 	/** the depth pass's dithered alpha test, `null` without it */
 	dither: {
 		/**
@@ -486,8 +491,6 @@ export interface DitheredSurface {
 		exponent: number;
 		/** the dither pattern's tiling */
 		tiling: number;
-		/** the vertex colour's alpha scales the alpha too (`_DisableVertColor` off): a particle's fade */
-		vertexAlpha: boolean;
 		/** the near camera fade, which scales the alpha; `null` without it */
 		near: EffectNearFade | null;
 		/**

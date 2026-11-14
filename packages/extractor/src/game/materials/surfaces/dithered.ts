@@ -123,7 +123,6 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 			alphaScale: (color('_TintColor') ?? [1, 1, 1, 1])[3] * float('_TintColorAlpha', 1),
 			exponent: float('_DitherAlphaExp', 1),
 			tiling: float('_DitherTilling', 1),
-			vertexAlpha: float('_DisableVertColor', 0) === 0,
 			near: nearFadeOf(reader),
 		};
 		if (main !== undefined) {
@@ -144,6 +143,7 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 		baseMap: redAlpha ? null : (main ?? null),
 		normalMap: normal ?? null,
 		color: [tint[0] * second[0], tint[1] * second[1], tint[2] * second[2]],
+		vertexColor: float('_DisableVertColor', 0) === 0,
 		dither,
 		lighting: lit
 			? {
