@@ -141,7 +141,12 @@ the tint covering the base colour as an untextured look's does. the test takes t
 and the near camera fade from `DitherRow.near`; its pattern moves by the temporal antialiasing's
 jitter phase (`frame.params.w`), 0 with antialiasing off. `_USE_MAIN2` is drawn only when its second
 texture masks (`_UseMainTex2AsAlpha` with `_MainTex2BlendMode` 0): the tint is multiplied by
-`_MainTex2Color`, and the surface draws without the test.
+`_MainTex2Color`, and the surface draws without the test. a lit material whose only effect keyword
+is [`_USE_MASK`](../game-data/effects.md#solid-effects) stays on this path
+(`DitheredSurface.dither.mask`): the test multiplies in the mask from the noise slot, bound without
+the slot's flag so the shading never reads it, and only a still mask on UV set 0 is drawn. the reeds
+and bamboo leaves blowing through Qingbo Stockade (`M_fx_map_common_bigwind_reed_01`, `…_leaves_02`,
+lit mesh particles with a normal map) are such.
 
 `_SUBSURFACE` surfaces take the game's [subsurface model](../game-data/materials.md#subsurface) for
 the sun and the ambient light (`subsurface_sun` and `Surface.scatter` in `frame.wgsl`): the look

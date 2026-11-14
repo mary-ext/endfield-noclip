@@ -54,6 +54,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 					tiling: 1,
 					vertexAlpha: false,
 					near: null,
+					mask: null,
 				},
 				lighting: null,
 				ignorePostExposure: 1,
@@ -71,6 +72,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 					tiling: 0.1,
 					vertexAlpha: false,
 					near: null,
+					mask: null,
 				},
 				lighting: null,
 				ignorePostExposure: 1,
@@ -117,6 +119,7 @@ test('lit dithered effects with a red alpha dither through the base slot and tak
 						tiling: 1,
 						vertexAlpha: true,
 						near: [1, 2, 120, 80],
+						mask: null,
 					},
 					lighting: { roughness: 0.5, metallic: 0.8, normalScale: 1, subsurface: null },
 					ignorePostExposure: 1,
@@ -138,6 +141,45 @@ test('lit dithered effects with a red alpha dither through the base slot and tak
 	assert.equal(splash.params[LookRow.emissive + 3], 1);
 	assert.equal(splash.params[DitherRow.dither + 3], DitherFlags.RedAlpha | DitherFlags.VertexAlpha);
 	assert.deepEqual(Array.from(splash.params.subarray(DitherRow.near, DitherRow.near + 4)), [1, 2, 120, 80]);
+});
+
+test('a dithered surface tests its mask from the noise slot, which its shading never reads', () => {
+	// the reeds Qingbo's wind blows about (`M_fx_map_common_bigwind_reed_01`)
+	const slot = (texture: number): TextureSlot => ({ texture, uv: 0, scale: [1, 1], offset: [0, 0] });
+	const [reed] = materialLooks({
+		entries: [
+			described(
+				{
+					kind: 'dithered',
+					baseMap: slot(10),
+					normalMap: slot(12),
+					color: [2, 2, 2],
+					dither: {
+						texture: slot(10),
+						redAlpha: false,
+						alphaScale: 2,
+						exponent: 1,
+						tiling: 1,
+						vertexAlpha: true,
+						near: null,
+						mask: { texture: { ...slot(11), scale: [3, 2] }, redAlpha: true },
+					},
+					lighting: { roughness: 1, metallic: 0, normalScale: 1, subsurface: null },
+					ignorePostExposure: 1,
+				},
+				'none',
+			),
+		],
+	});
+	assert.equal(reed.queue, 'cutout');
+	assert.deepEqual(reed.textures, [10, 12, null, null, null, null, 11]);
+	// no slot flag, so the surface's shading doesn't take it for a vertex offset's or a layer's texture
+	assert.equal(reed.flags & LookFlags.ParallaxNoiseMap, 0);
+	assert.equal(
+		reed.params[DitherRow.dither + 3],
+		DitherFlags.VertexAlpha | DitherFlags.Mask | DitherFlags.MaskRed,
+	);
+	assert.deepEqual(Array.from(reed.params.subarray(LookRow.uv + 24, LookRow.uv + 28)), [3, 2, 0, 0]);
 });
 
 test('dithered effects with subsurface lighting scatter by their metallic and are never metals', () => {

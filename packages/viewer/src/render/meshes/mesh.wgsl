@@ -129,6 +129,8 @@ const HAS_COLORS = 67108864u;
 // the bits of a dithered look's `canopy.w` (`DitherFlags` in special-looks.ts)
 const DITHER_RED_ALPHA = 1u;
 const DITHER_VERTEX_ALPHA = 2u;
+const DITHER_MASK = 4u;
+const DITHER_MASK_RED = 8u;
 
 const BASE_SLOT = 0u;
 const NORMAL_SLOT = 1u;
@@ -163,8 +165,8 @@ fn look_slot(draw: Draw) -> u32 {
 @group(3) @binding(7) var base_sampler: sampler;
 @group(3) @binding(8) var detail_sampler: sampler;
 @group(3) @binding(9) var parallax_sampler: sampler;
-// the noise slot's own sampler, for the vertex offset's mask; the glow and the layers sample the slot with
-// the parallax slot's
+// the noise slot's own sampler, for the vertex offset's mask and a dithered look's; the glow and the layers
+// sample the slot with the parallax slot's
 @group(3) @binding(10) var noise_sampler: sampler;
 
 struct VertexIn {
@@ -1152,12 +1154,18 @@ fn fs_cutout_depth(in: CutoutDepthVaryings) {
 	let base = textureSampleBias(base_map, base_sampler, slot_uv(id, in.uv, flags, BASE_SLOT), bias);
 	let packed = textureSampleBias(normal_map, detail_sampler, slot_uv(id, in.uv, flags, NORMAL_SLOT), bias);
 	let texel = select(base, packed, (flags & ALPHA_NORMAL) != 0u);
+	// a dithered look's `_USE_MASK`, in the noise slot (white until it's loaded); sampled here, in uniform
+	// control flow
+	let masking = textureSampleBias(parallax_noise_map, noise_sampler, slot_uv(id, in.uv, flags, NOISE_SLOT), bias);
 	if (look.tint.w < 0.0) {
 		let dither = look.canopy;
 		let bits = u32(dither.w);
 		var scaled = select(texel.a, texel.r, (bits & DITHER_RED_ALPHA) != 0u) * dither.x;
 		if ((bits & DITHER_VERTEX_ALPHA) != 0u) {
 			scaled *= in.color.a;
+		}
+		if ((bits & DITHER_MASK) != 0u) {
+			scaled *= select(masking.a, masking.r, (bits & DITHER_MASK_RED) != 0u);
 		}
 		// the near camera fade: in over the first range of view depths, out over the second
 		let near = look.canopy_color;

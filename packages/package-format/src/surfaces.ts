@@ -487,6 +487,11 @@ export interface DitheredSurface {
 		vertexAlpha: boolean;
 		/** the near camera fade, which scales the alpha; `null` without it */
 		near: EffectNearFade | null;
+		/**
+		 * `_USE_MASK`: a still texture on UV set 0 whose alpha, or red (`_UseMaskTexAsAlpha`), scales the alpha
+		 * too, without colouring the surface; `null` without it
+		 */
+		mask: { texture: TextureSlot; redAlpha: boolean } | null;
 	} | null;
 	/** the lit surface's inputs; `null` when unlit (`_UseLighting` off) */
 	lighting: {

@@ -2,11 +2,14 @@ import type { DitheredSurface, UnsupportedSurface } from '@endfield-noclip/packa
 import type { Rgb } from '@endfield-noclip/package-format/values';
 
 import { undrawnKeywords } from '../describe-steps.ts';
-import { nearFadeOf } from '../effects/effect-steps.ts';
-import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
+import { matrixRotationOf, nearFadeOf, speedOf } from '../effects/effect-steps.ts';
+import { isUnsupported, linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
 
-/** keywords a `HGRP/Effect/VFXDitherAlpha` material can have and still be drawn as a dithered surface */
-const DITHERED_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2', '_SUBSURFACE']);
+/**
+ * keywords a `HGRP/Effect/VFXDitherAlpha` material can have and still be drawn as a dithered surface.
+ * `_USE_MASK` reaches here only on lit materials (`isDitherEffect`)
+ */
+const DITHERED_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2', '_SUBSURFACE', '_USE_MASK']);
 
 const NO_LIGHTING_SHADER = 'HGRP/Effect/VFXDitherAlphaNoLighting';
 
@@ -50,6 +53,34 @@ const subsurfaceOf = ({
 	return [...hsvOf([r, g, b]), float('_SubsurfaceIndirect', 1)];
 };
 
+type DitherMask = NonNullable<NonNullable<DitheredSurface['dither']>['mask']>;
+
+/**
+ * `_USE_MASK`'s texture, which only the depth pass samples, for the tested alpha. the surface's depth pass
+ * draws it still, on UV set 0
+ *
+ * @returns the mask, `null` for an unset one (the shader's white), or `unsupported` when it moves
+ */
+const stillMaskOf = (reader: MaterialReader): DitherMask | UnsupportedSurface | null => {
+	const slot = reader.slot('_MaskTex');
+	if (slot === undefined) {
+		return null;
+	}
+	const [cos, sin] = matrixRotationOf(reader, '_MaskTexUVRotateMat');
+	const weights = reader.colorOrVector('_MaskTexUVWeights') ?? [1, 0, 0, 0];
+	if (
+		slot.uv !== 0 ||
+		speedOf(reader, '_MaskTexUVSpeed').some((speed) => speed !== 0) ||
+		cos !== 1 ||
+		sin !== 0 ||
+		weights[0] !== 1 ||
+		weights.slice(1).some((weight) => weight !== 0)
+	) {
+		return unsupported('a mask that scrolls, turns or leaves UV set 0 on a lit surface');
+	}
+	return { texture: slot, redAlpha: reader.float('_UseMaskTexAsAlpha', 1) !== 0 };
+};
+
 /**
  * `HGRP/Effect/VFXDitherAlpha`, its variants and `HGRP/Effect/VFXWaterDitherAlpha` (the same passes) as an
  * opaque G-buffer surface (`docs/game-data/effects.md#solid-effects`)
@@ -84,6 +115,10 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 	// the default dither mode
 	let dither: DitheredSurface['dither'] = null;
 	if (main !== undefined && !has('_USE_MAIN2') && float('_DitherAlphaMode', 0) === 0) {
+		const mask = has('_USE_MASK') ? stillMaskOf(reader) : null;
+		if (mask !== null && isUnsupported(mask)) {
+			return mask;
+		}
 		dither = {
 			texture: main,
 			redAlpha,
@@ -92,7 +127,10 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 			tiling: float('_DitherTilling', 1),
 			vertexAlpha: float('_DisableVertColor', 0) === 0,
 			near: nearFadeOf(reader),
+			mask,
 		};
+	} else if (has('_USE_MASK')) {
+		return unsupported('a mask without the dithered test it scales');
 	}
 	const tint = scaleRgb(linearRgb(color('_TintColor') ?? [1, 1, 1, 1]), float('_TintColorIntensity', 1));
 	return {

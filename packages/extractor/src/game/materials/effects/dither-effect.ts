@@ -38,11 +38,19 @@ const DITHER_EFFECT_EXTRA_KEYWORDS = new Set(['_USE_VERTOFFSET', '_USE_MAIN2', '
 
 /**
  * @returns whether a VFXDitherAlpha material is one of its effect variants (a distortion, dissolve, mask or
- *   polar or screen UVs), drawn as a texture stack rather than a dithered surface
+ *   polar or screen UVs), drawn as a texture stack rather than a dithered surface. a lit material whose only
+ *   such keyword is the mask stays a dithered surface, which keeps its lighting and tests the mask
  */
-export const isDitherEffect = (reader: MaterialReader): boolean =>
-	reader.shader.name === 'HGRP/Effect/VFXDitherAlpha' &&
-	reader.material.keywords.some((keyword) => DITHER_EFFECT_KEYWORDS.has(keyword));
+export const isDitherEffect = (reader: MaterialReader): boolean => {
+	if (reader.shader.name !== 'HGRP/Effect/VFXDitherAlpha') {
+		return false;
+	}
+	const effects = reader.material.keywords.filter((keyword) => DITHER_EFFECT_KEYWORDS.has(keyword));
+	if (effects.length === 1 && effects[0] === '_USE_MASK' && reader.float('_UseLighting', 0) !== 0) {
+		return false;
+	}
+	return effects.length > 0;
+};
 
 /**
  * an unlit `HGRP/Effect/VFXDitherAlpha` effect variant, optionally with a vertex offset, as a texture stack.

@@ -117,6 +117,7 @@ describe('dithered effects', () => {
 				tiling: 1,
 				vertexAlpha: true,
 				near: null,
+				mask: null,
 			},
 		);
 		assert.equal(plain.lighting, null);
@@ -131,6 +132,7 @@ describe('dithered effects', () => {
 				tiling: 0.1,
 				vertexAlpha: true,
 				near: null,
+				mask: null,
 			},
 		);
 		// the edge mode isn't drawn
@@ -165,8 +167,51 @@ describe('dithered effects', () => {
 		assert.deepEqual(surface.lighting, { roughness: 0.5, metallic: 0.8, normalScale: 1, subsurface: null });
 		assert.deepEqual(
 			{ ...surface.dither, texture: surface.dither?.texture.texture },
-			{ texture: 8, redAlpha: true, alphaScale: 2, exponent: 2, tiling: 1, vertexAlpha: true, near: null },
+			{
+				texture: 8,
+				redAlpha: true,
+				alphaScale: 2,
+				exponent: 2,
+				tiling: 1,
+				vertexAlpha: true,
+				near: null,
+				mask: null,
+			},
 		);
+	});
+
+	it('keep lit surfaces with a still mask dithered, the mask scaling the tested alpha', () => {
+		// the reeds Qingbo's wind blows about (`M_fx_map_common_bigwind_reed_01`)
+		const reed = (overrides: Partial<MaterialValues> = {}) =>
+			describeMaterial(
+				values({
+					keywords: ['_NORMAL_MAP', '_USE_MASK'],
+					cull: 'none',
+					slots: {
+						_MainTex: { texture: 10, uv: 0, scale: [1, 1], offset: [0, 0] },
+						_MaskTex: { texture: 11, uv: 0, scale: [1, 1], offset: [0, 0] },
+						_NormalMap: { texture: 12, uv: 0, scale: [1, 1], offset: [0, 0] },
+					},
+					floats: { _TintColorIntensity: 2, _TintColorAlpha: 2, _Roughness: 1, _UseMaskTexAsAlpha: 1 },
+					vectors: { _MaskTexUVSpeed: [0, 0, 0, 0], _MaskTexUVRotateMat: [1, 0, 0, 1] },
+					...overrides,
+				}),
+				shader,
+			);
+		const surface = reed();
+		assert.ok(surface.kind === 'dithered');
+		assert.equal(surface.baseMap?.texture, 10);
+		assert.equal(surface.normalMap?.texture, 12);
+		assert.notEqual(surface.lighting, null);
+		assert.equal(surface.dither?.alphaScale, 2);
+		assert.deepEqual(
+			{ texture: surface.dither?.mask?.texture.texture, redAlpha: surface.dither?.mask?.redAlpha },
+			{ texture: 11, redAlpha: true },
+		);
+		// the depth pass draws the mask still
+		assert.equal(reed({ vectors: { _MaskTexUVSpeed: [0, 0.5, 0, 0] } }).kind, 'unsupported');
+		// unlit, the mask makes it an effect variant, blended by the masked alpha
+		assert.equal(reed({ keywords: ['_USE_MASK'], floats: { _UseLighting: 0 } }).kind, 'effectStack');
 	});
 
 	it('read the subsurface colour of waterfall splashes as hue, saturation and value while it is enabled', () => {
@@ -233,7 +278,16 @@ describe('dithered effects', () => {
 		assert.equal(surface.baseMap, null);
 		assert.deepEqual(
 			{ ...surface.dither, texture: surface.dither?.texture.texture },
-			{ texture: 7, redAlpha: true, alphaScale: 1, exponent: 1, tiling: 1, vertexAlpha: true, near: null },
+			{
+				texture: 7,
+				redAlpha: true,
+				alphaScale: 1,
+				exponent: 1,
+				tiling: 1,
+				vertexAlpha: true,
+				near: null,
+				mask: null,
+			},
 		);
 	});
 });

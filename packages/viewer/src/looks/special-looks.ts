@@ -13,7 +13,7 @@ import type {
 } from '@endfield-noclip/package-format/surfaces';
 import type { Rgb } from '@endfield-noclip/package-format/values';
 
-import { emptyLook, LookFlags, LookRow, type MaterialLook, setTexture, Slot } from './look.ts';
+import { emptyLook, LookFlags, LookRow, type MaterialLook, placeTexture, setTexture, Slot } from './look.ts';
 
 // #region erosion
 
@@ -129,6 +129,10 @@ export const DitherFlags = {
 	RedAlpha: 1,
 	/** the instance colour's alpha scales the alpha */
 	VertexAlpha: 2,
+	/** the texture in {@link Slot.ParallaxNoise} scales the alpha (`_USE_MASK`) */
+	Mask: 4,
+	/** by its red (`_UseMaskTexAsAlpha`) rather than its alpha */
+	MaskRed: 8,
 } as const;
 
 /** a hue (0–1) as a fully saturated colour */
@@ -170,8 +174,14 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 		} else if (dither.redAlpha) {
 			setTexture(look, Slot.Base, dither.texture);
 		}
-		const flags =
+		let flags =
 			(dither.redAlpha ? DitherFlags.RedAlpha : 0) | (dither.vertexAlpha ? DitherFlags.VertexAlpha : 0);
+		if (dither.mask !== null) {
+			// only the depth pass samples the mask, so it takes a slot the surface's shading leaves alone, without
+			// the slot's flag: unloaded, the slot binds white and the test runs unmasked
+			placeTexture(look, Slot.ParallaxNoise, dither.mask.texture);
+			flags |= DitherFlags.Mask | (dither.mask.redAlpha ? DitherFlags.MaskRed : 0);
+		}
 		params.set([dither.alphaScale, dither.exponent, dither.tiling, flags], DitherRow.dither);
 		if (dither.near !== null) {
 			params.set(dither.near, DitherRow.near);

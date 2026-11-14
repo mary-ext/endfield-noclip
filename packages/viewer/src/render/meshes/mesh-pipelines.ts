@@ -55,8 +55,9 @@ const createMaterialLayout = (device: GPUDevice): GPUBindGroupLayout => {
 	const VERTEX = GPUShaderStage.VERTEX;
 	const FRAGMENT = GPUShaderStage.FRAGMENT;
 	// the vertex stage samples a vertex offset's texture and its mask in the parallax slots, each with its own
-	// sampler (`vertex_offset` in mesh.wgsl); only the mask reads the noise slot's
-	const samplers = [FRAGMENT, FRAGMENT, VERTEX | FRAGMENT, VERTEX];
+	// sampler (`vertex_offset` in mesh.wgsl); only that mask and a dithered look's (`fs_cutout_depth`) read the
+	// noise slot's
+	const samplers = [FRAGMENT, FRAGMENT, VERTEX | FRAGMENT, VERTEX | FRAGMENT];
 	return device.createBindGroupLayout({
 		label: 'mesh materials',
 		entries: [
