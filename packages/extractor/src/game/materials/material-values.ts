@@ -30,6 +30,7 @@ export type ShaderFamily =
 	| 'leaf'
 	| 'trunk'
 	| 'grass'
+	| 'foliageGlow'
 	| 'cardMesh'
 	| 'fogSimple'
 	| 'waterProxy'

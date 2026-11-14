@@ -125,8 +125,8 @@ export interface LitSurface {
 	/** `_TRI_CHANNEL_MASK`'s channels R, G, B (`docs/game-data/materials.md#lit-layers`) */
 	triChannel: { mask: TextureSlot; channels: [MaskChannel, MaskChannel, MaskChannel] } | null;
 	detail: LitDetail | null;
-	/** the parallax glow or the second layer, which share their textures' slots */
-	overlay: ParallaxGlow | LitLayer | null;
+	/** the parallax glow, the second layer or the flowing glow, which share their textures' slots */
+	overlay: ParallaxGlow | LitLayer | FlowGlow | null;
 	foliage: LeafInputs | GrassInputs | CardInputs | null;
 	/** `HGRP/Foliage/Trunk`'s `_FOLIAGE_TRUNK` inputs, `null` without the keyword */
 	trunk: TrunkInputs | null;
@@ -318,6 +318,33 @@ export interface ParallaxGlow {
 	ignorePostExposure: Weight;
 	/** the brightening near the player: radii and strength (0 for none) */
 	near: { outer: number; inner: number; strength: number };
+}
+
+/**
+ * `HGRP/Foliage/Glow`'s `_DISTORTION_FLOW` (`docs/game-data/materials.md#glowing-foliage`): a glow that flows
+ * over the surface, added to its emission without the exposure's scaling. for t in seconds and `uv` the
+ * noise's UV set,
+ *
+ * - `n1 = noise.r((uv · scales[0] + (0, t · speeds[0])) / 4)`
+ * - `n2 = noise.r(((2 · n1 − 1) · warp + uv · scales[1] + (t, t) · speeds[1]) / 4)`
+ * - the glow is `color · albedo · max(1 + 10 · (luma(albedo) − luminanceBase), 0) · saturate((2 · n2 − 1) ·
+ *   multiplier + bias)`, times `mix(1, vertex red, vertexRed)`, luma by Rec. 709's weights
+ */
+export interface FlowGlow {
+	kind: 'flowGlow';
+	/** `_FoliageGlowNoise`, on `_DistortionUVSet`'s UV set, without its `_ST` */
+	noise: TextureSlot;
+	/** `_DistortionColor`, HDR as stored */
+	color: Rgb;
+	luminanceBase: number;
+	scales: [first: number, second: number];
+	/** UV scroll per second: the first along v, the second along both axes */
+	speeds: [first: number, second: number];
+	warp: number;
+	multiplier: number;
+	bias: number;
+	/** `_VertexColorRControlDistortion` */
+	vertexRed: Weight;
 }
 
 /** what decides how much a Lit layer covers */

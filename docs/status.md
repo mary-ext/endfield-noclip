@@ -215,8 +215,9 @@ packs or renders correctly.
 - shaders without a look, shown as [unsupported](viewer/materials.md#unsupported-materials) and
   counted per shader by `pack`: on map02 `Hidden/HGRP/Effect/VFXInkWashPaint`,
   `HGRP/Effect/VFXRadialBlur`, `HGRP/CharacterNPR`, `Hidden/HGRP/LitEffectBlend`,
-  `HGRP/Effect/VFXTransparentDepthOnly`, `HGRP/Foliage/Glow` and the factory placement and outline
-  shaders
+  `HGRP/Effect/VFXTransparentDepthOnly` and the factory placement and outline shaders
+- glowing foliage ([viewer](viewer/materials.md#foliage)): the flow's clock is taken as seconds, and
+  Deep Dale Street's mushrooms are unchecked against an in-game shot
 - forward Lit ([viewer](viewer/materials.md#forward-lit)): the golden treasure chest reflects the
   scene instead of its own `_CUSTOM_IBL` cubemap; the shader's other variants aren't decoded
 - matte paintings ([viewer](viewer/materials.md#matte-paintings)): `_UseMainTexAsAlpha` isn't read

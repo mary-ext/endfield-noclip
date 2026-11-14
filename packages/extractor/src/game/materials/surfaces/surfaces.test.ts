@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import type { TextureSlot } from '@endfield-noclip/package-format/materials';
+
 import { describeMaterial } from '../material-describe.ts';
 import { type MaterialValues, readerOf, type ShaderEntry } from '../material-values.ts';
 
@@ -387,6 +389,90 @@ describe('matte paintings', () => {
 			highlight: { threshold: 1, intensity: 4 },
 			ignorePostExposure: 1,
 		});
+	});
+});
+
+// Deep Dale Street's glowing mushrooms (`M_bush_map02_glow+1_001_01`)
+describe('glowing foliage', () => {
+	const shader = shaderEntry({
+		name: 'HGRP/Foliage/Glow',
+		family: 'foliageGlow',
+		textures: { _BaseColorMap: 'white', _NormalMap: 'bump', _FoliageGlowNoise: 'white' },
+	});
+	const slot = (texture: number): TextureSlot => ({ texture, uv: 0, scale: [2, 2], offset: [0.5, 0] });
+	const glow = (overrides: Partial<MaterialValues> = {}) =>
+		values({
+			keywords: ['_DISTORTION_FLOW', '_TERRAIN_BLEND'],
+			slots: { _BaseColorMap: slot(1), _NormalMap: slot(2), _FoliageGlowNoise: slot(3) },
+			floats: {
+				_BaseTextureMapCount: 2,
+				_Metallic: 0.1,
+				_NormalScale: 2,
+				_RoughnessMin: 0.2,
+				_EmissiveIgnoreAlbedo: 0,
+				_IgnorePostExposure: 1,
+				_DistortionUVSet: 1,
+				_DistortionFlowScale1: 4,
+				_DistortionFlowScale2: 4,
+				_DistortionFlowSpeed1: -0.08,
+				_DistortionFlowSpeed2: -0.5,
+				_DistortionFlowWarp: 2,
+				_DistortionFlowMultiplier: 3,
+				_DistortionFlowBias: -0.05,
+				_DistortionLuminanceBase: 0.15,
+				_VertexColorRControlDistortion: 1,
+			},
+			colors: { _BaseColor: [1, 1, 1, 1], _EmissiveColor: [4, 2, 3, 1], _DistortionColor: [6, 1.5, 2, 1] },
+			...overrides,
+		});
+
+	it('is the two-basemap Lit surface without its remaps, glowing by the base alpha and a flowing noise', () => {
+		const surface = describeMaterial(glow(), shader);
+		assert.equal(surface.kind, 'lit');
+		if (surface.kind !== 'lit') {
+			return;
+		}
+		assert.deepEqual(
+			[
+				surface.layout,
+				surface.metallicFromBaseAlpha,
+				surface.roughness,
+				surface.metallic,
+				surface.normalScale,
+			],
+			['twoBasemap', false, [0, 1], 0, 2],
+		);
+		assert.deepEqual(surface.emission, {
+			color: [4, 2, 3],
+			source: 'mask',
+			maskChannel: 1,
+			channels: null,
+			albedoAffect: 0,
+			ignorePostExposure: 1,
+			albedoTint: null,
+			pulse: null,
+		});
+		assert.deepEqual(surface.overlay, {
+			kind: 'flowGlow',
+			noise: { texture: 3, uv: 1, scale: [1, 1], offset: [0, 0] },
+			color: [6, 1.5, 2],
+			luminanceBase: 0.15,
+			scales: [4, 4],
+			speeds: [-0.08, -0.5],
+			warp: 2,
+			multiplier: 3,
+			bias: -0.05,
+			vertexRed: 1,
+		});
+		// the blend into the terrain isn't drawn
+		assert.deepEqual(surfaceGaps(readerOf(glow(), shader)), ['_TERRAIN_BLEND']);
+	});
+
+	it('draws no flow without the keyword, and none it can’t place', () => {
+		const still = describeMaterial(glow({ keywords: [] }), shader);
+		assert.equal(still.kind === 'lit' && still.overlay, null);
+		const blended = describeMaterial(glow({ floats: { _DistortionUVSet: 0.5 } }), shader);
+		assert.equal(blended.kind, 'unsupported');
 	});
 });
 

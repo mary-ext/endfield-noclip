@@ -90,6 +90,13 @@ surface's `trunk`, packed by `trunkParams` into rows leaves use otherwise and ma
 `Trunk` flag, since those rows hold the dither on dithered looks), and
 `HGRP/Foliage/TreeFoliageCardMeshLod` draws as plain alpha-tested foliage.
 
+[glowing foliage](../game-data/materials.md#glowing-foliage) (`describeFoliageGlow`) is a Lit
+surface whose overlay is the flowing glow (`FlowGlow`): its noise takes the parallax noise slot, and
+its values the parallax rows the emission pulse leaves alone (`FlowGlowRow` in
+[lit-look.ts](../../packages/viewer/src/looks/lit-look.ts)). `flow_glow` in `mesh.wgsl` draws it on
+a look whose parallax slots hold that noise alone, and takes t as seconds, which is unchecked. the
+blend into the terrain isn't drawn, which the gaps view marks.
+
 ## swaying cloth
 
 [swaying cloth](../game-data/materials.md#swaying-cloth) is the surface's `sway`, packed by
@@ -243,9 +250,9 @@ operations or texture combinations their look doesn't handle, or sampling a text
 the look doesn't read (sets past 1, past 0 for VFXWater and VFXRefract), lit decals in variants the
 viewer lacks or without a placement or base colour map, additive materials outside the effects,
 since the opaque path can't blend, shaders without a family (`HGRP/CharacterNPR`,
-`Hidden/HGRP/LitEffectBlend`, `HGRP/Foliage/Glow`, `HGRP/ErosionDynamic` and the like, which `pack`
-lists per shader), and materials that didn't convert. stand-ins (`DrawRole.Unsupported`) take the
-same look whatever their material.
+`Hidden/HGRP/LitEffectBlend`, `HGRP/ErosionDynamic` and the like, which `pack` lists per shader),
+and materials that didn't convert. stand-ins (`DrawRole.Unsupported`) take the same look whatever
+their material.
 
 the extractor decides which materials are unsupported when it
 [describes their surfaces](../package-format.md#materials), and `pack` counts them by shader and

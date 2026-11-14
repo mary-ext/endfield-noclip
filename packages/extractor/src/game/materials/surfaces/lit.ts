@@ -33,6 +33,7 @@ const STENCIL_REF_SHADERS = new Set([
 	'HGRP/Foliage/Trunk',
 	'HGRP/Foliage/TreeFoliageCardMeshLod',
 	'HGRP/Foliage/Grass Cardmesh Lod',
+	'HGRP/Foliage/Glow',
 ]);
 
 /** the stencil bit `HGRP/DecalLit` draws only where clear */

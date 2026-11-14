@@ -11,6 +11,7 @@ import type {
 
 import {
 	EmissivePulseRow,
+	FlowGlowRow,
 	LayerBlendRow,
 	LayerSource,
 	LeafBlendRow,
@@ -37,6 +38,38 @@ test('glass is transparent and shadowless with its blending flag', () => {
 	assert.equal(blended.params[LookRow.emissive2 + 3], 0.5);
 	assert.notEqual(blended.flags & LookFlags.AlphaNormal, 0);
 	assert.deepEqual([premultiplied.queue, premultiplied.params[LookRow.detail2 + 2]], ['transparent', 1]);
+});
+
+test('a flowing glow takes the noise slot on its UV set and the parallax rows the pulse leaves', () => {
+	const [look] = materialLooks({
+		entries: [
+			described(
+				litSurface({
+					overlay: {
+						kind: 'flowGlow',
+						noise: { texture: 3, uv: 1, scale: [1, 1], offset: [0, 0] },
+						color: [6, 1.5, 2],
+						luminanceBase: 0.25,
+						scales: [4, 2],
+						speeds: [-0.5, -0.25],
+						warp: 2,
+						multiplier: 3,
+						bias: -0.5,
+						vertexRed: 1,
+					},
+				}),
+			),
+		],
+	});
+	assert.equal(look.textures[6], 3);
+	assert.equal(
+		look.flags & (LookFlags.ParallaxMap | LookFlags.ParallaxNoiseMap | (1 << (UV1_SHIFT + 6))),
+		LookFlags.ParallaxNoiseMap | (1 << (UV1_SHIFT + 6)),
+	);
+	assert.deepEqual(
+		[...look.params.subarray(FlowGlowRow.color, FlowGlowRow.shape + 4)],
+		[6, 1.5, 2, 0.25, 4, 2, -0.5, -0.25, 2, 3, -0.5, 1],
+	);
 });
 
 /** a two-basemap Lit surface with no optional parts */

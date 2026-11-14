@@ -575,6 +575,10 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 	let uv0_dy = dpdy(in.uv.xy) * gradient_scale;
 	let parallax_dx = dpdx(parallax_uv) * gradient_scale;
 	let parallax_dy = dpdy(parallax_uv) * gradient_scale;
+	// the flowing glow's noise, on its own UV set
+	let noise_uv = slot_set(in.uv, flags, NOISE_SLOT);
+	let noise_dx = dpdx(noise_uv) * gradient_scale;
+	let noise_dy = dpdy(noise_uv) * gradient_scale;
 	// the layer's coordinates: UV set 0, world XZ, or UV set 2, which the viewer reads as set 0
 	// (`layerBlendParams` in lit-look.ts)
 	let layer_type = look.parallax.w;
@@ -818,6 +822,12 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		s.emission *= mix(1.0, emissive_pulse(look), look.parallax2.x);
 	}
 
+	// `HGRP/Foliage/Glow`'s flowing glow: the noise map alone in the parallax slots
+	let parallax_users = PARALLAX_MAP | PARALLAX_NOISE_MAP | LAYER_BLEND | VERTEX_OFFSET;
+	if ((flags & parallax_users) == PARALLAX_NOISE_MAP) {
+		s.emission += flow_glow(look, s.albedo, in.color.r, noise_uv, noise_dx, noise_dy);
+	}
+
 	// the glow needs its pattern; without a noise map it marches a flat height field
 	if ((flags & (PARALLAX_MAP | LAYER_BLEND | VERTEX_OFFSET)) == PARALLAX_MAP && in.tangent.w != 0.0) {
 		// the glow's mask uses the same channel numbering as the emission mask, one lower
@@ -953,6 +963,22 @@ fn map_channel(flags: u32, mro: bool, channel: f32, base_a: f32, packed: vec4f, 
 // the emissive slot
 fn has_mro(flags: u32, look: Look) -> bool {
 	return (flags & MASK_MAP) != 0u && ((flags & TRI_CHANNEL_MASK) == 0u || look.mask_offset.w > 0.5);
+}
+
+// `_DISTORTION_FLOW`'s flowing glow (`FlowGlowRow` in lit-look.ts, docs/game-data/materials.md#glowing-foliage):
+// a noise warped by itself, both scrolling, lights the albedo by its brightness. it adds to the emission after
+// the exposure's scaling, so it doesn't ignore the post exposure
+fn flow_glow(look: Look, albedo: vec3f, vertex_red: f32, uv: vec2f, dx: vec2f, dy: vec2f) -> vec3f {
+	let flow = look.parallax_dark;
+	let shape = look.parallax_bright;
+	let t = frame.eye.w;
+	let first_uv = (uv * flow.x + vec2f(0.0, t * flow.z)) * 0.25;
+	let n1 = textureSampleGrad(parallax_noise_map, parallax_sampler, first_uv, dx * flow.x * 0.25, dy * flow.x * 0.25).r;
+	let second_uv = ((2.0 * n1 - 1.0) * shape.x + uv * flow.y + vec2f(t * flow.w)) * 0.25;
+	let n2 = textureSampleGrad(parallax_noise_map, parallax_sampler, second_uv, dx * flow.y * 0.25, dy * flow.y * 0.25).r;
+	let brightness = max(1.0 + 10.0 * (dot(albedo, LUMINANCE) - look.parallax_color.w), 0.0);
+	let strength = saturate((2.0 * n2 - 1.0) * shape.y + shape.z) * mix(1.0, vertex_red, shape.w);
+	return look.parallax_color.rgb * albedo * brightness * strength;
 }
 
 // `_EMISSIVE_ANIM`'s pulse (`EmissivePulseRow` in lit-look.ts, docs/game-data/materials.md#emission): each cycle

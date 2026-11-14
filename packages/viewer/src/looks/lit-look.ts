@@ -3,6 +3,7 @@ import type {
 	GrassInputs,
 	LayerCoverage,
 	LeafInputs,
+	FlowGlow,
 	LitEmission,
 	LitLayer,
 	LitSurface,
@@ -179,6 +180,10 @@ export const litLook = (surface: LitSurface, cull: MaterialCull): MaterialLook =
 		case 'parallax': {
 			parallaxParams(look, overlay);
 			parallaxRowsFree = false;
+			break;
+		}
+		case 'flowGlow': {
+			flowGlowParams(look, overlay);
 			break;
 		}
 		case 'layer': {
@@ -410,6 +415,28 @@ const parallaxParams = (look: MaterialLook, glow: ParallaxGlow): void => {
 	params.set(glow.dark, LookRow.parallaxDark);
 	// the brightening near the player, whom the viewer places at the camera
 	params.set([glow.near.outer, glow.near.inner, glow.near.strength], LookRow.parallaxBright);
+};
+
+/**
+ * where `HGRP/Foliage/Glow`'s flowing glow keeps its inputs: the parallax rows the pulse leaves alone.
+ * mesh.wgsl draws it on a look with {@link LookFlags.ParallaxNoiseMap} and none of the other users of the
+ * parallax slots ({@link LookFlags.ParallaxMap}, {@link LookFlags.LayerBlend}, {@link LookFlags.VertexOffset})
+ */
+export const FlowGlowRow = {
+	/** `_DistortionColor` (HDR rgb), the luminance base */
+	color: LookRow.parallaxColor,
+	/** the two noise scales, then the two speeds */
+	flow: LookRow.parallaxDark,
+	/** the warp, multiplier, bias and how much the vertex colour's red weighs the glow */
+	shape: LookRow.parallaxBright,
+} as const;
+
+/** `_DISTORTION_FLOW`'s flowing glow (docs/game-data/materials.md#glowing-foliage) */
+const flowGlowParams = (look: MaterialLook, glow: FlowGlow): void => {
+	setTexture(look, Slot.ParallaxNoise, glow.noise);
+	look.params.set([...glow.color, glow.luminanceBase], FlowGlowRow.color);
+	look.params.set([...glow.scales, ...glow.speeds], FlowGlowRow.flow);
+	look.params.set([glow.warp, glow.multiplier, glow.bias, glow.vertexRed], FlowGlowRow.shape);
 };
 
 /** what decides how much a layer covers ({@link LayerBlendRow.height}'s last float) */

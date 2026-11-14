@@ -276,6 +276,28 @@ has, and with `_EnableTrunkRamp` the albedo blends toward `_TrunkRampColor` by `
 × the base map's alpha × `smoothstep(range + transition, range, A)` (`_TrunkRampRange`,
 `_TrunkRampTransitionRange`). the keyword also sways the trunk in the wind.
 
+### glowing foliage
+
+`HGRP/Foliage/Glow` is a static, opaque plant shader for glowing growths, such as Deep Dale Street's
+mushroom stalks (`M_bush_map02_glow+1_001_01`, near unity −43, 63, 89). it writes Lit's standard
+G-buffer from the two-basemap layout without its remaps: roughness is the normal map's B and
+occlusion its A as read, metallic is always 0 (`_Metallic` is ignored), and the albedo is
+`mix(saturate(base · _BaseColor), _BaseColor, _BaseColorTintCover)` without a brightening. the
+textures ignore their `_ST`. it always emits `_EmissiveColor` by the base colour's alpha, as Lit's
+`_EMISSIVE_MASK` does from that channel, weighted towards the albedo by `_EmissiveIgnoreAlbedo` and
+by the exposure by `_IgnorePostExposure`. like Lit it writes `_StencilRef`.
+
+`_DISTORTION_FLOW` adds a flowing glow, not scaled by the exposure. on `_DistortionUVSet`'s UVs
+(mixing sets 0 and 1), with t the shader's `_VFXParams0.w` clock:
+
+- `n1 = _FoliageGlowNoise.r((uv · _DistortionFlowScale1 + (0, t · _DistortionFlowSpeed1)) / 4)`
+- `n2 = _FoliageGlowNoise.r(((2 n1 − 1) · _DistortionFlowWarp + uv · _DistortionFlowScale2 + (t, t) · _DistortionFlowSpeed2) / 4)`
+- the glow is
+  `_DistortionColor · albedo · max(1 + 10 · (luma(albedo) − _DistortionLuminanceBase), 0) · saturate((2 n2 − 1) · _DistortionFlowMultiplier + _DistortionFlowBias)`,
+  times `mix(1, vertex red, _VertexColorRControlDistortion)`, luma by Rec. 709's weights
+
+`_TERRAIN_BLEND` blends it into the terrain beneath as Lit's keyword does.
+
 ## subsurface
 
 the deferred lighting has a third model beside the default and the foliage one, for surfaces that

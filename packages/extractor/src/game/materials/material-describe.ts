@@ -33,6 +33,7 @@ import {
 } from './material-values.ts';
 import { describeDithered } from './surfaces/dithered.ts';
 import { describeErosion } from './surfaces/erosion.ts';
+import { describeFoliageGlow } from './surfaces/foliage-glow.ts';
 import { describeLitDecal } from './surfaces/lit-decal.ts';
 import { swayOf, vertexOffsetOf } from './surfaces/lit-sway.ts';
 import { describeLit } from './surfaces/lit.ts';
@@ -75,6 +76,7 @@ const DESCRIBERS: { readonly [F in ShaderFamily]?: Describer | ReadonlyMap<strin
 	leaf: describeLit,
 	grass: describeLit,
 	cardMesh: describeLit,
+	foliageGlow: describeFoliageGlow,
 	hlod: describeLit,
 	terrain: describeLit,
 	mattePainting: describeMattePainting,
