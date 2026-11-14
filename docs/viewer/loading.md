@@ -6,11 +6,11 @@ a package is read through a `PackageSource`
 ([`package/package-source.ts`](../../packages/viewer/src/package/package-source.ts)), which offers
 whole-file reads, byte-range reads and reads of several ranges of one file at once:
 
-| source            | used for                                                                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `httpSource`      | the dev/preview server, or any static host; one HTTP range request per read or per several, tolerating servers that ignore `Range`    |
-| `directorySource` | a folder picked with the File System Access API (`showDirectoryPicker`), or a package copied into OPFS                                 |
-| `fileListSource`  | a `<input webkitdirectory>` fallback where `showDirectoryPicker` is missing                                                           |
+| source            | used for                                                                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `httpSource`      | the dev/preview server, or any static host; one HTTP range request per read or per several, tolerating servers that ignore `Range` |
+| `directorySource` | a folder picked with the File System Access API (`showDirectoryPicker`), or a package copied into OPFS                             |
+| `fileListSource`  | a `<input webkitdirectory>` fallback where `showDirectoryPicker` is missing                                                        |
 
 `httpSource` reads several ranges with one multi-range request (`Range: bytes=a-b,c-d,…`), which a
 server answers as `multipart/byteranges`, a part per range; `parseByteRanges` cuts the body by each
@@ -77,8 +77,8 @@ throws on a page of any other size, which fails that blob.
 most 64 jobs at once; the rest wait in the pool, so the jobs of an unloaded package that no worker
 has taken yet are dropped instead of keeping the workers busy. a worker's answers reach the main
 thread only between its frames, so the jobs in hand are what a frame can take in: with four per
-worker the pool turned over a few dozen blobs a frame while the workers idled, which bounded
-loading (a map02 teleport took 2.4 s to settle, and 0.9 s with 64).
+worker the pool turned over a few dozen blobs a frame while the workers idled, which bounded loading
+(a map02 teleport took 2.4 s to settle, and 0.9 s with 64).
 
 a job is a range of a `SharedBytes` buffer: a whole coalesced range read, or a core blob copied out
 of the core's bytes (which stay on the main thread). the pool transfers the buffer to the worker

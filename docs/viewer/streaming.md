@@ -120,9 +120,9 @@ the group's bounds: its sphere, its largest row radius and its farthest LOD reac
 builds the groups, the [segments](#gpu-culling) and the rows' handedness beside the rows
 (`buildRowBounds`), and the selection only fills in each group's reach on the block's first
 selection, since that takes the chains' drawn slots. a group that fails a rule has no row that
-passes it, so it's skipped whole.
-rows are in placement order, which keeps a group's rows close together (a median radius of about 20
-m on map02); groups holding spinning or riding rows are never skipped. per instance it:
+passes it, so it's skipped whole. rows are in placement order, which keeps a group's rows close
+together (a median radius of about 20 m on map02); groups holding spinning or riding rows are never
+skipped. per instance it:
 
 1. culls by projected bounding-sphere radius (`minBoxPixels`, default 1.5 px) and by frustum planes;
 2. computes Unity's LODGroup metric (object size relative to screen height, the size being twice the
@@ -299,20 +299,21 @@ the renderers and stores that own the GPU side; their residency shapes are in
   and grouping each archive's meshes and textures by the tiles using them brought that down by only
   a quarter, since no order suits what's shared map-wide. carrying several reads a request halved a
   map02 flight's requests and took a quarter to a third off the 95th percentile of its waits from
-  wanting a mesh, texture or instance block to having it. every blob's place in byte order is sorted once when the stream opens (a few tens of milliseconds
-  for map02's hundred thousand or so blobs), so a dispatch heapifies the queue and walks neighbours
-  instead of sorting it twice, which took milliseconds once thousands of blobs were queued. core
-  blobs are read from memory without a request slot. requests whose blobs nobody wanted for more
-  than 2 frames are aborted; queued blobs not wanted this frame return to idle. no new reads start
-  while 384 blobs (`MAX_UNDECODED`) are fetched or being read and not yet decoding.
+  wanting a mesh, texture or instance block to having it. every blob's place in byte order is sorted
+  once when the stream opens (a few tens of milliseconds for map02's hundred thousand or so blobs),
+  so a dispatch heapifies the queue and walks neighbours instead of sorting it twice, which took
+  milliseconds once thousands of blobs were queued. core blobs are read from memory without a
+  request slot. requests whose blobs nobody wanted for more than 2 frames are aborted; queued blobs
+  not wanted this frame return to idle. no new reads start while 384 blobs (`MAX_UNDECODED`) are
+  fetched or being read and not yet decoding.
 - **decoding.** fetched blobs wait in the stream manager, not in the decode pool, and each slot that
   frees on a worker (64 per worker: a worker's answers wait for a busy main thread, so its jobs in
   hand are what a frame can take in, see [decode workers](loading.md#decode-workers-and-zstd)) takes
   the most wanted one; blobs nobody has wanted for 30 frames are dropped first. no decode starts
   while 64 MiB of raw blobs are being decoded or wait decoded for an upload (one blob always may):
-  the workers outrun the frames' upload budget, and decoded content waits in memory. queued in the pool in
-  arrival order instead, thousands of blobs wait at once flying across map02, so what comes into
-  view waits behind what the camera has left while the workers sit idle nearly all the time.
+  the workers outrun the frames' upload budget, and decoded content waits in memory. queued in the
+  pool in arrival order instead, thousands of blobs wait at once flying across map02, so what comes
+  into view waits behind what the camera has left while the workers sit idle nearly all the time.
 - **uploading.** pinned first, then by priority, until the frame has uploaded 24 MiB or spent 2 ms
   on unpinned uploads (at least one a frame). the cost is per upload more than per byte: a frame
   fits hundreds of average geometry blobs in 24 MiB, and flying over map02 bursts of dozens of

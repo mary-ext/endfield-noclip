@@ -163,9 +163,9 @@ with a request carrying several reads and 64 decode jobs in hand per worker, 202
 table's run again (one run each, before and after, the same day): the page loads to idle in 2.2 s
 rather than 5.2, a teleport to the Jingyu or lv008 overview settles in 1.0 s rather than 2.6, and
 over the flight the frame's median/p95 goes from 6.9/18 ms to 6.3/16 ms, its requests from about
-18,000 to 8,000, and the 95th percentile of the wait from wanting a mesh to having it from 400 ms
-to 110 ms (textures 340 to 140 ms). at a teleport meshes still wait longest, a median of about half
-a second against the textures' tenth: what bounds them now isn't looked into.
+18,000 to 8,000, and the 95th percentile of the wait from wanting a mesh to having it from 400 ms to
+110 ms (textures 340 to 140 ms). at a teleport meshes still wait longest, a median of about half a
+second against the textures' tenth: what bounds them now isn't looked into.
 
 map02's walks are bound by the CPU. in Wuling City's streets about a third of `mesh select` is
 placing particles (a few thousand live ones across about a hundred emitters), and the rest the
