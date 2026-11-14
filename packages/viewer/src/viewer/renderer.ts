@@ -240,9 +240,11 @@ export class Renderer {
 			lightShadows.update([], { enabled: false, compiling, contentVersion: 0, streamIdle: true });
 		}
 		const uniforms = ring.allocate(FRAME_UNIFORM_BYTES);
+		const jitter = this.post.nextJitter(width, height, outputHeight);
 		writeFrameUniforms(uniforms.f32, uniforms.u32, {
 			camera,
-			jitter: this.post.nextJitter(width, height, outputHeight),
+			jitter,
+			jitterPhase: this.post.jitterPhase,
 			width,
 			height,
 			outputWidth,

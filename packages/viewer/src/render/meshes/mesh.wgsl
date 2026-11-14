@@ -125,6 +125,10 @@ const HAS_NORMALS = 512u;
 const HAS_TANGENTS = 1024u;
 const HAS_COLORS = 67108864u;
 
+// the bits of a dithered look's `canopy.w` (`DitherFlags` in special-looks.ts)
+const DITHER_RED_ALPHA = 1u;
+const DITHER_VERTEX_ALPHA = 2u;
+
 const BASE_SLOT = 0u;
 const NORMAL_SLOT = 1u;
 const MASK_SLOT = 2u;
@@ -340,12 +344,15 @@ struct CutoutDepthVaryings {
 	@builtin(position) position: vec4f,
 	@location(3) uv: vec4f,
 	@location(4) @interpolate(flat) draw: u32,
+	@location(7) color: vec4f,
 }
 
 struct CutoutDepthOut {
 	@builtin(position) @invariant position: vec4f,
 	@location(3) uv: vec4f,
 	@location(4) @interpolate(flat) draw: u32,
+	// the instance's colour (a particle's), without the mesh's vertex colours, whose stream these passes don't bind
+	@location(7) color: vec4f,
 }
 
 @vertex
@@ -363,6 +370,7 @@ fn vs_cutout_depth(v: CutoutDepthIn, @builtin(instance_index) ii: u32) -> Cutout
 	out.position = frame.view_proj * vec4f(rel, 1.0);
 	out.uv = sheet_uv(row.sheet, uv);
 	out.draw = draw_id;
+	out.color = unpack4x8unorm(row.color);
 	return out;
 }
 
@@ -1126,8 +1134,20 @@ fn fs_cutout_depth(in: CutoutDepthVaryings) {
 	let texel = select(base, packed, (flags & ALPHA_NORMAL) != 0u);
 	if (look.tint.w < 0.0) {
 		let dither = look.canopy;
-		let alpha = pow(saturate(select(texel.a, texel.r, dither.w > 0.5) * dither.x), dither.y);
-		if (alpha - gradient_noise(in.position.xy * dither.z) < 1e-5) {
+		let bits = u32(dither.w);
+		var scaled = select(texel.a, texel.r, (bits & DITHER_RED_ALPHA) != 0u) * dither.x;
+		if ((bits & DITHER_VERTEX_ALPHA) != 0u) {
+			scaled *= in.color.a;
+		}
+		// the near camera fade: in over the first range of view depths, out over the second
+		let near = look.canopy_color;
+		if (any(near != vec4f(0.0))) {
+			let depth = 1.0 / in.position.w;
+			scaled *= saturate((depth - near.x) / (near.y - near.x)) * saturate((depth - near.z) / (near.w - near.z));
+		}
+		let alpha = pow(saturate(scaled), dither.y);
+		// the pattern moves each frame, so the temporal antialiasing resolves the surviving pixels into coverage
+		if (alpha - gradient_noise(in.position.xy * dither.z + frame.params.w) < 1e-5) {
 			discard;
 		}
 	} else if (texel.a < look.tint.w) {

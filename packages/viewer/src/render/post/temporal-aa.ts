@@ -89,6 +89,11 @@ export class TemporalAA {
 		return this.#jitter;
 	}
 
+	/** @returns this frame's place in the jitter cycle, from 1; 0 while off */
+	get phase(): number {
+		return this.enabled ? this.#phase : 0;
+	}
+
 	/** @returns this frame's jitter in NDC, as {@link nextJitter} returned it */
 	get jitter(): readonly [x: number, y: number] {
 		return this.#jitter;

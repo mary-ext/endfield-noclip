@@ -108,10 +108,12 @@ export const erosionLook = (surface: ErosionSurface, cull: MaterialCull): Materi
  */
 export const DitherRow = {
 	/**
-	 * the alpha scale (`_TintColor.a · _TintColorAlpha`), `_DitherAlphaExp`, `_DitherTilling`, 1 when the alpha
-	 * is the red of the texture (`_UseMainTexAsAlpha`) rather than its alpha
+	 * the alpha scale (`_TintColor.a · _TintColorAlpha`), `_DitherAlphaExp`, `_DitherTilling`, then
+	 * {@link DitherFlags}
 	 */
 	dither: LookRow.canopy,
+	/** the near camera fade's start, end, second start and second end in metres; zeros without it */
+	near: LookRow.canopyColor,
 	/**
 	 * `_SUBSURFACE`: the scattered colour times its amount, then the amount (the colour's value times the
 	 * metallic); zero without it
@@ -119,6 +121,14 @@ export const DitherRow = {
 	subsurface: LookRow.foliage,
 	/** the scattered colour's share of the ambient light (`_SubsurfaceIndirect`), 0, 0, 0 */
 	subsurfaceIndirect: LookRow.foliageAo,
+} as const;
+
+/** the bits of {@link DitherRow.dither}'s last float, matching `fs_cutout_depth` in mesh.wgsl */
+export const DitherFlags = {
+	/** the alpha is the red of the texture (`_UseMainTexAsAlpha`) rather than its alpha */
+	RedAlpha: 1,
+	/** the instance colour's alpha scales the alpha */
+	VertexAlpha: 2,
 } as const;
 
 /** a hue (0–1) as a fully saturated colour */
@@ -160,10 +170,12 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 		} else if (dither.redAlpha) {
 			setTexture(look, Slot.Base, dither.texture);
 		}
-		params.set(
-			[dither.alphaScale, dither.exponent, dither.tiling, dither.redAlpha ? 1 : 0],
-			DitherRow.dither,
-		);
+		const flags =
+			(dither.redAlpha ? DitherFlags.RedAlpha : 0) | (dither.vertexAlpha ? DitherFlags.VertexAlpha : 0);
+		params.set([dither.alphaScale, dither.exponent, dither.tiling, flags], DitherRow.dither);
+		if (dither.near !== null) {
+			params.set(dither.near, DitherRow.near);
+		}
 		look.queue = 'cutout';
 	}
 	const { color, lighting } = surface;

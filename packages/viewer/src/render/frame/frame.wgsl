@@ -40,8 +40,8 @@ struct Frame {
 	flags: vec4u,
 	// boxes larger than x metres (max half extent) draw as outlines only; y = material texture mip bias (log2 of
 	// the render scale, so upsampled frames sample at the output's density); z = `indirectDiffuseFactor`, the
-	// game's scale on all diffuse ambient, applied here to the irradiance volume (`sh` already carries it); w
-	// reserved
+	// game's scale on all diffuse ambient, applied here to the irradiance volume (`sh` already carries it); w =
+	// this frame's place in the temporal antialiasing's jitter cycle (0 without one)
 	params: vec4f,
 	// #endregion
 	// #region shadows

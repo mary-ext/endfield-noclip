@@ -483,6 +483,10 @@ export interface DitheredSurface {
 		exponent: number;
 		/** the dither pattern's tiling */
 		tiling: number;
+		/** the vertex colour's alpha scales the alpha too (`_DisableVertColor` off): a particle's fade */
+		vertexAlpha: boolean;
+		/** the near camera fade, which scales the alpha; `null` without it */
+		near: EffectNearFade | null;
 	} | null;
 	/** the lit surface's inputs; `null` when unlit (`_UseLighting` off) */
 	lighting: {

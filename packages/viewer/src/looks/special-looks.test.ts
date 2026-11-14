@@ -5,7 +5,7 @@ import type { MaterialCull, ReadyMaterial, TextureSlot } from '@endfield-noclip/
 
 import { LookFlags, LookRow, UV1_SHIFT } from './look.ts';
 import { materialLooks } from './material-looks.ts';
-import { DitherRow, ErosionRow } from './special-looks.ts';
+import { DitherFlags, DitherRow, ErosionRow } from './special-looks.ts';
 
 /** a ready material drawing `surface` */
 const described = (surface: ReadyMaterial['surface'], cull: MaterialCull = 'back'): ReadyMaterial => ({
@@ -52,7 +52,15 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 				baseMap: main,
 				normalMap: null,
 				color: [0.2, 0.2, 0.2],
-				dither: { texture: main, redAlpha: false, alphaScale: 0.75, exponent: 1, tiling: 1 },
+				dither: {
+					texture: main,
+					redAlpha: false,
+					alphaScale: 0.75,
+					exponent: 1,
+					tiling: 1,
+					vertexAlpha: false,
+					near: null,
+				},
 				lighting: null,
 				ignorePostExposure: 1,
 			}),
@@ -61,7 +69,15 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 				baseMap: null,
 				normalMap: null,
 				color: [0.2, 0.2, 0.2],
-				dither: { texture: main, redAlpha: true, alphaScale: 0.5, exponent: 14, tiling: 0.1 },
+				dither: {
+					texture: main,
+					redAlpha: true,
+					alphaScale: 0.5,
+					exponent: 14,
+					tiling: 0.1,
+					vertexAlpha: false,
+					near: null,
+				},
 				lighting: null,
 				ignorePostExposure: 1,
 			}),
@@ -98,7 +114,16 @@ test('lit dithered effects with a red alpha dither through the base slot and tak
 					baseMap: null,
 					normalMap: { ...main, texture: 9 },
 					color: [50, 50, 50],
-					dither: { texture: main, redAlpha: true, alphaScale: 2, exponent: 2, tiling: 1 },
+					// its particles fade by their colour's alpha and with the camera's distance
+					dither: {
+						texture: main,
+						redAlpha: true,
+						alphaScale: 2,
+						exponent: 2,
+						tiling: 1,
+						vertexAlpha: true,
+						near: [1, 2, 120, 80],
+					},
 					lighting: { roughness: 0.5, metallic: 0.8, normalScale: 1, subsurface: null },
 					ignorePostExposure: 1,
 				},
@@ -117,7 +142,8 @@ test('lit dithered effects with a red alpha dither through the base slot and tak
 	// the saturated tint covers the base map's colour (`emissive.w`)
 	assert.deepEqual(Array.from(splash.params.subarray(LookRow.tint, LookRow.tint + 4)), [1, 1, 1, -1]);
 	assert.equal(splash.params[LookRow.emissive + 3], 1);
-	assert.equal(splash.params[DitherRow.dither + 3], 1);
+	assert.equal(splash.params[DitherRow.dither + 3], DitherFlags.RedAlpha | DitherFlags.VertexAlpha);
+	assert.deepEqual(Array.from(splash.params.subarray(DitherRow.near, DitherRow.near + 4)), [1, 2, 120, 80]);
 });
 
 test('dithered effects with subsurface lighting scatter by their metallic and are never metals', () => {

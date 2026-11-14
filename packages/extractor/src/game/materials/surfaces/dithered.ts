@@ -2,6 +2,7 @@ import type { DitheredSurface, UnsupportedSurface } from '@endfield-noclip/packa
 import type { Rgb } from '@endfield-noclip/package-format/values';
 
 import { undrawnKeywords } from '../describe-steps.ts';
+import { nearFadeOf } from '../effects/effect-steps.ts';
 import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
 
 /** keywords a `HGRP/Effect/VFXDitherAlpha` material can have and still be drawn as a dithered surface */
@@ -89,6 +90,8 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 			alphaScale: (color('_TintColor') ?? [1, 1, 1, 1])[3] * float('_TintColorAlpha', 1),
 			exponent: float('_DitherAlphaExp', 1),
 			tiling: float('_DitherTilling', 1),
+			vertexAlpha: float('_DisableVertColor', 0) === 0,
+			near: nearFadeOf(reader),
 		};
 	}
 	const tint = scaleRgb(linearRgb(color('_TintColor') ?? [1, 1, 1, 1]), float('_TintColorIntensity', 1));

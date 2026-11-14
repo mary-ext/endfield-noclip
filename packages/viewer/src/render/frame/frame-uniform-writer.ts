@@ -66,6 +66,8 @@ export interface FrameUniformInputs {
 	camera: Camera;
 	/** this frame's subpixel jitter in NDC, added to the projection */
 	jitter: readonly [x: number, y: number];
+	/** this frame's place in the jitter cycle (0 without one), which moves the dithered surfaces' pattern */
+	jitterPhase: number;
 	/** the render size, px */
 	width: number;
 	height: number;
@@ -173,6 +175,7 @@ export const writeFrameUniforms = (f32: Float32Array, u32: Uint32Array, inputs: 
 	// below the output size, textures sample as sharp as the output needs; the history gathers the detail
 	f32[FrameOffsets.params + 1] = Math.log2(height / outputHeight);
 	f32[FrameOffsets.params + 2] = environment.indirectDiffuse;
+	f32[FrameOffsets.params + 3] = inputs.jitterPhase;
 	const shadowMap = inputs.shadowMap;
 	shadowMap.layers.forEach((layer, i) => {
 		f32.set(layer.sample, FrameOffsets.shadowMatrices + i * 16);

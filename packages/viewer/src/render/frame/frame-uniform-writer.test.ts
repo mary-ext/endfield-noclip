@@ -20,6 +20,7 @@ const inputs = (patch: Partial<FrameUniformInputs> = {}): FrameUniformInputs => 
 	return {
 		camera,
 		jitter: [0, 0],
+		jitterPhase: 0,
 		width: 800,
 		height: 400,
 		outputWidth: 1600,

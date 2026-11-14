@@ -376,7 +376,13 @@ one: its shape comes from a mask texture's red alone.
 its depth pass keeps a pixel where the alpha beats an interleaved gradient noise of the pixel
 position times `_DitherTilling`, so a fraction of the pixels equal to the alpha survives. the alpha
 is `_TintColor.a · _TintColorAlpha` times `_MainTex`'s alpha (its red with `_UseMainTexAsAlpha`),
-saturated and raised to `_DitherAlphaExp`. this shapes the dark disc at the centre of Power
+the vertex colour's alpha (unless `_DisableVertColor`) and the near camera fade (in over view depths
+`_NearCameraFadeDistanceStart`–`…End`, out over `…Start2`–`…End2`), saturated and raised to
+`_DitherAlphaExp`. on particles the vertex alpha is the particle's colour, so they thin out as they
+fade: the dam splashes' start at a random alpha of 0.3–1 and fade out over most of their life. the
+noise's pixel position is offset by `_TaaFrameInfo.z` (the frame's place in the temporal
+antialiasing's cycle in Unity's HDRP, unread in the game's code), so the pattern moves every frame
+and the antialiasing resolves it into coverage. this shapes the dark disc at the centre of Power
 Plateau's sky vortex (`blackspot`), a quad whose texture's alpha is a soft round mask.
 
 `_USE_DISTURB`, `_USE_DISSOLVE`, `_USE_POLARUV` and `_USE_SCREENUV` bring in VFXBaseV2's texture

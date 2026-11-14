@@ -323,9 +323,10 @@ packs or renders correctly.
     keywords stay unsupported, as do lit surfaces with a normal map and a distortion, mask or
     scroll, since the dithered G-buffer path draws only still textures (Marker Stone Interiors' ink
     patterns `p_fxmap_map02_lv004_inkpattern_801` and `…_802`); the plain variant's dither leaves
-    out the vertex alpha and the near-camera fade, and `_USE_MAIN2` draws only where its second
-    texture masks, as its colour times the tint, and on the plain variant without the dither (Wuling
-    City's red-tide walls, unchecked in game). the NoLighting variant goes through the G-buffer path
+    out a mesh's own vertex alpha (a particle's is drawn) and moves by the viewer's jitter phase
+    where the game's frame value is unread, and `_USE_MAIN2` draws only where its second texture
+    masks, as its colour times the tint, and on the plain variant without the dither (Wuling City's
+    red-tide walls, unchecked in game). the NoLighting variant goes through the G-buffer path
     without its colour's extra factor of the alpha, so it's fogged and its soft edges are brighter
     than the game's; its effect variants stay unsupported (Si's Painting's ink sheet
     `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very Large Rift's escaping trails

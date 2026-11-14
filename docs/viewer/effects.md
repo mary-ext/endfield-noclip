@@ -136,10 +136,12 @@ path ([`special-looks.ts`](../../packages/viewer/src/looks/special-looks.ts), `d
 (`fs_cutout_depth` in `mesh.wgsl`), for materials without `_USE_MAIN2` in the default
 `_DitherAlphaMode`. with `_UseMainTexAsAlpha` the texture only feeds the test: unlit looks bind it
 in the normal slot, lit ones (which may need that slot for their normal map) in the base slot, with
-the tint covering the base colour as an untextured look's does. the test leaves out the vertex alpha
-and the near camera fade. `_USE_MAIN2` is drawn only when its second texture masks
-(`_UseMainTex2AsAlpha` with `_MainTex2BlendMode` 0): the tint is multiplied by `_MainTex2Color`, and
-the surface draws without the test.
+the tint covering the base colour as an untextured look's does. the test takes the instance's colour
+(a particle's) as the vertex alpha, since the depth passes don't bind a mesh's own vertex colours,
+and the near camera fade from `DitherRow.near`; its pattern moves by the temporal antialiasing's
+jitter phase (`frame.params.w`), 0 with antialiasing off. `_USE_MAIN2` is drawn only when its second
+texture masks (`_UseMainTex2AsAlpha` with `_MainTex2BlendMode` 0): the tint is multiplied by
+`_MainTex2Color`, and the surface draws without the test.
 
 `_SUBSURFACE` surfaces take the game's [subsurface model](../game-data/materials.md#subsurface) for
 the sun and the ambient light (`subsurface_sun` and `Surface.scatter` in `frame.wgsl`): the look

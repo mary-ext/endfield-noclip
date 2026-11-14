@@ -257,6 +257,11 @@ export class PostProcess {
 		return this.#taa.nextJitter(width, height, outputHeight);
 	}
 
+	/** @returns this frame's place in the jitter cycle, from 1; 0 with antialiasing off */
+	get jitterPhase(): number {
+		return this.#taa.phase;
+	}
+
 	/** jumps the auto exposure straight to its next reading (a new package or level) */
 	resetExposure(): void {
 		this.#autoExposure.reset();

@@ -109,13 +109,29 @@ describe('dithered effects', () => {
 		assert.ok(plain.kind === 'dithered' && mask.kind === 'dithered' && edged.kind === 'dithered');
 		assert.deepEqual(
 			{ ...plain.dither, texture: plain.dither?.texture.texture },
-			{ texture: 6, redAlpha: false, alphaScale: 0.75, exponent: 1, tiling: 1 },
+			{
+				texture: 6,
+				redAlpha: false,
+				alphaScale: 0.75,
+				exponent: 1,
+				tiling: 1,
+				vertexAlpha: true,
+				near: null,
+			},
 		);
 		assert.equal(plain.lighting, null);
 		assert.equal(mask.baseMap, null);
 		assert.deepEqual(
 			{ ...mask.dither, texture: mask.dither?.texture.texture },
-			{ texture: 6, redAlpha: true, alphaScale: 0.5, exponent: 14, tiling: 0.1 },
+			{
+				texture: 6,
+				redAlpha: true,
+				alphaScale: 0.5,
+				exponent: 14,
+				tiling: 0.1,
+				vertexAlpha: true,
+				near: null,
+			},
 		);
 		// the edge mode isn't drawn
 		assert.equal(edged.dither, null);
@@ -149,7 +165,7 @@ describe('dithered effects', () => {
 		assert.deepEqual(surface.lighting, { roughness: 0.5, metallic: 0.8, normalScale: 1, subsurface: null });
 		assert.deepEqual(
 			{ ...surface.dither, texture: surface.dither?.texture.texture },
-			{ texture: 8, redAlpha: true, alphaScale: 2, exponent: 2, tiling: 1 },
+			{ texture: 8, redAlpha: true, alphaScale: 2, exponent: 2, tiling: 1, vertexAlpha: true, near: null },
 		);
 	});
 
@@ -170,6 +186,22 @@ describe('dithered effects', () => {
 		const dam = splash({ _Metallic: 0 }, [0.577, 0.577, 0.577, 1]);
 		assert.ok(dam.kind === 'dithered');
 		assert.deepEqual(dam.lighting?.subsurface, [0, 0, 0.577, 1]);
+		// its particles fade by their colour's alpha, and with the camera's distance
+		const faded = splash(
+			{
+				_UseNearCameraFade: 1,
+				_NearCameraFadeDistanceStart: 1,
+				_NearCameraFadeDistanceEnd: 2,
+				_NearCameraFadeDistanceStart2: 120,
+				_NearCameraFadeDistanceEnd2: 80,
+			},
+			[0.577, 0.577, 0.577, 1],
+		);
+		assert.ok(faded.kind === 'dithered');
+		assert.deepEqual([faded.dither?.vertexAlpha, faded.dither?.near], [true, [1, 2, 120, 80]]);
+		const still = splash({ _DisableVertColor: 1 }, [0.577, 0.577, 0.577, 1]);
+		assert.ok(still.kind === 'dithered');
+		assert.deepEqual([still.dither?.vertexAlpha, still.dither?.near], [false, null]);
 		assert.equal(dam.lighting?.metallic, 0);
 		const teal = splash({ _SubsurfaceIndirect: 0.5 }, [0.25, 1, 0.75, 1]);
 		assert.ok(teal.kind === 'dithered');
@@ -201,7 +233,7 @@ describe('dithered effects', () => {
 		assert.equal(surface.baseMap, null);
 		assert.deepEqual(
 			{ ...surface.dither, texture: surface.dither?.texture.texture },
-			{ texture: 7, redAlpha: true, alphaScale: 1, exponent: 1, tiling: 1 },
+			{ texture: 7, redAlpha: true, alphaScale: 1, exponent: 1, tiling: 1, vertexAlpha: true, near: null },
 		);
 	});
 });
