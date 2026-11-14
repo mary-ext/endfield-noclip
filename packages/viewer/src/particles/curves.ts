@@ -113,10 +113,6 @@ export const upperBound = (curve: MinMaxCurveInfo): number => {
 	}
 };
 
-/** @returns a constant or random-between-two-constants rate's mean */
-export const meanOf = (curve: MinMaxCurveInfo): number =>
-	curve.mode === CurveMode.TwoConstants ? (curve.min + curve.scalar) / 2 : curve.scalar;
-
 /**
  * @param age a particle's age, s
  * @param life its lifetime, s

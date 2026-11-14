@@ -345,6 +345,31 @@ test('a cap of 0 becomes what one lifetime of emission holds', () => {
 	assert.equal(steady.info.maxParticles, 88);
 });
 
+test('a rate curve is kept, and bounds the emission by its peak', () => {
+	// the water a Qingbo waterwheel's scoops pour: up to 32 a second over part of each loop, living 1.5 s
+	const rateOverTime = {
+		...curve([
+			[0, 0],
+			[0.121, 1],
+			[0.773, 1],
+			[0.845, 0],
+			[1, 0],
+		]),
+		scalar: 32,
+	};
+	const pour = readParticleSystem(
+		system(
+			{ lengthInSec: 3.125, EmissionModule: { enabled: true, rateOverTime, m_Bursts: [] } },
+			{ startLifetime: constant(1.5), maxNumParticles: 300 },
+		),
+		renderer(),
+	);
+	assert.ok(pour !== null && 'info' in pour);
+	assert.equal(pour.info.rate.mode, CurveMode.Curve);
+	assert.equal(pour.info.rate.scalar, 32);
+	assert.equal(pour.info.emissionBound, 48);
+});
+
 test('systems the viewer cannot play say why', () => {
 	const reason = (s: TypeTreeObject, r: TypeTreeObject = renderer()) => {
 		const read = readParticleSystem(s, r);
@@ -399,10 +424,6 @@ test('systems the viewer cannot play say why', () => {
 	assert.equal(
 		reason(system({ ...ramping, ClampVelocityModule: dragged })),
 		'speed modifier curve with drag',
-	);
-	assert.equal(
-		reason(system({ EmissionModule: { enabled: true, rateOverTime: curve([[0, 1]]), m_Bursts: [] } })),
-		'rate curve',
 	);
 	// one a script starts shows nothing until then, so it's neither played nor unsupported
 	assert.equal(readParticleSystem(system({ playOnAwake: false }), renderer()), null);

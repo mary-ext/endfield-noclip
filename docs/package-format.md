@@ -754,11 +754,11 @@ sizes them unless the mode is Shape. the entry keeps:
   emission holds, the top rate times the lifetime plus each loop's top burst counts times the loops
   that lifetime spans. a system that stores a cap of 0
   ([particle systems](game-data/particles.md#particle-systems)) gets the bound as its cap
-- the start lifetime, speed, size and rotation, gravity modifier and emission rate as
-  `MinMaxCurve`s, the bursts, and the start colour and colour over lifetime as `MinMaxGradient`s.
-  their curves and gradients are the `AnimationCurve` and `Gradient` of
-  [`curves.ts`](../packages/package-format/src/curves.ts), which lens flares use too, with key times
-  over 0–1 (the game stores gradient key times as 0–65535)
+- the start lifetime, speed, size and rotation, gravity modifier and emission rate as `MinMaxCurve`s
+  (a rate curve is read at the system's time over its duration), the bursts, and the start colour
+  and colour over lifetime as `MinMaxGradient`s. their curves and gradients are the `AnimationCurve`
+  and `Gradient` of [`curves.ts`](../packages/package-format/src/curves.ts), which lens flares use
+  too, with key times over 0–1 (the game stores gradient key times as 0–65535)
 - the shape (sphere, hemisphere, cone, cone volume, box, circle, donut or mesh), a union on its
   kind: every kind keeps its placement and random-direction and -position amounts, and only the
   fields it reads of radius and thickness (round kinds), arc (cones, circle, donut), angle (cones),

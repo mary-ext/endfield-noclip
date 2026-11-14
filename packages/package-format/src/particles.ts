@@ -354,7 +354,7 @@ export interface ParticleSystemInfo {
 	startSize: [MinMaxCurveInfo, MinMaxCurveInfo, MinMaxCurveInfo];
 	/** Euler angles about x, y and z, radians */
 	startRotation: [MinMaxCurveInfo, MinMaxCurveInfo, MinMaxCurveInfo];
-	/** particles per second; a constant or two */
+	/** particles per second; a curve is read at the system's time over the duration, every loop */
 	rate: MinMaxCurveInfo;
 	bursts: ParticleBurstInfo[];
 	/** `null` emits every particle at the emitter's origin, along +z */

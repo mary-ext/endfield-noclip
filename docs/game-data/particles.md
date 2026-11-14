@@ -12,6 +12,12 @@ stretched 1, horizontal 2, vertical 3.
 
 ### emission and lifetime
 
+- **rate over time.** `EmissionModule.rateOverTime` is particles per second; a curve is read at the
+  system's time over its duration (`lengthInSec`), so it repeats every loop, as Unity documents it
+  (the engine's step isn't traced; how it draws between two curves isn't either). effects time their
+  emission to an animation this way: the water pouring off the scoops of Qingbo's waterwheels
+  (`bigwater_01` in `p_igroup_map02_sfwaterwheel+2_004_01`) emits 32 a second from 12% to 77% of a
+  3.125 s loop and nothing in its last 15%.
 - **cap.** without a ring buffer, the cap (`maxNumParticles`) only limits emission: each emission,
   by rate or burst, makes at most the cap minus the live particles, none when the system is full,
   and the skipped ones aren't made up later. live particles are never cut short to make room. the

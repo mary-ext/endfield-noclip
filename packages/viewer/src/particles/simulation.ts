@@ -18,7 +18,8 @@ import { eulerQuaternion, eulerQuaternionInto, type Quat, rotateByInto, rotateIn
 import { normalizeOrZInto } from '../math/vec3.ts';
 
 import { type DrawnCurve, integrateOverAge } from './curve-integrals.ts';
-import { evaluateMinMax, evaluateMinMaxGradientInto, livedAt, meanOf, upperBound } from './curves.ts';
+import { evaluateMinMax, evaluateMinMaxGradientInto, livedAt, upperBound } from './curves.ts';
+import { type EmissionStream, emissionStream } from './emission-rate.ts';
 import { applyForces, type ForceRandoms, type PreparedField, prepareField } from './forces.ts';
 import { meshShapePoint, type PreparedMeshShape, prepareMeshShape } from './mesh-shape.ts';
 import { dragged, draggedFall, type SteppedState, splinePoint, steppedPath, travelled } from './motion.ts';
@@ -264,8 +265,8 @@ export class ParticleSimulation {
 	readonly #longest: number;
 	/** how far back emissions can still be alive, s: their lifetime, or until enough newer ones replace them */
 	readonly #lookback: number;
-	/** particles per second */
-	readonly #rate: number;
+	/** the rate over time's emissions; `null` when only bursts emit */
+	readonly #stream: EmissionStream | null;
 	readonly #meshTotal: number;
 	readonly #shapeRotation: Quat;
 	/** the mesh a mesh shape emits from; `null` for other shapes */
@@ -319,7 +320,7 @@ export class ParticleSimulation {
 		this.#seed = seed;
 		this.#startDelay = Math.max(evaluateMinMax(info.startDelay, 0, random(seed, 0, Channel.StartDelay)), 0);
 		this.#longest = Math.max(upperBound(info.startLifetime), 0);
-		this.#rate = Math.max(meanOf(info.rate), 0);
+		this.#stream = emissionStream(info.rate, info.duration);
 		this.#lookback = this.#longest;
 		if (info.ringBuffer !== null) {
 			// the newest `maxParticles` emissions stay; look back far enough to find that many
@@ -327,7 +328,7 @@ export class ParticleSimulation {
 				(sum, burst) => sum + Math.max(upperBound(burst.count), 0) * burst.cycles * burst.probability,
 				0,
 			);
-			const perSecond = this.#rate + burstsPerLoop / info.duration;
+			const perSecond = (this.#stream?.mean ?? 0) + burstsPerLoop / info.duration;
 			const kept = Math.min(info.maxParticles, MAX_PARTICLES) + 1;
 			if (!info.looping) {
 				this.#lookback = Infinity;
@@ -361,7 +362,7 @@ export class ParticleSimulation {
 			this.#burstsNumbered =
 				shapeMesh !== null &&
 				shapeMesh.spawn !== ParticleMeshSpawn.Random &&
-				this.#rate === 0 &&
+				this.#stream === null &&
 				(!info.looping || sameEachLoop);
 		}
 		const rotation = info.shape?.rotation ?? [0, 0, 0];
@@ -494,7 +495,7 @@ export class ParticleSimulation {
 		}
 		// the stream's emissions per window are capped, so play in steps that hold them all
 		const step = Math.max(
-			this.#rate > 0 ? Math.min(this.#longest, MAX_PARTICLES / this.#rate) : this.#longest,
+			this.#stream === null ? this.#longest : Math.min(this.#longest, MAX_PARTICLES / this.#stream.peak),
 			1e-3,
 		);
 		while (after < time) {
@@ -586,12 +587,13 @@ export class ParticleSimulation {
 			}
 		}
 		emissions.sort(byTime);
-		if (this.#rate > 0) {
-			const first = Math.max(0, Math.ceil((from - startDelay) * this.#rate));
-			const last = Math.floor((end - startDelay) * this.#rate);
+		const stream = this.#stream;
+		if (stream !== null) {
+			const first = Math.max(0, Math.ceil(stream.emitted(from - startDelay)));
+			const last = Math.floor(stream.emitted(end - startDelay));
 			for (let k = Math.max(first, last - MAX_PARTICLES); k <= last; k++) {
 				// even ids for the stream, odd for bursts
-				this.#emit(startDelay + k / this.#rate, (k * 2) >>> 0);
+				this.#emit(startDelay + stream.timeOf(k), (k * 2) >>> 0);
 			}
 		}
 		emissions.sort(byTime);

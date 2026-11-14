@@ -753,8 +753,8 @@ export const readCustomData = (
  * @param renderer its `ParticleSystemRenderer`
  * @returns the system and the meshes its particles draw, or why the viewer can't play it: a render mode, a
  *   module, shape, texture sheet or ring buffer mode it doesn't evaluate, a speed modifier curve alongside
- *   drag without a speed limit, a per-axis speed limit, a drag or rate curve, or no mesh. `null` for a system
- *   that doesn't play on awake, which shows nothing until a script starts it
+ *   drag without a speed limit, a per-axis speed limit, a drag curve, or no mesh. `null` for a system that
+ *   doesn't play on awake, which shows nothing until a script starts it
  */
 export const readParticleSystem = (
 	system: TypeTreeObject,
@@ -824,9 +824,6 @@ export const readParticleSystem = (
 	const emission = objectField(system, 'EmissionModule');
 	const emits = booleanField(emission, 'enabled');
 	const rate = emits ? readMinMaxCurve(objectField(emission, 'rateOverTime')) : ZERO_CURVE;
-	if (!isConstantCurve(rate)) {
-		return { reason: 'rate curve' };
-	}
 	const bursts = emits
 		? arrayField(emission, 'm_Bursts').map((burst) => {
 				if (!isObject(burst)) {

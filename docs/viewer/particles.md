@@ -51,9 +51,11 @@ each particle follows from its emission time and random values hashed from the e
 system and its index, so any moment can be evaluated on its own:
 
 - emissions start after the start delay, drawn once per emitter between its two constants, and are
-  the rate's steady stream (one every `1 / rate` seconds, a random rate taking its mean) and each
-  loop's bursts (count rounded, each fired with its probability), within the window the longest
-  lifetime reaches back; non-looping systems stop emitting after one duration.
+  the rate's stream (the nth particle when the rate's integral reaches n: one every `1 / rate`
+  seconds for a constant, and for a curve the time found in a table of its integral over one loop,
+  `emission-rate.ts`; a random rate takes its mean) and each loop's bursts (count rounded, each
+  fired with its probability), within the window the longest lifetime reaches back; non-looping
+  systems stop emitting after one duration.
 - with a ring buffer a particle stays until newer ones replace it, so the window reaches back far
   enough for that many emissions; past its lifetime it shows its end (or replays its loop range),
   and the newest live ones that fit the rows are kept. a particle held at its end keeps moving and
