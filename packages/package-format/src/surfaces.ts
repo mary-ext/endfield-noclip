@@ -1060,6 +1060,23 @@ export interface WaterSheetSurface {
 	/** `_IgnorePostExposure`, for the unlit share of the colour */
 	ignorePostExposure: Weight;
 	near: EffectNearFade | null;
+	/**
+	 * `_VAT_SOFTBODY`: the vertices move by a position texture and take their normals from a rotation texture
+	 * (`docs/game-data/effects.md#soft-body-animation`); `null` without it. such a sheet has no flipbook and no
+	 * normal map
+	 */
+	softBody: WaterSheetSoftBody | null;
+}
+
+/** a VFXWater sheet's soft-body animation, whose shading reads the animated normals */
+export interface WaterSheetSoftBody extends EffectSoftBody {
+	/**
+	 * the rotation texture (`_RotationTexture`), sampled where the position texture is: a quaternion per vertex
+	 * and frame that turns +y into the normal
+	 */
+	rotation: number;
+	/** the rotation texture stores `q / 2 + 0.5` in 8 bits rather than the quaternion itself */
+	rotationPacked: boolean;
 }
 
 /**

@@ -227,19 +227,31 @@ fn fx_camera_pull(rel: vec3f, pull: f32) -> vec3f {
 	return -rel / max(camera_distance, 1e-6) * (min(max(0.0, camera_distance - 1.0), pull) + 0.001);
 }
 
-// VFXBaseV2's soft-body animation (`VertexMotion.SoftBody` in stack.ts): the object-space position moved
-// by the position texture's texel at UV1's column and the current frame's row. vertices with UV1's v at most
-// 0.1 collapse to the object's origin, as the game's do
-fn fx_soft_body(id: u32, p: vec3f, uv1: vec2f) -> vec3f {
-	let low = fx_row(id, FX_OFFSET_DIR);
-	let range = fx_row(id, FX_OFFSET).xyz;
+// where a soft-body animation's textures hold a vertex (`VertexMotion.SoftBody` in stack.ts): UV1's column
+// and the current frame's row, of `frames`
+fn fx_soft_body_at(id: u32, frames: f32, uv1: vec2f) -> vec2f {
 	let scale = fx_row(id, FX_UV + FX_OFFSET_SLOT).xy;
 	let play = fx_row(id, FX_ANIM + FX_OFFSET_SLOT).xy;
-	let frames = low.w;
 	let current = floor(fract(frame.eye.w * play.x + play.y) * frames);
-	let at = vec2f(uv1.x * scale.x, 1.0 - scale.y * ((1.0 - uv1.y) + current / frames));
+	return vec2f(uv1.x * scale.x, 1.0 - scale.y * ((1.0 - uv1.y) + current / frames));
+}
+
+// the soft body's object-space position: moved by the position texture's texel at `at`, scaled into `range`
+// from `low`. vertices with UV1's v at most 0.1 collapse to the object's origin, as the game's do
+fn fx_soft_body(low: vec3f, range: vec3f, at: vec2f, p: vec3f, uv1: vec2f) -> vec3f {
 	let texel = textureSampleLevel(fx_tex6, fx_samp6, at, 0.0).xyz;
-	return select(p + range * texel + low.xyz, vec3f(0.0), uv1.y <= 0.1);
+	return select(p + range * texel + low, vec3f(0.0), uv1.y <= 0.1);
+}
+
+// a water sheet's soft-body normal: +y turned by the rotation texture's quaternion at `at`, stored as
+// `q / 2 + 0.5` (`packing` 1) or as it is
+fn fx_soft_body_normal(at: vec2f, packing: f32) -> vec3f {
+	var q = textureSampleLevel(fx_tex5, fx_samp5, at, 0.0);
+	if (packing == 1.0) {
+		q = q * 2.0 - 1.0;
+	}
+	let up = vec3f(0.0, 1.0, 0.0);
+	return normalize(up + 2.0 * cross(q.xyz, q.w * up + cross(q.xyz, up)));
 }
 
 @vertex
@@ -261,10 +273,19 @@ fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 	let flags = bitcast<u32>(offset.w);
 	let uv = sheet_uv(row.sheet, vec4f(v.uv0 * uv0.xy + uv0.zw, v.uv1 * uv1.xy + uv1.zw));
 	let color = select(vec4f(1.0), v.color, (flags & FX_HAS_COLORS) != 0u) * unpack4x8unorm(row.color);
-	let normal = oct_decode(v.normal);
+	var normal = oct_decode(v.normal);
 	let motion = fx_row(id, FX_OFFSET_MODE).x;
 	if (motion == FX_MOTION_SOFT_BODY) {
-		p = fx_soft_body(id, p, v.uv1 * uv1.xy + uv1.zw);
+		// a water sheet keeps the stack's two rows for its own values, and turns its normals too
+		let sheet = fx_row(id, FX_UNFOGGED).y == FX_KIND_WATER_SHEET;
+		let low = fx_row(id, select(FX_OFFSET_DIR, WS_SOFT_MIN, sheet));
+		let range = fx_row(id, select(FX_OFFSET, WS_SOFT_RANGE, sheet));
+		let body_uv = v.uv1 * uv1.xy + uv1.zw;
+		let at = fx_soft_body_at(id, low.w, body_uv);
+		p = fx_soft_body(low.xyz, range.xyz, at, p, body_uv);
+		if (sheet) {
+			normal = fx_soft_body_normal(at, range.w);
+		}
 	}
 	var rel = m * p + origin;
 	let pull = fx_row(id, FX_CAMERA_PULL).xy;
@@ -863,6 +884,9 @@ const WS_SEQUENCE_TINT = 27u;
 const WS_SURFACE = 28u;
 const WS_SUBSURFACE = 29u;
 const WS_MISC = 30u;
+// a soft body's offset minimum and frame count, and its range and rotation packing (`WaterSheetRow.softMin`)
+const WS_SOFT_MIN = 40u;
+const WS_SOFT_RANGE = 41u;
 
 // `WaterSheetFlags`
 const WS_DISTURB_ON = 1u;

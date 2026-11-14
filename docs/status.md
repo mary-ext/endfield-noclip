@@ -347,8 +347,14 @@ packs or renders correctly.
     drawn, its scene copy includes the water and fog (unchecked against the game's), and on meshes
     it ignores the second UV set the game reads as custom data; Deep Dale Street's fog-wall haze,
     the balloons' glitch and Valley Pass's fire-column haze are unchecked in game
-  - VFXWater: `VFX_WATER_REFRACT`, `_VAT_SOFTBODY`, punctual lights, matcaps, and
-    `VFX_WATER_SIMPLE_LIGHT`'s probe (lit the full way instead)
+  - VFXWater: `VFX_WATER_REFRACT`, punctual lights, matcaps, `VFX_WATER_SIMPLE_LIGHT`'s probe (lit
+    the full way instead) and the dissolve's vertex-colour weight
+    (`_UseVertexColorAlphaAsDissolveWeight`). a
+    [soft body](game-data/effects.md#soft-body-animation) with a flipbook or a normal map, or played
+    by particle data, stays unsupported; its per-draw frame offset is taken as 0. the waterwheels'
+    pouring water holds the frame, opacity and dissolve their clip ends on, since
+    [looping clips](#interactives-and-animation) don't play material values, so it stands still
+    where the game's pours; unchecked against an in-game shot
   - [six-way smoke](game-data/effects.md#six-way-smoke): no shadow ramp texture, local lights or
     main texture; a mask or dissolve on UV set 1 stays unsupported on meshes; unchecked in game,
     including Valley Pass's fire column and its screen-space blend layer

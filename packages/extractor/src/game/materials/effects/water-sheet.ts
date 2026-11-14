@@ -2,11 +2,12 @@ import type { TextureSlot } from '@endfield-noclip/package-format/materials';
 import type {
 	EffectTexture,
 	UnsupportedSurface,
+	WaterSheetSoftBody,
 	WaterSheetSurface,
 } from '@endfield-noclip/package-format/surfaces';
 
 import { undrawnBlend, undrawnKeywords } from '../describe-steps.ts';
-import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
+import { isUnsupported, linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
 
 import {
 	dissolveOf,
@@ -18,6 +19,7 @@ import {
 	softBlendOf,
 	speedOf,
 } from './effect-steps.ts';
+import { softBodyHdr, softBodyOf } from './soft-body.ts';
 
 /**
  * VFXWater keywords that are drawn. `VFX_WATER_SIMPLE_LIGHT`, the game's cheaper lighting from a per-draw
@@ -34,6 +36,7 @@ const WATER_KEYWORDS = new Set([
 	'_USE_SEQUENCE_FRAME_MV',
 	'_USE_SEQUENCE_FRAME_NORMAL',
 	'VFX_WATER_SIMPLE_LIGHT',
+	'_VAT_SOFTBODY',
 ]);
 
 /** a water sheet texture, once those on other UV sets (`'uv'`) have been rejected */
@@ -44,7 +47,7 @@ const sheetTexture = (value: EffectTexture | null | 'uv'): EffectTexture | null 
  * `HGRP/Effect/VFXWater`, the sheets of falling water (`docs/game-data/effects.md#waterfalls`)
  *
  * @param reader the material's properties
- * @returns its surface, or `unsupported` for features the viewer doesn't draw (refraction, vertex animation)
+ * @returns its surface, or `unsupported` for features the viewer doesn't draw (refraction, a vertex offset)
  */
 export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | UnsupportedSurface => {
 	const { float, colorOrVector: color, has } = reader;
@@ -55,6 +58,10 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 	const sequence = has('_USE_SEQUENCE_FRAME');
 	if (sequence && reader.slot('_SequenceBaseColorMap') === undefined) {
 		return unsupported('a flipbook without its texture');
+	}
+	const softBody = sheetSoftBodyOf(reader);
+	if (softBody !== null && isUnsupported(softBody)) {
+		return softBody;
 	}
 	/** a used slot; the sheets are drawn from UV set 0 alone */
 	const used = (name: string, on: boolean): TextureSlot | null | 'uv' => {
@@ -176,5 +183,31 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 		soft: softBlendOf(reader),
 		ignorePostExposure: float('_IgnorePostExposure', 1),
 		near: nearFadeOf(reader),
+		softBody,
 	};
+};
+
+/**
+ * `_VAT_SOFTBODY` on a sheet: its position texture and the rotation texture its normals come from
+ *
+ * @returns the animation, `null` without the keyword, or `unsupported`
+ */
+const sheetSoftBodyOf = (reader: MaterialReader): WaterSheetSoftBody | UnsupportedSurface | null => {
+	const { has } = reader;
+	if (!has('_VAT_SOFTBODY')) {
+		return null;
+	}
+	// the viewer binds the two textures where a flipbook's motion vectors and the normals go
+	if (has('_USE_SEQUENCE_FRAME') || has('_NORMAL_MAP')) {
+		return unsupported('a soft-body animation with a flipbook or a normal map');
+	}
+	const body = softBodyOf(reader);
+	if (isUnsupported(body)) {
+		return body;
+	}
+	const rotation = reader.slot('_RotationTexture');
+	if (rotation === undefined) {
+		return unsupported('a soft-body animation without its rotation texture');
+	}
+	return { ...body, rotation: rotation.texture, rotationPacked: !softBodyHdr(reader) };
 };

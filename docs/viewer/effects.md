@@ -179,6 +179,14 @@ falls, far below the game's. the normal map's frame comes from the UVs' screen d
 than mesh tangents. `VFX_WATER_SIMPLE_LIGHT` sheets are lit the full way, and textures on UV sets
 other than 0 are unsupported.
 
+a sheet's [soft body](../game-data/effects.md#soft-body-animation) (`WaterSheetSurface.softBody`)
+moves through the stack's vertex path: the position texture in slot 6 (`setSoftBodySlot`), and the
+rotation texture in slot 5, from which `vs_effect` turns the normal the sheet shades with
+(`fx_soft_body_normal`). the sheet keeps the bounds and frame count in rows of its own
+(`WaterSheetRow.softMin`), since its surface rows sit where the stack keeps them. the two slots are
+the flipbook's motion vectors' and the normal map's, so a soft body with either stays unsupported,
+as does one that particle data plays.
+
 ## six-way smoke
 
 [six-way smoke](../game-data/effects.md#six-way-smoke) draws through `fs_effect`, which hands it to

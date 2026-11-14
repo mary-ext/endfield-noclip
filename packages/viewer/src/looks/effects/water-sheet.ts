@@ -6,14 +6,17 @@ import {
 	EffectRole,
 	EffectRow,
 	emptyEffect,
+	ROLE_NONE,
 	setNear,
 	setSlot,
+	still,
 } from './effect-look.ts';
+import { setSoftBodySlot, VertexMotion } from './stack.ts';
 
 /**
  * float offsets of a VFXWater look's parameters, in place of {@link EffectRow}'s rows 17–22 and 26–30. the
- * tint, UV, scroll, soft blend, near fade and last rows are shared, and the vertex offset stays off (row 30's
- * x)
+ * tint, UV, scroll, soft blend, near fade and last rows are shared, and row 30's x is the vertex motion, as
+ * in the stack
  */
 export const WaterSheetRow = {
 	/** {@link WaterSheetFlags}, 1 when additive (`_BlendMode`), `_UseLighting`, `_WaterRandomUV` */
@@ -36,9 +39,19 @@ export const WaterSheetRow = {
 	surface: 112,
 	/** subsurface hue, saturation, value (0 without `_SUBSURFACE`), indirect strength */
 	subsurface: 116,
-	/** 0 (the vertex offset's switch), `_IndirectSaturation`, 0, 0 */
+	/** the `VertexMotion` (the soft body's, or none), `_IndirectSaturation`, 0, 0 */
 	misc: 120,
+	/** a soft body's offset minimum and frame count, in the stack's reveal rows, which sheets don't have */
+	softMin: 160,
+	/**
+	 * a soft body's offset range, then how its rotation texture in {@link ROTATION_SLOT} stores the normals'
+	 * quaternions: 1 as `q / 2 + 0.5`, 2 as they are
+	 */
+	softRange: 164,
 } as const;
+
+/** the slot of a soft body's rotation texture, the flipbook's motion vectors' otherwise */
+export const ROTATION_SLOT = 5;
 
 /** {@link WaterSheetRow.flags} bits, matching `effect.wgsl` */
 export const WaterSheetFlags = {
@@ -62,7 +75,8 @@ export const WaterSheetFlags = {
 
 /**
  * a VFXWater sheet ({@link WaterSheetSurface}): main, disturb, mask, dissolve, flipbook and its motion
- * vectors in slots 0–5, and slot 6 whichever normals it uses
+ * vectors in slots 0–5, and slot 6 whichever normals it uses; a soft body's rotation and position textures
+ * take slots 5 and 6 instead
  *
  * @param sheet the sheet
  * @returns its look
@@ -126,7 +140,18 @@ export const waterSheetLook = (sheet: WaterSheetSurface): EffectLook => {
 	params.set([...sequence.tint, textures.normals?.scale ?? 1], WaterSheetRow.sequenceTint);
 	params.set([sheet.roughness, sheet.specular, sheet.directSpecular, sheet.fresnel], WaterSheetRow.surface);
 	params.set(sheet.subsurface, WaterSheetRow.subsurface);
-	params.set([0, sheet.indirectSaturation, 0, 0], WaterSheetRow.misc);
+	const { softBody } = sheet;
+	if (softBody !== null) {
+		// the vertex stage reads both textures; no flag marks them, so the fragment stage leaves them alone
+		setSoftBodySlot(look, softBody);
+		setSlot(look, ROTATION_SLOT, still(softBody.rotation), ROLE_NONE);
+		params.set([...softBody.min, softBody.frameCount], WaterSheetRow.softMin);
+		params.set([...softBody.range, softBody.rotationPacked ? 1 : 2], WaterSheetRow.softRange);
+	}
+	params.set(
+		[softBody === null ? VertexMotion.None : VertexMotion.SoftBody, sheet.indirectSaturation, 0, 0],
+		WaterSheetRow.misc,
+	);
 	params.set(
 		[sheet.soft?.distance ?? 0, sheet.soft?.bias ?? 0, sheet.ignorePostExposure, sheet.vertexColor ? 1 : 0],
 		EffectRow.soft,

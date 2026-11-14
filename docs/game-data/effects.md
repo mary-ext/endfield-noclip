@@ -257,6 +257,17 @@ times `_boundMinZ` and `_boundMaxX` (1 for the bounds seen). textures of HDR off
 the wobbling blob at the heart of the Hub's Aurelyne (`M_erosionmud_core`, map01_lv001 near unity
 −104, 118, −534) is one, 100 frames looped 3.5 times a second.
 
+[VFXWater](#waterfalls) has the same keyword and vertex stage, and shades with the turned normal
+(8-bit rotation textures store `q / 2 + 0.5`). without `_B_autoPlayback` its frame is
+`floor(_displayFrame + d) − 1`, d a per-draw value whose writer isn't traced (taken as 0), plus the
+particle's custom data w under `_HoudiniVATInParticle`. the water pouring off the scoops of Qingbo's
+octagonal waterwheels (`M_fx_xiaoshuiche` on two mesh renderers of
+`p_igroup_map02_sfwaterwheel+2_004_01`, 400 frames at 60 a second) is such, and nothing in the
+material plays it: the wheel's [Animator clip](animation.md#scenery-animators) animates
+`_displayFrame` on each renderer, four ramps from 1 to 375 over its 25 s loop, the two renderers
+half a ramp apart, along with `_TintColorAlpha` and `_DissolveScheduleOffset`, which fade each pour
+in and out.
+
 ## VFXDecal
 
 `HGRP/Effect/VFXDecal` draws a unit box (`s_fx_particle_decal_cube`): each covered pixel finds the

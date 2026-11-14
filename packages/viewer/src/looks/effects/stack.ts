@@ -41,9 +41,9 @@ const SOURCES: Record<EffectUvSource, SlotSource> = {
 
 /**
  * how the vertex stage moves an effect's vertices ({@link EffectRow.offsetMode} x). with the soft body, the
- * {@link OFFSET_SLOT} holds the position texture, its UV row UV1's u scale and the frame rows' scale, its
- * scroll row the cycles per second and the phase; {@link EffectRow.offsetDir} holds the offset's minimum and
- * the frame count, and {@link EffectRow.offset} its range
+ * {@link OFFSET_SLOT} holds the position texture ({@link setSoftBodySlot}); {@link EffectRow.offsetDir} holds
+ * the offset's minimum and the frame count, and {@link EffectRow.offset} its range. a water sheet's soft body
+ * keeps those two rows elsewhere (`WaterSheetRow.softMin`)
  */
 export const VertexMotion = {
 	None: 0,
@@ -94,9 +94,14 @@ const setVertexOffset = (look: EffectLook, offset: EffectVertexOffset): void => 
 	}
 };
 
-/** the soft-body animation's slot and rows ({@link VertexMotion}) */
-const setSoftBody = (look: EffectLook, body: EffectSoftBody): void => {
-	const params = look.params;
+/**
+ * binds a soft body's position texture to the {@link OFFSET_SLOT}, whose UV row holds UV1's u scale and the
+ * frame rows' scale and whose scroll row the cycles per second and the phase
+ *
+ * @param look the look to change
+ * @param body the animation
+ */
+export const setSoftBodySlot = (look: EffectLook, body: EffectSoftBody): void => {
 	// a fixed frame is a still phase in the middle of its frame
 	const rate = body.fixedFrame === null ? body.cycleRate : 0;
 	const phase =
@@ -114,6 +119,12 @@ const setSoftBody = (look: EffectLook, body: EffectSoftBody): void => {
 		},
 		ROLE_NONE,
 	);
+};
+
+/** the soft-body animation's slot and rows ({@link VertexMotion}) */
+const setSoftBody = (look: EffectLook, body: EffectSoftBody): void => {
+	const params = look.params;
+	setSoftBodySlot(look, body);
 	params.set([...body.min, body.frameCount], EffectRow.offsetDir);
 	params.set(body.range, EffectRow.offset);
 	params[EffectRow.offsetMode] = VertexMotion.SoftBody;

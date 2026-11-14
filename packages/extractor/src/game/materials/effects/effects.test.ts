@@ -1550,6 +1550,62 @@ describe('VFXWater', () => {
 		assert.deepEqual([sheet.mainAsAlpha, sheet.maskAsAlpha, sheet.vertexColor], [true, true, true]);
 		assert.deepEqual(sheet.soft, { distance: 3, bias: 0 });
 		assert.equal(describeMaterial(material({ keywords: ['VFX_WATER_REFRACT'] }), water).kind, 'unsupported');
+		assert.equal(sheet.softBody, null);
+	});
+
+	it('keeps a soft body: the position and rotation textures, and the frame its material holds', () => {
+		// the water Qingbo's waterwheels pour (`M_fx_xiaoshuiche`), as the wheel's clip leaves its frame
+		const water = shader('HGRP/Effect/VFXWater', 'water', { textures: { _MainTex: 'white' } });
+		const poured = (overrides: Partial<MaterialValues> = {}) =>
+			describeMaterial(
+				material({
+					keywords: ['_SUBSURFACE', '_USE_DISSOLVE', '_USE_DISTURB', '_USE_SOFTBLEND', '_VAT_SOFTBODY'],
+					slots: {
+						_MainTex: slot(1, [0.96, 0.1]),
+						_DisturbTex1: slot(2, [1, 0.5]),
+						_DissolveTex: slot(3, [1, 0.2]),
+						_PositionTexture: slot(4),
+						_RotationTexture: slot(5),
+					},
+					floats: {
+						_TextureFormat: 1,
+						_frameCount: 400,
+						_houdiniFPS: 60,
+						_playbackSpeed: 1,
+						_displayFrame: 38.0013,
+						_boundMaxX: 26.6,
+						_boundMaxY: 3.1,
+						_boundMaxZ: 4.15,
+						_boundMinX: 0.7,
+						_boundMinY: -41.101,
+						_boundMinZ: -4,
+					},
+					...overrides,
+				}),
+				water,
+			);
+		const sheet = ofKind(poured(), 'waterSheet');
+		assert.deepEqual(sheet.softBody, {
+			texture: 4,
+			// HDR textures hold the offsets and quaternions themselves
+			min: [0, 0, 0],
+			range: [1, 1, 1],
+			frameCount: 400,
+			cycleRate: 60 / 399.99,
+			cycleStart: 0,
+			// `_displayFrame` is 1-based
+			fixedFrame: 37,
+			uScale: 1,
+			vScale: 1,
+			rotation: 5,
+			rotationPacked: false,
+		});
+		assert.equal(sheet.textures.normals, null);
+		// its two textures take the flipbook's and the normal map's slots
+		const flipbook = poured({ keywords: ['_VAT_SOFTBODY', '_USE_SEQUENCE_FRAME'] });
+		assert.equal(flipbook.kind, 'unsupported');
+		const unturned = poured({ slots: { _PositionTexture: slot(4) } });
+		assert.equal(unturned.kind, 'unsupported');
 	});
 });
 
