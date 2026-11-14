@@ -30,6 +30,7 @@ import {
 	particleShapeMesh,
 	readParticleSystem,
 	ScalingMode,
+	SimulationSpace,
 } from '../effects/particle-system.ts';
 import { isSplineMoverType, splineMoverRenderers } from '../effects/spline-movers.ts';
 
@@ -321,6 +322,10 @@ const collectParticles: NodeStep = async (walk, node, state) => {
 			billboard: null,
 		});
 		walk.candidates.push(candidate);
+		// a custom simulation space's Transform is taken to hold still, as the world does
+		if (numberField(system.data, 'moveWithTransform') !== SimulationSpace.Local) {
+			walk.worldSimulated.add(candidate);
+		}
 		if (read.forces !== null) {
 			walk.pendingForces.set(candidate, {
 				system: system.ref,

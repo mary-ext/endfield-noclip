@@ -35,7 +35,7 @@ import {
 	rendererVisitor,
 	type RendererWalk,
 } from './renderer-walk.ts';
-import { type PoseFrames, poseFrames, poseSkin, skinMotion } from './skin-pose.ts';
+import { emitterMotion, type PoseFrames, poseFrames, poseSkin, skinMotion } from './skin-pose.ts';
 
 // #region types
 
@@ -275,8 +275,23 @@ const assembleRenderer = async (
 	}
 	let matrix = candidate.matrix;
 	let bounds = aabbField(mesh, 'm_LocalAABB');
-	if (candidate.particles !== null) {
-		bounds = particleReach(candidate.particles, Math.hypot(...bounds.center) + Math.hypot(...bounds.extents));
+	let particles = candidate.particles;
+	if (particles !== null) {
+		bounds = particleReach(particles, Math.hypot(...bounds.center) + Math.hypot(...bounds.extents));
+		const transform = walk.candidateTransforms.get(candidate);
+		const placed = transform === undefined ? undefined : walk.transforms.get(transform);
+		if (frames !== null && transform !== undefined && placed !== undefined) {
+			// the emitter is drawn where the clip ends, and moves from there as it plays
+			const moving = emitterMotion(
+				frames,
+				{ transform, placed, matrix, inWorld: walk.worldSimulated.has(candidate) },
+				bounds,
+			);
+			if (moving !== null) {
+				particles = { ...particles, emitterMotion: moving.motion };
+				bounds = moving.bounds;
+			}
+		}
 	}
 	let skin: Float32Array[] | null = null;
 	let motion: RendererMotion | null = null;
@@ -345,7 +360,7 @@ const assembleRenderer = async (
 			layer: optionalNumberField(candidate.data, 'm_SortingLayer') ?? 0,
 			order: optionalNumberField(candidate.data, 'm_SortingOrder') ?? 0,
 		},
-		particles: candidate.particles,
+		particles,
 		unsupported,
 		// a renderer the clip moves takes the identity matrix
 		ownSize: candidate.ownSize && motion === null,

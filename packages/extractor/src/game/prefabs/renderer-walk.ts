@@ -158,6 +158,8 @@ export interface RendererWalk {
 	forceFields: Map<string, PlacedForceField>;
 	/** by candidate, the played systems whose force fields are resolved after the walk */
 	pendingForces: Map<RendererCandidate, PendingForces>;
+	/** the played systems simulated in world space, whose particles stay where a moving emitter left them */
+	worldSimulated: Set<RendererCandidate>;
 }
 
 /**
@@ -190,6 +192,7 @@ export const createRendererWalk = (
 	followers: new Map(),
 	forceFields: new Map(),
 	pendingForces: new Map(),
+	worldSimulated: new Set(),
 });
 
 /**

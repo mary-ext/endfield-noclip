@@ -109,7 +109,12 @@ set its model's parameters as it loads
   bindings (ZXY) turn the wheel's Transforms about their z: two from 0° to −360°, one from 45° to
   360°, which wraps by an eighth of a turn and so looks seamless on the eight-sided wheel. the same
   clip sets a value on two water-sheet MonoBehaviours, switches three GameObjects and sets renderer
-  material properties.
+  material properties. it also carries the two pour emitters (`bigwater_01`, 26 m out from the hub
+  at hub height in the prefab's units) under `rotate/rotate2` in the effect child
+  `P_fxmap_map02_lv003_sfwaterwheel_01`: `rotate` turns steadily with the wheel, 0° to −360°, while
+  `rotate2` steps +45° every 3.125 s, so each emitter rides one scoop up for an eighth of a turn,
+  from about 30° below hub height to about 15° above it, then jumps back to the next. their emission
+  ([rate over time](particles.md#emission-and-lifetime)) loops in the same 3.125 s.
 
 ### decoration animators
 

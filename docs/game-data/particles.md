@@ -38,6 +38,13 @@ stretched 1, horizontal 2, vertical 3.
   systems cap at 2 particles but emit four per loop, each puff fading in and out over its life.
   Jingyu Valley's fish school relies on mode 1: its one burst lives 5–10 s, then swims on in its
   force field for good.
+- **simulation space.** `moveWithTransform` is Unity's simulation space: 0 Local, where the
+  particles move with the system's Transform, 1 World, where each stays where it was emitted and
+  moves on its own, and 2 Custom, relative to `moveWithCustomTransform`. it shows only on an emitter
+  that moves: the pour emitters of Qingbo's octagonal waterwheels (`bigwater_01 (6)` and `(7)` in
+  `p_igroup_map02_sfwaterwheel+2_004_01`) are World systems their prefab's clip carries round
+  ([scenery animators](animation.md#scenery-animators)), so the water falls from where each scoop
+  was. the splash at the wheel's foot (`huihuagenbu (2)`) holds still.
 - **donut shape.** `ShapeModule.type` 17 emits from a torus: `radius` around the shape's z,
   `donutRadius` the tube's, `radiusThickness` the tube's outer part used, each particle leaving
   outwards from the tube's centre line, as Unity documents it (not checked against the engine). the

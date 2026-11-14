@@ -798,6 +798,12 @@ sizes them unless the mode is Shape. the entry keeps:
 - the render alignment (Facing is kept as View; Velocity too) and pivot, in multiples of the
   particle's size: a mesh particle's pivot is first multiplied by the mesh's size
   ([pivot](game-data/particles.md#particle-systems))
+- `emitterMotion`, when a looping clip the prefab plays
+  ([scenery animators](extraction/prefabs-and-interactives.md#scenery-animators)) moves the system's
+  Transform: whether its particles are simulated in the world (any `moveWithTransform` but Local; a
+  custom space's Transform is taken to hold still), and the emitter's frame at each frame of the
+  clip, at most 30 a second, as rows3x4 matrices into the frame the draw is placed in (the clip's
+  end pose), rounded to 1e-5. the bounds then hold everywhere the moving emitter's particles reach
 - the ring buffer mode and `ringBufferLoopRange`
 - the texture sheet: `UVModule` in grid mode, up to 64×64 tiles, the whole sheet or one row (fixed,
   random or by mesh; `rows`, a union on its kind), timed over the lifetime by `frameOverTime` and

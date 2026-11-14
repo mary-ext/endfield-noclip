@@ -1,6 +1,12 @@
-import { multiplyMatrices, trsMatrix, transformBounds } from '@endfield-noclip/formats/unity/transform';
+import {
+	inverseAffine,
+	multiplyMatrices,
+	trsMatrix,
+	transformBounds,
+} from '@endfield-noclip/formats/unity/transform';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import { arrayField, asPPtr, isObject, numberField, type Aabb } from '@endfield-noclip/formats/unity/values';
+import type { ParticleEmitterMotion } from '@endfield-noclip/package-format/particles';
 
 import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
 import type { LocalTransform } from '../effects/particle-mesh.ts';
@@ -187,6 +193,60 @@ export const skinMotion = (
 	}
 	return {
 		motion: { boneCount, frameCount, frameRate: frames.frameRate, matrices },
+		bounds: boxBounds(min, max),
+	};
+};
+
+/** the most frames a second an emitter's motion keeps: emission points between them barely differ */
+const EMITTER_FRAME_RATE = 30;
+
+/**
+ * @param frames the prefab's Transforms at each frame of its looping clip
+ * @param emitter the system's Transform key, its prefab-space matrix as the walk placed it (the clip's end
+ *   pose), the emitter matrix its draw is placed with, and whether its particles are simulated in the world
+ * @param reach the bounds its particles reach, in the emitter's frame
+ * @returns the emitter's motion relative to its draw's frame and the bounds its particles reach in that frame
+ *   over the whole clip, or `null` when the clip doesn't move it
+ */
+export const emitterMotion = (
+	frames: PoseFrames,
+	emitter: { transform: string; placed: Float32Array; matrix: Float32Array; inWorld: boolean },
+	reach: Aabb,
+): { motion: ParticleEmitterMotion; bounds: Aabb } | null => {
+	const step = Math.max(Math.round(frames.frameRate / EMITTER_FRAME_RATE), 1);
+	// the emitter matrix is the Transform's times a fixed correction (a scaling mode dropping the parents'
+	// scale), so the Transform's motion, seen from the emitter's frame, is the emitter's
+	const toEmitter = inverseAffine(emitter.matrix);
+	const fromPlaced = multiplyMatrices(inverseAffine(emitter.placed), emitter.matrix);
+	const values: number[] = [];
+	const min = [Infinity, Infinity, Infinity];
+	const max = [-Infinity, -Infinity, -Infinity];
+	let moves = false;
+	for (let frame = 0; frame < frames.matrices.length; frame += step) {
+		const transform = frames.matrices[frame].get(emitter.transform);
+		if (transform === undefined) {
+			return null;
+		}
+		const relative = multiplyMatrices(toEmitter, multiplyMatrices(transform, fromPlaced));
+		// column-major to rows3x4, rounded: the motion is stored in the package's JSON
+		for (let row = 0; row < 3; row++) {
+			for (let column = 0; column < 4; column++) {
+				const value = Math.round(relative[column * 4 + row] * 1e5) / 1e5;
+				moves ||= Math.abs(value - (row === column ? 1 : 0)) > STILL;
+				values.push(value);
+			}
+		}
+		const box = transformBounds(reach, relative);
+		for (let axis = 0; axis < 3; axis++) {
+			min[axis] = Math.min(min[axis], box.center[axis] - box.extents[axis]);
+			max[axis] = Math.max(max[axis], box.center[axis] + box.extents[axis]);
+		}
+	}
+	if (!moves) {
+		return null;
+	}
+	return {
+		motion: { inWorld: emitter.inWorld, frameRate: frames.frameRate / step, frames: values },
 		bounds: boxBounds(min, max),
 	};
 };

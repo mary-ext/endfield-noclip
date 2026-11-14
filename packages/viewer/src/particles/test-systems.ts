@@ -96,6 +96,7 @@ const fields = (
 		angle: 2,
 		...placement,
 	},
+	emitterMotion: null,
 	sizeOverLifetime: null,
 	rotationOverLifetime: null,
 	alignment: ParticleAlignment.View,

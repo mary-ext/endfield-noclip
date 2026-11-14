@@ -361,6 +361,8 @@ export interface ParticleSystemInfo {
 	shape: ParticleShapeInfo | null;
 	/** how the particles move from where the shape starts them */
 	motion: ParticleMotionInfo;
+	/** how a looping clip moves the emitter; `null` when it holds still */
+	emitterMotion: ParticleEmitterMotion | null;
 	/** a multiplier of the start size over each particle's lifetime, per axis; `null` without */
 	sizeOverLifetime: [MinMaxCurveInfo, MinMaxCurveInfo, MinMaxCurveInfo] | null;
 	/**
@@ -396,6 +398,27 @@ export interface ParticleSystemInfo {
 	 * renderer passes none
 	 */
 	customData: [ParticleCustom, ParticleCustom, ParticleCustom, ParticleCustom] | null;
+}
+
+/**
+ * an emitter a looping clip moves, as a scenery animator plays it: the clip starts with the viewer's clock,
+ * as rigidly animated meshes do, and the system plays from the same moment. the emitter's draw is placed
+ * where the clip ends; each frame says where the emitter is relative to that
+ */
+export interface ParticleEmitterMotion {
+	/**
+	 * whether the particles are simulated in the world (Unity's `World` simulation space), so each starts from
+	 * where the emitter was when it was emitted and then moves on its own; otherwise they move with the
+	 * emitter
+	 */
+	inWorld: boolean;
+	/** frames per second */
+	frameRate: number;
+	/**
+	 * per frame, a rows3x4 matrix (12 numbers, row-major) taking the emitter's frame at that time into the
+	 * frame its draw is placed in. the clip loops after the last frame
+	 */
+	frames: number[];
 }
 
 /** one component of {@link ParticleSystemInfo.customData} */

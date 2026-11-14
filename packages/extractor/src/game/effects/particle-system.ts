@@ -76,6 +76,15 @@ export const ScalingMode = {
 	Shape: 2,
 } as const;
 
+/** `ParticleSystem.moveWithTransform` values, Unity's `ParticleSystemSimulationSpace` */
+export const SimulationSpace = {
+	/** particles move with the system's Transform */
+	Local: 0,
+	World: 1,
+	/** particles move with `moveWithCustomTransform` */
+	Custom: 2,
+} as const;
+
 /** shapes the viewer emits from, by `ShapeModule.type` */
 const SHAPES = new Set<number>(Object.values(ParticleShapeKind));
 const isShapeKind = (kind: number): kind is ParticleShapeKind => SHAPES.has(kind);
@@ -972,6 +981,8 @@ export const readParticleSystem = (
 				// the caller resolves the fields
 				forces: null,
 			},
+			// the prefab reader adds the clip's motion
+			emitterMotion: null,
 			sizeOverLifetime,
 			rotationOverLifetime,
 			alignment,

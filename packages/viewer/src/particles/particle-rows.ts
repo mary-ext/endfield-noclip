@@ -20,6 +20,7 @@ import { times3Columns, times3ColumnsInto } from '../math/mat3.ts';
 import { type Quat, rotateInto, turnFromZInto } from '../math/quat.ts';
 import { normalizeOrZ, normalizeOrZInto } from '../math/vec3.ts';
 
+import { emitterFrameInto, multiplyRowsInto } from './emitter-motion.ts';
 import { hash2, hashText } from './random.ts';
 import { MAX_PARTICLES, PARTICLE_FLOATS, ParticleFloat, ParticleSimulation } from './simulation.ts';
 import { velocityBasisInto } from './vector-math.ts';
@@ -416,8 +417,14 @@ const rowContext = (
 interface Emitter {
 	simulation: ParticleSimulation;
 	rows: RangeAllocation;
-	/** the viewer time the emitter was first drawn, which non-looping systems start from */
+	/** the viewer time its system time counts from: when the emitter was first drawn, or 0 for a moving one */
 	start: number;
+	/**
+	 * its system time at {@link start}: 0 for a system that plays once, else long enough for it to look as if it
+	 * had always played; for a moving emitter, a whole number of loops, so its loops keep in step with the
+	 * clip
+	 */
+	offset: number;
 	/** the frame its rows were last written */
 	frame: number;
 	/** global indices of the rows holding live particles */
@@ -459,6 +466,9 @@ export class ParticleField {
 	readonly #rowsF32 = new Float32Array(this.#rows.buffer);
 	/** the emitter being written's transform, its columns and their lengths (`#write`, `#toLocal`) */
 	readonly #m = new Float64Array(12);
+	/** a moving emitter's frame relative to its row's (`#write`) and its row's own transform */
+	readonly #emittedAt = new Float64Array(12);
+	readonly #placed = new Float64Array(12);
 	readonly #columns: [Vec3, Vec3, Vec3] = [vec3(), vec3(), vec3()];
 	readonly #scales = vec3();
 	/** world down in the emitter's frame (`#write`) */
@@ -539,10 +549,20 @@ export class ParticleField {
 			if (rows === null) {
 				return NO_ROWS;
 			}
+			// a moving emitter's system plays from where its clip starts, the viewer's clock's 0, as in the game, where
+			// both start as the prefab loads
+			const moving = info.emitterMotion !== null;
+			let offset = 0;
+			if (info.looping) {
+				offset = moving
+					? Math.ceil(simulation.settleTime / info.duration) * info.duration
+					: simulation.settleTime;
+			}
 			emitter = {
 				simulation,
 				rows,
-				start: view.time,
+				start: moving && info.looping ? 0 : view.time,
+				offset,
 				frame: -1,
 				live: [],
 			};
@@ -591,6 +611,11 @@ export class ParticleField {
 		for (let i = 0; i < 12; i++) {
 			m[i] = f32[at + i];
 		}
+		this.#columnsOf(m);
+	}
+
+	/** sets {@link #columns} and {@link #scales} from a rows3x4 transform */
+	#columnsOf(m: Float64Array): void {
 		for (let i = 0; i < 3; i++) {
 			const column = this.#columns[i];
 			column[0] = m[i];
@@ -605,8 +630,26 @@ export class ParticleField {
 		const info = simulation.info;
 		this.#readFrame(block.rowsF32, row * ROW_WORDS);
 		const m = this.#m;
-		const elapsed = (view.time - emitter.start) * info.simulationSpeed;
-		const time = info.looping ? elapsed + simulation.settleTime : elapsed;
+		const speed = info.simulationSpeed;
+		const time = (view.time - emitter.start) * speed + emitter.offset;
+		const motion = info.emitterMotion;
+		let emittedFrom: ((born: number) => Readonly<Float64Array>) | undefined;
+		if (motion !== null) {
+			if (motion.inWorld) {
+				// each particle leaves from where the emitter was when it was emitted, the clip read at that moment
+				const at = this.#emittedAt;
+				emittedFrom = (born) =>
+					emitterFrameInto(motion, (born - emitter.offset) / Math.max(speed, 1e-6) + emitter.start, at);
+			} else {
+				// the particles move with the emitter, so the whole system is where the clip has it now
+				const placed = this.#placed;
+				for (let i = 0; i < 12; i++) {
+					placed[i] = m[i];
+				}
+				multiplyRowsInto(m, placed, emitterFrameInto(motion, view.time, this.#emittedAt));
+				this.#columnsOf(m);
+			}
+		}
 		// derived once per frame, since the simulation reuses it for every particle
 		const down = this.#down;
 		const local = this.#toLocal(WORLD_DOWN);
@@ -619,6 +662,7 @@ export class ParticleField {
 			down,
 			this.#toLocal,
 			particles.subarray(0, Math.min(emitter.rows.count, MAX_PARTICLES) * PARTICLE_FLOATS),
+			emittedFrom,
 		);
 		const context = rowContext(info, view, block, m, this.#columns, this.#scales);
 		const { sizing, billboard, pivoted, shape } = context;

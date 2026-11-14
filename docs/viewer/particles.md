@@ -163,6 +163,20 @@ system and its index, so any moment can be evaluated on its own:
 - colour is the start colour (read at the emission's place in its loop) times the colour over
   lifetime, blended in the authored colour space, then made linear into the row's colour word.
 
+### moving emitters
+
+an emitter a looping clip moves ([package format](../package-format.md#particles)) is drawn where
+the clip ends and carries its frames relative to that
+([`emitter-motion.ts`](../../packages/viewer/src/particles/emitter-motion.ts)). the clip plays by
+the viewer's clock from its zero, as rigidly animated meshes do, and a looping system's time runs
+from the same zero, offset by whole loops, so its emission keeps in step with the clip as the game's
+does when both start with the prefab. `emitterFrameInto` holds each stored frame until the next. a
+particle simulated in the world leaves from the shape where the emitter was at its emission (the
+clip read at that moment) and moves on from there in the draw's frame, so gravity and the speed
+limit act as for a still emitter; a local one is drawn in the frame the clip has now. Qingbo's
+octagonal waterwheels pour so: each of the two pour emitters rides a scoop up out of the river and
+pours while it rises ([scenery animators](../game-data/animation.md#scenery-animators)).
+
 ## custom data
 
 custom data (`customData` in the [package](../package-format.md#particles)) is read with the rest of

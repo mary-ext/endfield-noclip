@@ -264,6 +264,10 @@ clips holding their end poses.
   goes) drops the motion and records the gap `material values a looping clip plays`. vector and
   colour components, the curves of ACL-compressed clips and any looping clip after a renderer's
   first hold their end values.
+- a played particle system whose Transform the clip moves is placed at the end pose and keeps its
+  emitter's frame at each frame relative to it (`emitterMotion` in
+  [skin-pose.ts](../../packages/extractor/src/game/prefabs/skin-pose.ts)), at most 30 a second, as
+  [the package's](../package-format.md#particles) `emitterMotion`.
 - a clip the sampler can't read holds its end pose.
 
 the balloon's tube (`int_balloon_postmodel`) and the regional upgrade terminal's robot

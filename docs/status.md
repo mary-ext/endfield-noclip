@@ -547,7 +547,10 @@ packs or renders correctly.
   [scenery animators](game-data/animation.md#scenery-animators) play their controllers' settled
   states; a looping clip's GameObject switches hold their end values (its material values as
   [above](#interactives-and-animation)), and each moving renderer stores every frame (Qingbo's
-  octagonal waterwheels: dozens of renderers over more than a thousand frames). of
+  octagonal waterwheels: dozens of renderers over more than a thousand frames). particle emitters it
+  moves [play along](viewer/particles.md#moving-emitters), but a world-simulated one's velocity
+  module and force fields keep the end pose's frame, and a local one feels gravity in the frame the
+  clip has now rather than gathering it step by step. of
   [ACL-compressed clips](game-data/animation.md#acl-compressed-clips) only the Transform tracks
   play: float tracks and root motion aren't decoded, and buffers with a database, non-trivial
   default values or Euler bindings hold their end pose. blend-tree states, additive or

@@ -308,6 +308,8 @@ export class ParticleSimulation {
 	#down: Readonly<Vec3> = ZERO;
 	/** turns a world direction into the emitter's frame, for the current {@link evaluate} */
 	#worldToLocal: (direction: Vec3) => Vec3 = (direction) => direction;
+	/** where a moving emitter was at an emission, for the current {@link evaluate}; `null` when it holds still */
+	#emittedFrom: ((born: number) => Readonly<Float64Array>) | null = null;
 	/** the particle being placed's random value for a channel */
 	readonly #randomOf = (channel: number): number => random(this.#seed, placing.id, channel);
 
@@ -401,11 +403,21 @@ export class ParticleSimulation {
 	 *   result is read before the next call, so it may reuse one array
 	 * @param out {@link PARTICLE_FLOATS} floats per particle: position in the emitter's frame, rotation, size,
 	 *   texture sheet tile
+	 * @param emittedFrom for an emitter that moves while its particles stay in the world, where it was at a
+	 *   system time: a rows3x4 matrix taking its frame then into the frame `time`'s particles are written in,
+	 *   which each particle starts from. its result is read before the next call, so it may reuse one array
 	 * @returns how many particles were written (at most `out.length / PARTICLE_FLOATS`)
 	 */
-	evaluate(time: number, down: Vec3, worldToLocal: (direction: Vec3) => Vec3, out: Float32Array): number {
+	evaluate(
+		time: number,
+		down: Vec3,
+		worldToLocal: (direction: Vec3) => Vec3,
+		out: Float32Array,
+		emittedFrom?: (born: number) => Readonly<Float64Array>,
+	): number {
 		this.#down = down;
 		this.#worldToLocal = worldToLocal;
+		this.#emittedFrom = emittedFrom ?? null;
 		const emissions = this.#capped ? this.#admit(time) : this.#emitted(time - this.#lookback, time);
 		this.#steppedNow.clear();
 		const capacity = Math.floor(out.length / PARTICLE_FLOATS);
@@ -1058,6 +1070,22 @@ export class ParticleSimulation {
 		const u = this.#loopFraction(born);
 		const start = begin.position;
 		this.#start(id, start, begin.direction);
+		if (this.#emittedFrom !== null) {
+			// it leaves from the shape where the emitter was then, and moves on in the world from there
+			const m = this.#emittedFrom(born);
+			const [x, y, z] = start;
+			start[0] = m[0] * x + m[1] * y + m[2] * z + m[3];
+			start[1] = m[4] * x + m[5] * y + m[6] * z + m[7];
+			start[2] = m[8] * x + m[9] * y + m[10] * z + m[11];
+			const direction = begin.direction;
+			const [dx, dy, dz] = direction;
+			normalizeOrZInto(
+				direction,
+				m[0] * dx + m[1] * dy + m[2] * dz,
+				m[4] * dx + m[5] * dy + m[6] * dz,
+				m[8] * dx + m[9] * dy + m[10] * dz,
+			);
+		}
 		const lived = life > 0 ? age / life : 0;
 		const sizeRandom = random(seed, id, Channel.Size);
 		const growth = random(seed, id, Channel.SizeOverLifetime);

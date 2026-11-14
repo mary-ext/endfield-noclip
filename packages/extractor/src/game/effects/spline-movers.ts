@@ -331,6 +331,7 @@ export const readSplineMover = (data: TypeTreeObject): SplineMoverRead => {
 				randomPosition: 0,
 			},
 			motion: { kind: 'spline', segments, speed },
+			emitterMotion: null,
 			sizeOverLifetime: [growth, growth, growth],
 			rotationOverLifetime: null,
 			alignment: ParticleAlignment.Local,
