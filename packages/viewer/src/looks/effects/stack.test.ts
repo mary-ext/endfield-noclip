@@ -73,6 +73,8 @@ const stack = (overrides: Partial<EffectStackSurface> = {}): EffectStackSurface 
 	stencil: null,
 	appear: null,
 	parallax: null,
+	normalMap: null,
+	emission: null,
 	...overrides,
 });
 
@@ -107,6 +109,33 @@ test('a texture stack packs its normal-read distortion and vertex-coloured blend
 	assert.deepEqual([on[EffectRow.disturbNormal], on[EffectRow.blendVertexColor]], [1, 1]);
 	const off = params({});
 	assert.deepEqual([off[EffectRow.disturbNormal], off[EffectRow.blendVertexColor]], [0, 0]);
+});
+
+test('a texture stack’s Fresnel colour, normal map and emission fill the rows past the reveal', () => {
+	const [look] = materialLooks({
+		entries: [
+			described(
+				stack({
+					variant: 'advance',
+					fresnel: { power: 10, bias: 0.85, flip: 0, opacity: 0, color: [1.2, 1.25, 1.5, 1], facing: true },
+					normalMap: { slot: 5, texture: texture(7, { scroll: [0, 0.5] }), source: 'uv1', scale: 1.5 },
+					emission: { slot: 6, texture: texture(8), color: [2, 2, 2] },
+				}),
+			),
+		],
+	});
+	assert.deepEqual(look.textures.slice(5), [7, 8]);
+	assert.deepEqual(
+		[...look.params.subarray(EffectRow.fresnelColor, EffectRow.emission + 4)],
+		[1.2, 1.25, 1.5, 1, 5, 1.5, 1, 0, 2, 2, 2, 6].map(Math.fround),
+	);
+	// neither slot joins the stack's loop; the normal map keeps its UV source
+	assert.deepEqual(
+		[look.params[EffectRow.slotBits + 5], look.params[EffectRow.slotBits + 6]],
+		[ROLE_NONE + SlotSource.Uv1 * 32, ROLE_NONE],
+	);
+	assert.deepEqual([...look.params.subarray(EffectRow.anim + 5 * 4, EffectRow.anim + 5 * 4 + 2)], [0, 0.5]);
+	assert.ok(EffectRow.emission + 4 <= LOOK_FLOATS);
 });
 
 test('a texture stack packs each layer’s role, red alpha, source and distortion share into its slot bits', () => {

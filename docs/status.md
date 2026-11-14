@@ -298,10 +298,12 @@ packs or renders correctly.
   and these shaders' undrawn variants show as
   [unsupported](viewer/materials.md#unsupported-materials)
   - [VFXAdvance](game-data/effects.md#vfxadvance): the second disturb texture, polar and screen UVs,
-    edge colour, interiors, `_FogIntensity` and a Fresnel colour aren't drawn. the dissolving walls,
-    Yinglung Pass's ink rooms (`…_inkroom_floor_*`, the `inkarea_*` walls, shown only within 8 m of
-    the camera) and Si's Painting's ink road over the cave falls (which draws mostly white) are
-    unchecked against an in-game shot, and the ink simulation isn't run
+    edge colour, interiors and `_FogIntensity` aren't drawn. the Fresnel colour on lit
+    (`_USE_LIGHTING`) VFXBaseV2 layers mixes in before the lighting, which no dump checks; Deep Dale
+    Street's normal-mapped floating rocks are unchecked against an in-game shot. the dissolving
+    walls, Yinglung Pass's ink rooms (`…_inkroom_floor_*`, the `inkarea_*` walls, shown only within
+    8 m of the camera) and Si's Painting's ink road over the cave falls (which draws mostly white)
+    are unchecked against an in-game shot, and the ink simulation isn't run
   - [CharacterNPR_VFX](game-data/effects.md#characternpr_vfx): drawn as VFXAdvance's stack; its
     dissolve, a nonzero `_VertCameraOffset` and its other keywords aren't. on Marker Stone
     Interiors' rift monsters, the shell's screen UVs about the mesh's origin measure from the

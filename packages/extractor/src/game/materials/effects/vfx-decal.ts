@@ -303,5 +303,7 @@ export const describeVfxDecal = (reader: MaterialReader): EffectStackSurface | U
 		stencil: null,
 		appear: null,
 		parallax,
+		normalMap: null,
+		emission: null,
 	};
 };

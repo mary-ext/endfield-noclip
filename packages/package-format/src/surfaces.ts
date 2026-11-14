@@ -910,8 +910,29 @@ export interface EffectStackSurface {
 	 * feeds only its alpha test. elsewhere it scales the colour too
 	 */
 	maskAlphaOnly: boolean;
-	/** the Fresnel term (`_USE_FRESNEL`), flipped by `flip` and applied to the alpha by `opacity` */
-	fresnel: { power: number; bias: number; flip: Weight; opacity: Weight } | null;
+	/**
+	 * the Fresnel term (`_USE_FRESNEL`), flipped by `flip`, applied to the alpha by `opacity`, and mixing the
+	 * colour towards `color`'s rgb (HDR, as stored) by its w times the term. with `facing`, back faces read the
+	 * reversed normal (VFXAdvance); VFXBaseV2 reads the normal as it is
+	 */
+	fresnel: {
+		power: number;
+		bias: number;
+		flip: Weight;
+		opacity: Weight;
+		color: Color;
+		facing: boolean;
+	} | null;
+	/**
+	 * VFXAdvance's `_NORMAL_MAP`: a tangent-space normal map (x from alpha times red) that bends the normal the
+	 * Fresnel term reads, its xy scaled by `scale`; `null` without
+	 */
+	normalMap: { slot: number; texture: EffectTexture; source: EffectUvSource | null; scale: number } | null;
+	/**
+	 * VFXAdvance's `_EMISSION`: the texture's rgb times `color` (HDR) adds to the colour before the Fresnel
+	 * colour mixes in. sampled at UV0 through its `_ST` alone; `null` without
+	 */
+	emission: { slot: number; texture: EffectTexture; color: Rgb } | null;
 	soft: SoftBlend | null;
 	/** `_IgnorePostExposure` */
 	ignorePostExposure: Weight;

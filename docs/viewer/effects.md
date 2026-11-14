@@ -68,13 +68,20 @@ particle meshes play through the [particles](particles.md#particles), which also
 ## VFXAdvance and the reveal
 
 [VFXAdvance](../game-data/effects.md#vfxadvance) materials with only a main texture, the first
-disturb texture, a mask, a blend layer, a dissolve, a Fresnel fade, a soft blend, fog, a vertex
-offset and the reveal draw through the texture stack (`variant: 'advance'`, `describeVfxAdvance`),
-in slots 0–4 (main, disturb, mask, blend, dissolve), the dissolve with VFXBaseV2's sweep and edge
-colour; their other keywords, a Fresnel colour and interiors stay unsupported. two switches in row
-43 of the look cover what only VFXAdvance does: `disturbNormal` reads the disturb texture as a
-normal, and `blendVertexColor` scales the blend tint by the vertex colour. the ink keywords are
-drawn as the game draws them where the ink simulation hasn't run, since the viewer has none.
+disturb texture, a mask, a blend layer, a dissolve, a Fresnel term, a normal map, an emission, a
+soft blend, fog, a vertex offset and the reveal draw through the texture stack
+(`variant: 'advance'`, `describeVfxAdvance`), in slots 0–4 (main, disturb, mask, blend, dissolve),
+the dissolve with VFXBaseV2's sweep and edge colour; their other keywords and interiors stay
+unsupported. the normal map (`EffectStackSurface.normalMap`) and the emission texture take slots 5
+and 6 with no role, so the stack's loop skips them, and `fx_fresnel_normal` and `fx_stack_layer`
+sample them through their own UVs; an emission beside a vertex offset, which would share slot 6,
+stays unsupported. the Fresnel colour, the normal map's slot and scale, the switch that reverses
+back faces' normals, and the emission's colour and slot sit in rows 44–46 of the look
+(`EffectRow.fresnelColor`, `normalMap`, `emission`), which the look grew to 48 rows for. VFXBaseV2's
+Fresnel colour is drawn the same way. two switches in row 43 of the look cover what only VFXAdvance
+does: `disturbNormal` reads the disturb texture as a normal, and `blendVertexColor` scales the blend
+tint by the vertex colour. the ink keywords are drawn as the game draws them where the ink
+simulation hasn't run, since the viewer has none.
 
 [CharacterNPR_VFX](../game-data/effects.md#characternpr_vfx) is classified with VFXAdvance and drawn
 by the same steps (`describeCharacterVfx`), with screen UVs and without the dissolve; a nonzero

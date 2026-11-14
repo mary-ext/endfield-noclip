@@ -110,11 +110,11 @@ export const SLOT_FLAGS = [
 ];
 
 /**
- * floats of a material's draw parameters (`Look` in mesh.wgsl, one per look table slot), 44 rows: mesh looks
+ * floats of a material's draw parameters (`Look` in mesh.wgsl, one per look table slot), 48 rows: mesh looks
  * use the first 36 ({@link LookRow}), effect looks all of them for their own (`EffectRow` in
  * effects/effect-look.ts)
  */
-export const LOOK_FLOATS = 176;
+export const LOOK_FLOATS = 192;
 
 /** one material as the mesh shader draws it */
 export interface MaterialLook {

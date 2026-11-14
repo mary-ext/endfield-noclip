@@ -13,8 +13,8 @@
 // mesh.wgsl's `Draw`: dequantization, flags and look slot (4 vec4s)
 @group(2) @binding(0) var<storage, read> effect_draws: array<array<vec4f, 4>>;
 @group(2) @binding(1) var<storage, read> effect_draw_ids: array<u32>;
-// mesh.wgsl's `looks`: the look's 44 rows (`EffectRow`, `WaterSheetRow` or `MistRow` in mist.ts)
-@group(2) @binding(5) var<storage, read> effect_looks: array<array<vec4f, 44>>;
+// mesh.wgsl's `looks`: the look's 48 rows (`EffectRow`, `WaterSheetRow` or `MistRow` in mist.ts)
+@group(2) @binding(5) var<storage, read> effect_looks: array<array<vec4f, 48>>;
 @group(3) @binding(0) var fx_tex0: texture_2d<f32>;
 @group(3) @binding(1) var fx_tex1: texture_2d<f32>;
 @group(3) @binding(2) var fx_tex2: texture_2d<f32>;
@@ -75,6 +75,11 @@ const FX_CUSTOM_SCROLL = 36u;
 const FX_APPEAR = 40u;
 const FX_APPEAR_NOISE = 41u;
 const FX_APPEAR_BRIGHT = 42u;
+// the Fresnel colour (rgb, cover); the normal map's slot, scale and 1 to reverse back faces' normals; the
+// emission's colour and slot (`EffectRow.fresnelColor`, `normalMap`, `emission`)
+const FX_FRESNEL_COLOR = 44u;
+const FX_NORMAL_MAP = 45u;
+const FX_EMISSION = 46u;
 // the texture stack's switches: the vertex alpha scales the reveal's brightening, the global radii add to the
 // reveal's, the first disturb texture holds a normal, the vertex colour scales the blend tint
 const FX_STACK_FLAGS = 43u;
@@ -107,6 +112,7 @@ fn slot_disturb(bits: u32) -> f32 {
 	return f32(bits >> 8u) / 1024.0;
 }
 
+const FX_HAS_TANGENTS = 1024u;
 const FX_HAS_COLORS = 67108864u;
 
 struct EffectIn {
@@ -139,6 +145,8 @@ struct EffectOut {
 	@location(11) @interpolate(flat) placement_uv: vec4f,
 	// the row's extras: a particle's custom data
 	@location(12) @interpolate(flat) custom: vec4f,
+	// w = bitangent sign, 0 without a tangent
+	@location(13) tangent: vec4f,
 }
 
 // the transparent pass's output (`TRANSPARENT_TARGETS` in render-targets.ts), as in mesh.wgsl: premultiplied
@@ -299,6 +307,11 @@ fn vs_effect(v: EffectIn, @builtin(instance_index) ii: u32) -> EffectOut {
 	out.position = frame.view_proj * vec4f(rel, 1.0);
 	out.rel = rel;
 	out.normal = m * normal;
+	out.tangent = vec4f(0.0);
+	if ((flags & FX_HAS_TANGENTS) != 0u) {
+		let sign = select(-1.0, 1.0, v.tangent.z >= 0.0) * select(-1.0, 1.0, determinant(m) >= 0.0);
+		out.tangent = vec4f(m * oct_decode(v.tangent.xy), sign);
+	}
 	out.uv = uv;
 	out.color = color;
 	out.look = id;
@@ -579,7 +592,7 @@ fn fs_effect(in: EffectOut, @builtin(front_facing) front: bool) -> EffectAccumul
 	if (kind.y == FX_KIND_SIX_WAY) {
 		return six_way_smoke(in, bases);
 	}
-	let layer = fx_stack_layer(in, bases);
+	let layer = fx_stack_layer(in, bases, front);
 	let color = layer.rgb;
 	let alpha = layer.a;
 	if (fx_below_water_blend(in)) {
@@ -607,8 +620,8 @@ fn fx_unsupported_checker(in: EffectOut) -> vec3f {
 // opaque VFXBaseV2 layers (`Blend One Zero`), shaded in the main pass: the colour times the alpha covers what's
 // behind, as the game writes it. what the lit surfaces hand the post passes is left empty, as for unlit meshes
 @fragment
-fn fs_effect_opaque(in: EffectOut) -> Shaded {
-	let layer = fx_stack_layer(in, fx_layer_bases(in));
+fn fs_effect_opaque(in: EffectOut, @builtin(front_facing) front: bool) -> Shaded {
+	let layer = fx_stack_layer(in, fx_layer_bases(in), front);
 	if (fx_below_water_blend(in)) {
 		return unlit(fx_unsupported_checker(in));
 	}
@@ -618,8 +631,8 @@ fn fs_effect_opaque(in: EffectOut) -> Shaded {
 // `_BlendMode` 2 VFXBaseV2 layers, drawn over the composited scene with a blend that multiplies it by the output:
 // `lerp(1, colour, alpha)`
 @fragment
-fn fs_effect_multiply(in: EffectOut) -> @location(0) vec4f {
-	let layer = fx_stack_layer(in, fx_layer_bases(in));
+fn fs_effect_multiply(in: EffectOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+	let layer = fx_stack_layer(in, fx_layer_bases(in), front);
 	return vec4f(mix(vec3f(1.0), layer.rgb, layer.a), 1.0);
 }
 
@@ -671,8 +684,38 @@ fn fx_appear(in: EffectOut, bases: FxBases, tint: vec4f) -> vec4f {
 	return revealed;
 }
 
+// a slot without a role sampled through its own UVs, undistorted
+fn fx_slot_sample(id: u32, slot: u32, bases: FxBases) -> vec4f {
+	let base = fx_slot_base(bases, fx_slot_bits(id, slot));
+	let bias = exp2(frame.params.y);
+	return fx_sample(
+		slot,
+		fx_slot_coords(id, slot, base[0]),
+		fx_slot_gradient(id, slot, base[1]) * bias,
+		fx_slot_gradient(id, slot, base[2]) * bias,
+	);
+}
+
+// the normal the stack's Fresnel term reads: VFXAdvance's normal map bends it (x from alpha times red, as Unity
+// unpacks it), and VFXAdvance reverses it on back faces (`EffectRow.normalMap`)
+fn fx_fresnel_normal(in: EffectOut, bases: FxBases, front: bool) -> vec3f {
+	let id = in.look;
+	let row = fx_row(id, FX_NORMAL_MAP);
+	var n = normalize(in.normal);
+	if (row.x > 0.0 && in.tangent.w != 0.0) {
+		let texel = fx_slot_sample(id, u32(row.x), bases);
+		let xy = vec2f(texel.a * texel.r, texel.g) * 2.0 - 1.0;
+		let z = max(1e-16, sqrt(1.0 - saturate(dot(xy, xy))));
+		let tangent_n = normalize(vec3f(xy * row.y, z));
+		let t = normalize(in.tangent.xyz - n * dot(in.tangent.xyz, n));
+		let b = cross(n, t) * in.tangent.w;
+		n = normalize(t * tangent_n.x + b * tangent_n.y + n * tangent_n.z);
+	}
+	return select(n, select(-n, n, front), row.z != 0.0);
+}
+
 // a texture-stack layer's colour (exposed, unpremultiplied) and alpha
-fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
+fn fx_stack_layer(in: EffectOut, bases: FxBases, front: bool) -> vec4f {
 	let id = in.look;
 	let soft = fx_row(id, FX_SOFT);
 	let misc = fx_row(id, FX_MISC);
@@ -702,6 +745,21 @@ fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
 	}
 	var color = combined.rgb;
 	color += max(color - vec3f(misc.y), vec3f(0.0)) * misc.z;
+	// VFXAdvance's `_EMISSION` adds its texture times its colour
+	let emission = fx_row(id, FX_EMISSION);
+	if (emission.w > 0.0) {
+		color += fx_slot_sample(id, u32(emission.w), bases).rgb * emission.rgb;
+	}
+	// the Fresnel term fades the alpha below, and mixes the colour towards the Fresnel colour before the exposure
+	let fresnel_row = fx_row(id, FX_FRESNEL);
+	var fresnel = 1.0;
+	if (fresnel_row.x > 0.0) {
+		let n = fx_fresnel_normal(in, bases, front);
+		let f = pow(saturate(dot(normalize(-in.rel), n) + fresnel_row.y), fresnel_row.x);
+		fresnel = mix(1.0 - f, f, fresnel_row.z);
+		let fresnel_color = fx_row(id, FX_FRESNEL_COLOR);
+		color = mix(color, fresnel_color.rgb, fresnel_color.w * fresnel);
+	}
 	let lighting = fx_row(id, FX_OFFSET_MODE);
 	if (lighting.z > 0.0) {
 		// `_USE_LIGHTING`: the colour is an albedo, lit by the irradiance volume and the sun at the surface's normal
@@ -714,14 +772,6 @@ fn fx_stack_layer(in: EffectOut, bases: FxBases) -> vec4f {
 		color = clamp(color, vec3f(0.0), vec3f(1000.0)) * (ambient_irradiance(in.rel + frame.eye.xyz, n) + sun);
 	} else {
 		color = clamp(color * mix(1.0, frame.ambient.y, soft.z), vec3f(0.0), vec3f(1000.0));
-	}
-
-	let fresnel_row = fx_row(id, FX_FRESNEL);
-	var fresnel = 1.0;
-	if (fresnel_row.x > 0.0) {
-		let n = normalize(in.normal);
-		let f = pow(saturate(dot(normalize(-in.rel), n) + fresnel_row.y), fresnel_row.x);
-		fresnel = mix(1.0 - f, f, fresnel_row.z);
 	}
 	var soft_fade = 1.0;
 	if (soft.x > 0.0) {

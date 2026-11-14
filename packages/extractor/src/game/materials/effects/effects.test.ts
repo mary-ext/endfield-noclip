@@ -1169,7 +1169,15 @@ describe('VFXAdvance', () => {
 		]);
 		assert.deepEqual(surface.layers[1]?.scroll, [0.0025, 0.2]);
 		assert.deepEqual([surface.distorted, surface.masked, surface.unfogged], [true, true, false]);
-		assert.deepEqual(surface.fresnel, { power: 11, bias: 0.6, flip: 1, opacity: 1 });
+		assert.deepEqual(surface.fresnel, {
+			power: 11,
+			bias: 0.6,
+			flip: 1,
+			opacity: 1,
+			color: [1, 1, 1, 0],
+			facing: true,
+		});
+		assert.deepEqual([surface.normalMap, surface.emission], [null, null]);
 		assert.deepEqual(surface.appear, {
 			global: true,
 			inner: 2,
@@ -1274,13 +1282,56 @@ describe('VFXAdvance', () => {
 		assert.equal(road(keywords).soft, null);
 	});
 
+	// Deep Dale Street's floating rocks (`M_fxmap_dung02_rdg008_rock_01_1103`)
+	it('rims its colour by a normal-mapped Fresnel term and adds its emission', () => {
+		const surface = ofKind(
+			describeMaterial(
+				bridge({
+					keywords: ['_EMISSION', '_NORMAL_MAP', '_USE_FRESNEL'],
+					slots: { _MainTex: slot(1), _NormalMap: slot(2), _EmissionTex: slot(3) },
+					floats: {
+						_NormalScale: 1.54,
+						_FresnelPower: 10,
+						_FresnelBias: 0.85,
+						_BlendMode: 1,
+						_InParticle: 0,
+					},
+					colors: {
+						_TintColor: [0.5, 0.6, 1, 1],
+						_FresnelColor: [1.2, 1.25, 1.3, 1],
+						_EmissionColor: [2.4, 2.4, 2.4, 1],
+					},
+					vectors: { _NormalMapUVSpeed: [0, 0.1, 0, 0] },
+				}),
+				advance,
+			),
+			'effectStack',
+		);
+		assert.deepEqual(
+			[surface.fresnel?.color, surface.fresnel?.facing, surface.blendMode],
+			[[1.2, 1.25, 1.3, 1], true, 'add'],
+		);
+		assert.deepEqual(
+			[surface.normalMap?.slot, surface.normalMap?.texture.texture, surface.normalMap?.texture.scroll],
+			[5, 2, [0, 0.1]],
+		);
+		assert.deepEqual([surface.normalMap?.source, surface.normalMap?.scale], ['uv0', 1.54]);
+		assert.deepEqual(
+			[surface.emission?.slot, surface.emission?.texture.texture, surface.emission?.color],
+			[6, 3, [2.4, 2.4, 2.4]],
+		);
+	});
+
 	it('leaves out what it can’t draw', () => {
 		const reasons = [
 			bridge({ keywords: ['_USE_EDGECOLOR'] }),
 			bridge({ keywords: ['_USE_GLOBAL_APPEAR'] }),
 			bridge({ colors: { _BrightCenter: [1, 2, 3, 1] } }),
 			bridge({ floats: { _UseInterior: 1 } }),
-			bridge({ colors: { _FresnelColor: [1, 1, 1, 1] } }),
+			bridge({
+				keywords: ['_EMISSION', '_USE_VERTOFFSET'],
+				slots: { _MainTex: slot(1), _EmissionTex: slot(2), _OffsetTex: slot(3) },
+			}),
 		].map((values) => describeMaterial(values, advance).kind);
 		assert.deepEqual(reasons, Array(5).fill('unsupported'));
 	});

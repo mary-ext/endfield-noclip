@@ -82,7 +82,7 @@ struct Look {
 	emissive_channels: array<vec4f, 3>,
 	// the per-draw albedo tint where the emission's strength is at least 0.1: linear colour, w = weight
 	emissive_albedo: vec4f,
-	effect_only: array<vec4f, 8>,
+	effect_only: array<vec4f, 12>,
 }
 
 const BASE_MAP = 1u;

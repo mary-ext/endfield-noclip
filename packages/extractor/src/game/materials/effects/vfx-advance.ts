@@ -35,6 +35,8 @@ const ADVANCE_KEYWORDS = new Set([
 	'_USE_VERTOFFSET',
 	'_INK_DISTORT',
 	'_INK_COLOR_DISTORT',
+	'_NORMAL_MAP',
+	'_EMISSION',
 	...APPEAR_KEYWORDS,
 ]);
 
@@ -55,6 +57,69 @@ const CHARACTER_KEYWORDS = new Set([
 
 /** VFXAdvance's `_BlendMode` values the viewer draws */
 const BLEND_MODES: readonly EffectStackSurface['blendMode'][] = ['over', 'add'];
+
+/** the stack slots of VFXAdvance's normal map and emission texture, past the fixed slots' 0–4 */
+const NORMAL_SLOT = 5;
+const EMISSION_SLOT = 6;
+
+/** `_NORMAL_MAP`'s texture, its UVs built like the main texture's from `_NormalMap*` properties */
+const normalMapOf = (
+	reader: MaterialReader,
+	computed: readonly boolean[],
+): EffectStackSurface['normalMap'] | UnsupportedSurface => {
+	const { float, colorOrVector: color, has } = reader;
+	if (!has('_NORMAL_MAP')) {
+		return null;
+	}
+	const bound = reader.slot('_NormalMap');
+	if (bound === undefined) {
+		return unsupported('_NORMAL_MAP without a normal map');
+	}
+	const uvSet = pastUvSets('_NormalMap', bound);
+	if (uvSet !== null) {
+		return uvSet;
+	}
+	return {
+		slot: NORMAL_SLOT,
+		texture: effectTexture(
+			bound,
+			speedOf(reader, '_NormalMapUVSpeed'),
+			matrixRotationOf(reader, '_NormalMapUVRotateMat'),
+		),
+		source: sourceOf(color('_NormalMapUVWeights') ?? [1, 0, 0, 0], computed),
+		scale: float('_NormalScale', 1),
+	};
+};
+
+/**
+ * `_EMISSION`'s texture and colour. its slot is the vertex offset's, but the shader has no variant with both
+ *
+ * @param reader the material's properties
+ * @param offset whether the vertex offset takes the slot
+ */
+const emissionOf = (
+	reader: MaterialReader,
+	offset: boolean,
+): EffectStackSurface['emission'] | UnsupportedSurface => {
+	const { colorOrVector: color, has } = reader;
+	if (!has('_EMISSION')) {
+		return null;
+	}
+	if (offset) {
+		return unsupported('an emission beside a vertex offset');
+	}
+	const bound = reader.slot('_EmissionTex');
+	if (bound === undefined) {
+		return unsupported('_EMISSION without a texture');
+	}
+	const emissionColor = color('_EmissionColor') ?? [1, 1, 1, 1];
+	return {
+		slot: EMISSION_SLOT,
+		// UV0 through its `_ST` alone, whatever the slot's UV set
+		texture: effectTexture(bound),
+		color: [emissionColor[0], emissionColor[1], emissionColor[2]],
+	};
+};
 
 /**
  * `HGRP/Effect/VFXAdvance` (`docs/game-data/effects.md#vfxadvance`) as a texture stack: its main texture, one
@@ -110,10 +175,6 @@ const describeFixedSlots = (
 	}
 	if (float('_UseInterior', 0) !== 0) {
 		return unsupported('an interior');
-	}
-	// the Fresnel colour covers the colour by its w; only the opacity term is drawn
-	if (has('_USE_FRESNEL') && (color('_FresnelColor')?.[3] ?? 0) !== 0) {
-		return unsupported('a Fresnel colour');
 	}
 	const appear = appearOf(reader);
 	if (isUnsupported(appear)) {
@@ -190,6 +251,15 @@ const describeFixedSlots = (
 			disturbShare: slot.disturbed === null ? 0 : float(slot.disturbed, 0),
 		};
 	}
+	const offset = vertexOffsetOf(reader);
+	const normalMap = normalMapOf(reader, computed);
+	if (isUnsupported(normalMap)) {
+		return normalMap;
+	}
+	const emission = emissionOf(reader, offset !== null);
+	if (isUnsupported(emission)) {
+		return emission;
+	}
 	const { tint, intensity } = stackTintOf(reader);
 	const shared = stackSharedOf(reader, intensity);
 	return {
@@ -214,6 +284,8 @@ const describeFixedSlots = (
 					bias: float('_FresnelBias', 0),
 					flip: float('_FresnelFlip', 0),
 					opacity: float('_FresnelAffectOpacity', 0),
+					color: color('_FresnelColor') ?? [1, 1, 1, 0],
+					facing: true,
 				}
 			: null,
 		soft: softBlendOf(reader),
@@ -225,7 +297,7 @@ const describeFixedSlots = (
 		edge: null,
 		decalFade: null,
 		alphaPower: 1,
-		offset: vertexOffsetOf(reader),
+		offset,
 		softBody: null,
 		// as VFXBaseV2's, by `1 − _InParticle`
 		cameraPull: float('_InParticle', 1) === 0 ? float('_VertCameraOffset', 0) : null,
@@ -238,5 +310,7 @@ const describeFixedSlots = (
 		stencil: null,
 		appear,
 		parallax: null,
+		normalMap,
+		emission,
 	};
 };

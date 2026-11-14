@@ -208,5 +208,7 @@ export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface
 		stencil: null,
 		appear,
 		parallax: null,
+		normalMap: null,
+		emission: null,
 	};
 };

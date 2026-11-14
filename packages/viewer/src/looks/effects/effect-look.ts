@@ -168,6 +168,18 @@ export const EffectRow = {
 	crack: 164,
 	/** the decal's crack noise colour (HDR rgb, times its intensity) */
 	crackNoise: 168,
+	/**
+	 * the colour the texture stack's Fresnel term mixes towards (`EffectStackSurface.fresnel.color`): rgb
+	 * (HDR), how much the term covers by
+	 */
+	fresnelColor: 176,
+	/**
+	 * the texture stack's normal map (`EffectStackSurface.normalMap`): its slot (0 without), its scale, then 1
+	 * when the Fresnel term reverses the normal on back faces (`fresnel.facing`)
+	 */
+	normalMap: 180,
+	/** the texture stack's emission (`EffectStackSurface.emission`): colour rgb (HDR), its slot (0 without) */
+	emission: 184,
 } as const;
 
 /**

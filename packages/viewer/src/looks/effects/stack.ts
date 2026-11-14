@@ -180,6 +180,20 @@ export const stackLook = (stack: EffectStackSurface): EffectLook => {
 	if (stack.fresnel !== null) {
 		const { fresnel } = stack;
 		params.set([fresnel.power, fresnel.bias, fresnel.flip, fresnel.opacity], EffectRow.fresnel);
+		params.set(fresnel.color, EffectRow.fresnelColor);
+		params[EffectRow.normalMap + 2] = fresnel.facing ? 1 : 0;
+	}
+	// both slots have no role, so the stack's loop skips them; the normal map's source bits place its UVs
+	if (stack.normalMap !== null) {
+		const { normalMap } = stack;
+		const source = normalMap.source === null ? SLOT_NO_BASE : SOURCES[normalMap.source] * 32;
+		setSlot(look, normalMap.slot, normalMap.texture, ROLE_NONE + source);
+		params.set([normalMap.slot, normalMap.scale], EffectRow.normalMap);
+	}
+	if (stack.emission !== null) {
+		const { emission } = stack;
+		setSlot(look, emission.slot, emission.texture, ROLE_NONE);
+		params.set([...emission.color, emission.slot], EffectRow.emission);
 	}
 	params.set(
 		[stack.soft?.distance ?? 0, stack.soft?.bias ?? 0, stack.ignorePostExposure, stack.vertexColor ? 1 : 0],

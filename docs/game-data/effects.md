@@ -65,8 +65,10 @@ colour, alpha from `_TintColor.a · _TintColorAlpha`; it's brightened by `_ExpIn
 `saturate((cos(t · _BreathingSpeed) · 0.5 + 0.5)^_BreathingPower)`, t the shader's time scaled and
 offset by two per-draw values; the panels of Dijiang's clue board breathe so. alpha fades by a
 Fresnel term (`saturate(N·V + _FresnelBias)^_FresnelPower`, flipped by `_FresnelFlip`, applied by
-`_FresnelAffectOpacity`) and, with `_USE_SOFTBLEND`, where the surface comes within `_SoftDistance`
-metres of what lies behind it.
+`_FresnelAffectOpacity`), which also mixes the colour towards `_FresnelColor`'s rgb by its w times
+the term, before the exposure; N is the vertex normal as it is, on back faces too. with
+`_USE_SOFTBLEND` the alpha also fades where the surface comes within `_SoftDistance` metres of what
+lies behind it.
 
 **lighting.** with `_USE_LIGHTING` the colour is an albedo lit by the irradiance volume, the
 shadowed sun and local lights, at the vertex normal turned towards the camera or at the world's up
@@ -141,11 +143,19 @@ texture, `_DisturbTex1` (and a second) shifting the main texture and `_MaskTex` 
 dissolve, a blend layer, polar and screen UVs, soft blending, an edge colour and an "interior" (a
 parallax tunnel). the colour and alpha start as VFXBaseV2's (`_TintColor`, vertex colour, intensity,
 `_TintColorAlpha`), the Fresnel term fades the alpha and mixes the colour towards `_FresnelColor` by
-its w, and `_BlendMode` 1 adds. `_USE_VERTOFFSET` and the pull towards the camera are VFXBaseV2's.
-`_USE_DISSOLVE` is VFXBaseV2's [dissolve](#the-texture-stack) on `_DissolveTex` (its UVs built like
-the main texture's from `_Dissolve*` properties, shifted by `_DissolveTexUseDisturb` of the
-distortion), with the edge colour `_DissolveEmissiveColor · _TintColorIntensity`; it eats the alpha
-after the mask and before the near-camera fade. the ink bridge prefabs' walls, floors and joins
+its w as VFXBaseV2's does, but reads the normal reversed on back faces, and `_BlendMode` 1 adds.
+`_NORMAL_MAP` bends that normal by `_NormalMap` (x from alpha times red, as Unity unpacks it, xy
+times `_NormalScale`; UVs built like the main texture's from `_NormalMap*` properties, undistorted),
+and changes nothing else. `_EMISSION` adds `_EmissionTex`'s rgb (at UV0 through its `_ST` alone)
+times `_EmissionColor` to the colour before the Fresnel colour mixes in. the shader has no variant
+with `_EMISSION` and a vertex offset. Deep Dale Street's floating rocks and gravel
+(`M_fxmap_dung02_rdg008_rock_01_*`, `…_rock_float_gravel_01_1101`, near unity −62, 68, 85) use both:
+a blue tint over a flow texture, rimmed towards a pale blue `_FresnelColor` at w 1.
+`_USE_VERTOFFSET` and the pull towards the camera are VFXBaseV2's. `_USE_DISSOLVE` is VFXBaseV2's
+[dissolve](#the-texture-stack) on `_DissolveTex` (its UVs built like the main texture's from
+`_Dissolve*` properties, shifted by `_DissolveTexUseDisturb` of the distortion), with the edge
+colour `_DissolveEmissiveColor · _TintColorIntensity`; it eats the alpha after the mask and before
+the near-camera fade. the ink bridge prefabs' walls, floors and joins
 (`M_fx_map02_lv007_inkbridge_freelance_wall_*`, `…_floor_*`, `…_join_*`) tear their edges with it.
 `_FogIntensity` mixes how much of the fog a fogged layer takes, fully past
 `_FogIntensityFadeOutDistance` metres. `_USE_SOFTBLEND` is VFXBaseV2's: the alpha fades by

@@ -419,6 +419,8 @@ export const describeVfxBase = (
 					bias: float('_FresnelBias', 0),
 					flip: float('_FresnelFlip', 0),
 					opacity: float('_FresnelAffectOpacity', 0),
+					color: color('_FresnelColor') ?? [1, 1, 1, 0],
+					facing: false,
 				}
 			: null,
 		soft,
@@ -464,6 +466,8 @@ export const describeVfxBase = (
 		stencil,
 		appear: null,
 		parallax: null,
+		normalMap: null,
+		emission: null,
 	};
 };
 
