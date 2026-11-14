@@ -56,11 +56,14 @@ system and its index, so any moment can be evaluated on its own:
   `emission-rate.ts`; a random rate takes its mean) and each loop's bursts (count rounded, each
   fired with its probability), within the window the longest lifetime reaches back; non-looping
   systems stop emitting after one duration.
-- with a ring buffer a particle stays until newer ones replace it, so the window reaches back far
-  enough for that many emissions; past its lifetime it shows its end (or replays its loop range),
-  and the newest live ones that fit the rows are kept. a particle held at its end keeps moving and
-  spinning by its age, its curves read at their end, as the game goes on stepping it; one replaying
-  its loop range replays its path too, where the game's moves on.
+- with a ring buffer a particle stays until the emission `maxParticles` after it replaces it, so the
+  window reaches back far enough for that many emissions; past its lifetime it shows its end (or
+  replays its loop range). a particle held at its end keeps moving and spinning by its age, its
+  curves read at their end, as the game goes on stepping it; one replaying its loop range replays
+  its path too, where the game's moves on. a replaced particle that was replaying its loop range
+  ages on from where its cycle stood at the replacement until its lifetime ends, so the window
+  reaches back one more lifetime and the rows hold one lifetime's emissions more than the cap. the
+  newest live ones that fit the rows are kept.
 - without a ring buffer, a system whose emissions can outnumber its
   [cap](../game-data/particles.md#particle-systems) skips the emissions that come while it's full,
   so which particles live depends on every earlier emission: the emitter plays them forward from

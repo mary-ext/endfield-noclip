@@ -407,4 +407,25 @@ describe('ring buffers', () => {
 		const [particle] = run(info, 5);
 		assert.ok(Math.abs(particle.position[2] - 5) < 1e-6);
 	});
+
+	it('let a looping particle that a newer one replaces live out its cycle, where a paused one goes', () => {
+		// Wuling City's bamboo smoke, simplified: more emissions than its cap within a lifetime, each puff
+		// shrinking to nothing over its life
+		const smoke = system({
+			maxParticles: 1,
+			startLifetime: constant(4),
+			sizeOverLifetime: [line(1, 0), line(1, 0), line(1, 0)],
+			ringBuffer: { loop: true, loopRange: [0, 1] },
+		});
+		// one a second: the newest keeps its slot, and each older one was swapped out a second into its life
+		// and has aged on since, until it ends four seconds after its emission
+		const sizes = run(smoke, 100.5).map(({ size }) => size[0]);
+		assert.deepEqual(
+			sizes.map((size) => Math.round(size * 1000) / 1000),
+			[3.5, 2.5, 1.5, 0.5],
+		);
+		assert.equal(run({ ...smoke, ringBuffer: { loop: false, loopRange: [0, 1] } }, 100.5).length, 1);
+		// with a cap of 0 every particle is swapped out as it's emitted, so it lives once and never loops
+		assert.equal(run({ ...smoke, maxParticles: 0 }, 100.5).length, 4);
+	});
 });

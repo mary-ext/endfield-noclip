@@ -29,10 +29,15 @@ stretched 1, horizontal 2, vertical 3.
 - **ring buffer.** `ringBufferMode` 1 holds a particle's age at its end until a newer one replaces
   it, 2 replays `ringBufferLoopRange` (its position goes on integrating while the age loops). a held
   particle isn't frozen: every module goes on moving and turning it, reading its curves at their
-  end, and it moves by its velocity as before. emission isn't capped; an emission past the cap
-  replaces the particles in slot order, oldest first, and only then fires their death sub-emitters.
-  Jingyu Valley's fish school relies on this: its one burst lives 5–10 s, then swims on in its force
-  field for good.
+  end, and it moves by its velocity as before. emission isn't capped; an emission past the cap takes
+  the slots in order, oldest first, so the particle emitted `maxNumParticles` before it is replaced.
+  mode 1 drops the replaced particle and only then fires its death sub-emitters. mode 2 keeps it,
+  moved past the cap, where its age no longer loops: it lives out the cycle it was in and dies at
+  the end of its lifetime, so a colour over lifetime fades it out instead of it vanishing. Wuling
+  City's bamboo smoke (`p_fxmap_map02_lv002_bamboo_watersmoke_2501`) relies on this: two of its
+  systems cap at 2 particles but emit four per loop, each puff fading in and out over its life.
+  Jingyu Valley's fish school relies on mode 1: its one burst lives 5–10 s, then swims on in its
+  force field for good.
 - **donut shape.** `ShapeModule.type` 17 emits from a torus: `radius` around the shape's z,
   `donutRadius` the tube's, `radiusThickness` the tube's outer part used, each particle leaving
   outwards from the tube's centre line, as Unity documents it (not checked against the engine). the

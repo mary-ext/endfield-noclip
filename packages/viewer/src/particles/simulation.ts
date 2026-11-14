@@ -333,7 +333,9 @@ export class ParticleSimulation {
 			if (!info.looping) {
 				this.#lookback = Infinity;
 			} else if (perSecond > 0) {
-				this.#lookback = Math.max(this.#longest, kept / perSecond + info.duration);
+				// a looping one's replaced particles live out their cycle, up to a lifetime after their replacement
+				const playOut = info.ringBuffer.loop ? this.#longest : 0;
+				this.#lookback = Math.max(this.#longest, kept / perSecond + info.duration + playOut);
 			}
 		}
 		this.#capped = info.ringBuffer === null && info.emissionBound > info.maxParticles;
@@ -378,13 +380,16 @@ export class ParticleSimulation {
 		return this.#startDelay + this.#lookback + this.info.duration;
 	}
 
-	/** the most particles alive at once: the cap, or less when one lifetime of emission holds fewer */
+	/**
+	 * the most particles alive at once: the cap, or less when one lifetime of emission holds fewer. a looping
+	 * ring buffer adds the replaced particles living out their cycle, one per emission within a lifetime
+	 */
 	get liveBound(): number {
-		const { maxParticles, ringBuffer } = this.info;
-		if (ringBuffer !== null) {
-			return maxParticles;
+		const { maxParticles, ringBuffer, emissionBound } = this.info;
+		if (ringBuffer === null) {
+			return Math.min(maxParticles, emissionBound);
 		}
-		return Math.min(maxParticles, this.info.emissionBound);
+		return ringBuffer.loop ? maxParticles + emissionBound : maxParticles;
 	}
 
 	/**
@@ -404,11 +409,14 @@ export class ParticleSimulation {
 		const emissions = this.#capped ? this.#admit(time) : this.#emitted(time - this.#lookback, time);
 		this.#steppedNow.clear();
 		const capacity = Math.floor(out.length / PARTICLE_FLOATS);
-		const ringBuffer = this.info.ringBuffer;
+		const { maxParticles, ringBuffer } = this.info;
 		let count = 0;
-		// with a ring buffer the newest particles win when there are more than the system allows
 		let alive = 0;
-		for (let i = emissions.length - 1; i >= 0 && alive < this.info.maxParticles && count < capacity; i--) {
+		for (let i = emissions.length - 1; i >= 0 && count < capacity; i--) {
+			// without a ring buffer the cap holds whatever the emissions; with one, replacement does
+			if (ringBuffer === null && alive >= maxParticles) {
+				break;
+			}
 			const { time: born, id } = emissions[i];
 			let age = time - born;
 			const life = this.#lifetime(emissions[i]);
@@ -418,10 +426,27 @@ export class ParticleSimulation {
 			// a paused particle holds its age but keeps moving, as the game goes on stepping it; a looping one
 			// replays its path with its age
 			let moved = age;
-			if (ringBuffer !== null && life > 0) {
-				age = life * ringBufferAge(age / life, ringBuffer.loop ? ringBuffer.loopRange : null);
-				if (ringBuffer.loop) {
+			if (ringBuffer !== null) {
+				// past the cap, each emission takes the slot of the particle emitted `maxParticles` before it
+				const replacer = i + maxParticles < emissions.length ? emissions[i + maxParticles] : null;
+				if (replacer === null) {
+					if (life > 0) {
+						age = life * ringBufferAge(age / life, ringBuffer.loop ? ringBuffer.loopRange : null);
+						if (ringBuffer.loop) {
+							moved = age;
+						}
+					}
+				} else if (ringBuffer.loop && life > 0) {
+					// a looping one isn't dropped but stops looping, living out the cycle it was in, so its colour
+					// over lifetime fades it out as it would without the ring buffer
+					const swapped = life * ringBufferAge((replacer.time - born) / life, ringBuffer.loopRange);
+					age = swapped + (time - replacer.time);
+					if (age >= life) {
+						continue;
+					}
 					moved = age;
+				} else {
+					continue;
 				}
 			}
 			// a particle that runs off its path's end is gone
