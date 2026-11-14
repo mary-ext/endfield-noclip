@@ -1,6 +1,6 @@
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
-import { LOOK_FLOATS, type LookStencil } from '../../looks/look.ts';
+import { LOOK_FLOATS, type LookStencil, type MaterialLook } from '../../looks/look.ts';
 import type { DecodedGeometry } from '../../package/decode-protocol.ts';
 import type { Camera } from '../../scene/camera.ts';
 import { type GpuCullWork, INDIRECT_WORDS } from '../../streaming/gpu-cull-work.ts';
@@ -219,6 +219,8 @@ export class MeshRenderer {
 	#skins: SkinAnimator;
 	/** the animations of this frame's draws, which are skinned before they draw */
 	#drawnSkins = new Set<ResidentSkin>();
+	/** the looks of this frame's draws that a looping clip keeps changing, by material id */
+	#movingLooks = new Map<number, MaterialLook>();
 	/** culls the GPU-culled buckets' rows; `null` without `indirect-first-instance` */
 	#culler: InstanceCuller | null;
 	/** last frame's depth, which rows in view are tested against */
@@ -404,13 +406,21 @@ export class MeshRenderer {
 	// #region animation
 
 	/**
-	 * skins the animated geometries this frame draws at the time's frame; encode before anything draws meshes
+	 * skins the animated geometries this frame draws at the time's frame, and moves the looks a looping clip
+	 * plays to it; encode before anything draws meshes
 	 *
 	 * @param encoder the frame's encoder
 	 * @param time seconds of the viewer's clock
 	 * @returns whether a drawn geometry moved, so the shadows it casts must be drawn again
 	 */
 	animate(encoder: GPUCommandEncoder, time: number): boolean {
+		for (const [material, look] of this.#movingLooks) {
+			const slot = this.#lookSlots[material] ?? 0;
+			// a look first drawn this frame is uploaded with the rest, already moved
+			if (look.motion?.advance(time) === true && slot !== 0 && !this.#newLooks.includes(look.params)) {
+				this.#device.queue.writeBuffer(this.#looks.buffer, (slot - 1) * LOOK_BYTES, look.params);
+			}
+		}
 		return this.#skins.encode(encoder, this.#drawnSkins, time);
 	}
 
@@ -489,6 +499,7 @@ export class MeshRenderer {
 		this.triangles = 0;
 		this.texturedDraws = 0;
 		this.#drawnSkins.clear();
+		this.#movingLooks.clear();
 	}
 
 	/**
@@ -710,6 +721,9 @@ export class MeshRenderer {
 		const lookSlot = this.#lookSlot(bucket.material, look.params);
 		if (lookSlot < 0) {
 			return false;
+		}
+		if (look.motion !== null) {
+			this.#movingLooks.set(bucket.material, look);
 		}
 		const state = this.#materials.state(bucket.material, look, textures);
 		if (resident.skin !== null) {

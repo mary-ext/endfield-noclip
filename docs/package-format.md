@@ -588,6 +588,14 @@ which multiplies the placement's alpha.
 settled view state; [view-state poses](extraction/prefabs-and-interactives.md#view-state-poses))
 draws a copy of its material with those values in place of the saved ones.
 
+**motion**: a posed copy whose looping clip keeps changing float properties
+([looping clips](extraction/prefabs-and-interactives.md#looping-clips)) carries a `motion`: the
+loop's duration and one track per number of the surface that changes, as its path from the surface's
+root (property names and array indices) and its value at each of the clip's frames, held between
+them. the surface itself stands as the clip ends. a viewer plays the tracks from the clock it plays
+the prefab's looping geometry by ([skin](#geometry-blob-mesh-efgm)), which has as many frames, so
+the two stay in step.
+
 ### lights
 
 the packer keeps the spot and point lights (a point with a positive length is a tube along its

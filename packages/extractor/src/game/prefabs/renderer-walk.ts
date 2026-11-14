@@ -1,6 +1,6 @@
 /* oxlint-disable no-await-in-loop -- reads a GameObject's components in authored order */
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
-import type { ClipMaterialValue } from '@endfield-noclip/formats/unity/animation-clip';
+import type { ClipMaterialValue, ClipMotion } from '@endfield-noclip/formats/unity/animation-clip';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import { booleanField, optionalNumberField, pptrField } from '@endfield-noclip/formats/unity/values';
@@ -62,7 +62,17 @@ export interface RendererCandidate {
 	billboard: PrefabBillboard | null;
 	/** material values the pose's clips set on the renderer */
 	posedMaterials: readonly ClipMaterialValue[];
+	/** the pose's looping clips that keep changing the renderer's material values */
+	playedMaterials: readonly PlayedMaterials[];
 	distances: DistanceBands | null;
+}
+
+/** a looping clip's material values on one renderer */
+export interface PlayedMaterials {
+	/** the clip as its state plays it */
+	motion: ClipMotion;
+	/** the renderer's binding path in the clip */
+	binding: number;
 }
 
 /** a played particle system's external forces, resolved once every force field is placed */
@@ -213,6 +223,8 @@ export interface RendererNode extends RendererScope {
 	local: LocalTransform;
 	/** material values the pose's clips leave on its renderers */
 	posedMaterials: ClipMaterialValue[];
+	/** the pose's looping clips that keep changing its renderers' material values */
+	playedMaterials: PlayedMaterials[];
 	/** other renderer values the pose's clips leave on its renderers, by attribute */
 	posedRenderer: Map<number, number>;
 	/** whether an EffectSetting on it switches by distance, measured from it */
@@ -458,8 +470,9 @@ const COMPONENT_READERS: readonly ComponentReader[] = [
 const posedRendererValues = (
 	pose: PrefabPose | null,
 	paths: ClipPaths,
-): Pick<RendererNode, 'posedMaterials' | 'posedRenderer'> => {
+): Pick<RendererNode, 'posedMaterials' | 'playedMaterials' | 'posedRenderer'> => {
 	const posedMaterials: ClipMaterialValue[] = [];
+	const playedMaterials: PlayedMaterials[] = [];
 	const posedRenderer = new Map<number, number>();
 	for (const [i, clip] of (pose?.clips ?? []).entries()) {
 		const path = paths[i];
@@ -467,12 +480,18 @@ const posedRendererValues = (
 			continue;
 		}
 		const binding = bindingKey(path);
-		posedMaterials.push(...(clip.materials.get(binding) ?? []));
+		const materials = clip.materials.get(binding);
+		if (materials !== undefined) {
+			posedMaterials.push(...materials);
+			if (clip.motion !== null && clip.motion.loops && clip.motion.materials !== null) {
+				playedMaterials.push({ motion: clip.motion, binding });
+			}
+		}
 		for (const [attribute, value] of clip.renderers.get(binding) ?? []) {
 			posedRenderer.set(attribute, value);
 		}
 	}
-	return { posedMaterials, posedRenderer };
+	return { posedMaterials, playedMaterials, posedRenderer };
 };
 
 /**

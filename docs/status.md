@@ -352,9 +352,8 @@ packs or renders correctly.
     (`_UseVertexColorAlphaAsDissolveWeight`). a
     [soft body](game-data/effects.md#soft-body-animation) with a flipbook or a normal map, or played
     by particle data, stays unsupported; its per-draw frame offset is taken as 0. the waterwheels'
-    pouring water holds the frame, opacity and dissolve their clip ends on, since
-    [looping clips](#interactives-and-animation) don't play material values, so it stands still
-    where the game's pours; unchecked against an in-game shot
+    pouring water, whose frame, opacity and dissolve their clip plays, is unchecked against an
+    in-game shot
   - [six-way smoke](game-data/effects.md#six-way-smoke): no shadow ramp texture, local lights or
     main texture; a mask or dissolve on UV set 1 stays unsupported on meshes; unchecked in game,
     including Valley Pass's fire column and its screen-space blend layer
@@ -472,8 +471,10 @@ packs or renders correctly.
   factory power network (The Hub's power ports beside its laser-gate switches) aren't drawn: no
   client file holds their positions ([laser gates](game-data/interactives.md#laser-gates))
 - a settled loop clip moves skinned bones and the Transforms of mesh renderers, including ones under
-  its bones, but not billboarded renderers or particle systems; its material values and GameObject
-  switches hold their end values
+  its bones, but not billboarded renderers or particle systems. of its material values it plays the
+  floats, stepped at the clip's frames rather than interpolated; vector and colour components, a
+  float that changes more of the surface than numbers, ACL-compressed clips' curves and its
+  GameObject switches hold their end values
   ([looping clips](extraction/prefabs-and-interactives.md#looping-clips)). every placement plays in
   step from the viewer's clock (the game's start per placement is unknown), the animation moves only
   while frames render, each moving renderer stores every frame of its own, and the balloon's sway
@@ -528,18 +529,18 @@ packs or renders correctly.
 - skeletons the reader can't pose and nonzero blend shapes (meshes with them are stand-ins);
   characters' skeletal animation isn't played. prefab
   [scenery animators](game-data/animation.md#scenery-animators) play their controllers' settled
-  states; a looping clip's material values and GameObject switches hold their end values, and each
-  moving renderer stores every frame (Qingbo's octagonal waterwheels: dozens of renderers over more
-  than a thousand frames). of [ACL-compressed clips](game-data/animation.md#acl-compressed-clips)
-  only the Transform tracks play: float tracks and root motion aren't decoded, and buffers with a
-  database, non-trivial default values or Euler bindings hold their end pose. blend-tree states,
-  additive or partial-weight layers, override controllers and the Animators of models with view
-  states hold their saved pose. of the
-  [decoration animator](game-data/animation.md#decoration-animators) values level scripts set, only
-  those set on script start (constant or by one saved property) are read; `PlayDecorationAnimation`
-  and values set by quest, custom or volume events aren't, and a saved property's default (set, as
-  in a finished save) is assumed. vertex-animation-texture meshes (`_vat`, e.g. floating rocks) draw
-  their rest pose
+  states; a looping clip's GameObject switches hold their end values (its material values as
+  [above](#interactives-and-animation)), and each moving renderer stores every frame (Qingbo's
+  octagonal waterwheels: dozens of renderers over more than a thousand frames). of
+  [ACL-compressed clips](game-data/animation.md#acl-compressed-clips) only the Transform tracks
+  play: float tracks and root motion aren't decoded, and buffers with a database, non-trivial
+  default values or Euler bindings hold their end pose. blend-tree states, additive or
+  partial-weight layers, override controllers and the Animators of models with view states hold
+  their saved pose. of the [decoration animator](game-data/animation.md#decoration-animators) values
+  level scripts set, only those set on script start (constant or by one saved property) are read;
+  `PlayDecorationAnimation` and values set by quest, custom or volume events aren't, and a saved
+  property's default (set, as in a finished save) is assumed. vertex-animation-texture meshes
+  (`_vat`, e.g. floating rocks) draw their rest pose
 - [spinning scenery](game-data/animation.md#spinning-scenery) (Qingbo's other waterwheels, the
   originium hub frames) turns from its stored pose at the viewer clock's zero rather than at the
   game's clock phase, and how the native systems turn it is inferred from the data, not read.

@@ -1,6 +1,7 @@
 import type {
 	MaterialCull,
 	MaterialEntry,
+	MaterialMotion,
 	MaterialTable,
 	ReadyMaterial,
 } from '@endfield-noclip/package-format/materials';
@@ -10,6 +11,8 @@ import type {
 	StencilMaskSurface,
 	WaterFoamSurface,
 } from '@endfield-noclip/package-format/surfaces';
+
+import { skinFrame } from '../render/meshes/skin-frame.ts';
 
 import type { EffectLook } from './effects/effect-look.ts';
 import { lightBeamLook } from './effects/light-beam.ts';
@@ -25,6 +28,7 @@ import {
 	emptyLook,
 	GAPS_FLOAT,
 	LookFlags,
+	type LookMotion,
 	type LookQueue,
 	LookRow,
 	type LookStencil,
@@ -108,6 +112,15 @@ const materialLook = (entry: MaterialEntry): MaterialLook => {
 	if (entry.status !== 'ready') {
 		return unsupportedLook();
 	}
+	const look = stillLook(entry);
+	if (entry.motion !== null) {
+		look.motion = lookMotion(entry, entry.motion, look.params);
+	}
+	return look;
+};
+
+/** a converted material's look as its surface stands, with its gaps */
+const stillLook = (entry: ReadyMaterial): MaterialLook => {
 	const look = surfaceLook(entry);
 	look.gaps.unshift(...entry.gaps);
 	// effect looks keep the float for their own; their describers turn what they can't draw unsupported
@@ -115,6 +128,57 @@ const materialLook = (entry: MaterialEntry): MaterialLook => {
 		look.params[GAPS_FLOAT] = 1;
 	}
 	return look;
+};
+
+/**
+ * plays a material's looping clip: at each of its steps the surface takes the tracks' values and its look is
+ * built again, for the parameters alone. the textures, queue and flags stay the first build's, which tracks
+ * of numbers leave alone
+ *
+ * @param entry the material
+ * @param motion its motion
+ * @param params the look's parameters, which each step overwrites
+ * @returns the motion
+ */
+const lookMotion = (entry: ReadyMaterial, motion: MaterialMotion, params: Float32Array): LookMotion => {
+	const steps = Math.min(...motion.tracks.map(({ values }) => values.length));
+	let shown = -1;
+	return {
+		advance(time) {
+			if (!(steps > 0 && motion.duration > 0)) {
+				return false;
+			}
+			// the step a looping geometry of the same clip shows (`skinFrame`)
+			const step = skinFrame(time, steps, steps / motion.duration).a;
+			if (step === shown) {
+				return false;
+			}
+			shown = step;
+			const surface = structuredClone(entry.surface);
+			for (const { path, values } of motion.tracks) {
+				setAt(surface, path, values[step]);
+			}
+			params.set(stillLook({ ...entry, surface }).params);
+			return true;
+		},
+	};
+};
+
+/** sets the number at a path of property names and array indices, where the path leads to one */
+const setAt = (root: object, path: readonly (string | number)[], value: number): void => {
+	let at: unknown = root;
+	for (const [i, key] of path.entries()) {
+		if (typeof at !== 'object' || at === null) {
+			return;
+		}
+		if (i === path.length - 1) {
+			if (typeof Reflect.get(at, key) === 'number') {
+				Reflect.set(at, key, value);
+			}
+			return;
+		}
+		at = Reflect.get(at, key);
+	}
 };
 
 /** a new look for a converted material's surface, with the gaps its builder leaves */
@@ -285,4 +349,5 @@ const effectMaterialLook = (
 	params: effect.params,
 	stencil,
 	gaps: [],
+	motion: null,
 });

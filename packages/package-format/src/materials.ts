@@ -25,6 +25,29 @@ export interface ReadyMaterial {
 	 * holds everything, and for unsupported and undrawn ones, whose reason says what's missing
 	 */
 	gaps: string[];
+	/** the numbers of `surface` a looping clip keeps changing; `null` for a material that holds still */
+	motion: MaterialMotion | null;
+}
+
+/**
+ * what a looping animation clip does to a material's surface: a prefab's Animator setting material properties
+ * on a renderer over time. it plays from the viewer's clock, in step with the looping geometry of its prefab
+ */
+export interface MaterialMotion {
+	/** seconds per loop */
+	duration: number;
+	tracks: MaterialTrack[];
+}
+
+/** one number of a surface over a {@link MaterialMotion}'s loop */
+export interface MaterialTrack {
+	/** where the number is in the surface: property names and array indices from its root */
+	path: (string | number)[];
+	/**
+	 * its value at even steps through the loop, the first at the loop's start, each held until the next; a
+	 * material's tracks all have as many
+	 */
+	values: number[];
 }
 
 /** a texture bound to a material slot */

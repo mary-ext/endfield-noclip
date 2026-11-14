@@ -146,6 +146,19 @@ export interface MaterialLook {
 	 * dropped for want of a slot or a row. empty when nothing is known to be missing
 	 */
 	gaps: string[];
+	/** how a looping clip keeps changing {@link params}; `null` for a look that holds still */
+	motion: LookMotion | null;
+}
+
+/** a look's parameters over a looping clip (`MaterialMotion` in the package) */
+export interface LookMotion {
+	/**
+	 * moves the look's {@link MaterialLook.params} to a time
+	 *
+	 * @param time seconds of the viewer's clock
+	 * @returns whether they changed, so the look table needs them again
+	 */
+	advance(time: number): boolean;
 }
 
 /**
@@ -350,6 +363,7 @@ export const emptyLook = ({ drawn }: { drawn: boolean }): MaterialLook => ({
 	flags: 0,
 	stencil: null,
 	gaps: [],
+	motion: null,
 });
 
 /**

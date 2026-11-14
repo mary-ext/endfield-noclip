@@ -18,6 +18,13 @@ the mesh shader has seven texture slots (`SLOTS` in
 WebGPU's sixteen), so features that rarely meet share a slot or a parameter row, and a material that
 has both draws only one. each section below names what that leaves out.
 
+a material with a [motion](../package-format.md#materials) gets a `LookMotion` (`lookMotion` in
+`material-looks.ts`): at each step of the loop the surface takes its tracks' values and the look is
+built again for its parameters alone, the textures, queue and flags staying the first build's.
+`MeshRenderer.animate` advances the moving looks a frame draws and rewrites their rows of the look
+table, at the step `skinFrame` gives a looping geometry of the same clip, so the water of Qingbo's
+waterwheels pours as their scoops come round. like the geometry, it moves only while frames render.
+
 ## emission
 
 [emission](../game-data/materials.md#emission)'s post exposure is the auto exposure times the

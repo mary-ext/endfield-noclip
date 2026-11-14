@@ -25,7 +25,7 @@ import type { DistanceRange } from '../effects/view-state-effects.ts';
 import { animatorDefaultPose } from './animator-defaults.ts';
 import type { PrefabBillboard } from './billboard.ts';
 import type { EmissiveColors } from './emissive-override.ts';
-import { posedMaterialValues } from './material-values.ts';
+import { playedFloats, posedMaterialValues } from './material-values.ts';
 import { walkPrefab } from './prefab-walk.ts';
 import { moveFollowers, resolveForces } from './renderer-passes.ts';
 import {
@@ -124,6 +124,11 @@ export interface MaterialValues {
 	colors: Record<string, [number, number, number, number]>;
 	/** texture scales and offsets, by texture property */
 	textures: Record<string, Pick<MaterialTextureSlot, 'scale' | 'offset'>>;
+	/**
+	 * the floats a looping clip keeps changing, each at every frame of the loop (the frames a moving renderer's
+	 * {@link RendererMotion} plays); `floats` holds the clip's end values. `null` when nothing plays
+	 */
+	motion: { duration: number; floats: Record<string, number[]> } | null;
 }
 
 /** a skeletal animation for a geometry: {@link SkinAnimation} without the box its positions lie in */
@@ -288,6 +293,7 @@ const assembleRenderer = async (
 		}
 	}
 	const materialValues: (MaterialValues | null)[] = [];
+	const played = playedFloats(candidate.playedMaterials);
 	for (const material of materials) {
 		// material reads are cached by the resolver
 		materialValues.push(
@@ -297,6 +303,7 @@ const assembleRenderer = async (
 						values: candidate.posedMaterials,
 						tilings: walk.lengthTilings.get(key) ?? [],
 						emissive: walk.emissiveOverrides.get(key) ?? null,
+						played,
 					}),
 		);
 	}

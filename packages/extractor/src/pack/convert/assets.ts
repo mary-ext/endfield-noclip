@@ -2,7 +2,7 @@ import type { MaterialRecord, ShaderSummary } from '@endfield-noclip/formats/uni
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
 import type { GeometryEntry } from '@endfield-noclip/package-format/geometry';
 import type { Chain } from '@endfield-noclip/package-format/instances';
-import type { MaterialEntry, MaterialTable } from '@endfield-noclip/package-format/materials';
+import type { MaterialEntry, MaterialMotion, MaterialTable } from '@endfield-noclip/package-format/materials';
 import type { LitSway, LitVertexOffset } from '@endfield-noclip/package-format/surfaces';
 import {
 	type TextureEntry,
@@ -48,6 +48,7 @@ import {
 	resultMatches,
 } from './convert-pool.ts';
 import type { OffsetReach, SwayReach } from './geometry.ts';
+import { surfaceMotion } from './material-motion.ts';
 import { convertMaterial, ShaderTable } from './materials.ts';
 
 // converting the assets the packer referenced (by the ids `AssetIds` handed out) reads materials first (they
@@ -206,7 +207,7 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 		}
 	}
 	timer.end('textures');
-	const surfaces = describeSurfaces(materials);
+	const surfaces = describeSurfaces(materials, input.materialOverrides);
 	return {
 		geometries: geometries.entries,
 		materials: { entries: surfaces.entries },
@@ -470,9 +471,16 @@ const loadMaterials = async (
 	return out;
 };
 
+/**
+ * the gap of a material whose looping clip changes more of its surface than numbers, so it holds the clip's
+ * end
+ */
+const PLAYED_VALUES_GAP = 'material values a looping clip plays';
+
 /** describes each converted material's surface, recording the ones the viewer can't draw in their debug rows */
 const describeSurfaces = (
 	materials: LoadedMaterials,
+	overrides: ReadonlyMap<number, MaterialOverrides>,
 ): { entries: MaterialEntry[]; unsupported: Record<string, number> } => {
 	const unsupported: Record<string, number> = {};
 	const entries = materials.converted.map((material, id): MaterialEntry => {
@@ -487,12 +495,21 @@ const describeSurfaces = (
 			materials.debug[id].unsupported = surface.reason;
 		}
 		const drawn = surface.kind !== 'unsupported' && surface.kind !== 'undrawn';
-		return {
-			status: 'ready',
-			cull: material.cull,
-			surface,
-			gaps: drawn ? surfaceGaps(readerOf(material, shader)) : [],
-		};
+		const gaps = drawn ? surfaceGaps(readerOf(material, shader)) : [];
+		// a looping clip's floats, as the numbers of the surface they change
+		const played = overrides.get(id)?.saved.motion ?? null;
+		let motion: MaterialMotion | null = null;
+		if (drawn && played !== null) {
+			const moving = surfaceMotion(surface, played, (floats) =>
+				describeMaterial({ ...material, floats: { ...material.floats, ...floats } }, shader),
+			);
+			if (moving === 'reshaped') {
+				gaps.push(PLAYED_VALUES_GAP);
+			} else {
+				motion = moving;
+			}
+		}
+		return { status: 'ready', cull: material.cull, surface, gaps, motion };
 	});
 	return { entries, unsupported };
 };

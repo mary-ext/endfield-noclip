@@ -57,6 +57,19 @@ const MATERIAL_PROPERTY = 22;
 /** a material binding's top four attribute bits: vector components x to w (0–3), colour r to a (4–7), a float */
 const MATERIAL_FLOAT = 8;
 
+/**
+ * @param attribute a material binding's attribute
+ * @returns the property it names and the component it sets
+ * @throws {FormatError} for a kind past a float's
+ */
+const materialProperty = (attribute: number): Pick<ClipMaterialValue, 'nameHash' | 'component'> => {
+	const kind = attribute >>> 28;
+	if (kind > MATERIAL_FLOAT) {
+		throw new FormatError(`unsupported AnimationClip material property kind ${kind}`);
+	}
+	return { nameHash: attribute & 0x0fff_ffff, component: kind === MATERIAL_FLOAT ? null : kind % 4 };
+};
+
 const DEGREES = Math.PI / 180;
 
 /**
@@ -147,17 +160,9 @@ export const readClipEndPose = (clip: TypeTreeObject): ClipEndPose => {
 		}
 		if (RENDERERS.has(type) && at < stops.length) {
 			if (numberField(binding, 'customType') === MATERIAL_PROPERTY) {
-				const kind = attribute >>> 28;
-				if (kind > MATERIAL_FLOAT) {
-					throw new FormatError(`unsupported AnimationClip material property kind ${kind}`);
-				}
 				materials
 					.getOrInsertComputed(path, () => [])
-					.push({
-						nameHash: attribute & 0x0fff_ffff,
-						component: kind === MATERIAL_FLOAT ? null : kind % 4,
-						value: stops[at],
-					});
+					.push({ ...materialProperty(attribute), value: stops[at] });
 			} else {
 				renderers.getOrInsertComputed(path, () => new Map()).set(attribute >>> 0, stops[at]);
 			}
@@ -223,6 +228,12 @@ export interface ClipMotion {
 	 *   {@link ClipEndPose.transforms}
 	 */
 	sample(time: number): Map<number, ClipTransformValue[]>;
+	/**
+	 * the material properties the clip sets on each renderer at a time within `[0, duration]`, by binding path,
+	 * as {@link ClipEndPose.materials}; `null` for a clip whose float curves the reader doesn't decode (an
+	 * ACL-compressed one), which then holds its end values
+	 */
+	materials: ((time: number) => Map<number, ClipMaterialValue[]>) | null;
 }
 
 /** one streamed key: the cubic `((a·dt + b)·dt + c)·dt + value` from its time to the curve's next key */
@@ -356,6 +367,7 @@ export const readClipMotion = (clip: TypeTreeObject): ClipMotion => {
 	const kinds: number[] = [];
 	const paths: number[] = [];
 	const transformBindings: { path: number; attribute: number; order: number; at: number }[] = [];
+	const materialBindings: { path: number; nameHash: number; component: number | null; at: number }[] = [];
 	for (const binding of arrayField(objectField(clip, 'm_ClipBindingConstant'), 'genericBindings')) {
 		if (!isObject(binding)) {
 			throw new FormatError('invalid AnimationClip binding');
@@ -363,7 +375,12 @@ export const readClipMotion = (clip: TypeTreeObject): ClipMotion => {
 		if (numberField(binding, 'isPPtrCurve') !== 0) {
 			continue;
 		}
-		if (numberField(binding, 'typeID') !== TRANSFORM) {
+		const type = numberField(binding, 'typeID');
+		if (type !== TRANSFORM) {
+			if (RENDERERS.has(type) && numberField(binding, 'customType') === MATERIAL_PROPERTY) {
+				const property = materialProperty(numberField(binding, 'attribute'));
+				materialBindings.push({ path: numberField(binding, 'path') >>> 0, ...property, at: kinds.length });
+			}
 			kinds.push(0);
 			continue;
 		}
@@ -434,7 +451,8 @@ export const readClipMotion = (clip: TypeTreeObject): ClipMotion => {
 	}
 
 	const values = new Float64Array(scalarKinds.length);
-	const sample = (time: number): Map<number, ClipTransformValue[]> => {
+	/** reads every scalar at a time into `values` */
+	const evaluate = (time: number): void => {
 		const t = start + time;
 		for (let i = 0; i < streamedCount; i++) {
 			values[i] = sampleStreamed(streamed[i], t);
@@ -452,6 +470,9 @@ export const readClipMotion = (clip: TypeTreeObject): ClipMotion => {
 		for (let i = 0; i < constants.length; i++) {
 			values[streamedCount + denseCount + i] = constants[i];
 		}
+	};
+	const sample = (time: number): Map<number, ClipTransformValue[]> => {
+		evaluate(time);
 		const out = new Map<number, ClipTransformValue[]>();
 		for (const { path, attribute, order, at } of transformBindings) {
 			let value: ClipTransformValue;
@@ -487,6 +508,14 @@ export const readClipMotion = (clip: TypeTreeObject): ClipMotion => {
 		}
 		return out;
 	};
+	const materials = (time: number): Map<number, ClipMaterialValue[]> => {
+		evaluate(time);
+		const out = new Map<number, ClipMaterialValue[]>();
+		for (const { path, nameHash, component, at } of materialBindings) {
+			out.getOrInsertComputed(path, () => []).push({ nameHash, component, value: values[at] });
+		}
+		return out;
+	};
 
 	return {
 		duration,
@@ -494,6 +523,7 @@ export const readClipMotion = (clip: TypeTreeObject): ClipMotion => {
 		loops: booleanField(muscle, 'm_LoopTime'),
 		paths,
 		sample,
+		materials,
 	};
 };
 
@@ -640,6 +670,8 @@ const readAclMotion = (clip: TypeTreeObject, acl: TypeTreeObject): ClipMotion =>
 		loops: booleanField(muscle, 'm_LoopTime'),
 		paths,
 		sample,
+		// the float tracks aren't decoded
+		materials: null,
 	};
 };
 

@@ -250,6 +250,17 @@ clips holding their end poses.
 - a mesh renderer (not billboarded) whose own Transform moves between those frames gets a `rigid`
   motion the same way, its Transform as the one bone with an identity bind pose: conversion gives
   every vertex bone 0 at full weight (`rigidSkin`) and never reads the mesh's own bone weights.
+- a renderer whose material floats the clip animates gets them at each of those frames
+  (`playedFloats`, from `ClipMotion.materials`), beside the end values its
+  [posed copy](../package-format.md#materials) is described with. conversion describes the copy's
+  surface once per frame and keeps the numbers that change as the entry's `motion` tracks
+  (`surfaceMotion` in
+  [material-motion.ts](../../packages/extractor/src/pack/convert/material-motion.ts)), so a track is
+  whatever the describer made of the property: the frame a soft body shows, a tint's alpha, a
+  dissolve's threshold. a frame whose surface differs by more than numbers (a part that comes and
+  goes) drops the motion and records the gap `material values a looping clip plays`. vector and
+  colour components, the curves of ACL-compressed clips and any looping clip after a renderer's
+  first hold their end values.
 - a clip the sampler can't read holds its end pose.
 
 the balloon's tube (`int_balloon_postmodel`) and the regional upgrade terminal's robot

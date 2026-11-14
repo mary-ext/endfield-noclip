@@ -224,6 +224,33 @@ test('clip playback samples streamed cubics, interpolated dense frames and const
 	close(motion.sample(1).get(1)![0].value, [2, 0, 0]);
 });
 
+test('clip playback samples the material properties a clip sets on a renderer', () => {
+	// the water a Qingbo waterwheel pours: `_displayFrame` (a float) climbs 60 a second from 1, and
+	// `_TintColorAlpha` stays 1
+	const material = (path: number, attribute: number) => ({ ...binding(path, attribute, 23), customType: 22 });
+	// prettier-ignore
+	const words = [
+		word(-3.4028234663852886e38), 1, 0, word(0), word(0), word(0), word(1),
+		word(0), 1, 0, word(0), word(0), word(60), word(1),
+		word(Infinity), 0,
+	];
+	const motion = readClipMotion(
+		motionClip({
+			bindings: [material(9, 0x882d_ec3a), material(9, 0x889f_1888)],
+			streamed: { curveCount: 1, words },
+			dense: { curveCount: 0, frames: [], packed: false },
+			constants: [1],
+			stop: 2,
+		}),
+	);
+	assert.deepEqual(motion.paths, []);
+	assert.deepEqual(motion.materials?.(0.5).get(9), [
+		{ nameHash: 0x082d_ec3a, component: null, value: 31 },
+		{ nameHash: 0x089f_1888, component: null, value: 1 },
+	]);
+	assert.equal(motion.materials?.(2).get(9)?.[0].value, 121);
+});
+
 test('clip playback reads float dense frames and rejects blocks that disagree with the bindings', () => {
 	const options = {
 		bindings: [binding(3, 3)],

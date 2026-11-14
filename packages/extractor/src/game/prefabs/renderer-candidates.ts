@@ -61,11 +61,12 @@ const enabledData = async (component: PrefabComponent): Promise<TypeTreeObject |
 const candidateOf = (
 	node: PlacedPrefabNode,
 	state: RendererNode,
-	fields: Omit<RendererCandidate, 'name' | 'posedMaterials' | 'distances'>,
+	fields: Omit<RendererCandidate, 'name' | 'posedMaterials' | 'playedMaterials' | 'distances'>,
 ): RendererCandidate => ({
 	...fields,
 	name: node.name,
 	posedMaterials: state.posedMaterials,
+	playedMaterials: state.playedMaterials,
 	distances: state.distances,
 });
 
@@ -347,6 +348,7 @@ const collectSplineMovers: NodeStep = async (walk, node, state) => {
 				ownSize: false,
 				billboard: null,
 				posedMaterials: [],
+				playedMaterials: [],
 				distances: state.distances,
 			});
 		}

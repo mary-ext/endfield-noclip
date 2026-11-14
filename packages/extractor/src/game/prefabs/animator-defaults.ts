@@ -229,10 +229,12 @@ const atSpeed = (motion: ClipMotion, speed: number): ClipMotion => {
 	if (speed === 1) {
 		return motion;
 	}
+	const { materials } = motion;
 	return {
 		...motion,
 		duration: motion.duration / speed,
 		sample: (time) => motion.sample(Math.min(time * speed, motion.duration)),
+		materials: materials === null ? null : (time) => materials(Math.min(time * speed, motion.duration)),
 	};
 };
 

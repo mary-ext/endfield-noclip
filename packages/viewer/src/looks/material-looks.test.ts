@@ -21,6 +21,35 @@ test('undrawn surfaces are not drawn, and unsupported ones show an unlit, shadow
 	assert.equal(unsupported.params[LookRow.surface + 2], 0.5);
 });
 
+test('a material a looping clip plays moves its look to the step the clock is at', () => {
+	// a matte painting whose colour's red steps 1, 2, 3, 4 over a 2 s loop
+	const entry = described({
+		kind: 'mattePainting',
+		texture: null,
+		color: [9, 0.5, 0.25],
+		alphaClip: null,
+		highlight: { threshold: 1, intensity: 0 },
+		ignorePostExposure: 1,
+	});
+	const [look, still] = materialLooks({
+		entries: [
+			{ ...entry, motion: { duration: 2, tracks: [{ path: ['color', 0], values: [1, 2, 3, 4] }] } },
+			entry,
+		],
+	});
+	assert.equal(still.motion, null);
+	const red = () => look.params[LookRow.tint];
+	// it starts as the surface stands, at the clip's end
+	assert.equal(red(), 9);
+	assert.equal(look.motion?.advance(0.6), true);
+	assert.deepEqual(Array.from(look.params.subarray(LookRow.tint, LookRow.tint + 3)), [2, 0.5, 0.25]);
+	// within the same step nothing changes
+	assert.equal(look.motion?.advance(0.9), false);
+	// and the loop wraps
+	assert.equal(look.motion?.advance(2.1), true);
+	assert.equal(red(), 1);
+});
+
 test('unconverted materials show as unsupported', () => {
 	const [failed] = materialLooks({ entries: [{ status: 'failed' }] });
 	assert.equal(failed.unsupported, true);
