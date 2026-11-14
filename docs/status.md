@@ -604,8 +604,9 @@ packs or renders correctly.
 - with every level shown, HLOD clusters the game would unload through its HLOD-unload volumes
   ([stream area](game-data/world.md#stream-areas) slots 7–9, undecoded) may draw over neighbouring
   levels; none were seen on map02
-- teleport points as viewpoints: the game's fast-travel destinations aren't packed
-  ([teleport points](game-data/world.md#teleport-points))
+- teleport points and named places as viewpoints: the game's fast-travel destinations and the place
+  names it shows aren't packed ([teleport points](game-data/world.md#teleport-points),
+  [named places](game-data/world.md#named-places))
 - mesh selection on the CPU is the largest frame cost (about half the frame over dense foliage), and
   GPU-culled buckets still cost an encoded draw each
   ([performance](viewer/performance.md#optimization-candidates))

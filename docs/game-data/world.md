@@ -739,6 +739,39 @@ arrive, a few metres from it facing the stored yaw: `TpForMap_ent_2100000031` in
 campfire's LevelData id, with the arrival point 4.3 m from the campfire.
 `GameplayConfig/LevelMapMark.json` holds the map marks that point at these ids; it isn't read.
 
+## named places
+
+the place name the HUD shows as the player walks ("Wuling City · Fangxing Avenue") comes from
+volumes in LevelData, not from the map: each LevelData file's `functionArea` holds parallel lists,
+`baseData` (a volume: type, shape, position, Euler rotation, size or outline, a unique id),
+`specificDatas` (what the volume does), `ranges` (its world bounding box) and
+`functionAreaConditions` (a condition per unique id, for volumes that exist only in some quest
+states). a volume whose specific data is a `SceneToastUIData` names a place:
+
+- `mainTitle`, `subTitle` and `depthText` are TextTable keys
+  (`scene_map02_lv002_regiontoast_tips_8`). the main title is the level's name, the subtitle the
+  place's and the depth text a flavour line ("Depth: 0.0461±0.0057")
+- `priority` 1 volumes are the places. each open-world level also has one priority 0 volume over
+  all of it, titled with the region and the level ("Wuling · Test Area"), which shows where no place
+  does
+- the shape is a box (`shapeType` 1: `size` about `postion`, turned by `euler`) or a polygon (3:
+  `posList`, x and z relative to `postion`). the range gives the height span, so places stack
+  (Yuanyuan Manor's two floors)
+
+map02 has about 120 of them and map01 about 80; story interiors have a handful (Suiming, the Marker
+Stone) and most dungeons none. a level keeps them in its main LevelData file or a sub-file of their
+own (`map02_lv002_lv_data_sub_RegionToast.json`).
+
+these aren't the `mapVolumeDatas` of the same files (`LevelMapRegionData`, also collected in
+`GameplayConfig/MapRegionTable.json`): those are the map screen's regions, by `mapRegionType` the
+fog-of-war pieces (mist), multi-floor containers and their tiers, and oxygen zones, and carry no
+name.
+
+LevelData also says where the ground people use is: `worldWayPointData` is the graph ambient NPCs
+walk (points with links to their neighbours; Wuling City and the Marker Stone have several hundred
+each), and NPCs, interactives, enemy spawners and patrol points stand on it. air walls
+(`airWalls`, polylines with a height range) fence it.
+
 ## open
 
 - terrain: the distance where the close-up layers give way to the baked pages and how they fade; how
