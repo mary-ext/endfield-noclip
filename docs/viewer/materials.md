@@ -178,8 +178,14 @@ it. a pass between the main and the transparent pass (`fs_decal_relight`) adds t
 surface's light instead: it lights the surface twice, with its own normal, roughness and occlusion
 and with the decal's, and adds the difference times the decal's alpha to the radiance. the surface's
 colour comes from the main pass's diffuse ambient divided by the ambient light at its normal, taken
-as a dielectric's; its emission, screen-space reflections, ambient occlusion and metallic stay as
-drawn.
+as a dielectric's; its emission, ambient occlusion and metallic stay as drawn. the change in its sky
+reflection also goes to the main pass's reflection target, and the surface the decal leaves (the
+normal, roughness and reflection weight blended by its alpha, as the game's G-buffer is) to a decal
+surface target that the [screen-space reflections](lighting.md#screen-space-reflections) read in
+place of the main pass's, so they march the decal's surface as the game's do. where decals overlap,
+the last one's surface wins. without this, the water-flow decals' near-mirror roughness
+(`_WaterRoughness` times the map's B, about 0.01) reflected the bright sky wherever the game's
+reflections find nearby rock.
 
 an emissive decal's glow is part of the decal's own shading when it's laid over; a relit one adds
 it, times its alpha, on top of the surface's emission rather than replacing it.
@@ -190,8 +196,8 @@ through the texture's own sampler (the game's is a shared one).
 surface's own colour, which only that pass estimates. there the surface's inputs blend as the game's
 targets do (`LitDecalSurface.wetness`, the look's `DecalLitRow.pbrPlaced` row): the estimated colour
 is darkened and laid over by the decal's, the normal and roughness mix by the alpha without the
-opacity, and the difference in light is added whole rather than times the alpha. the puddles'
-reflections stay the surface's own, as for other relit decals.
+opacity, and the difference in light, sky reflection and surface are taken whole rather than blended
+by the alpha.
 
 lit decals with keywords past `_COMPLETE_PBR`, `_NORMAL_ANGLE_BLEND`, `_BLEND_WATER_FLOW`,
 `_BLEND_EMISSIVE`, `_BLEND_SLUDGE_EROSION` and `_BLEND_WETNESS` (footprints, UV noise, arcs), a

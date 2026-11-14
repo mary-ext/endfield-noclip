@@ -7,6 +7,7 @@ import {
 	DEPTH_COMPARE,
 	HDR_FORMAT,
 	type MainPassFormat,
+	REFLECTION_SURFACE_FORMAT,
 	TRANSPARENT_TARGETS,
 	WATER_FOAM_FORMAT,
 } from '../frame/render-targets.ts';
@@ -313,20 +314,21 @@ export const prepareMeshPipelines = (
 	describeEffect(PHASES.waterFoamBehind, 'fs_water_foam', foam, 'less');
 	describeEffect(PHASES.waterFoamThrough, 'fs_water_foam', foam, 'always');
 	// relit decals add the change in the surface's light to the radiance, leaving its alpha (the albedo's
-	// luminance) alone. they read the depth as a texture, so the pass has no depth attachment
+	// luminance) alone, and the change in its sky reflection to the reflection target; the last decal over a
+	// pixel writes the surface the screen-space reflections trace. they read the depth as a texture, so the
+	// pass has no depth attachment
+	const added: GPUColorTargetState = {
+		format: HDR_FORMAT,
+		blend: {
+			color: ADD,
+			alpha: KEEP,
+		},
+		writeMask: GPUColorWrite.RED | GPUColorWrite.GREEN | GPUColorWrite.BLUE,
+	};
 	describeEffect(
 		PHASES.decalRelight,
 		'fs_decal_relight',
-		[
-			{
-				format: HDR_FORMAT,
-				blend: {
-					color: ADD,
-					alpha: KEEP,
-				},
-				writeMask: GPUColorWrite.RED | GPUColorWrite.GREEN | GPUColorWrite.BLUE,
-			},
-		],
+		[added, added, { format: REFLECTION_SURFACE_FORMAT }],
 		null,
 	);
 	// #endregion

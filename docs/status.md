@@ -226,14 +226,15 @@ packs or renders correctly.
   patches, hidden by default) has no look and shows as unsupported
 - decals ([decals](viewer/materials.md#decals)): `HGRP/DecalLit`'s footprint, UV-noise and arc
   variants, and placements without their colour and UV, show as unsupported; the sludge erosion and
-  wetness variants (Yinglung Pass's puddles, which don't change the floor's reflections) are
-  unchecked against an in-game shot; overlaps ignore `_DrawOrder`; decals that write no albedo, and
-  wetness decals, relight the surface from an estimate of its colour, as a dielectric, leave its
-  screen-space reflections, ambient occlusion and metallic as they were, and add their emission over
-  the surface's; under a laid-over decal that doesn't write them, the surface's occlusion and
-  metallic are taken as 1 and 0. terrain decals (InitChunkData component 28) aren't packed and
-  `HGRP/DecalUnlit` has no look; prefabs' `HGDecalProjector`s (about 20 on each of the Qingbo
-  waterwheels' prefabs) aren't read, and their drop isn't reported in `debug/`
+  wetness variants (Yinglung Pass's puddles) and the water-flow decals' wet rock are unchecked
+  against an in-game shot; overlaps ignore `_DrawOrder`; decals that write no albedo, and wetness
+  decals, relight the surface from an estimate of its colour, as a dielectric, leave its ambient
+  occlusion and metallic as they were, add their emission over the surface's, and hand the
+  screen-space reflections only the last overlapping decal's surface; under a laid-over decal that
+  doesn't write them, the surface's occlusion and metallic are taken as 1 and 0. terrain decals
+  (InitChunkData component 28) aren't packed and `HGRP/DecalUnlit` has no look; prefabs'
+  `HGDecalProjector`s (about 20 on each of the Qingbo waterwheels' prefabs) aren't read, and their
+  drop isn't reported in `debug/`
 - terrain close up ([terrain](viewer/terrain.md#close-up-layers)): smooth triplanar replaces the
   game's random plane choice; the cliff projection, cone-map parallax and the `A` page's subsurface
   curvature aren't drawn; the fade distances are the viewer's own and the blend's GPU cost is

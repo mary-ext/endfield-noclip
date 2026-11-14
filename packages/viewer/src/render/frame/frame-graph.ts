@@ -336,16 +336,23 @@ export const encodeFrame = (
 	if (settings.scene && scene.mipFeedback !== null) {
 		meshes.encodeMipFeedback(encoder, { view: scene.mipFeedback, width, height }, context.index);
 	}
-	if (sceneFrame !== null) {
+	{
+		// runs without the scene too, so the screen-space reflections never read a stale decal surface
 		const pass = beginPass(
 			encoder,
 			{
 				label: 'decal relight',
-				colorAttachments: [{ view: scene.radiance, loadOp: 'load', storeOp: 'store' }],
+				colorAttachments: [
+					{ view: scene.radiance, loadOp: 'load', storeOp: 'store' },
+					{ view: scene.reflection, loadOp: 'load', storeOp: 'store' },
+					{ view: scene.decalSurface, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
+				],
 			},
 			sceneFrame,
 		);
-		draws += meshes.encodeEffectPass('relight', pass, scene);
+		if (sceneFrame !== null) {
+			draws += meshes.encodeEffectPass('relight', pass, scene);
+		}
 		pass.end();
 	}
 	const composited = post.encodeComposite(encoder, {

@@ -388,7 +388,9 @@ rather than the box's UVs:
   `steep = (1 − |N.y|)^_AngleBlendFallOff2`
 - the four samples' normals (decoded like the PBR map's) sum, their xy times `_WaterNormalScale`,
   into the box's or the surface's frame as above
-- roughness: `_WaterRoughness` × the mean of the first layer's two B samples
+- roughness: `_WaterRoughness` × the mean of the first layer's two B samples. the shipped
+  `M_rdecal_common_water_flow+1_001_*` give about 0.01, a near mirror: the rock's look comes from
+  what the screen-space reflections find, since they march the G-buffer the decal wrote
 - alpha: the base map's alpha × the colour's alpha × `_DecalOpacity` × `steep`, so level ground
   stays dry
 

@@ -32,7 +32,7 @@ export const HDR_FORMAT: GPUTextureFormat = 'rgba16float';
 export const WATER_FOAM_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 /** what lit surfaces hand the screen-space reflections, packed (reflection-surface.wgsl) */
-const REFLECTION_SURFACE_FORMAT: GPUTextureFormat = 'rg32uint';
+export const REFLECTION_SURFACE_FORMAT: GPUTextureFormat = 'rg32uint';
 
 /**
  * the main pass's colour targets, in `@location` order: radiance, its ambient part, the sky reflection the
@@ -89,6 +89,11 @@ export interface SceneTextures {
 	reflection: GPUTextureView;
 	/** the surface's normal, roughness and screen-space reflection weight, packed; 0 where nothing lit was drawn */
 	reflectionSurface: GPUTextureView;
+	/**
+	 * {@link reflectionSurface} as the relit decals changed it, which the screen-space reflections take in its
+	 * place; 0 where no decal changed it
+	 */
+	decalSurface: GPUTextureView;
 	/** the depth aspect alone, for sampling */
 	depth: GPUTextureView;
 	/** the nearest water surface's depth in front of the scene, {@link WATER_DEPTH_FORMAT}; 0 where there's none */
@@ -127,6 +132,7 @@ export class RenderTargets {
 	#depth: GPUTexture | null = null;
 	#colors: GPUTexture[] | null = null;
 	#waterDepth: GPUTexture | null = null;
+	#decalSurface: GPUTexture | null = null;
 	#scene: SceneTextures | null = null;
 	/** the passes' attachments, built on first use after each resize */
 	#mainAttachments: PassAttachments | null = null;
@@ -244,6 +250,12 @@ export class RenderTargets {
 				create({ label: 'mip feedback', size: [width, height], format: MIP_FEEDBACK_FORMAT, usage }),
 			);
 		}
+		this.#decalSurface = create({
+			label: 'decal reflection surface',
+			size: [width, height],
+			format: REFLECTION_SURFACE_FORMAT,
+			usage,
+		});
 		this.#waterDepth = create({
 			label: 'water depth',
 			size: [width, height],
@@ -260,6 +272,7 @@ export class RenderTargets {
 			ambient: this.#colors[1].createView(),
 			reflection: this.#colors[2].createView(),
 			reflectionSurface: this.#colors[3].createView(),
+			decalSurface: this.#decalSurface.createView(),
 			depth: this.#depth.createView({ aspect: 'depth-only' }),
 			waterDepth: this.#waterDepth.createView(),
 			mipFeedback: this.#colors[MAIN_TARGETS.length]?.createView() ?? null,
@@ -274,7 +287,8 @@ export class RenderTargets {
 		const depth = this.format.stencil ? 8 : 4;
 		const feedback = this.format.targets.length > MAIN_TARGETS.length ? 4 : 0;
 		return (
-			this.width * this.height * (depth + 8 * 4 + 4 + feedback) + this.outputWidth * this.outputHeight * 4 * 2
+			this.width * this.height * (depth + 8 * 4 + 8 + 4 + feedback) +
+			this.outputWidth * this.outputHeight * 4 * 2
 		);
 	}
 

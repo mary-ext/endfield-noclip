@@ -1797,12 +1797,35 @@ fn fx_lit_decal(in: EffectOut, px: vec2i, rel: vec3f, rel_dx: vec3f, rel_dy: vec
 	return fx_accumulate(shaded.radiance.rgb * d.alpha, d.alpha, rel, in.position.xy, 0.0);
 }
 
+// what a relit decal changes: the radiance and the sky reflection it holds, each added, and the surface the
+// screen-space reflections then trace from in place of the main pass's
+struct DecalRelit {
+	@location(0) radiance: vec4f,
+	@location(1) reflection: vec4f,
+	@location(2) reflection_surface: vec2u,
+}
+
+// the change between the surface lit without and with a decal's changes, the latter weighted by `alpha`
+fn decal_relit(before: Surface, after: Surface, alpha: f32, emission: vec3f, rel: vec3f, px: vec2f) -> DecalRelit {
+	let lit_before = shade_surface(before, rel, px);
+	let lit_after = shade_surface(after, rel, px);
+	let a = unpack_reflection_surface(lit_before.reflection_surface);
+	let b = unpack_reflection_surface(lit_after.reflection_surface);
+	var out: DecalRelit;
+	out.radiance = vec4f((lit_after.radiance.rgb - lit_before.radiance.rgb + emission) * alpha, 0.0);
+	out.reflection = vec4f((lit_after.reflection.rgb - lit_before.reflection.rgb) * alpha, 0.0);
+	// the game's decal blends the normal and roughness in its G-buffer before the reflections march them
+	out.reflection_surface = pack_reflection_surface(normalize(mix(a.normal, b.normal, alpha)),
+		mix(a.roughness, b.roughness, alpha), mix(a.weight, b.weight, alpha));
+	return out;
+}
+
 // lit decals that write no albedo, between the main and the transparent pass (docs/viewer/materials.md#decals):
 // each adds the difference between the surface lit with and without its changes, times its alpha, to the
-// radiance. the surface's colour is its diffuse ambient over the ambient light at its normal (taken as a
-// dielectric's)
+// radiance and to the sky reflection it holds, and hands the screen-space reflections the changed surface. the
+// surface's colour is its diffuse ambient over the ambient light at its normal (taken as a dielectric's)
 @fragment
-fn fs_decal_relight(in: EffectOut) -> @location(0) vec4f {
+fn fs_decal_relight(in: EffectOut) -> DecalRelit {
 	let px = vec2i(in.position.xy);
 	let scene_depth = fx_scene_depth(px);
 	let rel = in.rel * (scene_depth / dot(in.rel, frame.view_forward.xyz));
@@ -1814,12 +1837,13 @@ fn fs_decal_relight(in: EffectOut) -> @location(0) vec4f {
 	let rel_dx = dpdx(rel);
 	let rel_dy = dpdy(rel);
 	let n = fx_surface_normal(px);
+	// pixels it leaves alone keep the surface an earlier decal wrote
 	if (any(abs(object_p) >= vec3f(0.5)) || scene_depth >= 1e9 || all(n == vec3f(0.0)) || fx_keeps_lit_decals_off(px)) {
-		return vec4f(0.0);
+		discard;
 	}
 	let d = ld_decal(in, rel, rel_dx, rel_dy, object_p, uv, dx, dy, n, fx_surface_roughness(px));
 	if (d.alpha <= 0.0) {
-		return vec4f(0.0);
+		discard;
 	}
 	let ambient = textureLoad(fx_ambient, px, 0);
 	let irradiance = ambient_irradiance(frame.eye.xyz + rel, n);
@@ -1842,15 +1866,13 @@ fn fs_decal_relight(in: EffectOut) -> @location(0) vec4f {
 		if (d.writes_occlusion) {
 			after.occlusion = mix(before.occlusion, d.occlusion, covered);
 		}
-		let wetted = shade_surface(after, rel, in.position.xy).radiance.rgb - shade_surface(before, rel, in.position.xy).radiance.rgb;
-		return vec4f(wetted, 0.0);
+		return decal_relit(before, after, 1.0, vec3f(0.0), rel, in.position.xy);
 	}
 	if (d.writes_occlusion) {
 		after.occlusion = d.occlusion;
 	}
 	// the decal's emission is added over the surface's rather than replacing it by the alpha
-	let change = shade_surface(after, rel, in.position.xy).radiance.rgb - shade_surface(before, rel, in.position.xy).radiance.rgb;
-	return vec4f((change + d.emission) * d.alpha, 0.0);
+	return decal_relit(before, after, d.alpha, d.emission, rel, in.position.xy);
 }
 
 // #endregion

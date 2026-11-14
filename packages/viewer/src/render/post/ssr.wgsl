@@ -40,6 +40,8 @@ struct Ssr {
 @group(1) @binding(12) var depth_pyramid: texture_2d<f32>;
 // the main pass's `reflection`: the sky reflection the radiance holds
 @group(1) @binding(13) var reflection_texture: texture_2d<f32>;
+// the surface relit decals changed (`fs_decal_relight` in effect.wgsl), packed alike; 0 where none did
+@group(1) @binding(14) var decal_surface_texture: texture_2d<u32>;
 
 // the view depth stored where nothing was drawn; any real surface is nearer
 const SKY_DEPTH = 60000.0;
@@ -47,7 +49,12 @@ const SKY_DEPTH = 60000.0;
 // the game's 4 × 4 binomial for its pyramid and resolve
 const BINOMIAL = array<f32, 4>(0.125, 0.375, 0.375, 0.125);
 
+// the surface at a pixel as the relit decals left it: in the game they change the G-buffer the march reads
 fn reflection_surface_at(px: vec2i) -> ReflectionSurface {
+	let decal = unpack_reflection_surface(textureLoad(decal_surface_texture, px, 0).xy);
+	if (decal.valid) {
+		return decal;
+	}
 	return unpack_reflection_surface(textureLoad(surface_texture, px, 0).xy);
 }
 

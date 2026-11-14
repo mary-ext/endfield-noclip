@@ -861,8 +861,9 @@ export class MeshRenderer {
 	/**
 	 * encodes a pass of scene effects, with group 0 bound. in frame order:
 	 *
-	 * - `relight` adds the light that relit decals change to the main pass's radiance, into a pass whose only
-	 *   attachment is that radiance, kept (`load`)
+	 * - `relight` adds the light that relit decals change to the main pass's radiance and sky reflection, both
+	 *   kept (`load`), and writes the surface they leave into the cleared decal surface, the attachments in
+	 *   that order (`SceneTextures.decalSurface`)
 	 * - `decals` lays lit decals over the composited scene, into a pass as `multiply`'s, before the water draws
 	 * - `transparent` into the transparent pass, with the main pass's depth attached read-only
 	 * - `waterFoam` draws the WaterDecal boxes into a pass whose only colour attachment is the foam target

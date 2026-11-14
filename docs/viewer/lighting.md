@@ -100,8 +100,9 @@ targets at the pixel under each texel's centre, and the composite upsamples the 
 (about half a millisecond at 2560×1600). it reprojects through the depth buffer and the previous
 camera instead of motion vectors (the scenery is static), and needs no rain-wetness variant: the
 viewer's surfaces already carry the wet roughness ([wetness](../game-data/environment.md#wetness)),
-so only the variant's ripple normals are missing. reflection-only effects don't draw into the
-march's inputs. off the screen the sky reflection stays, as in the game.
+so only the variant's ripple normals are missing. relit decals hand it the surface they leave
+([decals](materials.md#decals)); reflection-only effects don't draw into the march's inputs. off the
+screen the sky reflection stays, as in the game.
 
 ## irradiance volume
 
