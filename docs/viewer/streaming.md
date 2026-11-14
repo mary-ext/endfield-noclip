@@ -322,16 +322,15 @@ the renderers and stores that own the GPU side; their residency shapes are in
   decoded content nobody has wanted for 30 frames is dropped instead. a full pool evicts up to 16
   resident, unpinned blobs of the same kind that weren't used this frame and have no higher
   priority, oldest first, and retries.
-- **budget.** resident bytes of all kinds count against `budgetMiB` (default 768, since the densest
-  views, such as Wuling City at street level, want up to about 700 MiB). over budget, the least
-  recently used unpinned blobs not used this frame are evicted. if the budget is still exceeded by
-  content in use, the manager is _saturated_: unpinned fetches and uploads pause (queued blobs
-  return to idle and decoded ones are dropped) until something falls out of use, because evicting
-  fresh uploads only to refetch them would thrash.
+- **budget.** resident bytes of all kinds count against `budgetMiB` (default 1536). over budget, the
+  least recently used unpinned blobs not used this frame are evicted. if the budget is still
+  exceeded by content in use, the manager is _saturated_: unpinned fetches and uploads pause (queued
+  blobs return to idle and decoded ones are dropped) until something falls out of use, because
+  evicting fresh uploads only to refetch them would thrash.
 - **texture reduction.** textures are most of what saturates it: flying from Test Area over Yinglung
   Pass into North Wuling, the view at (-508, 235, 1018) wants about 600 MiB of textures, which alone
-  would pause the stream with meshes still to load, left as boxes. while the manager is saturated
-  and textures in use are at least a quarter of the budget,
+  would pause the stream at half the default budget with meshes still to load, left as boxes. while
+  the manager is saturated and textures in use are at least a quarter of the budget,
   [`TextureReduction`](../../packages/viewer/src/streaming/texture-reduction.ts) adds half a mip
   level to every material texture request (on top of `textureBias`, up to 3), every 4 frames. the
   levels it lets go fall out of use and are evicted, and the paused loads resume. every 30 frames it
