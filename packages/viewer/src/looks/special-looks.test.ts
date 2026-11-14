@@ -42,7 +42,7 @@ test('dithered effects shade as opaque shadowless surfaces, or unlit, and dither
 					normalMap: { ...main, texture: 5, scale: [1, 1] },
 					color: [10, 2.14, 0],
 					dither: null,
-					lighting: { roughness: 1, metallic: 0, normalScale: 1.5 },
+					lighting: { roughness: 1, metallic: 0, normalScale: 1.5, subsurface: null },
 					ignorePostExposure: 1,
 				},
 				'none',
@@ -99,13 +99,18 @@ test('lit dithered effects with a red alpha dither through the base slot and tak
 					normalMap: { ...main, texture: 9 },
 					color: [50, 50, 50],
 					dither: { texture: main, redAlpha: true, alphaScale: 2, exponent: 2, tiling: 1 },
-					lighting: { roughness: 0.5, metallic: 0.8, normalScale: 1 },
+					lighting: { roughness: 0.5, metallic: 0.8, normalScale: 1, subsurface: null },
 					ignorePostExposure: 1,
 				},
 				'none',
 			),
 		],
 	});
+	assert.equal(splash.params[LookRow.surface + 2], Math.fround(0.8));
+	assert.deepEqual(
+		Array.from(splash.params.subarray(DitherRow.subsurface, DitherRow.subsurface + 4)),
+		[0, 0, 0, 0],
+	);
 	assert.equal(splash.queue, 'cutout');
 	assert.deepEqual(splash.textures.slice(0, 2), [8, 9]);
 	assert.equal(splash.flags & LookFlags.AlphaNormal, 0);
@@ -113,6 +118,37 @@ test('lit dithered effects with a red alpha dither through the base slot and tak
 	assert.deepEqual(Array.from(splash.params.subarray(LookRow.tint, LookRow.tint + 4)), [1, 1, 1, -1]);
 	assert.equal(splash.params[LookRow.emissive + 3], 1);
 	assert.equal(splash.params[DitherRow.dither + 3], 1);
+});
+
+test('dithered effects with subsurface lighting scatter by their metallic and are never metals', () => {
+	const splash = (metallic: number) =>
+		materialLooks({
+			entries: [
+				described({
+					kind: 'dithered',
+					baseMap: null,
+					normalMap: null,
+					color: [1, 1, 1],
+					dither: null,
+					// a half-saturated green at half value, a quarter of it into the ambient light
+					lighting: { roughness: 0.5, metallic, normalScale: 1, subsurface: [1 / 3, 0.5, 0.5, 0.25] },
+					ignorePostExposure: 1,
+				}),
+			],
+		})[0];
+	const scattering = splash(0.5);
+	assert.equal(scattering.params[LookRow.surface + 2], 0);
+	assert.deepEqual(
+		Array.from(scattering.params.subarray(DitherRow.subsurface, DitherRow.subsurface + 4)),
+		[0.125, 0.25, 0.125, 0.25],
+	);
+	assert.equal(scattering.params[DitherRow.subsurfaceIndirect], 0.25);
+	// Wuling City's dam splashes (`M_fxmap_water_citywaterfall_820`) have no metallic, so nothing scatters
+	const plain = splash(0);
+	assert.deepEqual(
+		Array.from(plain.params.subarray(DitherRow.subsurface, DitherRow.subsurface + 4)),
+		[0, 0, 0, 0],
+	);
 });
 
 test('erosion rock: its maps tile by their own scales on UV set 0, the ramp streams whole', () => {

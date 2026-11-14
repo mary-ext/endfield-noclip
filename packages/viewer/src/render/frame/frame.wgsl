@@ -316,6 +316,11 @@ struct Surface {
 	sun_shadow: f32,
 	// foliage: the N·L of the sun's diffuse, or negative to take the shading normal's
 	sun_n_dot_l: f32,
+	// the game's subsurface model (`subsurface_sun` below): the colour of the light scattered inside the surface,
+	// times its amount (rgb), and the amount (a). zero without it
+	scatter: vec4f,
+	// how much of the scattered colour the ambient light adds
+	scatter_indirect: f32,
 }
 
 fn default_surface(albedo: vec3f, normal: vec3f) -> Surface {
@@ -332,6 +337,8 @@ fn default_surface(albedo: vec3f, normal: vec3f) -> Surface {
 	s.subsurface = 0.0;
 	s.sun_shadow = 1.0;
 	s.sun_n_dot_l = -1.0;
+	s.scatter = vec4f(0.0);
+	s.scatter_indirect = 0.0;
 	return s;
 }
 
@@ -799,6 +806,17 @@ fn foliage_sun(s: Surface, n: vec3f, v: vec3f, l: vec3f, a2: f32, f0: vec3f, alb
 	return color * s.sun_shadow / PI;
 }
 
+// the sun's share of the game's subsurface model, per unit of its illuminance over π
+// (docs/game-data/materials.md#subsurface): the scattered colour through a wrapped lobe, which a viewer looking
+// towards the sun sees brighten into a see-through one. both flatten as the amount nears 1
+fn subsurface_sun(scatter: vec4f, n: vec3f, v: vec3f, l: vec3f) -> vec3f {
+	let k = saturate(1.0 - scatter.a);
+	let wrap = saturate(dot(n, l) * (2.0 / 3.0) + 1.0 / 3.0);
+	let through = mix(mix(1.0, wrap * sqrt(wrap) * (5.0 / 3.0), k) / (2.0 * PI), 1.0,
+		pow(saturate(-dot(v, l)), 12.0) * mix(3.0, 0.1, k));
+	return scatter.rgb * through;
+}
+
 // sun (shadowed) plus ambient probe; `rel` is the camera-relative position
 fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	let n = s.normal;
@@ -824,9 +842,13 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 		let specular = f * (ggx_distribution(n_dot_h, a2) * smith_visibility(n_dot_v, n_dot_l, a2)) * frame.sun_color.w;
 		let diffuse = diffuse_color / PI * (vec3f(1.0) - f);
 		direct = (diffuse + specular) * n_dot_l;
-		// the shadow lookup only where the sun can reach
+		let scatters = s.scatter.a > 0.0;
+		if (scatters) {
+			direct += subsurface_sun(s.scatter, n, v, l) / PI;
+		}
+		// the shadow lookup only where the sun can reach, which scattered light does past the terminator
 		var visibility = vec3f(0.0);
-		if (n_dot_l > 0.0) {
+		if (n_dot_l > 0.0 || scatters) {
 			visibility = sun_visibility(rel, n, px);
 		}
 		direct *= frame.sun_color.rgb * visibility * frame.sun.w;
@@ -834,7 +856,7 @@ fn shade_surface(s: Surface, rel: vec3f, px: vec2f) -> Shaded {
 	direct += local_lighting(s, v, rel, px, diffuse_color, f0, roughness);
 
 	let irradiance = ambient_irradiance(frame.eye.xyz + rel, n);
-	let diffuse_ambient = diffuse_color * irradiance;
+	let diffuse_ambient = (diffuse_color + s.scatter.rgb * s.scatter_indirect) * irradiance;
 	// specular sees only the material occlusion, through Lagarde's specular occlusion
 	let specular_occlusion = clamp(pow(n_dot_v + s.occlusion, exp2(-16.0 * roughness - 1.0)) - 1.0 + s.occlusion, 0.0, 1.0);
 	// a screen-space hit gets the environment BRDF and specular occlusion but not the sky's specular factor

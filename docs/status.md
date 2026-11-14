@@ -331,9 +331,11 @@ packs or renders correctly.
     `…_inkpattern_huge_01_fj_12`, with `_INK_COLOR_DISTORT`). the Very Large Rift's escaping trails
     are unchecked in game
   - [VFXWaterDitherAlpha](game-data/effects.md#solid-effects) splashes draw as VFXDitherAlpha's
-    plain variant; `_SUBSURFACE` and the sequence-frame variants stay unsupported (about a third of
-    map02's), and the splash at the foot of Si's Painting's cave falls is unchecked against an
-    in-game shot
+    plain variant, `_SUBSURFACE` ones with the game's
+    [subsurface lighting](game-data/materials.md#subsurface) from the sun and the ambient light but
+    not from local lights; the sequence-frame variants stay unsupported (one map02 material), and
+    the splash at the foot of Si's Painting's cave falls and those under Wuling City's dam are
+    unchecked against an in-game shot
   - [VFXRefract](game-data/effects.md#refraction): its saturation, Fresnel mask and trail aren't
     drawn, its scene copy includes the water and fog (unchecked against the game's), and on meshes
     it ignores the second UV set the game reads as custom data; Deep Dale Street's fog-wall haze,

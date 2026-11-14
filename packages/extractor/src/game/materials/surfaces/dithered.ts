@@ -5,9 +5,49 @@ import { undrawnKeywords } from '../describe-steps.ts';
 import { linearRgb, type MaterialReader, scaleRgb, unsupported } from '../material-values.ts';
 
 /** keywords a `HGRP/Effect/VFXDitherAlpha` material can have and still be drawn as a dithered surface */
-const DITHERED_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2']);
+const DITHERED_KEYWORDS = new Set(['_NORMAL_MAP', '_USE_MAIN2', '_SUBSURFACE']);
 
 const NO_LIGHTING_SHADER = 'HGRP/Effect/VFXDitherAlphaNoLighting';
+
+/** a colour's hue, saturation and value, each 0–1, as Unity's `Color.RGBToHSV` gives them */
+const hsvOf = ([r, g, b]: Rgb): Rgb => {
+	const max = Math.max(r, g, b);
+	const span = max - Math.min(r, g, b);
+	if (max <= 0 || span <= 0) {
+		return [0, 0, max];
+	}
+	let sixth: number;
+	switch (max) {
+		case r: {
+			sixth = (g - b) / span;
+			break;
+		}
+		case g: {
+			sixth = 2 + (b - r) / span;
+			break;
+		}
+		default: {
+			sixth = 4 + (r - g) / span;
+		}
+	}
+	return [(sixth / 6 + 1) % 1, span / max, max];
+};
+
+/**
+ * `_SUBSURFACE`'s values, which the game's lighting takes from a table the material registers its
+ * `_SubsurfaceColor` (as stored) and `_SubsurfaceIndirect` in while `_EnableSubsurface` is set; unregistered,
+ * it reads zeros
+ */
+const subsurfaceOf = ({
+	float,
+	color,
+}: MaterialReader): NonNullable<DitheredSurface['lighting']>['subsurface'] => {
+	if (float('_EnableSubsurface', 0) <= 0) {
+		return [0, 0, 0, 0];
+	}
+	const [r, g, b] = color('_SubsurfaceColor') ?? [1, 1, 1, 1];
+	return [...hsvOf([r, g, b]), float('_SubsurfaceIndirect', 1)];
+};
 
 /**
  * `HGRP/Effect/VFXDitherAlpha`, its variants and `HGRP/Effect/VFXWaterDitherAlpha` (the same passes) as an
@@ -63,6 +103,7 @@ export const describeDithered = (reader: MaterialReader): DitheredSurface | Unsu
 					roughness: float('_Roughness', 1),
 					metallic: float('_Metallic', 0),
 					normalScale: float('_NormalScale', 1),
+					subsurface: has('_SUBSURFACE') ? subsurfaceOf(reader) : null,
 				}
 			: null,
 		ignorePostExposure: float('_IgnorePostExposure', 1),

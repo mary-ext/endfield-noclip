@@ -60,10 +60,12 @@ struct Look {
 	parallax_bright: vec4f,
 	// leaves (`leafParams` in lit-look.ts): how much the vertex AO shadows the sun, the fake directional
 	// shadow's strength and power, 1 when the sun's N·L takes the vertex normal. Lit layers: the fuzzy shading's
-	// core darkness, edge brightness, edge shadow range and offset
+	// core darkness, edge brightness, edge shadow range and offset. dithered VFXDitherAlpha (`DitherRow` in
+	// special-looks.ts): the subsurface colour times its amount, the amount
 	foliage: vec4f,
 	// leaves: the vertex AO ranges fading transmission (xy: start, range) and subsurface (zw) in. Lit layers:
-	// the fuzzy edge shadow's intensity, the dark and bright powers, the edge's normal strength
+	// the fuzzy edge shadow's intensity, the dark and bright powers, the edge's normal strength. dithered
+	// VFXDitherAlpha: the subsurface colour's share of the ambient light
 	foliage_ao: vec4f,
 	// leaves: subsurface intensity, 1 when transmission fades out with distance, canopy ramp intensity, 1 when
 	// the ramp starts at the top
@@ -794,6 +796,10 @@ fn shade(in: VertexOut, wet: bool) -> Shaded {
 		}
 	} else if ((flags & TRUNK) != 0u) {
 		s = trunk_surface(s, look, in, base_a);
+	} else if ((flags & LAYER_BLEND) == 0u) {
+		// VFXWaterDitherAlpha's `_SUBSURFACE` (`DitherRow` in special-looks.ts); zero on other looks
+		s.scatter = look.foliage;
+		s.scatter_indirect = look.foliage_ao.x;
 	}
 	// the game wets what its deferred lighting shades, so not the forward-shaded glass
 	if (wet) {

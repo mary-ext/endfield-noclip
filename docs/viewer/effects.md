@@ -141,6 +141,11 @@ and the near camera fade. `_USE_MAIN2` is drawn only when its second texture mas
 (`_UseMainTex2AsAlpha` with `_MainTex2BlendMode` 0): the tint is multiplied by `_MainTex2Color`, and
 the surface draws without the test.
 
+`_SUBSURFACE` surfaces take the game's [subsurface model](../game-data/materials.md#subsurface) for
+the sun and the ambient light (`subsurface_sun` and `Surface.scatter` in `frame.wgsl`): the look
+packs the scattered colour times its amount in `DitherRow.subsurface` and zeroes the metallic. local
+lights light them as a default surface.
+
 unlit VFXDitherAlpha materials with a distortion, a dissolve, a mask or polar or screen UVs draw
 through VFXBaseV2's texture stack (`describeDitherEffect`, `stackLook`), fogged, blended by the
 alpha the game dithers with rather than dithered, which the temporal antialiasing would average to

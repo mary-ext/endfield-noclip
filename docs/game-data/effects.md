@@ -354,12 +354,16 @@ with gold veins.
 
 `HGRP/Effect/VFXWaterDitherAlpha` has the same G-buffer and depth passes under another name, with
 fewer variants (`_NORMAL_MAP`, `_USE_DISTURB`, `_USE_DISSOLVE`, `_USE_MASK` in the depth pass, and
-its own `_SUBSURFACE` and `_USE_SEQUENCE_FRAME_*`). waterfall splashes use it: map02 has over a
-dozen such materials, among them the foam sheet at the foot of Si's Painting's cave falls
-(`M_fx_map_common_waterdecal_splashes_2504_01` in `p_fxmap_map02_lv010_water_splashes_01`, near
-unity 734, 233, 1151), lit at `_TintColorIntensity` 50 (so its albedo saturates to white) with
-metallic 0.8, a normal map, and its main texture's red as the dithered alpha (`_UseMainTexAsAlpha`,
-raised to 2).
+its own `_SUBSURFACE` and `_USE_SEQUENCE_FRAME_*`). `_SUBSURFACE` lights the surface with the
+[subsurface model](materials.md#subsurface), where `_Metallic` scales the scattering instead of
+making a metal: the splashes under Wuling City's dam (`M_fxmap_water_citywaterfall_820` in
+`p_fxmap_common_citywatersplashes_small_b_802`, near unity −1243, 286, −336) have a grey subsurface
+colour and `_Metallic` 0, so nothing scatters and they're plain white foam. waterfall splashes use
+the shader: map02 has over a dozen such materials, among them the foam sheet at the foot of Si's
+Painting's cave falls (`M_fx_map_common_waterdecal_splashes_2504_01` in
+`p_fxmap_map02_lv010_water_splashes_01`, near unity 734, 233, 1151), lit at `_TintColorIntensity` 50
+(so its albedo saturates to white) with metallic 0.8, a normal map, and its main texture's red as
+the dithered alpha (`_UseMainTexAsAlpha`, raised to 2).
 
 `HGRP/Effect/VFXDitherAlphaNoLighting` is the same surface drawn unlit in a forward pass instead of
 the G-buffer, and doesn't declare `_UseLighting`. its depth pass is the dithered test below; the

@@ -11,6 +11,7 @@ import type {
 	ErosionSurface,
 	MattePaintingSurface,
 } from '@endfield-noclip/package-format/surfaces';
+import type { Rgb } from '@endfield-noclip/package-format/values';
 
 import { emptyLook, LookFlags, LookRow, type MaterialLook, setTexture, Slot } from './look.ts';
 
@@ -111,7 +112,23 @@ export const DitherRow = {
 	 * is the red of the texture (`_UseMainTexAsAlpha`) rather than its alpha
 	 */
 	dither: LookRow.canopy,
+	/**
+	 * `_SUBSURFACE`: the scattered colour times its amount, then the amount (the colour's value times the
+	 * metallic); zero without it
+	 */
+	subsurface: LookRow.foliage,
+	/** the scattered colour's share of the ambient light (`_SubsurfaceIndirect`), 0, 0, 0 */
+	subsurfaceIndirect: LookRow.foliageAo,
 } as const;
+
+/** a hue (0–1) as a fully saturated colour */
+const hueRgb = (hue: number): Rgb => {
+	const channel = (shift: number): number => {
+		const turn = (((hue + shift) % 1) + 1) % 1;
+		return Math.min(Math.max(Math.abs(turn * 6 - 3) - 1, 0), 1);
+	};
+	return [channel(0), channel(2 / 3), channel(1 / 3)];
+};
 
 /**
  * a dithered effect ({@link DitheredSurface}), drawn like an opaque surface; the shader has no shadow caster
@@ -161,10 +178,17 @@ export const ditheredLook = (surface: DitheredSurface, cull: MaterialCull): Mate
 	// untextured, the tint is the albedo, which the G-buffer saturates
 	const untextured = surface.baseMap === null;
 	params.set([...(untextured ? color.map((c) => Math.min(c, 1)) : color), -1], LookRow.tint);
-	params.set(
-		[lighting.roughness, lighting.roughness, lighting.metallic, lighting.normalScale],
-		LookRow.surface,
-	);
+	const { subsurface } = lighting;
+	// the game's subsurface lighting has no metals: the metallic scales the scattering instead
+	const metallic = subsurface === null ? lighting.metallic : 0;
+	params.set([lighting.roughness, lighting.roughness, metallic, lighting.normalScale], LookRow.surface);
+	if (subsurface !== null) {
+		const [hue, saturation, value, indirect] = subsurface;
+		const amount = value * lighting.metallic;
+		const scattered = hueRgb(hue).map((c) => (1 + (c - 1) * saturation) * amount);
+		params.set([...scattered, amount], DitherRow.subsurface);
+		params[DitherRow.subsurfaceIndirect] = indirect;
+	}
 	params.set([1, 0.04, 0, 1], LookRow.surface2);
 	params[LookRow.emissive + 3] = untextured ? 1 : 0;
 	return look;

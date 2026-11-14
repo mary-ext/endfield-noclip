@@ -276,6 +276,29 @@ has, and with `_EnableTrunkRamp` the albedo blends toward `_TrunkRampColor` by `
 × the base map's alpha × `smoothstep(range + transition, range, A)` (`_TrunkRampRange`,
 `_TrunkRampTransitionRange`). the keyword also sways the trunk in the wind.
 
+## subsurface
+
+the deferred lighting has a third model beside the default and the foliage one, for surfaces that
+light scatters inside. a material with `_EnableSubsurface` set registers its `_SubsurfaceColor` (as
+stored) and `_SubsurfaceIndirect` in a table of up to 63 entries, and its G-buffer pass writes its
+entry's number; an unregistered material reads zeros. per pixel the scattered colour is
+`c = mix(1, hue, saturation) · v` from the colour's hue and saturation, with `v` its value times
+what the pass writes in the metallic channel, so the surface is never a metal: the albedo is all
+diffuse and F0 is 0.04. with `k = saturate(1 − v)`:
+
+- the sun, beside the default diffuse and specular, adds
+  `c · mix(t · mix(1, w^1.5 · 5/3, k) / 2π, 1, saturate(−V·L)^12 · mix(3, 0.1, k))`, where
+  `w = saturate(N·L · 2/3 + 1/3)` wraps the light past the terminator, `t` is what the pass writes
+  in the occlusion channel, and the second lobe shows the sun through the surface to a viewer facing
+  it
+- the ambient light takes `albedo + c · _SubsurfaceIndirect` as its diffuse colour
+
+[VFXWaterDitherAlpha](effects.md#solid-effects) writes it under `_SUBSURFACE`, with `_Metallic` in
+the metallic channel and `t` 1. [VFXWater](effects.md#waterfalls)'s forward pass has the same two
+terms. the model's other branch, a table of up to 15 `HGSubsurfaceProfile`s with scatter and
+indirect lookup textures, isn't read, nor are its local-light pass or which other shaders write
+either branch (`HGRP/Lit` has `_SUBSURFACE*` keywords).
+
 ## glass
 
 `HGRP/LitTransparent` is the glass shader (a dozen or so materials on map01: windows and glass walls

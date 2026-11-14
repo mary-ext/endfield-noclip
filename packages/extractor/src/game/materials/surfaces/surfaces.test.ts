@@ -85,7 +85,7 @@ describe('dithered effects', () => {
 			surface.color.map((c) => Math.round(c * 1000) / 1000),
 			[10, 2.14, 0],
 		);
-		assert.deepEqual(surface.lighting, { roughness: 1, metallic: 0, normalScale: 1.5 });
+		assert.deepEqual(surface.lighting, { roughness: 1, metallic: 0, normalScale: 1.5, subsurface: null });
 		// a second texture's colour isn't drawn; a dissolve makes it an effect
 		assert.equal(rock({ floats: { _UseMainTex2AsAlpha: 0 } }).kind, 'unsupported');
 		assert.notEqual(rock({ keywords: ['_USE_DISSOLVE'] }).kind, 'dithered');
@@ -146,11 +146,41 @@ describe('dithered effects', () => {
 		assert.ok(surface.kind === 'dithered');
 		assert.equal(surface.baseMap, null);
 		assert.equal(surface.normalMap?.texture, 9);
-		assert.deepEqual(surface.lighting, { roughness: 0.5, metallic: 0.8, normalScale: 1 });
+		assert.deepEqual(surface.lighting, { roughness: 0.5, metallic: 0.8, normalScale: 1, subsurface: null });
 		assert.deepEqual(
 			{ ...surface.dither, texture: surface.dither?.texture.texture },
 			{ texture: 8, redAlpha: true, alphaScale: 2, exponent: 2, tiling: 1 },
 		);
+	});
+
+	it('read the subsurface colour of waterfall splashes as hue, saturation and value while it is enabled', () => {
+		const splash = (floats: Record<string, number>, color: [number, number, number, number]) =>
+			describeMaterial(
+				values({
+					keywords: ['_NORMAL_MAP', '_SUBSURFACE'],
+					blend: 'alphaTest',
+					alphaClipThreshold: 0.5,
+					slots: { _MainTex: { texture: 8, uv: 0, scale: [1, 1], offset: [0, 0] } },
+					floats: { _EnableSubsurface: 1, _SubsurfaceIndirect: 1, ...floats },
+					colors: { _SubsurfaceColor: color },
+				}),
+				shaderEntry({ ...shader, name: 'HGRP/Effect/VFXWaterDitherAlpha' }),
+			);
+		// Wuling City's dam splashes (`M_fxmap_water_citywaterfall_820`): a grey, on a surface with no metallic
+		const dam = splash({ _Metallic: 0 }, [0.577, 0.577, 0.577, 1]);
+		assert.ok(dam.kind === 'dithered');
+		assert.deepEqual(dam.lighting?.subsurface, [0, 0, 0.577, 1]);
+		assert.equal(dam.lighting?.metallic, 0);
+		const teal = splash({ _SubsurfaceIndirect: 0.5 }, [0.25, 1, 0.75, 1]);
+		assert.ok(teal.kind === 'dithered');
+		assert.deepEqual(
+			teal.lighting?.subsurface?.map((c) => Math.round(c * 1000) / 1000),
+			[0.444, 0.75, 1, 0.5],
+		);
+		// a material that never registered its colour scatters nothing
+		const off = splash({ _EnableSubsurface: 0 }, [1, 0, 0, 1]);
+		assert.ok(off.kind === 'dithered');
+		assert.deepEqual(off.lighting?.subsurface, [0, 0, 0, 0]);
 	});
 
 	it('draw the NoLighting variant unlit, though it declares no lighting switch', () => {

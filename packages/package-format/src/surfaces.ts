@@ -485,7 +485,17 @@ export interface DitheredSurface {
 		tiling: number;
 	} | null;
 	/** the lit surface's inputs; `null` when unlit (`_UseLighting` off) */
-	lighting: { roughness: number; metallic: number; normalScale: number } | null;
+	lighting: {
+		roughness: number;
+		/** with `subsurface`, the share of its value that scatters rather than how metallic the surface is */
+		metallic: number;
+		normalScale: number;
+		/**
+		 * `_SUBSURFACE`, the game's subsurface lighting (`docs/game-data/materials.md#subsurface`): the scattered
+		 * colour's hue, saturation and value, and its share of the ambient light. `null` without the keyword
+		 */
+		subsurface: [hue: number, saturation: number, value: number, indirect: number] | null;
+	} | null;
 	/** unlit: the radiance ignores the post exposure (`_IgnorePostExposure`) */
 	ignorePostExposure: Weight;
 }
