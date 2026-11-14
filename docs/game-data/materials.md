@@ -369,6 +369,22 @@ rather than the box's UVs:
 - alpha: the base map's alpha × the colour's alpha × `_DecalOpacity` × `steep`, so level ground
   stays dry
 
+`_BLEND_SLUDGE_EROSION` is the blight's erosion creeping over built ground and up what stands on it
+(The Hub's deck, map02_lv002 near unity −784, 256, 13). it compiles alone or with `_COMPLETE_PBR`
+and `_NORMAL_ANGLE_BLEND`, and changes only the albedo and the alpha:
+
+- albedo: the surface normal's squared world components weigh three projections. `N.y²` takes the
+  albedo above; `N.x²` takes `_SludgeDecalTex` at the box's local zy and `N.z²` at its local xy,
+  each times the texture's `_ST` scale, untinted by the placement's colour. the weights follow the
+  world's axes while the positions are the box's, so they line up only on an unrotated box
+- alpha: the base map's alpha × `_SludgeDecalAlphaScale` ×
+  `sat(1 − local.y · _SludgeDecalHeightFalloff)` × the colour's alpha × `_DecalOpacity` (and the
+  angle fade), with `local.y` the height in the box from −0.5 to 0.5: the decal is whole below the
+  box's centre and gone `1 / falloff` above it. the sludge texture's alpha isn't read
+
+the sludge texture is read through a sampler of the pipeline's rather than its own; which one isn't
+traced.
+
 ## matte paintings
 
 `HGRP/MattePainting` draws the painted mountain ranges on the horizon: a few alpha-tested ring

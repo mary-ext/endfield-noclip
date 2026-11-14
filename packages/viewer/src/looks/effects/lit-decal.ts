@@ -11,9 +11,9 @@ import {
 } from './effect-look.ts';
 
 /**
- * float offsets of an `HGRP/DecalLit` look's parameters, in place of {@link EffectRow}'s rows 17–26. the tint
- * (the placement's colour; alpha times `_DecalOpacity`), the UV rows of slot 0 (`_BaseColorMap`) and 1
- * (`_SampleTex1`) and the last row are shared
+ * float offsets of an `HGRP/DecalLit` look's parameters, in place of {@link EffectRow}'s rows 17–26 and 32.
+ * the tint (the placement's colour; alpha times `_DecalOpacity`), the UV rows of slot 0 (`_BaseColorMap`), 1
+ * (`_SampleTex1`) and 2 (`_SludgeDecalTex`) and the last row are shared
  */
 export const DecalLitRow = {
 	/**
@@ -54,6 +54,11 @@ export const DecalLitRow = {
 	 * the base map always takes the placement's
 	 */
 	pbrPlaced: 104,
+	/**
+	 * `_BLEND_SLUDGE_EROSION`: 1 when on, `_SludgeDecalAlphaScale`, `_SludgeDecalHeightFalloff`, 0. in the
+	 * texture stack's edge colour row, which decals don't read
+	 */
+	sludge: 128,
 } as const;
 
 /**
@@ -62,6 +67,9 @@ export const DecalLitRow = {
  * 0
  */
 const DECAL_PBR_SLOT = 1;
+
+/** the slot of `_BLEND_SLUDGE_EROSION`'s wall texture, whose UV row holds its scale of the box's position */
+const DECAL_SLUDGE_SLOT = 2;
 
 /**
  * a lit decal ({@link LitDecalSurface}): its base colour map tinted by the placement's colour, with the PBR
@@ -98,7 +106,11 @@ export const litDecalLook = (decal: LitDecalSurface): EffectLook => {
 		[decal.pbrBase ? 1 : 0, decal.metallicChannel, decal.occlusionChannel, decal.affectNormal],
 		DecalLitRow.channels,
 	);
-	const { waterFlow, emission } = decal;
+	const { waterFlow, sludge, emission } = decal;
+	if (sludge !== null) {
+		setSlot(look, DECAL_SLUDGE_SLOT, { ...still(sludge.texture), scale: sludge.scale }, ROLE_NONE);
+		params.set([1, sludge.alphaScale, sludge.heightFalloff], DecalLitRow.sludge);
+	}
 	if (waterFlow !== null) {
 		params.set([1, waterFlow.normalScale, waterFlow.roughness, waterFlow.normalFactor], DecalLitRow.water);
 		params.set(waterFlow.movement, DecalLitRow.flow);

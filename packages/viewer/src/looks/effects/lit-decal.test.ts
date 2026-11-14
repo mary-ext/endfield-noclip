@@ -38,9 +38,10 @@ test('a lit decal draws its maps through the placement or the PBR map’s own tr
 		occlusionChannel: 0,
 		affectNormal: 0,
 		waterFlow: null,
+		sludge: null,
 		emission: { color: [1, 1, 1], channel: 3, albedoAffect: 0, ignorePostExposure: 1 },
 	};
-	const [look, water] = materialLooks({
+	const [look, water, sludged] = materialLooks({
 		entries: [
 			described(decal),
 			described({
@@ -54,6 +55,11 @@ test('a lit decal draws its maps through the placement or the PBR map’s own tr
 					movement: [0.02, 0.05, 1, 1],
 					levelFade: 0.1,
 				},
+				emission: null,
+			}),
+			described({
+				...decal,
+				sludge: { texture: 4, scale: [2, 3], alphaScale: 3, heightFalloff: 5.75 },
 				emission: null,
 			}),
 		],
@@ -84,4 +90,9 @@ test('a lit decal draws its maps through the placement or the PBR map’s own tr
 		),
 		[1, 0.4, 0.13, 0.01],
 	);
+	assert.equal(look.params[DecalLitRow.sludge], 0);
+	// the sludge texture's slot holds its scale of the box's position
+	assert.equal(sludged.textures[2], 4);
+	assert.deepEqual([...sludged.params.subarray(EffectRow.uv + 8, EffectRow.uv + 10)], [2, 3]);
+	assert.deepEqual([...sludged.params.subarray(DecalLitRow.sludge, DecalLitRow.sludge + 4)], [1, 3, 5.75, 0]);
 });

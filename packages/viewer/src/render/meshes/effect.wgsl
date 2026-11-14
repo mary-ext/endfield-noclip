@@ -1537,7 +1537,7 @@ fn fs_effect_decal(in: EffectOut) -> EffectAccumulated {
 		if (fx_keeps_lit_decals_off(px)) {
 			return fx_nothing();
 		}
-		return fx_lit_decal(in, px, rel, rel_dx, rel_dy, uv, bases.dx[0], bases.dy[0]);
+		return fx_lit_decal(in, px, rel, rel_dx, rel_dy, object_p, uv, bases.dx[0], bases.dy[0]);
 	}
 	let cracked = fx_row(id, FX_PARALLAX).y != 0.0;
 	var parallax = vec2f(0.0);
@@ -1583,6 +1583,9 @@ const LD_FLOW_FADE = 23u;
 const LD_EMISSIVE = 24u;
 const LD_EMISSIVE_MASK = 25u;
 const LD_PBR_PLACED = 26u;
+const LD_SLUDGE = 32u;
+// the sludge texture's slot, whose UV row holds its scale
+const LD_SLUDGE_SLOT = 2u;
 
 // one of four map channels by `_MetallicChannel`/`_OcclusionChannel`'s numbering, as the game blends them:
 // `offset` 1 for the occlusion's (R at 1, … A at 4) and 0 for the metallic's (R at 2, … A at 5)
@@ -1617,10 +1620,10 @@ struct LitDecal {
 // `HGRP/DecalLit` boxes (`litDecalLook` in lit-decal.ts, docs/game-data/materials.md#decals) over a surface of
 // normal `n` and roughness `roughness` at camera-relative `rel` (with its screen gradients): where the
 // material's colour masks let it, the decal's roughness, normal, metallic and occlusion replace the surface's.
-// `uv` is the box's `local.xz + 0.5` with its screen gradients; the placement's colour and UV transform are
-// its row's
-fn ld_decal(in: EffectOut, rel: vec3f, rel_dx: vec3f, rel_dy: vec3f, uv: vec2f, dx: vec2f, dy: vec2f, n: vec3f,
-	roughness: f32) -> LitDecal {
+// `local` is the point in the box (±0.5) and `uv` its `local.xz + 0.5` with its screen gradients; the
+// placement's colour and UV transform are its row's
+fn ld_decal(in: EffectOut, rel: vec3f, rel_dx: vec3f, rel_dy: vec3f, local: vec3f, uv: vec2f, dx: vec2f, dy: vec2f,
+	n: vec3f, roughness: f32) -> LitDecal {
 	let id = in.look;
 	let base_t = in.placement_uv;
 	let base = textureSampleGrad(fx_tex0, fx_samp0, uv * base_t.xy + base_t.zw, dx * base_t.xy, dy * base_t.xy);
@@ -1648,6 +1651,20 @@ fn ld_decal(in: EffectOut, rel: vec3f, rel_dx: vec3f, rel_dy: vec3f, uv: vec2f, 
 	var alpha = base.a * tint.a;
 	if (surface_row.w > 0.0) {
 		alpha *= pow(max(saturate(dot(in.up, n)), 5.96e-8), surface_row.w);
+	}
+	let sludge = fx_row(id, LD_SLUDGE);
+	if (sludge.x > 0.5) {
+		// `_BLEND_SLUDGE_EROSION`: surfaces facing the world's x and z take the sludge texture, untinted, at the
+		// box's local zy and xy; the weights are the surface normal's squared world components, as the game's
+		let st = fx_row(id, FX_UV + LD_SLUDGE_SLOT).xy;
+		let local_dx = vec3f(dot(in.to_object0.xyz, rel_dx), dot(in.to_object1.xyz, rel_dx), dot(in.to_object2.xyz, rel_dx));
+		let local_dy = vec3f(dot(in.to_object0.xyz, rel_dy), dot(in.to_object1.xyz, rel_dy), dot(in.to_object2.xyz, rel_dy));
+		let side_x = textureSampleGrad(fx_tex2, fx_samp2, local.zy * st, local_dx.zy * st, local_dy.zy * st);
+		let side_z = textureSampleGrad(fx_tex2, fx_samp2, local.xy * st, local_dx.xy * st, local_dy.xy * st);
+		let w = n * n;
+		d.albedo = d.albedo * w.y + side_x.rgb * w.x + side_z.rgb * w.z;
+		// the alpha stays the base map's, scaled, and fades out above the box's centre
+		alpha *= sludge.y * saturate(1.0 - local.y * sludge.z);
 	}
 
 	var tangent_n: vec3f;
@@ -1731,15 +1748,15 @@ fn fx_surface_roughness(px: vec2i) -> f32 {
 
 // a lit decal laid over the surface by its alpha, over the composited scene before the water draws, lit like any
 // surface: the decals that write albedo
-fn fx_lit_decal(in: EffectOut, px: vec2i, rel: vec3f, rel_dx: vec3f, rel_dy: vec3f, uv: vec2f, dx: vec2f,
-	dy: vec2f) -> EffectAccumulated {
+fn fx_lit_decal(in: EffectOut, px: vec2i, rel: vec3f, rel_dx: vec3f, rel_dy: vec3f, local: vec3f, uv: vec2f,
+	dx: vec2f, dy: vec2f) -> EffectAccumulated {
 	var n = fx_surface_normal(px);
 	var roughness = fx_surface_roughness(px);
 	if (all(n == vec3f(0.0))) {
 		n = in.up;
 		roughness = 1.0;
 	}
-	let d = ld_decal(in, rel, rel_dx, rel_dy, uv, dx, dy, n, roughness);
+	let d = ld_decal(in, rel, rel_dx, rel_dy, local, uv, dx, dy, n, roughness);
 	if (d.alpha <= 0.0) {
 		return fx_nothing();
 	}
@@ -1776,7 +1793,7 @@ fn fs_decal_relight(in: EffectOut) -> @location(0) vec4f {
 	if (any(abs(object_p) >= vec3f(0.5)) || scene_depth >= 1e9 || all(n == vec3f(0.0)) || fx_keeps_lit_decals_off(px)) {
 		return vec4f(0.0);
 	}
-	let d = ld_decal(in, rel, rel_dx, rel_dy, uv, dx, dy, n, fx_surface_roughness(px));
+	let d = ld_decal(in, rel, rel_dx, rel_dy, object_p, uv, dx, dy, n, fx_surface_roughness(px));
 	if (d.alpha <= 0.0) {
 		return vec4f(0.0);
 	}

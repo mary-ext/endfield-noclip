@@ -1152,6 +1152,12 @@ export interface LitDecalSurface {
 		levelFade: number;
 	} | null;
 	/**
+	 * `_BLEND_SLUDGE_EROSION`: the texture walls take instead of the base map, at the box's local position
+	 * times `scale`; the alpha is the base map's times `alphaScale`, fading out above the box's centre by
+	 * `heightFalloff` per unit of its local height
+	 */
+	sludge: { texture: number; scale: Vec2; alphaScale: number; heightFalloff: number } | null;
+	/**
 	 * `_BLEND_EMISSIVE`: `channel` is `_EmissiveChannel` (0–3 the PBR map's R–A, 4 the base map's alpha;
 	 * fractional values blend between neighbours)
 	 */

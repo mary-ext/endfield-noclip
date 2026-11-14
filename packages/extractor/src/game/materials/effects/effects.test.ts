@@ -436,9 +436,30 @@ describe('lit decals', () => {
 			movement: [0.02, 0.05, 1, 1],
 			levelFade: 0.1,
 		});
-		assert.equal(placed({ keywords: ['_BLEND_SLUDGE_EROSION'] }).kind, 'unsupported');
+		assert.equal(water.sludge, null);
+		assert.equal(placed({ keywords: ['_BLEND_WETNESS'] }).kind, 'unsupported');
 		// writes no albedo, and has no map to change the surface with
 		assert.equal(placed({ floats: { ...floats, _ColorMask3: 0 } }).kind, 'undrawn');
+	});
+
+	it('takes its sludge texture for walls with _BLEND_SLUDGE_EROSION', () => {
+		// the blight's erosion on The Hub's deck (`M_rdecal_com_effect_erosion+1_001_02`)
+		const sludged = (overrides: Partial<MaterialValues>) =>
+			describeMaterial(
+				material({
+					keywords: ['_BLEND_SLUDGE_EROSION', '_COMPLETE_PBR', '_NORMAL_ANGLE_BLEND'],
+					slots: { _BaseColorMap: slot(1), _SampleTex1: slot(2), _SludgeDecalTex: slot(1, [2, 3]) },
+					floats: { ...floats, _SludgeDecalAlphaScale: 3, _SludgeDecalHeightFalloff: 5.76 },
+					...overrides,
+				}),
+				litDecal,
+			);
+		const decal = ofKind(sludged({}), 'litDecal');
+		assert.deepEqual(decal.sludge, { texture: 1, scale: [2, 3], alphaScale: 3, heightFalloff: 5.76 });
+		assert.equal(decal.angleFade, 2);
+		assert.equal(sludged({ slots: { _BaseColorMap: slot(1) } }).kind, 'unsupported');
+		// no variant of the game's has both
+		assert.equal(sludged({ keywords: ['_BLEND_SLUDGE_EROSION', '_BLEND_WATER_FLOW'] }).kind, 'unsupported');
 	});
 
 	it('glows by its PBR map channel with _BLEND_EMISSIVE', () => {

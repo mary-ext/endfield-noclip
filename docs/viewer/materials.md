@@ -171,10 +171,13 @@ as a dielectric's; its emission, screen-space reflections, ambient occlusion and
 drawn.
 
 an emissive decal's glow is part of the decal's own shading when it's laid over; a relit one adds
-it, times its alpha, on top of the surface's emission rather than replacing it. lit decals with
-keywords past `_COMPLETE_PBR`, `_NORMAL_ANGLE_BLEND`, `_BLEND_WATER_FLOW` and `_BLEND_EMISSIVE`
-(wetness, sludge, footprints, UV noise, arcs) are [unsupported](#unsupported-materials): drawn by
-the opaque path, their box would show as a solid block.
+it, times its alpha, on top of the surface's emission rather than replacing it.
+`_BLEND_SLUDGE_EROSION`'s wall texture is the look's third slot, its UV row holding the scale, read
+through the texture's own sampler (the game's is a shared one). lit decals with keywords past
+`_COMPLETE_PBR`, `_NORMAL_ANGLE_BLEND`, `_BLEND_WATER_FLOW`, `_BLEND_EMISSIVE` and
+`_BLEND_SLUDGE_EROSION` (wetness, footprints, UV noise, arcs), a sludge decal without its texture or
+with a water flow or emission, are [unsupported](#unsupported-materials): drawn by the opaque path,
+their box would show as a solid block.
 
 ## matte paintings
 

@@ -13,6 +13,7 @@ const LIT_DECAL_KEYWORDS = new Set([
 	'_NORMAL_ANGLE_BLEND',
 	'_BLEND_WATER_FLOW',
 	'_BLEND_EMISSIVE',
+	'_BLEND_SLUDGE_EROSION',
 ]);
 
 /** Unity's `ColorWriteMask` bits */
@@ -40,6 +41,23 @@ export const describeLitDecal = (
 	const waterFlow = has('_BLEND_WATER_FLOW');
 	// the emission target's mask is fixed, so emissive decals always write it
 	const emissive = !waterFlow && has('_BLEND_EMISSIVE');
+	let sludge: LitDecalSurface['sludge'] = null;
+	if (has('_BLEND_SLUDGE_EROSION')) {
+		// the game compiles the sludge only alone or with the PBR map and the angle fade
+		if (waterFlow || emissive) {
+			return unsupported('_BLEND_SLUDGE_EROSION with a water flow or emission');
+		}
+		const texture = reader.slot('_SludgeDecalTex');
+		if (texture === undefined) {
+			return unsupported('no sludge texture');
+		}
+		sludge = {
+			texture: texture.texture,
+			scale: [...texture.scale],
+			alphaScale: float('_SludgeDecalAlphaScale', 1),
+			heightFalloff: float('_SludgeDecalHeightFalloff', 0),
+		};
+	}
 	const relight = (float('_ColorMask3', 0) & WRITE_RED) === 0;
 	const surfaceMask = float('_ColorMask2', 0);
 	if (relight && !emissive && (surfaceMask & (WRITE_RED | WRITE_GREEN | WRITE_BLUE)) === 0) {
@@ -103,6 +121,7 @@ export const describeLitDecal = (
 					levelFade: Math.max(float('_AngleBlendFallOff2', 1), 1e-3),
 				}
 			: null,
+		sludge,
 		emission: emissive
 			? {
 					color: [emission[0], emission[1], emission[2]],
