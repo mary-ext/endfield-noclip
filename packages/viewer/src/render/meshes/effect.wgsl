@@ -1729,8 +1729,8 @@ fn fx_surface_roughness(px: vec2i) -> f32 {
 	return f32(textureLoad(fx_surface, px, 0).x >> 24u) / 255.0;
 }
 
-// a lit decal laid over the surface by its alpha in the transparent pass, lit like any surface: the decals that
-// write albedo
+// a lit decal laid over the surface by its alpha, over the composited scene before the water draws, lit like any
+// surface: the decals that write albedo
 fn fx_lit_decal(in: EffectOut, px: vec2i, rel: vec3f, rel_dx: vec3f, rel_dy: vec3f, uv: vec2f, dx: vec2f,
 	dy: vec2f) -> EffectAccumulated {
 	var n = fx_surface_normal(px);

@@ -849,6 +849,7 @@ export class MeshRenderer {
 	 *
 	 * - `relight` adds the light that relit decals change to the main pass's radiance, into a pass whose only
 	 *   attachment is that radiance, kept (`load`)
+	 * - `decals` lays lit decals over the composited scene, into a pass as `multiply`'s, before the water draws
 	 * - `transparent` into the transparent pass, with the main pass's depth attached read-only
 	 * - `waterFoam` draws the WaterDecal boxes into a pass whose only colour attachment is the foam target
 	 *   (`WATER_FOAM_FORMAT`), cleared to (0, 0, 0, 1), with the main pass's depth attached read-only; `inputs`

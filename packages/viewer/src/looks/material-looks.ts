@@ -166,7 +166,7 @@ const materialLook = (entry: MaterialEntry): MaterialLook => {
 		}
 		case 'litDecal': {
 			return effectMaterialLook(litDecalLook(surface), {
-				queue: surface.relight ? 'decalRelight' : 'effectDecal',
+				queue: surface.relight ? 'decalRelight' : 'litDecal',
 				box: true,
 				cull: entry.cull,
 			});

@@ -262,6 +262,7 @@ export const prepareMeshPipelines = (
 	describeEffect(PHASES.effect, 'fs_effect', TRANSPARENT_TARGETS, DEPTH_COMPARE);
 	// decals find their surface through the depth buffer, so their back faces draw wherever they are
 	describeEffect(PHASES.effectDecal, 'fs_effect_decal', TRANSPARENT_TARGETS, 'always');
+	describeEffect(PHASES.litDecal, 'fs_effect_decal', TRANSPARENT_TARGETS, 'always');
 	describeEffect(PHASES.mist, 'fs_mist_card', TRANSPARENT_TARGETS, DEPTH_COMPARE);
 	// fog boxes measure their thickness up to the depth buffer the same way
 	describeEffect(PHASES.mistVolume, 'fs_mist_volume', TRANSPARENT_TARGETS, 'always');

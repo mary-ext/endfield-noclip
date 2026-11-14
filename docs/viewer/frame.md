@@ -4,8 +4,8 @@
 ([`render/frame/frame-graph.ts`](../../packages/viewer/src/render/frame/frame-graph.ts)) encodes one
 command buffer per frame from a `FrameContext` (camera, sizes, frame groups, frame index, clock and
 the settings in effect, which debug views turn the lit-only passes off in once per frame). the post
-chain runs in two halves around the passes over the composited scene (`encodeComposite`, then water,
-the transparent pass and screen effects, then `encodeAfterScene`). passes in order:
+chain runs in two halves around the passes over the composited scene (`encodeComposite`, then lit
+decals, water, the transparent pass and screen effects, then `encodeAfterScene`). passes in order:
 
 | #   | pass                                                                 | when                                                                                                                                                                                                                                                      |
 | --- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -25,6 +25,7 @@ the transparent pass and screen effects, then `encodeAfterScene`). passes in ord
 | 10  | `celestial`                                                          | always; writes nothing with `sky` off or nothing beyond the atmosphere                                                                                                                                                                                    |
 | 10b | `water depth`                                                        | always; draws the nearest water surface's depth when the `water` pass will run, else only clears it                                                                                                                                                       |
 | 11  | `composite`                                                          | always                                                                                                                                                                                                                                                    |
+| 11b | `lit decals`                                                         | lit decals that are laid over their surface are drawn ([decals](materials.md#decals))                                                                                                                                                                     |
 | 12  | scene copy, `water foam`, `water`                                    | `water` on, `lit`, and visible water surfaces; `water foam` only when foam effects are drawn                                                                                                                                                              |
 | 12a | `transparent`                                                        | glass or effects are drawn                                                                                                                                                                                                                                |
 | 12b | `effect multiply`, scene copy + `effect refract`                     | effects that multiply or refract the composited scene are drawn ([effects](effects.md#over-the-composited-scene))                                                                                                                                         |
@@ -63,6 +64,9 @@ what each post pass computes is in [post-processing](post-processing.md) and
 - **decal relight pass.** lit decals that change only a surface's normal, roughness or occlusion add
   the change in its light to the radiance, reading the depth, packed surface and ambient targets
   ([decals](materials.md#decals)).
+- **lit decal pass.** lit decals that write albedo are laid over the composited scene, testing no
+  depth and reading the main pass's, before the water draws, so water covers the decals on its bed
+  as it covers the bed ([decals](materials.md#decals)).
 - **transparent pass.** as in the game
   ([transparent draw order](../game-data/materials.md#transparent-draw-order); the pass's steps are
   under [blending](../game-data/effects.md#blending)), glass and alpha-blended effects draw after

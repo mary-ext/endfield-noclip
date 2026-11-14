@@ -144,14 +144,17 @@ pane (the corroded planet's plume behind Dijiang's deck glass).
 
 the viewer has no GBuffer, so it draws a [decal](../game-data/materials.md#decals) like the VFXDecal
 boxes ([effects](effects.md#vfxbasev2-and-vfxdecal)): the box's back faces without a depth test, in
-the transparent pass ([`litDecalLook`](../../packages/viewer/src/looks/effects/lit-decal.ts),
-`fx_lit_decal` in [`effect.wgsl`](../../packages/viewer/src/render/meshes/effect.wgsl)). it takes
-the surface's normal and roughness from the main pass where the masks keep them, shades the decal
-like any surface, and lays it over by its alpha. placements of one material share its look and draw
-the game's VFXDecal cube; each row's block word indexes its placement's colour and UV transform in a
-placement buffer beside the rows (`row_placement` in frame.wgsl), which the effect vertex shader
-passes on. overlapping decals draw in no set order (`_DrawOrder` isn't read). under a laid-over
-decal that doesn't write them, the surface's occlusion and metallic are taken as 1 and 0.
+a pass of their own over the composited scene
+([`litDecalLook`](../../packages/viewer/src/looks/effects/lit-decal.ts), `fx_lit_decal` in
+[`effect.wgsl`](../../packages/viewer/src/render/meshes/effect.wgsl)). that pass runs before the
+water and the [transparent pass](frame.md), since the game's decals are part of the surface they lie
+on: drawn after the water, the moss and rust on a pool's bed showed through water that hides the bed
+itself. it takes the surface's normal and roughness from the main pass where the masks keep them,
+shades the decal like any surface, and lays it over by its alpha. placements of one material share
+its look and draw the game's VFXDecal cube; each row's block word indexes its placement's colour and
+UV transform in a placement buffer beside the rows (`row_placement` in frame.wgsl), which the effect
+vertex shader passes on. overlapping decals draw in no set order (`_DrawOrder` isn't read). under a
+laid-over decal that doesn't write them, the surface's occlusion and metallic are taken as 1 and 0.
 
 the game keeps lit decals off surfaces by a stencil bit. the viewer carries it in the main pass's
 packed surface instead (bit 31, `SURFACE_NO_LIT_DECALS` in frame.wgsl), so it works without a

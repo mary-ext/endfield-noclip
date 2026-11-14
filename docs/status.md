@@ -272,10 +272,11 @@ packs or renders correctly.
   authored height and don't lag; `ground_distance`, flow and transfers between volumes aren't read;
   volumes coinciding with a placed surface draw twice, unverified against the game; Suiming's lily
   pads end 0.9 m under the pit's surface at the first stage, as the data says, unverified in game;
-  no shoreline wetness. [pumped pools](game-data/water.md#depletable-pools) offer only empty,
-  authored and full, not the fills between that a pump can stop at; whether the server's starting
-  amount always equals the authored one, and whether an empty pool's surface still draws in game,
-  aren't checked
+  no shoreline wetness; how opaque the Test Area's sewage and acid read is unchecked against an
+  in-game shot (the acid still shows its bed faintly, as its config's values give).
+  [pumped pools](game-data/water.md#depletable-pools) offer only empty, authored and full, not the
+  fills between that a pump can stop at; whether the server's starting amount always equals the
+  authored one, and whether an empty pool's surface still draws in game, aren't checked
 - waterfalls missing: Jingyu's pool falls (near unity −763, 209, −1190) and the small cascades
   beside it show white in game, but the viewer's VFXWater sheet there sits inside the rocks in front
   of it, and the steep river surface running down the lip draws as clear water. what the game draws

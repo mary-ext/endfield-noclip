@@ -362,6 +362,18 @@ export const encodeFrame = (
 		water,
 		frameGroup: context.frame,
 	});
+	/** a pass over the composited scene, testing the main pass's depth */
+	const over = (label: string): GPURenderPassDescriptor => ({
+		label,
+		colorAttachments: [{ view: composited.target, loadOp: 'load', storeOp: 'store' }],
+		depthStencilAttachment: targets.readOnlyDepthAttachment(),
+	});
+	// lit decals are part of the surface they lie on, so they draw before the water covers it
+	if (sceneFrame !== null && meshes.has('decals')) {
+		const pass = beginPass(encoder, over('lit decals'), sceneFrame);
+		draws += meshes.encodeEffectPass('decals', pass, scene);
+		pass.end();
+	}
 	// the water and effects that refract read a copy of the composited scene
 	if (composited.water !== null) {
 		post.copyComposite(encoder, scene);
@@ -390,12 +402,6 @@ export const encodeFrame = (
 		water.encode(encoder, composited.target, { ...composited.water, foam });
 	}
 	if (sceneFrame !== null) {
-		// effects over the composited scene
-		const over = (label: string): GPURenderPassDescriptor => ({
-			label,
-			colorAttachments: [{ view: composited.target, loadOp: 'load', storeOp: 'store' }],
-			depthStencilAttachment: targets.readOnlyDepthAttachment(),
-		});
 		// as the game, glass and effects after the water, far to near over the scene, each fogging itself
 		if (meshes.has('transparent')) {
 			const pass = beginPass(

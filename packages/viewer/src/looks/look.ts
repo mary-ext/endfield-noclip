@@ -160,6 +160,8 @@ export interface MaterialLook {
  * - `effectDecal`: a VFXDecal box in the transparent pass, projected onto the surfaces inside it
  * - `mist`: a FogSimple card (`MistRow` in effects/mist.ts) in the transparent pass
  * - `mistVolume`: a VFXFakeVolumeFog box in the transparent pass, drawn by its back faces like a decal's
+ * - `litDecal`: a lit decal laid over the surface beneath, drawn over the composited scene before the water,
+ *   which it lies under as part of that surface
  * - `decalRelight`: a lit decal that changes only the normal, roughness or occlusion of the surface beneath,
  *   drawn by the decal relight pass into the main pass's radiance
  * - `screenMultiply`, `refract`: drawn over the composited scene, because they multiply what lies behind or
@@ -177,6 +179,7 @@ export type LookQueue =
 	| 'effectDecal'
 	| 'mist'
 	| 'mistVolume'
+	| 'litDecal'
 	| 'decalRelight'
 	| 'screenMultiply'
 	| 'refract'

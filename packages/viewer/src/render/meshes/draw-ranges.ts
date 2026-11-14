@@ -38,6 +38,7 @@ export const DRAW_RANGES: readonly DrawRangeInfo[] = [
 	{ range: 'effectDecal', order: 'bindings', effect: true },
 	{ range: 'mist', order: 'bindings', effect: true },
 	{ range: 'mistVolume', order: 'bindings', effect: true },
+	{ range: 'litDecal', order: 'bindings', effect: true },
 	{ range: 'decalRelight', order: 'bindings', effect: true },
 	{ range: 'screenMultiply', order: 'bindings', effect: true },
 	{ range: 'refract', order: 'bindings', effect: true },
@@ -98,6 +99,7 @@ export const PHASES = {
 	effectDecal: shading('mesh/effect-decal', 'effectDecal'),
 	mist: shading('mesh/mist', 'mist'),
 	mistVolume: shading('mesh/mist-volume', 'mistVolume'),
+	litDecal: shading('mesh/lit-decal', 'litDecal'),
 	decalRelight: shading('mesh/decal-relight', 'decalRelight'),
 	screenMultiply: shading('mesh/effect-multiply', 'screenMultiply'),
 	refract: shading('mesh/refract', 'refract'),
@@ -121,7 +123,7 @@ export type MeshPass = SurfacePass | EffectPass | 'shadow';
 export type SurfacePass = 'prepass' | 'main';
 
 /** passes of scene effects, which read the main pass's outputs */
-export type EffectPass = 'relight' | 'transparent' | 'multiply' | 'refract' | 'waterFoam';
+export type EffectPass = 'relight' | 'decals' | 'transparent' | 'multiply' | 'refract' | 'waterFoam';
 
 /** each pass's phases, in the order they draw */
 export const PASS_PHASES: Record<MeshPass, readonly DrawPhase[]> = {
@@ -132,6 +134,9 @@ export const PASS_PHASES: Record<MeshPass, readonly DrawPhase[]> = {
 	// lit decals that change only the surface's normal, roughness or occlusion, run between the main and the
 	// transparent pass: they add the change in the surface's light to the radiance
 	relight: [PHASES.decalRelight],
+	// lit decals laid over their surface, drawn over the composited scene before the water: the game writes them
+	// into its GBuffer, so they lie under the water and everything transparent
+	decals: [PHASES.litDecal],
 	transparent: [PHASES.transparent, PHASES.effect, PHASES.effectDecal, PHASES.mist, PHASES.mistVolume],
 	// effects that multiply the composited scene, drawn over it
 	multiply: [PHASES.screenMultiply],
