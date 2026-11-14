@@ -515,6 +515,21 @@ m platforms on spline 25012, a 144 m loop under the crane rails near unity 80, 1
 the loop apart at 4 m/s. the level's own LevelData places eleven more that keep `state` 0, four of
 them (12800025316–19, near 104, 118, 85) without a spline, so those stand still.
 
+## bamboo rafts
+
+`int_bambooraft_postmodel` (Wuling City's near unity −908, 242, 108) ferries the team between docks
+along a spline (`BambooRaftComponent`, logic type 62). its root's
+`InteractiveSummonTeamPostmodelMono` names what the logic drives: under `WaterAnchor`, `Head` and
+`Tail` (`headAnchorRoot`, `tailAnchorRoot`) each hold a wake, three particle systems of water sheets
+and a `P_waterdecal_01` foam box ([water decals](water.md#waterproxy-and-waterdecal)). both are
+saved switched off, and the logic switches them every update: off while the raft stands still or is
+hidden, and while it moves only the one at the end it's heading from. the foam box's opacity is the
+raft's speed over its top speed, so it fades in and out with the motion. `EffectRoot`'s `HeadEffect`
+and `TailEffect`, which the logic also switches, hold only empty anchors in the prefab.
+
+what calls the logic's wake update isn't traced, so that it runs for a raft nobody rides is assumed;
+either way the saved state at rest is off.
+
 ## crane towers
 
 a crane puzzle is a tower (`int_crane_tower`, a crane tower component, `CraneTowerComponent`), the

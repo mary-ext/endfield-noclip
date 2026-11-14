@@ -510,6 +510,9 @@ packs or renders correctly.
   effects ride with it); particles on it move with it whole, where the game leaves world-space ones
   behind as a trail. other curve movers (coins, butterflies, kickable balls), which scripts start,
   hold still
+- [bamboo rafts](game-data/interactives.md#bamboo-rafts) stay at their placement: the docks, the
+  spline and the dock the server last left them at aren't read, so they never ride, and their wakes,
+  which show only while they move, aren't drawn
 - [crane towers](game-data/interactives.md#crane-towers) draw their placement's starting steps, with
   the container hung from the hook; the steps the player's operations save on the server aren't
   offered as controls

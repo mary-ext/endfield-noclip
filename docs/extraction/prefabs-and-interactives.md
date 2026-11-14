@@ -30,9 +30,9 @@ them. clip binding paths and posed local transforms are shared in
 the renderer walk ([renderer-walk.ts](../../packages/extractor/src/game/prefabs/renderer-walk.ts))
 decides at each GameObject whether it's switched off, hands each component to the first reader that
 accepts it (those acting on other GameObjects, the subtree or the pose: `VFXAdjustLength`, a root
-`UnlockEffectConfigMono`, emission overrides, view-state controllers, `EffectSetting`s, Animators),
-then once it's placed runs the steps that need its matrix (followers, force fields, distance
-origins, billboards) and, when it draws, the candidate sources
+`UnlockEffectConfigMono`, a raft's post-model, emission overrides, view-state controllers,
+`EffectSetting`s, Animators), then once it's placed runs the steps that need its matrix (followers,
+force fields, distance origins, billboards) and, when it draws, the candidate sources
 ([renderer-candidates.ts](../../packages/extractor/src/game/prefabs/renderer-candidates.ts)):
 LODGroups, skinned and mesh renderers, the particle system and spline movers, in the order their
 renderers are kept. a new component kind is one reader, one step or one source. what depends on the
@@ -59,6 +59,9 @@ and looping-clip frames are in
   `interactiveLockData` ([level-locks.ts](../../packages/formats/src/endfield/level-locks.ts)),
   decoded whole, so a level whose LevelData the MemoryPack schema can't decode (Dijiang's) reports
   `gameplay locks` in `unsupported-interactives.json` and its placements count as unlocked.
+- **raft wakes**: the two wake subtrees a root `InteractiveSummonTeamPostmodelMono` names show only
+  while the raft moves ([bamboo rafts](../game-data/interactives.md#bamboo-rafts)), and rafts stand
+  still here, so they're left out rather than standing in.
 - **emission overrides**: an enabled `AnimationProperties_Emissive` on an active GameObject folds
   its colour into `_EmissiveColor` of the renderers it lists, as the shader mixes it
   ([emission](../game-data/materials.md#emission);

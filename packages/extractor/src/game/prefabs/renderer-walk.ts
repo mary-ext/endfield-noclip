@@ -125,6 +125,8 @@ export interface RendererWalk {
 	 * leaves the model as saved
 	 */
 	lockModels: Map<string, boolean | null>;
+	/** Transforms a component of the root shows only while its interactive moves, so never at rest */
+	movingOnly: Set<string>;
 	/**
 	 * by GameObject, the distances an EffectSetting's distance LOD leaves it on at and that setting's
 	 * GameObject
@@ -169,6 +171,7 @@ export const createRendererWalk = (
 	played: new Set(),
 	lodSwitched: new Set(),
 	lockModels: new Map(),
+	movingOnly: new Set(),
 	distanceSwitched: new Map(),
 	settingOrigins: new Map(),
 	lengthScales: new Map(),
@@ -260,6 +263,10 @@ const switchedOff = async (
 	if (lockShown !== undefined) {
 		// only the lock switches these models, so one it leaves off never shows
 		return (lockShown ?? node.active) ? null : { standIn: null };
+	}
+	// the interactive's logic keeps these off while it stands still, whatever the prefab saved
+	if (walk.movingOnly.has(node.transformKey)) {
+		return { standIn: null };
 	}
 	const clips = walk.pose?.clips ?? [];
 	let posed = walk.pose?.active.get(node.name);
@@ -378,6 +385,35 @@ const readUnlockConfig: ComponentReader = {
 	},
 };
 
+/** the fields of `InteractiveSummonTeamPostmodelMono` that hold a raft's bow and stern wakes */
+const RAFT_WAKE_ROOTS = ['headAnchorRoot', 'tailAnchorRoot'] as const;
+
+/** whether a MonoBehaviour is an `InteractiveSummonTeamPostmodelMono`, the bamboo raft's post-model */
+const isRaftPostmodelType = (ref: ObjectRef): boolean => {
+	const names = new Set(ref.info.type?.nodes.filter((node) => node.level === 1).map((node) => node.name));
+	return RAFT_WAKE_ROOTS.every((name) => names.has(name)) && names.has('decalHeadRoot');
+};
+
+/**
+ * `InteractiveSummonTeamPostmodelMono` on the root: the wakes the raft's logic switches on only while it
+ * moves (`docs/game-data/interactives.md#bamboo-rafts`)
+ */
+const readRaftPostmodel: ComponentReader = {
+	accepts: behaviourOf(isRaftPostmodelType),
+	async read(walk, node, _, component) {
+		if (!node.isRoot) {
+			return;
+		}
+		const data = await component.read();
+		for (const name of RAFT_WAKE_ROOTS) {
+			const root = await walk.resolver.resolve(component.ref, pptrField(data, name));
+			if (root !== null) {
+				walk.movingOnly.add(objectKey(root));
+			}
+		}
+	},
+};
+
 /** `AnimationProperties_Emissive`: the emission colours it writes to its renderers */
 const readEmissiveOverrideComponent: ComponentReader = {
 	accepts: behaviourOf(isEmissiveOverrideType),
@@ -456,6 +492,7 @@ const readAnimator: ComponentReader = {
 const COMPONENT_READERS: readonly ComponentReader[] = [
 	readAdjustLengthComponent,
 	readUnlockConfig,
+	readRaftPostmodel,
 	readEmissiveOverrideComponent,
 	readViewStateController,
 	readEffectSetting,

@@ -463,6 +463,80 @@ test('a root UnlockEffectConfigMono draws the locked model of a locked placement
 	assert.deepEqual(await read(false), [['Fixed', false]]);
 });
 
+test('a raft post-model draws nothing for its wakes, which show only while it moves', async () => {
+	const values = new Map<bigint, TypeTreeObject>();
+	const objects: ObjectInfo[] = [];
+	const add = (id: bigint, classId: number, data: TypeTreeObject, fields: string[] = []): void => {
+		const info = object(id, classId);
+		info.type?.nodes.push(
+			...fields.map((name, index) => ({
+				type: '',
+				name,
+				level: 1,
+				byteSize: -1,
+				typeFlags: 0,
+				metaFlag: 0,
+				version: 1,
+				index,
+				refTypeHash: 0n,
+			})),
+		);
+		objects.push(info);
+		values.set(id, data);
+	};
+	const vector = (x: number, y: number, z: number) => ({ x, y, z });
+	const transform = (go: bigint, children: bigint[]) => ({
+		m_GameObject: pointer(go),
+		m_LocalPosition: vector(0, 0, 0),
+		m_LocalRotation: { x: 0, y: 0, z: 0, w: 1 },
+		m_LocalScale: vector(1, 1, 1),
+		m_Children: children.map((id) => pointer(id)),
+	});
+	add(1n, UnityClass.GameObject, {
+		m_Name: 'root',
+		m_IsActive: true,
+		m_Component: [2n, 3n].map((id) => ({ component: pointer(id) })),
+	});
+	add(2n, UnityClass.Transform, transform(1n, [11n, 21n, 31n]));
+	// the mono names its wake roots by their Transforms
+	add(
+		3n,
+		UnityClass.MonoBehaviour,
+		{ m_Enabled: 1, headAnchorRoot: pointer(21n), tailAnchorRoot: pointer(31n), decalHeadRoot: pointer(0n) },
+		['m_Enabled', 'headAnchorRoot', 'tailAnchorRoot', 'decalHeadRoot'],
+	);
+	// as saved, the wakes are off; another switched-off model still stands in
+	for (const [id, name, active] of [
+		[10n, 'Raft', true],
+		[20n, 'Head', false],
+		[30n, 'Tail', false],
+	] as const) {
+		add(id, UnityClass.GameObject, {
+			m_Name: name,
+			m_IsActive: active,
+			m_Component: [id + 1n, id + 2n, id + 3n].map((componentId) => ({ component: pointer(componentId) })),
+		});
+		add(id + 1n, UnityClass.Transform, transform(id, []));
+		add(id + 2n, UnityClass.MeshFilter, { m_Mesh: pointer(50n) });
+		add(id + 3n, UnityClass.MeshRenderer, { m_Enabled: true, m_CastShadows: 1, m_Materials: [pointer(60n)] });
+	}
+	add(50n, UnityClass.Mesh, {
+		m_LocalAABB: { m_Center: vector(0, 0, 0), m_Extent: vector(1, 1, 1) },
+		m_SubMeshes: [{}],
+	});
+	add(60n, UnityClass.Material, {});
+	const owner = file('CAB-prefab', objects, values);
+	const rows = await readPrefabRenderers(
+		resolver([owner]),
+		{ bundleIndex: 0, file: owner, info: objects[0] },
+		{ viewPose: null, particleQuad: null, locked: false },
+	);
+	assert.deepEqual(
+		rows.map((row) => [row.name, row.unsupported !== null]),
+		[['Raft', false]],
+	);
+});
+
 test('prefab lights read the enabled lights of active GameObjects with their HG light data', async () => {
 	const values = new Map<bigint, TypeTreeObject>();
 	const objects: ObjectInfo[] = [];
