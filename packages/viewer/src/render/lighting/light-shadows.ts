@@ -1,40 +1,48 @@
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import tgpu, { type TgpuRenderPipeline, type TgpuRoot, d, std } from 'typegpu';
+
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { SHADOW_FORMAT } from '../shadows/shadow-map.ts';
 
-import clearSource from './light-shadow-clear.wgsl?raw';
 import { ATLAS_SIZE, ShadowTiles } from './shadow-tiles.ts';
 
 const CLEAR_KEY = 'light shadow clear';
+
+/** clears one tile of the local lights' shadow atlas: a triangle over the viewport at the far depth */
+const vsLightShadowClear = tgpu.vertexFn({
+	in: { index: d.builtin.vertexIndex },
+	out: { position: d.builtin.position },
+})((input) => {
+	'use gpu';
+	const corner = d.vec2f(d.f32((input.index << 1) & 2), d.f32(input.index & 2));
+	return { position: d.vec4f(std.sub(std.mul(corner, 2), d.vec2f(1)), 1, 1) };
+});
 
 /** the local lights' shadow atlas, with the tiles {@link ShadowTiles} hands out, and the pass that draws one */
 export class LightShadows extends ShadowTiles {
 	readonly texture: GPUTexture;
 	/** the atlas, sampled and drawn into */
 	readonly view: GPUTextureView;
-	readonly #pipelines: PipelineCache;
+	readonly #clear: AsyncPipeline<TgpuRenderPipeline>;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache) {
+	constructor(root: TgpuRoot, pipelines: PipelineCache) {
 		super();
-		this.#pipelines = pipelines;
-		this.texture = device.createTexture({
+		this.texture = root.device.createTexture({
 			label: 'local light shadows',
 			size: [ATLAS_SIZE, ATLAS_SIZE],
 			format: SHADOW_FORMAT,
 			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
 		});
 		this.view = this.texture.createView();
-		const module = pipelines.module('light shadow clear', clearSource);
-		void pipelines.prepare(CLEAR_KEY, () => ({
-			label: 'light shadow clear',
-			layout: 'auto',
-			vertex: { module, entryPoint: 'vs_clear' },
-			fragment: { module, entryPoint: 'fs_clear', targets: [] },
-			depthStencil: { format: SHADOW_FORMAT, depthWriteEnabled: true, depthCompare: 'always' },
-		}));
+		this.#clear = pipelines.prepareTgpuRender(CLEAR_KEY, () =>
+			root.createRenderPipeline({
+				vertex: vsLightShadowClear,
+				depthStencil: { format: SHADOW_FORMAT, depthWriteEnabled: true, depthCompare: 'always' },
+			}),
+		);
 	}
 
 	/** @returns bytes of the atlas */
@@ -56,7 +64,7 @@ export class LightShadows extends ShadowTiles {
 		draw: (pass: GPURenderPassEncoder) => number,
 	): number {
 		const request = this.request;
-		const clear = this.#pipelines.get(CLEAR_KEY);
+		const clear = this.#clear.get();
 		if (request === null || clear === undefined) {
 			return 0;
 		}
@@ -68,8 +76,7 @@ export class LightShadows extends ShadowTiles {
 		const { x, y, size } = request;
 		pass.setViewport(x, y, size, size, 0, 1);
 		pass.setScissorRect(x, y, size, size);
-		pass.setPipeline(clear);
-		pass.draw(3);
+		clear.with(pass).draw(3);
 		bind(pass);
 		const draws = draw(pass);
 		pass.end();

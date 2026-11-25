@@ -1,14 +1,19 @@
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { TgpuBindGroup, TgpuComputePipeline, TgpuRoot, TgpuUniform } from 'typegpu';
 
-import feedbackWgsl from './mip-feedback.wgsl?raw';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
+
+import {
+	MIP_FEEDBACK_STRIDE,
+	MipFeedbackParams,
+	csMipFeedbackReduce,
+	mipFeedbackLayout,
+} from './mip-feedback-shader.ts';
 
 const KEY = 'mip feedback';
-/** the main pass target the meshes report into (`Shaded.mip_feedback` in frame.wgsl) */
+/** the main pass target the meshes report into (`Shaded.mip_feedback` in frame-core.ts) */
 export const MIP_FEEDBACK_FORMAT: GPUTextureFormat = 'r32uint';
 /** look slots a report can name (its 17 bits) */
 export const MIP_FEEDBACK_LOOKS = 1 << 17;
-/** one pixel of each block this many pixels a side is read a frame (`STRIDE` in mip-feedback.wgsl) */
-const STRIDE = 4;
 /** look slots to start with room for */
 const INITIAL_LOOKS = 4096;
 /** bytes per look slot: a word per UV set */
@@ -21,7 +26,7 @@ const READBACKS = 3;
  * out of sight stops asking for its textures within two windows
  */
 const WINDOW_MS = 400;
-const WINDOW_READBACKS = STRIDE * STRIDE;
+const WINDOW_READBACKS = MIP_FEEDBACK_STRIDE * MIP_FEEDBACK_STRIDE;
 
 /** how finely the frames just drawn sampled each material's textures */
 export interface MipSteps {
@@ -30,7 +35,7 @@ export interface MipSteps {
 	 *   `MeshRenderer.mips` a material id
 	 * @param set UV set 0 or 1
 	 * @returns how many quarter mip levels below one UV unit per pixel the finest sample of the set was, over
-	 *   the last frames (a texture `t` texels across a UV unit is sampled down to level `log2(t) − steps / 4`),
+	 *   the last frames (a texture `t` texels across a UV unit is sampled down to level `log2(t) - steps / 4`),
 	 *   or -1 when no pixel of the material was read
 	 */
 	steps(look: number, set: number): number;
@@ -43,14 +48,13 @@ export interface MipSteps {
  * a mesh the camera stands inside or one mostly hidden
  */
 export class MipFeedback implements MipSteps {
-	#device: GPUDevice;
-	#pipelines: PipelineCache;
+	#root: TgpuRoot;
+	#pipeline: AsyncPipeline<TgpuComputePipeline>;
 	/** look slots the buffers have room for */
 	#capacity = 0;
 	#seen: GPUBuffer | null = null;
-	#params: GPUBuffer;
-	#paramData = new Uint32Array(4);
-	#group: GPUBindGroup | null = null;
+	#params: TgpuUniform<typeof MipFeedbackParams>;
+	#group: TgpuBindGroup | null = null;
 	/** the feedback view {@link #group} reads */
 	#source: GPUTextureView | null = null;
 	#idle: GPUBuffer[] = [];
@@ -66,27 +70,20 @@ export class MipFeedback implements MipSteps {
 	#destroyed = false;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines compiles the pass
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache) {
-		this.#device = device;
-		this.#pipelines = pipelines;
-		const module = pipelines.module(KEY, feedbackWgsl);
-		void pipelines.prepareCompute(KEY, () => ({
-			layout: 'auto',
-			compute: { module, entryPoint: 'cs_reduce' },
-		}));
-		this.#params = device.createBuffer({
-			label: 'mip feedback params',
-			size: this.#paramData.byteLength,
-			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-		});
+	constructor(root: TgpuRoot, pipelines: PipelineCache) {
+		this.#root = root;
+		this.#pipeline = pipelines.prepareTgpuCompute(KEY, () =>
+			root.createComputePipeline({ compute: csMipFeedbackReduce }),
+		);
+		this.#params = root.createUniform(MipFeedbackParams);
 	}
 
 	/** @returns bytes of the GPU allocations */
 	get bytes(): number {
-		return this.#capacity * LOOK_BYTES * (1 + READBACKS) + this.#params.size;
+		return this.#capacity * LOOK_BYTES * (1 + READBACKS) + 16;
 	}
 
 	/** forgets every report, when the look table's slots name other materials */
@@ -102,7 +99,7 @@ export class MipFeedback implements MipSteps {
 		this.#destroyed = true;
 		this.#generation++;
 		this.#seen?.destroy();
-		this.#params.destroy();
+		this.#params.buffer.destroy();
 		for (const buffer of this.#idle) {
 			buffer.destroy();
 		}
@@ -130,7 +127,7 @@ export class MipFeedback implements MipSteps {
 		looks: number,
 		frame: number,
 	): void {
-		const pipeline = this.#pipelines.getCompute(KEY);
+		const pipeline = this.#pipeline.get();
 		if (pipeline === undefined || looks === 0) {
 			return;
 		}
@@ -144,30 +141,26 @@ export class MipFeedback implements MipSteps {
 		}
 		if (this.#group === null || this.#source !== feedback.view) {
 			this.#source = feedback.view;
-			this.#group = this.#device.createBindGroup({
-				label: KEY,
-				layout: pipeline.getBindGroupLayout(0),
-				entries: [
-					{ binding: 0, resource: feedback.view },
-					{ binding: 1, resource: { buffer: seen } },
-					{ binding: 2, resource: { buffer: this.#params } },
-				],
+			this.#group = this.#root.createBindGroup(mipFeedbackLayout, {
+				feedback: feedback.view,
+				seen,
+				params: this.#params,
 			});
 		}
-		const params = this.#paramData;
-		params[0] = frame % STRIDE;
-		params[1] = Math.floor(frame / STRIDE) % STRIDE;
-		params[2] = looks;
-		this.#device.queue.writeBuffer(this.#params, 0, params);
+		this.#params.write({
+			offset: [frame % MIP_FEEDBACK_STRIDE, Math.floor(frame / MIP_FEEDBACK_STRIDE) % MIP_FEEDBACK_STRIDE],
+			looks,
+		});
 		const bytes = looks * LOOK_BYTES;
 		encoder.clearBuffer(seen, 0, bytes);
 		const pass = encoder.beginComputePass({ label: KEY });
-		pass.setPipeline(pipeline);
-		pass.setBindGroup(0, this.#group);
-		pass.dispatchWorkgroups(
-			Math.ceil(feedback.width / (STRIDE * 8)),
-			Math.ceil(feedback.height / (STRIDE * 8)),
-		);
+		pipeline
+			.with(this.#group)
+			.with(pass)
+			.dispatchWorkgroups(
+				Math.ceil(feedback.width / (MIP_FEEDBACK_STRIDE * 8)),
+				Math.ceil(feedback.height / (MIP_FEEDBACK_STRIDE * 8)),
+			);
 		pass.end();
 		encoder.copyBufferToBuffer(seen, 0, readback, 0, bytes);
 		this.#pending = { buffer: readback, looks };
@@ -235,13 +228,13 @@ export class MipFeedback implements MipSteps {
 			buffer.destroy();
 		}
 		this.#capacity = capacity;
-		this.#seen = this.#device.createBuffer({
+		this.#seen = this.#root.device.createBuffer({
 			label: 'mip feedback',
 			size: capacity * LOOK_BYTES,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
 		});
 		this.#idle = Array.from({ length: READBACKS }, () =>
-			this.#device.createBuffer({
+			this.#root.device.createBuffer({
 				label: 'mip feedback readback',
 				size: capacity * LOOK_BYTES,
 				usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,

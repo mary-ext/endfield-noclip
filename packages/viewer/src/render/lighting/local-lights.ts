@@ -1,10 +1,11 @@
 import { type LightEntry, LightKind } from '@endfield-noclip/package-format/lights';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
+import type { TgpuRoot } from 'typegpu';
+
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { dot } from '../../math/vec3.ts';
 import type { Camera, Plane } from '../../scene/camera.ts';
-import { wgslConst } from '../shaders/wgsl-const.ts';
 
 import { LightShadows } from './light-shadows.ts';
 import { MAX_SHADOW_RECORDS, SHADOW_RECORD_VEC4S, type ShadowFrame } from './shadow-tiles.ts';
@@ -12,27 +13,19 @@ import { MAX_SHADOW_RECORDS, SHADOW_RECORD_VEC4S, type ShadowFrame } from './sha
 /** lights the shading takes per frame, as the game's light list does */
 const MAX_LOCAL_LIGHTS = 256;
 /** u32 words per bin mask */
-const MASK_WORDS = MAX_LOCAL_LIGHTS / 32;
+export const LIGHT_MASK_WORDS = MAX_LOCAL_LIGHTS / 32;
 /** screen tile edge, render px */
-const LIGHT_TILE_SIZE = 32;
+export const LIGHT_TILE_SIZE = 32;
 /** view-depth slices, 1 m each */
-const LIGHT_SLICES = 2048;
+export const LIGHT_SLICES = 2048;
 /** vec4s per light in the light buffer */
-const LIGHT_VEC4S = 9;
+export const LIGHT_VEC4S = 9;
 /** where the shadow records start in the light buffer, vec4s */
-const SHADOW_RECORDS_AT = MAX_LOCAL_LIGHTS * LIGHT_VEC4S;
+export const LIGHT_SHADOW_RECORDS = MAX_LOCAL_LIGHTS * LIGHT_VEC4S;
+/** vec4s per local-light shadow record */
+export const LIGHT_SHADOW_VEC4S = SHADOW_RECORD_VEC4S;
 /** tiles the bin buffer holds at most (a 8192 × 4096 render) */
 const MAX_TILES = 256 * 128;
-
-/** the light and bin buffers' layout, as the constants `local_lighting` in frame.wgsl reads */
-export const LOCAL_LIGHTS_WGSL = [
-	wgslConst('LIGHT_TILE_SIZE', 'f32', LIGHT_TILE_SIZE),
-	wgslConst('LIGHT_SLICES', 'f32', LIGHT_SLICES),
-	wgslConst('LIGHT_MASK_WORDS', 'u32', MASK_WORDS),
-	wgslConst('LIGHT_VEC4S', 'u32', LIGHT_VEC4S),
-	wgslConst('LIGHT_SHADOW_RECORDS', 'u32', SHADOW_RECORDS_AT),
-	wgslConst('LIGHT_SHADOW_VEC4S', 'u32', SHADOW_RECORD_VEC4S),
-].join('\n');
 
 /** what the frame uniforms need from this frame's lights */
 export interface LocalLightFrame {
@@ -60,7 +53,9 @@ export class LocalLights {
 	/** the lights' shadow maps, whose records follow the lights in {@link lightBuffer} */
 	readonly shadows: LightShadows;
 	readonly #device: GPUDevice;
-	readonly #lightData = new Float32Array((SHADOW_RECORDS_AT + MAX_SHADOW_RECORDS * SHADOW_RECORD_VEC4S) * 4);
+	readonly #lightData = new Float32Array(
+		(LIGHT_SHADOW_RECORDS + MAX_SHADOW_RECORDS * SHADOW_RECORD_VEC4S) * 4,
+	);
 	/** whether the last prepared frame could draw shadow tiles */
 	#shadowsEnabled = false;
 	/** the streamed content's version at the last prepared frame */
@@ -82,12 +77,13 @@ export class LocalLights {
 	readonly #view = new Float64Array(9).fill(Number.NaN);
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache) {
+	constructor(root: TgpuRoot, pipelines: PipelineCache) {
+		const device = root.device;
 		this.#device = device;
-		this.shadows = new LightShadows(device, pipelines);
+		this.shadows = new LightShadows(root, pipelines);
 		this.lightBuffer = device.createBuffer({
 			label: 'local lights',
 			size: this.#lightData.byteLength,
@@ -95,7 +91,7 @@ export class LocalLights {
 		});
 		this.binBuffer = device.createBuffer({
 			label: 'local light bins',
-			size: (MAX_TILES + LIGHT_SLICES) * MASK_WORDS * 4,
+			size: (MAX_TILES + LIGHT_SLICES) * LIGHT_MASK_WORDS * 4,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 		});
 	}
@@ -164,14 +160,14 @@ export class LocalLights {
 			return frameInfo;
 		}
 
-		const words = (tilesX * tilesY + LIGHT_SLICES) * MASK_WORDS;
+		const words = (tilesX * tilesY + LIGHT_SLICES) * LIGHT_MASK_WORDS;
 		if (this.#bins.length !== words) {
 			this.#bins = new Uint32Array(words);
 		} else {
 			this.#bins.fill(0);
 		}
 		const bins = this.#bins;
-		const zBase = tilesX * tilesY * MASK_WORDS;
+		const zBase = tilesX * tilesY * LIGHT_MASK_WORDS;
 		const right = camera.right();
 		const up = camera.up();
 		const forward = camera.forward();
@@ -189,7 +185,7 @@ export class LocalLights {
 					? 0
 					: shadows.writeRecords(
 							this.#lightData,
-							(SHADOW_RECORDS_AT + records * SHADOW_RECORD_VEC4S) * 4,
+							(LIGHT_SHADOW_RECORDS + records * SHADOW_RECORD_VEC4S) * 4,
 							candidate,
 						);
 			this.#lightData[shadowAt] = written === 0 ? -1 : records;
@@ -207,7 +203,7 @@ export class LocalLights {
 			const first = Math.max(0, Math.floor(z - radius - near));
 			const last = Math.min(LIGHT_SLICES - 1, Math.floor(z + radius - near));
 			for (let s = first; s <= last; s++) {
-				bins[zBase + s * MASK_WORDS + word] |= bit;
+				bins[zBase + s * LIGHT_MASK_WORDS + word] |= bit;
 			}
 
 			// screen tiles: the extremes of the sphere's view-space box over its nearest depth, or the whole
@@ -240,14 +236,14 @@ export class LocalLights {
 			}
 			for (let ty = ty0; ty <= ty1; ty++) {
 				for (let tx = tx0; tx <= tx1; tx++) {
-					bins[(ty * tilesX + tx) * MASK_WORDS + word] |= bit;
+					bins[(ty * tilesX + tx) * LIGHT_MASK_WORDS + word] |= bit;
 				}
 			}
 		}
 		const queue = this.#device.queue;
 		queue.writeBuffer(this.lightBuffer, 0, this.#lightData, 0, selected.length * LIGHT_VEC4S * 4);
 		if (records > 0) {
-			const at = SHADOW_RECORDS_AT * 4;
+			const at = LIGHT_SHADOW_RECORDS * 4;
 			queue.writeBuffer(this.lightBuffer, at * 4, this.#lightData, at, records * SHADOW_RECORD_VEC4S * 4);
 		}
 		queue.writeBuffer(this.binBuffer, 0, bins);
@@ -383,7 +379,7 @@ const boundingSphere = (candidate: Candidate): void => {
 };
 
 /**
- * one light's 8 vec4s, the layout `local_light_at` in frame.wgsl reads:
+ * one light's 8 vec4s, the layout `local_light_at` in frame-core.ts reads:
  *
  * - 0: camera-relative position, 1 / range
  * - 1: colour (faded), kind (0 spot, 1 point)

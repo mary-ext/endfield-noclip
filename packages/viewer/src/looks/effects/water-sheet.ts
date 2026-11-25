@@ -58,7 +58,7 @@ export const WaterSheetRow = {
 /** the slot of a soft body's rotation texture, the flipbook's motion vectors' otherwise */
 export const ROTATION_SLOT = 5;
 
-/** {@link WaterSheetRow.flags} bits, matching `effect.wgsl` */
+/** {@link WaterSheetRow.flags} bits, matching `effects/common.ts` */
 export const WaterSheetFlags = {
 	Disturb: 1 << 0,
 	/** the disturb texture holds a normal: its (a·r, g) distort instead of its red */

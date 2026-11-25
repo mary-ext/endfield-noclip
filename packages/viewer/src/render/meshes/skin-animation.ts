@@ -1,31 +1,33 @@
+import { type TgpuBindGroup, type TgpuComputePipeline, type TgpuRoot, d } from 'typegpu';
+
 import { createBufferWithData } from '../../gfx/buffers.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import type { DecodedSkin } from '../../package/decode-protocol.ts';
-import octahedralWgsl from '../shaders/common/octahedral.wgsl?raw';
 
 import { skinFrame } from './skin-frame.ts';
-import skinWgsl from './skin.wgsl?raw';
+import { SKIN_NONE, SkinParamsSchema, csSkin, skinLayout } from './skin-shader.ts';
 
-/** bytes of `Skin` in skin.wgsl */
-const PARAMS_BYTES = 112;
+/** bytes of {@link SkinParamsSchema} */
+const PARAMS_BYTES = d.sizeOf(SkinParamsSchema);
 const WORKGROUP = 64;
 const PIPELINE_KEY = 'skin';
-/** `NONE` in skin.wgsl: a stream the geometry lacks */
-const NONE = 0xff_ff_ff_ff;
+
+const streamOutWord = (offset: number | null, from: number): number =>
+	offset !== null && from >= 0 ? offset / 4 : SKIN_NONE;
 
 /** an animated geometry's GPU side: its bind pose, frames and the pass that skins it into its vertices */
 export interface ResidentSkin {
 	vertexCount: number;
 	frameCount: number;
 	frameRate: number;
-	/** `Skin` in skin.wgsl; the frame fields change with the frame */
+	/** `SkinParamsSchema`; the frame fields change with the frame */
 	params: GPUBuffer;
 	/** the params as last written, as words and as floats */
 	paramWords: Uint32Array<ArrayBuffer>;
 	paramFloats: Float32Array<ArrayBuffer>;
 	/** whether the vertices hold the frame the params name; `false` until first skinned */
 	skinned: boolean;
-	group: GPUBindGroup;
+	group: TgpuBindGroup;
 	/** GPU bytes of the bind pose and frames */
 	bytes: number;
 	/** buffers the skin owns, destroyed with it */
@@ -34,33 +36,18 @@ export interface ResidentSkin {
 
 /** skins animated geometries into their own vertex buffers before they're drawn */
 export class SkinAnimator {
-	#device: GPUDevice;
-	#pipelines: PipelineCache;
-	/** explicit, so geometries can be bound while the pipeline compiles */
-	#layout: GPUBindGroupLayout;
+	#root: TgpuRoot;
+	#pipeline: AsyncPipeline<TgpuComputePipeline>;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache, which compiles the skinning pass
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache) {
-		this.#device = device;
-		this.#pipelines = pipelines;
-		const compute = GPUShaderStage.COMPUTE;
-		const layout = device.createBindGroupLayout({
-			label: 'skin',
-			entries: [
-				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
-				{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
-				{ binding: 2, visibility: compute, buffer: { type: 'read-only-storage' } },
-				{ binding: 3, visibility: compute, buffer: { type: 'storage' } },
-			],
-		});
-		this.#layout = layout;
-		void pipelines.prepareCompute(PIPELINE_KEY, () => ({
-			layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-			compute: { module: pipelines.module('skin', octahedralWgsl + '\n' + skinWgsl), entryPoint: 'cs_skin' },
-		}));
+	constructor(root: TgpuRoot, pipelines: PipelineCache) {
+		this.#root = root;
+		this.#pipeline = pipelines.prepareTgpuCompute(PIPELINE_KEY, () =>
+			root.createComputePipeline({ compute: csSkin }),
+		);
 	}
 
 	/**
@@ -83,7 +70,7 @@ export class SkinAnimator {
 			positionScale: readonly number[];
 		},
 	): ResidentSkin {
-		const device = this.#device;
+		const device = this.#root.device;
 		const storage = (name: string, data: ArrayBuffer): GPUBuffer =>
 			createBufferWithData(device, {
 				label: `${label} ${name}`,
@@ -100,10 +87,8 @@ export class SkinAnimator {
 			words[0] = target.vertexCount;
 			words[1] = skin.boneCount;
 			// a stream the geometry has is written in place of its bind pose's, which the source keeps
-			const out = (offset: number | null, from: number): number =>
-				offset !== null && from >= 0 ? offset / 4 : NONE;
-			words[5] = out(target.normalOffset, skin.normalWord);
-			words[6] = out(target.tangentOffset, skin.tangentWord);
+			words[5] = streamOutWord(target.normalOffset, skin.normalWord);
+			words[6] = streamOutWord(target.tangentOffset, skin.tangentWord);
 			words[7] = Math.max(skin.normalWord, 0);
 			words[8] = Math.max(skin.tangentWord, 0);
 			words[9] = skin.weightWord;
@@ -123,15 +108,11 @@ export class SkinAnimator {
 			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 			data: paramData,
 		});
-		const group = device.createBindGroup({
-			label: `${label} skin`,
-			layout: this.#layout,
-			entries: [
-				{ binding: 0, resource: { buffer: params } },
-				{ binding: 1, resource: { buffer: source } },
-				{ binding: 2, resource: { buffer: frames } },
-				{ binding: 3, resource: { buffer: target.vertices } },
-			],
+		const group = this.#root.createBindGroup(skinLayout, {
+			skin: params,
+			source,
+			frames,
+			vertices: target.vertices,
 		});
 		return {
 			vertexCount: target.vertexCount,
@@ -157,7 +138,7 @@ export class SkinAnimator {
 	 * @returns whether any geometry was skinned
 	 */
 	encode(encoder: GPUCommandEncoder, skins: Iterable<ResidentSkin>, time: number): boolean {
-		const pipeline = this.#pipelines.getCompute(PIPELINE_KEY);
+		const pipeline = this.#pipeline.get();
 		if (pipeline === undefined) {
 			return false;
 		}
@@ -174,11 +155,12 @@ export class SkinAnimator {
 			floats[4] = blend;
 			skin.skinned = true;
 			// only the frame fields change
-			this.#device.queue.writeBuffer(skin.params, 0, words, 0, 5);
+			this.#root.device.queue.writeBuffer(skin.params, 0, words, 0, 5);
 			pass ??= encoder.beginComputePass({ label: 'skin' });
-			pass.setPipeline(pipeline);
-			pass.setBindGroup(0, skin.group);
-			pass.dispatchWorkgroups(Math.ceil(skin.vertexCount / WORKGROUP));
+			pipeline
+				.with(skin.group)
+				.with(pass)
+				.dispatchWorkgroups(Math.ceil(skin.vertexCount / WORKGROUP));
 		}
 		pass?.end();
 		return pass !== null;

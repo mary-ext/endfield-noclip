@@ -1,28 +1,31 @@
+import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common, d } from 'typegpu';
+
 import type { PostLook } from '../../environment/environment.ts';
 import { createUniformBuffer } from '../../gfx/buffers.ts';
-import {
-	type FullscreenPass,
-	type FullscreenPipeline,
-	autoBindGroup,
-	encodeFullscreen,
-	fullscreenPipeline,
-} from '../../gfx/fullscreen-pass.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
+import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import type { Camera } from '../../scene/camera.ts';
 import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
-import colorWgsl from '../shaders/common/color.wgsl?raw';
-import gbufferWgsl from '../shaders/common/gbuffer.wgsl?raw';
-import octahedralWgsl from '../shaders/common/octahedral.wgsl?raw';
-import screenSpaceWgsl from '../shaders/common/screen-space.wgsl?raw';
 
 import { CAMERA_HISTORY_FLOATS, CameraHistory } from './camera-history.ts';
-import { postShaderModule } from './shader-source.ts';
-import ssrWgsl from './ssr.wgsl?raw';
+import { postUniformLayout } from './post-schema.ts';
+import {
+	SsrSchema,
+	fsSsrDownsample,
+	fsSsrMarch,
+	fsSsrResolve,
+	fsSsrTemporal,
+	ssrDownsampleLayout,
+	ssrMarchLayout,
+	ssrResolveLayout,
+	ssrSharedLayout,
+	ssrTemporalLayout,
+} from './ssr-shader.ts';
 
-/** byte size of `Ssr` in ssr.wgsl */
-const UNIFORM_BYTES = 128;
+/** byte size of {@link SsrSchema} */
+const UNIFORM_BYTES = d.sizeOf(SsrSchema);
 /** the render size over the passes' size: the game's PC high quality runs every pass at half size */
 const DOWNSCALE = 2;
 /** the game's `ssrRayMarchingSampleCount` at PC high quality */
@@ -45,55 +48,73 @@ interface Sized {
 	/** resolved reflection radiance (rgb) and fade (a) at half size */
 	output: GPUTexture;
 	/** march passes, one per TAA history view */
-	march: [FullscreenPass, FullscreenPass];
+	march: [TgpuFullscreenPass, TgpuFullscreenPass];
 	/** per pyramid: the temporal filter into its finest mip (reading the other's), its coarser mips, the resolve */
-	chains: [FullscreenPass[], FullscreenPass[]];
+	chains: [TgpuFullscreenPass[], TgpuFullscreenPass[]];
 	clear: GPUTextureView;
 }
 
 /** half render size reflections; resolve outputs radiance (rgb) and fade (a) for the composite */
 export class ScreenSpaceReflections {
-	#device: GPUDevice;
-	#postUniforms: GPUBuffer;
+	#root: TgpuRoot;
+	#postGroup: TgpuBindGroup;
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(UNIFORM_BYTES / 4);
 	#sampler: GPUSampler;
-	#pipelines: Record<'march' | 'temporal' | 'downsample' | 'resolve', FullscreenPipeline>;
+	#pipelines: Record<'march' | 'temporal' | 'downsample' | 'resolve', AsyncPipeline<TgpuRenderPipeline>>;
 	#targets: TextureSet;
 	#sized: Sized | null = null;
 	/** the camera of last frame's reflections, which held only if they ran over the current targets */
 	#camera = new CameraHistory();
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param postUniforms the post chain's `Post` uniforms
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache, postUniforms: GPUBuffer) {
-		this.#device = device;
-		this.#postUniforms = postUniforms;
-		this.#uniforms = createUniformBuffer(device, 'ssr uniforms', UNIFORM_BYTES);
-		this.#sampler = sampler(device, LINEAR_CLAMP);
-		this.#targets = new TextureSet(device);
-		const module = postShaderModule(device, 'ssr', [
-			colorWgsl,
-			screenSpaceWgsl,
-			octahedralWgsl,
-			gbufferWgsl,
-			ssrWgsl,
-		]);
-		const pipeline = (label: string, entryPoint: string, formats: GPUTextureFormat[]): FullscreenPipeline =>
-			fullscreenPipeline(pipelines, {
-				label,
-				module,
-				entryPoint,
-				targets: formats.map((format) => ({ format })),
-			});
+	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer) {
+		this.#root = root;
+		this.#postGroup = root.createBindGroup(postUniformLayout, { post: postUniforms });
+		this.#uniforms = createUniformBuffer(root.device, 'ssr uniforms', UNIFORM_BYTES);
+		this.#sampler = sampler(root.device, LINEAR_CLAMP);
+		this.#targets = new TextureSet(root.device);
 		this.#pipelines = {
-			march: pipeline('ssr march', 'fs_march', [COLOR_FORMAT, WEIGHT_FORMAT, FADE_FORMAT, DEPTH_FORMAT]),
-			temporal: pipeline('ssr temporal', 'fs_temporal', [COLOR_FORMAT]),
-			downsample: pipeline('ssr downsample', 'fs_downsample', [COLOR_FORMAT, DEPTH_FORMAT]),
-			resolve: pipeline('ssr resolve', 'fs_resolve', [HDR_FORMAT]),
+			march: pipelines.prepareTgpuRender('ssr march', () =>
+				root.createRenderPipeline({
+					vertex: common.fullScreenTriangle,
+					fragment: fsSsrMarch,
+					targets: {
+						color: { format: COLOR_FORMAT },
+						weight: { format: WEIGHT_FORMAT },
+						fade: { format: FADE_FORMAT },
+						depth: { format: DEPTH_FORMAT },
+					},
+				}),
+			),
+			temporal: pipelines.prepareTgpuRender('ssr temporal', () =>
+				root.createRenderPipeline({
+					vertex: common.fullScreenTriangle,
+					fragment: fsSsrTemporal,
+					targets: { format: COLOR_FORMAT },
+				}),
+			),
+			downsample: pipelines.prepareTgpuRender('ssr downsample', () =>
+				root.createRenderPipeline({
+					vertex: common.fullScreenTriangle,
+					fragment: fsSsrDownsample,
+					targets: {
+						color: { format: COLOR_FORMAT },
+						depth: { format: DEPTH_FORMAT },
+					},
+				}),
+			),
+			resolve: pipelines.prepareTgpuRender('ssr resolve', () =>
+				root.createRenderPipeline({
+					vertex: common.fullScreenTriangle,
+					fragment: fsSsrResolve,
+					targets: { format: HDR_FORMAT },
+				}),
+			),
 		};
 	}
 
@@ -134,7 +155,7 @@ export class ScreenSpaceReflections {
 		const { scene, previousScenes } = input;
 		const width = Math.max(1, Math.ceil(input.width / DOWNSCALE));
 		const height = Math.max(1, Math.ceil(input.height / DOWNSCALE));
-		const device = this.#device;
+		const root = this.#root;
 		const p = this.#pipelines;
 		const mips = Math.max(
 			2,
@@ -153,24 +174,22 @@ export class ScreenSpaceReflections {
 		// the march's colour is done with once the temporal filter has read it, so the resolve writes over it
 		const output = marchColor;
 
-		const group = (pipeline: GPURenderPipeline, index: number, entries: Record<number, GPUBindingResource>) =>
-			autoBindGroup(device, pipeline, index, entries);
-		const postGroup = (pipeline: GPURenderPipeline) =>
-			group(pipeline, 0, { 0: { buffer: this.#postUniforms } });
-		const ssr = { buffer: this.#uniforms };
+		const sharedGroup = root.createBindGroup(ssrSharedLayout, {
+			ssr: this.#uniforms,
+			depth: scene.depth,
+			linearSampler: this.#sampler,
+		});
 
-		const makeMarch = (previousScene: GPUTextureView): FullscreenPass => ({
+		const makeMarch = (previousScene: GPUTextureView): TgpuFullscreenPass => ({
 			label: 'ssr march',
 			pipeline: p.march,
-			bind: (compiled) => [
-				postGroup(compiled),
-				group(compiled, 1, {
-					0: ssr,
-					1: scene.depth,
-					2: scene.gbufferB,
-					3: previousScene,
-					4: this.#sampler,
-					13: scene.velocity,
+			groups: [
+				this.#postGroup,
+				sharedGroup,
+				root.createBindGroup(ssrMarchLayout, {
+					gbufferB: scene.gbufferB,
+					previousScene,
+					velocity: scene.velocity,
 				}),
 			],
 			targets: [
@@ -180,34 +199,32 @@ export class ScreenSpaceReflections {
 				mip(depthPyramid, 0),
 			],
 		});
-		const march: [FullscreenPass, FullscreenPass] = [
+		const march: [TgpuFullscreenPass, TgpuFullscreenPass] = [
 			makeMarch(previousScenes[0]),
 			makeMarch(previousScenes[1]),
 		];
-		const chain = (i: number): FullscreenPass[] => {
+		const chain = (i: number): TgpuFullscreenPass[] => {
 			const pyramid = pyramids[i];
 			const marchColorView = marchColor.createView();
 			const marchWeightView = marchWeight.createView();
 			const marchFadeView = marchFade.createView();
 			const prevMip0 = mip(pyramids[1 - i], 0);
-			const passes: FullscreenPass[] = [
+			const passes: TgpuFullscreenPass[] = [
 				{
 					label: 'ssr temporal',
 					pipeline: p.temporal,
-					bind: (compiled) => [
-						postGroup(compiled),
-						group(compiled, 1, {
-							0: ssr,
-							1: scene.depth,
-							4: this.#sampler,
-							5: marchColorView,
-							6: marchWeightView,
-							7: marchFadeView,
-							8: prevMip0,
-							13: scene.velocity,
+					groups: [
+						this.#postGroup,
+						sharedGroup,
+						root.createBindGroup(ssrTemporalLayout, {
+							marchColor: marchColorView,
+							marchWeight: marchWeightView,
+							marchFade: marchFadeView,
+							history: prevMip0,
+							velocity: scene.velocity,
 						}),
 					],
-					targets: [mip(pyramid, 0)],
+					target: mip(pyramid, 0),
 				},
 			];
 			for (let level = 1; level < mips; level++) {
@@ -216,8 +233,12 @@ export class ScreenSpaceReflections {
 				passes.push({
 					label: 'ssr downsample',
 					pipeline: p.downsample,
-					// the downsample reads no uniforms, so its group 0 is empty
-					bind: (compiled) => [group(compiled, 0, {}), group(compiled, 1, { 9: prevColor, 10: prevDepth })],
+					groups: [
+						root.createBindGroup(ssrDownsampleLayout, {
+							finePyramid: prevColor,
+							fineDepth: prevDepth,
+						}),
+					],
 					targets: [mip(pyramid, level), mip(depthPyramid, level)],
 				});
 			}
@@ -226,18 +247,16 @@ export class ScreenSpaceReflections {
 			passes.push({
 				label: 'ssr resolve',
 				pipeline: p.resolve,
-				bind: (compiled) => [
-					postGroup(compiled),
-					group(compiled, 1, {
-						0: ssr,
-						1: scene.depth,
-						4: this.#sampler,
-						6: marchWeightView,
-						11: pyramidView,
-						12: depthPyramidView,
+				groups: [
+					this.#postGroup,
+					sharedGroup,
+					root.createBindGroup(ssrResolveLayout, {
+						marchWeight: marchWeightView,
+						pyramid: pyramidView,
+						depthPyramid: depthPyramidView,
 					}),
 				],
-				targets: [output.createView()],
+				target: output.createView(),
 			});
 			return passes;
 		};
@@ -283,9 +302,10 @@ export class ScreenSpaceReflections {
 		this.#camera.write(f, camera, sized.width / sized.height);
 		f.set([look.onScreen, look.mirrorMul, look.mirrorAdd, 0], CAMERA_HISTORY_FLOATS);
 		f[CAMERA_HISTORY_FLOATS + 4] = MARCH_STEPS;
-		this.#device.queue.writeBuffer(this.#uniforms, 0, f);
-		for (const pass of [sized.march[previousScene], ...sized.chains[this.#camera.index]]) {
-			encodeFullscreen(encoder, pass);
+		this.#root.device.queue.writeBuffer(this.#uniforms, 0, f);
+		encodeTgpuFullscreen(encoder, sized.march[previousScene]);
+		for (const pass of sized.chains[this.#camera.index]) {
+			encodeTgpuFullscreen(encoder, pass);
 		}
 		this.#camera.advance();
 	}

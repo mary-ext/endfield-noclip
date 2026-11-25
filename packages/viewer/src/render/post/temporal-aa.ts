@@ -1,22 +1,17 @@
+import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common, d } from 'typegpu';
+
 import { createUniformBuffer } from '../../gfx/buffers.ts';
-import {
-	type FullscreenPass,
-	type FullscreenPipeline,
-	autoBindGroup,
-	encodeFullscreen,
-	fullscreenPipeline,
-} from '../../gfx/fullscreen-pass.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
+import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import { halton } from '../../math/sequence.ts';
 import type { Camera } from '../../scene/camera.ts';
 import { HDR_FORMAT } from '../frame/render-targets.ts';
-import colorWgsl from '../shaders/common/color.wgsl?raw';
 
 import { CAMERA_HISTORY_FLOATS, CameraHistory } from './camera-history.ts';
-import { postShaderModule } from './shader-source.ts';
-import taaWgsl from './taa.wgsl?raw';
+import { postUniformLayout } from './post-schema.ts';
+import { TaaSchema, fsTaa, taaLayout } from './taa-shader.ts';
 
 /** frames rendered after the last change, so the history converges on the still view */
 export const SETTLE_FRAMES = 32;
@@ -25,8 +20,8 @@ const BLEND = 0.1;
 /** jitter positions per cycle without upsampling; the cycle lengthens with the upsampling ratio squared */
 const BASE_PHASES = 8;
 const MAX_PHASES = 64;
-/** byte size of `Taa` in taa.wgsl */
-const UNIFORM_BYTES = 112;
+/** byte size of {@link TaaSchema} */
+const UNIFORM_BYTES = d.sizeOf(TaaSchema);
 
 interface Sized {
 	width: number;
@@ -36,17 +31,16 @@ interface Sized {
 	/** views of {@link history} */
 	views: [GPUTextureView, GPUTextureView];
 	/** resolve pass of the frame that writes `history[i]` */
-	passes: [FullscreenPass, FullscreenPass];
+	passes: [TgpuFullscreenPass, TgpuFullscreenPass];
 }
 
 /** owns the jitter sequence, the history and the resolve pass */
 export class TemporalAA {
 	/** jitter and accumulate; off passes the current frame through (upscaled to the output size) */
 	enabled = true;
-	#device: GPUDevice;
-	#postUniforms: GPUBuffer;
-	#pipeline: FullscreenPipeline;
-	#postGroup: GPUBindGroup | null = null;
+	#root: TgpuRoot;
+	#pipeline: AsyncPipeline<TgpuRenderPipeline>;
+	#postGroup: TgpuBindGroup;
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(UNIFORM_BYTES / 4);
 	#sampler: GPUSampler;
@@ -57,22 +51,23 @@ export class TemporalAA {
 	#jitter: [x: number, y: number] = [0, 0];
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param postUniforms the post chain's `Post` uniforms
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache, postUniforms: GPUBuffer) {
-		this.#device = device;
-		this.#postUniforms = postUniforms;
-		this.#pipeline = fullscreenPipeline(pipelines, {
-			label: 'taa',
-			module: postShaderModule(device, 'taa', [colorWgsl, taaWgsl]),
-			entryPoint: 'fs_taa',
-			targets: [{ format: HDR_FORMAT }],
-		});
-		this.#uniforms = createUniformBuffer(device, 'taa uniforms', UNIFORM_BYTES);
-		this.#sampler = sampler(device, LINEAR_CLAMP);
-		this.#targets = new TextureSet(device);
+	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer) {
+		this.#root = root;
+		this.#postGroup = root.createBindGroup(postUniformLayout, { post: postUniforms });
+		this.#pipeline = pipelines.prepareTgpuRender('taa', () =>
+			root.createRenderPipeline({
+				vertex: common.fullScreenTriangle,
+				fragment: fsTaa,
+				targets: { format: HDR_FORMAT },
+			}),
+		);
+		this.#uniforms = createUniformBuffer(root.device, 'taa uniforms', UNIFORM_BYTES);
+		this.#sampler = sampler(root.device, LINEAR_CLAMP);
+		this.#targets = new TextureSet(root.device);
 	}
 
 	/**
@@ -142,21 +137,21 @@ export class TemporalAA {
 			});
 		const pair: [GPUTexture, GPUTexture] = [history(0), history(1)];
 		const views: [GPUTextureView, GPUTextureView] = [pair[0].createView(), pair[1].createView()];
-		const makePass = (read: GPUTextureView, target: GPUTextureView): FullscreenPass => ({
+		const makePass = (read: GPUTextureView, target: GPUTextureView): TgpuFullscreenPass => ({
 			label: 'taa',
 			pipeline: this.#pipeline,
-			bind: (compiled) => [
-				(this.#postGroup ??= autoBindGroup(this.#device, compiled, 0, { 0: { buffer: this.#postUniforms } })),
-				autoBindGroup(this.#device, compiled, 1, {
-					0: { buffer: this.#uniforms },
-					1: scene,
-					2: depth,
-					3: read,
-					4: this.#sampler,
-					5: velocity,
+			groups: [
+				this.#postGroup,
+				this.#root.createBindGroup(taaLayout, {
+					taa: this.#uniforms,
+					current: scene,
+					depth,
+					history: read,
+					linearSampler: this.#sampler,
+					velocity,
 				}),
 			],
-			targets: [target],
+			target,
 		});
 		this.#sized = {
 			width,
@@ -216,8 +211,8 @@ export class TemporalAA {
 		this.#camera.write(f, camera, sized.width / sized.height);
 		f.set([sized.width, sized.height, 1 / sized.width, 1 / sized.height], CAMERA_HISTORY_FLOATS);
 		f.set([BLEND, this.enabled ? 0 : 1, 0, 0], CAMERA_HISTORY_FLOATS + 4);
-		this.#device.queue.writeBuffer(this.#uniforms, 0, f);
-		if (encodeFullscreen(encoder, sized.passes[written])) {
+		this.#root.device.queue.writeBuffer(this.#uniforms, 0, f);
+		if (encodeTgpuFullscreen(encoder, sized.passes[written])) {
 			this.#camera.advance();
 		}
 		return written;

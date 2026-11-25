@@ -1,8 +1,8 @@
 /**
- * the rows a frame leaves for the GPU to cull, as the mesh selection writes them and instance-cull.wgsl reads
- * them. the selection tests each group of rows on the CPU, picks the LODs its rows can reach and requests
- * their geometry; when every one of them is resident, the group's rows go to the GPU as items, each item's
- * rows of one chain, and the GPU tests every row and writes the visible list and the draws' indirect
+ * the rows a frame leaves for the GPU to cull, as the mesh selection writes them and instance-cull-shader.ts
+ * reads them. the selection tests each group of rows on the CPU, picks the LODs its rows can reach and
+ * requests their geometry; when every one of them is resident, the group's rows go to the GPU as items, each
+ * item's rows of one chain, and the GPU tests every row and writes the visible list and the draws' indirect
  * arguments.
  *
  * @module
@@ -70,8 +70,8 @@ export const MAX_LIGHT_CASTERS = 8;
 const LIGHT_CASTERS_AT = 68;
 
 /**
- * floats of `View` in instance-cull.wgsl: the view's planes, the caster volume's planes, the shadow axes and
- * layers and the light caster spheres (vec4 each), then {@link ViewWord}
+ * floats of `View` in instance-cull-shader.ts: the view's planes, the caster volume's planes, the shadow axes
+ * and layers and the light caster spheres (vec4 each), then {@link ViewWord}
  */
 export const VIEW_FLOATS = 112;
 

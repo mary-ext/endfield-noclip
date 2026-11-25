@@ -367,7 +367,7 @@ export const DitherRow = {
 	subsurfaceIndirect: LookRow.foliageAo,
 } as const;
 
-/** the bits of {@link DitherRow.dither}'s last float, matching `fs_cutout_depth` in mesh.wgsl */
+/** the bits of {@link DitherRow.dither}'s last float, matching `fs_cutout_depth` in surfaces/common.ts */
 export const DitherFlags = {
 	/** the alpha is the red of the texture (`_UseMainTexAsAlpha`) rather than its alpha */
 	RedAlpha: 1,

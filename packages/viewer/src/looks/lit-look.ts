@@ -265,7 +265,7 @@ const emissiveFresnelParams = (params: Float32Array, fresnel: EmissiveFresnel): 
 
 // #region vertex animation and pulse
 
-/** values of {@link SwayRow.kind} (`meta.y` in `surfaces/common.wgsl`) */
+/** values of {@link SwayRow.kind} (`meta.y` in `surfaces/common.ts`) */
 export const SwayKind = {
 	Cloth: 0,
 	Pendulum: 1,
@@ -274,8 +274,8 @@ export const SwayKind = {
 
 /**
  * where vertex sway keeps its inputs: dedicated tail rows that never collide with foliage or trunk
- * parameters. `surfaces/common.wgsl` sways cloth/pendulum vertices when the look isn't foliage, erosion,
- * unlit or an effect, and mushroom vertices when `meta.y` is {@link SwayKind.Mushroom}
+ * parameters. `surfaces/common.ts` sways cloth/pendulum vertices when the look isn't foliage, erosion, unlit
+ * or an effect, and mushroom vertices when `meta.y` is {@link SwayKind.Mushroom}
  */
 export const SwayRow = {
 	/**
@@ -361,7 +361,7 @@ const vertexOffsetParams = (look: MaterialLook, offset: LitVertexOffset): void =
 
 /**
  * where `_EMISSIVE_ANIM`'s pulse and per-draw breathing keep their inputs: dedicated tail rows that never
- * collide with parallax, layer blend or Fresnel parameters. surfaces/surface.wgsl pulses emission when the
+ * collide with parallax, layer blend or Fresnel parameters. surfaces/surface.ts pulses emission when the
  * interval is positive and breathes it when the breathing frequency is positive
  */
 export const EmissivePulseRow = {
@@ -393,7 +393,7 @@ const emissivePulseParams = (
 
 /**
  * where a trunk's `_FOLIAGE_TRUNK` inputs go: rows only leaves use otherwise (a trunk doesn't sway, so the
- * sway's direction row is free). mesh.wgsl reads them on looks with {@link LookFlags.Trunk}
+ * sway's direction row is free). surfaces/common.ts reads them on looks with {@link LookFlags.Trunk}
  */
 export const TrunkRow = {
 	/** the ramp's range and transition range, `_TrunkVertexAoStrength`, the ramp's intensity (0 without one) */
@@ -445,8 +445,8 @@ const leafParams = (look: MaterialLook, leaf: LeafInputs): void => {
 };
 
 /**
- * where `_BLEND_COLOR` keeps its inputs: the tri-channel mask's rows, which leaves don't use. mesh.wgsl
- * blends when the last value of {@link LeafBlendRow.shape} is set
+ * where `_BLEND_COLOR` keeps its inputs: the tri-channel mask's rows, which leaves don't use.
+ * surfaces/common.ts blends when the last value of {@link LeafBlendRow.shape} is set
  */
 export const LeafBlendRow = {
 	/** `_BlendColor`: linear colour, alpha */
@@ -476,8 +476,9 @@ const grassParams = (look: MaterialLook, grass: GrassInputs): void => {
 
 /**
  * where `_PARALLAX_MAP_WORLDSPACE`'s world-space mask keeps its inputs: five rows in the tail mesh looks
- * leave free (`effect_only[1..5]` in mesh.wgsl), after `GAPS_FLOAT`. mesh.wgsl enters the world-space branch
- * when the last float of {@link additionalColor} is set, reading `_ParallaxMaskMap` from {@link Slot.Mask}
+ * leave free (`effect_only[1..5]` in surfaces/common.ts), after `GAPS_FLOAT`. surfaces/common.ts enters the
+ * world-space branch when the last float of {@link additionalColor} is set, reading `_ParallaxMaskMap` from
+ * {@link Slot.Mask}
  */
 export const ParallaxWorldRow = {
 	/** centre X and Z (`_MaskWorldPosParams.xz`), `1 / scale`, `_ParallaxLerpSchedule` */
@@ -536,8 +537,9 @@ const parallaxParams = (look: MaterialLook, glow: ParallaxGlow): void => {
 
 /**
  * where `HGRP/Foliage/Glow`'s flowing glow keeps its inputs: the parallax rows the pulse leaves alone.
- * mesh.wgsl draws it on a look with {@link LookFlags.ParallaxNoiseMap} and none of the other users of the
- * parallax slots ({@link LookFlags.ParallaxMap}, {@link LookFlags.LayerBlend}, {@link LookFlags.VertexOffset})
+ * surfaces/common.ts draws it on a look with {@link LookFlags.ParallaxNoiseMap} and none of the other users of
+ * the parallax slots ({@link LookFlags.ParallaxMap}, {@link LookFlags.LayerBlend},
+ * {@link LookFlags.VertexOffset})
  */
 export const FlowGlowRow = {
 	/** `_DistortionColor` (HDR rgb), the luminance base */

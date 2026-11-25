@@ -1,9 +1,11 @@
 import type { IrradianceRegionInfo, IrradianceTable } from '@endfield-noclip/package-format/irradiance';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
+import { type TgpuBindGroup, type TgpuComputePipeline, type TgpuRoot, d } from 'typegpu';
+
 import { createUniformBuffer } from '../../gfx/buffers.ts';
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
 import { writeBufferStaged } from '../../gfx/staged-write.ts';
 import { vec3From } from '../../math/vec3.ts';
@@ -11,14 +13,18 @@ import type { DecodedIrradiance } from '../../package/decode-protocol.ts';
 import type { ResidentIrradiance } from '../../streaming/resident.ts';
 import type { StreamManager } from '../../streaming/stream-manager.ts';
 
-import clipmapWgsl from './irradiance-clipmap.wgsl?raw';
-import updateWgsl from './irradiance-update.wgsl?raw';
+import {
+	IrradianceRegionSchema,
+	IrradianceUpdateSchema,
+	csIrradianceUpdate,
+	irradianceUpdateLayout,
+} from './irradiance-update-shader.ts';
 
 /** texels per clipmap level */
 const SIZE = [128, 64, 128] as const;
 /**
  * slices per level in the stacked textures: the level's, with a wrapped copy either side
- * (irradiance-clipmap.wgsl)
+ * (irradiance-clipmap.ts)
  */
 const SLAB = SIZE[2] + 2;
 /** metres between probes, per level */
@@ -39,9 +45,9 @@ const ORIGIN = 8192;
 /** region bakes the finest level applies at once (Dijiang has four rooms) */
 const MAX_REGIONS = 8;
 /** words per region in the regions buffer: origin xyz, first cell word, size xyz, padding */
-const REGION_WORDS = 8;
-/** words of `Update` in irradiance-update.wgsl */
-const UPDATE_WORDS = 12;
+const REGION_WORDS = d.sizeOf(IrradianceRegionSchema) / 4;
+/** words of {@link IrradianceUpdateSchema} */
+const UPDATE_WORDS = d.sizeOf(IrradianceUpdateSchema) / 4;
 const PIPELINE_KEY = 'irradiance update';
 
 interface Level {
@@ -55,7 +61,7 @@ interface Level {
 	windowBase: number;
 	dirty: boolean;
 	uniforms: GPUBuffer;
-	group: GPUBindGroup | null;
+	group: TgpuBindGroup | null;
 }
 
 /** a clipmap's A (L0 rgb) and B (three slabs along y of L1) */
@@ -66,9 +72,9 @@ interface Clipmap {
 
 /** owns the cell buffer, the clipmaps and their update pass; holds one package's volume at a time */
 export class IrradianceVolume {
+	#root: TgpuRoot;
 	#device: GPUDevice;
-	#pipelines: PipelineCache;
-	#layout: GPUBindGroupLayout;
+	#pipeline: AsyncPipeline<TgpuComputePipeline>;
 	/** each cell key's bakes in table order: the first whose group shows applies */
 	#cells = new Map<number, { blob: number; group: number }[]>();
 	/** the resident cells, in words */
@@ -99,12 +105,13 @@ export class IrradianceVolume {
 	/**
 	 * starts without a volume; see {@link setPackage}.
 	 *
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache, which compiles the update pass
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache) {
+	constructor(root: TgpuRoot, pipelines: PipelineCache) {
+		const device = root.device;
+		this.#root = root;
 		this.#device = device;
-		this.#pipelines = pipelines;
 		this.#regionBuffer = device.createBuffer({
 			label: 'irradiance regions',
 			size: MAX_REGIONS * REGION_WORDS * 4,
@@ -113,47 +120,9 @@ export class IrradianceVolume {
 		this.#buffer = cellBuffer(device, true);
 		this.sampler = sampler(device, LINEAR_REPEAT);
 		this.clampSampler = sampler(device, LINEAR_CLAMP);
-		{
-			const compute = GPUShaderStage.COMPUTE;
-			const storage = (binding: number, format: GPUTextureFormat): GPUBindGroupLayoutEntry => ({
-				binding,
-				visibility: compute,
-				storageTexture: { access: 'write-only', format, viewDimension: '3d' },
-			});
-			const sampled = (binding: number): GPUBindGroupLayoutEntry => ({
-				binding,
-				visibility: compute,
-				texture: { viewDimension: '3d' },
-			});
-			const cells = (binding: number): GPUBindGroupLayoutEntry => ({
-				binding,
-				visibility: compute,
-				buffer: { type: 'read-only-storage' },
-			});
-			this.#layout = device.createBindGroupLayout({
-				label: 'irradiance update',
-				entries: [
-					{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
-					cells(1),
-					cells(2),
-					storage(3, 'rgba16float'),
-					storage(4, 'rgba8unorm'),
-					sampled(5),
-					sampled(6),
-					{ binding: 7, visibility: compute, sampler: {} },
-					{ binding: 8, visibility: compute, sampler: {} },
-					cells(9),
-				],
-			});
-		}
-		const layout = this.#layout;
-		void pipelines.prepareCompute(PIPELINE_KEY, () => ({
-			layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-			compute: {
-				module: pipelines.module('irradiance update', clipmapWgsl + updateWgsl),
-				entryPoint: 'cs_update',
-			},
-		}));
+		this.#pipeline = pipelines.prepareTgpuCompute(PIPELINE_KEY, () =>
+			root.createComputePipeline({ compute: csIrradianceUpdate }),
+		);
 
 		// each level's window spans the cells its probes fall in: size · spacing / cell size, plus one
 		const windowSizes = SPACING.map((spacing, level) =>
@@ -226,20 +195,17 @@ export class IrradianceVolume {
 	#rebindLevels(): void {
 		this.#bufferVersion = this.#buffer.version;
 		for (const level of this.#levels) {
-			level.group = this.#device.createBindGroup({
-				layout: this.#layout,
-				entries: [
-					{ binding: 0, resource: { buffer: level.uniforms } },
-					{ binding: 1, resource: { buffer: this.#buffer.buffer } },
-					{ binding: 2, resource: { buffer: this.#windows } },
-					{ binding: 3, resource: this.#scratch.a.createView() },
-					{ binding: 4, resource: this.#scratch.b.createView() },
-					{ binding: 5, resource: this.#stacked.a.createView() },
-					{ binding: 6, resource: this.#stacked.b.createView() },
-					{ binding: 7, resource: this.sampler },
-					{ binding: 8, resource: this.clampSampler },
-					{ binding: 9, resource: { buffer: this.#regionBuffer } },
-				],
+			level.group = this.#root.createBindGroup(irradianceUpdateLayout, {
+				update: level.uniforms,
+				cells: this.#buffer.buffer,
+				windows: this.#windows,
+				outA: this.#scratch.a.createView(),
+				outB: this.#scratch.b.createView(),
+				coarseA: this.#stacked.a.createView(),
+				coarseB: this.#stacked.b.createView(),
+				coarseRepeat: this.sampler,
+				coarseClamp: this.clampSampler,
+				regions: this.#regionBuffer,
 			});
 		}
 	}
@@ -267,7 +233,7 @@ export class IrradianceVolume {
 	 *   counting levels {@link encode} fills this frame as filled
 	 */
 	centers(): (Vec3 | null)[] {
-		const compiled = this.#pipelines.getCompute(PIPELINE_KEY) !== undefined;
+		const compiled = this.#pipeline.get() !== undefined;
 		return this.#levels.map((level, i) =>
 			level.center === null || !compiled
 				? null
@@ -419,7 +385,7 @@ export class IrradianceVolume {
 	 * @param encoder this frame's encoder, before the main pass
 	 */
 	encode(encoder: GPUCommandEncoder): void {
-		const pipeline = this.#pipelines.getCompute(PIPELINE_KEY);
+		const pipeline = this.#pipeline.get();
 		if (pipeline === undefined) {
 			return;
 		}
@@ -434,7 +400,7 @@ export class IrradianceVolume {
 			if (coarserChanged) {
 				level.dirty = true;
 			}
-			if (!level.dirty || level.center === null) {
+			if (!level.dirty || level.center === null || level.group === null) {
 				continue;
 			}
 			level.dirty = false;
@@ -456,9 +422,10 @@ export class IrradianceVolume {
 			update[11] = regions;
 			device.queue.writeBuffer(level.uniforms, 0, update);
 			const pass = encoder.beginComputePass({ label: `irradiance update ${index}` });
-			pass.setPipeline(pipeline);
-			pass.setBindGroup(0, level.group);
-			pass.dispatchWorkgroups(SIZE[0] / 4, SIZE[1] / 4, SIZE[2] / 4);
+			pipeline
+				.with(level.group)
+				.with(pass)
+				.dispatchWorkgroups(SIZE[0] / 4, SIZE[1] / 4, SIZE[2] / 4);
 			pass.end();
 			this.#copyToSlab(encoder, index);
 		}

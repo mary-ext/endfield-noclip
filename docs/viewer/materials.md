@@ -85,11 +85,11 @@ cutout-depth, and shadow passes.
   turn reach on all axes. pendulums with gravity, custom anchor, or no swing (none on map02) stay
   still and record a gap.
 - **cloth simulation** ([game-data](../game-data/materials.md#cloth-simulation)): `ClothSimulator`
-  runs `cloth-sim.wgsl` (compute port of `ClothSingleDispatchCS`) once per frame at fixed
+  runs `cloth-sim-shader.ts` (compute port of `ClothSingleDispatchCS`) once per frame at fixed
   `dt = 0.023333333 s` (up to 2 substeps) over all cloths in the package's `.clth` blob using
   `WindNoiseTex` and the blended environment's wind intensity/direction. the mesh vertex stage
-  (`vs_main`, `vs_depth`, `vs_depth_fade`, `vs_cutout_depth`) binds vertex colour (stream 5) and
-  skins object-space positions from the resulting 3×4 skeleton buffer before sway, also reading the
+  (`vsMain`, `vsDepth`, `vsDepthFade`, `vsCutoutDepth`) binds vertex colour (stream 5) and skins
+  object-space positions from the resulting 3×4 skeleton buffer before sway, also reading the
   previous frame's skeleton buffer (`@group(1) @binding(5)`) to emit dynamic motion vectors for TAA
   and SSR. omits character capsule colliders.
 

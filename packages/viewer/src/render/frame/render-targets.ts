@@ -103,7 +103,7 @@ export interface SceneTextures {
 	depth: GPUTextureView;
 	/** the nearest water surface's depth in front of the scene, {@link WATER_DEPTH_FORMAT}; 0 where there's none */
 	waterDepth: GPUTextureView;
-	/** the meshes' mip feedback (`pack_mip_feedback` in frame.wgsl) */
+	/** the meshes' mip feedback (`pack_mip_feedback` in frame-core.ts) */
 	mipFeedback: GPUTextureView;
 	/** dynamic object screen-space velocity delta (`VELOCITY_FORMAT`, 0 on static pixels) */
 	velocity: GPUTextureView;

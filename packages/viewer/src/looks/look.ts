@@ -61,7 +61,7 @@ export const ExtraLookFlags = {
 /** the slot flags of {@link ExtraLookFlags} by extra slot index (`slot - EFFECT_SLOT_COUNT`) */
 export const EXTRA_SLOT_FLAGS = [ExtraLookFlags.TriMaskMap, ExtraLookFlags.OverlayMaskMap];
 
-/** {@link MaterialLook.flags} bits, matching `mesh.wgsl` */
+/** {@link MaterialLook.flags} bits, matching `surfaces/common.ts` */
 export const LookFlags = {
 	/** the slots of {@link SLOTS} that have a texture ({@link SLOT_FLAGS}) */
 	BaseMap: 1 << 0,
@@ -96,7 +96,7 @@ export const LookFlags = {
 	// bit 26 is the geometry's ({@link GeometryFlags})
 	/** `HGRP/Foliage/Leaf`: the sun shadow, vertex-normal lighting and canopy ramp of {@link LookRow.foliage} */
 	FoliageLeaf: 1 << 27,
-	/** a scene effect (`effects/`), drawn by `effect.wgsl` in one of the effect queues ({@link LookQueue}) */
+	/** a scene effect (`effects/`), drawn by `effects/common.ts` in one of the effect queues ({@link LookQueue}) */
 	Effect: 1 << 28,
 	/**
 	 * `_USE_VERTOFFSET`: the parallax slots hold the vertex offset's texture and its mask rather than a glow,
@@ -113,9 +113,9 @@ export const LookFlags = {
 } as const;
 
 /**
- * draw flags of the geometry, next to the material's {@link LookFlags} (`HAS_*` in mesh.wgsl). the shader
- * can't tell a missing stream from its values: the zero buffer bound in its place reads as an octahedral (0,
- * 0), which is +z
+ * draw flags of the geometry, next to the material's {@link LookFlags} (`HAS_*` in surfaces/common.ts). the
+ * shader can't tell a missing stream from its values: the zero buffer bound in its place reads as an
+ * octahedral (0, 0), which is +z
  */
 export const GeometryFlags = {
 	HasNormals: 1 << 9,
@@ -135,8 +135,8 @@ export const SLOT_FLAGS = [
 ];
 
 /**
- * floats of a material's draw parameters (`Look` in mesh.wgsl, one per look table slot), 48 rows: mesh looks
- * use the first 36 ({@link LookRow}), effect looks all of them for their own (`EffectRow` in
+ * floats of a material's draw parameters (`Look` in surfaces/common.ts, one per look table slot), 48 rows:
+ * mesh looks use the first 36 ({@link LookRow}), effect looks all of them for their own (`EffectRow` in
  * effects/effect-look.ts)
  */
 export const LOOK_FLOATS = 192;
@@ -195,7 +195,8 @@ export interface LookMotion {
 
 /**
  * the float of a mesh look's parameters that is 1 when it has {@link MaterialLook.gaps}, which the gaps view
- * stripes (`shade` in mesh.wgsl): the first past the rows mesh looks use. effect looks use it for their own
+ * stripes (`shade` in surfaces/common.ts): the first past the rows mesh looks use. effect looks use it for
+ * their own
  */
 export const GAPS_FLOAT = 144;
 
@@ -204,21 +205,21 @@ export const GAPS_FLOAT = 144;
  *
  * - `opaque`: shaded in the main pass, after a depth prepass
  * - `cutout`: alpha-tested against the alpha of the base colour, or of the normal map with
- *   {@link LookFlags.AlphaNormal} (`fs_cutout_depth` in mesh.wgsl), once that texture is bound
+ *   {@link LookFlags.AlphaNormal} (`fs_cutout_depth` in surfaces/common.ts), once that texture is bound
  *   ({@link alphaTextureOf}); until then drawn as `opaque`
  * - `cutoutOverlay`: alpha-tested without writing depth (`HGRP/Lit` `_ZWRITE_OFF` mesh decals), skipping the
  *   prepass and discarding in the main pass (`fs_cutout_overlay`) against `greater-equal` depth once its
  *   alpha texture is bound; never shadow-casting
  * - `stencilMask`: writes only the stencil where its surface passes the depth test, at the end of the main pass
  *   (a portal's mask, with a {@link MaterialLook.stencil})
- * - `transparent`: alpha-blended in the transparent pass with the opacity `fs_transparent` in mesh.wgsl
- *   computes, testing depth without writing it; never shadow-casting
+ * - `transparent`: alpha-blended in the transparent pass with the opacity `fs_transparent` in
+ *   surfaces/common.ts computes, testing depth without writing it; never shadow-casting
  * - `transparentDepthWrite`: like `transparent`, writing depth (`_Zwrite` on `HGRP/LitTransparent`) so
  *   self-overlapping meshes and later transparent draws occlude against it
  * - `transparentDepthOnly`: writes only depth (`HGRP/Effect/VFXTransparentDepthOnly`), with no colour output,
  *   during the sorted transparent pass so later transparent draws behind it are occluded
  *
- * and scene effects ({@link LookFlags.Effect}), drawn by effect.wgsl once all their textures are bound:
+ * and scene effects ({@link LookFlags.Effect}), drawn by effects/common.ts once all their textures are bound:
  *
  * - `effect`: in the transparent pass
  * - `effectOpaque`: an opaque VFXBaseV2 layer, shaded in the main pass after the meshes, writing depth

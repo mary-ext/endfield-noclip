@@ -60,7 +60,7 @@ export interface InstanceRange {
 	first: number;
 	count: number;
 	/**
-	 * 8-bit transition fade code packed into the visible list's top byte (`list_fade` in frame.wgsl): `0` =
+	 * 8-bit transition fade code packed into the visible list's top byte (`list_fade` in frame-core.ts): `0` =
 	 * opaque, `1..127` = fading in (`code / 128`), `129..255` = fading out (`(code - 128) / 128`)
 	 */
 	fade: number;

@@ -1,32 +1,30 @@
-import { BLOCK_SLOT_BITS } from '../../content/instance-rows.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { TgpuBindGroup, TgpuComputePipeline, TgpuRoot } from 'typegpu';
+
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import {
 	BUCKET_WORDS,
 	COUNTER_WORDS,
 	type GpuCullWork,
 	INDIRECT_WORDS,
 	ITEM_WORDS,
-	ItemFlags,
-	NO_BUCKET,
 	SLOT_WORDS,
 	STATS_WORDS,
-	SlotFlags,
 	VIEW_FLOATS,
 	ViewWord,
 } from '../../streaming/gpu-cull-work.ts';
-import { wgslConst } from '../shaders/wgsl-const.ts';
-import { SHADOW_LAYER_MIN_SQUARED, SHADOW_LAYERS } from '../shadows/shadow-map.ts';
+import { SHADOW_LAYERS } from '../shadows/shadow-map.ts';
 
-import cullWgsl from './instance-cull.wgsl?raw';
+import {
+	BUCKET_DRAW,
+	MAX_GROUPS_X,
+	csCullArguments,
+	csCullWrite,
+	instanceCullLayout,
+} from './instance-cull-shader.ts';
 
-/** floats of `View` in instance-cull.wgsl past the selection's part: last frame's camera and the pyramid */
+/** floats of `CullViewSchema` past the selection's part: last frame's camera and the pyramid */
 const OCCLUSION_FLOATS = 24;
-
-/** workgroups along x of a dispatch at most (WebGPU's default limit) */
-const MAX_GROUPS_X = 65_535;
 const KEYS = { write: 'instance cull/write', arguments: 'instance cull/arguments' };
-/** where a bucket's draw index and submesh range start among its words, past its regions */
-const BUCKET_DRAW = 2 * (1 + SHADOW_LAYERS);
 
 /** the buffers the culler reads and writes besides its own */
 export interface CullTargets {
@@ -77,9 +75,9 @@ export class InstanceCuller {
 	instances = 0;
 	triangles = 0;
 
-	#device: GPUDevice;
-	#pipelines: PipelineCache;
-	#layout: GPUBindGroupLayout;
+	#root: TgpuRoot;
+	#writePipeline: AsyncPipeline<TgpuComputePipeline>;
+	#argsPipeline: AsyncPipeline<TgpuComputePipeline>;
 	#view: GPUBuffer;
 	#viewData = new Float32Array(VIEW_FLOATS + OCCLUSION_FLOATS);
 	#viewWords = new Uint32Array(this.#viewData.buffer);
@@ -95,7 +93,7 @@ export class InstanceCuller {
 	#itemCount = 0;
 	/** whether work was committed since the last encode */
 	#pending = false;
-	#group: GPUBindGroup | null = null;
+	#group: TgpuBindGroup | null = null;
 	/** bound in place of a pyramid while rows aren't tested against one */
 	#noPyramid: GPUTexture;
 	#noPyramidView: GPUTextureView;
@@ -110,34 +108,14 @@ export class InstanceCuller {
 	#targets: () => CullTargets;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines compiles the culling passes
 	 * @param targets the buffers it reads and writes, asked for on every encode
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache, targets: () => CullTargets) {
-		this.#device = device;
-		this.#pipelines = pipelines;
+	constructor(root: TgpuRoot, pipelines: PipelineCache, targets: () => CullTargets) {
+		const device = root.device;
+		this.#root = root;
 		this.#targets = targets;
-		const compute = GPUShaderStage.COMPUTE;
-		const storage = (binding: number, type: GPUBufferBindingType): GPUBindGroupLayoutEntry => ({
-			binding,
-			visibility: compute,
-			buffer: { type },
-		});
-		this.#layout = device.createBindGroupLayout({
-			label: 'instance cull',
-			entries: [
-				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
-				storage(1, 'read-only-storage'),
-				storage(2, 'read-only-storage'),
-				storage(3, 'read-only-storage'),
-				storage(4, 'storage'),
-				storage(5, 'storage'),
-				storage(6, 'storage'),
-				storage(7, 'storage'),
-				{ binding: 8, visibility: compute, texture: { sampleType: 'unfilterable-float' } },
-			],
-		});
 		this.#noPyramid = device.createTexture({
 			label: 'no depth pyramid',
 			size: [1, 1],
@@ -158,39 +136,17 @@ export class InstanceCuller {
 			size: STATS_WORDS * 4,
 			usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
 		});
-		const code = [
-			wgslConst('ITEM_WORDS', 'u32', ITEM_WORDS),
-			wgslConst('SLOT_WORDS', 'u32', SLOT_WORDS),
-			wgslConst('BUCKET_WORDS', 'u32', BUCKET_WORDS),
-			wgslConst('BUCKET_DRAW', 'u32', BUCKET_DRAW),
-			wgslConst('COUNTER_WORDS', 'u32', COUNTER_WORDS),
-			wgslConst('INDIRECT_WORDS', 'u32', INDIRECT_WORDS),
-			wgslConst('STATS_WORDS', 'u32', STATS_WORDS),
-			wgslConst('SHADOW_LAYERS', 'u32', SHADOW_LAYERS),
-			`const SHADOW_MIN_SQUARED = array<f32, ${SHADOW_LAYERS}>(${SHADOW_LAYER_MIN_SQUARED.join(', ')});`,
-			wgslConst('BLOCK_SLOT_BITS', 'u32', BLOCK_SLOT_BITS),
-			wgslConst('NO_BUCKET', 'u32', NO_BUCKET),
-			wgslConst('ITEM_INSIDE', 'u32', ItemFlags.Inside),
-			wgslConst('SLOT_CASTS', 'u32', SlotFlags.Casts),
-			wgslConst('SLOT_SHADOW_ONLY', 'u32', SlotFlags.ShadowOnly),
-			wgslConst('SLOT_REALTIME', 'u32', SlotFlags.Realtime),
-			wgslConst('SLOT_STATIC', 'u32', SlotFlags.Static),
-			wgslConst('MAX_GROUPS_X', 'u32', MAX_GROUPS_X),
-			cullWgsl,
-		].join('\n');
-		const module = pipelines.module('instance cull', code);
-		const layout = device.createPipelineLayout({ bindGroupLayouts: [this.#layout] });
-		for (const [key, entryPoint] of [
-			[KEYS.write, 'cs_write'],
-			[KEYS.arguments, 'cs_arguments'],
-		] as const) {
-			void pipelines.prepareCompute(key, () => ({ layout, compute: { module, entryPoint } }));
-		}
+		this.#writePipeline = pipelines.prepareTgpuCompute(KEYS.write, () =>
+			root.createComputePipeline({ compute: csCullWrite }),
+		);
+		this.#argsPipeline = pipelines.prepareTgpuCompute(KEYS.arguments, () =>
+			root.createComputePipeline({ compute: csCullArguments }),
+		);
 	}
 
 	/** @returns whether the passes compiled; until they have, the GPU culls nothing */
 	get ready(): boolean {
-		return Object.values(KEYS).every((key) => this.#pipelines.getCompute(key) !== undefined);
+		return this.#writePipeline.get() !== undefined && this.#argsPipeline.get() !== undefined;
 	}
 
 	/** @returns the buckets' indirect draw arguments, {@link INDIRECT_WORDS} each by GPU index */
@@ -274,7 +230,7 @@ export class InstanceCuller {
 			this.#indirect.destroy();
 			this.#indirect = this.#indirectBuffer(buckets);
 		}
-		const queue = this.#device.queue;
+		const queue = this.#root.device.queue;
 		queue.writeBuffer(this.#work, 0, work.items, 0, itemWords);
 		queue.writeBuffer(this.#work, itemWords * 4, work.slots, 0, slotWords);
 		queue.writeBuffer(this.#work, (itemWords + slotWords) * 4, this.#buckets, 0, bucketWords);
@@ -301,8 +257,8 @@ export class InstanceCuller {
 	 */
 	encode(encoder: GPUCommandEncoder, occlusion: Occlusion | null): void {
 		this.#readStats();
-		const write = this.#pipelines.getCompute(KEYS.write);
-		const args = this.#pipelines.getCompute(KEYS.arguments);
+		const write = this.#writePipeline.get();
+		const args = this.#argsPipeline.get();
 		if (!this.#pending || write === undefined || args === undefined) {
 			return;
 		}
@@ -321,17 +277,18 @@ export class InstanceCuller {
 				words[at + 22] = occlusion.pyramid.levels;
 				data[at + 23] = occlusion.near;
 			}
-			this.#device.queue.writeBuffer(this.#view, at * 4, data, at, OCCLUSION_FLOATS);
+			this.#root.device.queue.writeBuffer(this.#view, at * 4, data, at, OCCLUSION_FLOATS);
 		}
 		encoder.clearBuffer(this.#counters, 0, (STATS_WORDS + this.#bucketCount * COUNTER_WORDS) * 4);
+		const group = this.#bindGroup(occlusion?.pyramid.view ?? this.#noPyramidView);
 		const pass = encoder.beginComputePass({ label: 'instance cull' });
-		pass.setBindGroup(0, this.#bindGroup(occlusion?.pyramid.view ?? this.#noPyramidView));
 		const x = Math.min(this.#itemCount, MAX_GROUPS_X);
 		const y = Math.ceil(this.#itemCount / MAX_GROUPS_X);
-		pass.setPipeline(write);
-		pass.dispatchWorkgroups(x, y);
-		pass.setPipeline(args);
-		pass.dispatchWorkgroups(Math.ceil(this.#bucketCount / 64));
+		write.with(group).with(pass).dispatchWorkgroups(x, y);
+		args
+			.with(group)
+			.with(pass)
+			.dispatchWorkgroups(Math.ceil(this.#bucketCount / 64));
 		pass.end();
 		if (!this.#statsCopied && !this.#statsMapping) {
 			encoder.copyBufferToBuffer(this.#counters, 0, this.#statsRead, 0, STATS_WORDS * 4);
@@ -361,7 +318,7 @@ export class InstanceCuller {
 			});
 	}
 
-	#bindGroup(pyramid: GPUTextureView): GPUBindGroup {
+	#bindGroup(pyramid: GPUTextureView): TgpuBindGroup {
 		const targets = this.#targets();
 		const bound = this.#bound;
 		if (
@@ -377,27 +334,23 @@ export class InstanceCuller {
 			bound.work = this.#work;
 			bound.counters = this.#counters;
 			bound.pyramid = pyramid;
-			this.#group = this.#device.createBindGroup({
-				label: 'instance cull',
-				layout: this.#layout,
-				entries: [
-					{ binding: 0, resource: { buffer: this.#view } },
-					{ binding: 1, resource: { buffer: targets.rows } },
-					{ binding: 2, resource: { buffer: targets.blocks } },
-					{ binding: 3, resource: { buffer: this.#work } },
-					{ binding: 4, resource: { buffer: this.#counters } },
-					{ binding: 5, resource: { buffer: targets.list } },
-					{ binding: 6, resource: { buffer: targets.drawIds } },
-					{ binding: 7, resource: { buffer: this.#indirect } },
-					{ binding: 8, resource: pyramid },
-				],
+			this.#group = this.#root.createBindGroup(instanceCullLayout, {
+				view: this.#view,
+				rows: targets.rows,
+				blocks: targets.blocks,
+				work: this.#work,
+				counters: this.#counters,
+				list: targets.list,
+				drawIds: targets.drawIds,
+				indirect: this.#indirect,
+				pyramid,
 			});
 		}
 		return this.#group;
 	}
 
 	#workBuffer(words: number): GPUBuffer {
-		return this.#device.createBuffer({
+		return this.#root.device.createBuffer({
 			label: 'instance cull work',
 			size: words * 4,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -405,7 +358,7 @@ export class InstanceCuller {
 	}
 
 	#counterBuffer(buckets: number): GPUBuffer {
-		return this.#device.createBuffer({
+		return this.#root.device.createBuffer({
 			label: 'instance cull counters',
 			size: (STATS_WORDS + buckets * COUNTER_WORDS) * 4,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
@@ -413,7 +366,7 @@ export class InstanceCuller {
 	}
 
 	#indirectBuffer(buckets: number): GPUBuffer {
-		return this.#device.createBuffer({
+		return this.#root.device.createBuffer({
 			label: 'mesh indirect draws',
 			size: buckets * INDIRECT_WORDS * 4,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT,

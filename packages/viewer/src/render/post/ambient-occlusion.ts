@@ -1,56 +1,65 @@
-import {
-	type FullscreenPass,
-	type FullscreenPipeline,
-	autoBindGroup,
-	encodeFullscreen,
-	fullscreenPipeline,
-} from '../../gfx/fullscreen-pass.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
-import { TextureSet } from '../../gfx/texture-set.ts';
-import gbufferWgsl from '../shaders/common/gbuffer.wgsl?raw';
-import octahedralWgsl from '../shaders/common/octahedral.wgsl?raw';
+import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common } from 'typegpu';
 
-import gtaoWgsl from './gtao.wgsl?raw';
-import { postShaderModule } from './shader-source.ts';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
+import { TextureSet } from '../../gfx/texture-set.ts';
+import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
+
+import {
+	AO_SCALE,
+	fsAoDepth,
+	fsGtao,
+	fsGtaoBlur,
+	gtaoBlurLayout,
+	gtaoDepthLayout,
+	gtaoMarchLayout,
+} from './gtao-shader.ts';
+import { postUniformLayout } from './post-schema.ts';
 
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */
 const AO_DEPTH_FORMAT: GPUTextureFormat = 'r32float';
-/** full-resolution pixels per AO pixel along each axis; matches `AO_SCALE` in gtao.wgsl */
-const AO_SCALE = 2;
 
 interface Sized {
 	/** the blurred AO, at full resolution */
 	blurred: GPUTextureView;
 	/** the reduced depth, the march and the depth-aware blur that upsamples it */
-	passes: FullscreenPass[];
+	passes: TgpuFullscreenPass[];
 }
 
-/** the ground-truth ambient occlusion (gtao.wgsl): marched at half resolution, blurred back up */
+/** the ground-truth ambient occlusion (gtao-shader.ts): marched at half resolution, blurred back up */
 export class AmbientOcclusion {
-	#device: GPUDevice;
-	#postUniforms: GPUBuffer;
-	#pipelines: Record<'depth' | 'gtao' | 'blur', FullscreenPipeline>;
+	#root: TgpuRoot;
+	#postGroup: TgpuBindGroup;
+	#pipelines: Record<'depth' | 'gtao' | 'blur', AsyncPipeline<TgpuRenderPipeline>>;
 	/** half resolution: view depth, and the AO marched over it; full resolution: the blurred AO */
 	#targets: TextureSet;
 	#sized: Sized | null = null;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param postUniforms the post chain's `Post` uniforms
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache, postUniforms: GPUBuffer) {
-		this.#device = device;
-		this.#targets = new TextureSet(device);
-		this.#postUniforms = postUniforms;
-		const module = postShaderModule(device, 'gtao', [octahedralWgsl, gbufferWgsl, gtaoWgsl]);
-		const pipeline = (label: string, entryPoint: string, format: GPUTextureFormat): FullscreenPipeline =>
-			fullscreenPipeline(pipelines, { label, module, entryPoint, targets: [{ format }] });
+	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer) {
+		this.#root = root;
+		this.#targets = new TextureSet(root.device);
+		this.#postGroup = root.createBindGroup(postUniformLayout, { post: postUniforms });
+		const make = (
+			label: string,
+			fragment: typeof fsAoDepth,
+			format: GPUTextureFormat,
+		): AsyncPipeline<TgpuRenderPipeline> =>
+			pipelines.prepareTgpuRender(label, () =>
+				root.createRenderPipeline({
+					vertex: common.fullScreenTriangle,
+					fragment,
+					targets: { format },
+				}),
+			);
 		this.#pipelines = {
-			depth: pipeline('ao depth', 'fs_ao_depth', AO_DEPTH_FORMAT),
-			gtao: pipeline('gtao', 'fs_gtao', AO_FORMAT),
-			blur: pipeline('gtao blur', 'fs_blur', AO_FORMAT),
+			depth: make('ao depth', fsAoDepth, AO_DEPTH_FORMAT),
+			gtao: make('gtao', fsGtao, AO_FORMAT),
+			blur: make('gtao blur', fsGtaoBlur, AO_FORMAT),
 		};
 	}
 
@@ -79,7 +88,7 @@ export class AmbientOcclusion {
 	resize(input: { depth: GPUTextureView; gbufferB: GPUTextureView; width: number; height: number }): void {
 		this.#release();
 		const { depth, gbufferB, width, height } = input;
-		const device = this.#device;
+		const root = this.#root;
 		const p = this.#pipelines;
 		const texture = (label: string, w: number, h: number, format: GPUTextureFormat): GPUTexture =>
 			this.#targets.create({
@@ -97,8 +106,6 @@ export class AmbientOcclusion {
 		const aoDepth = texture('ao depth', aoWidth, aoHeight, AO_DEPTH_FORMAT);
 		const ao = texture('ao', aoWidth, aoHeight, AO_FORMAT);
 		const blurred = texture('ao blurred', width, height, AO_FORMAT);
-		const post = (pipeline: GPURenderPipeline): GPUBindGroup =>
-			autoBindGroup(device, pipeline, 0, { 0: { buffer: this.#postUniforms } });
 		const aoDepthView = aoDepth.createView();
 		const aoView = ao.createView();
 		const blurredView = blurred.createView();
@@ -108,26 +115,26 @@ export class AmbientOcclusion {
 				{
 					label: 'ao depth',
 					pipeline: p.depth,
-					bind: (compiled) => [post(compiled), autoBindGroup(device, compiled, 1, { 0: depth })],
-					targets: [aoDepthView],
+					groups: [this.#postGroup, root.createBindGroup(gtaoDepthLayout, { depth })],
+					target: aoDepthView,
 				},
 				{
 					label: 'gtao',
 					pipeline: p.gtao,
-					bind: (compiled) => [
-						post(compiled),
-						autoBindGroup(device, compiled, 1, { 1: aoDepthView, 3: gbufferB }),
+					groups: [
+						this.#postGroup,
+						root.createBindGroup(gtaoMarchLayout, { halfDepth: aoDepthView, gbufferB }),
 					],
-					targets: [aoView],
+					target: aoView,
 				},
 				{
 					label: 'gtao blur',
 					pipeline: p.blur,
-					bind: (compiled) => [
-						post(compiled),
-						autoBindGroup(device, compiled, 1, { 0: depth, 1: aoDepthView, 2: aoView }),
+					groups: [
+						this.#postGroup,
+						root.createBindGroup(gtaoBlurLayout, { depth, halfDepth: aoDepthView, ao: aoView }),
 					],
-					targets: [blurredView],
+					target: blurredView,
 				},
 			],
 		};
@@ -136,7 +143,7 @@ export class AmbientOcclusion {
 	/** @param encoder this frame's encoder, after the main pass */
 	encode(encoder: GPUCommandEncoder): void {
 		for (const pass of this.#ensureSized().passes) {
-			encodeFullscreen(encoder, pass);
+			encodeTgpuFullscreen(encoder, pass);
 		}
 	}
 

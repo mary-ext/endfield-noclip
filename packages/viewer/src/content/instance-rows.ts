@@ -19,7 +19,7 @@ import {
 
 /**
  * 32-bit words per row: transform (12), bounds centre + block word (4), half extents + info (4), then the
- * words {@link RowWord} names from the texture sheet on (4). frame.wgsl's `InstanceRow` mirrors it
+ * words {@link RowWord} names from the texture sheet on (4). frame-core.ts's `InstanceRow` mirrors it
  */
 export const ROW_WORDS = 24;
 
@@ -33,7 +33,7 @@ export const RowWord = {
 	info: 19,
 	/** the texture sheet tile its mesh's UVs are remapped into ({@link rowSheet}) */
 	sheet: 20,
-	/** RGBA8 that multiplies the mesh's vertex colours (`instance_color` in frame.wgsl); white for most rows */
+	/** RGBA8 that multiplies the mesh's vertex colours (`instance_color` in frame-core.ts); white for most rows */
 	color: 21,
 	/**
 	 * two words of f16 pairs (xy, zw): a particle's custom data (`ParticleSystemInfo.customData`), which effect
@@ -46,7 +46,7 @@ export const RowWord = {
 const ROW_WHITE = 0xffff_ffff;
 
 /**
- * bits of a row's block word that hold its block slot (`row_block` in frame.wgsl); the bits above hold its
+ * bits of a row's block word that hold its block slot (`row_block` in frame-core.ts); the bits above hold its
  * decal placement's index in its block plus 1, or 0 for a row without one (`row_placement`)
  */
 export const BLOCK_SLOT_BITS = 14;
@@ -73,9 +73,9 @@ export type RowKind = (typeof RowKind)[keyof typeof RowKind];
 
 /**
  * a row's texture sheet word ({@link RowWord.sheet}): the tile its mesh's UVs are remapped into (`sheet_uv`
- * in frame.wgsl), tiles across − 1 in bits 0–5, down − 1 in bits 6–11, the tile in bits 12–23, which UV sets
- * take the tile (bit 24 UV0, bit 25 UV1), and per-axis UV flips before tile remapping (bit 26 U, bit 27 V).
- * 0, a 1×1 unflipped sheet, leaves the UVs as they are
+ * in frame-core.ts), tiles across − 1 in bits 0–5, down − 1 in bits 6–11, the tile in bits 12–23, which UV
+ * sets take the tile (bit 24 UV0, bit 25 UV1), and per-axis UV flips before tile remapping (bit 26 U, bit 27
+ * V). 0, a 1×1 unflipped sheet, leaves the UVs as they are
  *
  * @param tiles tiles across and down, 1–64 each
  * @param tile the tile, counted from the sheet's top-left along its rows
@@ -110,7 +110,7 @@ export const packRowCustom = (custom: ArrayLike<number>): [xy: number, zw: numbe
 };
 
 /**
- * how a row turns towards the camera (`row_basis` in frame.wgsl), in bits 30–31 of its info word: its
+ * how a row turns towards the camera (`row_basis` in frame-core.ts), in bits 30–31 of its info word: its
  * transform's rotation is relative to the camera's ({@link ChainFlags.BillboardFacing}), or to the camera's
  * heading about the vertical ({@link ChainFlags.BillboardUpright})
  */

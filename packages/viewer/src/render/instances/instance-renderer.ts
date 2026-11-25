@@ -17,6 +17,8 @@
 
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
+import tgpu from 'typegpu';
+
 import { BLOCK_SLOTS, ROW_BYTES, ROW_WORDS, assignBlockSlot } from '../../content/instance-rows.ts';
 import { freeSlots } from '../../gfx/free-slots.ts';
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
@@ -29,10 +31,16 @@ import type { ResidentInstances } from '../../streaming/resident.ts';
 import type { InstanceRange } from '../../streaming/selection.ts';
 import type { BindLayouts } from '../frame/bind-layouts.ts';
 import { describeFill, describeWire } from '../frame/fill-and-wire.ts';
-import { FRAME_CORE_WGSL } from '../frame/frame-uniforms.ts';
 import type { MainPassFormat } from '../frame/render-targets.ts';
 
-import boxesWgsl from './instance-boxes.wgsl?raw';
+import {
+	fsBoxFill,
+	fsBoxWire,
+	vsBoxFill,
+	vsBoxFillList,
+	vsBoxWire,
+	vsBoxWireList,
+} from './instance-boxes-shader.ts';
 
 /** rows the mega buffer starts with (12 MiB) */
 const INITIAL_ROWS = 131_072;
@@ -136,7 +144,10 @@ export class InstanceRenderer {
 		});
 		this.#bindGroup = this.#createBindGroup();
 
-		const module = pipelines.module('instance-boxes', FRAME_CORE_WGSL + '\n' + boxesWgsl);
+		const module = pipelines.module(
+			'instance-boxes',
+			tgpu.resolve([vsBoxFill, vsBoxFillList, vsBoxWire, vsBoxWireList, fsBoxFill, fsBoxWire]),
+		);
 		this.#keys = {
 			ranges: { fill: 'boxes/fill', wire: 'boxes/wire' },
 			list: { fill: 'boxes/list-fill', wire: 'boxes/list-wire' },
@@ -144,14 +155,15 @@ export class InstanceRenderer {
 		const layout = layouts.instancesPipeline;
 		const targets = format.targets;
 		for (const mode of ['ranges', 'list'] as const) {
-			const constants = { USE_LIST: mode === 'list' ? 1 : 0 };
+			const fillEntry = mode === 'list' ? 'vsBoxFillList' : 'vsBoxFill';
+			const wireEntry = mode === 'list' ? 'vsBoxWireList' : 'vsBoxWire';
 			void pipelines.prepare(this.#keys[mode].fill, () =>
 				describeFill(
 					format,
 					{
 						layout,
-						vertex: { module, entryPoint: 'vs_fill', constants },
-						fragment: { module, entryPoint: 'fs_fill', targets },
+						vertex: { module, entryPoint: fillEntry },
+						fragment: { module, entryPoint: 'fsBoxFill', targets },
 					},
 					// generated boxes aren't wound consistently; they're closed, so culling would only halve fill cost
 					{ cullMode: 'none' },
@@ -160,8 +172,8 @@ export class InstanceRenderer {
 			void pipelines.prepare(this.#keys[mode].wire, () =>
 				describeWire(format, {
 					layout,
-					vertex: { module, entryPoint: 'vs_wire', constants },
-					fragment: { module, entryPoint: 'fs_wire', targets },
+					vertex: { module, entryPoint: wireEntry },
+					fragment: { module, entryPoint: 'fsBoxWire', targets },
 				}),
 			);
 		}
@@ -264,7 +276,7 @@ export class InstanceRenderer {
 			);
 		}
 		this.#blockOrigins.set(decoded.origin, slot * 3);
-		// a row's placement index counts from 1 (`row_placement` in frame.wgsl)
+		// a row's placement index counts from 1 (`row_placement` in frame-core.ts)
 		this.#blockData[slot * 4 + 3] = placements.start - 1;
 		this.#liveSlots = Math.max(this.#liveSlots, slot + 1);
 		return {

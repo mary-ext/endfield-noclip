@@ -2,7 +2,7 @@ import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import { LOOK_FLOATS, type MaterialLook } from '../../looks/look.ts';
 import { MIP_FEEDBACK_LOOKS } from '../textures/mip-feedback.ts';
 
-/** bytes of a look table slot (`Look` in surfaces/common.wgsl) */
+/** bytes of a look table slot (`Look` in surfaces/common.ts) */
 const LOOK_BYTES = LOOK_FLOATS * 4;
 /** look table slots to start with: a view draws a few thousand materials */
 const INITIAL_LOOKS = 4096;
@@ -19,7 +19,7 @@ const createBuffer = (device: GPUDevice): GrowableBuffer =>
 	});
 
 /**
- * owns the GPU look table (`looks` in surfaces/common.wgsl): allocates one slot per material on first draw,
+ * owns the GPU look table (`looks` in surfaces/common.ts): allocates one slot per material on first draw,
  * batches uploads for newly seen looks, and advances animated looks in place
  */
 export class LookTable {

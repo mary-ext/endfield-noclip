@@ -1,42 +1,36 @@
-import {
-	type FullscreenPass,
-	autoBindGroup,
-	encodeFullscreen,
-	fullscreenPipeline,
-} from '../../gfx/fullscreen-pass.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common } from 'typegpu';
+
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
+import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import { HDR_FORMAT } from '../frame/render-targets.ts';
-import { postShaderModule } from '../post/shader-source.ts';
+import { postUniformLayout } from '../post/post-schema.ts';
 
-import atmosphereWgsl from './atmosphere.wgsl?raw';
+import {
+	fsMultiScattering,
+	fsSkyView,
+	fsTransmittance,
+	multiScatteringLayout,
+	skyViewBuildLayout,
+} from './atmosphere-shader.ts';
 
-/** group 1 bindings of atmosphere.wgsl and sky.wgsl */
-export const SkyBinding = {
-	transmittance: 0,
-	multiScattering: 1,
-	skyView: 2,
-	sampler: 3,
-	froxels: 5,
-} as const;
-
-/** owns the atmosphere's lookup tables (atmosphere.wgsl) and the passes that build them */
+/** owns the atmosphere's lookup tables (atmosphere-shader.ts) and the passes that build them */
 export class AtmosphereLuts {
-	/** the sky-view LUT, which sky.wgsl samples; rebuilt each frame the sky shows */
+	/** the sky-view LUT, which sky shaders sample; rebuilt each frame the sky shows */
 	readonly skyView: GPUTextureView;
 	#textures: GPUTexture[];
-	#passes: Record<'transmittance' | 'multiScattering' | 'skyView', FullscreenPass>;
+	#passes: Record<'transmittance' | 'multiScattering' | 'skyView', TgpuFullscreenPass>;
 	/** whether the transmittance and multiple-scattering LUTs hold the current environment */
 	#ready = false;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param postUniforms the post chain's `Post` uniforms, which hold the atmosphere
 	 * @param sampler the bilinear clamping sampler the LUTs are read with
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache, postUniforms: GPUBuffer, sampler: GPUSampler) {
+	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer, sampler: GPUSampler) {
 		const lut = (label: string, width: number, height: number): GPUTexture =>
-			device.createTexture({
+			root.device.createTexture({
 				label,
 				size: [width, height],
 				format: HDR_FORMAT,
@@ -52,56 +46,42 @@ export class AtmosphereLuts {
 			skyView: skyView.createView(),
 		};
 		this.skyView = views.skyView;
-		const module = postShaderModule(device, 'atmosphere', [atmosphereWgsl]);
-		const resources: Record<number, GPUBindingResource> = {
-			[SkyBinding.transmittance]: views.transmittance,
-			[SkyBinding.multiScattering]: views.multiScattering,
-			[SkyBinding.sampler]: sampler,
-		};
+		const postGroup = root.createBindGroup(postUniformLayout, { post: postUniforms });
+		const make = (label: string, fragment: typeof fsTransmittance): AsyncPipeline<TgpuRenderPipeline> =>
+			pipelines.prepareTgpuRender(label, () =>
+				root.createRenderPipeline({
+					vertex: common.fullScreenTriangle,
+					fragment,
+					targets: { format: HDR_FORMAT },
+				}),
+			);
 		const pass = (
 			label: string,
-			entryPoint: string,
+			fragment: typeof fsTransmittance,
 			target: GPUTextureView,
-			reads: readonly number[],
-		): FullscreenPass => {
-			const pipeline = fullscreenPipeline(pipelines, {
-				label,
-				module,
-				entryPoint,
-				targets: [{ format: HDR_FORMAT }],
-			});
-			return {
-				label,
-				pipeline,
-				bind: (compiled) => {
-					const groups = [autoBindGroup(device, compiled, 0, { 0: { buffer: postUniforms } })];
-					// an `auto` layout has only the bindings the pass reads
-					if (reads.length > 0) {
-						groups.push(
-							autoBindGroup(
-								device,
-								compiled,
-								1,
-								Object.fromEntries(reads.map((binding) => [binding, resources[binding]])),
-							),
-						);
-					}
-					return groups;
-				},
-				targets: [target],
-			};
-		};
-		const B = SkyBinding;
+			groups: readonly TgpuBindGroup[],
+		): TgpuFullscreenPass => ({
+			label,
+			pipeline: make(label, fragment),
+			groups,
+			target,
+		});
 		this.#passes = {
-			transmittance: pass('transmittance lut', 'fs_transmittance', views.transmittance, []),
-			multiScattering: pass('multiple scattering lut', 'fs_multi_scattering', views.multiScattering, [
-				B.transmittance,
-				B.sampler,
+			transmittance: pass('transmittance lut', fsTransmittance, views.transmittance, [postGroup]),
+			multiScattering: pass('multiple scattering lut', fsMultiScattering, views.multiScattering, [
+				postGroup,
+				root.createBindGroup(multiScatteringLayout, {
+					transmittance: views.transmittance,
+					lutSampler: sampler,
+				}),
 			]),
-			skyView: pass('sky view lut', 'fs_sky_view', views.skyView, [
-				B.transmittance,
-				B.multiScattering,
-				B.sampler,
+			skyView: pass('sky view lut', fsSkyView, views.skyView, [
+				postGroup,
+				root.createBindGroup(skyViewBuildLayout, {
+					transmittance: views.transmittance,
+					multiScattering: views.multiScattering,
+					lutSampler: sampler,
+				}),
 			]),
 		};
 	}
@@ -125,13 +105,13 @@ export class AtmosphereLuts {
 	 */
 	encode(encoder: GPUCommandEncoder, sky: boolean): void {
 		if (!this.#ready) {
-			const t = encodeFullscreen(encoder, this.#passes.transmittance);
-			const m = encodeFullscreen(encoder, this.#passes.multiScattering);
+			const t = encodeTgpuFullscreen(encoder, this.#passes.transmittance);
+			const m = encodeTgpuFullscreen(encoder, this.#passes.multiScattering);
 			this.#ready = t && m;
 		}
 		// the atmosphere fog is analytic; only the sky reads the LUTs
 		if (sky) {
-			encodeFullscreen(encoder, this.#passes.skyView);
+			encodeTgpuFullscreen(encoder, this.#passes.skyView);
 		}
 	}
 

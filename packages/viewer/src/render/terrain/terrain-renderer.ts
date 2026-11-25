@@ -1,13 +1,13 @@
 import {
-	TERRAIN_LEAF_METRES,
 	TERRAIN_PAGE_SAMPLES,
-	TERRAIN_SPLAT_CELL_METRES,
 	TERRAIN_SPLAT_CELLS,
 	TERRAIN_SURFACE_BORDER,
 	TERRAIN_SURFACE_TEXELS,
 	type TerrainSplatInfo,
 } from '@endfield-noclip/package-format/terrain';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
+
+import tgpu from 'typegpu';
 
 import { createBufferWithData } from '../../gfx/buffers.ts';
 import { freeSlots } from '../../gfx/free-slots.ts';
@@ -31,9 +31,7 @@ import type {
 import type { TerrainPatch } from '../../streaming/selection.ts';
 import type { BindLayouts } from '../frame/bind-layouts.ts';
 import { describeFill, describeWire } from '../frame/fill-and-wire.ts';
-import { FRAME_CORE_WGSL } from '../frame/frame-uniforms.ts';
 import type { MainPassFormat } from '../frame/render-targets.ts';
-import { wgslConst } from '../shaders/wgsl-const.ts';
 import {
 	SHADOW_DEPTH_STATE,
 	SHADOW_LAYERS,
@@ -41,7 +39,7 @@ import {
 	shadowDepthState,
 } from '../shadows/shadow-map.ts';
 
-import terrainWgsl from './terrain.wgsl?raw';
+import { fsTerrainMain, fsTerrainShadow, fsTerrainWire, vsTerrain } from './terrain-shader.ts';
 
 const PAGE_SIDE = TERRAIN_PAGE_SAMPLES;
 const QUADS = PAGE_SIDE - 1;
@@ -72,16 +70,6 @@ const SURFACE_SLOTS = 1024;
 const SURFACE_FORMAT: GPUTextureFormat = 'bc3-rgba-unorm';
 /** bytes of one BC3 surface image */
 const SURFACE_IMAGE_BYTES = (SURFACE_SIDE / 4) ** 2 * 16;
-
-/** the package's terrain layout as the constants terrain.wgsl reads */
-const LAYOUT_WGSL = [
-	wgslConst('SIDE', 'i32', TERRAIN_PAGE_SAMPLES),
-	wgslConst('PAGE_TEXELS', 'f32', TERRAIN_SURFACE_TEXELS),
-	wgslConst('PAGE_BORDER', 'f32', TERRAIN_SURFACE_BORDER),
-	wgslConst('LEAF_METRES', 'f32', TERRAIN_LEAF_METRES),
-	wgslConst('CELL_METRES', 'f32', TERRAIN_SPLAT_CELL_METRES),
-	wgslConst('CELLS', 'u32', TERRAIN_SPLAT_CELLS),
-].join('\n');
 
 const vertexAt = (x: number, z: number): number => z * GRID + x;
 
@@ -254,31 +242,34 @@ export class TerrainRenderer {
 		this.#layout = layouts.terrain;
 		this.#bindGroup = this.#createBindGroup();
 
-		const module = pipelines.module('terrain', FRAME_CORE_WGSL + '\n' + LAYOUT_WGSL + '\n' + terrainWgsl);
+		const module = pipelines.module(
+			'terrain',
+			tgpu.resolve([vsTerrain, fsTerrainMain, fsTerrainWire, fsTerrainShadow]),
+		);
 		const layout = layouts.terrainPipeline;
-		const vertex = { module, entryPoint: 'vs_main' };
+		const vertex = { module, entryPoint: 'vsTerrain' };
 		const targets = format.targets;
 		void pipelines.prepare(FILL_KEY, () =>
 			describeFill(
 				format,
-				{ layout, vertex, fragment: { module, entryPoint: 'fs_main', targets } },
+				{ layout, vertex, fragment: { module, entryPoint: 'fsTerrainMain', targets } },
 				{ frontFace: 'cw', cullMode: 'back' },
 			),
 		);
 		void pipelines.prepare(WIRE_KEY, () =>
-			describeWire(format, { layout, vertex, fragment: { module, entryPoint: 'fs_wire', targets } }),
+			describeWire(format, { layout, vertex, fragment: { module, entryPoint: 'fsTerrainWire', targets } }),
 		);
 		void pipelines.prepare(SHADOW_KEY, () => ({
 			layout,
 			vertex,
-			fragment: { module, entryPoint: 'fs_shadow', targets: [] },
+			fragment: { module, entryPoint: 'fsTerrainShadow', targets: [] },
 			primitive: { topology: 'triangle-list', unclippedDepth: options.shadow.unclippedDepth },
 			depthStencil: shadowDepthState(options.shadow.format),
 		}));
 		void pipelines.prepare(LIGHT_SHADOW_KEY, () => ({
 			layout,
 			vertex,
-			fragment: { module, entryPoint: 'fs_shadow', targets: [] },
+			fragment: { module, entryPoint: 'fsTerrainShadow', targets: [] },
 			primitive: { topology: 'triangle-list' },
 			depthStencil: SHADOW_DEPTH_STATE,
 		}));

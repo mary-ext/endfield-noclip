@@ -1,5 +1,7 @@
 import type { RainConfig, RainPresetting } from '@endfield-noclip/package-format/environment';
 
+import type { TgpuRoot } from 'typegpu';
+
 import type { CelestialLook, CelestialTextureSlot } from '../../environment/celestial-look.ts';
 import type { Environment } from '../../environment/environment.ts';
 import { createUniformBuffer } from '../../gfx/buffers.ts';
@@ -10,10 +12,12 @@ import type { Camera } from '../../scene/camera.ts';
 import { DeferredLighting } from '../lighting/deferred-lighting.ts';
 import { AmbientOcclusion } from '../post/ambient-occlusion.ts';
 import { Composite } from '../post/composite.ts';
-import { POST_BYTES, writeEnvironmentUniforms, writeFrameUniforms } from '../post/post-uniforms.ts';
+import { POST_BYTES, postUniformLayout } from '../post/post-schema.ts';
+import { writeEnvironmentUniforms, writeFrameUniforms } from '../post/post-uniforms.ts';
 import { ScreenSpaceReflections } from '../post/screen-space-reflections.ts';
 import { type PostSettings, effectiveSettings } from '../post/settings.ts';
-import { AtmosphereLuts, SkyBinding } from '../sky/atmosphere-luts.ts';
+import { AtmosphereLuts } from '../sky/atmosphere-luts.ts';
+import { skyReadLayout } from '../sky/atmosphere-shader.ts';
 import { CelestialLayer } from '../sky/celestial.ts';
 import type { VolumetricFog } from '../sky/volumetric-fog.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
@@ -40,14 +44,14 @@ export class SceneComposer {
 	readonly sampler: GPUSampler;
 	/**
 	 * explicit layouts of the post uniforms and of the sky's reads (the sky-view LUT, its sampler and the
-	 * volumetric fog, at their atmosphere.wgsl and sky.wgsl bindings), for passes that also bind the main
-	 * pass's frame group and so can't use `auto` layouts
+	 * volumetric fog, at their atmosphere-shader.ts and sky-shader.ts bindings), for passes that also bind the
+	 * main pass's frame group and so can't use `auto` layouts
 	 */
 	readonly skyLayouts: { uniforms: GPUBindGroupLayout; sky: GPUBindGroupLayout };
 	/** bind groups for {@link skyLayouts}, bound by the water pass */
 	readonly skyLayoutGroups: { uniforms: GPUBindGroup; sky: GPUBindGroup };
 	/**
-	 * what transparent draws fog themselves with (fog.wgsl): the post uniforms, written once a frame by
+	 * what transparent draws fog themselves with (fog-shader.ts): the post uniforms, written once a frame by
 	 * {@link encodePreDeferred}, the volumetric fog and the bilinear clamping sampler
 	 */
 	readonly fogInputs: { uniforms: GPUBuffer; froxels: GPUTextureView; sampler: GPUSampler };
@@ -65,7 +69,7 @@ export class SceneComposer {
 	#fog: VolumetricFog;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param environment the environment to start with
 	 * @param fog the volumetric fog
@@ -73,13 +77,14 @@ export class SceneComposer {
 	 * @param verticalOcclusion the top-down vertical occlusion depth map for rain wetness
 	 */
 	constructor(
-		device: GPUDevice,
+		root: TgpuRoot,
 		pipelines: PipelineCache,
 		environment: Environment,
 		fog: VolumetricFog,
 		frameLayout: GPUBindGroupLayout,
 		verticalOcclusion: VerticalOcclusionMap,
 	) {
+		const device = root.device;
 		this.#device = device;
 		this.#fog = fog;
 		this.#targets = new TextureSet(device);
@@ -88,11 +93,11 @@ export class SceneComposer {
 		const postUniforms = this.uniforms;
 		const sampler = this.sampler;
 		this.fogInputs = { uniforms: postUniforms, froxels: fog.view, sampler };
-		this.#luts = new AtmosphereLuts(device, pipelines, postUniforms, sampler);
-		this.#ao = new AmbientOcclusion(device, pipelines, postUniforms);
-		this.#reflections = new ScreenSpaceReflections(device, pipelines, postUniforms);
-		this.#celestial = new CelestialLayer(device, pipelines, { postUniforms, sampler });
-		this.#composite = new Composite(device, pipelines, {
+		this.#luts = new AtmosphereLuts(root, pipelines, postUniforms, sampler);
+		this.#ao = new AmbientOcclusion(root, pipelines, postUniforms);
+		this.#reflections = new ScreenSpaceReflections(root, pipelines, postUniforms);
+		this.#celestial = new CelestialLayer(root, pipelines, { postUniforms, sampler });
+		this.#composite = new Composite(root, pipelines, {
 			postUniforms,
 			sampler,
 			skyView: this.#luts.skyView,
@@ -101,46 +106,21 @@ export class SceneComposer {
 		this.#environment = environment;
 		writeEnvironmentUniforms(this.#data, environment);
 
-		const fragment = GPUShaderStage.FRAGMENT;
-		const texture = (binding: number, viewDimension: GPUTextureViewDimension): GPUBindGroupLayoutEntry => ({
-			binding,
-			visibility: fragment,
-			texture: { sampleType: 'float', viewDimension },
-		});
-		const uniforms = device.createBindGroupLayout({
-			label: 'post uniforms',
-			entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | fragment, buffer: { type: 'uniform' } }],
-		});
-		const sky = device.createBindGroupLayout({
-			label: 'sky reads',
-			entries: [
-				texture(SkyBinding.skyView, '2d'),
-				{ binding: SkyBinding.sampler, visibility: fragment, sampler: { type: 'filtering' } },
-				texture(SkyBinding.froxels, '3d'),
-			],
-		});
-		this.skyLayouts = { uniforms, sky };
-		this.skyLayoutGroups = {
-			uniforms: device.createBindGroup({
-				layout: uniforms,
-				entries: [{ binding: 0, resource: { buffer: postUniforms } }],
-			}),
-			sky: device.createBindGroup({
-				layout: sky,
-				entries: [
-					{ binding: SkyBinding.skyView, resource: this.#luts.skyView },
-					{ binding: SkyBinding.sampler, resource: sampler },
-					{ binding: SkyBinding.froxels, resource: fog.view },
-				],
-			}),
+		this.skyLayouts = {
+			uniforms: root.unwrap(postUniformLayout),
+			sky: root.unwrap(skyReadLayout),
 		};
-		this.#deferred = new DeferredLighting(
-			device,
-			pipelines,
-			{ frame: frameLayout, postUniforms: uniforms },
-			postUniforms,
-			verticalOcclusion,
-		);
+		this.skyLayoutGroups = {
+			uniforms: root.unwrap(root.createBindGroup(postUniformLayout, { post: postUniforms })),
+			sky: root.unwrap(
+				root.createBindGroup(skyReadLayout, {
+					skyView: this.#luts.skyView,
+					lutSampler: sampler,
+					froxels: fog.view,
+				}),
+			),
+		};
+		this.#deferred = new DeferredLighting(root, pipelines, frameLayout, postUniforms, verticalOcclusion);
 	}
 
 	/** @returns bytes of the composited target, LUTs, AO, and reflection targets */

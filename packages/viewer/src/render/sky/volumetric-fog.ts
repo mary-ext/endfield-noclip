@@ -1,5 +1,7 @@
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
+import tgpu, { type TgpuRoot } from 'typegpu';
+
 import type { Environment, VolumetricFog as VolumetricFogLook } from '../../environment/environment.ts';
 import { createUniformBuffer, rowWriter } from '../../gfx/buffers.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
@@ -7,9 +9,8 @@ import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
 import { halton } from '../../math/sequence.ts';
 import { scale } from '../../math/vec3.ts';
 import type { Camera } from '../../scene/camera.ts';
-import { FRAME_WGSL } from '../frame/frame-uniforms.ts';
 
-import fogWgsl from './volumetric-fog.wgsl?raw';
+import { VOLUMETRIC_FOG_BYTES, csFroxels, volumetricFogLayout } from './volumetric-fog-shader.ts';
 
 /**
  * froxels across, down and in depth: a fixed grid, coarser than the game's, which follows the view in cells
@@ -28,8 +29,6 @@ const NEAR_OFFSET = 0.095;
 const HISTORY_WEIGHT = 0.9;
 /** sample positions per jitter cycle */
 const JITTER_PHASES = 16;
-/** byte size of `VolumetricFog` in volumetric-fog.wgsl */
-const UNIFORM_BYTES = 17 * 16;
 const WORKGROUP = 8;
 const PIPELINE_KEY = 'volumetric fog';
 
@@ -65,13 +64,6 @@ const sliceMapping = (near: number, far: number): Slices => {
 const sameSlices = (a: Slices | null, b: Slices | null): boolean =>
 	a !== null && b !== null && a.scale === b.scale && a.offset === b.offset;
 
-/** a write-only 3D grid in the froxel pass's group */
-const storage = (binding: number): GPUBindGroupLayoutEntry => ({
-	binding,
-	visibility: GPUShaderStage.COMPUTE,
-	storageTexture: { access: 'write-only', format: 'rgba16float', viewDimension: '3d' },
-});
-
 /** owns the froxel grid, its lighting history, its compute pipeline and uniforms */
 export class VolumetricFog {
 	/** the integrated fog: scattered light (rgb) and transmittance (a) up to each slice */
@@ -84,7 +76,7 @@ export class VolumetricFog {
 	 */
 	#history: [GPUTexture, GPUTexture];
 	#uniforms: GPUBuffer;
-	#data = new Float32Array(UNIFORM_BYTES / 4);
+	#data = new Float32Array(VOLUMETRIC_FOG_BYTES / 4);
 	/** group 1 for a frame that writes `#history[i]` and reads the other */
 	#groups: [GPUBindGroup, GPUBindGroup];
 	#index = 0;
@@ -95,11 +87,12 @@ export class VolumetricFog {
 	#slices: Slices | null = null;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache, which compiles the froxel pass
 	 * @param frameLayout the shared frame layout (group 0), for the sun's shadow and the ambient probe
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache, frameLayout: GPUBindGroupLayout) {
+	constructor(root: TgpuRoot, pipelines: PipelineCache, frameLayout: GPUBindGroupLayout) {
+		const device = root.device;
 		this.#device = device;
 		const grid = (label: string): GPUTexture =>
 			device.createTexture({
@@ -112,38 +105,28 @@ export class VolumetricFog {
 		this.#texture = grid('volumetric fog');
 		this.view = this.#texture.createView();
 		this.#history = [grid('volumetric fog history 0'), grid('volumetric fog history 1')];
-		this.#uniforms = createUniformBuffer(device, 'volumetric fog uniforms', UNIFORM_BYTES);
-		const layout = device.createBindGroupLayout({
-			label: 'volumetric fog',
-			entries: [
-				{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-				storage(1),
-				storage(2),
-				{ binding: 3, visibility: GPUShaderStage.COMPUTE, texture: { viewDimension: '3d' } },
-				{ binding: 4, visibility: GPUShaderStage.COMPUTE, sampler: {} },
-			],
-		});
-		const history = sampler(device, LINEAR_CLAMP);
+		this.#uniforms = createUniformBuffer(device, 'volumetric fog uniforms', VOLUMETRIC_FOG_BYTES);
+		const historySampler = sampler(device, LINEAR_CLAMP);
 		const group = (write: GPUTexture, read: GPUTexture): GPUBindGroup =>
-			device.createBindGroup({
-				label: 'volumetric fog',
-				layout,
-				entries: [
-					{ binding: 0, resource: { buffer: this.#uniforms } },
-					{ binding: 1, resource: this.view },
-					{ binding: 2, resource: write.createView() },
-					{ binding: 3, resource: read.createView() },
-					{ binding: 4, resource: history },
-				],
-			});
+			root.unwrap(
+				root.createBindGroup(volumetricFogLayout, {
+					fog: this.#uniforms,
+					froxels: this.view,
+					historyOut: write.createView(),
+					historyIn: read.createView(),
+					historySampler,
+				}),
+			);
 		const [a, b] = this.#history;
 		this.#groups = [group(a, b), group(b, a)];
 		this.#pipelines = pipelines;
 		void pipelines.prepareCompute(PIPELINE_KEY, () => ({
-			layout: device.createPipelineLayout({ bindGroupLayouts: [frameLayout, layout] }),
+			layout: device.createPipelineLayout({
+				bindGroupLayouts: [frameLayout, root.unwrap(volumetricFogLayout)],
+			}),
 			compute: {
-				module: pipelines.module('volumetric fog', FRAME_WGSL + fogWgsl),
-				entryPoint: 'cs_froxels',
+				module: pipelines.module('volumetric fog', tgpu.resolve([csFroxels])),
+				entryPoint: 'csFroxels',
 			},
 		}));
 	}

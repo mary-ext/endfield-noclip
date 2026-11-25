@@ -1,6 +1,13 @@
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { TgpuBindGroup, TgpuComputePipeline, TgpuRoot } from 'typegpu';
 
-import pyramidWgsl from './depth-pyramid.wgsl?raw';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
+
+import {
+	csDepthPyramidDown,
+	csDepthPyramidFirst,
+	depthPyramidDownLayout,
+	depthPyramidFirstLayout,
+} from './depth-pyramid-shader.ts';
 
 const KEYS = { first: 'depth pyramid/first', down: 'depth pyramid/down' };
 
@@ -9,40 +16,34 @@ const KEYS = { first: 'depth pyramid/first', down: 'depth pyramid/down' };
  * first level (reversed-Z: the smallest value). the instance culler tests last frame's view against it
  */
 export class DepthPyramid {
-	#device: GPUDevice;
-	#pipelines: PipelineCache;
+	#root: TgpuRoot;
+	#first: AsyncPipeline<TgpuComputePipeline>;
+	#down: AsyncPipeline<TgpuComputePipeline>;
 	#texture: GPUTexture | null = null;
 	/** the whole pyramid, sampled */
 	#view: GPUTextureView | null = null;
 	/** each level's dispatch: its bind group and size */
-	#levels: { group: GPUBindGroup; width: number; height: number }[] = [];
+	#levels: { group: TgpuBindGroup; width: number; height: number }[] = [];
 	/** the depth view the groups read */
 	#source: GPUTextureView | null = null;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines compiles the passes
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache) {
-		this.#device = device;
-		this.#pipelines = pipelines;
-		const module = pipelines.module('depth pyramid', pyramidWgsl);
-		void pipelines.prepareCompute(KEYS.first, () => ({
-			layout: 'auto',
-			compute: { module, entryPoint: 'cs_first' },
-		}));
-		void pipelines.prepareCompute(KEYS.down, () => ({
-			layout: 'auto',
-			compute: { module, entryPoint: 'cs_down' },
-		}));
+	constructor(root: TgpuRoot, pipelines: PipelineCache) {
+		this.#root = root;
+		this.#first = pipelines.prepareTgpuCompute(KEYS.first, () =>
+			root.createComputePipeline({ compute: csDepthPyramidFirst }),
+		);
+		this.#down = pipelines.prepareTgpuCompute(KEYS.down, () =>
+			root.createComputePipeline({ compute: csDepthPyramidDown }),
+		);
 	}
 
 	/** @returns whether the passes compiled */
 	get ready(): boolean {
-		return (
-			this.#pipelines.getCompute(KEYS.first) !== undefined &&
-			this.#pipelines.getCompute(KEYS.down) !== undefined
-		);
+		return this.#first.get() !== undefined && this.#down.get() !== undefined;
 	}
 
 	/**
@@ -84,34 +85,32 @@ export class DepthPyramid {
 		encoder: GPUCommandEncoder,
 		depth: { view: GPUTextureView; width: number; height: number },
 	): boolean {
-		const first = this.#pipelines.getCompute(KEYS.first);
-		const down = this.#pipelines.getCompute(KEYS.down);
+		const first = this.#first.get();
+		const down = this.#down.get();
 		if (first === undefined || down === undefined) {
 			return false;
 		}
 		if (this.#source !== depth.view) {
-			this.#build(depth, { first, down });
+			this.#build(depth);
 		}
 		const pass = encoder.beginComputePass({ label: 'depth pyramid' });
 		this.#levels.forEach((level, i) => {
-			pass.setPipeline(i === 0 ? first : down);
-			pass.setBindGroup(0, level.group);
-			pass.dispatchWorkgroups(Math.ceil(level.width / 8), Math.ceil(level.height / 8));
+			(i === 0 ? first : down)
+				.with(level.group)
+				.with(pass)
+				.dispatchWorkgroups(Math.ceil(level.width / 8), Math.ceil(level.height / 8));
 		});
 		pass.end();
 		return true;
 	}
 
 	/** (re)creates the texture and the levels' groups for a depth buffer */
-	#build(
-		depth: { view: GPUTextureView; width: number; height: number },
-		pipelines: { first: GPUComputePipeline; down: GPUComputePipeline },
-	): void {
+	#build(depth: { view: GPUTextureView; width: number; height: number }): void {
 		this.#texture?.destroy();
 		const width = Math.max(1, Math.ceil(depth.width / 2));
 		const height = Math.max(1, Math.ceil(depth.height / 2));
 		const levels = Math.floor(Math.log2(Math.max(width, height))) + 1;
-		const texture = this.#device.createTexture({
+		const texture = this.#root.device.createTexture({
 			label: 'depth pyramid',
 			size: [width, height],
 			format: 'r32float',
@@ -120,21 +119,20 @@ export class DepthPyramid {
 		});
 		const level = (mip: number): GPUTextureView =>
 			texture.createView({ baseMipLevel: mip, mipLevelCount: 1 });
-		this.#levels = Array.from({ length: levels }, (_, mip) => {
-			const pipeline = mip === 0 ? pipelines.first : pipelines.down;
-			return {
-				group: this.#device.createBindGroup({
-					label: `depth pyramid ${mip}`,
-					layout: pipeline.getBindGroupLayout(0),
-					entries: [
-						mip === 0 ? { binding: 0, resource: depth.view } : { binding: 1, resource: level(mip - 1) },
-						{ binding: 2, resource: level(mip) },
-					],
-				}),
-				width: Math.max(1, width >> mip),
-				height: Math.max(1, height >> mip),
-			};
-		});
+		this.#levels = Array.from({ length: levels }, (_, mip) => ({
+			group:
+				mip === 0
+					? this.#root.createBindGroup(depthPyramidFirstLayout, {
+							sourceDepth: depth.view,
+							output: level(0),
+						})
+					: this.#root.createBindGroup(depthPyramidDownLayout, {
+							source: level(mip - 1),
+							output: level(mip),
+						}),
+			width: Math.max(1, width >> mip),
+			height: Math.max(1, height >> mip),
+		}));
 		this.#texture = texture;
 		this.#view = texture.createView();
 		this.#source = depth.view;

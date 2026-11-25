@@ -40,7 +40,7 @@ interface CacheSlot {
 
 /**
  * streams visible local reflection probes, caches their BC6H cubemaps in a 32-slot `cube-array` texture, and
- * packs their volume/normalisation records for `frame.wgsl` and `water.wgsl`
+ * packs their volume/normalisation records for `frame-core.ts` and `water-shader.ts`
  */
 export class ReflectionProbes {
 	/** storage buffer holding up to 32 packed probe records (7 vec4s each) */

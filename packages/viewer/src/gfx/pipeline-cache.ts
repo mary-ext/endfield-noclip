@@ -1,9 +1,20 @@
+import type { TgpuComputePipeline, TgpuRenderPipeline } from 'typegpu';
+
+/** a handle to an asynchronously compiled TypeGPU pipeline */
+export interface AsyncPipeline<P> {
+	readonly key: string;
+	/** @returns the compiled pipeline, or `undefined` while it compiles */
+	get(): P | undefined;
+}
+
 /** shader labels and pipeline keys identify immutable descriptors for the lifetime of the cache */
 export class PipelineCache {
 	#device: GPUDevice;
 	#modules = new Map<string, GPUShaderModule>();
 	#render = new Compiled<GPURenderPipeline>();
 	#compute = new Compiled<GPUComputePipeline>();
+	#tgpuRender = new Compiled<TgpuRenderPipeline>();
+	#tgpuCompute = new Compiled<TgpuComputePipeline>();
 
 	/** @param device the device */
 	constructor(device: GPUDevice) {
@@ -61,14 +72,66 @@ export class PipelineCache {
 		return this.#compute.ready.get(key);
 	}
 
+	/**
+	 * starts async compilation of a TypeGPU render pipeline and tracks it in {@link compiling} / {@link size}.
+	 *
+	 * @param key unique key of the pipeline's state, e.g. `tonemap`
+	 * @param create builds the TypeGPU render pipeline; only called on a miss
+	 * @returns a handle whose `get()` returns the pipeline once `initAsync()` completes
+	 */
+	prepareTgpuRender<P extends TgpuRenderPipeline>(key: string, create: () => P): AsyncPipeline<P> {
+		let ready: P | undefined;
+		void this.#tgpuRender.prepare(key, async () => {
+			const pipeline = create();
+			await pipeline.initAsync();
+			ready = pipeline;
+			return pipeline;
+		});
+		return {
+			key,
+			get: () => ready,
+		};
+	}
+
+	/**
+	 * {@link prepareTgpuRender} for a TypeGPU compute pipeline.
+	 *
+	 * @param key unique key of the pipeline's state, e.g. `auto exposure histogram`
+	 * @param create builds the TypeGPU compute pipeline; only called on a miss
+	 * @returns a handle whose `get()` returns the pipeline once `initAsync()` completes
+	 */
+	prepareTgpuCompute<P extends TgpuComputePipeline>(key: string, create: () => P): AsyncPipeline<P> {
+		let ready: P | undefined;
+		void this.#tgpuCompute.prepare(key, async () => {
+			const pipeline = create();
+			await pipeline.initAsync();
+			ready = pipeline;
+			return pipeline;
+		});
+		return {
+			key,
+			get: () => ready,
+		};
+	}
+
 	/** @returns how many pipelines are still compiling */
 	get compiling(): number {
-		return this.#render.pending.size + this.#compute.pending.size;
+		return (
+			this.#render.pending.size +
+			this.#compute.pending.size +
+			this.#tgpuRender.pending.size +
+			this.#tgpuCompute.pending.size
+		);
 	}
 
 	/** @returns compiled pipeline count */
 	get size(): number {
-		return this.#render.ready.size + this.#compute.ready.size;
+		return (
+			this.#render.ready.size +
+			this.#compute.ready.size +
+			this.#tgpuRender.ready.size +
+			this.#tgpuCompute.ready.size
+		);
 	}
 }
 

@@ -1,17 +1,27 @@
-import { createBufferWithData } from '../../gfx/buffers.ts';
 import {
-	type FullscreenPass,
-	type FullscreenPipeline,
-	autoBindGroup,
-	encodeFullscreen,
-	fullscreenPipeline,
-} from '../../gfx/fullscreen-pass.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+	type TgpuBindGroup,
+	type TgpuRenderPipeline,
+	type TgpuRoot,
+	type TgpuUniform,
+	common,
+	d,
+} from 'typegpu';
+
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
+import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import { HDR_FORMAT } from '../frame/render-targets.ts';
 
-import bloomWgsl from './bloom.wgsl?raw';
-import { postShaderModule } from './shader-source.ts';
+import {
+	BloomPassSchema,
+	bloomPassLayout,
+	bloomUpLayout,
+	fsBloomBlurH,
+	fsBloomBlurV,
+	fsBloomPrefilter,
+	fsBloomUp,
+} from './bloom-shader.ts';
+import { postUniformLayout } from './post-schema.ts';
 
 /** the game's cap on bloom levels */
 const BLOOM_MAX_LEVELS = 16;
@@ -30,45 +40,52 @@ const bloomLevelCount = (width: number, height: number, half: boolean): number =
 };
 
 interface Sized {
-	buffers: GPUBuffer[];
+	uniforms: TgpuUniform<typeof BloomPassSchema>[];
 	/** the last upsample, or the only level, or `null` on a canvas too small for bloom */
 	result: GPUTexture | null;
 	/** the prefilter from each temporal history, or `null` on a canvas too small for bloom */
-	prefilter: [FullscreenPass, FullscreenPass] | null;
+	prefilter: [TgpuFullscreenPass, TgpuFullscreenPass] | null;
 	/** two blurs per level after the first */
-	down: FullscreenPass[];
+	down: TgpuFullscreenPass[];
 	/** upsamples from the coarsest level, for the full chain and for one level fewer */
-	up: { full: FullscreenPass[]; short: FullscreenPass[] };
+	up: { full: TgpuFullscreenPass[]; short: TgpuFullscreenPass[] };
 }
 
-/** the game's bloom chain (bloom.wgsl) at the output size */
+/** the game's bloom chain (bloom-shader.ts) at the output size */
 export class Bloom {
-	#device: GPUDevice;
-	#postUniforms: GPUBuffer;
+	#root: TgpuRoot;
 	#sampler: GPUSampler;
-	#pipelines: Record<'prefilter' | 'blurH' | 'blurV' | 'up', FullscreenPipeline>;
+	#postGroup: TgpuBindGroup;
+	#pipelines: Record<'prefilter' | 'blurH' | 'blurV' | 'up', AsyncPipeline<TgpuRenderPipeline>>;
 	#targets: TextureSet;
 	#sized: Sized | null = null;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param postUniforms the post chain's `Post` uniforms
 	 * @param sampler the bilinear clamping sampler the levels are read with
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache, postUniforms: GPUBuffer, sampler: GPUSampler) {
-		this.#device = device;
-		this.#targets = new TextureSet(device);
-		this.#postUniforms = postUniforms;
+	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer, sampler: GPUSampler) {
+		this.#root = root;
+		this.#targets = new TextureSet(root.device);
 		this.#sampler = sampler;
-		const module = postShaderModule(device, 'bloom', [bloomWgsl]);
-		const pipeline = (label: string, entryPoint: string): FullscreenPipeline =>
-			fullscreenPipeline(pipelines, { label, module, entryPoint, targets: [{ format: HDR_FORMAT }] });
+		this.#postGroup = root.createBindGroup(postUniformLayout, {
+			post: postUniforms,
+		});
+		const make = (label: string, fragment: typeof fsBloomPrefilter): AsyncPipeline<TgpuRenderPipeline> =>
+			pipelines.prepareTgpuRender(label, () =>
+				root.createRenderPipeline({
+					vertex: common.fullScreenTriangle,
+					fragment,
+					targets: { format: HDR_FORMAT },
+				}),
+			);
 		this.#pipelines = {
-			prefilter: pipeline('bloom prefilter', 'fs_prefilter'),
-			blurH: pipeline('bloom blur h', 'fs_blur_h'),
-			blurV: pipeline('bloom blur v', 'fs_blur_v'),
-			up: pipeline('bloom up', 'fs_up'),
+			prefilter: make('bloom prefilter', fsBloomPrefilter),
+			blurH: make('bloom blur h', fsBloomBlurH),
+			blurV: make('bloom blur v', fsBloomBlurV),
+			up: make('bloom up', fsBloomUp),
 		};
 	}
 
@@ -99,7 +116,7 @@ export class Bloom {
 	resize(input: { histories: readonly GPUTexture[]; outputWidth: number; outputHeight: number }): void {
 		this.#release();
 		const { histories, outputWidth, outputHeight } = input;
-		const device = this.#device;
+		const root = this.#root;
 		const p = this.#pipelines;
 		const texture = (label: string, w: number, h: number): GPUTexture =>
 			this.#targets.create({
@@ -128,49 +145,47 @@ export class Bloom {
 				}
 			}
 		}
-		const buffers: GPUBuffer[] = [];
+		const uniforms: TgpuUniform<typeof BloomPassSchema>[] = [];
 		const pass = (descriptor: {
 			label: string;
-			pipeline: FullscreenPipeline;
+			pipeline: AsyncPipeline<TgpuRenderPipeline>;
 			source: GPUTexture;
 			/** upsamples: the matching level of the downsample chain */
 			high: GPUTexture | null;
 			target: GPUTexture;
-		}): FullscreenPass => {
+		}): TgpuFullscreenPass => {
 			const { label, pipeline, source, high, target } = descriptor;
-			const buffer = createBufferWithData(device, {
-				label: 'bloom pass',
-				usage: GPUBufferUsage.UNIFORM,
-				data: new Float32Array([1 / source.width, 1 / source.height, source.width, source.height]),
+			const passInfo = root.createUniform(BloomPassSchema, {
+				texel: d.vec2f(1 / source.width, 1 / source.height),
+				lowSize: d.vec2f(source.width, source.height),
 			});
-			buffers.push(buffer);
-			const entries: Record<number, GPUBindingResource> = {
-				0: source.createView(),
-				1: this.#sampler,
-				2: { buffer },
-			};
-			if (high !== null) {
-				entries[3] = high.createView();
+			uniforms.push(passInfo);
+			const passGroup = root.createBindGroup(bloomPassLayout, {
+				source: source.createView(),
+				bilinear: this.#sampler,
+				passInfo,
+			});
+			const groups: TgpuBindGroup[] = [passGroup];
+			if (pipeline === p.prefilter || pipeline === p.up) {
+				groups.push(this.#postGroup);
 			}
-			// the blurs don't read the shared uniforms, so their group 0 is empty
-			const blur = pipeline === p.blurH || pipeline === p.blurV;
+			if (high !== null) {
+				groups.push(root.createBindGroup(bloomUpLayout, { high: high.createView() }));
+			}
 			return {
 				label,
 				pipeline,
-				bind: (compiled) => [
-					autoBindGroup(device, compiled, 0, blur ? {} : { 0: { buffer: this.#postUniforms } }),
-					autoBindGroup(device, compiled, 1, entries),
-				],
-				targets: [target.createView()],
+				groups,
+				target: target.createView(),
 			};
 		};
-		let prefilter: [FullscreenPass, FullscreenPass] | null = null;
+		let prefilter: [TgpuFullscreenPass, TgpuFullscreenPass] | null = null;
 		if (down.length > 0) {
-			const from = (history: GPUTexture): FullscreenPass =>
+			const from = (history: GPUTexture): TgpuFullscreenPass =>
 				pass({ label: 'bloom down', pipeline: p.prefilter, source: history, high: null, target: down[0] });
 			prefilter = [from(histories[0]), from(histories[1])];
 		}
-		const downPasses: FullscreenPass[] = [];
+		const downPasses: TgpuFullscreenPass[] = [];
 		for (let i = 1; i < down.length; i++) {
 			const temp = blurred[i - 1];
 			downPasses.push(
@@ -178,8 +193,8 @@ export class Bloom {
 				pass({ label: 'bloom down', pipeline: p.blurV, source: temp, high: null, target: down[i] }),
 			);
 		}
-		const upPasses = (count: number): FullscreenPass[] => {
-			const passes: FullscreenPass[] = [];
+		const upPasses = (count: number): TgpuFullscreenPass[] => {
+			const passes: TgpuFullscreenPass[] = [];
 			for (let i = count - 2; i >= 0; i--) {
 				const low = i === count - 2 ? down[i + 1] : up[i + 1];
 				passes.push(pass({ label: 'bloom up', pipeline: p.up, source: low, high: down[i], target: up[i] }));
@@ -194,7 +209,7 @@ export class Bloom {
 			result = down[0];
 		}
 		this.#sized = {
-			buffers,
+			uniforms,
 			result,
 			prefilter,
 			down: downPasses,
@@ -214,19 +229,19 @@ export class Bloom {
 		if (sized.prefilter === null) {
 			return;
 		}
-		encodeFullscreen(encoder, sized.prefilter[input.history]);
+		encodeTgpuFullscreen(encoder, sized.prefilter[input.history]);
 		for (const pass of sized.down) {
-			encodeFullscreen(encoder, pass);
+			encodeTgpuFullscreen(encoder, pass);
 		}
 		for (const pass of input.half ? sized.up.full : sized.up.short) {
-			encodeFullscreen(encoder, pass);
+			encodeTgpuFullscreen(encoder, pass);
 		}
 	}
 
 	#release(): void {
 		this.#targets.destroy();
-		for (const buffer of this.#sized?.buffers ?? []) {
-			buffer.destroy();
+		for (const uniform of this.#sized?.uniforms ?? []) {
+			uniform.buffer.destroy();
 		}
 		this.#sized = null;
 	}

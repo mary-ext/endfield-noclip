@@ -1,3 +1,5 @@
+import type { TgpuRoot } from 'typegpu';
+
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { SwayKind, SwayRow } from '../../looks/lit-look.ts';
 import type { LookStencil } from '../../looks/look.ts';
@@ -43,7 +45,7 @@ import { type SortedSource, mergeFarToNear } from './sorted-runs.ts';
 import { VertexBindings } from './vertex-bindings.ts';
 
 /**
- * floats of `Draw` in surfaces/common.wgsl: the position and UV dequantizations, the flags and the material's
+ * floats of `Draw` in surfaces/common.ts: the position and UV dequantizations, the flags and the material's
  * slot in the look table
  */
 const DRAW_FLOATS = 16;
@@ -219,8 +221,14 @@ export class MeshRenderer {
 	 *   and writes; the main pass's targets; what transparent draws fog themselves with; and
 	 *   `indirectFirstInstance` when indirect draws may start past the first instance, which GPU culling needs
 	 */
+	/**
+	 * @param root the TypeGPU root
+	 * @param layouts shared bind-group layouts
+	 * @param pipelines pipeline cache
+	 * @param options instances, main pass format, shadow map, fog inputs, and device features
+	 */
 	constructor(
-		device: GPUDevice,
+		root: TgpuRoot,
 		layouts: BindLayouts,
 		pipelines: PipelineCache,
 		{
@@ -237,10 +245,11 @@ export class MeshRenderer {
 			features: { indirectFirstInstance: boolean };
 		},
 	) {
+		const device = root.device;
 		this.#device = device;
 		this.#instances = instances;
 		this.#stencil = format.stencil;
-		this.#skins = new SkinAnimator(device, pipelines);
+		this.#skins = new SkinAnimator(root, pipelines);
 		this.#vertexBindings = new VertexBindings(device);
 		this.#pools = new GeometryPools(device);
 		this.#params = device.createBuffer({
@@ -258,10 +267,10 @@ export class MeshRenderer {
 		this.#looks = new LookTable(device);
 		this.#drawGroup = this.#createDrawGroup();
 		this.#culler = features.indirectFirstInstance
-			? new InstanceCuller(device, pipelines, () => ({ ...instances.buffers, drawIds: this.#drawIds }))
+			? new InstanceCuller(root, pipelines, () => ({ ...instances.buffers, drawIds: this.#drawIds }))
 			: null;
-		this.#pyramid = new DepthPyramid(device, pipelines);
-		this.#mips = new MipFeedback(device, pipelines);
+		this.#pyramid = new DepthPyramid(root, pipelines);
+		this.#mips = new MipFeedback(root, pipelines);
 		this.#meshPipelines = prepareMeshPipelines(device, layouts, pipelines, format, shadow);
 		this.#materials = new MaterialBindings(
 			device,

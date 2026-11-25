@@ -1,96 +1,72 @@
-import {
-	type FullscreenPass,
-	type FullscreenPipeline,
-	autoBindGroup,
-	encodeFullscreen,
-	fullscreenPipeline,
-} from '../../gfx/fullscreen-pass.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common } from 'typegpu';
+
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { placeholder } from '../../gfx/placeholders.ts';
 import { LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
+import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
-import { SkyBinding } from '../sky/atmosphere-luts.ts';
-import atmosphereWgsl from '../sky/atmosphere.wgsl?raw';
-import { fogSource } from '../sky/fog-source.ts';
-import skyWgsl from '../sky/sky.wgsl?raw';
+import { skyReadLayout } from '../sky/atmosphere-shader.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
 
-import compositeWgsl from './composite.wgsl?raw';
-import { postShaderModule } from './shader-source.ts';
+import { compositeFlowNoiseLayout, compositeSceneLayout, fsComposite } from './composite-shader.ts';
+import { postUniformLayout } from './post-schema.ts';
 
 /**
- * the composite (composite.wgsl): resolves the main pass into the scene at the render size, with the
+ * the composite (composite-shader.ts): resolves the main pass into the scene at the render size, with the
  * reflections, AO, sky, celestial layers and fogs
  */
 export class Composite {
-	#device: GPUDevice;
-	#pipeline: FullscreenPipeline;
-	#skyInputs: {
-		postUniforms: GPUBuffer;
-		sampler: GPUSampler;
-		skyView: GPUTextureView;
-		froxels: GPUTextureView;
-	};
-	/** groups 0 (uniforms) and 1 (the sky-view LUT and the volumetric fog), built once pipeline compiles */
-	#skyGroups: [GPUBindGroup, GPUBindGroup] | null = null;
-	#pass: FullscreenPass | null = null;
-	/** the height fog's flow noise and the repeating sampler the game reads it with */
-	#flowNoiseGroup: GPUBindGroup | null = null;
+	#root: TgpuRoot;
+	#pipeline: AsyncPipeline<TgpuRenderPipeline>;
+	#postGroup: TgpuBindGroup;
+	#skyGroup: TgpuBindGroup;
+	#sceneGroup: TgpuBindGroup | null = null;
+	#flowNoiseGroup: TgpuBindGroup;
+	#pass: TgpuFullscreenPass | null = null;
 	#flowNoise: TextureBinding;
 	#noFlowNoise: TextureBinding;
 	#repeatSampler: GPUSampler;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param input the post chain's `Post` uniforms, the bilinear clamping sampler, the sky-view LUT and the
 	 *   volumetric fog
 	 */
 	constructor(
-		device: GPUDevice,
+		root: TgpuRoot,
 		pipelines: PipelineCache,
 		input: { postUniforms: GPUBuffer; sampler: GPUSampler; skyView: GPUTextureView; froxels: GPUTextureView },
 	) {
-		this.#device = device;
-		this.#skyInputs = input;
-		this.#pipeline = fullscreenPipeline(pipelines, {
-			label: 'composite',
-			module: postShaderModule(device, 'composite', [
-				atmosphereWgsl,
-				fogSource({ group: 1, binding: SkyBinding.froxels }),
-				skyWgsl,
-				compositeWgsl,
-			]),
-			entryPoint: 'fs_composite',
-			targets: [{ format: HDR_FORMAT }],
+		this.#root = root;
+		this.#pipeline = pipelines.prepareTgpuRender('composite', () =>
+			root.createRenderPipeline({
+				vertex: common.fullScreenTriangle,
+				fragment: fsComposite,
+				targets: { format: HDR_FORMAT },
+			}),
+		);
+		this.#postGroup = root.createBindGroup(postUniformLayout, { post: input.postUniforms });
+		this.#skyGroup = root.createBindGroup(skyReadLayout, {
+			skyView: input.skyView,
+			lutSampler: input.sampler,
+			froxels: input.froxels,
 		});
-		this.#repeatSampler = sampler(device, LINEAR_REPEAT);
+		this.#repeatSampler = sampler(root.device, LINEAR_REPEAT);
 		this.#noFlowNoise = {
-			view: placeholder(device, 'black', '3d'),
+			view: placeholder(root.device, 'black', '3d'),
 			sampler: this.#repeatSampler,
 			version: -1,
 		};
 		this.#flowNoise = this.#noFlowNoise;
+		this.#flowNoiseGroup = this.#makeFlowNoiseGroup(this.#noFlowNoise.view);
 	}
 
-	#ensureSkyGroups(compiled: GPURenderPipeline): [GPUBindGroup, GPUBindGroup] {
-		this.#skyGroups ??= [
-			autoBindGroup(this.#device, compiled, 0, { 0: { buffer: this.#skyInputs.postUniforms } }),
-			autoBindGroup(this.#device, compiled, 1, {
-				[SkyBinding.skyView]: this.#skyInputs.skyView,
-				[SkyBinding.sampler]: this.#skyInputs.sampler,
-				[SkyBinding.froxels]: this.#skyInputs.froxels,
-			}),
-		];
-		return this.#skyGroups;
-	}
-
-	#ensureFlowNoiseGroup(compiled: GPURenderPipeline): GPUBindGroup {
-		this.#flowNoiseGroup ??= autoBindGroup(this.#device, compiled, 3, {
-			0: this.#flowNoise.view,
-			1: this.#repeatSampler,
+	#makeFlowNoiseGroup(view: GPUTextureView): TgpuBindGroup {
+		return this.#root.createBindGroup(compositeFlowNoiseLayout, {
+			flowNoise: view,
+			flowNoiseSampler: this.#repeatSampler,
 		});
-		return this.#flowNoiseGroup;
 	}
 
 	/** @returns whether the flow noise is bound */
@@ -107,9 +83,10 @@ export class Composite {
 		const next = noise ?? this.#noFlowNoise;
 		if (next !== this.#flowNoise) {
 			this.#flowNoise = next;
-			this.#flowNoiseGroup = null;
-			if (this.#pass !== null) {
-				this.#pass.groups = undefined;
+			this.#flowNoiseGroup = this.#makeFlowNoiseGroup(next.view);
+			if (this.#pass !== null && this.#sceneGroup !== null) {
+				this.#pass.groups = [this.#postGroup, this.#skyGroup, this.#sceneGroup, this.#flowNoiseGroup];
+				this.#pass.bound = undefined;
 			}
 		}
 	}
@@ -122,19 +99,15 @@ export class Composite {
 	 */
 	resize(input: { scene: SceneTextures; target: GPUTextureView }): void {
 		const { scene, target } = input;
-		let sceneGroup: GPUBindGroup | null = null;
+		this.#sceneGroup = this.#root.createBindGroup(compositeSceneLayout, {
+			lit: scene.lit,
+			depth: scene.depth,
+		});
 		this.#pass = {
 			label: 'composite',
 			pipeline: this.#pipeline,
-			bind: (compiled) => [
-				...this.#ensureSkyGroups(compiled),
-				(sceneGroup ??= autoBindGroup(this.#device, compiled, 2, {
-					0: scene.lit,
-					1: scene.depth,
-				})),
-				this.#ensureFlowNoiseGroup(compiled),
-			],
-			targets: [target],
+			groups: [this.#postGroup, this.#skyGroup, this.#sceneGroup, this.#flowNoiseGroup],
+			target,
 		};
 	}
 
@@ -144,6 +117,6 @@ export class Composite {
 		if (pass === null) {
 			throw new Error('composite used before resize()');
 		}
-		encodeFullscreen(encoder, pass);
+		encodeTgpuFullscreen(encoder, pass);
 	}
 }

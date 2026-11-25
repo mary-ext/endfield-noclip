@@ -2,6 +2,8 @@ import type { WeatherAssets } from '@endfield-noclip/package-format/environment'
 import type { IrradianceRegionInfo, IrradianceTable } from '@endfield-noclip/package-format/irradiance';
 import type { TerrainInfo } from '@endfield-noclip/package-format/terrain';
 
+import type { TgpuRoot } from 'typegpu';
+
 import type { GfxDevice } from '../gfx/device.ts';
 import { GpuProfiler } from '../gfx/gpu-profiler.ts';
 import { PipelineCache } from '../gfx/pipeline-cache.ts';
@@ -15,12 +17,8 @@ import {
 	ShadowLayerCache,
 	encodeFrame,
 } from '../render/frame/frame-graph.ts';
-import {
-	FRAME_UNIFORM_BYTES,
-	type FrameUniformInputs,
-	FrameOffsets,
-	writeFrameUniforms,
-} from '../render/frame/frame-uniform-writer.ts';
+import { FRAME_UNIFORM_BYTES, FrameOffsets } from '../render/frame/frame-schema.ts';
+import { type FrameUniformInputs, writeFrameUniforms } from '../render/frame/frame-uniform-writer.ts';
 import { RenderTargets } from '../render/frame/render-targets.ts';
 import { SceneComposer } from '../render/frame/scene-composer.ts';
 import { InstanceRenderer } from '../render/instances/instance-renderer.ts';
@@ -79,6 +77,7 @@ export interface RenderInput {
 /** the GPU side of the viewer: the device's renderers and targets, and the frame they encode together */
 export class Renderer {
 	readonly device: GPUDevice;
+	readonly root: TgpuRoot;
 	readonly targets: RenderTargets;
 	readonly pipelines: PipelineCache;
 	readonly shadows: ShadowMap;
@@ -126,6 +125,7 @@ export class Renderer {
 	constructor(gfx: GfxDevice, canvas: HTMLCanvasElement, look: EnvironmentLook, near: number) {
 		const device = gfx.device;
 		this.device = device;
+		this.root = gfx.root;
 		this.targets = new RenderTargets(device, canvas, gfx.presentationFormat, {
 			stencil: gfx.features.depth32floatStencil8,
 		});
@@ -140,8 +140,8 @@ export class Renderer {
 		);
 		this.shadows = new ShadowMap(device, { depthClipControl: gfx.features.depthClipControl });
 		this.verticalOcclusion = new VerticalOcclusionMap(device);
-		this.irradiance = new IrradianceVolume(device, this.pipelines);
-		this.lights = new LocalLights(device, this.pipelines);
+		this.irradiance = new IrradianceVolume(this.root, this.pipelines);
+		this.lights = new LocalLights(this.root, this.pipelines);
 		this.reflectionProbes = new ReflectionProbes(device, { bc: gfx.features.textureCompressionBc });
 		this.bindings = new FrameBindings(device, {
 			coreLayout: this.#layouts.frameCore,
@@ -160,41 +160,41 @@ export class Renderer {
 			bc: gfx.features.textureCompressionBc,
 			shadow: this.shadows,
 		});
-		this.cloth = new ClothSimulator(device, this.pipelines);
+		this.cloth = new ClothSimulator(this.root, this.pipelines);
 		this.instances = new InstanceRenderer(device, layouts, this.pipelines, format, INSTANCE_ROWS, () => ({
 			buffer: this.cloth.skeletonBuffer,
 			prevBuffer: this.cloth.prevSkeletonBuffer,
 			version: this.cloth.version,
 		}));
-		this.fog = new VolumetricFog(device, this.pipelines, layouts.frame);
+		this.fog = new VolumetricFog(this.root, this.pipelines, layouts.frame);
 		this.fog.setEnvironment(look.environment, near);
 		this.composer = new SceneComposer(
-			device,
+			this.root,
 			this.pipelines,
 			look.environment,
 			this.fog,
 			layouts.frame,
 			this.verticalOcclusion,
 		);
-		this.post = new PostProcess(device, this.pipelines, {
+		this.post = new PostProcess(this.root, this.pipelines, {
 			swapchainFormat: gfx.presentationFormat,
 			postUniforms: this.composer.uniforms,
 			sampler: this.composer.sampler,
 			environment: look.environment,
 		});
-		this.meshes = new MeshRenderer(device, layouts, this.pipelines, {
+		this.meshes = new MeshRenderer(this.root, layouts, this.pipelines, {
 			instances: this.instances,
 			format,
 			shadow: this.shadows,
 			fog: this.composer.fogInputs,
 			features: gfx.features,
 		});
-		this.water = new WaterRenderer(device, this.pipelines, {
+		this.water = new WaterRenderer(this.root, this.pipelines, {
 			frame: layouts.frame,
 			...this.composer.skyLayouts,
 		});
 		this.weather = new WeatherRenderer(
-			device,
+			this.root,
 			this.pipelines,
 			layouts.frame,
 			format.depth,
@@ -446,6 +446,7 @@ export class Renderer {
 			system.destroy();
 		}
 		destroyPlaceholders(this.device);
+		this.root.destroy();
 		this.device.destroy();
 	}
 }

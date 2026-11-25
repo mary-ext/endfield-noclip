@@ -32,7 +32,7 @@ export const SixWayRow = {
 	blendTint: 88,
 } as const;
 
-/** {@link SixWayRow.flags} bits, matching `effect.wgsl` */
+/** {@link SixWayRow.flags} bits, matching `effects/common.ts` */
 export const SixWayFlags = {
 	Disturb1: 1 << 0,
 	Disturb2: 1 << 1,

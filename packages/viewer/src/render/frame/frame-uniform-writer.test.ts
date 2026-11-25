@@ -7,12 +7,8 @@ import { deriveEnvironment } from '../../environment/derive.ts';
 import { wetnessParams } from '../../environment/wetness.ts';
 import { Camera } from '../../scene/camera.ts';
 
-import {
-	FRAME_UNIFORM_BYTES,
-	type FrameUniformInputs,
-	FrameOffsets,
-	writeFrameUniforms,
-} from './frame-uniform-writer.ts';
+import { FRAME_UNIFORM_BYTES, FrameOffsets } from './frame-schema.ts';
+import { type FrameUniformInputs, writeFrameUniforms } from './frame-uniform-writer.ts';
 
 const inputs = (patch: Partial<FrameUniformInputs> = {}): FrameUniformInputs => {
 	const camera = new Camera();

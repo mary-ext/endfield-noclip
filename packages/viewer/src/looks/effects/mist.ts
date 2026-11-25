@@ -4,7 +4,7 @@ import { type EffectLook, emptyEffect, ROLE_NONE, setSlot, still } from './effec
 
 /**
  * float offsets of a mist look's parameters ({@link mistCardLook}, {@link mistVolumeLook}), in place of
- * `EffectRow` for the mist entry points of `effect.wgsl`. the UV rows are shared
+ * `EffectRow` for the mist entry points of `effects/common.ts`. the UV rows are shared
  */
 export const MistRow = {
 	/** colour rgb (linear, HDR), alpha */

@@ -64,7 +64,7 @@ export interface EmitterState {
 }
 
 /**
- * @returns the axes `row_basis` (frame.wgsl) turns a row's own by for its billboard kind, as columns, or
+ * @returns the axes `row_basis` (frame-core.ts) turns a row's own by for its billboard kind, as columns, or
  *   `null` for a row it leaves be
  */
 const billboardBasis = (billboard: RowBillboard, view: ParticleView): readonly Vec3[] | null => {
@@ -84,7 +84,7 @@ const billboardBasis = (billboard: RowBillboard, view: ParticleView): readonly V
 };
 
 /**
- * turns a vector in a row's frame as `row_basis` (frame.wgsl) turns the row's axes for its billboard kind
+ * turns a vector in a row's frame as `row_basis` (frame-core.ts) turns the row's axes for its billboard kind
  *
  * @param billboard the row's billboard kind
  * @param view the camera's axes

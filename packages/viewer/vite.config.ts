@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 import react from '@vitejs/plugin-react';
+import typegpu from 'unplugin-typegpu/vite';
 import { defineConfig } from 'vite';
 
 import { packageServer } from './vite-plugins/package-server.ts';
@@ -9,7 +10,7 @@ import { packageServer } from './vite-plugins/package-server.ts';
 const packagesRoot = resolve(process.env.NOCLIP_PACKAGES ?? resolve(import.meta.dirname, '../../out'));
 
 export default defineConfig({
-	plugins: [react(), packageServer(packagesRoot)],
+	plugins: [typegpu(), react(), packageServer(packagesRoot)],
 	worker: {
 		format: 'es',
 	},

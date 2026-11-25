@@ -1,11 +1,13 @@
 import type { ClothDataBlob } from '@endfield-noclip/package-format/cloth';
 
+import { type TgpuBindGroup, type TgpuComputePipeline, type TgpuRoot, type TgpuUniform, d } from 'typegpu';
+
 import type { Environment } from '../../environment/environment.ts';
 import { createBufferWithData } from '../../gfx/buffers.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
 
-import clothSimWgsl from './cloth-sim.wgsl?raw';
+import { ClothUniformsSchema, clothSimLayout, csClothSim } from './cloth-sim-shader.ts';
 
 const PIPELINE_KEY = 'cloth-sim';
 
@@ -15,21 +17,19 @@ const CLOTH_DT = 0.023333333;
 const MAX_SUBSTEPS = 2;
 /** `GpuClothManager.windSpeed` default (`0x41000000` = 8.0) */
 const CLOTH_WIND_SPEED = 8.0;
-/** bytes of `ClothUniforms` (3 × vec4f) */
-const UNIFORM_BYTES = 48;
-/** floats per bone in `skeletons` (3 × vec4f row-major 3×4 matrix) */
+/** bytes of {@link ClothUniformsSchema} */
+const UNIFORM_BYTES = d.sizeOf(ClothUniformsSchema);
+/** floats per bone in `skeletons` (3 x vec4f row-major 3x4 matrix) */
 const BONE_FLOATS = 12;
 
 /**
- * runs the GPU cloth simulation compute pass (`cloth-sim.wgsl`) for a scene's simulated cloths and owns the
- * skeleton buffer read by `mesh.wgsl`
+ * runs the GPU cloth simulation compute pass (`cloth-sim-shader.ts`) for a scene's simulated cloths and owns
+ * the skeleton buffer read by `surfaces/common.ts`
  */
 export class ClothSimulator {
-	#device: GPUDevice;
-	#pipelines: PipelineCache;
-	#layout: GPUBindGroupLayout;
-	#uniforms: GPUBuffer;
-	#uniformData = new Float32Array(UNIFORM_BYTES / 4);
+	#root: TgpuRoot;
+	#pipeline: AsyncPipeline<TgpuComputePipeline>;
+	#uniforms: TgpuUniform<typeof ClothUniformsSchema>;
 	#sampler: GPUSampler;
 	#fallbackNoise: GPUTexture;
 	#fallbackNoiseView: GPUTextureView;
@@ -45,7 +45,7 @@ export class ClothSimulator {
 	#prevSkeletons: GPUBuffer | null = null;
 	#skeletonBytes = 0;
 	#prevDirty = false;
-	#bindGroup: GPUBindGroup | null = null;
+	#bindGroup: TgpuBindGroup | null = null;
 	#version = 0;
 
 	#accumulator = 0;
@@ -55,35 +55,16 @@ export class ClothSimulator {
 	#stepped = false;
 
 	/**
-	 * @param device WebGPU device
+	 * @param root the TypeGPU root
 	 * @param pipelines pipeline cache
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache) {
-		this.#device = device;
-		this.#pipelines = pipelines;
-		const compute = GPUShaderStage.COMPUTE;
-		this.#layout = device.createBindGroupLayout({
-			label: 'cloth sim',
-			entries: [
-				{ binding: 0, visibility: compute, buffer: { type: 'uniform' } },
-				{ binding: 1, visibility: compute, buffer: { type: 'read-only-storage' } },
-				{ binding: 2, visibility: compute, buffer: { type: 'read-only-storage' } },
-				{ binding: 3, visibility: compute, buffer: { type: 'read-only-storage' } },
-				{ binding: 4, visibility: compute, buffer: { type: 'storage' } },
-				{ binding: 5, visibility: compute, buffer: { type: 'storage' } },
-				{ binding: 6, visibility: compute, texture: { sampleType: 'float' } },
-				{ binding: 7, visibility: compute, sampler: { type: 'filtering' } },
-			],
-		});
-		void pipelines.prepareCompute(PIPELINE_KEY, () => ({
-			layout: device.createPipelineLayout({ bindGroupLayouts: [this.#layout] }),
-			compute: { module: pipelines.module('cloth-sim', clothSimWgsl), entryPoint: 'cs_cloth_sim' },
-		}));
-		this.#uniforms = device.createBuffer({
-			label: 'cloth uniforms',
-			size: UNIFORM_BYTES,
-			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-		});
+	constructor(root: TgpuRoot, pipelines: PipelineCache) {
+		const device = root.device;
+		this.#root = root;
+		this.#pipeline = pipelines.prepareTgpuCompute(PIPELINE_KEY, () =>
+			root.createComputePipeline({ compute: csClothSim }),
+		);
+		this.#uniforms = root.createUniform(ClothUniformsSchema);
 		this.#sampler = sampler(device, LINEAR_REPEAT);
 		this.#fallbackNoise = device.createTexture({
 			label: 'cloth fallback wind noise',
@@ -129,7 +110,7 @@ export class ClothSimulator {
 	/** @returns bytes of the cloth simulation GPU buffers */
 	get bytes(): number {
 		return (
-			this.#uniforms.size +
+			UNIFORM_BYTES +
 			this.#dummySkeletons.size +
 			(this.#meta?.size ?? 0) +
 			(this.#batches?.size ?? 0) +
@@ -150,7 +131,7 @@ export class ClothSimulator {
 		if (data === null || data.clothCount === 0 || data.nodeCount === 0) {
 			return;
 		}
-		const device = this.#device;
+		const device = this.#root.device;
 		this.#clothCount = data.clothCount;
 		this.#meta = createBufferWithData(device, {
 			label: 'cloth meta',
@@ -234,7 +215,7 @@ export class ClothSimulator {
 		if (this.#clothCount === 0 || this.#bindGroup === null) {
 			return false;
 		}
-		const pipeline = this.#pipelines.getCompute(PIPELINE_KEY);
+		const pipeline = this.#pipeline.get();
 		if (pipeline === undefined) {
 			return false;
 		}
@@ -267,25 +248,14 @@ export class ClothSimulator {
 			this.#prevDirty = true;
 		}
 
-		const u = this.#uniformData;
-		u[0] = CLOTH_DT;
-		u[1] = 1 / CLOTH_DT;
-		u[2] = loopNum;
-		u[3] = 0;
-		u[4] = this.#windTime;
-		u[5] = this.#windNoiseU;
-		u[6] = this.#windNoiseV;
-		u[7] = 0;
-		u[8] = wind.intensity;
-		u[9] = 0;
-		u[10] = wind.direction[0];
-		u[11] = wind.direction[1];
-		this.#device.queue.writeBuffer(this.#uniforms, 0, u);
+		this.#uniforms.write({
+			dtInfo: [CLOTH_DT, 1 / CLOTH_DT, loopNum, 0],
+			windParams: [this.#windTime, this.#windNoiseU, this.#windNoiseV, 0],
+			windGlobal: [wind.intensity, 0, wind.direction[0], wind.direction[1]],
+		});
 
 		const pass = encoder.beginComputePass({ label: 'cloth sim' });
-		pass.setPipeline(pipeline);
-		pass.setBindGroup(0, this.#bindGroup);
-		pass.dispatchWorkgroups(this.#clothCount, 1, 1);
+		pipeline.with(this.#bindGroup).with(pass).dispatchWorkgroups(this.#clothCount, 1, 1);
 		pass.end();
 		return true;
 	}
@@ -293,7 +263,7 @@ export class ClothSimulator {
 	/** releases all GPU resources */
 	destroy(): void {
 		this.#releaseScene();
-		this.#uniforms.destroy();
+		this.#uniforms.buffer.destroy();
 		this.#fallbackNoise.destroy();
 		this.#dummySkeletons.destroy();
 	}
@@ -331,19 +301,15 @@ export class ClothSimulator {
 			this.#bindGroup = null;
 			return;
 		}
-		this.#bindGroup = this.#device.createBindGroup({
-			label: 'cloth sim',
-			layout: this.#layout,
-			entries: [
-				{ binding: 0, resource: { buffer: this.#uniforms } },
-				{ binding: 1, resource: { buffer: this.#meta } },
-				{ binding: 2, resource: { buffer: this.#batches } },
-				{ binding: 3, resource: { buffer: this.#cache } },
-				{ binding: 4, resource: { buffer: this.#nodes } },
-				{ binding: 5, resource: { buffer: this.#skeletons } },
-				{ binding: 6, resource: this.#windNoiseView },
-				{ binding: 7, resource: this.#sampler },
-			],
+		this.#bindGroup = this.#root.createBindGroup(clothSimLayout, {
+			params: this.#uniforms,
+			clothMeta: this.#meta,
+			batchMeta: this.#batches,
+			cacheMap: this.#cache,
+			clothNodes: this.#nodes,
+			skeletons: this.#skeletons,
+			windNoise: this.#windNoiseView,
+			windSampler: this.#sampler,
 		});
 	}
 }

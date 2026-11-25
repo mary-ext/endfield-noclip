@@ -1,6 +1,6 @@
 /**
- * what every scene effect's look shares: the rows `effect.wgsl` reads for all of them, the slot bits, and the
- * slot writers the families' modules beside this one build on
+ * what every scene effect's look shares: the rows `effects/common.ts` reads for all of them, the slot bits,
+ * and the slot writers the families' modules beside this one build on
  *
  * @module
  */
@@ -13,7 +13,7 @@ import { emptySlots, type LookSlots, placeTexture } from '../look.ts';
 /** a look's {@link EffectRow.slotBits} role value for a texture that isn't sampled */
 export const ROLE_NONE = 7;
 
-/** the roles a texture plays, as `effect.wgsl` numbers them */
+/** the roles a texture plays, as `effects/common.ts` numbers them */
 export const EffectRole = {
 	Disturb1: 0,
 	Disturb2: 1,
@@ -28,7 +28,7 @@ export const EffectRole = {
 /** {@link EffectRow.decal}'s third float on decals by `decalFade.covers` */
 export const DECAL_COVERS = { all: 0, unmarked: 1, marked: 2 } as const;
 
-/** what `effect.wgsl` draws a look as, in {@link EffectRow.unfogged}'s second float */
+/** what `effects/common.ts` draws a look as, in {@link EffectRow.unfogged}'s second float */
 export const EffectKind = {
 	/** VFXBaseV2 and VFXDecal's texture stack */
 	Stack: 0,

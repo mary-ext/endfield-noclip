@@ -1,4 +1,5 @@
 import { definite } from '@mary-ext/array-fns';
+import tgpu, { type TgpuRoot } from 'typegpu';
 
 /** optional features, detected on the adapter and requested when present */
 export interface GfxFeatures {
@@ -19,6 +20,8 @@ export interface GfxFeatures {
 /** a ready device plus what it supports */
 export interface GfxDevice {
 	device: GPUDevice;
+	/** TypeGPU root wrapping {@link device} for typed schemas, bind groups and pipelines */
+	root: TgpuRoot;
 	features: GfxFeatures;
 	/** human-readable adapter description */
 	adapterName: string;
@@ -102,6 +105,7 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 	const info = adapter.info;
 	return {
 		device,
+		root: tgpu.initFromDevice({ device }),
 		features,
 		adapterName: definite([info.vendor, info.architecture, info.description]).join(' '),
 		presentationFormat: navigator.gpu.getPreferredCanvasFormat(),

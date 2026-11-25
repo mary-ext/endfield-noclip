@@ -5,7 +5,7 @@
 		"typeCheck": true
 	},
 	"plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y"],
-	"jsPlugins": ["@mary-ext/oxlint-rules"],
+	"jsPlugins": ["@mary-ext/oxlint-rules", "eslint-plugin-typegpu"],
 	"categories": {
 		"correctness": "warn",
 		"suspicious": "warn",
@@ -19,6 +19,12 @@
 		"react/react-in-jsx-scope": "off",
 		"react/rules-of-hooks": "error",
 		"react/only-export-components": ["warn", { "allowConstantExport": true }],
+		"typegpu/no-integer-division": "warn",
+		"typegpu/no-invalid-assignment": "error",
+		"typegpu/no-math": "warn",
+		"typegpu/no-uninitialized-variables": "error",
+		"typegpu/no-unsupported-syntax": "error",
+		"typegpu/no-unwrapped-objects": "error",
 		"typescript/consistent-return": "off",
 		"unicorn/switch-case-braces": ["warn", "always"]
 	},

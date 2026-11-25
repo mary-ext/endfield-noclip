@@ -1,3 +1,5 @@
+import type { TgpuBindGroup, TgpuComputePipeline, TgpuRoot, TgpuUniform } from 'typegpu';
+
 import {
 	type AutoExposureSettings,
 	BINS,
@@ -5,18 +7,13 @@ import {
 	meteredExposure,
 	targetExposure,
 } from '../../environment/exposure.ts';
-import { BindGroupCache } from '../../gfx/bind-group-cache.ts';
-import { createUniformBuffer } from '../../gfx/buffers.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
-import luminanceWgsl from '../shaders/common/luminance.wgsl?raw';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 
-import autoExposureWgsl from './auto-exposure.wgsl?raw';
+import { AutoExposureParams, WEIGHT_SCALE, autoExposureLayout, csHistogram } from './auto-exposure-shader.ts';
 
-/** pixels between samples along each axis; one workgroup of 8 × 8 threads covers 128² pixels */
+/** pixels between samples along each axis; one workgroup of 8 x 8 threads covers 128^2 pixels */
 const STRIDE = 16;
 const WORKGROUP_PIXELS = 8 * STRIDE;
-/** fixed-point scale of the weights the shader accumulates; matches `WEIGHT_SCALE` in auto-exposure.wgsl */
-const WEIGHT_SCALE = 1024;
 /** the game's centre weight under centre metering */
 const CENTRE_WEIGHT = 0.75;
 /** the exposure counts as settled once within this many EV of its target */
@@ -27,16 +24,16 @@ const PIPELINE_KEY = 'auto exposure histogram';
 export class AutoExposure {
 	/** the post exposure (linear) the scene is shown at, before the viewer's exposure option */
 	exposure = 1;
-	#device: GPUDevice;
-	#pipelines: PipelineCache;
-	#uniforms: GPUBuffer;
+	#root: TgpuRoot;
+	#pipeline: AsyncPipeline<TgpuComputePipeline>;
+	#params: TgpuUniform<typeof AutoExposureParams>;
 	#bins: GPUBuffer;
 	/** readback buffers not waiting on a map */
 	#idle: GPUBuffer[];
 	/** the readback buffer this frame's histogram was copied into, mapped after submit, and its settings */
 	#pending: { buffer: GPUBuffer; settings: AutoExposureSettings } | null = null;
-	/** the histogram's group, over the scene view it reads */
-	#group = new BindGroupCache<string>();
+	/** cached bind group for the current scene view */
+	#cachedGroup: { view: GPUTextureView; group: TgpuBindGroup } | null = null;
 	#metered: number | null = null;
 	/** jump straight to the next metered exposure instead of easing (a new level or a fresh start) */
 	#snap = true;
@@ -45,27 +42,22 @@ export class AutoExposure {
 	#destroyed = false;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache, which compiles the histogram pass
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache) {
-		this.#device = device;
-		this.#pipelines = pipelines;
-		void pipelines.prepareCompute(PIPELINE_KEY, () => ({
-			layout: 'auto',
-			compute: {
-				module: pipelines.module('auto exposure', luminanceWgsl + '\n' + autoExposureWgsl),
-				entryPoint: 'cs_histogram',
-			},
-		}));
-		this.#uniforms = createUniformBuffer(device, 'auto exposure params', 32);
-		this.#bins = device.createBuffer({
+	constructor(root: TgpuRoot, pipelines: PipelineCache) {
+		this.#root = root;
+		this.#pipeline = pipelines.prepareTgpuCompute(PIPELINE_KEY, () =>
+			root.createComputePipeline({ compute: csHistogram }),
+		);
+		this.#params = root.createUniform(AutoExposureParams);
+		this.#bins = root.device.createBuffer({
 			label: 'auto exposure bins',
 			size: BINS * 4,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
 		});
 		this.#idle = [0, 1].map(() =>
-			device.createBuffer({
+			root.device.createBuffer({
 				label: 'auto exposure readback',
 				size: BINS * 4,
 				usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
@@ -95,7 +87,7 @@ export class AutoExposure {
 		if (settings.mode === 'manual' || (!this.#metering && this.#metered !== null)) {
 			return;
 		}
-		const pipeline = this.#pipelines.getCompute(PIPELINE_KEY);
+		const pipeline = this.#pipeline.get();
 		if (pipeline === undefined) {
 			return;
 		}
@@ -104,29 +96,29 @@ export class AutoExposure {
 			return;
 		}
 		const { view, width, height } = scene;
-		const params = new ArrayBuffer(32);
-		new Uint32Array(params, 0, 3).set([width, height, STRIDE]);
-		new Float32Array(params, 12, 3).set([
-			settings.centerWeighted ? CENTRE_WEIGHT : 0,
-			settings.meteringRange[0],
-			settings.meteringRange[1],
-		]);
-		this.#device.queue.writeBuffer(this.#uniforms, 0, params);
-		const group = this.#group.get(PIPELINE_KEY, [view], () =>
-			this.#device.createBindGroup({
-				layout: pipeline.getBindGroupLayout(0),
-				entries: [
-					{ binding: 0, resource: view },
-					{ binding: 1, resource: { buffer: this.#uniforms } },
-					{ binding: 2, resource: { buffer: this.#bins } },
-				],
-			}),
-		);
+		this.#params.write({
+			size: [width, height],
+			stride: STRIDE,
+			centerWeight: settings.centerWeighted ? CENTRE_WEIGHT : 0,
+			evRange: [settings.meteringRange[0], settings.meteringRange[1]],
+		});
+		let group: TgpuBindGroup;
+		if (this.#cachedGroup !== null && this.#cachedGroup.view === view) {
+			group = this.#cachedGroup.group;
+		} else {
+			group = this.#root.createBindGroup(autoExposureLayout, {
+				scene: view,
+				params: this.#params,
+				bins: this.#bins,
+			});
+			this.#cachedGroup = { view, group };
+		}
 		encoder.clearBuffer(this.#bins);
 		const pass = encoder.beginComputePass({ label: 'auto exposure histogram' });
-		pass.setPipeline(pipeline);
-		pass.setBindGroup(0, group);
-		pass.dispatchWorkgroups(Math.ceil(width / WORKGROUP_PIXELS), Math.ceil(height / WORKGROUP_PIXELS));
+		pipeline
+			.with(group)
+			.with(pass)
+			.dispatchWorkgroups(Math.ceil(width / WORKGROUP_PIXELS), Math.ceil(height / WORKGROUP_PIXELS));
 		pass.end();
 		encoder.copyBufferToBuffer(this.#bins, 0, readback, 0, BINS * 4);
 		this.#pending = { buffer: readback, settings };
@@ -200,7 +192,7 @@ export class AutoExposure {
 	/** frees the GPU resources */
 	destroy(): void {
 		this.#destroyed = true;
-		this.#uniforms.destroy();
+		this.#params.buffer.destroy();
 		this.#bins.destroy();
 		for (const buffer of this.#idle) {
 			buffer.destroy();

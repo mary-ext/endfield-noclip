@@ -1,5 +1,5 @@
 /**
- * packs the `Post` uniforms of post-common.wgsl. the environment's lanes are written when it changes and the
+ * packs the `Post` uniforms of post-schema.ts. the environment's lanes are written when it changes and the
  * frame's over them each frame; the two writers own disjoint lanes, so the buffer can be uploaded whole after
  * the frame's
  *
@@ -10,75 +10,8 @@ import type { Environment } from '../../environment/environment.ts';
 import { rowWriter } from '../../gfx/buffers.ts';
 import type { Camera } from '../../scene/camera.ts';
 
+import { PostSlot } from './post-schema.ts';
 import { type PostSettings, TONEMAPPERS } from './settings.ts';
-
-/** vec4 index of each `Post` field */
-const PostSlot = {
-	forward: 0,
-	right: 1,
-	up: 2,
-	eye: 3,
-	viewport: 4,
-	sun: 5,
-	sunIlluminance: 6,
-	skySun: 7,
-	skyIlluminance: 8,
-	planet: 9,
-	rayleigh: 10,
-	mieScattering: 11,
-	mieExtinction: 12,
-	ozone: 13,
-	ozoneTent: 14,
-	groundAlbedo: 15,
-	fogLayer0: 16,
-	fogLayer1: 17,
-	fogColor: 18,
-	fogRange: 19,
-	fogDirectional: 20,
-	ao: 23,
-	bloom: 24,
-	bloomTint: 25,
-	grade: 26,
-	flags: 27,
-	aoShape: 28,
-	vignetteColor: 29,
-	vignetteCenter: 30,
-	cloud: 31,
-	cloudTint: 32,
-	cloudShape: 33,
-	fogDirectionalDirection: 34,
-	atmoSun: 35,
-	atmoExtinction: 36,
-	atmoRayleigh: 37,
-	atmoMie: 38,
-	atmoAmbient: 39,
-	skyFog: 40,
-	colorBalance: 41,
-	colorFilter: 42,
-	hueSatCon: 43,
-	mixerRed: 44,
-	mixerGreen: 45,
-	mixerBlue: 46,
-	shadows: 47,
-	midtones: 48,
-	highlights: 49,
-	shaHiLimits: 50,
-	lift: 51,
-	gamma: 52,
-	gain: 53,
-	splitShadows: 54,
-	splitHighlights: 55,
-	bloomShape: 56,
-	jitter: 57,
-	froxelSlices: 58,
-	froxelRange: 59,
-	reflections: 60,
-	flowNoise: 61,
-	flowNoiseScale: 62,
-} as const;
-
-/** byte size of `Post` */
-export const POST_BYTES = 63 * 16;
 
 /**
  * writes the lanes that change only with the environment: the sun, atmosphere, fogs, bloom, AO shape,

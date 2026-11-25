@@ -2,6 +2,8 @@ import type { GeometryTable } from '@endfield-noclip/package-format/geometry-tab
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 import type { WaterConfig, WaterTable } from '@endfield-noclip/package-format/water';
 
+import tgpu, { type TgpuRoot } from 'typegpu';
+
 import { BindGroupCache } from '../../gfx/bind-group-cache.ts';
 import { createBufferWithData, createUniformBuffer } from '../../gfx/buffers.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
@@ -13,7 +15,6 @@ import { type Plane, boxInFrustum } from '../../scene/camera.ts';
 import type { ResidentGeometry } from '../../streaming/resident.ts';
 import type { StreamManager } from '../../streaming/stream-manager.ts';
 import { streamWholeTexture } from '../../streaming/texture-requests.ts';
-import { FRAME_WGSL } from '../frame/frame-uniforms.ts';
 import {
 	DEPTH_CLEAR,
 	DEPTH_COMPARE,
@@ -24,21 +25,21 @@ import {
 } from '../frame/render-targets.ts';
 import { FRONT_FACE, POSITION_FORMATS, type PositionFormat } from '../meshes/pipeline-variants.ts';
 import { NORMAL_STREAM, positionStream } from '../meshes/vertex-bindings.ts';
-import { postCommonSource } from '../post/shader-source.ts';
-import screenSpaceWgsl from '../shaders/common/screen-space.wgsl?raw';
-import { SkyBinding } from '../sky/atmosphere-luts.ts';
-import atmosphereWgsl from '../sky/atmosphere.wgsl?raw';
-import { fogSource } from '../sky/fog-source.ts';
 import type { TextureBinding, TextureStore } from '../textures/texture-store.ts';
 
-import ssrTraceWgsl from './ssr-trace.wgsl?raw';
-import waterWgsl from './water.wgsl?raw';
+import {
+	WATER_CONFIG_FLOATS,
+	WATER_SURFACE_FLOATS,
+	fsWater,
+	fsWaterDepth,
+	vsWater,
+	waterLayout,
+} from './water-shader.ts';
 
-/** floats of `Surface` in water.wgsl */
-const SURFACE_FLOATS = 20;
-/** floats of `Config` in water.wgsl */
-const CONFIG_FLOATS = 56;
-/** floats of the `water` uniform in water.wgsl (3 base vec4s + 5 reprojection vec4s + 1 sector window vec4) */
+/**
+ * floats of the `water` uniform in water-shader.ts (3 base vec4s + 5 reprojection vec4s + 1 sector window
+ * vec4)
+ */
 const PARAM_FLOATS = 36;
 /** edge of the camera-centred sector flow atlas, in sector tiles */
 const SECTOR_GRID = 3;
@@ -86,21 +87,6 @@ export interface WaterContext {
 	foam: boolean;
 }
 
-/**
- * @returns the water shader: the frame's lighting at group 0, then the post passes' helpers with their
- *   uniforms moved to group 3
- */
-const waterShaderSource = (): string =>
-	[
-		FRAME_WGSL,
-		postCommonSource(3),
-		atmosphereWgsl,
-		fogSource({ group: 1, binding: SkyBinding.froxels }),
-		screenSpaceWgsl,
-		ssrTraceWgsl,
-		waterWgsl,
-	].join('\n');
-
 /** the foam the boxes leave on the water surface */
 interface FoamTargets {
 	/** the scene textures' version they were made at */
@@ -128,7 +114,7 @@ interface SectorCopy {
 	cellZ: number;
 }
 
-/** packs one config the way `Config` in water.wgsl reads it */
+/** packs one config the way `Config` in water-shader.ts reads it */
 const packConfig = (c: WaterConfig, out: Float32Array, at: number): void => {
 	const rows = [
 		c.waterRayleighScatteringMeter,
@@ -152,8 +138,8 @@ const packConfig = (c: WaterConfig, out: Float32Array, at: number): void => {
 
 /** owns the water pipeline, its buffers and the per-frame surface list */
 export class WaterRenderer {
+	#root: TgpuRoot;
 	#device: GPUDevice;
-	#layout: GPUBindGroupLayout;
 	/** compiles {@link SHADE_KEY} and {@link DEPTH_KEY} */
 	#pipelines: PipelineCache;
 	/** the foam the boxes leave on the surface, at the main pass's size */
@@ -166,7 +152,7 @@ export class WaterRenderer {
 	/** bound in place of the foam while there are no foam targets */
 	#noFoam: GPUTextureView;
 	#surfaces: GPUBuffer;
-	#surfaceData = new Float32Array(MAX_SURFACES * SURFACE_FLOATS);
+	#surfaceData = new Float32Array(MAX_SURFACES * WATER_SURFACE_FLOATS);
 	#surfaceWords = new Uint32Array(this.#surfaceData.buffer);
 	#configs: GPUBuffer | null = null;
 	#params: GPUBuffer;
@@ -196,43 +182,20 @@ export class WaterRenderer {
 	#groups = new BindGroupCache<GPUTextureView>();
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache, which compiles the water's pipelines
 	 * @param layouts the shared groups' layouts
 	 */
-	constructor(device: GPUDevice, pipelines: PipelineCache, layouts: WaterLayouts) {
+	constructor(root: TgpuRoot, pipelines: PipelineCache, layouts: WaterLayouts) {
+		const device = root.device;
+		this.#root = root;
 		this.#device = device;
 		this.#pipelines = pipelines;
 		this.#foam = new TextureSet(device);
-		const module = pipelines.module('water', waterShaderSource());
-		const fragment = GPUShaderStage.FRAGMENT;
-		const texture = (
-			binding: number,
-			sampleType: GPUTextureSampleType,
-			viewDimension: GPUTextureViewDimension = '2d',
-		): GPUBindGroupLayoutEntry => ({ binding, visibility: fragment, texture: { sampleType, viewDimension } });
-		this.#layout = device.createBindGroupLayout({
-			label: 'water',
-			entries: [
-				{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
-				{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
-				texture(2, 'unfilterable-float'),
-				texture(3, 'depth'),
-				texture(4, 'float', '2d-array'),
-				texture(5, 'float'),
-				{ binding: 6, visibility: fragment, sampler: { type: 'filtering' } },
-				{ binding: 7, visibility: fragment, buffer: { type: 'uniform' } },
-				texture(8, 'float'),
-				texture(10, 'float'),
-				texture(11, 'float'),
-				{ binding: 12, visibility: fragment, sampler: { type: 'filtering' } },
-				texture(14, 'depth'),
-				texture(15, 'float'),
-			],
-		});
+		const module = pipelines.module('water', tgpu.resolve([vsWater, fsWater, fsWaterDepth]));
 		const layout = device.createPipelineLayout({
 			label: 'water',
-			bindGroupLayouts: [layouts.frame, layouts.sky, this.#layout, layouts.uniforms],
+			bindGroupLayouts: [layouts.frame, layouts.sky, root.unwrap(waterLayout), layouts.uniforms],
 		});
 		// the shader drops back faces, by the winding the transform leaves
 		const primitive: GPUPrimitiveState = {
@@ -243,20 +206,20 @@ export class WaterRenderer {
 		for (const positionFormat of POSITION_FORMATS) {
 			const vertex: GPUVertexState = {
 				module,
-				entryPoint: 'vs_water',
+				entryPoint: 'vsWater',
 				// meshes without normals bind their positions as them, which the shader ignores
 				buffers: [positionStream(positionFormat), NORMAL_STREAM],
 			};
 			void pipelines.prepare(`${SHADE_KEY}/${positionFormat}`, () => ({
 				layout,
 				vertex,
-				fragment: { module, entryPoint: 'fs_water', targets: [{ format: HDR_FORMAT }] },
+				fragment: { module, entryPoint: 'fsWater', targets: [{ format: HDR_FORMAT }] },
 				primitive,
 			}));
 			void pipelines.prepare(`${DEPTH_KEY}/${positionFormat}`, () => ({
 				layout,
 				vertex,
-				fragment: { module, entryPoint: 'fs_water_depth', targets: [] },
+				fragment: { module, entryPoint: 'fsWaterDepth', targets: [] },
 				primitive,
 				depthStencil: { format: WATER_DEPTH_FORMAT, depthWriteEnabled: true, depthCompare: DEPTH_COMPARE },
 			}));
@@ -306,8 +269,8 @@ export class WaterRenderer {
 				this.#sectorIds.set(`${sector.x},${sector.z}`, sector.texture);
 			}
 		}
-		const data = new Float32Array(table.configs.length * CONFIG_FLOATS);
-		table.configs.forEach((config, i) => packConfig(config.values, data, i * CONFIG_FLOATS));
+		const data = new Float32Array(table.configs.length * WATER_CONFIG_FLOATS);
+		table.configs.forEach((config, i) => packConfig(config.values, data, i * WATER_CONFIG_FLOATS));
 		this.#configs = createBufferWithData(this.#device, {
 			label: 'water configs',
 			usage: GPUBufferUsage.STORAGE,
@@ -373,7 +336,7 @@ export class WaterRenderer {
 				continue;
 			}
 			const t = surface.transform;
-			const at = slot * SURFACE_FLOATS;
+			const at = slot * WATER_SURFACE_FLOATS;
 			for (let r = 0; r < 3; r++) {
 				data[at + r * 4] = t[r * 4];
 				data[at + r * 4 + 1] = t[r * 4 + 1];
@@ -392,7 +355,7 @@ export class WaterRenderer {
 		if (slot === 0) {
 			return;
 		}
-		this.#device.queue.writeBuffer(this.#surfaces, 0, data, 0, slot * SURFACE_FLOATS);
+		this.#device.queue.writeBuffer(this.#surfaces, 0, data, 0, slot * WATER_SURFACE_FLOATS);
 
 		const global = table.global;
 		const streamBinding = (id: number | null, kind: '2d' | '2d-array'): TextureBinding | null =>
@@ -527,27 +490,24 @@ export class WaterRenderer {
 		sectorFlow: GPUTextureView,
 		reflectionScene: GPUTextureView,
 	): GPUBindGroup {
-		return this.#device.createBindGroup({
-			label: 'water',
-			layout: this.#layout,
-			entries: [
-				{ binding: 0, resource: { buffer: this.#surfaces } },
-				{ binding: 1, resource: { buffer: configs } },
-				{ binding: 2, resource: context.background },
-				{ binding: 3, resource: context.scene.depth },
-				{ binding: 4, resource: this.#normals?.view ?? this.#noNormals },
-				{ binding: 5, resource: this.#flow?.view ?? this.#noFlow },
-				{ binding: 6, resource: this.#repeat },
-				{ binding: 7, resource: { buffer: this.#params } },
-				// the flow map's placeholder stands in; the shader skips caustics without the map
-				{ binding: 8, resource: this.#caustics?.view ?? this.#noFlow },
-				{ binding: 10, resource: foam },
-				{ binding: 11, resource: reflectionScene },
-				{ binding: 12, resource: this.#clamp },
-				{ binding: 14, resource: waterDepth },
-				{ binding: 15, resource: sectorFlow },
-			],
-		});
+		return this.#root.unwrap(
+			this.#root.createBindGroup(waterLayout, {
+				surfaces: this.#surfaces,
+				configs,
+				background: context.background,
+				depthTexture: context.scene.depth,
+				waveNormals: this.#normals?.view ?? this.#noNormals,
+				flowMap: this.#flow?.view ?? this.#noFlow,
+				repeatSampler: this.#repeat,
+				water: this.#params,
+				causticMap: this.#caustics?.view ?? this.#noFlow,
+				foamTexture: foam,
+				reflectionScene,
+				clampSampler: this.#clamp,
+				waterDepthTexture: waterDepth,
+				sectorFlow,
+			}),
+		);
 	}
 
 	/** @returns whether there's anything to draw this frame, with all pipelines compiled */

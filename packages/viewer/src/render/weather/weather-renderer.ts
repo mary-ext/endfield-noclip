@@ -1,21 +1,28 @@
 import type { RainConfig, SnowConfig, WeatherAssets } from '@endfield-noclip/package-format/environment';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
+import tgpu, { type TgpuRoot } from 'typegpu';
+
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { placeholder } from '../../gfx/placeholders.ts';
 import { LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
-import { FRAME_WGSL } from '../frame/frame-uniforms.ts';
 import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
-import { postCommonSource } from '../post/shader-source.ts';
-import { fogSource } from '../sky/fog-source.ts';
+import { postUniformLayout } from '../post/post-schema.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
 
-import farRainWgsl from './far-rain.wgsl?raw';
-import rainSplashWgsl from './rain-splash.wgsl?raw';
-import sceneEffectRainWgsl from './scene-effect-rain.wgsl?raw';
-import sceneEffectSnowWgsl from './scene-effect-snow.wgsl?raw';
-import screenRainDropWgsl from './screen-rain-drop.wgsl?raw';
+import { fsFarRain, vsFarRain } from './far-rain-shader.ts';
+import { fsSplash, vsSplash } from './rain-splash-shader.ts';
+import { fsRain, vsRain } from './scene-effect-rain-shader.ts';
+import { fsSnow, vsSnow } from './scene-effect-snow-shader.ts';
+import {
+	MAX_SCREEN_DROPS,
+	SCREEN_DROP_BYTES,
+	fsScreenDrop,
+	screenDropLayout,
+	vsScreenDrop,
+} from './screen-rain-drop-shader.ts';
 import type { VerticalOcclusionMap } from './vertical-occlusion.ts';
+import { WEATHER_SLOT_BYTES, weatherFogDepthLayout } from './weather-common.ts';
 import {
 	createFarRainMesh,
 	createRainSplashMesh,
@@ -28,15 +35,10 @@ const RAIN_LAYER_SCALES: readonly number[] = [1.0, 0.5, 0.4, 0.6];
 /** nested falling-snow layer scale multipliers (`HGSceneEffectSnowRenderer.s_sceneEffectLayerScale`) */
 const SNOW_LAYER_SCALES: readonly number[] = [1.0, 0.5, 0.4, 0.6, 0.3, 0.2];
 
-/** 16 vec4f = 256 bytes, matching `minUniformBufferOffsetAlignment` */
-const SLOT_BYTES = 256;
+const SLOT_BYTES = WEATHER_SLOT_BYTES;
 const SLOT_FLOATS = SLOT_BYTES / 4;
 /** max draws per frame: 4 rain + 3 far rain + 1 splash + 6 snow = 14 */
 const MAX_SLOTS = 16;
-/** max simultaneous screen-space lens raindrops (`HGScreenRainDropFXRenderer`) */
-const MAX_SCREEN_DROPS = 30;
-/** 6 header vec4f + 30 drop vec4f = 36 vec4f = 576 bytes */
-const SCREEN_DROP_BYTES = (6 + MAX_SCREEN_DROPS) * 16;
 const SCREEN_DROP_FLOATS = SCREEN_DROP_BYTES / 4;
 
 interface ScreenDropState {
@@ -140,17 +142,17 @@ interface PlannedDraw {
  * falling snow with vertical-occlusion collision over the composited HDR scene
  */
 export class WeatherRenderer {
+	readonly #root: TgpuRoot;
 	readonly #device: GPUDevice;
 	readonly #pipelines: PipelineCache;
 	readonly #verticalOcclusion: VerticalOcclusionMap;
 	readonly #fogInputs: { uniforms: GPUBuffer; froxels: GPUTextureView; sampler: GPUSampler };
-	readonly #postFogLayout: GPUBindGroupLayout;
+	readonly #postGroup: GPUBindGroup;
 	readonly #weatherLayout: GPUBindGroupLayout;
 	readonly #uniforms: GPUBuffer;
 	readonly #uniformData = new Float32Array(MAX_SLOTS * SLOT_FLOATS);
 	readonly #screenDropUniforms: GPUBuffer;
 	readonly #screenDropData = new Float32Array(SCREEN_DROP_FLOATS);
-	readonly #screenDropLayout: GPUBindGroupLayout;
 	readonly #screenDrops: ScreenDropState[] = Array.from({ length: MAX_SCREEN_DROPS }, () => ({
 		active: false,
 		x: 0,
@@ -168,7 +170,7 @@ export class WeatherRenderer {
 	readonly #splashMesh: WeatherMesh;
 	readonly #farRainMesh: WeatherMesh;
 
-	#postFogGroup: GPUBindGroup | null = null;
+	#fogDepthGroup: GPUBindGroup | null = null;
 	#sceneVersion = -1;
 	#rainTexView: GPUTextureView;
 	#waveTexView: GPUTextureView;
@@ -195,7 +197,7 @@ export class WeatherRenderer {
 	readonly #draws: PlannedDraw[] = [];
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param frameLayout group 0 (`frame`) layout
 	 * @param depthFormat the main pass's depth-stencil format
@@ -203,13 +205,15 @@ export class WeatherRenderer {
 	 * @param verticalOcclusion the top-down vertical occlusion depth map
 	 */
 	constructor(
-		device: GPUDevice,
+		root: TgpuRoot,
 		pipelines: PipelineCache,
 		frameLayout: GPUBindGroupLayout,
 		depthFormat: GPUTextureFormat,
 		fogInputs: { uniforms: GPUBuffer; froxels: GPUTextureView; sampler: GPUSampler },
 		verticalOcclusion: VerticalOcclusionMap,
 	) {
+		const device = root.device;
+		this.#root = root;
 		this.#device = device;
 		this.#pipelines = pipelines;
 		this.#fogInputs = fogInputs;
@@ -231,15 +235,7 @@ export class WeatherRenderer {
 
 		const vf = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
 		const frag = GPUShaderStage.FRAGMENT;
-		this.#postFogLayout = device.createBindGroupLayout({
-			label: 'weather post fog',
-			entries: [
-				{ binding: 0, visibility: vf, buffer: { type: 'uniform' } },
-				{ binding: 1, visibility: frag, texture: { sampleType: 'float', viewDimension: '3d' } },
-				{ binding: 2, visibility: frag, sampler: { type: 'filtering' } },
-				{ binding: 3, visibility: frag, texture: { sampleType: 'depth' } },
-			],
-		});
+		this.#postGroup = root.unwrap(root.createBindGroup(postUniformLayout, { post: fogInputs.uniforms }));
 		this.#weatherLayout = device.createBindGroupLayout({
 			label: 'weather params',
 			entries: [
@@ -251,21 +247,11 @@ export class WeatherRenderer {
 				{ binding: 5, visibility: frag, sampler: { type: 'filtering' } },
 			],
 		});
-		this.#screenDropLayout = device.createBindGroupLayout({
-			label: 'weather screen drops',
-			entries: [
-				{ binding: 0, visibility: vf, buffer: { type: 'uniform' } },
-				{ binding: 1, visibility: frag, texture: { sampleType: 'depth' } },
-				{ binding: 2, visibility: frag, sampler: { type: 'comparison' } },
-				{ binding: 3, visibility: frag, sampler: { type: 'non-filtering' } },
-				{ binding: 4, visibility: frag, texture: { sampleType: 'float' } },
-				{ binding: 5, visibility: frag, sampler: { type: 'filtering' } },
-			],
-		});
 
+		const fogDepthLayout = root.unwrap(weatherFogDepthLayout);
 		const pipelineLayout = device.createPipelineLayout({
 			label: 'weather',
-			bindGroupLayouts: [frameLayout, this.#postFogLayout, this.#weatherLayout],
+			bindGroupLayouts: [frameLayout, fogDepthLayout, this.#weatherLayout, root.unwrap(postUniformLayout)],
 		});
 		const blend: GPUBlendState = {
 			color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
@@ -276,8 +262,6 @@ export class WeatherRenderer {
 			depthWriteEnabled: false,
 			depthCompare: 'greater-equal',
 		};
-		const postSrc = postCommonSource(1, 0);
-		const fogSrc = fogSource({ group: 1, binding: 1 });
 
 		const sceneEffectBuffers: GPUVertexBufferLayout[] = [
 			{
@@ -328,48 +312,33 @@ export class WeatherRenderer {
 			});
 		};
 
-		preparePipeline(
-			RAIN_PIPELINE,
-			[FRAME_WGSL, postSrc, sceneEffectRainWgsl].join('\n'),
-			'vs_rain',
-			'fs_rain',
-			sceneEffectBuffers,
-		);
-		preparePipeline(
-			SNOW_PIPELINE,
-			[FRAME_WGSL, postSrc, sceneEffectSnowWgsl].join('\n'),
-			'vs_snow',
-			'fs_snow',
-			sceneEffectBuffers,
-		);
+		preparePipeline(RAIN_PIPELINE, tgpu.resolve([vsRain, fsRain]), 'vsRain', 'fsRain', sceneEffectBuffers);
+		preparePipeline(SNOW_PIPELINE, tgpu.resolve([vsSnow, fsSnow]), 'vsSnow', 'fsSnow', sceneEffectBuffers);
 		preparePipeline(
 			FAR_RAIN_PIPELINE,
-			[FRAME_WGSL, postSrc, fogSrc, farRainWgsl].join('\n'),
-			'vs_far_rain',
-			'fs_far_rain',
+			tgpu.resolve([vsFarRain, fsFarRain]),
+			'vsFarRain',
+			'fsFarRain',
 			farRainBuffers,
 		);
 		preparePipeline(
 			SPLASH_PIPELINE,
-			[FRAME_WGSL, postSrc, rainSplashWgsl].join('\n'),
-			'vs_splash',
-			'fs_splash',
+			tgpu.resolve([vsSplash, fsSplash]),
+			'vsSplash',
+			'fsSplash',
 			splashBuffers,
 		);
 		{
-			const screenDropLayout = device.createPipelineLayout({
+			const screenDropPipelineLayout = device.createPipelineLayout({
 				label: SCREEN_DROP_PIPELINE,
-				bindGroupLayouts: [frameLayout, this.#postFogLayout, this.#screenDropLayout],
+				bindGroupLayouts: [frameLayout, fogDepthLayout, root.unwrap(screenDropLayout)],
 			});
 			void pipelines.prepare(SCREEN_DROP_PIPELINE, () => {
-				const module = pipelines.module(
-					SCREEN_DROP_PIPELINE,
-					[FRAME_WGSL, postSrc, screenRainDropWgsl].join('\n'),
-				);
+				const module = pipelines.module(SCREEN_DROP_PIPELINE, tgpu.resolve([vsScreenDrop, fsScreenDrop]));
 				return {
-					layout: screenDropLayout,
-					vertex: { module, entryPoint: 'vs_screen_drop' },
-					fragment: { module, entryPoint: 'fs_screen_drop', targets: [{ format: HDR_FORMAT, blend }] },
+					layout: screenDropPipelineLayout,
+					vertex: { module, entryPoint: 'vsScreenDrop' },
+					fragment: { module, entryPoint: 'fsScreenDrop', targets: [{ format: HDR_FORMAT, blend }] },
 					primitive: { topology: 'triangle-list', cullMode: 'none' },
 					depthStencil: { format: depthFormat, depthWriteEnabled: false, depthCompare: 'always' },
 				};
@@ -405,18 +374,16 @@ export class WeatherRenderer {
 	}
 
 	#buildScreenDropGroup(textureView: GPUTextureView): GPUBindGroup {
-		return this.#device.createBindGroup({
-			label: 'weather screen drops',
-			layout: this.#screenDropLayout,
-			entries: [
-				{ binding: 0, resource: { buffer: this.#screenDropUniforms } },
-				{ binding: 1, resource: this.#verticalOcclusion.view },
-				{ binding: 2, resource: this.#verticalOcclusion.compareSampler },
-				{ binding: 3, resource: this.#verticalOcclusion.rawSampler },
-				{ binding: 4, resource: textureView },
-				{ binding: 5, resource: this.#repeatSampler },
-			],
-		});
+		return this.#root.unwrap(
+			this.#root.createBindGroup(screenDropLayout, {
+				dropData: this.#screenDropUniforms,
+				verticalOcclusion: this.#verticalOcclusion.view,
+				verticalOcclusionCompare: this.#verticalOcclusion.compareSampler,
+				verticalOcclusionRaw: this.#verticalOcclusion.rawSampler,
+				noiseTex: textureView,
+				noiseSampler: this.#repeatSampler,
+			}),
+		);
 	}
 
 	#buildWeatherGroup(label: string, textureView: GPUTextureView): GPUBindGroup {
@@ -744,22 +711,19 @@ export class WeatherRenderer {
 		}
 	}
 
-	#ensurePostFogGroup(scene: SceneTextures): GPUBindGroup {
-		if (this.#postFogGroup !== null && this.#sceneVersion === scene.version) {
-			return this.#postFogGroup;
+	#ensureFogDepthGroup(scene: SceneTextures): GPUBindGroup {
+		if (this.#fogDepthGroup !== null && this.#sceneVersion === scene.version) {
+			return this.#fogDepthGroup;
 		}
 		this.#sceneVersion = scene.version;
-		this.#postFogGroup = this.#device.createBindGroup({
-			label: 'weather post fog',
-			layout: this.#postFogLayout,
-			entries: [
-				{ binding: 0, resource: { buffer: this.#fogInputs.uniforms } },
-				{ binding: 1, resource: this.#fogInputs.froxels },
-				{ binding: 2, resource: this.#fogInputs.sampler },
-				{ binding: 3, resource: scene.depth },
-			],
-		});
-		return this.#postFogGroup;
+		this.#fogDepthGroup = this.#root.unwrap(
+			this.#root.createBindGroup(weatherFogDepthLayout, {
+				froxels: this.#fogInputs.froxels,
+				lutSampler: this.#fogInputs.sampler,
+				sceneDepth: scene.depth,
+			}),
+		);
+		return this.#fogDepthGroup;
 	}
 
 	#updateScreenDrops(
@@ -869,7 +833,8 @@ export class WeatherRenderer {
 		if (draws.length === 0 && this.#activeScreenDrops === 0) {
 			return 0;
 		}
-		pass.setBindGroup(1, this.#ensurePostFogGroup(scene));
+		pass.setBindGroup(1, this.#ensureFogDepthGroup(scene));
+		pass.setBindGroup(3, this.#postGroup);
 		let encoded = 0;
 		let lastKind: DrawKind | null = null;
 		for (const draw of draws) {

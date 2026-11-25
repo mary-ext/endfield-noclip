@@ -67,7 +67,7 @@ export const BASE2_SLOT = 4;
 /** the slots of `_ParallaxNoiseMap0` and `_ParallaxNoiseMap1` (`_USE_TWO_LAYER_FLOATING_MAP`), past slot 4 */
 export const FLOATING_SLOTS = [5, 6] as const;
 
-/** {@link WaterFoamRow.tint}'s w bits, matching `effect.wgsl` */
+/** {@link WaterFoamRow.tint}'s w bits, matching `effects/common.ts` */
 export const WaterFoamFlags = {
 	Disturb: 1 << 0,
 	Mask: 1 << 1,

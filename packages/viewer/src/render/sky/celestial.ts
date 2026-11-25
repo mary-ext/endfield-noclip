@@ -1,12 +1,14 @@
 /**
  * draws the sky beyond the atmosphere ({@link CelestialLook}) at the sky pixels in the celestial pass
- * (celestial.wgsl), for the composite to put over the atmosphere's sky. the uniforms are written each frame,
- * since the ray-traced planet is placed relative to the camera.
+ * (celestial-shader.ts), for the composite to put over the atmosphere's sky. the uniforms are written each
+ * frame, since the ray-traced planet is placed relative to the camera.
  *
  * @module
  */
 
 import type { Vec3 } from '@endfield-noclip/package-format/values';
+
+import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common, d } from 'typegpu';
 
 import {
 	CELESTIAL_TEXTURE_SLOTS,
@@ -15,40 +17,38 @@ import {
 	NO_CELESTIAL,
 } from '../../environment/celestial-look.ts';
 import { createUniformBuffer, rowWriter } from '../../gfx/buffers.ts';
-import {
-	type FullscreenPass,
-	type FullscreenPipeline,
-	autoBindGroup,
-	encodeFullscreen,
-	fullscreenPipeline,
-} from '../../gfx/fullscreen-pass.ts';
-import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { placeholder } from '../../gfx/placeholders.ts';
 import { LINEAR_REPEAT_MIPMAPPED, NEAREST_REPEAT, sampler } from '../../gfx/samplers.ts';
+import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import { HDR_FORMAT } from '../frame/render-targets.ts';
-import { postShaderModule } from '../post/shader-source.ts';
-import colorWgsl from '../shaders/common/color.wgsl?raw';
+import { postUniformLayout } from '../post/post-schema.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
 
-import celestialWgsl from './celestial.wgsl?raw';
+import {
+	CelestialSchema,
+	SkyPlanetSchema,
+	celestialLayerLayout,
+	celestialSceneLayout,
+	fsCelestial,
+} from './celestial-shader.ts';
 
-/** byte size of `Celestial` in celestial.wgsl */
-const UNIFORM_BYTES = (11 + 19 + 2 * 13 + 2) * 16;
-const STAR_OFFSET = 4 * 4;
-const RAY_OFFSET = 11 * 4;
-const SKY_OFFSET = (11 + 19) * 4;
-const SKY_STRIDE = 13 * 4;
-const SUN_OFFSET = (11 + 19 + 2 * 13) * 4;
+/** byte size and float offsets derived from {@link CelestialSchema} */
+const UNIFORM_BYTES = d.sizeOf(CelestialSchema);
+const STAR_OFFSET = d.memoryLayoutOf(CelestialSchema, (s) => s.stars).offset / 4;
+const RAY_OFFSET = d.memoryLayoutOf(CelestialSchema, (s) => s.ray).offset / 4;
+const SKY_OFFSET = d.memoryLayoutOf(CelestialSchema, (s) => s.sky).offset / 4;
+const SKY_STRIDE = d.sizeOf(SkyPlanetSchema) / 4;
+const SUN_OFFSET = d.memoryLayoutOf(CelestialSchema, (s) => s.sunDirection).offset / 4;
 
 /**
  * owns the celestial pass, which draws the layers at the sky pixels into the main pass's sky reflection
  * target for the composite: its uniforms, samplers and bound textures
  */
 export class CelestialLayer {
-	#device: GPUDevice;
-	#postUniforms: GPUBuffer;
-	#pipeline: FullscreenPipeline;
-	#postGroup: GPUBindGroup | null = null;
+	#root: TgpuRoot;
+	#pipeline: AsyncPipeline<TgpuRenderPipeline>;
+	#postGroup: TgpuBindGroup;
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(UNIFORM_BYTES / 4);
 	#words = new Uint32Array(this.#data.buffer);
@@ -59,42 +59,70 @@ export class CelestialLayer {
 	#views = new Map<CelestialTextureSlot, GPUTextureView>();
 	#look: CelestialLook = NO_CELESTIAL;
 	/** group 1, rebuilt when a texture changes */
-	#group: GPUBindGroup | null = null;
+	#layerGroup: TgpuBindGroup;
 	/** the cloud panorama bound in group 2 */
 	#cloud: TextureBinding;
 	#noCloud: TextureBinding;
 	/** the main pass's depth and the target, plus its fullscreen pass, once sized */
-	#sized: { depth: GPUTextureView; target: GPUTextureView; pass: FullscreenPass } | null = null;
+	#sized: {
+		depth: GPUTextureView;
+		target: GPUTextureView;
+		sceneGroup: TgpuBindGroup;
+		pass: TgpuFullscreenPass;
+	} | null = null;
 
 	/**
-	 * @param device the device
+	 * @param root the TypeGPU root
 	 * @param pipelines the pipeline cache
 	 * @param input the post chain's `Post` uniforms, and the bilinear clamping sampler the cloud panorama is
 	 *   read with until it streams in
 	 */
 	constructor(
-		device: GPUDevice,
+		root: TgpuRoot,
 		pipelines: PipelineCache,
 		input: { postUniforms: GPUBuffer; sampler: GPUSampler },
 	) {
-		this.#device = device;
-		this.#postUniforms = input.postUniforms;
-		this.#pipeline = fullscreenPipeline(pipelines, {
-			label: 'celestial',
-			module: postShaderModule(device, 'celestial', [colorWgsl, celestialWgsl]),
-			entryPoint: 'fs_celestial',
-			targets: [{ format: HDR_FORMAT }],
-		});
+		this.#root = root;
+		this.#postGroup = root.createBindGroup(postUniformLayout, { post: input.postUniforms });
+		this.#pipeline = pipelines.prepareTgpuRender('celestial', () =>
+			root.createRenderPipeline({
+				vertex: common.fullScreenTriangle,
+				fragment: fsCelestial,
+				targets: { format: HDR_FORMAT },
+			}),
+		);
 		this.#noCloud = {
-			view: placeholder(device, 'black', '2d'),
+			view: placeholder(root.device, 'black', '2d'),
 			sampler: input.sampler,
 			version: -1,
 		};
 		this.#cloud = this.#noCloud;
-		this.#uniforms = createUniformBuffer(device, 'celestial uniforms', UNIFORM_BYTES);
-		this.#sampler = sampler(device, LINEAR_REPEAT_MIPMAPPED);
-		this.#pointSampler = sampler(device, NEAREST_REPEAT);
-		this.#black = placeholder(device, 'black', '2d');
+		this.#uniforms = createUniformBuffer(root.device, 'celestial uniforms', UNIFORM_BYTES);
+		this.#sampler = sampler(root.device, LINEAR_REPEAT_MIPMAPPED);
+		this.#pointSampler = sampler(root.device, NEAREST_REPEAT);
+		this.#black = placeholder(root.device, 'black', '2d');
+		this.#layerGroup = this.#makeLayerGroup();
+	}
+
+	#makeLayerGroup(): TgpuBindGroup {
+		const view = (slot: CelestialTextureSlot): GPUTextureView => this.#views.get(slot) ?? this.#black;
+		return this.#root.createBindGroup(celestialLayerLayout, {
+			celestial: this.#uniforms,
+			sampler: this.#sampler,
+			pointSampler: this.#pointSampler,
+			nebula: view('nebula'),
+			rayBase: view('rayBase'),
+			rayRsm: view('rayRsm'),
+			rayClouds: view('rayClouds'),
+			rayLut: view('rayLut'),
+			sky0Main: view('sky0Main'),
+			sky0Emissive: view('sky0Emissive'),
+			sky0Ring: view('sky0Ring'),
+			sky1Main: view('sky1Main'),
+			sky1Emissive: view('sky1Emissive'),
+			sky1Ring: view('sky1Ring'),
+			starDensity: view('starDensity'),
+		});
 	}
 
 	/** @param look what to draw */
@@ -117,29 +145,12 @@ export class CelestialLayer {
 			}
 		}
 		if (changed) {
-			this.#group = null;
+			this.#layerGroup = this.#makeLayerGroup();
 			if (this.#sized !== null) {
-				this.#sized.pass.groups = undefined;
+				this.#sized.pass.groups = [this.#postGroup, this.#layerGroup, this.#sized.sceneGroup];
+				this.#sized.pass.bound = undefined;
 			}
 		}
-	}
-
-	/** @returns group 1, rebuilt after a texture changed */
-	#layerGroup(compiled: GPURenderPipeline): GPUBindGroup {
-		this.#group ??= this.#device.createBindGroup({
-			label: 'celestial',
-			layout: compiled.getBindGroupLayout(1),
-			entries: [
-				{ binding: 0, resource: { buffer: this.#uniforms } },
-				{ binding: 1, resource: this.#sampler },
-				{ binding: 2, resource: this.#pointSampler },
-				...CELESTIAL_TEXTURE_SLOTS.map((slot, i) => ({
-					binding: 3 + i,
-					resource: this.#views.get(slot) ?? this.#black,
-				})),
-			],
-		});
-		return this.#group;
 	}
 
 	/** @returns whether the cloud panorama is bound */
@@ -171,25 +182,20 @@ export class CelestialLayer {
 	 */
 	resize(input: { depth: GPUTextureView; target: GPUTextureView }): void {
 		const { depth, target } = input;
-		let cloudGroup: GPUBindGroup | null = null;
+		const sceneGroup = this.#root.createBindGroup(celestialSceneLayout, {
+			depth,
+			cloud: this.#cloud.view,
+			cloudSampler: this.#cloud.sampler,
+		});
 		this.#sized = {
 			depth,
 			target,
+			sceneGroup,
 			pass: {
 				label: 'celestial',
 				pipeline: this.#pipeline,
-				bind: (compiled) => [
-					(this.#postGroup ??= autoBindGroup(this.#device, compiled, 0, {
-						0: { buffer: this.#postUniforms },
-					})),
-					this.#layerGroup(compiled),
-					(cloudGroup ??= autoBindGroup(this.#device, compiled, 2, {
-						0: depth,
-						1: this.#cloud.view,
-						2: this.#cloud.sampler,
-					})),
-				],
-				targets: [target],
+				groups: [this.#postGroup, this.#layerGroup, sceneGroup],
+				target,
 			},
 		};
 	}
@@ -207,7 +213,7 @@ export class CelestialLayer {
 			throw new Error('celestial layer used before resize()');
 		}
 		this.#write(input.eye, input.sun, input.sunIlluminance);
-		encodeFullscreen(encoder, sized.pass);
+		encodeTgpuFullscreen(encoder, sized.pass);
 	}
 
 	/**
@@ -254,7 +260,7 @@ export class CelestialLayer {
 			const r = RAY_OFFSET;
 			// in f64 here: the planet is hundreds of kilometres away
 			const origin = [eye[0] - ray.center[0], eye[1] - ray.center[1], eye[2] - ray.center[2]];
-			// `_LightDataBuffer._DirectionalLightColor` folds `1 / π` in (`directIntensityDividePi`)
+			// `_LightDataBuffer._DirectionalLightColor` folds `1 / pi` in (`directIntensityDividePi`)
 			const lightColor = ray.lightColor ?? sunIlluminance;
 			const lightScale = ray.lightColor === null ? ray.lightScale / Math.PI : ray.lightScale;
 			f.set([...origin, ray.radius], r);
@@ -310,7 +316,7 @@ export class CelestialLayer {
 				);
 			}
 		}
-		this.#device.queue.writeBuffer(this.#uniforms, 0, f);
+		this.#root.device.queue.writeBuffer(this.#uniforms, 0, f);
 	}
 
 	/** releases the GPU objects */

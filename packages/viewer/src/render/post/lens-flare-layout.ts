@@ -58,7 +58,7 @@ export class UnityRandom {
 
 // #region layout
 
-/** one quad of the flare, as `lens-flare.wgsl` takes it (SRP core's `_FlareData0..3` and colour) */
+/** one quad of the flare, as `lens-flare.ts` takes it (SRP core's `_FlareData0..3` and colour) */
 export interface FlareQuad {
 	/** texture-table id of the image, or `null` for a circle */
 	texture: number | null;

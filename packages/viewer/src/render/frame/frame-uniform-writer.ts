@@ -1,5 +1,5 @@
 /**
- * the TS side of `frame.wgsl`'s `Frame` struct: its layout, and the writer that packs a frame into it.
+ * the TS side of `frame-core.ts`'s `Frame` struct: its layout, and the writer that packs a frame into it.
  *
  * @module
  */
@@ -15,63 +15,7 @@ import type { ShadowMap } from '../shadows/shadow-map.ts';
 
 import { DEBUG_VIEWS, type DebugView } from './debug-views.ts';
 import type { FrameBindings } from './frame-bindings.ts';
-
-/** byte size of `Frame` */
-export const FRAME_UNIFORM_BYTES = 1104;
-
-/** float offsets of `Frame` fields */
-export const FrameOffsets = {
-	// camera
-	viewProj: 0,
-	eye: 16,
-	viewForward: 20,
-	viewRight: 24,
-	viewUp: 28,
-	viewport: 32,
-	renderSize: 36,
-	// lighting
-	sun: 40,
-	sunColor: 44,
-	/** 7 vec4s */
-	sh: 48,
-	ambient: 76,
-	/** three vec4s: irradiance clipmap centres, w = filled */
-	irradiance: 80,
-	/** light count, tiles across and down, near plane */
-	localLights: 92,
-	// terrain and debug
-	terrain: 96,
-	/** u32 */
-	flags: 100,
-	params: 104,
-	// shadows
-	/** four mat4s */
-	shadowMatrices: 108,
-	shadowFade: 172,
-	shadowPenumbra: 176,
-	/** four vec4s */
-	shadowSpheres: 180,
-	shadowLook: 196,
-	// weather
-	/** four vec4s, see `Frame.cloud_shadow` */
-	cloudShadow: 200,
-	/** three vec4s, see `Frame.wetness` */
-	wetness: 216,
-	/** see `Frame.wind` */
-	wind: 228,
-	/** three vec4s: `_IVDefaultSHAr/g/b` × `indirectDiffuseFactor` */
-	ivDefaultSh: 232,
-	/** luminance L1 SH for sky reflection normalisation (`_ReflectionProbeGlobalParam3`) */
-	reflectionProbeSh: 244,
-	/** local reflection probes: active count, max mip level, unused, unused */
-	reflectionProbes: 248,
-	/** last frame's unjittered view-projection (16 floats) */
-	prevViewProj: 252,
-	/** this frame's eye minus last frame's (m), w = 1 when no previous frame */
-	prevEyeDelta: 268,
-	/** last frame's animation time (s), last frame's wind clock, unused, unused */
-	prevTime: 272,
-} as const;
+import { FrameOffsets } from './frame-schema.ts';
 
 /** what {@link writeFrameUniforms} packs */
 export interface FrameUniformInputs {
