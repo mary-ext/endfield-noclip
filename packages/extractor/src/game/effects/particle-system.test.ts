@@ -522,7 +522,9 @@ test('trails the viewer cannot draw stand in without particles, and are left off
 	assert.equal(reason(purificationTrail({ textureMode: 1 })), 'trail texture mode 1');
 	assert.equal(reason(purificationTrail({ dieWithParticles: false })), 'trails outliving their particles');
 	assert.equal(reason(purificationTrail({ lifetime: curve([[0, 1]]) })), 'trail lifetime curve');
-	assert.equal(reason(purificationTrail(), { ringBufferMode: 1 }), 'trails with a ring buffer');
+	// a paused ring buffer keeps moving monotonically, so trails follow it; a looping one replays its path
+	assert.equal(reason(purificationTrail(), { ringBufferMode: 1 }), null);
+	assert.equal(reason(purificationTrail(), { ringBufferMode: 2 }), 'trails with a looping ring buffer');
 	const limit = {
 		enabled: true,
 		dampen: 0.015,

@@ -519,6 +519,11 @@ describe('ring buffers', () => {
 		const young = points(trailed(), 0.2);
 		near(young[TRAIL_POINTS - 1].z, 0);
 		near(young[TRAIL_POINTS - 1].width, 0.05);
+		// a paused ring buffer keeps moving past its lifetime, and its trail follows its actual motion
+		const paused = points({ ...trailed(), ringBuffer: { loop: false, loopRange: [0, 1] } }, 5);
+		assert.equal(paused.length, TRAIL_POINTS);
+		near(paused[0].z, 5);
+		near(paused[TRAIL_POINTS - 1].z, 4.5);
 		// and a particle the ratio leaves out has none
 		const none = trailed();
 		assert.equal(

@@ -1746,7 +1746,8 @@ export class ParticleSimulation {
 		const id = w[at];
 		const life = w[at + 2];
 		const age = w[at + 3];
-		if (life <= 0 || age <= 0 || random(seed, id, Channel.TrailRatio) >= trail.ratio) {
+		const moved = w[at + 4];
+		if (life <= 0 || moved <= 0 || random(seed, id, Channel.TrailRatio) >= trail.ratio) {
 			return 0;
 		}
 		const base = index * PARTICLE_FLOATS;
@@ -1755,7 +1756,7 @@ export class ParticleSimulation {
 		if (trail.sizeAffectsLifetime) {
 			lifetime *= size;
 		}
-		const span = Math.min(age, lifetime);
+		const span = Math.min(moved, lifetime);
 		if (!(span > 0)) {
 			return 0;
 		}
@@ -1788,8 +1789,9 @@ export class ParticleSimulation {
 			let fromAt = base;
 			if (k > 0) {
 				// where the particle was then; only paths read at any age have trails (the packer checks)
-				placing.age = age - along * span;
-				placing.moved = w[at + 4] - along * span;
+				const earlierMoved = moved - along * span;
+				placing.moved = earlierMoved;
+				placing.age = Math.min(earlierMoved, life);
 				this.#place(placing, birth, earlier, 0);
 				from = earlier;
 				fromAt = 0;

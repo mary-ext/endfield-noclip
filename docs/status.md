@@ -345,7 +345,7 @@ only `map01` and `map02` are tested. other scenes listed by `scene list` are unv
   - **trails** ([game-data](game-data/particles.md#trails)): follow Unity docs (unverified, e.g.
     purification swirls `dung01_wrdg001` ~2, 355, 208); fixed 9 points/trail (ignoring
     `minVertexDistance`); `worldSpace` unread (moving emitter drags trails). omitted: ribbon mode,
-    other texture modes, trails outliving particles, and trails on ring-buffered/force-field/
+    other texture modes, trails outliving particles, and trails on looping-ring-buffer/force-field/
     speed-limited systems.
   - **stand-ins**: non-play-on-awake; renderless systems without supported trails (map02 water
     ribbons) or driving active particle lights / non-Birth/Death sub-emitters (empty renderless

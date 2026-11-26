@@ -108,9 +108,9 @@ system, index):
 
 trail entries share the renderer's particle salt and evaluate every particle regardless of mesh.
 
-- for each particle passing the trail ratio, 9 evenly spaced ages are sampled back over
-  `min(trailLifetime, age)`, reading width and trail colour along the span (0 at head) and lifetime
-  colour at current age.
+- for each particle passing the trail ratio, 9 evenly spaced points are sampled back over
+  `min(trailLifetime, moved)` (tracing actual elapsed motion on paused ring buffers), reading width
+  and trail colour along the span (0 at head) and lifetime colour at current age.
 - emits 8 quad rows per particle (stretched point-to-point along X, mean width across segment and
   sightline, −Z facing camera, mean colour, tile `j` of an 8×1 sheet).
 - divergence: the game samples every `minVertexDistance`, giving smoother bends and continuous

@@ -709,8 +709,8 @@ const readTrail = (
 	if (stepped) {
 		return 'trails with forces or a speed limit';
 	}
-	if (ringBuffer !== null) {
-		return 'trails with a ring buffer';
+	if (ringBuffer !== null && ringBuffer.loop) {
+		return 'trails with a looping ring buffer';
 	}
 	const lifetime = readMinMaxCurve(objectField(module, 'lifetime'));
 	if (!isConstantCurve(lifetime)) {

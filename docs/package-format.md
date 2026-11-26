@@ -566,8 +566,8 @@ each `ParticleSystem` playing on awake packs in one of three ways:
    - **trails**: supported trails emit an extra unit-quad emitter using the second material with
      `trail` populated (ratio, lifetime multiplier, width, colour gradients, size/colour flags).
      unsupported trails (ribbon mode, other texture modes, outliving particles, or on
-     ring-buffered/force-field/speed-limited systems) are omitted (or stand in if no particle render
-     mode exists).
+     looping-ring-buffer/force-field/speed-limited systems) are omitted (or stand in if no particle
+     render mode exists).
 3. **[stand-in](#stand-ins)**: any other system (including non-play-on-awake, curve start delay,
    unsupported shape/mesh/force-field, no render mode + no supported trails). draws `m_Mesh` or
    `BillboardFacing` unit quad at emitter transform, sized by scaling mode.
