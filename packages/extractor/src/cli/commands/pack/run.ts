@@ -14,6 +14,7 @@ import { ignoreMissing } from '../../../errors.ts';
 import { packScene } from '../../../pack/packer.ts';
 import { PackedPackage } from '../../../pack/read-package.ts';
 import type { PackReport } from '../../../pack/report.ts';
+import { PackSession } from '../../../pack/session.ts';
 
 import type { PackArgs } from './parser.ts';
 
@@ -92,27 +93,39 @@ export const runPack = async (args: PackArgs): Promise<void> => {
 
 	await withContext(args.config, async (context) => {
 		const reports: PackReport[] = [];
-		for (const target of targets) {
-			console.error(
-				`packing ${target.scene}${target.level === null ? '' : ` (${target.level})`} into ${target.outDir}`,
-			);
-			// oxlint-disable-next-line no-await-in-loop -- packs sequentially to avoid memory and cache contention
-			const report = await packScene(context, {
-				scene: target.scene,
-				outDir: target.outDir,
-				level: target.level,
-				bounds: target.bounds,
-				zstdLevel: args.zstdLevel,
-				textureZstdLevel: args.textureZstdLevel,
-				maxTextureSize: args.maxTextureSize ?? target.maxTextureSize ?? null,
-				jobs: args.jobs,
-				cacheDir,
-				convertAssets: !args.noAssets,
-				log: (line) => console.error(line),
-			});
-			reports.push(report);
-			if (!args.json) {
-				console.log(formatReport(report));
+		const session =
+			targets.length > 1 ? await PackSession.open(context, { cacheDir, jobs: args.jobs }) : undefined;
+		try {
+			for (const target of targets) {
+				console.error(
+					`packing ${target.scene}${target.level === null ? '' : ` (${target.level})`} into ${target.outDir}`,
+				);
+				// oxlint-disable-next-line no-await-in-loop -- packs sequentially to avoid memory and cache contention
+				const report = await packScene(context, {
+					scene: target.scene,
+					outDir: target.outDir,
+					level: target.level,
+					bounds: target.bounds,
+					zstdLevel: args.zstdLevel,
+					textureZstdLevel: args.textureZstdLevel,
+					maxTextureSize: args.maxTextureSize ?? target.maxTextureSize ?? null,
+					jobs: args.jobs,
+					cacheDir,
+					session,
+					convertAssets: !args.noAssets,
+					log: (line) => console.error(line),
+				});
+				reports.push(report);
+				if (!args.json) {
+					console.log(formatReport(report));
+				}
+			}
+		} finally {
+			const swept = await session?.close();
+			if (swept != null && !args.json) {
+				console.error(
+					`cache sweep: swept ${swept.blobs} blobs and ${swept.memos} memos (${mb(swept.bytes)})`,
+				);
 			}
 		}
 		if (args.json) {

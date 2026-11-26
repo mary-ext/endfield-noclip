@@ -38,6 +38,7 @@ import { checkOutDir, siblingDir, swapIn } from './output-dir.ts';
 import { PhaseTimer } from './phase-timer.ts';
 import { blobTotals, type PackReport, ready, treeTotals } from './report.ts';
 import { indexScene, type SceneSelection } from './scene-index.ts';
+import type { PackSession } from './session.ts';
 import { addSceneStateControls, buildSceneStates, progressionControls } from './states.ts';
 import { BlobDir } from './store/blob-file.ts';
 import { BlobStore } from './store/blob-store.ts';
@@ -71,6 +72,8 @@ export interface PackOptions extends SceneSelection {
 	jobs: number;
 	/** the pack cache directory (see `pack-cache.ts`), or `null` to convert everything afresh */
 	cacheDir: string | null;
+	/** optional multi-scene session sharing cache, workers, and install tables across scenes */
+	session?: PackSession;
 	/** progress output */
 	log: (line: string) => void;
 }
@@ -105,7 +108,14 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 	const stage = siblingDir(options.outDir, 'staging');
 	await rm(stage, { recursive: true, force: true });
 	await mkdir(stage, { recursive: true });
-	const cache = options.cacheDir === null ? null : await PackCache.open(options.cacheDir);
+	const session = options.session ?? null;
+	const cache =
+		session !== null
+			? session.cache
+			: options.cacheDir === null
+				? null
+				: await PackCache.open(options.cacheDir);
+	cache?.beginScene();
 	// scratch space for the debug log, and for blobs when there's no cache to hold them
 	const spool = join(stage, '.spool');
 	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), {
@@ -126,8 +136,10 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 		// #endregion
 
 		const entities = await collectEntities(context, content, progressions, cache);
-		// only the entities phase decodes MemoryPack data
-		context.releaseMemoryPack();
+		// only the entities phase decodes MemoryPack data; keep it warm across multi-scene sessions
+		if (session === null) {
+			context.releaseMemoryPack();
+		}
 		timer.end('entities');
 
 		// #region terrain
@@ -252,7 +264,9 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 		}
 		addSceneStateControls(controls, scene);
 		// every hash has its path by now; the tables are the largest thing the later phases would carry
-		context.world.releasePathTables();
+		if (session === null) {
+			context.world.releasePathTables();
+		}
 		// #endregion
 
 		// #region irradiance
@@ -316,13 +330,16 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 				content.geometries.assets.length,
 				content.materials.assets.length,
 			);
-			const pool = new ConvertPool(options.jobs, {
-				gameData: context.config.gameData,
-				keys: context.keys,
-				blobDir: store.dir.root,
-				cacheDb: cache?.dbPath ?? null,
-				manifest: (await context.world.manifest()).bytes,
-			});
+			const sharedPool = session === null ? null : await session.sharedPool();
+			const pool =
+				sharedPool ??
+				new ConvertPool(options.jobs, {
+					gameData: context.config.gameData,
+					keys: context.keys,
+					blobDir: store.dir.root,
+					cacheDb: cache?.dbPath ?? null,
+					manifest: (await context.world.manifest()).bytes,
+				});
 			try {
 				conversion = await convertAssets({
 					resolver: await context.resolver(),
@@ -343,7 +360,9 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 					log: options.log,
 				});
 			} finally {
-				await pool.close();
+				if (sharedPool === null) {
+					await pool.close();
+				}
 			}
 			assetTables = conversion;
 			timer.adopt(conversion.stats.timings);
@@ -489,14 +508,21 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 		await rm(spool, { recursive: true, force: true });
 		await swapIn(stage, options.outDir);
 		// after the swap: the cache keeps blobs only for roots whose package exists.
-		// --no-assets leaves the existing root untouched so it doesn't sweep cached asset blobs
-		const cacheReport =
-			cache === null
-				? null
-				: options.convertAssets
-					? await cache.finish(options.outDir, store.hashes())
-					: cache.report();
-		if (cacheReport !== null) {
+		// --no-assets leaves the existing root untouched so it doesn't sweep cached asset blobs.
+		// in a multi-scene session, roots are recorded here and swept once when the session closes.
+		let cacheReport: ReturnType<PackCache['report']> | null = null;
+		if (cache !== null) {
+			if (!options.convertAssets) {
+				cacheReport = cache.report();
+			} else if (session !== null) {
+				cache.recordRoot(options.outDir, store.hashes());
+				session.markRootRecorded();
+				cacheReport = cache.report();
+			} else {
+				cacheReport = await cache.finish(options.outDir, store.hashes());
+			}
+		}
+		if (cacheReport !== null && session === null) {
 			timer.end('cache sweep');
 		}
 
@@ -576,6 +602,8 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 	} finally {
 		// gone after a successful swap; a failed pack leaves the previous package untouched
 		await rm(stage, { recursive: true, force: true });
-		await cache?.close();
+		if (session === null) {
+			await cache?.close();
+		}
 	}
 };
