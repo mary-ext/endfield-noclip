@@ -21,7 +21,7 @@ import {
 import type { SkinAnimation } from '@endfield-noclip/package-format/geometry';
 import type { ParticleSystemInfo } from '@endfield-noclip/package-format/particles';
 
-import type { SyntheticMesh } from '../../pack/convert/synthetic-mesh.ts';
+import type { SyntheticMesh } from '../../ir/synthetic-mesh.ts';
 import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
 import { particleReach } from '../effects/particle-system.ts';
 import type { DistanceRange } from '../effects/view-state-effects.ts';

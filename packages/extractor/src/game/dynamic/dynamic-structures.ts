@@ -31,7 +31,7 @@ import { mapDefined, partition as partitionArray, range } from '@mary-ext/array-
 
 import type { Context } from '../../context.ts';
 import { type Vfs, VfsGroup } from '../../hg/vfs.ts';
-import type { PackCache } from '../../pack/store/pack-cache.ts';
+import type { MemoCache } from '../../ir/cache.ts';
 import { mapPool } from '../../pool.ts';
 import {
 	readViewStates,
@@ -170,7 +170,7 @@ export const loadDynamicStructures = async (
 	scene: string,
 	partition: LevelPartition | undefined,
 	game: GameState,
-	options?: { includeEcs?: boolean; cache?: PackCache | null },
+	options?: { includeEcs?: boolean; cache?: MemoCache | null },
 ): Promise<DynamicStructures> => {
 	const cache = options?.cache ?? null;
 	const files = new DynamicFiles(context.vfs, scene);
@@ -340,7 +340,7 @@ const drivenViewStates = async (
 	context: Pick<Context, 'vfs' | 'memoryPack'>,
 	owners: readonly DynamicSceneEntity[],
 	blights: ReadonlyMap<DynamicSceneEntity, unknown>,
-	cache: PackCache | null,
+	cache: MemoCache | null,
 ): Promise<Map<DynamicSceneEntity, DrivenViewStates>> => {
 	const candidates: { entity: DynamicSceneEntity; model: string; variable: DynamicVariable }[] = [];
 	const uniqueModels = new Set<string>();
@@ -517,7 +517,7 @@ class DynamicFiles {
 	async readEcsGroups(
 		groups: EcsGroups,
 		counts: Record<string, number>,
-		cache: PackCache | null = null,
+		cache: MemoCache | null = null,
 	): Promise<{
 		entities: Map<number, DynamicEntity>;
 		lights: Map<number, { light: ChunkLight; visibility: Visibility }>;

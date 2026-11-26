@@ -27,15 +27,14 @@ import { conditionVisible } from '@endfield-noclip/package-format/conditions';
 import { unique } from '@mary-ext/array-fns';
 
 import { formatErrorOnly } from '../../errors.ts';
-import type { BundleSource } from '../../pack/convert/convert-pool.ts';
 import {
 	bundleSources,
 	relocateSaved,
 	type SavedLocator,
 	saveLocated,
 	sourcesCurrent,
-} from '../../pack/store/bundle-memo.ts';
-import type { PackCache } from '../../pack/store/pack-cache.ts';
+} from '../../ir/bundle-memo.ts';
+import type { BundleSource, MemoCache } from '../../ir/cache.ts';
 import { mapPool } from '../../pool.ts';
 import {
 	type AssetResolver,
@@ -220,7 +219,7 @@ export const loadPlacedVolumes = async (
 	roots: PrefabRoots,
 	placements: readonly PlacedPrefab[],
 	defaults: Readonly<Record<string, number>>,
-	cache: PackCache | null = null,
+	cache: MemoCache | null = null,
 ): Promise<{ volumes: SceneEnvironmentVolume[]; unsupported: { path: string; reason: string }[] }> => {
 	const { resolver } = roots;
 	const fp = cache === null ? null : await cache.fingerprint(PREFAB_ENV_ENTRY);

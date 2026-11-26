@@ -6,7 +6,10 @@ import { Queue } from '@mary-ext/ds-queue';
 
 import type { Keys } from '../../config.ts';
 import type { AssetRef, ObjectLocator } from '../../game/assets/assets.ts';
+import type { BundleSource } from '../../ir/cache.ts';
 import type { BlobMeta } from '../store/blob-file.ts';
+
+export type { BundleSource };
 
 import type { OffsetReach, SwayReach } from './geometry.ts';
 import type { ConvertedTexture } from './textures.ts';
@@ -70,13 +73,6 @@ export type ConvertOutput =
 			/** coarse to fine */
 			pieces: { firstLevel: number; levelCount: number; blob: BlobMeta }[];
 	  };
-
-/** a bundle a conversion read, as the VFS catalog had it then */
-export interface BundleSource {
-	/** manifest bundle name, `main/<hex>.ab` */
-	bundle: string;
-	md5: string;
-}
 
 /** a failed conversion and what it read before failing: holds while those bundles (or the manifest) do */
 export interface FailedConvertResult {

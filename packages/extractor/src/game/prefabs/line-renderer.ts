@@ -9,7 +9,7 @@ import {
 } from '@endfield-noclip/formats/unity/values';
 
 import { compareNumbers } from '../../compare.ts';
-import type { LineRibbonSample, SyntheticMesh } from '../../pack/convert/synthetic-mesh.ts';
+import type { LineRibbonSample, SyntheticMesh } from '../../ir/synthetic-mesh.ts';
 
 // Unity's `LineRenderer` (class 120): polylines baked into synthetic ribbon meshes along `+x`, with
 // `ChainFlags.BillboardAxial` turning view-aligned ribbons about their segment axis to face the camera.

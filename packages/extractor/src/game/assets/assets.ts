@@ -22,7 +22,7 @@ import {
 	openBundle,
 } from '../../hg/bundles.ts';
 import type { Vfs } from '../../hg/vfs.ts';
-import type { SyntheticMesh } from '../../pack/convert/synthetic-mesh.ts';
+import type { SyntheticMesh } from '../../ir/synthetic-mesh.ts';
 import type { RendererMotion } from '../prefabs/prefab.ts';
 
 // resolves external CAB and .resS files within the referencing bundle's dependency closure, caching each
