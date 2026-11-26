@@ -14,8 +14,17 @@ import { hsvToRgb, gradientNoise } from '../core/shader-math.ts';
 export const tonemapLayout = tgpu.bindGroupLayout({
 	scene: { texture: d.texture2d(d.f32) },
 	bloom: { texture: d.texture2d(d.f32) },
+	lut: { texture: d.texture3d(d.f32) },
 	bilinear: { sampler: 'filtering' },
 });
+
+/** group 1 bind group layout for baking the 32^3 LogC grading + tonemapping 3D LUT */
+export const tonemapLutLayout = tgpu.bindGroupLayout({
+	lut: { storageTexture: d.textureStorage3d('rgba16float', 'write-only') },
+});
+
+/** edge of the 3D grading + tonemap LUT */
+export const TONEMAP_LUT_SIZE = 32;
 
 const LIN_TO_LMS = tgpu.const(
 	d.mat3x3f,
@@ -65,6 +74,33 @@ const AP1_TO_SRGB = tgpu.const(
 const AP1_LUMINANCE = tgpu.const(d.vec3f, d.vec3f(0.272229, 0.674082, 0.0536895));
 /** the LUT's LogC encoding saturates here (linear) */
 const LUT_MAX = 58.85;
+/** ARRI LogC3 parameters (matching Unity URP's `LinearToLogC` / `LogCToLinear`, saturating at {@link LUT_MAX}) */
+const LOGC_A = 5.555556;
+const LOGC_B = 0.047996;
+const LOGC_C_LOG2 = 0.244161 * 0.3010299956639812;
+const LOGC_D = 0.386036;
+
+const linearToLogC = tgpu.fn(
+	[d.vec3f],
+	d.vec3f,
+)((x) => {
+	'use gpu';
+	return std.add(
+		std.mul(std.log2(std.add(std.mul(x, LOGC_A), d.vec3f(LOGC_B))), LOGC_C_LOG2),
+		d.vec3f(LOGC_D),
+	);
+});
+
+const logCToLinear = tgpu.fn(
+	[d.vec3f],
+	d.vec3f,
+)((x) => {
+	'use gpu';
+	return std.max(
+		std.div(std.sub(std.exp2(std.div(std.sub(x, d.vec3f(LOGC_D)), LOGC_C_LOG2)), d.vec3f(LOGC_B)), LOGC_A),
+		d.vec3f(0),
+	);
+});
 
 /** Adobe's soft light, as URP's split toning blends */
 const softLight = tgpu.fn(
@@ -204,6 +240,37 @@ const casCompress = tgpu.fn(
 	return std.div(c, 1 + std.max(c.r, std.max(c.g, c.b)));
 });
 
+/** compute entrypoint baking URP/ACEScg color grading, tonemapping, and sRGB encoding into a 32^3 LogC 3D LUT */
+export const csBakeTonemapLut = tgpu.computeFn({
+	workgroupSize: [4, 4, 4],
+	in: { id: d.builtin.globalInvocationId },
+})((input) => {
+	'use gpu';
+	const id = input.id;
+	if (id.x >= TONEMAP_LUT_SIZE || id.y >= TONEMAP_LUT_SIZE || id.z >= TONEMAP_LUT_SIZE) {
+		return;
+	}
+	const uvw = std.div(d.vec3f(id), TONEMAP_LUT_SIZE - 1);
+	const linear = logCToLinear(uvw);
+	let color = d.vec3f(0);
+	switch (d.u32(postUniformLayout.$.post.grade.w)) {
+		case 0: {
+			color = acesModified(grade(linear));
+			break;
+		}
+		case 1: {
+			const graded = grade(linear);
+			color = pbrNeutral(std.max(std.mul(graded, AP1_TO_SRGB.$), d.vec3f(0)));
+			break;
+		}
+		default: {
+			color = std.clamp(linear, d.vec3f(0), d.vec3f(1));
+			break;
+		}
+	}
+	std.textureStore(tonemapLutLayout.$.lut, id, d.vec4f(srgbEncode(color), 1));
+});
+
 /** fragment entrypoint for the final tonemapping pass */
 export const fsTonemap = tgpu.fragmentFn({
 	in: {
@@ -283,24 +350,15 @@ export const fsTonemap = tgpu.fragmentFn({
 		const factor = std.pow(std.clamp(1 - std.dot(dist, dist), 0, 1), post.grade.z * 5);
 		color = std.mul(color, std.mix(post.vignetteColor.rgb, d.vec3f(1), factor));
 	}
-	switch (d.u32(post.grade.w)) {
-		case 0: {
-			color = acesModified(
-				grade(std.clamp(std.mul(color, post.colorBalance.w), d.vec3f(0), d.vec3f(LUT_MAX))),
-			);
-			break;
-		}
-		case 1: {
-			const graded = grade(std.clamp(std.mul(color, post.colorBalance.w), d.vec3f(0), d.vec3f(LUT_MAX)));
-			color = pbrNeutral(std.max(std.mul(graded, AP1_TO_SRGB.$), d.vec3f(0)));
-			break;
-		}
-		default: {
-			color = std.clamp(color, d.vec3f(0), d.vec3f(1));
-			break;
-		}
-	}
 	// +-half a step of dither against banding in the sky
 	const noise = (gradientNoise(std.add(input.position.xy, d.vec2f(post.eye.w * 5.588238))) - 0.5) / 255;
-	return d.vec4f(std.add(srgbEncode(color), d.vec3f(noise)), 1);
+	if (d.u32(post.grade.w) <= d.u32(1)) {
+		const clamped = std.clamp(std.mul(color, post.colorBalance.w), d.vec3f(0), d.vec3f(LUT_MAX));
+		const lutScale = (TONEMAP_LUT_SIZE - 1) / TONEMAP_LUT_SIZE;
+		const lutOffset = 0.5 / TONEMAP_LUT_SIZE;
+		const uvw = std.add(std.mul(linearToLogC(clamped), lutScale), d.vec3f(lutOffset));
+		const encoded = std.textureSampleLevel(tonemapLayout.$.lut, tonemapLayout.$.bilinear, uvw, 0).rgb;
+		return d.vec4f(std.add(encoded, d.vec3f(noise)), 1);
+	}
+	return d.vec4f(std.add(srgbEncode(std.clamp(color, d.vec3f(0), d.vec3f(1))), d.vec3f(noise)), 1);
 });

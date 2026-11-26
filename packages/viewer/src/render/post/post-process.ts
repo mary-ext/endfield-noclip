@@ -89,6 +89,7 @@ export class PostProcess {
 	setEnvironment(environment: Environment, lensFlare: LensFlareLook | null): void {
 		this.#environment = environment;
 		this.#lensFlares.setLook(lensFlare);
+		this.#tonemap.invalidateLut();
 	}
 
 	/** drops the temporal antialiasing history after a camera cut */
@@ -267,7 +268,7 @@ export class PostProcess {
 		if (settings.bloom) {
 			this.#bloom.encode(encoder, { history: resolved, half: environment.post.bloom?.half ?? true });
 		}
-		this.#tonemap.encode(encoder, { swapchain, history: resolved });
+		this.#tonemap.encode(encoder, { swapchain, history: resolved, tonemap: settings.tonemapper });
 	}
 
 	/** frees the post chain's GPU resources */
@@ -277,5 +278,6 @@ export class PostProcess {
 		this.#taa.destroy();
 		this.#lightShafts.destroy();
 		this.#lensFlares.destroy();
+		this.#tonemap.destroy();
 	}
 }
