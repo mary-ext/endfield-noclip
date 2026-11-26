@@ -151,6 +151,14 @@ export interface BlobTally {
 export interface AssetConversion {
 	geometries: GeometryEntry[];
 	materials: MaterialTable;
+	/** per input geometry id, its deduplicated index in {@link geometries} */
+	geometryIds: number[];
+	/** per input material id, its deduplicated index in {@link materials} */
+	materialIds: number[];
+	/** surviving geometry {@link AssetRef}s in compacted table order, for `debug/assets.json` */
+	geometryRefs: AssetRef[];
+	/** surviving material {@link AssetRef}s in compacted table order, for `debug/assets.json` */
+	materialRefs: AssetRef[];
 	/** the texture table's sampler palette and entries */
 	textures: { samplers: TextureSampler[]; entries: TextureEntry[] };
 	/**
@@ -237,9 +245,15 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 	}
 	timer.end('textures');
 	const surfaces = describeSurfaces(materials, input.materialOverrides);
+	const dedupedGeometries = compactGeometries(geometries.entries, geometries.debug, input.geometries);
+	const dedupedMaterials = compactMaterials(surfaces.entries, materials.debug, input.materials);
 	return {
-		geometries: geometries.entries,
-		materials: { entries: surfaces.entries },
+		geometries: dedupedGeometries.entries,
+		materials: { entries: dedupedMaterials.entries },
+		geometryIds: dedupedGeometries.ids,
+		materialIds: dedupedMaterials.ids,
+		geometryRefs: dedupedGeometries.refs,
+		materialRefs: dedupedMaterials.refs,
 		textures: { samplers: textures.samplers, entries: textures.entries },
 		extraTextureIds: extraIndices.map((group) =>
 			group.map((index) => {
@@ -247,7 +261,11 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
 				return textures.entries[id]?.status === 'ready' ? id : null;
 			}),
 		),
-		debug: { geometries: geometries.debug, materials: materials.debug, textures: textures.debug },
+		debug: {
+			geometries: dedupedGeometries.debug,
+			materials: dedupedMaterials.debug,
+			textures: textures.debug,
+		},
 		stats: {
 			timings: timer.timings,
 			geometry: geometries.tally,
@@ -272,15 +290,114 @@ export const convertAssets = async (input: AssetConversionInput): Promise<AssetC
  * @returns pending tables; extra textures have no id
  */
 export const pendingAssets = (
-	geometries: number,
-	materials: number,
+	geometries: readonly AssetRef[],
+	materials: readonly AssetRef[],
 	extraTextures: readonly (readonly PlacedTexture[])[],
-): Pick<AssetConversion, 'geometries' | 'materials' | 'textures' | 'extraTextureIds'> => ({
-	geometries: Array.from({ length: geometries }, () => ({ status: 'pending' })),
-	materials: { entries: Array.from({ length: materials }, () => ({ status: 'pending' })) },
+): Pick<
+	AssetConversion,
+	| 'geometries'
+	| 'materials'
+	| 'geometryIds'
+	| 'materialIds'
+	| 'geometryRefs'
+	| 'materialRefs'
+	| 'textures'
+	| 'extraTextureIds'
+> => ({
+	geometries: Array.from({ length: geometries.length }, () => ({ status: 'pending' })),
+	materials: { entries: Array.from({ length: materials.length }, () => ({ status: 'pending' })) },
+	geometryIds: Array.from({ length: geometries.length }, (_, i) => i),
+	materialIds: Array.from({ length: materials.length }, (_, i) => i),
+	geometryRefs: [...geometries],
+	materialRefs: [...materials],
 	textures: { samplers: [], entries: [] },
 	extraTextureIds: extraTextures.map((group) => group.map(() => null)),
 });
+
+/** deduplicates identical ready geometry entries (e.g. static path-hash + prefab PPtr refs to the same mesh) */
+const compactGeometries = (
+	entries: readonly GeometryEntry[],
+	debug: AssetConversion['debug']['geometries'],
+	refs: readonly AssetRef[],
+): {
+	entries: GeometryEntry[];
+	debug: AssetConversion['debug']['geometries'];
+	refs: AssetRef[];
+	ids: number[];
+} => {
+	const outEntries: GeometryEntry[] = [];
+	const outDebug: AssetConversion['debug']['geometries'] = [];
+	const outRefs: AssetRef[] = [];
+	const ids: number[] = [];
+	const byKey = new Map<string, number>();
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i];
+		if (entry.status === 'ready') {
+			const key = `${entry.blob}:${entry.vertexCount}:${entry.indexCount}:${entry.submeshCount}:${entry.attributes}:${entry.tangentUv ?? ''}:${entry.animationFrames ?? ''}`;
+			const existing = byKey.get(key);
+			if (existing !== undefined) {
+				ids.push(existing);
+				continue;
+			}
+			const next = outEntries.length;
+			byKey.set(key, next);
+			ids.push(next);
+			outEntries.push(entry);
+			outDebug.push(debug[i]);
+			outRefs.push(refs[i]);
+		} else {
+			ids.push(outEntries.length);
+			outEntries.push(entry);
+			outDebug.push(debug[i]);
+			outRefs.push(refs[i]);
+		}
+	}
+	return { entries: outEntries, debug: outDebug, refs: outRefs, ids };
+};
+
+/**
+ * deduplicates identical ready material entries (e.g. static path-hash + prefab PPtr refs to the same
+ * material)
+ */
+const compactMaterials = (
+	entries: readonly MaterialEntry[],
+	debug: MaterialDebug[],
+	refs: readonly AssetRef[],
+): {
+	entries: MaterialEntry[];
+	debug: MaterialDebug[];
+	refs: AssetRef[];
+	ids: number[];
+} => {
+	const outEntries: MaterialEntry[] = [];
+	const outDebug: MaterialDebug[] = [];
+	const outRefs: AssetRef[] = [];
+	const ids: number[] = [];
+	const byKey = new Map<string, number>();
+	for (let i = 0; i < entries.length; i++) {
+		const entry = entries[i];
+		if (entry.status === 'ready') {
+			const key = JSON.stringify(entry);
+			const existing = byKey.get(key);
+			if (existing !== undefined) {
+				ids.push(existing);
+				continue;
+			}
+			const next = outEntries.length;
+			byKey.set(key, next);
+			ids.push(next);
+			outEntries.push(entry);
+			outDebug.push(debug[i]);
+			outRefs.push(refs[i]);
+		} else {
+			ids.push(outEntries.length);
+			outEntries.push(entry);
+			outDebug.push(debug[i]);
+			outRefs.push(refs[i]);
+		}
+	}
+	return { entries: outEntries, debug: outDebug, refs: outRefs, ids };
+};
 
 /** runs conversion jobs on the pool or recalls them from the cache, and counts failures by reason */
 class ConvertJobs {

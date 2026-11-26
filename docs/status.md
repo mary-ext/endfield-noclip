@@ -552,7 +552,8 @@ only `map01` and `map02` are tested. other scenes listed by `scene list` are unv
 - **pack cache** ([extraction](extraction.md#pack-cache)): entities phase (~20 s on map02) isn't
   cached.
 - **duplicate asset IDs** ([conversion](extraction.md#asset-conversion-and-workers)): assets reached
-  both by path hash (static) and object (prefab) convert and store twice.
+  both by path hash (static) and object (prefab) still convert twice on a cold pack, then compact
+  into one geometry/material table entry before emission.
 - **prefab LODGroups**: switch on packed `LODG` reference spheres without cross-fade or game LOD
   bias.
 - **textures**: formats without WebGPU equivalents fail

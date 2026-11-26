@@ -323,7 +323,17 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			cloth.windNoiseTexture === null ? [] : [{ ref: cloth.windNoiseTexture, place: null }],
 		];
 		let conversion: AssetConversion | null = null;
-		let assetTables: Pick<AssetConversion, 'geometries' | 'materials' | 'textures' | 'extraTextureIds'>;
+		let assetTables: Pick<
+			AssetConversion,
+			| 'geometries'
+			| 'materials'
+			| 'geometryIds'
+			| 'materialIds'
+			| 'geometryRefs'
+			| 'materialRefs'
+			| 'textures'
+			| 'extraTextureIds'
+		>;
 		if (options.convertAssets) {
 			const places = content.uses.resolve(
 				content.chains.chains,
@@ -367,11 +377,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			assetTables = conversion;
 			timer.adopt(conversion.stats.timings);
 		} else {
-			assetTables = pendingAssets(
-				content.geometries.assets.length,
-				content.materials.assets.length,
-				extraTextures,
-			);
+			assetTables = pendingAssets(content.geometries.assets, content.materials.assets, extraTextures);
 			timer.end('assets');
 		}
 		// #endregion
@@ -392,6 +398,9 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 		const environmentTable = finishEnvironments(environments, environmentTextureIds);
 		indexEnvironmentControls(environmentTable, states.controlIndex);
 		const waterTable = finishWater(water, waterTextureIds);
+		for (const surface of waterTable.surfaces) {
+			surface.geometry = assetTables.geometryIds[surface.geometry];
+		}
 		indexWaterControls(waterTable, states.controlIndex);
 		const reflectionProbesTable = finishReflectionProbes(reflectionProbes, reflectionProbeTextureIds);
 		let fireSeed: FireSeedInfo | null = null;
@@ -407,10 +416,20 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			instances.global,
 		);
 		const { particles: particlesTable, luts } = content.particles.finish();
+		const remappedChains: typeof chainOrder.chains = [];
+		for (const chain of chainOrder.chains) {
+			const draws = chain.draws.map((draw) =>
+				Object.assign({}, draw, {
+					geometry: assetTables.geometryIds[draw.geometry],
+					material: draw.material === null ? null : assetTables.materialIds[draw.material],
+				}),
+			);
+			remappedChains.push(Object.assign({}, chain, { draws }));
+		}
 		// a new table is one more member here
 		const members: CoreMember[] = [
 			{ path: CORE_PATHS.tree, data: encodeTree(tree) },
-			{ path: CORE_PATHS.chains, data: encodeChains(chainOrder.chains) },
+			{ path: CORE_PATHS.chains, data: encodeChains(remappedChains) },
 			{ path: CORE_PATHS.geometries, data: binaryTable(encodeGeometryTable(assetTables.geometries)) },
 			{ path: CORE_PATHS.materials, data: jsonTable(assetTables.materials satisfies MaterialTable) },
 			{
@@ -492,8 +511,8 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			{
 				name: 'assets.json',
 				value: {
-					geometries: assetRows(content.geometries.assets, conversion?.debug.geometries),
-					materials: assetRows(content.materials.assets, conversion?.debug.materials),
+					geometries: assetRows(assetTables.geometryRefs, conversion?.debug.geometries),
+					materials: assetRows(assetTables.materialRefs, conversion?.debug.materials),
 					textures: conversion?.debug.textures ?? [],
 				},
 			},
@@ -540,11 +559,11 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 				instancesPerChain: (rows.detail + rows.hlod + rows.global) / Math.max(1, chains.length),
 			},
 			assets: {
-				geometries: content.geometries.assets.length,
-				materials: content.materials.assets.length,
+				geometries: assetTables.geometries.length,
+				materials: assetTables.materials.entries.length,
 				textures: assetTables.textures.entries.length,
 				shaders: conversion?.stats.shaders ?? 0,
-				unresolvedPaths: [...content.geometries.assets, ...content.materials.assets].filter(
+				unresolvedPaths: [...assetTables.geometryRefs, ...assetTables.materialRefs].filter(
 					(asset) => asset.path === null,
 				).length,
 				ready: {
