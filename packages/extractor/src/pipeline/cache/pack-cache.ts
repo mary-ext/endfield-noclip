@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, hash as cryptoHash } from 'node:crypto';
 import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
@@ -535,7 +535,7 @@ const keyReplacer = (_key: string, value: unknown): unknown => {
 	// an animation's frames run to megabytes as JSON; their digest stands in for them
 	if (ArrayBuffer.isView(value)) {
 		const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-		return `${value.constructor.name}:${createHash('sha256').update(bytes).digest('hex')}`;
+		return `${value.constructor.name}:${cryptoHash('sha256', bytes, 'hex')}`;
 	}
 	return value;
 };

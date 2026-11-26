@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hash as cryptoHash } from 'node:crypto';
 
 import {
 	computeShapeMeshCdf,
@@ -32,7 +32,7 @@ export class ParticleTable {
 	 */
 	intern(system: ParticleSystemInfo): number {
 		return this.#ids.getOrInsertComputed(JSON.stringify(system), (json) => {
-			this.#keys.push(createHash('sha256').update(json).digest('hex').slice(0, 32));
+			this.#keys.push(cryptoHash('sha256', json, 'hex').slice(0, 32));
 			const seedSalt =
 				system.seedSalt ??
 				fnv1a32(JSON.stringify({ ...system, mesh: 0, pivot: null, trail: null, seedSalt: undefined }));

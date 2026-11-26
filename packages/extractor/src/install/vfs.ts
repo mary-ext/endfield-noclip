@@ -1,4 +1,4 @@
-import { createDecipheriv, createHash } from 'node:crypto';
+import { createDecipheriv, hash as cryptoHash } from 'node:crypto';
 import { open, readdir, readFile, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -109,7 +109,7 @@ export class VfsFile implements ByteSource {
 	 */
 	async readVerified(): Promise<Uint8Array> {
 		const data = await this.read();
-		const md5 = createHash('md5').update(data).digest('hex').toUpperCase();
+		const md5 = cryptoHash('md5', data, 'hex').toUpperCase();
 		if (md5 !== this.entry.dataMd5) {
 			throw new Error(`md5 mismatch for ${this.entry.name}: ${md5} != ${this.entry.dataMd5}`);
 		}
@@ -258,7 +258,7 @@ export class Vfs {
 		}
 
 		const catalog = parseVfsCatalog(blc, this.#key, VFS_CIPHER_OPTIONS);
-		const catalogHash = createHash('sha256').update(blc).digest('hex').slice(0, 32);
+		const catalogHash = cryptoHash('sha256', blc, 'hex').slice(0, 32);
 		const readRange = (group: MountedGroup, entry: VfsFileEntry, start: number, end: number) =>
 			this.#readRange(group, entry, start, end);
 		const group: MountedGroup = {

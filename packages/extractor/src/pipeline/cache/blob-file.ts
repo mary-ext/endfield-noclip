@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hash as cryptoHash } from 'node:crypto';
 import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { crc32 } from 'node:zlib';
@@ -27,7 +27,7 @@ export interface BlobMeta {
  * @returns the first 128 bits of its SHA-256, as 32 hex digits: the package's blob hash
  */
 export const shortHash = (data: Uint8Array | string): string => {
-	return createHash('sha256').update(data).digest('hex').slice(0, 32);
+	return cryptoHash('sha256', data, 'hex').slice(0, 32);
 };
 
 /**

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hash as cryptoHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { copyFile, link, mkdir, open, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -400,11 +400,7 @@ export class BlobStore {
 				const name =
 					stem === this.#core
 						? stem
-						: archiveName(
-								stem,
-								part,
-								createHash('sha256').update(plan.head).digest('hex').slice(0, ARCHIVE_ID_LENGTH),
-							);
+						: archiveName(stem, part, cryptoHash('sha256', plan.head, 'hex').slice(0, ARCHIVE_ID_LENGTH));
 				archives.set(name, { name, stem, plan, members: members.length });
 				for (const index of members) {
 					// empty blobs have no segment; their offset is never read
@@ -434,8 +430,7 @@ export class BlobStore {
 		const parts = new Map<number, number[]>();
 		for (const index of indices) {
 			const { hash, locality } = this.#blobs[index];
-			const spread =
-				locality === null ? hash : createHash('sha256').update(locality.split('.', 1)[0]).digest('hex');
+			const spread = locality === null ? hash : cryptoHash('sha256', locality.split('.', 1)[0], 'hex');
 			const part = Number.parseInt(spread.slice(0, 8), 16) >>> (32 - bits);
 			parts.getOrInsertComputed(part, () => []).push(index);
 		}

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hash as cryptoHash } from 'node:crypto';
 
 /** one station along a synthetic line ribbon, running along local `+x` */
 export interface LineRibbonSample {
@@ -32,15 +32,15 @@ export const syntheticMeshKey = (mesh: SyntheticMesh): string => {
 		return `synthetic:grid:${mesh.cells}`;
 	}
 	if (mesh.kind === 'lineRibbon') {
-		const digest = createHash('sha256');
+		let data = '';
 		for (const { x, width, u, color } of mesh.samples) {
-			digest.update(`${x},${width},${u},${color[0]},${color[1]},${color[2]},${color[3]};`);
+			data += `${x},${width},${u},${color[0]},${color[1]},${color[2]},${color[3]};`;
 		}
-		return `synthetic:line:${digest.digest('hex').slice(0, 32)}`;
+		return `synthetic:line:${cryptoHash('sha256', data, 'hex').slice(0, 32)}`;
 	}
-	const digest = createHash('sha256');
+	let data = '';
 	for (const [x, z] of mesh.points) {
-		digest.update(`${x},${z};`);
+		data += `${x},${z};`;
 	}
-	return `synthetic:polygon:${digest.digest('hex').slice(0, 32)}`;
+	return `synthetic:polygon:${cryptoHash('sha256', data, 'hex').slice(0, 32)}`;
 };

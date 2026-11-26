@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { hash as cryptoHash } from 'node:crypto';
 
 import { type ChunkEntity, DrawFlags } from '@endfield-noclip/formats/endfield/init-chunk-data';
 import { inverseTransformPoint } from '@endfield-noclip/formats/unity/transform';
@@ -144,7 +144,7 @@ export class ChainTable {
 				key += `|${keys.geometry(draw.geometry)},${material},${particles},${draw.submesh},${draw.lod},${draw.role},${bits(draw.minSquared)},${bits(draw.maxSquared)},${draw.flags},${draw.sortingLayer},${draw.sortingOrder}`;
 			}
 			// non-zero 64-bit hash (0n is reserved for absent hash)
-			const hash = BigInt(`0x${createHash('sha256').update(key).digest('hex').slice(0, 16)}`) || 1n;
+			const hash = BigInt(`0x${cryptoHash('sha256', key, 'hex').slice(0, 16)}`) || 1n;
 			hashes[id] = hash;
 			order.push(id);
 		}

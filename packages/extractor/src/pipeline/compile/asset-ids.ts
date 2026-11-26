@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, hash as cryptoHash } from 'node:crypto';
 
 import {
 	type AssetRef,
@@ -172,4 +172,4 @@ const digestHash = (digest: ReturnType<typeof createHash>): bigint => -BigInt(`0
  * @param key an object's {@link objectKey}
  * @returns its hash; negative hashes occupy a namespace separate from unsigned game hashes
  */
-const objectHash = (key: string): bigint => digestHash(createHash('sha256').update(key));
+const objectHash = (key: string): bigint => -BigInt(`0x${cryptoHash('sha256', key, 'hex')}`);
