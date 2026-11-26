@@ -20,10 +20,9 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 import tgpu from 'typegpu';
 
 import { BLOCK_SLOTS, ROW_BYTES, ROW_WORDS, assignBlockSlot } from '../../content/instance-rows.ts';
-import { freeSlots } from '../../gfx/free-slots.ts';
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
-import type { RangeAllocation } from '../../gfx/range-allocator.ts';
+import { freeSlots, type RangeAllocation } from '../../gfx/range-allocator.ts';
 import { writeBufferStaged } from '../../gfx/staged-write.ts';
 import type { DecodedInstances } from '../../package/decode-protocol.ts';
 import type { InstanceRange } from '../../streaming/selection.ts';

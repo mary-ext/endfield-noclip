@@ -7,7 +7,6 @@ import { Camera } from '../scene/camera.ts';
 import { type ShadowLayerVolumes, offscreenCasters } from '../scene/shadow-volumes.ts';
 import type { TileNode, TileTree } from '../scene/tile-tree.ts';
 
-import type { ContentItem } from './content-item.ts';
 import {
 	Selector,
 	type SelectionOptions,
@@ -16,6 +15,7 @@ import {
 	hlodRing,
 	reachUnloadMargin,
 } from './selection.ts';
+import type { ContentItem } from './stream-manager.ts';
 
 it('streams conditional scenery independently of coarse HLOD and never requests hidden variants', () => {
 	// groups: 0 with condition 0, 1 with condition 1, 2 with condition 2, 3 always loaded

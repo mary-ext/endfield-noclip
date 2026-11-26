@@ -1,8 +1,15 @@
 import { AnimationKind, type AnimationBlob } from '@endfield-noclip/package-format/animation';
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
+import { CORE_ARCHIVE_INDEX } from '@endfield-noclip/package-format/manifest';
+import type { ContentRef } from '@endfield-noclip/package-format/tree';
 
-import { markBillboardRows, markClothRows } from '../content/instance-rows.ts';
-import { instanceRowKinds } from '../content/row-kinds.ts';
+import {
+	RowKind,
+	type RowKinds,
+	type TierSpan,
+	markBillboardRows,
+	markClothRows,
+} from '../content/instance-rows.ts';
 import type { EnvironmentScene } from '../environment/blend.ts';
 import { LazyMaterialLooks } from '../looks/material-looks.ts';
 import type { DecodePool } from '../package/decode-pool.ts';
@@ -16,10 +23,75 @@ import { TextureStore } from '../render/textures/texture-store.ts';
 import type { WaterLevels } from '../scene-states/water-levels.ts';
 import type { GroundSource } from '../scene/ground.ts';
 import { type TileTree, buildTileTree } from '../scene/tile-tree.ts';
-import { coreBlobs, terrainLayerBlobs } from '../streaming/core-blobs.ts';
 import { MeshSelector } from '../streaming/mesh-selection.ts';
 import { Selector } from '../streaming/selection.ts';
 import { StreamManager } from '../streaming/stream-manager.ts';
+
+/**
+ * @returns what the rows of each instance blob are: rows of HLOD blocks take their tier from the refs that
+ *   slice them
+ */
+const instanceRowKinds = (tree: TileTree, global: readonly ContentRef[]): Map<number, RowKinds> => {
+	const kinds = new Map<number, RowKinds>();
+	const spans = new Map<number, TierSpan[]>();
+	for (const node of tree.nodes) {
+		for (const ref of node.hlod) {
+			const list = spans.getOrInsertComputed(ref.blob, () => {
+				const created: TierSpan[] = [];
+				kinds.set(ref.blob, created);
+				return created;
+			});
+			list.push({ first: ref.first, count: ref.count, tier: ref.tier });
+		}
+		for (const ref of [...node.detail, ...node.conditional]) {
+			kinds.set(ref.blob, RowKind.Detail);
+		}
+	}
+	for (const ref of global) {
+		kinds.set(ref.blob, RowKind.Global);
+	}
+	return kinds;
+};
+
+/**
+ * the coarse layer, pinned at load: the core archive's height pages and instance blocks (coarse terrain,
+ * every HLOD block, global scenery), and where the terrain draws surfaces, its surface pages.
+ */
+const coreBlobs = (
+	pkg: Pick<ViewerPackage, 'blobs' | 'manifest'>,
+	options: { surfaces: boolean },
+): number[] => {
+	const blobs: number[] = [];
+	for (let i = 0; i < pkg.blobs.length; i++) {
+		const blob = pkg.blobs[i];
+		if (blob.archive !== CORE_ARCHIVE_INDEX) {
+			continue;
+		}
+		switch (blob.kind) {
+			case BlobKind.TerrainHeights:
+			case BlobKind.Instances: {
+				blobs.push(i);
+				break;
+			}
+			case BlobKind.TerrainSurface: {
+				if (options.surfaces) {
+					blobs.push(i);
+				}
+				break;
+			}
+		}
+	}
+	return blobs;
+};
+
+/**
+ * every terrain layer texture, which every splat page draws from all of; pinned when the first splat page
+ * arrives rather than at load, since only ground within the splat pages' reach uses them (tens of MB)
+ */
+const terrainLayerBlobs = (pkg: Pick<ViewerPackage, 'manifest'>): number[] => {
+	const splat = pkg.manifest.terrain?.splat ?? null;
+	return splat === null ? [] : [...new Set([...splat.diffuse, ...splat.normal])];
+};
 
 /** what the level list needs */
 export interface LevelEntry {

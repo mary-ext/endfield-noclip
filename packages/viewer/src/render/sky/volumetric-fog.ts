@@ -6,7 +6,7 @@ import type { Environment, VolumetricFog as VolumetricFogLook } from '../../envi
 import { createUniformBuffer, rowWriter } from '../../gfx/buffers.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
-import { halton } from '../../math/sequence.ts';
+import { halton } from '../../math/scalar.ts';
 import { scale } from '../../math/vec3.ts';
 import type { Camera } from '../../scene/camera.ts';
 

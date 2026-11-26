@@ -1,13 +1,51 @@
-import type { TgpuBindGroup, TgpuComputePipeline, TgpuRoot, TgpuUniform } from 'typegpu';
+import tgpu, {
+	type TgpuBindGroup,
+	type TgpuComputePipeline,
+	type TgpuRoot,
+	type TgpuUniform,
+	d,
+	std,
+} from 'typegpu';
 
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 
-import {
-	MIP_FEEDBACK_STRIDE,
-	MipFeedbackParams,
-	csMipFeedbackReduce,
-	mipFeedbackLayout,
-} from './mip-feedback-shader.ts';
+/** one pixel of each `STRIDE` x `STRIDE` block is read per frame */
+const MIP_FEEDBACK_STRIDE = 4;
+
+/** uniform parameters for {@link csMipFeedbackReduce} */
+const MipFeedbackParams = d.struct({
+	/** which pixel of each block to read */
+	offset: d.vec2u,
+	/** look slots `seen` has room for */
+	looks: d.u32,
+});
+
+/** bind group layout for {@link csMipFeedbackReduce} */
+const mipFeedbackLayout = tgpu.bindGroupLayout({
+	feedback: { texture: d.texture2d(d.u32) },
+	seen: { storage: d.arrayOf(d.atomic(d.u32)), access: 'mutable' },
+	params: { uniform: MipFeedbackParams },
+});
+
+/** compute entrypoint reducing per-pixel mip feedback into per-look max quarter-level footprints */
+const csMipFeedbackReduce = tgpu.computeFn({
+	workgroupSize: [8, 8],
+	in: { id: d.builtin.globalInvocationId },
+})((input) => {
+	'use gpu';
+	const params = mipFeedbackLayout.$.params;
+	const px = std.add(std.mul(input.id.xy, MIP_FEEDBACK_STRIDE), params.offset);
+	if (std.any(std.ge(px, std.textureDimensions(mipFeedbackLayout.$.feedback)))) {
+		return;
+	}
+	const packed = std.textureLoad(mipFeedbackLayout.$.feedback, px, 0).x;
+	const look = packed & 0x1ffff;
+	if ((packed & d.u32(0x80000000)) === 0 || look >= params.looks) {
+		return;
+	}
+	std.atomicMax(mipFeedbackLayout.$.seen[look * 2], ((packed >>> 17) & 127) + 1);
+	std.atomicMax(mipFeedbackLayout.$.seen[look * 2 + 1], ((packed >>> 24) & 127) + 1);
+});
 
 const KEY = 'mip feedback';
 /** look slots a report can name (its 17 bits) */

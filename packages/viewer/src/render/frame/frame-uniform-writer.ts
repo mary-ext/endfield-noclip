@@ -9,8 +9,8 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import type { Environment } from '../../environment/environment.ts';
 import type { Camera } from '../../scene/camera.ts';
-import { DEBUG_VIEWS, type DebugView } from '../core/debug-views.ts';
 import { FrameOffsets } from '../core/frame-schema.ts';
+import { DEBUG_VIEWS, type DebugView } from '../core/settings.ts';
 import type { LocalLightFrame } from '../lighting/local-lights.ts';
 import type { ReflectionProbeFrame } from '../lighting/reflection-probes.ts';
 import type { ShadowMap } from '../lighting/shadow-map.ts';

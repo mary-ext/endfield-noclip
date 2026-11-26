@@ -5,6 +5,8 @@
  * @module
  */
 
+import { type PackageSource, httpSource } from './package-source.ts';
+
 /** URL prefix the packages are served under; package `name` lives at `${DEV_PACKAGES_PREFIX}${name}/` */
 export const DEV_PACKAGES_PREFIX = '/packages/';
 
@@ -34,4 +36,15 @@ export const fetchDevPackages = async (): Promise<DevPackage[]> => {
 	}
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- our own dev endpoint
 	return body.packages as DevPackage[];
+};
+
+/**
+ * @param value a `?package=` value: a dev package name, or a URL/path of a package directory
+ * @returns a source for it
+ */
+export const sourceFromParam = (value: string): PackageSource => {
+	if (/^(https?:)?\/|^\.\.?\//.test(value)) {
+		return httpSource(value);
+	}
+	return httpSource(`${DEV_PACKAGES_PREFIX}${encodeURIComponent(value)}/`);
 };

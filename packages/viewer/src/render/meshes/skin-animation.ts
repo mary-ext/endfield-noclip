@@ -2,7 +2,7 @@ import { type TgpuComputePipeline, type TgpuRoot, d } from 'typegpu';
 
 import { createBufferWithData } from '../../gfx/buffers.ts';
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
-import { skinFrame } from '../../math/skin-frame.ts';
+import { skinFrame } from '../../math/scalar.ts';
 import type { DecodedSkin } from '../../package/decode-protocol.ts';
 import type { ResidentSkin } from '../core/resident.ts';
 

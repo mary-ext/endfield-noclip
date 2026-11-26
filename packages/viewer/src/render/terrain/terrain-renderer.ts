@@ -10,9 +10,9 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 import tgpu from 'typegpu';
 
 import { createBufferWithData } from '../../gfx/buffers.ts';
-import { freeSlots } from '../../gfx/free-slots.ts';
 import { GrowableBuffer } from '../../gfx/growable-buffer.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
+import { freeSlots } from '../../gfx/range-allocator.ts';
 import { LINEAR_CLAMP, LINEAR_REPEAT_MIPMAPPED, sampler } from '../../gfx/samplers.ts';
 import { type TexelWrite, writeTexturesStaged } from '../../gfx/staged-write.ts';
 import type {

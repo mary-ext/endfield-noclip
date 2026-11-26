@@ -5,7 +5,7 @@ import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
-import { halton } from '../../math/sequence.ts';
+import { halton } from '../../math/scalar.ts';
 import type { Camera } from '../../scene/camera.ts';
 import { CAMERA_HISTORY_FLOATS, CameraHistory } from '../core/camera-history.ts';
 import { postUniformLayout } from '../core/post-schema.ts';

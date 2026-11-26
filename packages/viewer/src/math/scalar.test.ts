@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { skinFrame } from './skin-frame.ts';
+import { skinFrame } from './scalar.ts';
 
 test('an animation loops over its frames, the last blending into the first', () => {
 	// the balloon's idle: 420 frames at 30 per second

@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 
-import { type DevPackage, fetchDevPackages } from '../package/dev-packages.ts';
-import { sourceFromParam } from '../package/package-param.ts';
+import { type DevPackage, fetchDevPackages, sourceFromParam } from '../package/dev-packages.ts';
 import {
 	type PackageSource,
 	directorySource,

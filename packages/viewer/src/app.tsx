@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 
-import { sourceFromParam } from './package/package-param.ts';
+import { sourceFromParam } from './package/dev-packages.ts';
 import type { PackageSource } from './package/package-source.ts';
 import { CameraReadout } from './ui/camera-readout.tsx';
 import { describeError } from './ui/format.ts';

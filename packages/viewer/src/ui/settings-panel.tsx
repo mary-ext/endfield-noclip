@@ -1,7 +1,6 @@
 import { useId } from 'react';
 
-import { DEBUG_VIEWS } from '../render/core/debug-views.ts';
-import { TONEMAPPERS } from '../render/core/settings.ts';
+import { DEBUG_VIEWS, TONEMAPPERS } from '../render/core/settings.ts';
 import type { ViewerOptions } from '../viewer/options.ts';
 import type { Viewer } from '../viewer/viewer.ts';
 
