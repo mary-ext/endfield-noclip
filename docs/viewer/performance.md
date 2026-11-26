@@ -102,14 +102,16 @@ measurement instructions are in [driving the viewer](../driving-the-viewer.md#pr
   row packing all run on a dedicated worker with ping-pong transferred buffers (no main-thread
   simulation spike on first sight), cutting dense map02 `mesh select` by 47–63%.
 - **zero per-frame hot-path allocation and budgeted eviction.** selections, buckets, sort scratch,
-  particle worker buffers, and plane arrays reuse storage across frames; transparent sorting groups
-  contiguous equal-distance runs; per-bucket texture requests allocate nothing and deduplicate
-  within a frame; eviction fast-paths stale fine textures before a full LRU sort, biases toward
-  textures before geometry/instances, clears down to 90% headroom, and time-budgets releases to 1.5
-  ms/frame.
+  particle worker buffers, and plane arrays reuse storage across frames; tile selection skips
+  subtrees without conditional refs; animated material clips cache per-step look parameters;
+  transparent sorting groups contiguous equal-distance runs; per-bucket texture requests allocate
+  nothing and deduplicate within a frame; eviction fast-paths stale fine textures before a full LRU
+  sort, biases toward textures before geometry/instances, clears down to 90% headroom, time-budgets
+  releases to 1.5 ms/frame, and shrinks geometry pools when their unused tail exceeds 60%.
 
 target reuse: `composite` needs its own HDR target so next frame's SSR can read it after `main`
-overwrites radiance; `celestial` reuses the sky reflection target after SSR finishes.
+overwrites radiance; after compositing, `scene.lit` is reused as the background copy for water and
+refracting effects.
 
 ## optimization candidates
 
@@ -125,14 +127,22 @@ see [quality settings](../game-data/quality-settings.md) for what the game toggl
 - **settle-frame selection reuse for moving rows.** spinning/riding rows have exact finite swept
   bounds (so their 64-row groups stay GPU-cullable), and reusing their selection across settle
   frames would let still views skip re-traversal too.
-- **shadow caching.** cache cascades across selections when fit and casters match; tiling the far
-  shadow layer (200 m / 256² tiles, ≤ 8/frame) only pays off with per-tile CPU draw culling, since
-  the full far layer is already amortized to ~0.04 ms/frame GPU via an 8-frame redraw interval.
-- **pack ambient + sky reflection.** combine both `rgba16float` targets (16 B/px, reflection alpha
-  unused) into one `rg32uint` (shared-exponent or 11-11-10) to save ~32 MiB at 2560×1600 and
-  matching reads (`celestial` would need its own target).
-- **geometry pool compaction.** compact or shrink pools when mostly free so unused capacity returns
-  to the device ([geometry pools](gpu-resources.md#buffers-and-pools)).
-- **terrain close-up blending.** profile stochastic projection or lower anisotropy.
+- **shadow caching.** stagger CSM cascade 1/2 refreshes while world bounds still cover the frustum
+  (matching the game's `CSMCachedFrame` 1/2/4 option); tiling the far shadow layer (200 m / 256²
+  tiles, ≤ 8/frame) only pays off with per-tile CPU draw culling, since the full far layer is
+  already amortized to ~0.04 ms/frame GPU via an 8-frame redraw interval.
+- **indoor / area occlusion.** check whether shipped scenes populate authored software-occlusion
+  quads (`HGSOCChunk`) and decode HLOD-unload volumes (`FBStreamArea` slots 7–9) to avoid keeping
+  exterior HLOD resident inside interiors/caves.
+- **geometry pool compaction.** tail-shrinking already returns unused trailing capacity; full
+  compaction of fragmented interior holes would require relocating submesh `baseVertex`/`firstIndex`
+  offsets ([geometry pools](gpu-resources.md#buffers-and-pools)).
+- **terrain close-up blending.** cache blended close-up splat tiles in a camera-centered clipmap
+  (matching the game's `TerrainVTBake` / `HGTerrainClipmapCS`) or profile lower anisotropy.
+- **ahead-of-time packer work.** Morton-sort instance rows within chain runs and order chains by
+  centroid locality (tightening 64-row group/segment bounds with no format change); emit `RowFlags`
+  billboard bits at pack time; strip dead/undrawn draws from `chains.bin`; populate the existing
+  `luts.bin.zst` curve/gradient sections for particle systems; and bake `Unorm8x4` vertex colors and
+  uniform UV formats in `.mesh`.
 - **timestamp queries.** measure overhead before restricting queries to when the stats panel is
   open.
