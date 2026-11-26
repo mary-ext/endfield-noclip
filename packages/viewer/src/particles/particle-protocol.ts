@@ -1,6 +1,6 @@
 import type { ParticleSystemInfo } from '@endfield-noclip/package-format/particles';
 
-import type { ParticleView } from './row-writer.ts';
+import type { ParticleView } from './row-geometry.ts';
 
 /** messages posted from {@link ParticleField} to the particle worker */
 export type ParticleWorkerMessage =

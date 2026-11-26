@@ -5,7 +5,8 @@ import type { RangeAllocation } from '../gfx/range-allocator.ts';
 
 import type { ParticleWorkerMessage, ParticleWorkerResponse } from './particle-protocol.ts';
 import { hash2, hashText } from './random.ts';
-import { type EmitterState, ParticleRowWriter, type ParticleView, TRAIL_SEGMENTS } from './row-writer.ts';
+import type { ParticleView } from './row-geometry.ts';
+import { type EmitterState, ParticleRowWriter, TRAIL_SEGMENTS } from './row-writer.ts';
 import { MAX_PARTICLES, ParticleSimulation } from './simulation.ts';
 
 const NO_ROWS: readonly number[] = [];

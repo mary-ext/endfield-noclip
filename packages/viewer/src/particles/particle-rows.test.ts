@@ -14,7 +14,7 @@ import { ROW_WORDS, RowBillboard, RowWord, rowSheet } from '../content/instance-
 import type { ParticleWorkerResponse } from './particle-protocol.ts';
 import { type EmitterBlock, ParticleField, type ParticleRowStore } from './particle-rows.ts';
 import { createParticleWorkerHandler } from './particle-worker.ts';
-import { type ParticleView, screenLimited, turnedByBillboard } from './row-writer.ts';
+import { type ParticleView, screenLimited, turnedByBillboard } from './row-geometry.ts';
 import { between, constant, line, system, trailed } from './test-systems.ts';
 
 describe('ParticleField', () => {

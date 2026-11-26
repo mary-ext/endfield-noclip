@@ -15,7 +15,7 @@ import {
 import { alphaTextureOf, LookFlags, type MaterialLook, UV1_SHIFT } from '../looks/look.ts';
 import type { LazyMaterialLooks } from '../looks/material-looks.ts';
 import type { ParticleField } from '../particles/particle-rows.ts';
-import type { ParticleView } from '../particles/row-writer.ts';
+import type { ParticleView } from '../particles/row-geometry.ts';
 import type { ResidentInstances } from '../render/core/resident.ts';
 import {
 	type GpuCullWork,
