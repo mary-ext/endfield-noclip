@@ -90,22 +90,40 @@ const farShadow = tgpu.fn(
 	if (std.any(std.le(p.xyz, d.vec3f(0))) || std.any(std.ge(p.xyz, d.vec3f(1)))) {
 		return 1;
 	}
-	const size = d.vec2f(std.textureDimensions(frameLayout.$.shadowMap));
-	let sum = d.f32(0);
-	for (let y = d.i32(-1); y <= d.i32(1); y++) {
-		for (let x = d.i32(-1); x <= d.i32(1); x++) {
-			sum += std.textureSampleCompareLevel(
-				frameLayout.$.shadowMap,
-				frameLayout.$.shadowSampler,
-				std.add(p.xy, std.div(d.vec2f(d.f32(x), d.f32(y)), size)),
-				3,
-				p.z,
-			);
-		}
-	}
+	const halfTexel = std.div(d.vec2f(0.5), d.vec2f(std.textureDimensions(frameLayout.$.shadowMap)));
+	// 4 hardware-bilinear comparison taps at (±0.5, ±0.5) texels form a 3×3 tent filter
+	const sum =
+		std.textureSampleCompareLevel(
+			frameLayout.$.shadowMap,
+			frameLayout.$.shadowSampler,
+			std.add(p.xy, d.vec2f(-halfTexel.x, -halfTexel.y)),
+			3,
+			p.z,
+		) +
+		std.textureSampleCompareLevel(
+			frameLayout.$.shadowMap,
+			frameLayout.$.shadowSampler,
+			std.add(p.xy, d.vec2f(halfTexel.x, -halfTexel.y)),
+			3,
+			p.z,
+		) +
+		std.textureSampleCompareLevel(
+			frameLayout.$.shadowMap,
+			frameLayout.$.shadowSampler,
+			std.add(p.xy, d.vec2f(-halfTexel.x, halfTexel.y)),
+			3,
+			p.z,
+		) +
+		std.textureSampleCompareLevel(
+			frameLayout.$.shadowMap,
+			frameLayout.$.shadowSampler,
+			std.add(p.xy, d.vec2f(halfTexel.x, halfTexel.y)),
+			3,
+			p.z,
+		);
 	const diff = std.sub(rel, frame.shadowSpheres[3].xyz);
 	const edge = std.clamp((1 - std.dot(diff, diff) / frame.shadowSpheres[3].w) * 5, 0, 1);
-	return std.mix(1, sum / 9, edge);
+	return std.mix(1, sum * 0.25, edge);
 });
 
 const sunShadow = tgpu.fn(

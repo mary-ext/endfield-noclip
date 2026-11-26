@@ -156,24 +156,39 @@ const localLightShadow = tgpu.fn(
 	const low = std.add(rect.xy, texel);
 	const high = std.sub(std.add(rect.xy, rect.zw), texel);
 	const uv = std.add(rect.xy, std.mul(p.xy, rect.zw));
-	let sum = d.f32(0);
-	for (let y = d.i32(-1); y <= d.i32(1); y++) {
-		for (let x = d.i32(-1); x <= d.i32(1); x++) {
-			const tap = std.clamp(std.add(uv, std.mul(d.vec2f(d.f32(x), d.f32(y)), texel)), low, high);
-			sum += std.textureSampleCompareLevel(
-				frameLayout.$.lightShadowMap,
-				frameLayout.$.shadowSampler,
-				tap,
-				p.z,
-			);
-		}
-	}
+	const halfTexel = std.mul(texel, 0.5);
+	// 4 hardware-bilinear comparison taps at (±0.5, ±0.5) texels form a 3×3 tent filter
+	const sum =
+		std.textureSampleCompareLevel(
+			frameLayout.$.lightShadowMap,
+			frameLayout.$.shadowSampler,
+			std.clamp(std.add(uv, d.vec2f(-halfTexel.x, -halfTexel.y)), low, high),
+			p.z,
+		) +
+		std.textureSampleCompareLevel(
+			frameLayout.$.lightShadowMap,
+			frameLayout.$.shadowSampler,
+			std.clamp(std.add(uv, d.vec2f(halfTexel.x, -halfTexel.y)), low, high),
+			p.z,
+		) +
+		std.textureSampleCompareLevel(
+			frameLayout.$.lightShadowMap,
+			frameLayout.$.shadowSampler,
+			std.clamp(std.add(uv, d.vec2f(-halfTexel.x, halfTexel.y)), low, high),
+			p.z,
+		) +
+		std.textureSampleCompareLevel(
+			frameLayout.$.lightShadowMap,
+			frameLayout.$.shadowSampler,
+			std.clamp(std.add(uv, d.vec2f(halfTexel.x, halfTexel.y)), low, high),
+			p.z,
+		);
 	let strength = s.y;
 	if (spot) {
 		const edge = std.min(std.min(p.x, p.y), std.min(1 - p.x, 1 - p.y));
 		strength = std.min(strength, std.smoothstep(0, 0.05, std.min((params.z - clip.w) * 0.25, edge)));
 	}
-	return std.mix(1, sum / 9, strength);
+	return std.mix(1, sum * 0.25, strength);
 });
 
 /** 1-tap local-light shadow lookup for volumetric fog froxels (temporally filtered, so 3×3 PCF is redundant) */
@@ -269,15 +284,13 @@ export const localLighting = tgpu.fn(
 			if (light.attenuation <= 0) {
 				continue;
 			}
-			const e = frameLayout.$.lights[i * d.u32(LIGHT_VEC4S) + d.u32(3)];
-			const tubeLength = std.select(
-				e.y,
-				d.f32(0),
-				frameLayout.$.lights[i * d.u32(LIGHT_VEC4S) + d.u32(1)].w < 0.5,
-			);
+			const base = i * d.u32(LIGHT_VEC4S);
+			const colorAndKind = frameLayout.$.lights[base + d.u32(1)];
+			const e = frameLayout.$.lights[base + d.u32(3)];
+			const tubeLength = std.select(e.y, d.f32(0), colorAndKind.w < 0.5);
 			const d2 = std.dot(light.toLight, light.toLight);
-			const dist = std.sqrt(d2);
-			const l = std.div(light.toLight, dist);
+			const invDist = std.inverseSqrt(std.max(d2, 1e-8));
+			const l = std.mul(light.toLight, invDist);
 			let lSpec = d.vec3f(l);
 			let nDotL = d.f32(0);
 			let norm = d.f32(1);
@@ -297,18 +310,22 @@ export const localLighting = tgpu.fn(
 				);
 				lSpec = std.normalize(std.add(light.a, std.mul(segment, t)));
 				const r2 = roughness * roughness;
-				norm = r2 / std.clamp(r2 + 0.5 * std.clamp(tubeLength / dist, 0, 1), 1e-6, 1);
+				norm = r2 / std.clamp(r2 + 0.5 * std.clamp(tubeLength * invDist, 0, 1), 1e-6, 1);
 			} else {
 				nDotL = std.clamp(std.dot(n, l), 0, 1);
 			}
 			if (nDotL <= 0 && !s.foliage) {
 				continue;
 			}
+			const shadow = localLightShadow(i, rel, n, light.toLight);
+			if (shadow <= 0) {
+				continue;
+			}
 			const h = std.normalize(std.add(lSpec, v));
 			const nDotH = std.clamp(std.dot(n, h), 0, 1);
 			const vDotH = std.clamp(std.dot(v, h), 0, 1);
 			let a = roughness * roughness;
-			const soft = std.clamp(e.w / dist, 0, 1);
+			const soft = std.clamp(e.w * invDist, 0, 1);
 			if (soft > 0) {
 				a = std.clamp(a + (soft * soft) / (3.6 * vDotH + 0.4), 0, 1);
 			}
@@ -321,7 +338,7 @@ export const localLighting = tgpu.fn(
 					nDotV * std.sqrt(nDotL * nDotL * (1 - a2) + a2) +
 					1e-4);
 			const f = fresnelSchlick(f0, vDotH);
-			const g = frameLayout.$.lights[i * d.u32(LIGHT_VEC4S) + d.u32(4)];
+			const g = frameLayout.$.lights[base + d.u32(4)];
 			let lobe = std.min(std.mul(f, distribution * norm * visibility), d.vec3f(2048));
 			let through = d.vec3f(0);
 			let diffuse = d.vec3f(diffuseColor);
@@ -352,15 +369,8 @@ export const localLighting = tgpu.fn(
 				diffuse = std.mul(diffuse, s.sunShadow);
 			}
 			const specular = std.clamp(std.mul(lobe, g.x), d.vec3f(0), d.vec3f(1000));
-			const shadow = localLightShadow(i, rel, n, light.toLight);
 			const contrib = std.add(std.mul(std.add(specular, diffuse), nDotL), through);
-			sum = std.add(
-				sum,
-				std.mul(
-					std.mul(contrib, frameLayout.$.lights[i * d.u32(LIGHT_VEC4S) + d.u32(1)].xyz),
-					light.attenuation * shadow,
-				),
-			);
+			sum = std.add(sum, std.mul(std.mul(contrib, colorAndKind.xyz), light.attenuation * shadow));
 		}
 	}
 	return std.min(sum, d.vec3f(255));

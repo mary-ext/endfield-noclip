@@ -410,17 +410,19 @@ export const fsDeferredLighting = tgpu.fragmentFn({
 	const f0 = std.mix(d.vec3f(s.f0), s.albedo, s.metallic);
 
 	const debugView = frame.flags.y;
-	if (debugView === d.u32(1)) {
-		return d.vec4f(s.albedo, 1);
-	}
-	if (debugView === d.u32(2)) {
-		return d.vec4f(std.add(std.mul(n, 0.5), d.vec3f(0.5)), 1);
-	}
-	if (debugView === d.u32(3)) {
-		return d.vec4f(d.vec3f(roughness), 1);
-	}
-	if (debugView === d.u32(6)) {
-		return d.vec4f(d.vec3f(std.dot(s.albedo, LUMINANCE_ROUNDED.$)), 1);
+	if (debugView !== d.u32(0)) {
+		if (debugView === d.u32(1)) {
+			return d.vec4f(s.albedo, 1);
+		}
+		if (debugView === d.u32(2)) {
+			return d.vec4f(std.add(std.mul(n, 0.5), d.vec3f(0.5)), 1);
+		}
+		if (debugView === d.u32(3)) {
+			return d.vec4f(d.vec3f(roughness), 1);
+		}
+		if (debugView === d.u32(6)) {
+			return d.vec4f(d.vec3f(std.dot(s.albedo, LUMINANCE_ROUNDED.$)), 1);
+		}
 	}
 
 	const worldPos = std.add(frame.eye.xyz, rel);
@@ -429,10 +431,12 @@ export const fsDeferredLighting = tgpu.fragmentFn({
 		std.add(diffuseColor, std.mul(s.scatter.xyz, s.scatterIndirect)),
 		irradiance,
 	);
-	const useAo = post.ao.w > 0.5;
-	const gtao = std.select(d.f32(1), std.textureLoad(deferredInputsLayout.$.aoTexture, px, 0).x, useAo);
-	const ao = std.min(gtao, s.occlusion);
-	const diffuseAo = std.select(d.vec3f(s.occlusion), multiBounceRgb(ao, diffuseColor), useAo);
+	let ao = s.occlusion;
+	let diffuseAo = d.vec3f(s.occlusion);
+	if (post.ao.w > 0.5) {
+		ao = std.min(std.textureLoad(deferredInputsLayout.$.aoTexture, px, 0).x, s.occlusion);
+		diffuseAo = multiBounceRgb(ao, diffuseColor);
+	}
 	const specularOcclusion = std.clamp(std.pow(nDotV + ao, std.exp2(-16 * roughness - 1)) - 1 + ao, 0, 1);
 	const ssrWeight = std.mul(environmentBrdf(f0, roughness, nDotV), specularOcclusion);
 	const r = std.normalize(std.mix(std.reflect(std.neg(v), n), n, roughness * roughness));
