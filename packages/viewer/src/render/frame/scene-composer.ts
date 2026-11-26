@@ -43,8 +43,8 @@ export class SceneComposer {
 	readonly sampler: GPUSampler;
 	/**
 	 * explicit layouts of the post uniforms and of the sky's reads (the sky-view LUT, its sampler and the
-	 * volumetric fog, at their atmosphere-shader.ts and sky-shader.ts bindings), for passes that also bind the
-	 * main pass's frame group and so can't use `auto` layouts
+	 * volumetric fog, at their atmosphere-shader.ts bindings), for passes that also bind the main pass's frame
+	 * group and so can't use `auto` layouts
 	 */
 	readonly skyLayouts: { uniforms: GPUBindGroupLayout; sky: GPUBindGroupLayout };
 	/** bind groups for {@link skyLayouts}, bound by the water pass */
