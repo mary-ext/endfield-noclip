@@ -10,7 +10,13 @@ import { halton } from '../../math/scalar.ts';
 import { scale } from '../../math/vec3.ts';
 import type { Camera } from '../../scene/camera.ts';
 
-import { VOLUMETRIC_FOG_BYTES, csFroxels, volumetricFogLayout } from './volumetric-fog-shader.ts';
+import {
+	VOLUMETRIC_FOG_BYTES,
+	csFroxelInject,
+	csFroxelIntegrate,
+	volumetricFogInjectLayout,
+	volumetricFogIntegrateLayout,
+} from './volumetric-fog-shader.ts';
 
 /**
  * froxels across, down and in depth: a fixed grid, coarser than the game's, which follows the view in cells
@@ -29,8 +35,10 @@ const NEAR_OFFSET = 0.095;
 const HISTORY_WEIGHT = 0.9;
 /** sample positions per jitter cycle */
 const JITTER_PHASES = 16;
-const WORKGROUP = 8;
-const PIPELINE_KEY = 'volumetric fog';
+const INJECT_WORKGROUP = 4;
+const INTEGRATE_WORKGROUP = 8;
+const INJECT_KEY = 'volumetric fog inject';
+const INTEGRATE_KEY = 'volumetric fog integrate';
 
 /** how a view depth maps onto the grid's slices: `s = log2(z · scale + offset) · perDoubling` */
 interface Slices {
@@ -77,8 +85,10 @@ export class VolumetricFog {
 	#history: [GPUTexture, GPUTexture];
 	#uniforms: GPUBuffer;
 	#data = new Float32Array(VOLUMETRIC_FOG_BYTES / 4);
-	/** group 1 for a frame that writes `#history[i]` and reads the other */
-	#groups: [GPUBindGroup, GPUBindGroup];
+	/** group 1 for the 3D injection pass: writes `#history[i]` and reads the other */
+	#injectGroups: [GPUBindGroup, GPUBindGroup];
+	/** group 0 for the 2D integration pass: reads `#history[i]` and writes `#texture` */
+	#integrateGroups: [GPUBindGroup, GPUBindGroup];
 	#index = 0;
 	/** the view the last written history was laid over; `null` when there's no history to reproject */
 	#previous: GridView | null = null;
@@ -107,26 +117,43 @@ export class VolumetricFog {
 		this.#history = [grid('volumetric fog history 0'), grid('volumetric fog history 1')];
 		this.#uniforms = createUniformBuffer(device, 'volumetric fog uniforms', VOLUMETRIC_FOG_BYTES);
 		const historySampler = sampler(device, LINEAR_CLAMP);
-		const group = (write: GPUTexture, read: GPUTexture): GPUBindGroup =>
+		const injectGroup = (write: GPUTexture, read: GPUTexture): GPUBindGroup =>
 			root.unwrap(
-				root.createBindGroup(volumetricFogLayout, {
+				root.createBindGroup(volumetricFogInjectLayout, {
 					fog: this.#uniforms,
-					froxels: this.view,
 					historyOut: write.createView(),
 					historyIn: read.createView(),
 					historySampler,
 				}),
 			);
+		const integrateGroup = (medium: GPUTexture): GPUBindGroup =>
+			root.unwrap(
+				root.createBindGroup(volumetricFogIntegrateLayout, {
+					fog: this.#uniforms,
+					medium: medium.createView(),
+					froxels: this.view,
+				}),
+			);
 		const [a, b] = this.#history;
-		this.#groups = [group(a, b), group(b, a)];
+		this.#injectGroups = [injectGroup(a, b), injectGroup(b, a)];
+		this.#integrateGroups = [integrateGroup(a), integrateGroup(b)];
 		this.#pipelines = pipelines;
-		void pipelines.prepareCompute(PIPELINE_KEY, () => ({
+		void pipelines.prepareCompute(INJECT_KEY, () => ({
 			layout: device.createPipelineLayout({
-				bindGroupLayouts: [frameLayout, root.unwrap(volumetricFogLayout)],
+				bindGroupLayouts: [frameLayout, root.unwrap(volumetricFogInjectLayout)],
 			}),
 			compute: {
-				module: pipelines.module('volumetric fog', tgpu.resolve([csFroxels])),
-				entryPoint: 'csFroxels',
+				module: pipelines.module(INJECT_KEY, tgpu.resolve([csFroxelInject])),
+				entryPoint: 'csFroxelInject',
+			},
+		}));
+		void pipelines.prepareCompute(INTEGRATE_KEY, () => ({
+			layout: device.createPipelineLayout({
+				bindGroupLayouts: [root.unwrap(volumetricFogIntegrateLayout)],
+			}),
+			compute: {
+				module: pipelines.module(INTEGRATE_KEY, tgpu.resolve([csFroxelIntegrate])),
+				entryPoint: 'csFroxelIntegrate',
 			},
 		}));
 	}
@@ -207,40 +234,84 @@ export class VolumetricFog {
 		encoder: GPUCommandEncoder,
 		input: { frameGroup: GPUBindGroup; frameOffset: number; camera: Camera; aspect: number; frame: number },
 	): boolean {
-		const pipeline = this.#pipelines.getCompute(PIPELINE_KEY);
-		if (pipeline === undefined || this.#slices === null) {
+		const inject = this.#pipelines.getCompute(INJECT_KEY);
+		const integrate = this.#pipelines.getCompute(INTEGRATE_KEY);
+		if (inject === undefined || integrate === undefined || this.#slices === null) {
 			return false;
 		}
 		const { camera, aspect } = input;
 		const basis = camera.viewBasis(aspect);
 		const eye = camera.position;
 		const f = this.#data;
-		f.set([...basis.forward, 0], 0);
-		f.set([...basis.right, 0], 4);
-		f.set([...basis.up, 0], 8);
-		f.set([...eye, 0], 12);
+		f[0] = basis.forward[0];
+		f[1] = basis.forward[1];
+		f[2] = basis.forward[2];
+		f[3] = 0;
+		f[4] = basis.right[0];
+		f[5] = basis.right[1];
+		f[6] = basis.right[2];
+		f[7] = 0;
+		f[8] = basis.up[0];
+		f[9] = basis.up[1];
+		f[10] = basis.up[2];
+		f[11] = 0;
+		f[12] = eye[0];
+		f[13] = eye[1];
+		f[14] = eye[2];
+		f[15] = 0;
 		{
 			// the point each froxel is lit at this frame, as a fraction of its cell: across and down in
 			// [-0.5, 0.5), in depth in [0, 1)
 			const phase = (input.frame % JITTER_PHASES) + 1;
-			f.set([halton(phase, 2) - 0.5, halton(phase, 3) - 0.5, halton(phase, 5), 0], 48);
+			f[48] = halton(phase, 2) - 0.5;
+			f[49] = halton(phase, 3) - 0.5;
+			f[50] = halton(phase, 5);
+			f[51] = 0;
 		}
 		const previous = this.#previous;
 		if (previous === null) {
 			f.fill(0, 52, 68);
 		} else {
-			f.set([...previous.forward, HISTORY_WEIGHT], 52);
-			f.set([...previous.right, 0], 56);
-			f.set([...previous.up, 0], 60);
-			f.set([eye[0] - previous.eye[0], eye[1] - previous.eye[1], eye[2] - previous.eye[2], 0], 64);
+			f[52] = previous.forward[0];
+			f[53] = previous.forward[1];
+			f[54] = previous.forward[2];
+			f[55] = HISTORY_WEIGHT;
+			f[56] = previous.right[0];
+			f[57] = previous.right[1];
+			f[58] = previous.right[2];
+			f[59] = 0;
+			f[60] = previous.up[0];
+			f[61] = previous.up[1];
+			f[62] = previous.up[2];
+			f[63] = 0;
+			f[64] = eye[0] - previous.eye[0];
+			f[65] = eye[1] - previous.eye[1];
+			f[66] = eye[2] - previous.eye[2];
+			f[67] = 0;
 		}
 		this.#device.queue.writeBuffer(this.#uniforms, 0, f);
-		const pass = encoder.beginComputePass({ label: 'volumetric fog' });
-		pass.setPipeline(pipeline);
-		pass.setBindGroup(0, input.frameGroup, [input.frameOffset]);
-		pass.setBindGroup(1, this.#groups[this.#index]);
-		pass.dispatchWorkgroups(Math.ceil(GRID[0] / WORKGROUP), Math.ceil(GRID[1] / WORKGROUP));
-		pass.end();
+		{
+			const pass = encoder.beginComputePass({ label: INJECT_KEY });
+			pass.setPipeline(inject);
+			pass.setBindGroup(0, input.frameGroup, [input.frameOffset]);
+			pass.setBindGroup(1, this.#injectGroups[this.#index]);
+			pass.dispatchWorkgroups(
+				Math.ceil(GRID[0] / INJECT_WORKGROUP),
+				Math.ceil(GRID[1] / INJECT_WORKGROUP),
+				Math.ceil(GRID[2] / INJECT_WORKGROUP),
+			);
+			pass.end();
+		}
+		{
+			const pass = encoder.beginComputePass({ label: INTEGRATE_KEY });
+			pass.setPipeline(integrate);
+			pass.setBindGroup(0, this.#integrateGroups[this.#index]);
+			pass.dispatchWorkgroups(
+				Math.ceil(GRID[0] / INTEGRATE_WORKGROUP),
+				Math.ceil(GRID[1] / INTEGRATE_WORKGROUP),
+			);
+			pass.end();
+		}
 
 		{
 			const tanHalf = Math.tan(camera.fovY / 2);

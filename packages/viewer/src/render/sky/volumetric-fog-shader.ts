@@ -1,7 +1,7 @@
 /**
- * volumetric fog compute shader: walks each column of the logarithmic froxel grid front-to-back, lighting
- * every froxel (sun + shadow, ambient probe, local lights, emission), blending with reprojected history, and
- * integrating scattered radiance (rgb) and transmittance (a).
+ * volumetric fog compute shaders: a 3D injection pass lights every froxel in parallel (sun + shadow, ambient
+ * probe, local lights, emission) and blends with reprojected history, then a 2D integration pass walks each
+ * column front-to-back to accumulate scattered radiance (rgb) and transmittance (a).
  *
  * @module
  */
@@ -37,23 +37,30 @@ export const VolumetricFogSchema = d.struct({
 /** byte size of {@link VolumetricFogSchema} */
 export const VOLUMETRIC_FOG_BYTES = d.sizeOf(VolumetricFogSchema);
 
-/** group 1 bind group layout for the volumetric fog froxel compute pass */
-export const volumetricFogLayout = tgpu
+/** group 1 bind group layout for the 3D froxel lighting/injection compute pass */
+export const volumetricFogInjectLayout = tgpu
 	.bindGroupLayout({
 		fog: { uniform: VolumetricFogSchema },
-		froxels: { storageTexture: d.textureStorage3d('rgba16float', 'write-only') },
 		historyOut: { storageTexture: d.textureStorage3d('rgba16float', 'write-only') },
 		historyIn: { texture: d.texture3d(d.f32) },
 		historySampler: { sampler: 'filtering' },
 	})
 	.$idx(1);
 
+/** group 0 bind group layout for the 2D froxel front-to-back integration compute pass */
+export const volumetricFogIntegrateLayout = tgpu
+	.bindGroupLayout({
+		fog: { uniform: VolumetricFogSchema },
+		medium: { texture: d.texture3d(d.f32) },
+		froxels: { storageTexture: d.textureStorage3d('rgba16float', 'write-only') },
+	})
+	.$idx(0);
+
 const sliceDepth = tgpu.fn(
-	[d.f32],
+	[d.vec4f, d.f32],
 	d.f32,
-)((s) => {
+)((slices, s) => {
 	'use gpu';
-	const slices = volumetricFogLayout.$.fog.slices;
 	return (std.exp2(s / slices.z) - slices.y) / slices.x;
 });
 
@@ -62,7 +69,7 @@ const fogDensity = tgpu.fn(
 	d.f32,
 )((y) => {
 	'use gpu';
-	const fog = volumetricFogLayout.$.fog;
+	const fog = volumetricFogInjectLayout.$.fog;
 	let density = fog.layer0.x * std.exp2(-std.max(-127, fog.layer0.y * (y - fog.layer0.z)));
 	if (fog.layer1.x > 0) {
 		density += fog.layer1.x * std.exp2(-std.max(-127, fog.layer1.y * (y - fog.layer1.z)));
@@ -111,7 +118,7 @@ const froxelHistory = tgpu.fn(
 	History,
 )((rel) => {
 	'use gpu';
-	const fog = volumetricFogLayout.$.fog;
+	const fog = volumetricFogInjectLayout.$.fog;
 	const weight = fog.previousForward.w;
 	if (weight <= 0) {
 		return History({ medium: d.vec4f(0), weight: 0 });
@@ -129,8 +136,8 @@ const froxelHistory = tgpu.fn(
 	}
 	return History({
 		medium: std.textureSampleLevel(
-			volumetricFogLayout.$.historyIn,
-			volumetricFogLayout.$.historySampler,
+			volumetricFogInjectLayout.$.historyIn,
+			volumetricFogInjectLayout.$.historySampler,
 			uvw,
 			0,
 		),
@@ -138,18 +145,18 @@ const froxelHistory = tgpu.fn(
 	});
 });
 
-/** compute entrypoint lighting and integrating one froxel column per invocation */
-export const csFroxels = tgpu.computeFn({
+/** compute entrypoint lighting one froxel in 3D and blending with reprojected history */
+export const csFroxelInject = tgpu.computeFn({
 	in: { id: d.builtin.globalInvocationId },
-	workgroupSize: [8, 8, 1],
+	workgroupSize: [4, 4, 4],
 })((input) => {
 	'use gpu';
 	const id = input.id;
-	const size = std.textureDimensions(volumetricFogLayout.$.froxels);
-	if (id.x >= size.x || id.y >= size.y) {
+	const size = std.textureDimensions(volumetricFogInjectLayout.$.historyOut);
+	if (id.x >= size.x || id.y >= size.y || id.z >= size.z) {
 		return;
 	}
-	const fog = volumetricFogLayout.$.fog;
+	const fog = volumetricFogInjectLayout.$.fog;
 	const frame = frameLayout.$.frame;
 	const sizeF = d.vec2f(size.xy);
 	const uv = std.div(std.add(d.vec2f(id.xy), d.vec2f(0.5)), sizeF);
@@ -162,40 +169,70 @@ export const csFroxels = tgpu.computeFn({
 		std.add(fog.forward.xyz, std.mul(fog.right.xyz, litUv.x * 2 - 1)),
 		std.mul(fog.up.xyz, 1 - litUv.y * 2),
 	);
-	const direction = std.normalize(litRay);
-	const pixel = std.mul(litUv, frame.renderSize.xy);
-	const g = fog.range.z;
-	const phase = henyeyGreenstein(g, std.dot(direction, fog.sunDirection.xyz));
-	const d4 = d.vec4f(std.mul(direction, g), 1);
-	const sky = std.mul(
-		std.max(
-			d.vec3f(std.dot(frame.sh[0], d4), std.dot(frame.sh[1], d4), std.dot(frame.sh[2], d4)),
-			d.vec3f(0),
-		),
-		fog.emissive.w / Math.PI,
+	const s = d.f32(id.z);
+	const depth = sliceDepth(fog.slices, s + 0.5);
+	const rel = std.mul(litRay, sliceDepth(fog.slices, s + fog.jitter.z));
+	const sigma = std.max(0.5 * fogDensity(fog.eye.y + rel.y) * fog.albedo.w, 0);
+	let rawSource = d.vec3f(fog.emissive.xyz);
+	let rawExtinction = d.f32(0);
+	if (sigma > 0) {
+		const scattering = std.mul(fog.albedo.xyz, sigma);
+		const scatteringLuminance = std.dot(scattering, LUMINANCE_ROUNDED.$);
+		const direction = std.normalize(litRay);
+		const pixel = std.mul(litUv, frame.renderSize.xy);
+		const g = fog.range.z;
+		const d4 = d.vec4f(std.mul(direction, g), 1);
+		let light = std.mul(
+			std.max(
+				d.vec3f(std.dot(frame.sh[0], d4), std.dot(frame.sh[1], d4), std.dot(frame.sh[2], d4)),
+				d.vec3f(0),
+			),
+			fog.emissive.w / Math.PI,
+		);
+		if (fog.sun.x + fog.sun.y + fog.sun.z > 0) {
+			const phase = henyeyGreenstein(g, std.dot(direction, fog.sunDirection.xyz));
+			light = std.add(light, std.mul(fog.sun.xyz, froxelSun(rel) * phase));
+		}
+		light = std.add(light, localFogLighting(rel, pixel, direction, g));
+		rawSource = std.add(std.mul(light, scattering), fog.emissive.xyz);
+		rawExtinction = std.max(sigma - scatteringLuminance, 0) + scatteringLuminance;
+	}
+	const history = froxelHistory(std.mul(ray, depth));
+	const medium = std.mix(d.vec4f(rawSource, rawExtinction), history.medium, history.weight);
+	std.textureStore(volumetricFogInjectLayout.$.historyOut, id, medium);
+});
+
+/**
+ * compute entrypoint integrating one lit froxel column front-to-back into scattered radiance and
+ * transmittance
+ */
+export const csFroxelIntegrate = tgpu.computeFn({
+	in: { id: d.builtin.globalInvocationId },
+	workgroupSize: [8, 8, 1],
+})((input) => {
+	'use gpu';
+	const id = input.id;
+	const size = std.textureDimensions(volumetricFogIntegrateLayout.$.froxels);
+	if (id.x >= size.x || id.y >= size.y) {
+		return;
+	}
+	const fog = volumetricFogIntegrateLayout.$.fog;
+	const sizeF = d.vec2f(size.xy);
+	const uv = std.div(std.add(d.vec2f(id.xy), d.vec2f(0.5)), sizeF);
+	const ray = std.add(
+		std.add(fog.forward.xyz, std.mul(fog.right.xyz, uv.x * 2 - 1)),
+		std.mul(fog.up.xyz, 1 - uv.y * 2),
 	);
+	const rayLen = std.length(ray);
+	const count = d.u32(fog.slices.w);
 
 	let scattered = d.vec3f(0);
 	let transmittance = d.f32(1);
 	let previous = fog.range.x;
 	let travelled = d.f32(0);
-	const count = d.u32(fog.slices.w);
-	const rayLen = std.length(ray);
 	for (let s = d.u32(0); s < count; s++) {
-		const depth = sliceDepth(d.f32(s) + 0.5);
-		const rel = std.mul(litRay, sliceDepth(d.f32(s) + fog.jitter.z));
-		const sigma = std.max(0.5 * fogDensity(fog.eye.y + rel.y) * fog.albedo.w, 0);
-		const scattering = std.mul(fog.albedo.xyz, sigma);
-		const scatteringLuminance = std.dot(scattering, LUMINANCE_ROUNDED.$);
-		const light = std.add(
-			std.add(std.mul(fog.sun.xyz, froxelSun(rel) * phase), sky),
-			localFogLighting(rel, pixel, direction, g),
-		);
-		const rawSource = std.add(std.mul(light, scattering), fog.emissive.xyz);
-		const rawExtinction = std.max(sigma - scatteringLuminance, 0) + scatteringLuminance;
-		const history = froxelHistory(std.mul(ray, depth));
-		const medium = std.mix(d.vec4f(rawSource, rawExtinction), history.medium, history.weight);
-		std.textureStore(volumetricFogLayout.$.historyOut, d.vec3u(id.xy, s), medium);
+		const depth = sliceDepth(fog.slices, d.f32(s) + 0.5);
+		const medium = std.textureLoad(volumetricFogIntegrateLayout.$.medium, d.vec3u(id.xy, s), 0);
 		const source = medium.xyz;
 		const extinction = medium.w;
 
@@ -210,6 +247,10 @@ export const csFroxels = tgpu.computeFn({
 		);
 		scattered = std.add(scattered, stepScatter);
 		transmittance *= std.mix(1, stepTransmittance, fade);
-		std.textureStore(volumetricFogLayout.$.froxels, d.vec3u(id.xy, s), d.vec4f(scattered, transmittance));
+		std.textureStore(
+			volumetricFogIntegrateLayout.$.froxels,
+			d.vec3u(id.xy, s),
+			d.vec4f(scattered, transmittance),
+		);
 	}
 });
