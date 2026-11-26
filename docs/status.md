@@ -595,29 +595,22 @@ entries once resolved or ruled out.
   the game's depth pass still dithers.
 - `extractor/src/game/effects/particle-system.ts`: speed-modifier curve + drag + force fields
   without speed limit stands in, though the stepped path supports it.
-- `extractor/src/game/materials/surfaces/surface-keywords.ts`: lists unused `_NORMAL_MAP` for
-  foliage shaders.
-- `extractor/src/pack/tables/water.ts` `volumeSurface`: hardcodes `meshNormals: false` where
+- `extractor/src/pipeline/tables/water.ts` `volumeSurface`: hardcodes `meshNormals: false` where
   `surfaceEntry` gives `true` for proxy surfaces (equivalent on flat polygons).
 - `extractor/src/game/interactives/template-data.ts`: `state` lookup falls back saved → config →
   temporary, whereas [interactives](game-data/interactives.md) describes `saveProperties` alone.
 
 ### duplication
 
-- **extractor prefabs**: copied field-name probe in six `is…Type` functions (`adjust-length.ts`,
-  `billboard.ts`, `emissive-override.ts`, `prefab-environment.ts`, `renderer-walk.ts`); `xyz` in
-  `prefab-walk.ts` and `prefab-environment.ts`; identity matrices in `prefab.ts`,
-  `renderer-passes.ts`, and `prefab-walk.ts`.
 - **extractor interactives**: `toFloat` (`crane-tower.ts`, `curve-move.ts`) vs `atomFloat`
   (`template-data.ts`); `craneTowerOf` duplicates `componentParams` merge; `cranes.ts` duplicates
   `InteractiveRow.scaleOf`; `startState` and `entityProperties` both parse `templateVariant`;
   `propertyAtomBits` and `templateAtoms` are near-duplicates.
 - **extractor state & dynamic**: `plain` closure duplicated in `state/story.ts`; `levelCondition`
   duplicates `maskLevels`; raw literals where constants exist (resource types 5/6/7, `compare: 0` in
-  `dynamic-structures.ts`; `LOD_GROUP = 205` in `renderer-candidates.ts`).
+  `dynamic-structures.ts`).
 - **extractor materials**: `_USE_MAIN2` check and `_MainTex2Color` read duplicated in
   `surfaces/dithered.ts` and `effects/dither-effect.ts`.
-- **extractor pack**: `assetNames` (`commands/world.ts`) looks up assets twice.
 - **formats**: `expect`/`count`/`list`/`bool` redefined 3× in `interactive-model.ts`;
   `stream-area.test.ts` has its own FlatBuffer writer; `level-config.test.ts` holds a string pool
   test.
