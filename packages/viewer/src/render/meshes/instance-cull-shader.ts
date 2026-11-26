@@ -320,8 +320,8 @@ export const csCullWrite = tgpu.computeFn({
 		const slot = slots + s * SLOT_WORDS;
 		if (
 			!(
-				tested.squared > std.bitcast(d.f32, d.u32)(work[slot]) &&
-				tested.squared <= std.bitcast(d.f32, d.u32)(work[slot + 1])
+				tested.squared > std.bitcast(d.u32, d.f32)(work[slot]) &&
+				tested.squared <= std.bitcast(d.u32, d.f32)(work[slot + 1])
 			)
 		) {
 			continue;
