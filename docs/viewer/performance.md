@@ -91,55 +91,6 @@ measurement instructions are in [driving the viewer](../driving-the-viewer.md#pr
 target reuse: `composite` needs its own HDR target so next frame's SSR can read it after `main`
 overwrites radiance; `celestial` reuses the sky reflection target after SSR finishes.
 
-## baseline
-
-indicative numbers from map02 on RDNA 4 at 2560×1600 (not a specification).
-
-**2026-11-07 (initial run)**:
-
-| measure                                                 | value     |
-| ------------------------------------------------------- | --------- |
-| flight (40 m/s, 40 m AGL), median/p95                   | ~7/20 ms  |
-| settled (Jingyu, Jingyu ground, lv008 overview)         | 6–7 ms    |
-| GPU at those views                                      | ~5 ms     |
-| `mesh select` at those views                            | 3.5–4 ms  |
-| `encode`, `prepare`                                     | < 1.5 ms  |
-| teleport to idle / page load to idle                    | 3 s / 5 s |
-| GPU pool bytes (including geometry pool spare capacity) | ~800 MiB  |
-
-flight hitches are bursts of mesh selection and draw preparation, not uploads, instance-block
-builds, or material derivations.
-
-**2026-11-11 walks (12 m/s, eye height) and crossings (60–80 m/s, 40 m AGL), uncapped frame rate
-(p95 includes [backpressure](../driving-the-viewer.md#profiling)):**
-
-| route                                        | pre-feedback median/p95 | with mip feedback (11-12) | `mesh select` | GPU    |
-| -------------------------------------------- | ----------------------- | ------------------------- | ------------- | ------ |
-| Wuling City walk                             | 12/27 ms                | 12/24 ms                  | 6 ms          | 7 ms   |
-| Jingyu Valley walk                           | 14/29 ms                | 12/23 ms                  | 7 ms          | 8 ms   |
-| Qingbo Stockade walk                         | 11/25 ms                | 10/19 ms                  | 6 ms          | 8 ms   |
-| Si's Painting walk                           | 5/14 ms                 | 5/14 ms                   | 1.5 ms        | 5 ms   |
-| map02 crossing (8 levels)                    | 17/34 ms                | 16/34 ms                  | 6 ms          | 7 ms   |
-| map01 walks (Hub, Lodespring, Power Plateau) | 4–5/9–12 ms             | unchanged (±1 ms)         | 1.5–2.5 ms    | 3–6 ms |
-| map01 crossing (6 levels)                    | 5/14 ms                 | unchanged (±1 ms)         | 2 ms          | 5 ms   |
-
-**2026-11-14 (multi-range requests + 64 decode jobs/worker, same-day A/B on first table's run)**:
-
-- page load to idle: 5.2 s → 2.2 s; Jingyu / lv008 teleport to idle: 2.6 s → 1.0 s.
-- flight frame median/p95: 6.9/18 ms → 6.3/16 ms; requests: ~18,000 → 8,000.
-- p95 wait from want to ready: meshes 400 ms → 110 ms, textures 340 ms → 140 ms. at teleports,
-  meshes still wait longest (~0.5 s median vs ~0.1 s textures; cause uninvestigated).
-
-**bottlenecks and static memory**:
-
-- map02 walks are CPU-bound: in Wuling City, ~1/3 of `mesh select` is placing particles (a few
-  thousand live across ~100 emitters) and the rest is per-segment bookkeeping (~9k segments).
-- every route ends with a full budget (1–3 GB downloaded per walk, uncategorized): on Wuling City
-  walk, ~40% of uploaded texture bytes and 50% of geometry bytes were re-uploads of evicted blobs
-  (half evicted < 7 s earlier).
-- non-streaming GPU allocations at 2560×1600 total ~540 MiB: main targets 215 MiB, post targets 165
-  MiB, sun shadow map 64 MiB, local-light shadow atlas 64 MiB, volumetric fog 21 MiB.
-
 ## optimization candidates
 
 see [quality settings](../game-data/quality-settings.md) for what the game toggles.

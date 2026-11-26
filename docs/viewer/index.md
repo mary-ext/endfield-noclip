@@ -15,7 +15,7 @@ implementation pages (each links to its corresponding [game-data](../architectur
 | [streaming](streaming.md)             | tile tree, instance and terrain selection, LOD, priority, residency        |
 | [frame](frame.md)                     | frame passes and render targets                                            |
 | [GPU resources](gpu-resources.md)     | bind groups, pipelines, buffers, textures                                  |
-| [performance](performance.md)         | frame optimizations, measured baseline, optimization candidates            |
+| [performance](performance.md)         | frame optimizations and optimization candidates                            |
 | [scene states](scene-states.md)       | scene control evaluation and the scene conditions panel                    |
 | [environment](environment.md)         | environment volume blending and wetness                                    |
 | [lighting](lighting.md)               | units, sun, shadows, ambient, reflections, local lights, irradiance volume |
