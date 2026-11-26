@@ -1,6 +1,7 @@
 import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common } from 'typegpu';
 
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
+import { sampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import { postUniformLayout } from '../core/post-schema.ts';
@@ -30,6 +31,7 @@ interface Sized {
 export class AmbientOcclusion {
 	#root: TgpuRoot;
 	#postGroup: TgpuBindGroup;
+	#gatherSampler: GPUSampler;
 	#pipelines: Record<'depth' | 'gtao' | 'blur', AsyncPipeline<TgpuRenderPipeline>>;
 	/** half resolution: view depth, and the AO marched over it; full resolution: the blurred AO */
 	#targets: TextureSet;
@@ -43,6 +45,7 @@ export class AmbientOcclusion {
 	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer) {
 		this.#root = root;
 		this.#targets = new TextureSet(root.device);
+		this.#gatherSampler = sampler(root.device, {});
 		this.#postGroup = root.createBindGroup(postUniformLayout, { post: postUniforms });
 		const make = (
 			label: string,
@@ -132,7 +135,12 @@ export class AmbientOcclusion {
 					pipeline: p.blur,
 					groups: [
 						this.#postGroup,
-						root.createBindGroup(gtaoBlurLayout, { depth, halfDepth: aoDepthView, ao: aoView }),
+						root.createBindGroup(gtaoBlurLayout, {
+							depth,
+							halfDepth: aoDepthView,
+							ao: aoView,
+							gatherSampler: this.#gatherSampler,
+						}),
 					],
 					target: blurredView,
 				},

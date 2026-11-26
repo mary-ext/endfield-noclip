@@ -31,8 +31,9 @@ export const gtaoMarchLayout = tgpu.bindGroupLayout({
 /** bind group layout for `fsGtaoBlur` */
 export const gtaoBlurLayout = tgpu.bindGroupLayout({
 	depth: { texture: d.textureDepth2d() },
-	halfDepth: { texture: d.texture2d(d.f32) },
-	ao: { texture: d.texture2d(d.f32) },
+	halfDepth: { texture: d.texture2d(d.f32), sampleType: 'unfilterable-float' },
+	ao: { texture: d.texture2d(d.f32), sampleType: 'unfilterable-float' },
+	gatherSampler: { sampler: 'non-filtering' },
 });
 
 /** downsamples full-resolution reversed-Z depth to half-resolution linear view depth (0 for sky) */
@@ -186,7 +187,7 @@ export const fsGtao = tgpu.fragmentFn({
 	return d.vec4f(std.mix(1, ao, post.ao.y), 0, 0, 1);
 });
 
-/** 4x4 depth-aware box blur upsampling half-resolution AO to full resolution */
+/** 4x4 depth-aware box blur upsampling half-resolution AO to full resolution via 4x textureGather */
 export const fsGtaoBlur = tgpu.fragmentFn({
 	in: { position: d.builtin.position },
 	out: d.vec4f,
@@ -198,19 +199,24 @@ export const fsGtaoBlur = tgpu.fragmentFn({
 		return d.vec4f(1);
 	}
 	const z = viewDepth(depth);
-	const size = d.vec2i(std.textureDimensions(gtaoBlurLayout.$.ao));
-	const maxPx = std.sub(size, d.vec2i(1));
-	const center = d.vec2i(std.intdiv(px.x, AO_SCALE), std.intdiv(px.y, AO_SCALE));
+	const thresh = 0.05 * z + 0.1;
+	const invSize = std.div(d.vec2f(1), d.vec2f(std.textureDimensions(gtaoBlurLayout.$.ao)));
+	const center = d.vec2f(d.f32(std.intdiv(px.x, AO_SCALE)), d.f32(std.intdiv(px.y, AO_SCALE)));
+	const uv0 = std.mul(std.sub(center, d.vec2f(1)), invSize);
+	const uv1 = std.mul(std.add(center, d.vec2f(1)), invSize);
+	const zVec = d.vec4f(z);
+	const tVec = d.vec4f(thresh);
+	const ones = d.vec4f(1);
+	const zeros = d.vec4f(0);
 	let sum = d.f32(0);
 	let weight = d.f32(0);
-	for (let y = -2; y < 2; y++) {
-		for (let x = -2; x < 2; x++) {
-			const q = std.clamp(std.add(center, d.vec2i(x, y)), d.vec2i(0), maxPx);
-			const qz = std.textureLoad(gtaoBlurLayout.$.halfDepth, q, 0).r;
-			const w = std.select(d.f32(0), d.f32(1), std.abs(qz - z) < 0.05 * z + 0.1);
-			sum += std.textureLoad(gtaoBlurLayout.$.ao, q, 0).r * w;
-			weight += w;
-		}
+	for (let q = 0; q < 4; q++) {
+		const qUv = d.vec2f(std.select(uv0.x, uv1.x, (q & 1) !== 0), std.select(uv0.y, uv1.y, q >= 2));
+		const qz = std.textureGather(0, gtaoBlurLayout.$.halfDepth, gtaoBlurLayout.$.gatherSampler, qUv);
+		const qa = std.textureGather(0, gtaoBlurLayout.$.ao, gtaoBlurLayout.$.gatherSampler, qUv);
+		const w = std.select(zeros, ones, std.lt(std.abs(std.sub(qz, zVec)), tVec));
+		sum += std.dot(qa, w);
+		weight += std.dot(w, ones);
 	}
 	// no tap at this depth (a thin edge the half-resolution march missed): leave it unoccluded
 	return d.vec4f(std.select(1, sum / weight, weight > 0), 0, 0, 1);
