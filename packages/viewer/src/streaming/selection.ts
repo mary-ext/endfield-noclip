@@ -200,28 +200,26 @@ const stepFade = (
 	fades: Map<number, FadeState>,
 	key: number,
 	shown: boolean,
-	options: {
-		wasShown: boolean;
-		canStartIn: boolean;
-		canStartOut: boolean;
-		jumped: boolean;
-		fadeStep: number;
-	},
+	wasShown: boolean,
+	canStartIn: boolean,
+	canStartOut: boolean,
+	jumped: boolean,
+	fadeStep: number,
 ): number => {
-	let state = fades.get(key);
+	let state = fades.size > 0 ? fades.get(key) : undefined;
 	if (shown) {
 		if (state !== undefined && !state.toShown) {
 			state.toShown = true;
-			state.progress = Math.max(options.fadeStep, 1 - state.progress);
-		} else if (state === undefined && !options.jumped && !options.wasShown && options.canStartIn) {
-			if (options.fadeStep < 1) {
-				state = { toShown: true, progress: options.fadeStep };
+			state.progress = Math.max(fadeStep, 1 - state.progress);
+		} else if (state === undefined && !jumped && !wasShown && canStartIn) {
+			if (fadeStep < 1) {
+				state = { toShown: true, progress: fadeStep };
 				fades.set(key, state);
 			}
 		}
 	} else if (state === undefined) {
-		if (!options.jumped && options.wasShown && options.canStartOut && options.fadeStep < 1) {
-			state = { toShown: false, progress: options.fadeStep };
+		if (!jumped && wasShown && canStartOut && fadeStep < 1) {
+			state = { toShown: false, progress: fadeStep };
 			fades.set(key, state);
 		} else {
 			return -1;
@@ -402,13 +400,17 @@ export class Selector {
 		const wasShown = this.#conditionalFrame[node.index] === this.#frame - 1;
 		const slack = wasShown ? UNREFINE_SLACK : 0;
 		const within = distance < options.detailDistance + slack;
-		const fade = stepFade(this.#conditionalFades, node.index, within, {
+		const hasConditional = node.conditional.length > 0;
+		const fade = stepFade(
+			this.#conditionalFades,
+			node.index,
+			within,
 			wasShown,
-			canStartIn: node.conditional.length > 0 && distance > options.detailDistance - 32,
-			canStartOut: node.conditional.length > 0,
-			jumped: this.#jumped,
-			fadeStep: this.#fadeStep,
-		});
+			hasConditional && distance > options.detailDistance - 32,
+			hasConditional,
+			this.#jumped,
+			this.#fadeStep,
+		);
 		// keep descending past the ring only while a descendant may still be fading out
 		if (fade < 0) {
 			if (
@@ -421,7 +423,9 @@ export class Selector {
 			if (inView === null) {
 				return;
 			}
-			for (const child of node.quadrants) {
+			const quadrants = node.quadrants;
+			for (let i = 0; i < quadrants.length; i++) {
+				const child = quadrants[i];
 				if (child !== null) {
 					this.#conditional(child, view, options);
 				}
@@ -435,19 +439,22 @@ export class Selector {
 		if (within) {
 			this.#conditionalFrame[node.index] = this.#frame;
 		}
-		for (const ref of node.conditional) {
-			if (!this.#shows(ref)) {
+		const conditional = node.conditional;
+		const groupsShown = this.#groupsShown;
+		const stream = this.#stream;
+		for (let i = 0; i < conditional.length; i++) {
+			const ref = conditional[i];
+			if (!(groupsShown[ref.group] ?? false)) {
 				continue;
 			}
-			const item = this.#stream.want(
-				ref.blob,
-				this.#priority(node, view.pixelFactor / distance, inView, distance),
-			);
+			const item = stream.want(ref.blob, this.#priority(node, view.pixelFactor / distance, inView, distance));
 			if (item !== null) {
 				this.#emitRange(item, ref, fade);
 			}
 		}
-		for (const child of node.quadrants) {
+		const quadrants = node.quadrants;
+		for (let i = 0; i < quadrants.length; i++) {
+			const child = quadrants[i];
 			if (child !== null) {
 				this.#conditional(child, view, options);
 			}
@@ -464,26 +471,29 @@ export class Selector {
 		const ez = eye[2];
 		const groupsShown = this.#groupsShown;
 		const reached = this.#tree.reached;
+		const reachedFrame = this.#reachedFrame;
+		const reachedFades = this.#reachedFades;
+		const frame = this.#frame;
+		const prevFrame = frame - 1;
+		const jumped = this.#jumped;
+		const fadeStep = this.#fadeStep;
+		const stream = this.#stream;
 		let lastNode: TileNode | null = null;
 		let lastDistance = 0;
 		let lastInView: boolean | null = null;
 		for (let i = 0; i < reached.length; i++) {
 			const entry = reached[i];
 			const r = entry.reach;
-			const wasShown = this.#reachedFrame[i] === this.#frame - 1;
+			const wasShown = reachedFrame[i] === prevFrame;
 			const mx = wasShown ? reachUnloadMargin(r.maxX - r.minX) : 0;
 			const mz = wasShown ? reachUnloadMargin(r.maxZ - r.minZ) : 0;
 			const inside = ex >= r.minX - mx && ex <= r.maxX + mx && ez >= r.minZ - mz && ez <= r.maxZ + mz;
 			if (inside) {
-				this.#reachedFrame[i] = this.#frame;
+				reachedFrame[i] = frame;
+			} else if (!wasShown && reachedFades.size === 0) {
+				continue;
 			}
-			const fade = stepFade(this.#reachedFades, i, inside, {
-				wasShown,
-				canStartIn: true,
-				canStartOut: true,
-				jumped: this.#jumped,
-				fadeStep: this.#fadeStep,
-			});
+			const fade = stepFade(reachedFades, i, inside, wasShown, true, true, jumped, fadeStep);
 			if (fade < 0) {
 				continue;
 			}
@@ -501,7 +511,7 @@ export class Selector {
 				if (lastInView === null) {
 					continue;
 				}
-				const item = this.#stream.want(
+				const item = stream.want(
 					ref.blob,
 					this.#priority(node, view.pixelFactor / lastDistance, lastInView, lastDistance),
 				);
@@ -572,12 +582,17 @@ export class Selector {
 	#emitHlod(node: TileNode, options: SelectionOptions, priority: number, fade: number): boolean {
 		const out = this.selection.instances;
 		const start = out.length;
+		const hlod = node.hlod;
+		const tiers = options.hlodTiers;
+		const groupsShown = this.#groupsShown;
+		const stream = this.#stream;
 		let ready = true;
-		for (const ref of node.hlod) {
-			if (!options.hlodTiers[ref.tier] || !this.#shows(ref)) {
+		for (let i = 0; i < hlod.length; i++) {
+			const ref = hlod[i];
+			if (!tiers[ref.tier] || !(groupsShown[ref.group] ?? false)) {
 				continue;
 			}
-			const item = this.#stream.want(ref.blob, priority);
+			const item = stream.want(ref.blob, priority);
 			if (item === null) {
 				ready = false;
 			} else {
@@ -592,9 +607,13 @@ export class Selector {
 
 	/** @returns the finest HLOD tier the node shows, or `null` when it shows none */
 	#hlodTier(node: TileNode, options: SelectionOptions): number | null {
+		const hlod = node.hlod;
+		const tiers = options.hlodTiers;
+		const groupsShown = this.#groupsShown;
 		let tier: number | null = null;
-		for (const ref of node.hlod) {
-			if (options.hlodTiers[ref.tier] && this.#shows(ref)) {
+		for (let i = 0; i < hlod.length; i++) {
+			const ref = hlod[i];
+			if (tiers[ref.tier] && (groupsShown[ref.group] ?? false)) {
 				tier = tier === null ? ref.tier : Math.min(tier, ref.tier);
 			}
 		}
@@ -610,7 +629,7 @@ export class Selector {
 		}
 		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, view.camera.position), 1);
 		// content outside the view only casts shadows into it, so its streaming never holds back what's in view
-		return this.#refineInstances(node, view, options, { distance, inView, parentFade }) || !inView;
+		return this.#refineInstances(node, view, options, distance, inView, parentFade) || !inView;
 	}
 
 	/** emits a node's detail refs (leaf) or recurses into its children, with `fade` */
@@ -618,15 +637,21 @@ export class Selector {
 		node: TileNode,
 		view: SelectionView,
 		options: SelectionOptions,
-		{ leaf, priority, fade }: { leaf: boolean; priority: number; fade: number },
+		leaf: boolean,
+		priority: number,
+		fade: number,
 	): boolean {
 		let complete = true;
 		if (leaf) {
-			for (const ref of node.detail) {
-				if (!this.#shows(ref)) {
+			const detail = node.detail;
+			const groupsShown = this.#groupsShown;
+			const stream = this.#stream;
+			for (let i = 0; i < detail.length; i++) {
+				const ref = detail[i];
+				if (!(groupsShown[ref.group] ?? false)) {
 					continue;
 				}
-				const item = this.#stream.want(ref.blob, priority);
+				const item = stream.want(ref.blob, priority);
 				if (item === null) {
 					complete = false;
 				} else {
@@ -634,7 +659,9 @@ export class Selector {
 				}
 			}
 		} else {
-			for (const child of node.quadrants) {
+			const quadrants = node.quadrants;
+			for (let i = 0; i < quadrants.length; i++) {
+				const child = quadrants[i];
 				if (child !== null) {
 					complete = this.#instances(child, view, options, fade) && complete;
 				}
@@ -648,7 +675,9 @@ export class Selector {
 		node: TileNode,
 		view: SelectionView,
 		options: SelectionOptions,
-		{ distance, inView, parentFade }: { distance: number; inView: boolean; parentFade: number },
+		distance: number,
+		inView: boolean,
+		parentFade: number,
 	): boolean {
 		const out = this.selection.instances;
 		const sse = (node.geometricError * view.pixelFactor) / distance;
@@ -656,23 +685,26 @@ export class Selector {
 		const tier = this.#hlodTier(node, options);
 		const hasHlod = tier !== null;
 		const leaf = isLeaf(node);
-		const seen = this.#seenFrame[node.index] === this.#frame - 1;
-		this.#seenFrame[node.index] = this.#frame;
-		const wasRefined = this.#refinedFrame[node.index] === this.#frame - 1;
+		const frame = this.#frame;
+		const prevFrame = frame - 1;
+		const seen = this.#seenFrame[node.index] === prevFrame;
+		this.#seenFrame[node.index] = frame;
+		const wasRefined = this.#refinedFrame[node.index] === prevFrame;
 		// a leaf refines even without detail of its own (`docs/viewer/streaming.md#instance-selection`)
 		const canRefine = !leaf || options.detail;
 		const slack = wasRefined ? UNREFINE_SLACK : 0;
 		const refine = canRefine && distance < hlodRing(tier, options.detailDistance, leaf) + slack;
 		const canFade = !this.#jumped && seen && (hasHlod || leaf);
 
-		let fadeState = this.#hlodFades.get(node.index);
-		if (fadeState !== undefined && fadeState.toShown !== refine) {
-			fadeState.toShown = refine;
-			fadeState.progress = Math.max(this.#fadeStep, 1 - fadeState.progress);
-		}
+		const hlodFades = this.#hlodFades;
+		const fadeState = hlodFades.size > 0 ? hlodFades.get(node.index) : undefined;
 		if (fadeState !== undefined) {
+			if (fadeState.toShown !== refine) {
+				fadeState.toShown = refine;
+				fadeState.progress = Math.max(this.#fadeStep, 1 - fadeState.progress);
+			}
 			if (fadeState.toShown) {
-				this.#refinedFrame[node.index] = this.#frame;
+				this.#refinedFrame[node.index] = frame;
 			}
 			let refinedFade: number;
 			let hlodFade: number;
@@ -686,7 +718,7 @@ export class Selector {
 				refinedFade = encodeFadeOut(1 - fadeState.progress);
 				hlodFade = encodeFadeIn(fadeState.progress);
 			}
-			this.#emitRefined(node, view, options, { leaf, priority, fade: refinedFade });
+			this.#emitRefined(node, view, options, leaf, priority, refinedFade);
 			if (hasHlod) {
 				this.#emitHlod(node, options, priority, hlodFade);
 			}
@@ -697,9 +729,9 @@ export class Selector {
 			if (canFade && wasRefined && this.#fadeStep < 1) {
 				const hlodFade = parentFade !== 0 ? parentFade : encodeFadeIn(this.#fadeStep);
 				if (!hasHlod || this.#emitHlod(node, options, priority, hlodFade)) {
-					this.#hlodFades.set(node.index, { toShown: false, progress: this.#fadeStep });
+					hlodFades.set(node.index, { toShown: false, progress: this.#fadeStep });
 					const refinedFade = parentFade !== 0 ? parentFade : encodeFadeOut(1 - this.#fadeStep);
-					this.#emitRefined(node, view, options, { leaf, priority, fade: refinedFade });
+					this.#emitRefined(node, view, options, leaf, priority, refinedFade);
 					return true;
 				}
 			}
@@ -709,11 +741,11 @@ export class Selector {
 		const startFadeIn = canFade && !wasRefined && this.#fadeStep < 1;
 		const refinedFade = startFadeIn && parentFade === 0 ? encodeFadeIn(this.#fadeStep) : parentFade;
 		const mark = out.length;
-		const complete = this.#emitRefined(node, view, options, { leaf, priority, fade: refinedFade });
+		const complete = this.#emitRefined(node, view, options, leaf, priority, refinedFade);
 		if (complete) {
-			this.#refinedFrame[node.index] = this.#frame;
+			this.#refinedFrame[node.index] = frame;
 			if (startFadeIn) {
-				this.#hlodFades.set(node.index, { toShown: true, progress: this.#fadeStep });
+				hlodFades.set(node.index, { toShown: true, progress: this.#fadeStep });
 				if (hasHlod) {
 					const hlodFade = parentFade !== 0 ? parentFade : encodeFadeOut(1 - this.#fadeStep);
 					this.#emitHlod(node, options, priority, hlodFade);
