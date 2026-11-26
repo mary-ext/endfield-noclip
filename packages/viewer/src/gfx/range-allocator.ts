@@ -27,6 +27,12 @@ export class RangeAllocator {
 		return this.#used;
 	}
 
+	/** @returns end of the highest live allocation (0 when empty) */
+	get highWater(): number {
+		const last = this.#free.at(-1);
+		return last !== undefined && last.start + last.count === this.#capacity ? last.start : this.#capacity;
+	}
+
 	/**
 	 * extends the range at its end; live allocations keep their places.
 	 *
@@ -42,6 +48,28 @@ export class RangeAllocator {
 			this.#free[this.#free.length - 1] = { start: last.start, count: last.count + added };
 		} else {
 			this.#free.push({ start: this.#capacity, count: added });
+		}
+		this.#capacity = capacity;
+	}
+
+	/**
+	 * trims unused capacity from the end; live allocations keep their places.
+	 *
+	 * @param capacity the new capacity, at least {@link highWater} and less than {@link capacity}
+	 */
+	shrink(capacity: number): void {
+		if (capacity >= this.#capacity || capacity < this.highWater) {
+			return;
+		}
+		const removed = this.#capacity - capacity;
+		const last = this.#free.at(-1);
+		if (last !== undefined && last.start + last.count === this.#capacity) {
+			const remaining = last.count - removed;
+			if (remaining <= 0) {
+				this.#free.pop();
+			} else {
+				this.#free[this.#free.length - 1] = { start: last.start, count: remaining };
+			}
 		}
 		this.#capacity = capacity;
 	}

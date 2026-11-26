@@ -32,3 +32,22 @@ test('growing to a smaller capacity changes nothing', () => {
 	assert.equal(allocator.capacity, 8);
 	assert.deepEqual(allocator.allocate(8), { start: 0, count: 8 });
 });
+
+test('shrinking trims unused tail capacity while keeping live allocations in place', () => {
+	const allocator = new RangeAllocator(16);
+	assert.equal(allocator.highWater, 0);
+	const a = allocator.allocate(4);
+	const b = allocator.allocate(6);
+	assert.ok(a !== null && b !== null);
+	assert.equal(allocator.highWater, 10);
+	// cannot shrink below highWater
+	allocator.shrink(8);
+	assert.equal(allocator.capacity, 16);
+	// freeing the tail drops highWater and allows shrinking down to it
+	allocator.free(b);
+	assert.equal(allocator.highWater, 4);
+	allocator.shrink(6);
+	assert.equal(allocator.capacity, 6);
+	assert.deepEqual(allocator.allocate(2), { start: 4, count: 2 });
+	assert.equal(allocator.allocate(1), null);
+});

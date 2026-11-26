@@ -42,6 +42,8 @@ const INITIAL_VERTICES = 1 << 16;
 const INITIAL_INDEX_UNITS = 1 << 18;
 /** how much a full pool grows by, which bounds its unused tail */
 const GROWTH = 1.5;
+/** shrink a grown pool when its high-water mark drops to or below this fraction of capacity */
+const SHRINK_THRESHOLD = 0.4;
 
 /** buffers sub-allocated together by one range allocator, each with its own bytes per unit */
 class PoolBuffers {
@@ -50,6 +52,7 @@ class PoolBuffers {
 	readonly #label: string;
 	readonly #usage: GPUBufferUsageFlags;
 	readonly #unitBytes: readonly number[];
+	readonly #initialUnits: number;
 	readonly #maxUnits: number;
 	readonly #allocator: RangeAllocator;
 
@@ -68,6 +71,7 @@ class PoolBuffers {
 		this.#unitBytes = options.unitBytes;
 		this.#maxUnits = Math.floor(device.limits.maxBufferSize / Math.max(...options.unitBytes));
 		const units = Math.min(options.initialUnits, this.#maxUnits);
+		this.#initialUnits = units;
 		this.#allocator = new RangeAllocator(units);
 		this.buffers = this.#create(units);
 	}
@@ -95,8 +99,10 @@ class PoolBuffers {
 		return this.#allocator.allocate(count);
 	}
 
-	free(allocation: RangeAllocation): void {
+	/** @returns whether the buffers were shrunk (so callers must repoint bindings) */
+	free(allocation: RangeAllocation): boolean {
 		this.#allocator.free(allocation);
+		return this.#maybeShrink();
 	}
 
 	destroy(): void {
@@ -113,6 +119,44 @@ class PoolBuffers {
 				usage: this.#usage,
 			}),
 		);
+	}
+
+	/**
+	 * shrinks the buffers when a grown pool's live high-water mark falls well below capacity, returning unused
+	 * tail VRAM to the device. called on free (during eviction, before a frame encodes)
+	 */
+	#maybeShrink(): boolean {
+		const capacity = this.#allocator.capacity;
+		if (capacity <= this.#initialUnits) {
+			return false;
+		}
+		const highWater = this.#allocator.highWater;
+		if (highWater > capacity * SHRINK_THRESHOLD) {
+			return false;
+		}
+		const units = Math.max(this.#initialUnits, Math.ceil(highWater * GROWTH));
+		if (units >= capacity) {
+			return false;
+		}
+		flushUploadBatch({ keepOpen: true });
+		const previous = this.buffers;
+		const next = this.#create(units);
+		if (highWater > 0) {
+			const encoder = this.#device.createCommandEncoder({ label: `${this.#label} shrink` });
+			previous.forEach((buffer, i) => {
+				const copyBytes = highWater * this.#unitBytes[i];
+				if (copyBytes > 0) {
+					encoder.copyBufferToBuffer(buffer, 0, next[i], 0, copyBytes);
+				}
+			});
+			this.#device.queue.submit([encoder.finish()]);
+		}
+		for (const buffer of previous) {
+			buffer.destroy();
+		}
+		this.buffers = next;
+		this.#allocator.shrink(units);
+		return true;
 	}
 
 	/**
@@ -197,7 +241,9 @@ class VertexPool {
 	}
 
 	free(allocation: RangeAllocation): void {
-		this.#buffers.free(allocation);
+		if (this.#buffers.free(allocation)) {
+			this.#point();
+		}
 	}
 
 	destroy(): void {
@@ -240,7 +286,9 @@ class IndexPool {
 	}
 
 	free(allocation: RangeAllocation): void {
-		this.#buffers.free(allocation);
+		if (this.#buffers.free(allocation)) {
+			this.indices.buffer = this.#buffers.buffers[0];
+		}
 	}
 
 	destroy(): void {
