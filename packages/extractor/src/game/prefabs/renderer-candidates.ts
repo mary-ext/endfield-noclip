@@ -557,14 +557,27 @@ const UNHANDLED_RENDERER_CLASSES = new Map<number, string>([
 	[1971053207, 'SpriteShapeRenderer'],
 ]);
 
-/** Unity classes already handled by a dedicated collector above */
-const HANDLED_RENDERER_CLASSES = new Set<number>([
-	UnityClass.MeshRenderer,
-	UnityClass.SkinnedMeshRenderer,
-	UnityClass.ParticleSystemRenderer,
-	LINE_RENDERER_CLASS,
-	DECAL_PROJECTOR_CLASS,
-]);
+/** a registered prefab renderer collector and the Unity class IDs it claims */
+export interface RendererHandler {
+	name: string;
+	/** Unity class IDs claimed by this handler (excluded from the unhandled-renderer stand-in fallback) */
+	classes: readonly number[];
+	step: NodeStep;
+}
+
+/** registered prefab renderer collectors, run in authored candidate order */
+export const RENDERER_HANDLERS: readonly RendererHandler[] = [
+	{ name: 'lodGroup', classes: [LOD_GROUP], step: collectLodSizes },
+	{ name: 'skinnedMesh', classes: [UnityClass.SkinnedMeshRenderer], step: collectSkinnedRenderers },
+	{ name: 'mesh', classes: [UnityClass.MeshRenderer], step: collectMeshRenderers },
+	{ name: 'decalProjector', classes: [DECAL_PROJECTOR_CLASS], step: collectDecalProjectors },
+	{ name: 'lineRenderer', classes: [LINE_RENDERER_CLASS], step: collectLineRenderers },
+	{ name: 'particleSystem', classes: [UnityClass.ParticleSystemRenderer], step: collectParticles },
+	{ name: 'splineMover', classes: [], step: collectSplineMovers },
+];
+
+/** Unity classes claimed by a registered handler above */
+const HANDLED_RENDERER_CLASSES = new Set<number>(RENDERER_HANDLERS.flatMap((handler) => handler.classes));
 
 const STAND_IN_CUBE_BOUNDS = { center: [0, 0, 0], extents: [0.5, 0.5, 0.5] } as const;
 
@@ -613,12 +626,6 @@ const collectUnhandledRenderers: NodeStep = async (walk, node, state) => {
 
 /** what a drawn GameObject draws, in the order its candidates are kept */
 export const CANDIDATE_SOURCES: readonly NodeStep[] = [
-	collectLodSizes,
-	collectSkinnedRenderers,
-	collectMeshRenderers,
-	collectDecalProjectors,
-	collectLineRenderers,
-	collectParticles,
-	collectSplineMovers,
+	...RENDERER_HANDLERS.map((handler) => handler.step),
 	collectUnhandledRenderers,
 ];

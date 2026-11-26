@@ -142,9 +142,11 @@ const readNode = async (
 ): Promise<PrefabNode> => {
 	const key = objectKey(go);
 	const data = await resolver.read(go);
+	const resolved = await Promise.all(
+		objectsField(data, 'm_Component').map((item) => resolver.resolve(go, pptrField(item, 'component'))),
+	);
 	const components: PrefabComponent[] = [];
-	for (const item of objectsField(data, 'm_Component')) {
-		const ref = await resolver.resolve(go, pptrField(item, 'component'));
+	for (const ref of resolved) {
 		if (ref !== null) {
 			components.push(readComponent(resolver, ref));
 		}
@@ -193,13 +195,17 @@ export const readPrefabNode = (resolver: AssetResolver, go: ObjectRef): Promise<
  * @returns its children's GameObjects in authored order, skipping null PPtrs
  */
 export const prefabChildren = async (resolver: AssetResolver, node: PrefabNode): Promise<ObjectRef[]> => {
+	const resolved = await Promise.all(
+		arrayField(await node.transform.read(), 'm_Children').map(async (pointer) => {
+			const child = await resolver.resolve(node.transform.ref, asPPtr(pointer));
+			if (child === null) {
+				return null;
+			}
+			return resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject'));
+		}),
+	);
 	const children: ObjectRef[] = [];
-	for (const pointer of arrayField(await node.transform.read(), 'm_Children')) {
-		const child = await resolver.resolve(node.transform.ref, asPPtr(pointer));
-		if (child === null) {
-			continue;
-		}
-		const childGo = await resolver.resolve(child, pptrField(await resolver.read(child), 'm_GameObject'));
+	for (const childGo of resolved) {
 		if (childGo !== null) {
 			children.push(childGo);
 		}
