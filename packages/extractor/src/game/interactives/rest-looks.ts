@@ -28,6 +28,9 @@ export const CAMPFIRE_COMPONENTS = ['_InteractiveCampfireComponentDataForMemoryP
 /** the component of vertical rope lifts, which set their rope's length from their two ports */
 export const VERTICAL_ROPE_COMPONENTS = ['_InteractiveVerticalRopeComponentDataForMemoryPack'];
 
+/** the component of spore mushrooms, which sets view-state bool `Active` true on start */
+export const SPORE_MUSHROOM_COMPONENTS = ['_SporeMushroomComponentDataForMemoryPack'];
+
 /** the placement property naming the other port of a vertical rope */
 const TARGET_KEY = 'target';
 
@@ -139,8 +142,8 @@ export interface LookKeys {
 	keys: readonly PlayerKey[];
 	/** the `state` key's value, `null` when nothing sets it */
 	state: number | null;
-	/** float and int keys the interactive's components set before its view states start */
-	numbers: ReadonlyMap<string, number>;
+	/** keys the interactive's components set before its view states start */
+	values: ReadonlyMap<string, boolean | number>;
 }
 
 /**
@@ -153,7 +156,7 @@ export interface LookKeys {
 export const readInteractiveLooks = async (
 	context: FacilityContext,
 	model: ModelViews,
-	{ campfire, keys, state, numbers }: LookKeys,
+	{ campfire, keys, state, values }: LookKeys,
 ): Promise<InteractiveLooks | null> => {
 	const states = await readViewStates(context, model);
 	if (states === null) {
@@ -161,7 +164,7 @@ export const readInteractiveLooks = async (
 	}
 	const activations = campfire ? [false, true] : [null];
 	const settle = (activated: boolean | null, near: boolean) => {
-		const blackboard = new Map<string, boolean | number>(numbers);
+		const blackboard = new Map<string, boolean | number>(values);
 		if (state !== null) {
 			blackboard.set(STATE_KEY, state);
 		}
@@ -198,6 +201,8 @@ interface TemplateLooks {
 	radius: number | null;
 	/** the `state` `looks` were settled with, `null` when nothing passes one on */
 	state: number | null;
+	/** view-state keys the template's components always set on start */
+	defaults: Map<string, boolean | number>;
 	/** whether it's a vertical rope's port, whose look also follows its other port */
 	verticalRope: boolean;
 	/** a broken robot's decoded template, whose look also follows its component parameters */
@@ -263,9 +268,13 @@ export class RestLooks implements InteractiveKind {
 		if (traits.kind !== 'other' || this.#doodads.has(key)) {
 			return;
 		}
-		const { campfire, keys, start, verticalRope, fixableRobot, lifter, entity } = traits;
+		const { campfire, keys, start, verticalRope, sporeMushroom, fixableRobot, lifter, entity } = traits;
 		const state = start === null ? null : (start.variants.get(key) ?? start.state);
-		const looks = await this.#looksOf(model, { campfire, keys, state, numbers: new Map() });
+		const defaults = new Map<string, boolean | number>();
+		if (sporeMushroom) {
+			defaults.set('Active', true);
+		}
+		const looks = await this.#looksOf(model, { campfire, keys, state, values: defaults });
 		if (looks !== null) {
 			const radius = looks.near === null ? null : Math.max(...keys.map((entry) => entry.radius));
 			this.#templates.set(key, {
@@ -275,6 +284,7 @@ export class RestLooks implements InteractiveKind {
 				keys,
 				radius,
 				state,
+				defaults,
 				verticalRope,
 				fixableRobot,
 				lifter,
@@ -293,15 +303,15 @@ export class RestLooks implements InteractiveKind {
 		let { looks } = rest;
 		// a placement's own `state` overrides its template's
 		const state = (rest.state === null ? null : stateOf(row)) ?? rest.state;
-		const numbers = new Map<string, number>();
+		const extra = new Map<string, number>();
 		if (rest.verticalRope) {
 			for (const [key, value] of verticalRopeFloats(row, this.#rows)) {
-				numbers.set(key, value);
+				extra.set(key, value);
 			}
 		}
 		if (rest.fixableRobot !== null) {
 			for (const [key, value] of fixableRobotInts(rest.fixableRobot, row)) {
-				numbers.set(key, value);
+				extra.set(key, value);
 			}
 		}
 		const lift = rest.lifter && rest.entity && lifterStart(rest.lifter, rest.entity, row);
@@ -309,20 +319,24 @@ export class RestLooks implements InteractiveKind {
 			this.#sources.report(placed.source, `${lift.reason}; drawn as saved`);
 		} else if (lift) {
 			for (const [key, value] of lift.keys) {
-				numbers.set(key, value);
+				extra.set(key, value);
 			}
 		}
-		if (state !== rest.state || numbers.size > 0) {
-			looks = (await this.#looksOf(rest.model, { campfire, keys: rest.keys, state, numbers })) ?? looks;
+		if (state !== rest.state || extra.size > 0) {
+			const values = new Map<string, boolean | number>(rest.defaults);
+			for (const [key, value] of extra) {
+				values.set(key, value);
+			}
+			looks = (await this.#looksOf(rest.model, { campfire, keys: rest.keys, state, values })) ?? looks;
 		}
 		const [form] = placed.template.forms;
 		// a switch linked via `target_list` to a controlled bridge or door follows its target's off/on state
-		if (!campfire && rest.state !== null && numbers.size === 0 && !lift) {
+		if (!campfire && rest.state !== null && extra.size === 0 && !lift) {
 			const target = switchTargetGate(row, this.#targetStates);
 			if (target !== null) {
 				const [offLooks, onLooks] = await Promise.all([
-					this.#looksOf(rest.model, { campfire: false, keys: rest.keys, state: 0, numbers }),
-					this.#looksOf(rest.model, { campfire: false, keys: rest.keys, state: 1, numbers }),
+					this.#looksOf(rest.model, { campfire: false, keys: rest.keys, state: 0, values: rest.defaults }),
+					this.#looksOf(rest.model, { campfire: false, keys: rest.keys, state: 1, values: rest.defaults }),
 				]);
 				if (
 					offLooks !== null &&
@@ -423,10 +437,10 @@ export class RestLooks implements InteractiveKind {
 	}
 
 	#looksOf(model: string, keys: LookKeys): Promise<InteractiveLooks | null> {
-		const { campfire, state, numbers } = keys;
+		const { campfire, state, values } = keys;
 		const sources = this.#sources;
 		return this.#looks.getOrInsertComputed(
-			`${model} ${campfire} ${keys.keys.map((entry) => entry.key).join()} ${state} ${JSON.stringify([...numbers])}`,
+			`${model} ${campfire} ${keys.keys.map((entry) => entry.key).join()} ${state} ${JSON.stringify([...values])}`,
 			() =>
 				sources.attempt(
 					model,

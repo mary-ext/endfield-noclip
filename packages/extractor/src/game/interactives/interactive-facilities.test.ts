@@ -272,3 +272,13 @@ test('a switch follows its target when target_list names a single controlled int
 	assert.equal(switchTargetGate(sw(102, [999n]), targets), null);
 	assert.equal(switchTargetGate(sw(50, [22800030026n]), targets), null);
 });
+
+test('a spore mushroom template is flagged so its view states start Active', () => {
+	const traits = readTemplateTraits(
+		{ componentList: [{ $type: 'Beyond_Gameplay_Core_SporeMushroomComponentDataForMemoryPack' }] },
+		'spore',
+	);
+	assert.ok('kind' in traits && traits.kind === 'other' && traits.sporeMushroom);
+	const plain = readTemplateTraits({ componentList: [commonPerform] }, 'plain');
+	assert.ok('kind' in plain && plain.kind === 'other' && !plain.sporeMushroom);
+});

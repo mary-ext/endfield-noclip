@@ -45,7 +45,7 @@ export class FacilityForms {
 						campfire: false,
 						keys: [],
 						state: null,
-						numbers: new Map(),
+						values: new Map(),
 					}),
 				null,
 			);

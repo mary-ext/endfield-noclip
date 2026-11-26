@@ -110,8 +110,9 @@ looks, and facility forms alike.
 
 an interactive with view states settles every animator layer with all keys false, except `state`
 (set to the placement's starting [`state`](../game-data/interactives.md#the-state-key) when the
-template has a common-perform component). each pose holds one clip end pose per animator: local
-transforms, GameObject switches, renderer material values, and particle pivots.
+template has a common-perform component) and `Active` (set true for
+[spore mushrooms](../game-data/interactives.md#spore-mushrooms)). each pose holds one clip end pose
+per animator: local transforms, GameObject switches, renderer material values, and particle pivots.
 
 - transforms and switches apply during the prefab walk so skinned meshes follow their bones.
 - inside a clip that switches GameObjects, nodes saved off and untouched by the clip draw nothing

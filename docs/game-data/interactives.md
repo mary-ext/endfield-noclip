@@ -332,6 +332,15 @@ properties) to its view states on start:
 about half of the install's placements set `level` 1, including map02_lv010's robot 37900200005 at
 491, 237, 1231.
 
+### spore mushrooms
+
+`int_spore_mushroom_mint` (`int_spore_mushroom_mint_postmodel`) and `int_spore_mushroom_flame`
+(`int_spore_mushroom_flame_postmodel`) in Old Dam (`map02_lv011`) carry `SporeMushroomComponent`. on
+`OnStart`, it unconditionally sets view-state bool `Active` to `true`, moving the `effect` layer
+from `idle` to `active` and playing the looping sphere aura at `EffectRoot`
+(`P_fxint_l_map02_011_mushroom_Mintbuff_001` or `…_Firebuff_001`, after the one-shot `…_appear`).
+triggering the bud switches `Active` to `false` for a local cooldown, then back to `true`.
+
 ### keys the player sets
 
 - **`Distance`**: `MainCharacterInterestComponent` measures distance from the player to the entity

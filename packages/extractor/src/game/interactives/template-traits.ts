@@ -13,7 +13,13 @@ import { FIXABLE_ROBOT_COMPONENTS } from './fixable-robots.ts';
 import { JUMP_MACHINE_COMPONENTS, JUMP_MACHINE_VERTICAL_COMPONENTS } from './jump-pads.ts';
 import { LIFTER_CORE_COMPONENTS } from './lifters.ts';
 import { REGION_WALL_COMPONENTS } from './region-walls.ts';
-import { CAMPFIRE_COMPONENTS, type PlayerKey, playerKeys, VERTICAL_ROPE_COMPONENTS } from './rest-looks.ts';
+import {
+	CAMPFIRE_COMPONENTS,
+	type PlayerKey,
+	playerKeys,
+	SPORE_MUSHROOM_COMPONENTS,
+	VERTICAL_ROPE_COMPONENTS,
+} from './rest-looks.ts';
 import {
 	type EntityProperties,
 	entityProperties,
@@ -44,6 +50,8 @@ export type TemplateTraits =
 			/** an auto-moving platform's decoded template, `null` for other templates */
 			autoMove: MemoryPackValue | null;
 			verticalRope: boolean;
+			/** whether it's a spore mushroom, which starts with view-state bool `Active` true */
+			sporeMushroom: boolean;
 			/** a crane tower's decoded template, `null` for other templates */
 			craneTower: MemoryPackValue | null;
 			/** a broken robot's decoded template, `null` for other templates */
@@ -67,6 +75,7 @@ const UNREADABLE: TemplateTraits = {
 	electricFence: null,
 	autoMove: null,
 	verticalRope: false,
+	sporeMushroom: false,
 	craneTower: null,
 	fixableRobot: null,
 	lifter: null,
@@ -112,6 +121,7 @@ export const readTemplateTraits = (template: MemoryPackValue, path: string): Tra
 		electricFence: hasComponent(template, ELECTRIC_FENCE_COMPONENTS) ? template : null,
 		autoMove: isAutoMovePlatform(template) ? template : null,
 		verticalRope: hasComponent(template, VERTICAL_ROPE_COMPONENTS),
+		sporeMushroom: hasComponent(template, SPORE_MUSHROOM_COMPONENTS),
 		craneTower: hasComponent(template, CRANE_TOWER_COMPONENTS) ? template : null,
 		fixableRobot: hasComponent(template, FIXABLE_ROBOT_COMPONENTS) ? template : null,
 		lifter: hasComponent(template, LIFTER_CORE_COMPONENTS) ? template : null,
