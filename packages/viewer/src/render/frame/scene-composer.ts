@@ -9,7 +9,7 @@ import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, sampler as sharedSampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
 import type { Camera } from '../../scene/camera.ts';
-import { POST_BYTES, postUniformLayout } from '../core/post-schema.ts';
+import { POST_BYTES, PostSlot, postUniformLayout } from '../core/post-schema.ts';
 import { writeEnvironmentUniforms, writeFrameUniforms } from '../core/post-uniforms.ts';
 import { HDR_FORMAT, type SceneTextures } from '../core/render-targets.ts';
 import { type PostSettings, effectiveSettings } from '../core/settings.ts';
@@ -23,6 +23,10 @@ import { Composite } from '../sky/composite.ts';
 import type { VolumetricFog } from '../sky/volumetric-fog.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
 import type { VerticalOcclusionMap } from '../weather/vertical-occlusion.ts';
+
+/** float offset and length of the atmosphere medium uniforms read by transmittance and multi-scattering LUTs */
+const ATMO_START = PostSlot.planet * 4;
+const ATMO_END = (PostSlot.groundAlbedo + 1) * 4;
 
 /** the composited HDR target sized with the scene textures */
 export interface CompositedTarget {
@@ -56,6 +60,7 @@ export class SceneComposer {
 	readonly fogInputs: { uniforms: GPUBuffer; froxels: GPUTextureView; sampler: GPUSampler };
 	#device: GPUDevice;
 	#data = new Float32Array(POST_BYTES / 4);
+	#prevAtmo = new Float32Array(ATMO_END - ATMO_START);
 	#luts: AtmosphereLuts;
 	#ao: AmbientOcclusion;
 	#reflections: ScreenSpaceReflections;
@@ -179,15 +184,25 @@ export class SceneComposer {
 	}
 
 	/**
-	 * sets the environment; the atmosphere LUTs rebuild on the next frame
+	 * sets the environment; the atmosphere LUTs rebuild on the next frame if atmosphere parameters changed
 	 *
 	 * @param environment the shown level's environment
 	 * @param celestial what the environment draws beyond the atmosphere
 	 */
 	setEnvironment(environment: Environment, celestial: CelestialLook): void {
 		this.#environment = environment;
-		this.#luts.invalidate();
-		writeEnvironmentUniforms(this.#data, environment);
+		const data = this.#data;
+		const prev = this.#prevAtmo;
+		for (let i = 0; i < prev.length; i++) {
+			prev[i] = data[ATMO_START + i];
+		}
+		writeEnvironmentUniforms(data, environment);
+		for (let i = 0; i < prev.length; i++) {
+			if (data[ATMO_START + i] !== prev[i]) {
+				this.#luts.invalidate();
+				break;
+			}
+		}
 		this.#celestial.setLook(celestial);
 	}
 

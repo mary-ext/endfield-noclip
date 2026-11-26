@@ -1,5 +1,6 @@
 import type { TgpuRoot } from 'typegpu';
 
+import type { Grading } from '../../environment/color-grading.ts';
 import type { Environment } from '../../environment/environment.ts';
 import type { LensFlareLook } from '../../environment/lens-flare-look.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
@@ -14,6 +15,37 @@ import { LensFlares } from './lens-flare.ts';
 import { LightShafts } from './light-shafts.ts';
 import { TemporalAA } from './temporal-aa.ts';
 import { Tonemap } from './tonemap.ts';
+
+const sameVec = (a: readonly number[], b: readonly number[]): boolean => {
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) {
+			return false;
+		}
+	}
+	return true;
+};
+
+const sameGrading = (a: Grading, b: Grading): boolean =>
+	a === b ||
+	(a.postExposure === b.postExposure &&
+		a.hueShift === b.hueShift &&
+		a.saturation === b.saturation &&
+		a.contrast === b.contrast &&
+		a.splitBalance === b.splitBalance &&
+		sameVec(a.colorBalance, b.colorBalance) &&
+		sameVec(a.colorFilter, b.colorFilter) &&
+		sameVec(a.channelMixer[0], b.channelMixer[0]) &&
+		sameVec(a.channelMixer[1], b.channelMixer[1]) &&
+		sameVec(a.channelMixer[2], b.channelMixer[2]) &&
+		sameVec(a.shadows, b.shadows) &&
+		sameVec(a.midtones, b.midtones) &&
+		sameVec(a.highlights, b.highlights) &&
+		sameVec(a.limits, b.limits) &&
+		sameVec(a.lift, b.lift) &&
+		sameVec(a.gamma, b.gamma) &&
+		sameVec(a.gain, b.gain) &&
+		sameVec(a.splitShadows, b.splitShadows) &&
+		sameVec(a.splitHighlights, b.splitHighlights));
 
 /** the post-scene views sized with the scene textures */
 interface Sized {
@@ -87,9 +119,12 @@ export class PostProcess {
 	 * @param lensFlare the sun's lens flare (`null`: none)
 	 */
 	setEnvironment(environment: Environment, lensFlare: LensFlareLook | null): void {
+		const prev = this.#environment;
 		this.#environment = environment;
 		this.#lensFlares.setLook(lensFlare);
-		this.#tonemap.invalidateLut();
+		if (!sameGrading(prev.grading, environment.grading)) {
+			this.#tonemap.invalidateLut();
+		}
 	}
 
 	/** drops the temporal antialiasing history after a camera cut */
