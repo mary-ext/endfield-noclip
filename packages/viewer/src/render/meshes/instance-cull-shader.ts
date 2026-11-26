@@ -82,21 +82,22 @@ const Tested = d.struct({
 	occluded: d.bool,
 	squared: d.f32,
 	mirrored: d.u32,
-	layer: d.u32,
+	layerMask: d.u32,
 });
 
-const firstLayer = tgpu.fn(
+const shadowLayerMask = tgpu.fn(
 	[d.vec3f, d.f32],
 	d.u32,
 )((p, radius) => {
 	'use gpu';
 	const view = instanceCullLayout.$.view;
 	if (view.shadows === 0) {
-		return d.u32(SHADOW_LAYERS);
+		return d.u32(0);
 	}
 	const u = std.dot(p, view.shadowAxes[0].xyz);
 	const v = std.dot(p, view.shadowAxes[1].xyz);
 	const w = std.dot(p, view.shadowAxes[2].xyz);
+	let mask = d.u32(0);
 	for (let layer = d.u32(0); layer < SHADOW_LAYERS; layer++) {
 		const s = view.shadowLayers[layer];
 		const reach = s.w + radius;
@@ -107,10 +108,10 @@ const firstLayer = tgpu.fn(
 			dw <= reach &&
 			dw >= -reach - view.shadowReach
 		) {
-			return layer;
+			mask = mask | (d.u32(1) << layer);
 		}
 	}
-	return d.u32(SHADOW_LAYERS);
+	return mask;
 });
 
 const inPlanes = tgpu.fn(
@@ -237,18 +238,18 @@ const testRow = tgpu.fn(
 	const dist = std.max(std.length(p), 0.1);
 	const pixels = (radius * view.pixelFactor) / dist;
 	if (pixels < view.minPixels) {
-		return Tested({ drawn: false, inView: false, occluded: false, squared: 0, mirrored: 0, layer: 0 });
+		return Tested({ drawn: false, inView: false, occluded: false, squared: 0, mirrored: 0, layerMask: 0 });
 	}
 	const inView = (flags & ItemFlags.Inside) !== 0 || inPlanes(p, radius);
 	if (!inView) {
 		const sunCaster = view.casterPlaneCount !== 0 && inCasterPlanes(p, radius);
 		if (!sunCaster && !inLightCasters(p, radius)) {
-			return Tested({ drawn: false, inView: false, occluded: false, squared: 0, mirrored: 0, layer: 0 });
+			return Tested({ drawn: false, inView: false, occluded: false, squared: 0, mirrored: 0, layerMask: 0 });
 		}
 	}
-	const layer = firstLayer(p, radius);
-	if (!inView && layer >= SHADOW_LAYERS) {
-		return Tested({ drawn: false, inView: false, occluded: false, squared: 0, mirrored: 0, layer: 0 });
+	const layerMask = shadowLayerMask(p, radius);
+	if (!inView && layerMask === 0) {
+		return Tested({ drawn: false, inView: false, occluded: false, squared: 0, mirrored: 0, layerMask: 0 });
 	}
 	const lodBits = (row.info >>> d.u32(ROW_LOD_SIZE_SHIFT)) & d.u32(ROW_LOD_SIZE_MASK);
 	const lodSize = std.unpack2x16float(lodBits).x;
@@ -263,7 +264,7 @@ const testRow = tgpu.fn(
 		occluded: occludedFlag,
 		squared: relative * relative,
 		mirrored,
-		layer,
+		layerMask,
 	});
 });
 
@@ -338,8 +339,11 @@ export const csCullWrite = tgpu.computeFn({
 		if (tested.inView && !tested.occluded && (flags & SlotFlags.ShadowOnly) === 0) {
 			appendRow(bucket, 0, listEntry);
 		}
-		if (casts) {
-			for (let layer = tested.layer; layer < SHADOW_LAYERS; layer++) {
+		if (casts && tested.layerMask !== 0) {
+			for (let layer = d.u32(0); layer < SHADOW_LAYERS; layer++) {
+				if ((tested.layerMask & (d.u32(1) << layer)) === 0) {
+					continue;
+				}
 				const takes = std.select(
 					d.u32(SlotFlags.Realtime),
 					d.u32(SlotFlags.Static),
