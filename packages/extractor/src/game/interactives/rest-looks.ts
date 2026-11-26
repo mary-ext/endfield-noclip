@@ -8,10 +8,19 @@ import type { PrefabPose } from '../prefabs/prefab.ts';
 import type { InteractiveStateGate } from '../state/interactive-variables.ts';
 import { type DraftControl, sceneControl, switchValues } from '../state/scene-control.ts';
 
+import {
+	collectPlacementValues,
+	collectTemplateDefaults,
+	type MatchedBlackboardContributor,
+	SPORE_MUSHROOM_COMPONENTS,
+	VERTICAL_ROPE_COMPONENTS,
+	verticalRopeFloats,
+} from './blackboard-contributors.ts';
 import type { FacilityContext, FacilitySources, PrefabHashes } from './facility-sources.ts';
-import { fixableRobotInts } from './fixable-robots.ts';
 import type { InteractiveKind, InteractiveRow, SingleModelTemplate } from './interactive-row.ts';
 import { lifterStart, readLifterLook } from './lifters.ts';
+
+export { SPORE_MUSHROOM_COMPONENTS, VERTICAL_ROPE_COMPONENTS, verticalRopeFloats };
 import { componentFloat, type EntityProperties, STATE_KEY, stateOf } from './template-data.ts';
 import type { TemplateTraits } from './template-traits.ts';
 import {
@@ -25,15 +34,6 @@ import {
 
 /** the component of campfires */
 export const CAMPFIRE_COMPONENTS = ['_InteractiveCampfireComponentDataForMemoryPack'];
-
-/** the component of vertical rope lifts, which set their rope's length from their two ports */
-export const VERTICAL_ROPE_COMPONENTS = ['_InteractiveVerticalRopeComponentDataForMemoryPack'];
-
-/** the component of spore mushrooms, which sets view-state bool `Active` true on start */
-export const SPORE_MUSHROOM_COMPONENTS = ['_SporeMushroomComponentDataForMemoryPack'];
-
-/** the placement property naming the other port of a vertical rope */
-const TARGET_KEY = 'target';
 
 /**
  * interactive component types whose `target_list` links a switch to the interactive it toggles: `WaterSwitch`
@@ -68,23 +68,6 @@ export const switchTargetGate = (
 		}
 	}
 	return matched.size === 1 ? matched.values().next().value! : null;
-};
-
-/**
- * @param row a vertical rope's port
- * @param rows placed interactives by id
- * @returns the float keys its rope component sets before its view states start: `RopeLength`, the height
- *   between it and the port its `target` property names; none without another placed port
- */
-export const verticalRopeFloats = (
-	row: LevelInteractive,
-	rows: ReadonlyMap<bigint, LevelInteractive>,
-): Map<string, number> => {
-	const id = row.properties.find((param) => param.key === TARGET_KEY)?.values[0]?.bits;
-	const target = id === undefined || id === row.id ? undefined : rows.get(id);
-	return target === undefined
-		? new Map()
-		: new Map([['RopeLength', Math.abs(row.position[1] - target.position[1])]]);
 };
 
 /** a settled look of an interactive's model, its settled states' names and the effects they leave playing */
@@ -221,10 +204,8 @@ interface TemplateLooks {
 	state: number | null;
 	/** view-state keys the template's components always set on start */
 	defaults: Map<string, boolean | number>;
-	/** whether it's a vertical rope's port, whose look also follows its other port */
-	verticalRope: boolean;
-	/** a broken robot's decoded template, whose look also follows its component parameters */
-	fixableRobot: MemoryPackValue | null;
+	/** matched blackboard contributors supplying per-placement view-state keys */
+	blackboard: MatchedBlackboardContributor[];
 	/** a lift's decoded template, whose platform and pole follow its floor */
 	lifter: MemoryPackValue | null;
 	entity: EntityProperties | null;
@@ -286,12 +267,9 @@ export class RestLooks implements InteractiveKind {
 		if (traits.kind !== 'other' || this.#doodads.has(key)) {
 			return;
 		}
-		const { campfire, keys, start, verticalRope, sporeMushroom, fixableRobot, lifter, entity } = traits;
+		const { campfire, keys, start, blackboard, lifter, entity } = traits;
 		const state = start === null ? null : (start.variants.get(key) ?? start.state);
-		const defaults = new Map<string, boolean | number>();
-		if (sporeMushroom) {
-			defaults.set('Active', true);
-		}
+		const defaults = collectTemplateDefaults(blackboard);
 		const looks = await this.#looksOf(model, { campfire, keys, state, values: defaults });
 		if (looks !== null) {
 			for (const untested of looks.untestedKeys) {
@@ -312,8 +290,7 @@ export class RestLooks implements InteractiveKind {
 				radius,
 				state,
 				defaults,
-				verticalRope,
-				fixableRobot,
+				blackboard,
 				lifter,
 				entity,
 			});
@@ -330,17 +307,7 @@ export class RestLooks implements InteractiveKind {
 		let { looks } = rest;
 		// a placement's own `state` overrides its template's
 		const state = (rest.state === null ? null : stateOf(row)) ?? rest.state;
-		const extra = new Map<string, number>();
-		if (rest.verticalRope) {
-			for (const [key, value] of verticalRopeFloats(row, this.#rows)) {
-				extra.set(key, value);
-			}
-		}
-		if (rest.fixableRobot !== null) {
-			for (const [key, value] of fixableRobotInts(rest.fixableRobot, row)) {
-				extra.set(key, value);
-			}
-		}
+		const extra = collectPlacementValues(rest.blackboard, row, this.#rows);
 		const lift = rest.lifter && rest.entity && lifterStart(rest.lifter, rest.entity, row);
 		if (lift && 'reason' in lift) {
 			this.#sources.report(placed.source, `${lift.reason}; drawn as saved`);

@@ -2,6 +2,7 @@ import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
 import { type AnimatorStart, animatorStart } from './animator-starts.ts';
+import { type MatchedBlackboardContributor, matchBlackboardContributors } from './blackboard-contributors.ts';
 import { telescopicPieces } from './bridges.ts';
 import { CRANE_TOWER_COMPONENTS } from './crane-tower.ts';
 import { isAutoMovePlatform } from './curve-move.ts';
@@ -9,17 +10,10 @@ import { DOODAD_GRADE_COMPONENTS } from './doodad-grades.ts';
 import { DOOR_COMPONENTS } from './doors.ts';
 import { ELECTRIC_FENCE_COMPONENTS } from './electric-fences.ts';
 import type { FacilitySources } from './facility-sources.ts';
-import { FIXABLE_ROBOT_COMPONENTS } from './fixable-robots.ts';
 import { JUMP_MACHINE_COMPONENTS, JUMP_MACHINE_VERTICAL_COMPONENTS } from './jump-pads.ts';
 import { LIFTER_CORE_COMPONENTS } from './lifters.ts';
 import { REGION_WALL_COMPONENTS } from './region-walls.ts';
-import {
-	CAMPFIRE_COMPONENTS,
-	type PlayerKey,
-	playerKeys,
-	SPORE_MUSHROOM_COMPONENTS,
-	VERTICAL_ROPE_COMPONENTS,
-} from './rest-looks.ts';
+import { CAMPFIRE_COMPONENTS, type PlayerKey, playerKeys } from './rest-looks.ts';
 import {
 	type EntityProperties,
 	entityProperties,
@@ -49,13 +43,10 @@ export type TemplateTraits =
 			electricFence: MemoryPackValue | null;
 			/** an auto-moving platform's decoded template, `null` for other templates */
 			autoMove: MemoryPackValue | null;
-			verticalRope: boolean;
-			/** whether it's a spore mushroom, which starts with view-state bool `Active` true */
-			sporeMushroom: boolean;
+			/** matched view-state blackboard contributors (spore mushroom, vertical rope, fixable robot, …) */
+			blackboard: MatchedBlackboardContributor[];
 			/** a crane tower's decoded template, `null` for other templates */
 			craneTower: MemoryPackValue | null;
-			/** a broken robot's decoded template, `null` for other templates */
-			fixableRobot: MemoryPackValue | null;
 			/** a lift's decoded template, `null` for other templates */
 			lifter: MemoryPackValue | null;
 			/** whether its model is swapped for a graded doodad's form */
@@ -74,10 +65,8 @@ const UNREADABLE: TemplateTraits = {
 	verticalPad: null,
 	electricFence: null,
 	autoMove: null,
-	verticalRope: false,
-	sporeMushroom: false,
+	blackboard: [],
 	craneTower: null,
-	fixableRobot: null,
 	lifter: null,
 	doodadGrade: false,
 	entity: null,
@@ -120,10 +109,8 @@ export const readTemplateTraits = (template: MemoryPackValue, path: string): Tra
 		verticalPad: hasComponent(template, JUMP_MACHINE_VERTICAL_COMPONENTS) ? template : null,
 		electricFence: hasComponent(template, ELECTRIC_FENCE_COMPONENTS) ? template : null,
 		autoMove: isAutoMovePlatform(template) ? template : null,
-		verticalRope: hasComponent(template, VERTICAL_ROPE_COMPONENTS),
-		sporeMushroom: hasComponent(template, SPORE_MUSHROOM_COMPONENTS),
+		blackboard: matchBlackboardContributors(template),
 		craneTower: hasComponent(template, CRANE_TOWER_COMPONENTS) ? template : null,
-		fixableRobot: hasComponent(template, FIXABLE_ROBOT_COMPONENTS) ? template : null,
 		lifter: hasComponent(template, LIFTER_CORE_COMPONENTS) ? template : null,
 		doodadGrade: hasComponent(template, DOODAD_GRADE_COMPONENTS),
 		entity: entityProperties(template),

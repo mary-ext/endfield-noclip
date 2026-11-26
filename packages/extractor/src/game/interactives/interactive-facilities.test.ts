@@ -163,7 +163,11 @@ const fixableRobot: MemoryPackValue = {
 
 test("a broken robot passes its component's damage type, level and exit type to its view states", () => {
 	const traits = readTemplateTraits(fixableRobot, 'robot');
-	assert.ok('kind' in traits && traits.kind === 'other' && traits.fixableRobot !== null);
+	assert.ok(
+		'kind' in traits &&
+			traits.kind === 'other' &&
+			traits.blackboard.some(({ contributor }) => contributor.name === 'fixableRobot'),
+	);
 	// map02_lv010's robot 37900200005 near 491, 237, 1231 sets level 1 and exit type 2
 	const placed = { ...row(null, []), template: 'int_fixable_robot' };
 	placed.componentProperties = new Map([
@@ -278,7 +282,15 @@ test('a spore mushroom template is flagged so its view states start Active', () 
 		{ componentList: [{ $type: 'Beyond_Gameplay_Core_SporeMushroomComponentDataForMemoryPack' }] },
 		'spore',
 	);
-	assert.ok('kind' in traits && traits.kind === 'other' && traits.sporeMushroom);
+	assert.ok(
+		'kind' in traits &&
+			traits.kind === 'other' &&
+			traits.blackboard.some(({ contributor }) => contributor.name === 'sporeMushroom'),
+	);
 	const plain = readTemplateTraits({ componentList: [commonPerform] }, 'plain');
-	assert.ok('kind' in plain && plain.kind === 'other' && !plain.sporeMushroom);
+	assert.ok(
+		'kind' in plain &&
+			plain.kind === 'other' &&
+			!plain.blackboard.some(({ contributor }) => contributor.name === 'sporeMushroom'),
+	);
 });
