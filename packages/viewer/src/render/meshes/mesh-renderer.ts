@@ -15,7 +15,14 @@ import { MipFeedback, type MipSteps } from '../textures/mip-feedback.ts';
 import type { TextureStore } from '../textures/texture-store.ts';
 
 import { DepthPyramid } from './depth-pyramid.ts';
-import { COMPARATORS, type DrawEntry, drawRangeOf, pipelineKeyOf, sortKeyOf } from './draw-order.ts';
+import {
+	COMPARATORS,
+	type DrawEntry,
+	drawRangeOf,
+	pipelineKeyOf,
+	pipelineNearestKeyOf,
+	sortKeyOf,
+} from './draw-order.ts';
 import {
 	DRAW_RANGES,
 	type DrawPhase,
@@ -506,6 +513,7 @@ export class MeshRenderer {
 			range.entries.length = 0;
 		}
 		let entries = 0;
+		let rangeContext: { castOnly: boolean; stencil: boolean; state: MaterialState } | null = null;
 		for (let b = 0; b < buckets.length; b++) {
 			const bucket = buckets[b];
 			const span = spans[b];
@@ -514,24 +522,30 @@ export class MeshRenderer {
 			}
 			const look = bucket.look;
 			const state = this.#materials.state(bucket.material, look, textures);
-			const range = drawRangeOf(look, { castOnly: bucket.castOnly, stencil: this.#stencil, state });
+			if (rangeContext === null) {
+				rangeContext = { castOnly: bucket.castOnly, stencil: this.#stencil, state };
+			} else {
+				rangeContext.castOnly = bucket.castOnly;
+				rangeContext.state = state;
+			}
+			const range = drawRangeOf(look, rangeContext);
 			if (range === null) {
 				continue;
 			}
 			const preparedRange = this.#range(range);
 			const pipelineKey = pipelineKeyOf(bucket);
-			// pipelineThenNearest never reads entry.key
-			const key = preparedRange.info.order === 'pipelineThenNearest' ? 0 : sortKeyOf(bucket, pipelineKey);
+			const key =
+				preparedRange.info.order === 'pipelineThenNearest'
+					? pipelineNearestKeyOf(pipelineKey, bucket.nearest)
+					: sortKeyOf(bucket, pipelineKey);
 			const entry = this.#entries[entries];
 			if (entry === undefined) {
-				this.#entries[entries] = { bucket, span, state, pipelineKey, key, nearest: bucket.nearest };
+				this.#entries[entries] = { bucket, span, state, key };
 			} else {
 				entry.bucket = bucket;
 				entry.span = span;
 				entry.state = state;
-				entry.pipelineKey = pipelineKey;
 				entry.key = key;
-				entry.nearest = bucket.nearest;
 			}
 			preparedRange.entries.push(this.#entries[entries]);
 			entries++;

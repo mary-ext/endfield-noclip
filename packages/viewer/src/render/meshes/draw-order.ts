@@ -34,7 +34,7 @@ const COMPLEX_OPAQUE_FLAGS =
  * @returns whether an opaque look uses only base + normal PBR terms and can run the lean `fs_opaque_lit`
  *   shader
  */
-const isSimpleOpaqueLit = (look: MaterialLook): boolean =>
+export const isSimpleOpaqueLit = (look: MaterialLook): boolean =>
 	(look.flags & COMPLEX_OPAQUE_FLAGS) === 0 &&
 	look.extraFlags === 0 &&
 	look.stencil === null &&
@@ -55,7 +55,11 @@ export const drawRangeOf = (
 		castOnly,
 		stencil,
 		state,
-	}: { castOnly: boolean; stencil: boolean; state: Pick<MaterialState, 'slots' | 'alphaReady' | 'complete'> },
+	}: {
+		castOnly: boolean;
+		stencil: boolean;
+		state: Pick<MaterialState, 'slots' | 'alphaReady' | 'complete'> & { simpleOpaque?: boolean };
+	},
 ): DrawRange | null => {
 	const queue = look.queue;
 	if (castOnly && (!look.castsShadows || (queue !== 'opaque' && queue !== 'cutout'))) {
@@ -75,7 +79,7 @@ export const drawRangeOf = (
 	}
 	switch (queue) {
 		case 'opaque': {
-			return isSimpleOpaqueLit(look) ? 'opaqueLit' : 'opaque';
+			return (state.simpleOpaque ?? isSimpleOpaqueLit(look)) ? 'opaqueLit' : 'opaque';
 		}
 		case 'transparent':
 		case 'transparentDepthWrite':
@@ -139,41 +143,37 @@ export const sortKeyOf = (bucket: MeshBucket, pipelineKey = pipelineKeyOf(bucket
 	return key * 2 ** 8 + Math.min(bucket.submesh, 2 ** 8 - 1);
 };
 
+/**
+ * packs pipeline key and clamped nearest distance into one sortable float so depth-writing draws sort with a
+ * single subtraction instead of a two-field comparator
+ */
+export const pipelineNearestKeyOf = (pipelineKey: number, nearest: number): number =>
+	pipelineKey * 1e6 + Math.min(999_999, Math.max(0, nearest));
+
 /** a bucket queued to draw this frame, with where its rows landed in the visible list */
 export interface DrawEntry {
 	bucket: MeshBucket;
 	span: ListedSpan;
 	state: MaterialState;
-	/** {@link pipelineKeyOf} the bucket */
-	pipelineKey: number;
-	/** {@link sortKeyOf} the bucket */
+	/** sort key for the entry's range (`pipelineNearestKeyOf` or `sortKeyOf`) */
 	key: number;
-	/** cached {@link MeshBucket.nearest} for fast comparator access */
-	nearest: number;
 }
 
-const byBindings = (a: DrawEntry, b: DrawEntry): number => a.key - b.key;
+const byKey = (a: DrawEntry, b: DrawEntry): number => a.key - b.key;
 
 /** 0 for a bucket whose draws write the stencil, else 1 */
 const stencilWriteRank = ({ bucket }: DrawEntry): number => (bucket.look.stencil?.replace === true ? 0 : 1);
 
 /**
- * draw order for effects: as {@link byBindings}, but those that write the stencil first, so the effects
- * testing it see the whole mask
+ * draw order for effects: as {@link byKey}, but those that write the stencil first, so the effects testing it
+ * see the whole mask
  */
 const byStencilWritesThenBindings = (a: DrawEntry, b: DrawEntry): number =>
-	stencilWriteRank(a) - stencilWriteRank(b) || byBindings(a, b);
-
-/**
- * draw order for depth-writing draws: as {@link byBindings} up to the pipeline and vertex buffers, then
- * nearest first, so early depth testing skips more of the shading behind
- */
-const byPipelineThenNearest = (a: DrawEntry, b: DrawEntry): number =>
-	a.pipelineKey - b.pipelineKey || a.nearest - b.nearest;
+	stencilWriteRank(a) - stencilWriteRank(b) || a.key - b.key;
 
 /** the comparator of each {@link RangeOrder} */
 export const COMPARATORS: Record<RangeOrder, (a: DrawEntry, b: DrawEntry) => number> = {
-	pipelineThenNearest: byPipelineThenNearest,
-	bindings: byBindings,
+	pipelineThenNearest: byKey,
+	bindings: byKey,
 	stencilWritesThenBindings: byStencilWritesThenBindings,
 };

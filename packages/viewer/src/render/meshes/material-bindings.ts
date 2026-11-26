@@ -11,6 +11,8 @@ import {
 } from '../../looks/look.ts';
 import type { TextureBinding, TextureStore } from '../textures/texture-store.ts';
 
+import { isSimpleOpaqueLit } from './draw-order.ts';
+
 /** the main pass's outputs that scene effects read, as `SceneTextures` holds them */
 export interface EffectInputs {
 	depth: GPUTextureView;
@@ -43,6 +45,10 @@ export interface MaterialState extends EffectMaterial {
 	alphaReady: boolean;
 	/** whether every texture is bound, which effects wait for */
 	complete: boolean;
+	/** cached result of {@link isSimpleOpaqueLit} for this look */
+	simpleOpaque: boolean;
+	/** non-null texture ids referenced by this look (2D slots + optional 3D volume), for fast change checks */
+	textureIds: number[];
 }
 
 /** an effect draw's material: what its group is built from when its pass encodes */
@@ -52,15 +58,18 @@ export interface EffectMaterial {
 	volume: TextureBinding | null;
 }
 
-/** @returns whether none of a look's textures' bindings changed since the store's `version` */
-const texturesUnchanged = (look: MaterialLook, textures: TextureStore, version: number): boolean => {
-	for (let i = 0; i < look.textures.length; i++) {
-		const texture = look.textures[i];
-		if (texture !== null && !textures.unchangedSince(texture, version)) {
+/** @returns whether none of `textureIds` changed since the store's `version` */
+const texturesUnchanged = (
+	textureIds: readonly number[],
+	textures: TextureStore,
+	version: number,
+): boolean => {
+	for (let i = 0; i < textureIds.length; i++) {
+		if (!textures.unchangedSince(textureIds[i], version)) {
 			return false;
 		}
 	}
-	return look.volumeTexture === null || textures.unchangedSince(look.volumeTexture, version);
+	return true;
 };
 
 /** derives the mesh materials' states from their textures' bindings, and owns their bind groups */
@@ -137,16 +146,20 @@ export class MaterialBindings {
 			return cached;
 		}
 		// while streaming the store changes every frame, but rarely under a given material
-		if (cached !== undefined && texturesUnchanged(look, textures, cached.version)) {
+		if (cached !== undefined && texturesUnchanged(cached.textureIds, textures, cached.version)) {
 			cached.version = textures.version;
 			return cached;
 		}
 		const slots: (TextureBinding | null)[] = [];
+		const textureIds = cached !== undefined ? cached.textureIds : [];
 		let flags = look.flags;
 		let extraFlags = look.extraFlags;
 		let complete = true;
 		for (let i = 0; i < look.textures.length; i++) {
 			const texture = look.textures[i];
+			if (cached === undefined && texture !== null) {
+				textureIds.push(texture);
+			}
 			const binding = texture === null ? null : textures.binding(texture);
 			slots.push(binding);
 			if (binding === null) {
@@ -157,6 +170,9 @@ export class MaterialBindings {
 				}
 				complete &&= texture === null;
 			}
+		}
+		if (cached === undefined && look.volumeTexture !== null) {
+			textureIds.push(look.volumeTexture);
 		}
 		const volume = look.volumeTexture === null ? null : textures.binding(look.volumeTexture);
 		complete &&= look.volumeTexture === null || volume !== null;
@@ -170,6 +186,8 @@ export class MaterialBindings {
 			group: (look.flags & LookFlags.Effect) !== 0 ? null : this.#materialGroup(material, slots),
 			alphaReady: slots[(look.flags & LookFlags.AlphaNormal) !== 0 ? 1 : 0] !== null,
 			complete,
+			simpleOpaque: cached !== undefined ? cached.simpleOpaque : isSimpleOpaqueLit(look),
+			textureIds,
 		};
 		this.#states[material] = state;
 		return state;
