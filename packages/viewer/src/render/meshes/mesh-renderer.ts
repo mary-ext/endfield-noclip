@@ -169,7 +169,9 @@ export class MeshRenderer {
 		castOnlyEnd: 0,
 		castersEnd: 0,
 	}));
-	#rangeOf = new Map(this.#ranges.map((range) => [range.info.range, range]));
+	#rangeOf: Partial<Record<DrawRange, PreparedRange>> = Object.fromEntries(
+		this.#ranges.map((range) => [range.info.range, range]),
+	);
 	/** the entries queued in the ranges, reused across frames */
 	#entries: DrawEntry[] = [];
 	/** prepared draws in {@link DRAW_RANGES} order; entries past {@link #drawCount} are reused next frame */
@@ -539,7 +541,9 @@ export class MeshRenderer {
 		let listEnd = 0;
 		let d = 0;
 		for (const range of this.#ranges) {
-			range.entries.sort(COMPARATORS[range.info.order]);
+			if (range.entries.length > 1) {
+				range.entries.sort(COMPARATORS[range.info.order]);
+			}
 			range.start = d;
 			range.castOnlyEnd = d;
 			range.castersEnd = d;
@@ -624,7 +628,7 @@ export class MeshRenderer {
 
 	/** @returns the prepared range of a draw range */
 	#range(range: DrawRange): PreparedRange {
-		const prepared = this.#rangeOf.get(range);
+		const prepared = this.#rangeOf[range];
 		if (prepared === undefined) {
 			throw new Error(`draw range ${range} isn't in DRAW_RANGES`);
 		}

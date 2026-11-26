@@ -9,6 +9,15 @@ export const VERTICAL_OCCLUSION_SIZE = 512;
 export const DEFAULT_OCCLUSION_RANGE = 100;
 /** total vertical span, m (`HGVerticalOcclusionMapManager.OCCLUSION_MAP_HEIGHT`) */
 export const VERTICAL_OCCLUSION_HEIGHT = 256;
+/** horizontal camera drift from the last fit before re-centring and redrawing the map, m */
+const RECENTER_XZ = 12;
+/** vertical camera drift from the last fit before re-centring and redrawing the map, m */
+const RECENTER_Y = 16;
+/**
+ * minimum frames between content-only refreshes while streaming (camera moves past hysteresis redraw
+ * immediately)
+ */
+const CONTENT_REFRESH_INTERVAL = 16;
 
 /**
  * fits the top-down orthographic projection of the vertical occlusion map around `eye`, snapped to whole
@@ -91,6 +100,8 @@ export class VerticalOcclusionMap {
 	#contentVersion = -1;
 	#compiling = false;
 	#valid = false;
+	#staleContent = false;
+	#age = 0;
 
 	/** @param device the device */
 	constructor(device: GPUDevice) {
@@ -137,26 +148,40 @@ export class VerticalOcclusionMap {
 			return false;
 		}
 		const range = options.range !== undefined && options.range > 0 ? options.range : DEFAULT_OCCLUSION_RANGE;
-		const fit = fitVerticalOcclusion(eye, range);
-		this.render.set(fit.render);
-		this.originAndInvSpan[0] = fit.originAndInvSpan[0];
-		this.originAndInvSpan[1] = fit.originAndInvSpan[1];
-		this.originAndInvSpan[2] = fit.originAndInvSpan[2];
-		this.originAndInvSpan[3] = fit.originAndInvSpan[3];
-		this.metrics[0] = fit.metrics[0];
-		this.metrics[1] = fit.metrics[1];
-		this.metrics[2] = fit.metrics[2];
-		const moved =
-			!this.#valid ||
-			range !== this.#range ||
-			fit.snapped[0] !== this.#snapped[0] ||
-			fit.snapped[1] !== this.#snapped[1] ||
-			fit.snapped[2] !== this.#snapped[2];
 		const contentChanged = options.contentVersion !== this.#contentVersion;
 		const finishedCompiling = this.#compiling && !options.compiling;
-		const redraw = moved || contentChanged || finishedCompiling;
-		this.#range = range;
-		this.#snapped = fit.snapped;
+		if (contentChanged || finishedCompiling) {
+			this.#staleContent = true;
+		}
+		const drifted =
+			!this.#valid ||
+			range !== this.#range ||
+			Math.abs(eye[0] - this.#snapped[0]) > RECENTER_XZ ||
+			Math.abs(eye[2] - this.#snapped[2]) > RECENTER_XZ ||
+			Math.abs(eye[1] - this.#snapped[1]) > RECENTER_Y;
+		const redraw = drifted || (this.#staleContent && this.#age + 1 >= CONTENT_REFRESH_INTERVAL);
+		if (redraw) {
+			const fit = fitVerticalOcclusion(eye, range);
+			this.render.set(fit.render);
+			this.originAndInvSpan[0] = fit.originAndInvSpan[0];
+			this.originAndInvSpan[1] = fit.originAndInvSpan[1];
+			this.originAndInvSpan[2] = fit.originAndInvSpan[2];
+			this.originAndInvSpan[3] = fit.originAndInvSpan[3];
+			this.metrics[0] = fit.metrics[0];
+			this.metrics[1] = fit.metrics[1];
+			this.metrics[2] = fit.metrics[2];
+			this.#range = range;
+			this.#snapped = fit.snapped;
+			this.#age = 0;
+			this.#staleContent = options.compiling;
+		} else {
+			// keep the cached depth map valid by rebasing its world centre to the current camera eye
+			this.originAndInvSpan[0] = this.#snapped[0] - eye[0];
+			this.originAndInvSpan[1] = this.#snapped[1] - eye[1] + VERTICAL_OCCLUSION_HEIGHT * 0.5;
+			this.originAndInvSpan[2] = this.#snapped[2] - eye[2];
+			this.originAndInvSpan[3] = 1 / (2 * range);
+			this.#age++;
+		}
 		this.#contentVersion = options.contentVersion;
 		this.#compiling = options.compiling;
 		this.#valid = true;
@@ -168,6 +193,8 @@ export class VerticalOcclusionMap {
 	reset(): void {
 		this.#valid = false;
 		this.#snapped = [Number.NaN, Number.NaN, Number.NaN];
+		this.#staleContent = false;
+		this.#age = 0;
 		this.metrics[3] = 0;
 	}
 

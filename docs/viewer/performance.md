@@ -69,7 +69,9 @@ measurement instructions are in [driving the viewer](../driving-the-viewer.md#pr
   depth-aware blur upsamples.
 - **cached work.** transmittance and multiple-scattering LUTs render once per environment;
   irradiance clipmaps update only on re-centre or new cells; local lights select/bin/upload only on
-  camera, size, or visibility changes.
+  camera, size, or visibility changes; the weather vertical occlusion map rebases its cached world
+  centre until the camera drifts past 12 m horizontally (16 m vertically) and throttles content-only
+  refreshes to every 16 frames.
 - **mip feedback.** [mip feedback](streaming.md#mip-feedback) cut resident textures at
   street/interior stops by 33–67%, downloads by 25–40%, and map02 walk frame median/p95 from ~15/34
   ms to 12/23 ms (eliminating > 50 ms upload stalls). target costs 4 B/px; compute/readback overhead

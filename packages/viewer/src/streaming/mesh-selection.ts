@@ -209,6 +209,8 @@ interface SelectedBlock {
 	gpuRuns: Uint8Array;
 	/** per chain run: 1 when at least one shown slot casts shadows */
 	runCasts: Uint8Array;
+	/** whether any shown run in the block casts shadows */
+	anyRunCasts: boolean;
 	/** per chain run: OR of segment handedness bits (1 = unmirrored, 2 = mirrored) */
 	runHandedness: Uint8Array;
 	/** per chain run: max and min row size across segments */
@@ -430,6 +432,7 @@ export class MeshSelector {
 			spanEnd: number,
 		): void => {
 			const groups = block.groups;
+			const anyCasts = block.anyRunCasts;
 			for (let g = Math.floor(spanFirst / GROUP_ROWS); g * GROUP_ROWS < spanEnd; g++) {
 				// each of #selectRows' rejections, tested on the group's bounds: a group that fails one holds no row
 				// that passes it
@@ -445,11 +448,14 @@ export class MeshSelector {
 				}
 				const radius = groups[at + GroupFloat.radius];
 				const inView = sphereInPlanes(planes, planeFloats, gx, gy, gz, radius);
-				if (!inView && !inCasterVolume(casterPlanes, casterFloats, lightCasters, gx, gy, gz, radius)) {
+				if (
+					!inView &&
+					(!anyCasts || !inCasterVolume(casterPlanes, casterFloats, lightCasters, gx, gy, gz, radius))
+				) {
 					continue;
 				}
 				const layer =
-					view.shadowLayers === null
+					!anyCasts || view.shadowLayers === null
 						? SHADOW_LAYERS
 						: firstShadowLayer(view.shadowLayers, gx, gy, gz, radius);
 				if (!inView) {
@@ -501,9 +507,15 @@ export class MeshSelector {
 				block.gpuRuns = Uint8Array.from(block.slots, (slots, r) =>
 					slots.length > 0 && block.origins[r] === null && slots.every((slot) => slot.gpuCullable) ? 1 : 0,
 				);
-				block.runCasts = Uint8Array.from(block.slots, (slots) =>
-					slots.some((slot) => slot.castsShadows) ? 1 : 0,
-				);
+				let anyRunCasts = false;
+				block.runCasts = Uint8Array.from(block.slots, (slots) => {
+					const casts = slots.some((slot) => slot.castsShadows);
+					if (casts) {
+						anyRunCasts = true;
+					}
+					return casts ? 1 : 0;
+				});
+				block.anyRunCasts = anyRunCasts;
 				block.filter = filter;
 			}
 			const end = first + count;
@@ -674,6 +686,7 @@ export class MeshSelector {
 			origins,
 			gpuRuns: new Uint8Array(runCount),
 			runCasts: new Uint8Array(runCount),
+			anyRunCasts: false,
 			runHandedness,
 			runMaxSize,
 			runMinSize,
