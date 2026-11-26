@@ -144,13 +144,13 @@ export class Collector {
 		if (count === 0) {
 			return;
 		}
-		const visibility =
-			entry.conditional && entry.visibility !== null
-				? this.#controls.groupOf(entry.tag, entry.visibility)
-				: this.#controls.group(
-						entry.tag,
-						entry.visibility === null ? null : this.#controls.condition(entry.visibility),
-					);
+		let visibility: number;
+		if (entry.conditional && entry.visibility !== null) {
+			visibility = this.#controls.groupOf(entry.tag, entry.visibility);
+		} else {
+			const condition = entry.visibility === null ? null : this.#controls.condition(entry.visibility);
+			visibility = this.#controls.group(entry.tag, condition);
+		}
 		const mapKey = `${tileId(entry.key)}/${visibility}/${entry.conditional ? 'c' : 'd'}`;
 		const group = this.foliage.getOrInsertComputed(mapKey, () => ({
 			key: entry.key,

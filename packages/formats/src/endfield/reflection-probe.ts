@@ -87,23 +87,25 @@ export const readReflectionProbe = (object: MonoObject): ChunkReflectionProbe | 
 		center = [pos[0] + offset[0], pos[1] + offset[1], pos[2] + offset[2]];
 	}
 
-	const worldToLocal =
-		trInverse !== null
-			? [
-					trInverse[0],
-					trInverse[4],
-					trInverse[8],
-					trInverse[12],
-					trInverse[1],
-					trInverse[5],
-					trInverse[9],
-					trInverse[13],
-					trInverse[2],
-					trInverse[6],
-					trInverse[10],
-					trInverse[14],
-				]
-			: [1, 0, 0, -center[0], 0, 1, 0, -center[1], 0, 0, 1, -center[2]];
+	let worldToLocal: number[];
+	if (trInverse !== null) {
+		worldToLocal = [
+			trInverse[0],
+			trInverse[4],
+			trInverse[8],
+			trInverse[12],
+			trInverse[1],
+			trInverse[5],
+			trInverse[9],
+			trInverse[13],
+			trInverse[2],
+			trInverse[6],
+			trInverse[10],
+			trInverse[14],
+		];
+	} else {
+		worldToLocal = [1, 0, 0, -center[0], 0, 1, 0, -center[1], 0, 0, 1, -center[2]];
+	}
 
 	return {
 		id: object.id,

@@ -119,20 +119,25 @@ export class DepthPyramid {
 		});
 		const level = (mip: number): GPUTextureView =>
 			texture.createView({ baseMipLevel: mip, mipLevelCount: 1 });
-		this.#levels = Array.from({ length: levels }, (_, mip) => ({
-			group:
-				mip === 0
-					? this.#root.createBindGroup(depthPyramidFirstLayout, {
-							sourceDepth: depth.view,
-							output: level(0),
-						})
-					: this.#root.createBindGroup(depthPyramidDownLayout, {
-							source: level(mip - 1),
-							output: level(mip),
-						}),
-			width: Math.max(1, width >> mip),
-			height: Math.max(1, height >> mip),
-		}));
+		this.#levels = Array.from({ length: levels }, (_, mip) => {
+			let group: TgpuBindGroup;
+			if (mip === 0) {
+				group = this.#root.createBindGroup(depthPyramidFirstLayout, {
+					sourceDepth: depth.view,
+					output: level(0),
+				});
+			} else {
+				group = this.#root.createBindGroup(depthPyramidDownLayout, {
+					source: level(mip - 1),
+					output: level(mip),
+				});
+			}
+			return {
+				group,
+				width: Math.max(1, width >> mip),
+				height: Math.max(1, height >> mip),
+			};
+		});
 		this.#texture = texture;
 		this.#view = texture.createView();
 		this.#source = depth.view;

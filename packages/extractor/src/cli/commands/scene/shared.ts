@@ -163,27 +163,30 @@ export const entityJson = (
  * @param names asset name lookup
  * @returns plain JSON-friendly object
  */
-export const chunkEntityJson = (entity: ChunkEntity, { pathOf, bundleOf }: AssetNames): object => ({
-	matrix: entity.matrix === null ? null : [...entity.matrix],
-	bounds: entity.bounds,
-	decal: entity.decal,
-	waterDecal: entity.waterDecal,
-	components: entity.components,
-	renderer:
-		entity.renderer === null
-			? null
-			: {
-					lodCount: entity.renderer.lodCount,
-					draws: entity.renderer.draws.map((draw) => ({
-						lod: draw.lod,
-						mesh: pathOf(draw.meshHash) ?? `0x${draw.meshHash.toString(16)}`,
-						meshBundle: bundleOf(draw.meshHash),
-						material: pathOf(draw.materialHash) ?? `0x${draw.materialHash.toString(16)}`,
-						materialBundle: bundleOf(draw.materialHash),
-						submesh: draw.submesh,
-						flags: draw.flags,
-						lodMaxSquared: draw.lodMaxSquared,
-						lodMinSquared: draw.lodMinSquared,
-					})),
-				},
-});
+export const chunkEntityJson = (entity: ChunkEntity, { pathOf, bundleOf }: AssetNames): object => {
+	let renderer = null;
+	if (entity.renderer !== null) {
+		renderer = {
+			lodCount: entity.renderer.lodCount,
+			draws: entity.renderer.draws.map((draw) => ({
+				lod: draw.lod,
+				mesh: pathOf(draw.meshHash) ?? `0x${draw.meshHash.toString(16)}`,
+				meshBundle: bundleOf(draw.meshHash),
+				material: pathOf(draw.materialHash) ?? `0x${draw.materialHash.toString(16)}`,
+				materialBundle: bundleOf(draw.materialHash),
+				submesh: draw.submesh,
+				flags: draw.flags,
+				lodMaxSquared: draw.lodMaxSquared,
+				lodMinSquared: draw.lodMinSquared,
+			})),
+		};
+	}
+	return {
+		matrix: entity.matrix === null ? null : [...entity.matrix],
+		bounds: entity.bounds,
+		decal: entity.decal,
+		waterDecal: entity.waterDecal,
+		components: entity.components,
+		renderer,
+	};
+};

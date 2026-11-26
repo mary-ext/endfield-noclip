@@ -386,16 +386,18 @@ const assembleRenderer = async (
 	const materialValues: (MaterialValues | null)[] = [];
 	const played = playedFloats(candidate.playedMaterials);
 	for (const material of materials) {
+		if (material === null) {
+			materialValues.push(null);
+			continue;
+		}
 		// material reads are cached by the resolver
 		materialValues.push(
-			material === null
-				? null
-				: await posedMaterialValues(resolver, material, {
-						values: candidate.posedMaterials,
-						tilings: walk.lengthTilings.get(key) ?? [],
-						emissive: walk.emissiveOverrides.get(key) ?? null,
-						played,
-					}),
+			await posedMaterialValues(resolver, material, {
+				values: candidate.posedMaterials,
+				tilings: walk.lengthTilings.get(key) ?? [],
+				emissive: walk.emissiveOverrides.get(key) ?? null,
+				played,
+			}),
 		);
 	}
 	return {

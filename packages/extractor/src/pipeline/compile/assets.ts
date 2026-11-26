@@ -850,29 +850,31 @@ const meshNeeds = (
 			const reach = draw.material === null ? null : (reaches[draw.material] ?? null);
 			const held = sway[draw.geometry];
 			if (reach !== null) {
-				sway[draw.geometry] =
-					held === null
-						? reach
-						: {
-								flat: Math.max(held.flat, reach.flat),
-								perHeight: Math.max(held.perHeight, reach.perHeight),
-								perDistance: Math.max(held.perDistance, reach.perDistance),
-							};
+				if (held === null) {
+					sway[draw.geometry] = reach;
+				} else {
+					sway[draw.geometry] = {
+						flat: Math.max(held.flat, reach.flat),
+						perHeight: Math.max(held.perHeight, reach.perHeight),
+						perDistance: Math.max(held.perDistance, reach.perDistance),
+					};
+				}
 			}
 			const moved = draw.material === null ? null : (offsetReaches[draw.material] ?? null);
 			const heldOffset = offset[draw.geometry];
 			if (moved !== null) {
-				offset[draw.geometry] =
-					heldOffset === null
-						? moved
-						: {
-								reach: [
-									Math.max(heldOffset.reach[0], moved.reach[0]),
-									Math.max(heldOffset.reach[1], moved.reach[1]),
-									Math.max(heldOffset.reach[2], moved.reach[2]),
-								],
-								weighted: heldOffset.weighted || moved.weighted,
-							};
+				if (heldOffset === null) {
+					offset[draw.geometry] = moved;
+				} else {
+					offset[draw.geometry] = {
+						reach: [
+							Math.max(heldOffset.reach[0], moved.reach[0]),
+							Math.max(heldOffset.reach[1], moved.reach[1]),
+							Math.max(heldOffset.reach[2], moved.reach[2]),
+						],
+						weighted: heldOffset.weighted || moved.weighted,
+					};
+				}
 			}
 		}
 	}

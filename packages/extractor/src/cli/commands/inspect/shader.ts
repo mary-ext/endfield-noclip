@@ -220,18 +220,20 @@ const inspectShader = async (
 	let explicitSingle = false;
 
 	if (options.pathId !== undefined || parseHash(target) !== null || BUNDLE_NAME.test(target)) {
-		const refs =
-			options.pathId === undefined && parseHash(target) === null
-				? await resolveFromBundle(resolver, target, UnityClass.Shader, {
-						nameFilter: options.nameFilter,
-						all: true,
-					})
-				: [
-						await resolveObjectArg(context, resolver, target, UnityClass.Shader, {
-							pathId: options.pathId,
-							nameFilter: options.nameFilter,
-						}),
-					];
+		let refs;
+		if (options.pathId === undefined && parseHash(target) === null) {
+			refs = await resolveFromBundle(resolver, target, UnityClass.Shader, {
+				nameFilter: options.nameFilter,
+				all: true,
+			});
+		} else {
+			refs = [
+				await resolveObjectArg(context, resolver, target, UnityClass.Shader, {
+					pathId: options.pathId,
+					nameFilter: options.nameFilter,
+				}),
+			];
+		}
 		explicitSingle = refs.length === 1;
 		shaders = await Promise.all(
 			refs.map(async (ref) => ({

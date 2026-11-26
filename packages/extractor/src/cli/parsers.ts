@@ -85,11 +85,17 @@ export const wherePredicate = (): ValueParser<'sync', WherePredicate> => ({
 		}
 	},
 	format(value) {
-		return value.op === 'truthy'
-			? value.path
-			: value.op === 'falsy'
-				? `!${value.path}`
-				: `${value.path}${value.op}${value.raw}`;
+		switch (value.op) {
+			case 'truthy': {
+				return value.path;
+			}
+			case 'falsy': {
+				return `!${value.path}`;
+			}
+			default: {
+				return `${value.path}${value.op}${value.raw}`;
+			}
+		}
 	},
 });
 

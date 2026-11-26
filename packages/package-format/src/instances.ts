@@ -558,23 +558,21 @@ export const encodeInstanceBlock = (block: InstanceBlock): Uint8Array => {
 	hv.setFloat32(8, block.origin[2], true);
 	hv.setUint32(12, count, true);
 
-	const sections: ContainerSectionInput[] = [
-		{ tag: TAG_HEAD, required: true, data: head },
-		...(block.palette !== undefined
-			? [
-					{
-						tag: TAG_PLTT,
-						required: true,
-						data: bytesOf(block.palette),
-						count: block.palette.length,
-						stride: 8,
-					},
-				]
-			: []),
+	const sections: ContainerSectionInput[] = [{ tag: TAG_HEAD, required: true, data: head }];
+	if (block.palette !== undefined) {
+		sections.push({
+			tag: TAG_PLTT,
+			required: true,
+			data: bytesOf(block.palette),
+			count: block.palette.length,
+			stride: 8,
+		});
+	}
+	sections.push(
 		{ tag: TAG_CHNS, required: true, data: bytesOf(block.chains), count, stride: 4 },
 		{ tag: TAG_XFRM, required: true, data: bytesOf(block.transforms), count, stride: 48 },
 		{ tag: TAG_BNDS, required: true, data: bytesOf(block.bounds), count, stride: 24 },
-	];
+	);
 	if (block.rowFlags !== undefined) {
 		if (block.rowFlags.length !== count) {
 			throw new RangeError('instance block rowFlags disagrees with row count');

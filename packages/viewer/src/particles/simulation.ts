@@ -810,12 +810,14 @@ export class ParticleSimulation {
 		this.#down = down;
 		this.#worldToLocal = worldToLocal;
 		this.#emittedFrom = emittedFrom ?? null;
-		const emissions: readonly Emission[] =
-			subEmissions !== null
-				? subEmissions
-				: this.#capped
-					? this.#admit(time)
-					: this.#emitted(time - this.#lookback, time);
+		let emissions: readonly Emission[];
+		if (subEmissions !== null) {
+			emissions = subEmissions;
+		} else if (this.#capped) {
+			emissions = this.#admit(time);
+		} else {
+			emissions = this.#emitted(time - this.#lookback, time);
+		}
 		const evalFrame = ++this.#evalFrame;
 		this.#steppedNow.clear();
 		const capacity = Math.floor(out.length / PARTICLE_FLOATS);
@@ -1682,29 +1684,30 @@ export class ParticleSimulation {
 			launch[axis] = direction[axis] * speed;
 			acceleration[axis] = down[axis] * gravity;
 		}
+		let dragInput = null;
+		if (drag !== null) {
+			dragInput = {
+				info: drag,
+				r: random(seed, id, Channel.Drag),
+				// the larger axis of a 3D size, as the game reads it
+				size: (t: number) => {
+					const lived = livedAt(t, life);
+					let size = 0;
+					for (let axis = 0; axis < 3; axis++) {
+						const over = sizeOver === null ? 1 : evaluateMinMax(sizeOver[axis], lived, growth);
+						size = Math.max(size, startSize[axis] * over);
+					}
+					return size;
+				},
+			};
+		}
 		const {
 			offset,
 			velocity: v,
 			state,
 		} = steppedPath({
 			limit: limit === null ? null : { info: limit, r: random(seed, id, Channel.SpeedLimit) },
-			drag:
-				drag === null
-					? null
-					: {
-							info: drag,
-							r: random(seed, id, Channel.Drag),
-							// the larger axis of a 3D size, as the game reads it
-							size: (t) => {
-								const lived = livedAt(t, life);
-								let size = 0;
-								for (let axis = 0; axis < 3; axis++) {
-									const over = sizeOver === null ? 1 : evaluateMinMax(sizeOver[axis], lived, growth);
-									size = Math.max(size, startSize[axis] * over);
-								}
-								return size;
-							},
-						},
+			drag: dragInput,
 			start: launch,
 			acceleration,
 			push,

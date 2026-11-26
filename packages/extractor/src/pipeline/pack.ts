@@ -109,12 +109,12 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 	await rm(stage, { recursive: true, force: true });
 	await mkdir(stage, { recursive: true });
 	const session = options.session ?? null;
-	const cache =
-		session !== null
-			? session.cache
-			: options.cacheDir === null
-				? null
-				: await PackCache.open(options.cacheDir);
+	let cache: PackCache | null = null;
+	if (session !== null) {
+		cache = session.cache;
+	} else if (options.cacheDir !== null) {
+		cache = await PackCache.open(options.cacheDir);
+	}
 	cache?.beginScene();
 	// scratch space for the debug log, and for blobs when there's no cache to hold them
 	const spool = join(stage, '.spool');

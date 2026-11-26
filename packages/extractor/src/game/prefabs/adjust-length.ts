@@ -103,21 +103,23 @@ export const readAdjustLength = (data: TypeTreeObject): AdjustLength => {
 	const moveTargets = booleanField(data, 'useMoveTransformPositions')
 		? arrayField(data, 'targetMoveTransforms').map((pointer) => asPPtr(pointer))
 		: [];
-	const lifetimeTargets = booleanField(data, 'useParticleSystemLifeTimes')
-		? objectsField(data, 'targetLifeTimeParticleSystems').map((config): LengthParticleLifetime => ({
-				target: pptrField(config, 'target'),
-				offsetLength: numberField(config, 'offsetLength'),
-			}))
-		: [];
-	const tilings = booleanField(data, 'useTillingOffset')
-		? objectsField(data, 'tillingOffsetConfigs').map((config): LengthTiling => ({
-				renderer: pptrField(config, 'target'),
-				texture: stringField(config, 'textureName'),
-				dir: numberField(config, 'tillingDir'),
-				offset: numberField(config, 'offset'),
-				revert: booleanField(config, 'revertScale'),
-			}))
-		: [];
+	let lifetimeTargets: LengthParticleLifetime[] = [];
+	if (booleanField(data, 'useParticleSystemLifeTimes')) {
+		lifetimeTargets = objectsField(data, 'targetLifeTimeParticleSystems').map((config) => ({
+			target: pptrField(config, 'target'),
+			offsetLength: numberField(config, 'offsetLength'),
+		}));
+	}
+	let tilings: LengthTiling[] = [];
+	if (booleanField(data, 'useTillingOffset')) {
+		tilings = objectsField(data, 'tillingOffsetConfigs').map((config) => ({
+			renderer: pptrField(config, 'target'),
+			texture: stringField(config, 'textureName'),
+			dir: numberField(config, 'tillingDir'),
+			offset: numberField(config, 'offset'),
+			revert: booleanField(config, 'revertScale'),
+		}));
+	}
 	return { axis, preset, scaleTargets, moveTargets, lifetimeTargets, tilings, unread };
 };
 

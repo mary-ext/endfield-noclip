@@ -311,13 +311,14 @@ export const animatorPose = async (
 	if (clips.length === 0) {
 		return null;
 	}
-	const key =
-		parameters.size === 0
-			? 'animator-defaults'
-			: `animator:${parameters
-					.entries()
-					.map(([id, value]) => `${id}=${Number(value)}`)
-					.toArray()
-					.join(',')}`;
+	let key = 'animator-defaults';
+	if (parameters.size > 0) {
+		const entries = parameters
+			.entries()
+			.map(([id, value]) => `${id}=${Number(value)}`)
+			.toArray()
+			.join(',');
+		key = `animator:${entries}`;
+	}
 	return { key, clips, active: new Map() };
 };

@@ -330,16 +330,16 @@ const dumpMany = async (
 					continue;
 				}
 				matched++;
-				const outputRow =
-					options.pick.length > 0
-						? {
-								...(targets.length > 1 ? { bundle: bundleName } : {}),
-								pathId: header.pathId,
-								type: header.type,
-								...(gameObject === undefined ? {} : { gameObject }),
-								...pickFields(queryView, options.pick),
-							}
-						: row;
+				let outputRow: Record<string, unknown> = row;
+				if (options.pick.length > 0) {
+					outputRow = {
+						...(targets.length > 1 ? { bundle: bundleName } : {}),
+						pathId: header.pathId,
+						type: header.type,
+						...(gameObject === undefined ? {} : { gameObject }),
+						...pickFields(queryView, options.pick),
+					};
+				}
 				if (options.json) {
 					jsonRows.push(outputRow);
 				} else {

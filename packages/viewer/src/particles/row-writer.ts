@@ -758,22 +758,22 @@ export class ParticleRowWriter {
 		}
 		const m = this.#m;
 		const particles = this.#particles;
-		const context =
-			this.#context === null
-				? (this.#context = {
-						info,
-						view,
-						origin: emitter.origin,
-						m,
-						scales: this.#scales,
-						sizing: UNIT,
-						billboard: RowBillboard.None,
-						quadFrame: null,
-						pivoted: false,
-						unitAxes: true,
-						shape: quadShape,
-					})
-				: this.#context;
+		if (this.#context === null) {
+			this.#context = {
+				info,
+				view,
+				origin: emitter.origin,
+				m,
+				scales: this.#scales,
+				sizing: UNIT,
+				billboard: RowBillboard.None,
+				quadFrame: null,
+				pivoted: false,
+				unitAxes: true,
+				shape: quadShape,
+			};
+		}
+		const context = this.#context;
 		fillRowContext(context, this.#quadFrame, info, view, emitter.origin, m, this.#columns, this.#scales);
 		const { sizing, billboard, pivoted, unitAxes, shape } = context;
 		const turnedBy = pivoted ? billboardBasis(billboard, view) : null;
@@ -915,12 +915,18 @@ export class ParticleRowWriter {
 			words[o + RowWord.block] = slot;
 			words[o + RowWord.info] = infoWord;
 			const quadFlip = info.renderMode === ParticleRenderMode.Mesh ? 0 : flip & 3;
-			words[o + RowWord.sheet] =
-				sheet === null
-					? quadFlip === 0
-						? 0
-						: rowSheet([1, 1], 0, 0, quadFlip)
-					: rowSheet(sheet.tiles, particles[base + ParticleFloat.tile], sheet.uvChannels, quadFlip);
+			if (sheet !== null) {
+				words[o + RowWord.sheet] = rowSheet(
+					sheet.tiles,
+					particles[base + ParticleFloat.tile],
+					sheet.uvChannels,
+					quadFlip,
+				);
+			} else if (quadFlip === 0) {
+				words[o + RowWord.sheet] = 0;
+			} else {
+				words[o + RowWord.sheet] = rowSheet([1, 1], 0, 0, quadFlip);
+			}
 			color[0] = particles[base + ParticleFloat.color];
 			color[1] = particles[base + ParticleFloat.color + 1];
 			color[2] = particles[base + ParticleFloat.color + 2];

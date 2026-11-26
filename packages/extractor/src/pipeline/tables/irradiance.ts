@@ -279,17 +279,17 @@ export const packIrradiance = async (
 		return records.length === 0 ? undefined : { name, stateGroup, payload: payloads[file], records };
 	});
 
-	const key =
-		cache === null
-			? null
-			: await cache.stepKey(new URL(import.meta.url), {
-					index: indexFile.entry.dataMd5,
-					files: selected.map(({ payload, records }) => [
-						payload.entry.dataMd5,
-						records.map((record) => record.key),
-					]),
-					zstdLevel: ZSTD_LEVEL,
-				});
+	let key: string | null = null;
+	if (cache !== null) {
+		key = await cache.stepKey(new URL(import.meta.url), {
+			index: indexFile.entry.dataMd5,
+			files: selected.map(({ payload, records }) => [
+				payload.entry.dataMd5,
+				records.map((record) => record.key),
+			]),
+			zstdLevel: ZSTD_LEVEL,
+		});
+	}
 	let memo = key === null ? undefined : await cache?.recallStep<IrradianceMemo>(key);
 	if (memo === undefined) {
 		memo = await convertCells(store, selected);

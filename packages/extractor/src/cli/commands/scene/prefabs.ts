@@ -59,13 +59,15 @@ const scanScenePrefabs = async (
 		json: boolean;
 	},
 ): Promise<void> => {
-	const scenes =
-		sceneArg === 'all'
-			? await context.world.scenes()
-			: sceneArg
-					.split(',')
-					.map((s) => s.trim())
-					.filter(Boolean);
+	let scenes: string[];
+	if (sceneArg === 'all') {
+		scenes = await context.world.scenes();
+	} else {
+		scenes = sceneArg
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+	}
 
 	const unique = new Map<
 		bigint,
@@ -227,19 +229,19 @@ const scanScenePrefabs = async (
 			if (options.where.length > 0 && !matchesWhere(queryView, options.where)) {
 				continue;
 			}
-			const outRow =
-				options.pick.length > 0
-					? {
-							scenes: header.scenes,
-							path: header.path,
-							bundle: header.bundle,
-							pathId: header.pathId,
-							...(gameObject === undefined ? {} : { gameObject }),
-							...(renderMode === undefined ? {} : { renderMode }),
-							...pickFields(queryView, options.pick),
-						}
-					: { ...header, value };
-			rows.push(outRow);
+			if (options.pick.length > 0) {
+				rows.push({
+					scenes: header.scenes,
+					path: header.path,
+					bundle: header.bundle,
+					pathId: header.pathId,
+					...(gameObject === undefined ? {} : { gameObject }),
+					...(renderMode === undefined ? {} : { renderMode }),
+					...pickFields(queryView, options.pick),
+				});
+			} else {
+				rows.push({ ...header, value });
+			}
 		}
 		return rows;
 	});

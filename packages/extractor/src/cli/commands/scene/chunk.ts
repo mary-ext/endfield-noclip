@@ -73,18 +73,14 @@ const resolveChunkFile = async (
 	if (partial.length === 1) {
 		return { scene, file: partial[0] };
 	}
-	const hint =
-		partial.length === 0
-			? ''
-			: `\nmatching chunks:\n${partial
-					.slice(0, 10)
-					.map((f) => `  ${basename(f.name)}`)
-					.join('\n')}`;
-	throw new Error(
-		partial.length === 0
-			? `chunk ${query} not found in ${scene}`
-			: `chunk ${query} matched ${partial.length} files in ${scene}${hint}`,
-	);
+	if (partial.length === 0) {
+		throw new Error(`chunk ${query} not found in ${scene}`);
+	}
+	const hint = partial
+		.slice(0, 10)
+		.map((f) => `  ${basename(f.name)}`)
+		.join('\n');
+	throw new Error(`chunk ${query} matched ${partial.length} files in ${scene}\nmatching chunks:\n${hint}`);
 };
 
 const inspectChunk = async (

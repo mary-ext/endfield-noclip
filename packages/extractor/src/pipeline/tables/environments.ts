@@ -1164,30 +1164,29 @@ export const finishEnvironments = (
 	});
 	const mapTexture = (index: number | null): number | null =>
 		index === null ? null : (textureIds[index] ?? null);
-	const weather: WeatherAssets | null =
-		plan.weather === null
-			? null
-			: {
-					rain:
-						plan.weather.rain === null
-							? null
-							: {
-									...plan.weather.rain,
-									sceneEffectRainTex: mapTexture(plan.weather.rain.sceneEffectRainTex),
-									rainWaveTex: mapTexture(plan.weather.rain.rainWaveTex),
-									verticalFlowTexture: mapTexture(plan.weather.rain.verticalFlowTexture),
-									rippleTexture: mapTexture(plan.weather.rain.rippleTexture),
-									rainSplashTexture: mapTexture(plan.weather.rain.rainSplashTexture),
-									rainOcclusionSampleNoise: mapTexture(plan.weather.rain.rainOcclusionSampleNoise),
-								},
-					snow:
-						plan.weather.snow === null
-							? null
-							: {
-									...plan.weather.snow,
-									snowflakeTex: mapTexture(plan.weather.snow.snowflakeTex),
-								},
-				};
+	let weather: WeatherAssets | null = null;
+	if (plan.weather !== null) {
+		let rain: WeatherAssets['rain'] = null;
+		if (plan.weather.rain !== null) {
+			rain = {
+				...plan.weather.rain,
+				sceneEffectRainTex: mapTexture(plan.weather.rain.sceneEffectRainTex),
+				rainWaveTex: mapTexture(plan.weather.rain.rainWaveTex),
+				verticalFlowTexture: mapTexture(plan.weather.rain.verticalFlowTexture),
+				rippleTexture: mapTexture(plan.weather.rain.rippleTexture),
+				rainSplashTexture: mapTexture(plan.weather.rain.rainSplashTexture),
+				rainOcclusionSampleNoise: mapTexture(plan.weather.rain.rainOcclusionSampleNoise),
+			};
+		}
+		let snow: WeatherAssets['snow'] = null;
+		if (plan.weather.snow !== null) {
+			snow = {
+				...plan.weather.snow,
+				snowflakeTex: mapTexture(plan.weather.snow.snowflakeTex),
+			};
+		}
+		weather = { rain, snow };
+	}
 	return {
 		posts: plan.posts,
 		schema: plan.schema,
@@ -1317,17 +1316,22 @@ const environmentVolumeControl = (
 ): DraftControl => {
 	const scripted = volume.blend.kind === 'scripted';
 	const offByDefault = scripted || dynamic;
+	let assumption: string;
+	if (scripted) {
+		assumption = 'off: a level script fades it in, which isn’t followed; on previews it at full strength';
+	} else if (dynamic) {
+		assumption =
+			'off: a level script enables it, which isn’t followed; on previews it where it holds the camera';
+	} else {
+		assumption = 'on: it applies wherever it holds the camera';
+	}
 	return sceneControl({
 		kind: 'environmentVolume',
 		id: environmentVolumeControlId(index),
 		name: volume.name,
 		values: SWITCH_VALUES,
 		default: offByDefault ? 0 : 1,
-		assumption: scripted
-			? 'off: a level script fades it in, which isn’t followed; on previews it at full strength'
-			: dynamic
-				? 'off: a level script enables it, which isn’t followed; on previews it where it holds the camera'
-				: 'on: it applies wherever it holds the camera',
+		assumption,
 	});
 };
 

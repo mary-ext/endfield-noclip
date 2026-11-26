@@ -53,26 +53,31 @@ const auditEnv = async (
 	) {
 		await using pkg = await PackedPackage.open(packageDir);
 		const env = resolveEnvironment(await pkg.environment());
-		const phases =
-			options.post !== undefined && options.phase === undefined && options.section === undefined
-				? []
-				: env.phases
-						.map((phase, index) => {
-							const sections =
-								options.section === undefined
-									? phase.sections
-									: (Object.fromEntries(
-											Object.entries(phase.sections).filter(([key]) => options.section!.test(key)),
-										) as Partial<EnvironmentSections>);
-							return { index, name: phase.name, active: phase.active, sections };
-						})
-						.filter((p) => options.phase === undefined || options.phase.test(p.name));
-		const posts =
-			options.phase !== undefined && options.post === undefined
-				? []
-				: env.posts
-						.map((post, index) => ({ index, name: post.name, profile: post }))
-						.filter((p) => options.post === undefined || options.post.test(p.name));
+		let phases: {
+			index: number;
+			name: string;
+			active: string[];
+			sections: Partial<EnvironmentSections>;
+		}[] = [];
+		if (options.post === undefined || options.phase !== undefined || options.section !== undefined) {
+			phases = env.phases
+				.map((phase, index) => {
+					let sections: Partial<EnvironmentSections> = phase.sections;
+					if (options.section !== undefined) {
+						sections = Object.fromEntries(
+							Object.entries(phase.sections).filter(([key]) => options.section!.test(key)),
+						) as Partial<EnvironmentSections>;
+					}
+					return { index, name: phase.name, active: phase.active, sections };
+				})
+				.filter((p) => options.phase === undefined || options.phase.test(p.name));
+		}
+		let posts: { index: number; name: string; profile: (typeof env.posts)[number] }[] = [];
+		if (options.phase === undefined || options.post !== undefined) {
+			posts = env.posts
+				.map((post, index) => ({ index, name: post.name, profile: post }))
+				.filter((p) => options.post === undefined || options.post.test(p.name));
+		}
 		if (options.json) {
 			console.log(JSON.stringify({ phases, posts }, null, '\t'));
 			return;

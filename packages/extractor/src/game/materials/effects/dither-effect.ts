@@ -87,15 +87,16 @@ export const isDitherEffect = (reader: MaterialReader): boolean => {
  */
 export const describeDitherEffect = (reader: MaterialReader): EffectStackSurface | UnsupportedSurface => {
 	const { float, colorOrVector: color, has } = reader;
-	const keywords = undrawnKeywords(reader, {
-		has:
-			reader.shader.name === NO_LIGHTING_SHADER
-				? (keyword) => NO_LIGHTING_EFFECT_KEYWORDS.has(keyword)
-				: (keyword) =>
-						DITHER_EFFECT_KEYWORDS.has(keyword) ||
-						DITHER_EFFECT_EXTRA_KEYWORDS.has(keyword) ||
-						APPEAR_KEYWORDS.has(keyword),
-	});
+	let hasKeyword: (keyword: string) => boolean;
+	if (reader.shader.name === NO_LIGHTING_SHADER) {
+		hasKeyword = (keyword) => NO_LIGHTING_EFFECT_KEYWORDS.has(keyword);
+	} else {
+		hasKeyword = (keyword) =>
+			DITHER_EFFECT_KEYWORDS.has(keyword) ||
+			DITHER_EFFECT_EXTRA_KEYWORDS.has(keyword) ||
+			APPEAR_KEYWORDS.has(keyword);
+	}
+	const keywords = undrawnKeywords(reader, { has: hasKeyword });
 	if (keywords !== null) {
 		return keywords;
 	}

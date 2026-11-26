@@ -247,11 +247,11 @@ const findPlacements = async (context: Context, scene: string, options: FindOpti
 		}
 	}
 
-	const survey =
-		rows.full || !needsSurvey
-			? null
-			: await (surveyPromise ??
-					surveyPlacements(context, scene, scopedLevel, surveyOptions).catch(errorText));
+	let survey = null;
+	if (!rows.full && needsSurvey) {
+		survey = await (surveyPromise ??
+			surveyPlacements(context, scene, scopedLevel, surveyOptions).catch(errorText));
+	}
 	if (typeof survey === 'string') {
 		console.error(`${SURVEY_KINDS.filter((k) => kinds.has(k)).join(', ')}: not searched: ${survey}`);
 	} else if (survey !== null) {

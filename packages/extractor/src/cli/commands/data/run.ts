@@ -623,12 +623,13 @@ const readViewStatesCmd = async (
 		console.log(JSON.stringify(shown, jsonReplacer, '\t'));
 	} else {
 		for (const row of shown) {
-			const emText =
-				row.emissives.length === 0
-					? ''
-					: `  emissives: ${row.emissives
-							.map((e) => `${e.state}→${e.configPath?.split('/').pop() ?? e.configHash}`)
-							.join(', ')}`;
+			let emText = '';
+			if (row.emissives.length > 0) {
+				const list = row.emissives
+					.map((e) => `${e.state}→${e.configPath?.split('/').pop() ?? e.configHash}`)
+					.join(', ');
+				emText = `  emissives: ${list}`;
+			}
 			console.log(`${row.model.padEnd(44)} states=${row.states.length}${emText}`);
 		}
 	}

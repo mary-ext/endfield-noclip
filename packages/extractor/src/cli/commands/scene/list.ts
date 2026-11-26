@@ -91,20 +91,21 @@ const listDungeons = async (
 		const value = key === null ? undefined : text(key);
 		return value === undefined ? null : stripMarkup(value);
 	};
-	const rows = mapDefined(uses, ({ dungeon, scene, charId, missions }) =>
-		options.category === undefined || options.category.test(dungeon.category ?? '')
-			? {
-					id: dungeon.id,
-					name: dungeon.name ?? (dungeon.levelId === null ? null : levelNames.get(dungeon.levelId)) ?? null,
-					category: dungeon.category,
-					level: dungeon.levelId,
-					scene,
-					charId,
-					operator: charId === null ? null : (operators.get(charId) ?? null),
-					missions: missions.map((mission) => ({ id: mission.id, name: missionName(mission.nameKey) })),
-				}
-			: undefined,
-	);
+	const rows = mapDefined(uses, ({ dungeon, scene, charId, missions }) => {
+		if (options.category !== undefined && !options.category.test(dungeon.category ?? '')) {
+			return undefined;
+		}
+		return {
+			id: dungeon.id,
+			name: dungeon.name ?? (dungeon.levelId === null ? null : levelNames.get(dungeon.levelId)) ?? null,
+			category: dungeon.category,
+			level: dungeon.levelId,
+			scene,
+			charId,
+			operator: charId === null ? null : (operators.get(charId) ?? null),
+			missions: missions.map((mission) => ({ id: mission.id, name: missionName(mission.nameKey) })),
+		};
+	});
 	rows.sort((a, b) => compareNatural(a.level ?? '', b.level ?? '') || compareStrings(a.id, b.id));
 	if (options.json) {
 		console.log(JSON.stringify(rows, null, '\t'));

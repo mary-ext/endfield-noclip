@@ -107,18 +107,27 @@ export const describeWaterSheet = (reader: MaterialReader): WaterSheetSurface | 
 	let normals: WaterSheetSurface['textures']['normals'] = null;
 	{
 		const flipbook = sequence && has('_USE_SEQUENCE_FRAME_NORMAL');
-		const name = flipbook ? '_SequenceNormalMap' : has('_NORMAL_MAP') ? '_NormalMap' : null;
+		let name: string | null = null;
+		if (flipbook) {
+			name = '_SequenceNormalMap';
+		} else if (has('_NORMAL_MAP')) {
+			name = '_NormalMap';
+		}
 		const slot = name === null ? undefined : reader.slot(name);
 		if (slot !== undefined && slot.uv === 0) {
+			let texture;
+			if (flipbook) {
+				texture = effectTexture({ texture: slot.texture, scale: [1, 1], offset: [0, 0] });
+			} else {
+				// the normal map takes no custom data
+				texture = effectTexture(
+					slot,
+					ownSpeedOf(reader, '_NormalMapUVSpeed'),
+					matrixRotationOf(reader, '_NormalMapUVRotateMat'),
+				);
+			}
 			normals = {
-				texture: flipbook
-					? effectTexture({ texture: slot.texture, scale: [1, 1], offset: [0, 0] })
-					: // the normal map takes no custom data
-						effectTexture(
-							slot,
-							ownSpeedOf(reader, '_NormalMapUVSpeed'),
-							matrixRotationOf(reader, '_NormalMapUVRotateMat'),
-						),
+				texture,
 				flipbook,
 				scale: flipbook ? float('_FrameNormalScale', 1) : float('_NormalScale', 1),
 			};

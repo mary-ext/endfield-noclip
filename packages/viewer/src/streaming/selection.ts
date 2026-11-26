@@ -688,18 +688,18 @@ export class Selector {
 			if (fadeState.toShown) {
 				this.#refinedFrame[node.index] = this.#frame;
 			}
-			const refinedFade =
-				parentFade !== 0
-					? parentFade
-					: fadeState.toShown
-						? encodeFadeIn(fadeState.progress)
-						: encodeFadeOut(1 - fadeState.progress);
-			const hlodFade =
-				parentFade !== 0
-					? parentFade
-					: fadeState.toShown
-						? encodeFadeOut(1 - fadeState.progress)
-						: encodeFadeIn(fadeState.progress);
+			let refinedFade: number;
+			let hlodFade: number;
+			if (parentFade !== 0) {
+				refinedFade = parentFade;
+				hlodFade = parentFade;
+			} else if (fadeState.toShown) {
+				refinedFade = encodeFadeIn(fadeState.progress);
+				hlodFade = encodeFadeOut(1 - fadeState.progress);
+			} else {
+				refinedFade = encodeFadeOut(1 - fadeState.progress);
+				hlodFade = encodeFadeIn(fadeState.progress);
+			}
 			this.#emitRefined(node, view, options, { leaf, priority, fade: refinedFade });
 			if (hasHlod) {
 				this.#emitHlod(node, options, priority, hlodFade);

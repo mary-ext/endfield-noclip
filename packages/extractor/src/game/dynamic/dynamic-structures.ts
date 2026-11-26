@@ -354,13 +354,14 @@ const drivenViewStates = async (
 		uniqueModels.add(model);
 	}
 	const modelList = [...uniqueModels];
-	const [fp, jsonHash] =
-		cache === null || modelList.length === 0
-			? [null, null]
-			: await Promise.all([
-					cache.fingerprint(VIEW_STATE_POSES_ENTRY),
-					context.vfs.group(VfsGroup.JsonData).then((g) => g.catalogHash),
-				]);
+	let fp: string | null = null;
+	let jsonHash: string | null = null;
+	if (cache !== null && modelList.length > 0) {
+		[fp, jsonHash] = await Promise.all([
+			cache.fingerprint(VIEW_STATE_POSES_ENTRY),
+			context.vfs.group(VfsGroup.JsonData).then((g) => g.catalogHash),
+		]);
+	}
 	const loaded = await mapPool(modelList, READ_CONCURRENCY, async (model) => {
 		const memoKey =
 			cache === null || fp === null || jsonHash === null

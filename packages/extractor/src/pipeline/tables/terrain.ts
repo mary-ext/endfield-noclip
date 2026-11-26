@@ -177,18 +177,18 @@ export const packTerrain = async (
 	const splatIndex = await findTerrainSplatIndex(context, input.scene);
 	const layerFiles = layerTextureFiles(terrainScene, surface);
 
-	const key =
-		cache === null
-			? null
-			: await cache.stepKey(new URL(import.meta.url), {
-					scene: input.scene,
-					zstdLevel: input.zstdLevel,
-					textureZstdLevel: input.textureZstdLevel,
-					surface,
-					splatIndex: splatIndex?.bundleMd5 ?? null,
-					layers: Array.isArray(layerFiles) ? layerFiles.map(({ D, N }) => [md5(D), md5(N)]) : layerFiles,
-					tiles: tiles.map(tileSources),
-				});
+	let key: string | null = null;
+	if (cache !== null) {
+		key = await cache.stepKey(new URL(import.meta.url), {
+			scene: input.scene,
+			zstdLevel: input.zstdLevel,
+			textureZstdLevel: input.textureZstdLevel,
+			surface,
+			splatIndex: splatIndex?.bundleMd5 ?? null,
+			layers: Array.isArray(layerFiles) ? layerFiles.map(({ D, N }) => [md5(D), md5(N)]) : layerFiles,
+			tiles: tiles.map(tileSources),
+		});
+	}
 	let memo = key === null ? undefined : await cache?.recallStep<TerrainMemo>(key);
 	if (memo === undefined) {
 		memo = await convertTerrain(context, store, input, tiles, layerFiles, splatIndex);

@@ -88,25 +88,30 @@ const showEnvironment = async (
 	const fromPrefabs = new Set(placed.map(({ volume }) => volume));
 	const { sceneStates: states, game } = survey.scene;
 	const enabled = defaultSceneStates(states, game);
-	const assetName = (hash: bigint | null): string =>
-		hash === null
-			? '(none)'
-			: (pathOf(hash)
-					?.split('/')
-					.pop()
-					?.replace(/\.asset$/, '') ?? hashText(hash));
+	const assetName = (hash: bigint | null): string => {
+		if (hash === null) {
+			return '(none)';
+		}
+		return (
+			pathOf(hash)
+				?.split('/')
+				.pop()
+				?.replace(/\.asset$/, '') ?? hashText(hash)
+		);
+	};
 	const loadPhase = scenePhaseLoader(resolver, pathOf, volumes.environment);
 	const phaseName = async (volume: EnvironmentVolume | null): Promise<string> => {
 		if (volume === null || !fromPrefabs.has(volume)) {
 			return assetName(volume?.envPhase ?? null);
 		}
 		const load = loadPhase(volume);
-		return load === null
-			? '(none)'
-			: load.then(
-					({ phase }) => phase.name,
-					(error: unknown) => `(unreadable: ${errorText(error)})`,
-				);
+		if (load === null) {
+			return '(none)';
+		}
+		return load.then(
+			({ phase }) => phase.name,
+			(error: unknown) => `(unreadable: ${errorText(error)})`,
+		);
 	};
 
 	if (at !== undefined) {

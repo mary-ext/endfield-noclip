@@ -152,25 +152,26 @@ const summarizePrefabParticles = async (
 			.filter(isObject)
 			.map((b) => `${numberField(b, 'time')}@${numberField(objectField(b, 'countCurve'), 'scalar')}`);
 		const sub = objectField(data, 'SubModule');
-		const subEmitters = booleanField(sub, 'enabled')
-			? arrayField(sub, 'subEmitters')
-					.filter(isObject)
-					.map((e) => {
-						const targetId = pptrField(e, 'emitter').pathId;
-						const targetPs = psById.get(targetId);
-						const targetName =
-							targetPs === undefined
-								? targetId.toString()
-								: (goNames.get(pptrField(targetPs.data, 'm_GameObject').pathId) ?? targetId.toString());
-						return {
-							target: targetName,
-							type: numberField(e, 'type'),
-							properties: numberField(e, 'properties'),
-							prob: numberField(e, 'emitProbability'),
-						};
-					})
-					.filter((e) => e.target !== '0' && e.prob > 0)
-			: [];
+		let subEmitters: RawParticleSummary['subEmitters'] = [];
+		if (booleanField(sub, 'enabled')) {
+			subEmitters = arrayField(sub, 'subEmitters')
+				.filter(isObject)
+				.map((e) => {
+					const targetId = pptrField(e, 'emitter').pathId;
+					const targetPs = psById.get(targetId);
+					const targetName =
+						targetPs === undefined
+							? targetId.toString()
+							: (goNames.get(pptrField(targetPs.data, 'm_GameObject').pathId) ?? targetId.toString());
+					return {
+						target: targetName,
+						type: numberField(e, 'type'),
+						properties: numberField(e, 'properties'),
+						prob: numberField(e, 'emitProbability'),
+					};
+				})
+				.filter((e) => e.target !== '0' && e.prob > 0);
+		}
 		const lm = objectField(data, 'LightsModule');
 		const lights =
 			booleanField(lm, 'enabled') && pptrField(lm, 'light').pathId !== 0n
@@ -309,79 +310,85 @@ const inspectPrefab = async (
 	const materialCache = new Map<string, ReturnType<typeof loadMaterialSummary>>();
 	const summarizeMaterial = (matRef: ObjectRef) =>
 		materialCache.getOrInsertComputed(objectKey(matRef), () => loadMaterialSummary(matRef));
-	const rendererSummaries =
-		typeof renderersResult === 'string'
-			? { error: renderersResult }
-			: await Promise.all(
-					renderersResult.map(async (renderer) => {
-						const meshName =
-							renderer.mesh === null
-								? 'line-ribbon'
-								: ((await renderer.mesh.file.peekName(renderer.mesh.info)) ?? objectKey(renderer.mesh));
-						const materials = await Promise.all(
-							renderer.materials.map(async (matRef) => (matRef === null ? null : summarizeMaterial(matRef))),
-						);
-						let kind: string = 'mesh';
-						if (renderer.synthetic !== null) {
-							kind = 'line';
-						} else if (renderer.decal !== null) {
-							kind = 'decal';
-						} else if (renderer.particles !== null) {
-							kind = 'particles';
-						} else if (renderer.pose !== null || renderer.motion?.kind === 'skinned') {
-							kind = 'skinned';
-						}
-						return {
-							name: renderer.name,
-							kind,
-							mesh: meshName,
-							meshObject: renderer.mesh === null ? null : objectKey(renderer.mesh),
-							submeshes: renderer.submeshes,
-							shadowOnly: renderer.shadowOnly,
-							sorting: renderer.sorting,
-							motion:
-								renderer.motion === null
-									? null
-									: {
-											kind: renderer.motion.kind,
-											duration: renderer.motion.skin.frameCount / renderer.motion.skin.frameRate,
-										},
-							particles: renderer.particles,
-							billboard: renderer.billboard,
-							sizes: renderer.sizes,
-							distances: renderer.distances,
-							proxyLevels: renderer.proxyLevels,
-							unsupported: renderer.unsupported,
-							materials,
-						};
-					}),
+	let rendererSummaries;
+	if (typeof renderersResult === 'string') {
+		rendererSummaries = { error: renderersResult };
+	} else {
+		rendererSummaries = await Promise.all(
+			renderersResult.map(async (renderer) => {
+				const meshName =
+					renderer.mesh === null
+						? 'line-ribbon'
+						: ((await renderer.mesh.file.peekName(renderer.mesh.info)) ?? objectKey(renderer.mesh));
+				const materials = await Promise.all(
+					renderer.materials.map(async (matRef) => (matRef === null ? null : summarizeMaterial(matRef))),
 				);
+				let kind: string = 'mesh';
+				if (renderer.synthetic !== null) {
+					kind = 'line';
+				} else if (renderer.decal !== null) {
+					kind = 'decal';
+				} else if (renderer.particles !== null) {
+					kind = 'particles';
+				} else if (renderer.pose !== null || renderer.motion?.kind === 'skinned') {
+					kind = 'skinned';
+				}
+				return {
+					name: renderer.name,
+					kind,
+					mesh: meshName,
+					meshObject: renderer.mesh === null ? null : objectKey(renderer.mesh),
+					submeshes: renderer.submeshes,
+					shadowOnly: renderer.shadowOnly,
+					sorting: renderer.sorting,
+					motion:
+						renderer.motion === null
+							? null
+							: {
+									kind: renderer.motion.kind,
+									duration: renderer.motion.skin.frameCount / renderer.motion.skin.frameRate,
+								},
+					particles: renderer.particles,
+					billboard: renderer.billboard,
+					sizes: renderer.sizes,
+					distances: renderer.distances,
+					proxyLevels: renderer.proxyLevels,
+					unsupported: renderer.unsupported,
+					materials,
+				};
+			}),
+		);
+	}
 
-	const lightsSummary =
-		typeof lightsResult === 'string'
-			? { error: lightsResult }
-			: lightsResult.map(({ name, light }) => ({
-					name,
-					type: light.type,
-					color: light.color,
-					intensity: light.intensity,
-					range: light.range,
-					spotAngle: light.spotAngle,
-					shadows: light.shadows,
-				}));
+	let lightsSummary;
+	if (typeof lightsResult === 'string') {
+		lightsSummary = { error: lightsResult };
+	} else {
+		lightsSummary = lightsResult.map(({ name, light }) => ({
+			name,
+			type: light.type,
+			color: light.color,
+			intensity: light.intensity,
+			range: light.range,
+			spotAngle: light.spotAngle,
+			shadows: light.shadows,
+		}));
+	}
 
-	const volumesSummary =
-		typeof volumesResult === 'string'
-			? { error: volumesResult }
-			: await Promise.all(
-					volumesResult.map(async ({ volume, phase }) => ({
-						name: volume.name,
-						priority: volume.priority,
-						volumeType: volume.volumeType,
-						blendMode: volume.blendMode,
-						phase: phase === null ? null : ((await phase.file.peekName(phase.info)) ?? objectKey(phase)),
-					})),
-				);
+	let volumesSummary;
+	if (typeof volumesResult === 'string') {
+		volumesSummary = { error: volumesResult };
+	} else {
+		volumesSummary = await Promise.all(
+			volumesResult.map(async ({ volume, phase }) => ({
+				name: volume.name,
+				priority: volume.priority,
+				volumeType: volume.volumeType,
+				blendMode: volume.blendMode,
+				phase: phase === null ? null : ((await phase.file.peekName(phase.info)) ?? objectKey(phase)),
+			})),
+		);
+	}
 
 	const rawParticles = options.particles ? await summarizePrefabParticles(resolver, root) : undefined;
 

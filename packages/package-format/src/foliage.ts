@@ -404,17 +404,17 @@ export const encodeFoliageBlock = (block: FoliageBlock): Uint8Array => {
 
 	const sections: ContainerSectionInput[] = [
 		{ tag: TAG_HEAD, required: true, data: head, count: 1, stride: HEAD_SIZE },
-		...(block.palette !== undefined && block.palette.length > 0
-			? [
-					{
-						tag: TAG_PLTT,
-						required: false,
-						data: new Uint8Array(block.palette.buffer, block.palette.byteOffset, block.palette.byteLength),
-						count: block.palette.length,
-						stride: 8,
-					},
-				]
-			: []),
+	];
+	if (block.palette !== undefined && block.palette.length > 0) {
+		sections.push({
+			tag: TAG_PLTT,
+			required: false,
+			data: new Uint8Array(block.palette.buffer, block.palette.byteOffset, block.palette.byteLength),
+			count: block.palette.length,
+			stride: 8,
+		});
+	}
+	sections.push(
 		{ tag: TAG_CLST, required: true, data: clst, count: block.clusters.length, stride: CLST_SIZE },
 		{
 			tag: TAG_INST,
@@ -423,10 +423,10 @@ export const encodeFoliageBlock = (block: FoliageBlock): Uint8Array => {
 			count: instanceCount,
 			stride: FOLIAGE_INSTANCE_BYTES,
 		},
-		...(spst !== null
-			? [{ tag: TAG_SPST, required: false, data: spst, count: block.clusters.length, stride: 4 }]
-			: []),
-	];
+	);
+	if (spst !== null) {
+		sections.push({ tag: TAG_SPST, required: false, data: spst, count: block.clusters.length, stride: 4 });
+	}
 	return encodeContainer({ magic: MAGIC, majorVersion: MAJOR_VERSION, sections });
 };
 

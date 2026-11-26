@@ -104,13 +104,14 @@ export const collectInteractives = async (
 			control.kind === 'script' ? [scriptControlTarget(control), control] : undefined,
 		),
 	);
-	const [jsonHash, tableHash] =
-		cache === null
-			? ['', '']
-			: await Promise.all([
-					context.vfs.group(VfsGroup.JsonData).then((g) => g.catalogHash),
-					context.vfs.group(VfsGroup.Table).then((g) => g.catalogHash),
-				]);
+	let jsonHash = '';
+	let tableHash = '';
+	if (cache !== null) {
+		[jsonHash, tableHash] = await Promise.all([
+			context.vfs.group(VfsGroup.JsonData).then((g) => g.catalogHash),
+			context.vfs.group(VfsGroup.Table).then((g) => g.catalogHash),
+		]);
+	}
 	const levelScripts = await memoizeValue(cache, {
 		entry: SCRIPT_DRIVERS_ENTRY,
 		parts: {

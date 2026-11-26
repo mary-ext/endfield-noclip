@@ -143,13 +143,14 @@ export const placePrefabs = async (
 	const { scene } = content;
 	const { subset } = scene;
 	const { resolver } = roots;
-	const [renderersFp, lightsFp] =
-		cache === null
-			? [null, null]
-			: await Promise.all([
-					cache.fingerprint(PREFAB_RENDERERS_ENTRY),
-					cache.fingerprint(PREFAB_LIGHTS_ENTRY),
-				]);
+	let renderersFp: string | null = null;
+	let lightsFp: string | null = null;
+	if (cache !== null) {
+		[renderersFp, lightsFp] = await Promise.all([
+			cache.fingerprint(PREFAB_RENDERERS_ENTRY),
+			cache.fingerprint(PREFAB_LIGHTS_ENTRY),
+		]);
+	}
 	// particleQuad and decalCube are only needed on a prefab renderer cache miss
 	let builtinsPromise: Promise<[ObjectRef | null, ObjectRef | null]> | undefined;
 	const loadBuiltins = (): Promise<[ObjectRef | null, ObjectRef | null]> =>

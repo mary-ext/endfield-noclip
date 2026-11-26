@@ -77,18 +77,14 @@ export class ParticleTable {
 				const lut = meshIds.getOrInsertComputed(key, () => {
 					const positions =
 						mesh.positions instanceof Float32Array ? mesh.positions : Float32Array.from(mesh.positions);
-					const normals =
-						mesh.normals === null
-							? null
-							: mesh.normals instanceof Float32Array
-								? mesh.normals
-								: Float32Array.from(mesh.normals);
-					const colors =
-						mesh.colors === null
-							? null
-							: mesh.colors instanceof Uint8Array
-								? mesh.colors
-								: Uint8Array.from(mesh.colors);
+					let normals: Float32Array | null = null;
+					if (mesh.normals !== null) {
+						normals = mesh.normals instanceof Float32Array ? mesh.normals : Float32Array.from(mesh.normals);
+					}
+					let colors: Uint8Array | null = null;
+					if (mesh.colors !== null) {
+						colors = mesh.colors instanceof Uint8Array ? mesh.colors : Uint8Array.from(mesh.colors);
+					}
 					const primitives =
 						mesh.primitives instanceof Uint32Array ? mesh.primitives : Uint32Array.from(mesh.primitives);
 					const areaCdf = computeShapeMeshCdf(positions, primitives, mesh.corners);
