@@ -428,6 +428,7 @@ const collectParticles: NodeStep = async (walk, node, state) => {
 				ownSize: false,
 				billboard: null,
 				decal: null,
+				...(i === 0 && read.droppedModules.length > 0 ? { droppedModules: read.droppedModules } : {}),
 			}),
 		);
 	}

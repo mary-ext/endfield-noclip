@@ -487,6 +487,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			{ name: 'unsupported-interactives.json', value: entities.unsupported },
 			{ name: 'unsupported-prefabs.json', value: content.unsupportedPrefabs },
 			{ name: STAND_INS_FILE, value: content.standInReports() },
+			{ name: 'gaps.json', value: content.diagnostics.summary() },
 			{ name: 'skipped-entities.json', value: content.skipped.rows() },
 			{
 				name: 'assets.json',

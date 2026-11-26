@@ -20,6 +20,7 @@ import {
 	type RestingEffect,
 	settledPose,
 	switchesGameObjects,
+	untestedViewStateKeys,
 } from './view-state-poses.ts';
 
 /** the component of campfires */
@@ -103,6 +104,8 @@ export interface InteractiveLooks {
 	near: SettledLook[] | null;
 	/** whether any of the model's view states switches a GameObject on or off */
 	switches: boolean;
+	/** blackboard keys tested by the model's view states that were not supplied when settling */
+	untestedKeys: string[];
 }
 
 /** a view-state key that follows the player, and how near the player must be for it to hold */
@@ -187,8 +190,23 @@ export const readInteractiveLooks = async (
 			near.push(await settle(activated, true));
 		}
 	}
+	const supplied = new Set<string>(values.keys());
+	if (state !== null) {
+		supplied.add(STATE_KEY);
+	}
+	if (campfire) {
+		supplied.add('Enabled');
+	}
+	for (const { key } of keys) {
+		supplied.add(key);
+	}
 	const changes = near.some((look, i) => look.states.join() !== away[i].states.join());
-	return { away, near: changes ? near : null, switches: switchesGameObjects(states) };
+	return {
+		away,
+		near: changes ? near : null,
+		switches: switchesGameObjects(states),
+		untestedKeys: untestedViewStateKeys(states, supplied),
+	};
 };
 
 /** a template's settled looks and what they were settled with */
@@ -276,6 +294,15 @@ export class RestLooks implements InteractiveKind {
 		}
 		const looks = await this.#looksOf(model, { campfire, keys, state, values: defaults });
 		if (looks !== null) {
+			for (const untested of looks.untestedKeys) {
+				this.#sources.gaps.push({
+					severity: 'gap',
+					domain: 'interactive',
+					source: key,
+					name: model,
+					reason: `untested view-state key ${untested}`,
+				});
+			}
 			const radius = looks.near === null ? null : Math.max(...keys.map((entry) => entry.radius));
 			this.#templates.set(key, {
 				model,

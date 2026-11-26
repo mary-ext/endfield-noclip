@@ -2,6 +2,7 @@ import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-par
 import type { PlaceInfo } from '@endfield-noclip/package-format/manifest';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
+import type { Diagnostic } from '../../ir/diagnostics.ts';
 import type { StructureModel } from '../dynamic/dynamic-structures.ts';
 import type { Alternatives } from '../state/game-state.ts';
 import type { InteractiveStateGate } from '../state/interactive-variables.ts';
@@ -104,6 +105,7 @@ export const loadInteractiveFacilities = async (
 	doors: InteractiveDoor[];
 	bridges: DraftControl[];
 	unsupported: UnsupportedFile[];
+	gaps: Diagnostic[];
 	standIns: InteractiveStandIn[];
 	/** every placed row's template and position, by logic id */
 	placements: Map<string, { template: string; position: Vec3 }>;
@@ -257,6 +259,7 @@ export const loadInteractiveFacilities = async (
 		doors: doors.doors,
 		bridges: bridges.controls,
 		unsupported: sources.unsupported,
+		gaps: sources.gaps,
 		standIns,
 		placements: new Map(
 			placed.map(({ row }) => [row.id.toString(), { template: row.template, position: row.position }]),

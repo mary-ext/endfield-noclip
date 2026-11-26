@@ -282,6 +282,7 @@ export const collectInteractives = async (
 		}
 	}
 
+	content.diagnostics.merge(facilities.gaps);
 	for (const standIn of facilities.standIns) {
 		// a metre cube on the interactive's pivot, since its model's size isn't known
 		content.addStandInCube(

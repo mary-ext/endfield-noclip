@@ -17,6 +17,7 @@ import { uniqueBy } from '@mary-ext/array-fns';
 import { isNeutralWaterDecal } from '../../game/materials/effects/water-foam.ts';
 import type { Visibility } from '../../game/state/scene-control.ts';
 import type { WorldIndex } from '../../game/world/world-index.ts';
+import { DiagnosticCollector } from '../../ir/diagnostics.ts';
 import { ControlRegistry } from '../control-registry.ts';
 import { AssetIds } from '../convert/asset-ids.ts';
 import { AssetPlacement } from '../convert/asset-placement.ts';
@@ -117,6 +118,8 @@ export class PackContent {
 	readonly skipped = new SkippedEntities();
 	/** content drawn as stand-ins; prefab renderers repeat once per placement until {@link standInReports} */
 	readonly standIns: StandInReport[] = [];
+	/** behavioral and partial-feature gaps (dropped particle modules, untested view-state keys) */
+	readonly diagnostics = new DiagnosticCollector();
 	/** prefabs that couldn't be read, by path once each */
 	readonly unsupportedPrefabs: UnsupportedInput[] = [];
 	/** ids of entities already filed or left out; an entity repeats in every file that loads it */

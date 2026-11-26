@@ -6,6 +6,7 @@ import { isObject, numberField, objectField, stringField } from '@endfield-nocli
 
 import type { Context } from '../../context.ts';
 import { VfsGroup } from '../../hg/vfs.ts';
+import type { Diagnostic } from '../../ir/diagnostics.ts';
 import type { ObjectRef } from '../assets/assets.ts';
 import type { WorldIndex } from '../world/world-index.ts';
 
@@ -78,6 +79,8 @@ export class FacilitySources {
 	readonly models: ModelTable;
 	/** files and parts of files that were skipped, in the order they were met */
 	readonly unsupported: UnsupportedFile[] = [];
+	/** behavioral or coverage gaps noticed while settling interactives (e.g. untested view-state keys) */
+	readonly gaps: Diagnostic[] = [];
 	readonly #strings: Awaited<ReturnType<WorldIndex['stringPool']>>;
 
 	constructor(

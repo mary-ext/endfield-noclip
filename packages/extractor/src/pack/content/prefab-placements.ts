@@ -337,9 +337,20 @@ export const placePrefabs = async (
 			if (read instanceof FormatError) {
 				content.unsupportedPrefab({ path: label, reason: read.message });
 			} else {
-				for (const { name, unsupported } of read) {
+				for (const { name, unsupported, droppedModules } of read) {
 					if (unsupported !== null) {
 						content.standIns.push({ path: label, name, reason: unsupported, position: null });
+					}
+					if (droppedModules !== undefined) {
+						for (const mod of droppedModules) {
+							content.diagnostics.add({
+								severity: 'gap',
+								domain: 'particle',
+								source: label,
+								name,
+								reason: `dropped ${mod}`,
+							});
+						}
 					}
 				}
 			}

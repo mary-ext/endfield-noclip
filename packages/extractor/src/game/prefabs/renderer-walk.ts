@@ -84,6 +84,8 @@ export interface RendererCandidate {
 	avatarBones: ReadonlyMap<number, string> | null;
 	distances: DistanceBands | null;
 	proxyLevels: number | null;
+	/** enabled ParticleSystem modules not simulated by the viewer */
+	droppedModules?: string[];
 }
 
 /** a looping clip's material values on one renderer */

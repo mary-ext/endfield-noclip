@@ -114,6 +114,8 @@ export interface PrefabRenderer {
 	sizes: readonly SizeRange[] | null;
 	/** owning enabled LODGroup's reference sphere in prefab-root space, or `null` */
 	lodGroup?: { center: [number, number, number]; size: number } | null;
+	/** enabled ParticleSystem modules not simulated by the viewer, omitted when empty */
+	droppedModules?: string[];
 }
 
 /** a span of screen-relative heights (Unity's LODGroup metric) a LODGroup shows a renderer at */
@@ -423,5 +425,8 @@ const assembleRenderer = async (
 		ownSize: candidate.ownSize && motion === null,
 		billboard: candidate.billboard,
 		decal: candidate.decal,
+		...(candidate.droppedModules !== undefined && candidate.droppedModules.length > 0
+			? { droppedModules: candidate.droppedModules }
+			: {}),
 	};
 };

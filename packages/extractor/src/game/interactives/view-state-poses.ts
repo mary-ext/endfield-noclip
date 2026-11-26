@@ -526,3 +526,60 @@ export const settledPose = async (
 		effects,
 	};
 };
+
+/**
+ * view-state blackboard keys known to be driven by transient runtime/combat/player-motion events rather than
+ * initial settled state, excluded from untested-key gap reports
+ */
+export const KNOWN_RUNTIME_VIEW_STATE_KEYS: ReadonlySet<string> = new Set([
+	'isDead',
+	'IsMoving',
+	'moving',
+	'PlayerStepOn',
+	'InBattle',
+	'IsHit',
+]);
+
+/** fields in decoded `ModelViewStateControllerData` condition objects that name a blackboard key */
+const CONDITION_KEY_FIELDS = ['key', 'paramName', 'blackboardKey', 'propertyKey', 'conditionKey', 'varName'];
+
+/**
+ * collects every blackboard key tested by `states` that is neither supplied by `supplied` nor in
+ * {@link KNOWN_RUNTIME_VIEW_STATE_KEYS}
+ *
+ * @param states a model's decoded view-state controller
+ * @param supplied keys the caller supplied (or explicitly knows) when settling `states`
+ * @returns sorted list of untested blackboard keys
+ */
+export const untestedViewStateKeys = (states: ViewStates, supplied: ReadonlySet<string>): string[] => {
+	const tested = new Set<string>();
+	const visit = (value: MemoryPackValue): void => {
+		if (value === null || typeof value !== 'object') {
+			return;
+		}
+		if (Array.isArray(value)) {
+			for (const item of value) {
+				visit(item);
+			}
+			return;
+		}
+		for (const field of CONDITION_KEY_FIELDS) {
+			const name = value[field];
+			if (typeof name === 'string' && name.length > 0) {
+				tested.add(name);
+			}
+		}
+		for (const child of Object.values(value)) {
+			visit(child);
+		}
+	};
+	visit(states.data);
+	const missing: string[] = [];
+	for (const key of tested) {
+		if (!supplied.has(key) && !KNOWN_RUNTIME_VIEW_STATE_KEYS.has(key)) {
+			missing.push(key);
+		}
+	}
+	// oxlint-disable-next-line unicorn/no-array-sort -- sorts a fresh copy
+	return missing.sort();
+};
