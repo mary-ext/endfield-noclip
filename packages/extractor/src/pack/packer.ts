@@ -320,7 +320,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 				gameData: context.config.gameData,
 				keys: context.keys,
 				blobDir: store.dir.root,
-				memoDir: cache?.memosDir ?? null,
+				cacheDb: cache?.dbPath ?? null,
 				manifest: (await context.world.manifest()).bytes,
 			});
 			try {

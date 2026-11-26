@@ -12,6 +12,7 @@ import { AssetResolver, recordBundleReads } from '../../game/assets/assets.ts';
 import { sharedBundleManifest } from '../../hg/bundles.ts';
 import { Vfs } from '../../hg/vfs.ts';
 import { BlobDir } from '../store/blob-file.ts';
+import { openStoredBlobLookup } from '../store/pack-cache.ts';
 
 import { convertGeometryJob } from './convert-geometry.ts';
 import type {
@@ -29,7 +30,7 @@ const data = workerData as ConvertWorkerData;
 const port = parentPort!;
 const vfs = new Vfs(data.gameData, data.keys.vfsKey);
 const blobs = new BlobDir(data.blobDir);
-const memos = data.memoDir === null ? null : new BlobDir(data.memoDir);
+const memos = data.cacheDb === null ? null : openStoredBlobLookup(data.cacheDb);
 const resolver = new AssetResolver({ vfs, keys: data.keys }, sharedBundleManifest(data.manifest));
 
 const convert = async (job: ConvertJob): Promise<ConvertResult> => {
@@ -69,6 +70,7 @@ const convert = async (job: ConvertJob): Promise<ConvertResult> => {
 
 port.on('message', (request: WorkerRequest) => {
 	if (request.type === 'close') {
+		memos?.close();
 		void vfs.close().finally(() => port.close());
 		return;
 	}

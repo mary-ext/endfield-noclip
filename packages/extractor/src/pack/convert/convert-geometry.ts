@@ -6,7 +6,7 @@ import { errorText } from '../../errors.ts';
 import { loadMesh, loadTexture } from '../../game/assets/asset-decode.ts';
 import { type AssetResolver, type ObjectLocator, objectKey } from '../../game/assets/assets.ts';
 import { zstdSync } from '../../zstd.ts';
-import { type BlobDir, storeCompressed } from '../store/blob-file.ts';
+import { type BlobDir, storeCompressed, type StoredBlobLookup } from '../store/blob-file.ts';
 
 import type { ConvertJob, ConvertOutput } from './convert-pool.ts';
 import { convertMesh, geometryReady, rigidSkin } from './geometry.ts';
@@ -58,7 +58,7 @@ const bakeVat = async (
 export const convertGeometryJob = async (
 	resolver: AssetResolver,
 	blobs: BlobDir,
-	memos: BlobDir | null,
+	memos: StoredBlobLookup | null,
 	job: GeometryJob,
 ): Promise<GeometryOutput> => {
 	await geometryReady;

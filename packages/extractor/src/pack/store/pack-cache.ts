@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { deserialize, serialize } from 'node:v8';
 
@@ -9,11 +10,14 @@ import { CORE_ARCHIVE } from '@endfield-noclip/package-format/manifest';
 import { errorCode, ignoreMissing } from '../../errors.ts';
 import type { BundleSource, ConvertJob, ConvertResult } from '../convert/convert-pool.ts';
 
-import { BlobDir, type BlobMeta, shortHash, storedBlobKey } from './blob-file.ts';
+import { BlobDir, type BlobMeta, shortHash, storedBlobKey, type StoredBlobLookup } from './blob-file.ts';
 
-// caches converted assets and pack steps by code fingerprint, options and input catalog MD5s.
-// each live package roots its blobs and memos; unreferenced entries are swept after packing.
-// layout, invalidation and locking: docs/extraction.md#pack-cache.
+// caches converted assets and pack steps by code fingerprint, options and input catalog MD5s in a SQLite
+// database (`cache.sqlite`) alongside the content-addressed `blobs/` directory. each live package roots its
+// blobs and memos; unreferenced entries are swept after packing.
+
+/** SQLite database filename under the cache root */
+const CACHE_DB = 'cache.sqlite';
 
 /** converter entry modules, fingerprinted separately so geometry edits don't invalidate cached textures */
 const CONVERTER_ENTRIES: Record<ConvertJob['kind'], URL> = {
@@ -26,6 +30,20 @@ const WORKSPACE_PACKAGES = new URL('../../../../', import.meta.url);
 
 /** value imports and re-exports (`import … from '…'`, `import '…'`, `export … from '…'`), not type-only ones */
 const IMPORT_SPECIFIER = /^(?:import|export)\s+(?!type\s)(?:[^'";]*?\sfrom\s+)?'([^']+)'/gm;
+
+const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS memos (
+	key TEXT PRIMARY KEY,
+	kind TEXT NOT NULL,
+	payload BLOB NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS roots (
+	out_dir TEXT PRIMARY KEY,
+	updated_at TEXT NOT NULL,
+	blobs BLOB NOT NULL,
+	memos BLOB NOT NULL
+) WITHOUT ROWID;
+`;
 
 /** what a pack's cache use came to */
 export interface CacheReport {
@@ -44,33 +62,98 @@ export interface StepMemo<T> {
 	value: T;
 }
 
-/** a root: what one package was built from */
-interface Root {
-	outDir: string;
-	time: string;
-	blobs: string[];
-	memos: string[];
+interface RootRow {
+	out_dir: string;
+	blobs: Uint8Array;
+	memos: Uint8Array;
 }
+
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+
+const encodeLines = (items: readonly string[]): Uint8Array => encoder.encode(items.join('\n'));
+const decodeLines = (bytes: Uint8Array): string[] => {
+	if (bytes.byteLength === 0) {
+		return [];
+	}
+	return decoder.decode(bytes).split('\n');
+};
+
+/**
+ * opens a lightweight SQLite handle on `dbPath` for conversion workers to deduplicate raw blobs before zstd
+ *
+ * @param dbPath path to `cache.sqlite`
+ * @returns lookup handle with a `close()` method
+ */
+export const openStoredBlobLookup = (dbPath: string): StoredBlobLookup & { close(): void } => {
+	const db = new DatabaseSync(dbPath, { timeout: 5000 });
+	db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+	const getStmt = db.prepare('SELECT payload FROM memos WHERE key = ?');
+	const putStmt = db.prepare("INSERT OR REPLACE INTO memos (key, kind, payload) VALUES (?, 'stored', ?)");
+	return {
+		get(key: string): BlobMeta | undefined {
+			const row = getStmt.get(key);
+			if (row === undefined || !(row.payload instanceof Uint8Array)) {
+				return undefined;
+			}
+			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by set() as BlobMeta JSON
+			return JSON.parse(decoder.decode(row.payload)) as BlobMeta;
+		},
+		set(key: string, meta: BlobMeta): void {
+			putStmt.run(key, encoder.encode(JSON.stringify(meta)));
+		},
+		close(): void {
+			db.close();
+		},
+	};
+};
 
 /** a pack's handle on the cache, holding its lock until {@link PackCache.close} */
 export class PackCache {
 	readonly root: string;
+	/** path to `cache.sqlite`, passed to conversion workers for raw-byte deduplication */
+	readonly dbPath: string;
 	/** where the pack's blob store writes */
 	readonly blobs: BlobDir;
 	readonly hits = { geometries: 0, materials: 0, textures: 0 };
-	/** conversion results, step outputs, values and stored forms, by key */
-	readonly #memos: BlobDir;
+	readonly #db: DatabaseSync;
+	readonly #getMemo: StatementSync;
+	readonly #putMemo: StatementSync | null;
+	readonly #putRoot: StatementSync | null;
+	readonly #listRoots: StatementSync;
+	readonly #deleteRoot: StatementSync | null;
 	readonly #fingerprints: Record<ConvertJob['kind'], string>;
 	readonly #readOnly: boolean;
 	readonly #stepFingerprints = new Map<string, Promise<string>>();
 	readonly #used = new Set<string>();
+	#closed = false;
 
-	private constructor(root: string, fingerprints: Record<ConvertJob['kind'], string>, readOnly: boolean) {
+	private constructor(
+		root: string,
+		dbPath: string,
+		db: DatabaseSync,
+		fingerprints: Record<ConvertJob['kind'], string>,
+		readOnly: boolean,
+	) {
 		this.root = root;
+		this.dbPath = dbPath;
 		this.blobs = new BlobDir(join(root, 'blobs'));
-		this.#memos = new BlobDir(join(root, 'memo'));
+		this.#db = db;
 		this.#fingerprints = fingerprints;
 		this.#readOnly = readOnly;
+		this.#getMemo = db.prepare('SELECT payload FROM memos WHERE key = ?');
+		this.#listRoots = db.prepare('SELECT out_dir, blobs, memos FROM roots');
+		if (readOnly) {
+			this.#putMemo = null;
+			this.#putRoot = null;
+			this.#deleteRoot = null;
+		} else {
+			this.#putMemo = db.prepare('INSERT OR REPLACE INTO memos (key, kind, payload) VALUES (?, ?, ?)');
+			this.#putRoot = db.prepare(
+				'INSERT OR REPLACE INTO roots (out_dir, updated_at, blobs, memos) VALUES (?, ?, ?, ?)',
+			);
+			this.#deleteRoot = db.prepare('DELETE FROM roots WHERE out_dir = ?');
+		}
 	}
 
 	/**
@@ -83,11 +166,20 @@ export class PackCache {
 	static async open(root: string): Promise<PackCache> {
 		await mkdir(root, { recursive: true });
 		await lock(join(root, 'lock'));
-		const [geometry, texture] = await Promise.all([
-			moduleFingerprint(CONVERTER_ENTRIES.geometry),
-			moduleFingerprint(CONVERTER_ENTRIES.texture),
-		]);
-		return new PackCache(root, { geometry, texture }, false);
+		try {
+			const dbPath = join(root, CACHE_DB);
+			const db = new DatabaseSync(dbPath, { timeout: 5000 });
+			db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+			db.exec(SCHEMA_SQL);
+			const [geometry, texture] = await Promise.all([
+				moduleFingerprint(CONVERTER_ENTRIES.geometry),
+				moduleFingerprint(CONVERTER_ENTRIES.texture),
+			]);
+			return new PackCache(root, dbPath, db, { geometry, texture }, false);
+		} catch (error) {
+			await rm(join(root, 'lock'), { force: true });
+			throw error;
+		}
 	}
 
 	/**
@@ -95,13 +187,36 @@ export class PackCache {
 	 * commands (`scene find`, `scene prefabs`, `scene env`) can reuse step memos from previous packs
 	 *
 	 * @param root the cache directory
-	 * @returns a read-only handle, or `null` if the directory doesn't exist
+	 * @returns a read-only handle, or `null` if the database doesn't exist
 	 */
 	static async openReadOnly(root: string): Promise<PackCache | null> {
-		if ((await ignoreMissing(stat(join(root, 'memo')), undefined)) === undefined) {
+		const dbPath = join(root, CACHE_DB);
+		if ((await ignoreMissing(stat(dbPath), undefined)) === undefined) {
 			return null;
 		}
-		return new PackCache(root, { geometry: '', texture: '' }, true);
+		const db = new DatabaseSync(dbPath, { readOnly: true, timeout: 5000 });
+		return new PackCache(root, dbPath, db, { geometry: '', texture: '' }, true);
+	}
+
+	/** resets per-scene hit counters and tracked memo usage when reusing a cache across multiple scenes */
+	beginScene(): void {
+		this.hits.geometries = 0;
+		this.hits.materials = 0;
+		this.hits.textures = 0;
+		this.#used.clear();
+	}
+
+	#readMemo(key: string): Uint8Array | undefined {
+		const row = this.#getMemo.get(key);
+		return row !== undefined && row.payload instanceof Uint8Array ? row.payload : undefined;
+	}
+
+	#writeMemo(key: string, kind: string, payload: Uint8Array): void {
+		if (this.#putMemo === null) {
+			return;
+		}
+		this.#putMemo.run(key, kind, payload);
+		this.#used.add(key);
 	}
 
 	/**
@@ -123,12 +238,12 @@ export class PackCache {
 		key: string,
 		current: (sources: readonly BundleSource[], manifestHash?: string) => Promise<boolean>,
 	): Promise<ConvertResult | undefined> {
-		const text = await ignoreMissing(readFile(this.#memos.path(key), 'utf8'), undefined);
-		if (text === undefined) {
+		const payload = this.#readMemo(key);
+		if (payload === undefined) {
 			return undefined;
 		}
 		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by remember() under the same fingerprint
-		const result = JSON.parse(text) as ConvertResult;
+		const result = JSON.parse(decoder.decode(payload)) as ConvertResult;
 		const manifestHash = result.kind === 'failed' ? result.manifestHash : undefined;
 		if (!(await current(result.sources, manifestHash))) {
 			return undefined;
@@ -149,9 +264,9 @@ export class PackCache {
 	 * @param key the conversion's key
 	 * @param result what it produced
 	 */
-	async remember(key: string, result: ConvertResult): Promise<void> {
-		await this.#memos.replace(key, JSON.stringify(result));
-		this.#used.add(key);
+	remember(key: string, result: ConvertResult): Promise<void> {
+		this.#writeMemo(key, result.kind, encoder.encode(JSON.stringify(result)));
+		return Promise.resolve();
 	}
 
 	/**
@@ -190,12 +305,12 @@ export class PackCache {
 	 * @returns the step's remembered output, or `undefined` if there's none or a blob is gone
 	 */
 	async recallStep<T>(key: string): Promise<StepMemo<T> | undefined> {
-		const text = await ignoreMissing(readFile(this.#memos.path(key), 'utf8'), undefined);
-		if (text === undefined) {
+		const payload = this.#readMemo(key);
+		if (payload === undefined) {
 			return undefined;
 		}
 		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by rememberStep() under this key
-		const memo = JSON.parse(text) as StepMemo<T>;
+		const memo = JSON.parse(decoder.decode(payload)) as StepMemo<T>;
 		const present = await Promise.all(memo.blobs.map((blob) => this.blobs.has(blob.hash)));
 		if (!present.every(Boolean)) {
 			return undefined;
@@ -210,23 +325,23 @@ export class PackCache {
 	 * @param key from {@link PackCache.stepKey}
 	 * @param memo the blobs the step stored, in the order it commits them, and whatever else it needs
 	 */
-	async rememberStep<T>(key: string, memo: StepMemo<T>): Promise<void> {
-		await this.#memos.replace(key, JSON.stringify(memo));
-		this.#used.add(key);
+	rememberStep<T>(key: string, memo: StepMemo<T>): Promise<void> {
+		this.#writeMemo(key, 'step', encoder.encode(JSON.stringify(memo)));
+		return Promise.resolve();
 	}
 
 	/**
 	 * @param key from {@link PackCache.stepKey}
 	 * @returns the value {@link rememberValue} stored under the key, or `undefined` if there's none
 	 */
-	async recallValue<T>(key: string): Promise<T | undefined> {
-		const bytes = await ignoreMissing(readFile(this.#memos.path(key)), undefined);
-		if (bytes === undefined) {
-			return undefined;
+	recallValue<T>(key: string): Promise<T | undefined> {
+		const payload = this.#readMemo(key);
+		if (payload === undefined) {
+			return Promise.resolve(undefined);
 		}
 		this.#used.add(key);
 		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by rememberValue() under this key
-		return deserialize(bytes) as T;
+		return Promise.resolve(deserialize(payload) as T);
 	}
 
 	/**
@@ -236,12 +351,12 @@ export class PackCache {
 	 * @param key from {@link PackCache.stepKey}
 	 * @param value what to remember
 	 */
-	async rememberValue(key: string, value: unknown): Promise<void> {
+	rememberValue(key: string, value: unknown): Promise<void> {
 		if (this.#readOnly) {
-			return;
+			return Promise.resolve();
 		}
-		await this.#memos.replace(key, serialize(value));
-		this.#used.add(key);
+		this.#writeMemo(key, 'value', serialize(value));
+		return Promise.resolve();
 	}
 
 	/**
@@ -251,11 +366,6 @@ export class PackCache {
 	 */
 	storedKey(raw: Uint8Array, level: number): string {
 		return storedBlobKey(raw, level);
-	}
-
-	/** directory holding cache memos, passed to conversion workers for raw-byte deduplication */
-	get memosDir(): string {
-		return this.#memos.root;
 	}
 
 	/** @returns current hit counts without updating roots or sweeping */
@@ -272,12 +382,12 @@ export class PackCache {
 	 * @returns the stored form remembered for the bytes, or `undefined` if there's none or its blob is gone
 	 */
 	async recallStored(key: string): Promise<BlobMeta | undefined> {
-		const text = await ignoreMissing(readFile(this.#memos.path(key), 'utf8'), undefined);
-		if (text === undefined) {
+		const payload = this.#readMemo(key);
+		if (payload === undefined) {
 			return undefined;
 		}
 		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written by rememberStored() under this key
-		const meta = JSON.parse(text) as BlobMeta;
+		const meta = JSON.parse(decoder.decode(payload)) as BlobMeta;
 		if (!(await this.blobs.has(meta.hash))) {
 			return undefined;
 		}
@@ -291,9 +401,87 @@ export class PackCache {
 	 * @param key from {@link storedKey}
 	 * @param meta the stored blob
 	 */
-	async rememberStored(key: string, meta: BlobMeta): Promise<void> {
-		await this.#memos.replace(key, JSON.stringify(meta));
-		this.#used.add(key);
+	rememberStored(key: string, meta: BlobMeta): Promise<void> {
+		this.#writeMemo(key, 'stored', encoder.encode(JSON.stringify(meta)));
+		return Promise.resolve();
+	}
+
+	/**
+	 * records a finished package as a root without sweeping, for multi-scene sessions that sweep once at the
+	 * end
+	 *
+	 * @param outDir the package's directory
+	 * @param blobs hashes of every blob the package holds
+	 */
+	recordRoot(outDir: string, blobs: readonly string[]): void {
+		if (this.#putRoot === null) {
+			return;
+		}
+		this.#putRoot.run(outDir, new Date().toISOString(), encodeLines(blobs), encodeLines([...this.#used]));
+	}
+
+	/**
+	 * drops roots whose `core.czar` is gone and deletes every unreferenced blob and memo
+	 *
+	 * @returns what was deleted
+	 */
+	async sweep(): Promise<CacheReport['swept']> {
+		if (this.#deleteRoot === null) {
+			return { blobs: 0, memos: 0, bytes: 0 };
+		}
+		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- matches SELECT columns
+		const rows = this.#listRoots.all() as unknown as RootRow[];
+		const liveBlobs = new Set<string>();
+		const liveMemos = new Set<string>();
+		const staleDirs: string[] = [];
+		await Promise.all(
+			rows.map(async (row) => {
+				if ((await ignoreMissing(stat(join(row.out_dir, CORE_ARCHIVE)), undefined)) === undefined) {
+					staleDirs.push(row.out_dir);
+					return;
+				}
+				for (const hash of decodeLines(row.blobs)) {
+					liveBlobs.add(hash);
+				}
+				for (const key of decodeLines(row.memos)) {
+					liveMemos.add(key);
+				}
+			}),
+		);
+		// delete stale roots and dead memos in one SQLite transaction
+		let sweptMemos = 0;
+		let sweptMemoBytes = 0;
+		this.#db.exec('BEGIN');
+		try {
+			for (const dir of staleDirs) {
+				this.#deleteRoot.run(dir);
+			}
+			const deleteMemo = this.#db.prepare('DELETE FROM memos WHERE key = ?');
+			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- matches SELECT columns
+			const memoRows = this.#db
+				.prepare('SELECT key, length(payload) AS bytes FROM memos')
+				.all() as unknown as {
+				key: string;
+				bytes: number;
+			}[];
+			for (const { key, bytes } of memoRows) {
+				if (!liveMemos.has(key)) {
+					deleteMemo.run(key);
+					sweptMemos++;
+					sweptMemoBytes += bytes;
+				}
+			}
+			this.#db.exec('COMMIT');
+		} catch (error) {
+			this.#db.exec('ROLLBACK');
+			throw error;
+		}
+		const blobSweep = await this.blobs.sweep((hash) => liveBlobs.has(hash));
+		return {
+			blobs: blobSweep.files,
+			memos: sweptMemos,
+			bytes: blobSweep.bytes + sweptMemoBytes,
+		};
 	}
 
 	/**
@@ -304,39 +492,22 @@ export class PackCache {
 	 * @returns hits and what was deleted
 	 */
 	async finish(outDir: string, blobs: readonly string[]): Promise<CacheReport> {
-		const roots = new BlobDir(join(this.root, 'roots'));
-		const root: Root = { outDir, time: new Date().toISOString(), blobs: [...blobs], memos: [...this.#used] };
-		await roots.replace(shortHash(outDir), JSON.stringify(root));
-
-		const liveBlobs = new Set<string>();
-		const liveMemos = new Set<string>();
-		await Promise.all(
-			(await roots.names()).map(async (name) => {
-				// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written like the root above
-				const other = JSON.parse(await readFile(roots.path(name), 'utf8')) as Root;
-				if ((await ignoreMissing(stat(join(other.outDir, CORE_ARCHIVE)), undefined)) === undefined) {
-					await rm(roots.path(name), { force: true });
-					return;
-				}
-				for (const hash of other.blobs) {
-					liveBlobs.add(hash);
-				}
-				for (const key of other.memos) {
-					liveMemos.add(key);
-				}
-			}),
-		);
-		const blobSweep = await this.blobs.sweep((hash) => liveBlobs.has(hash));
-		const memoSweep = await this.#memos.sweep((key) => liveMemos.has(key));
+		this.recordRoot(outDir, blobs);
+		const swept = await this.sweep();
 		return {
 			dir: this.root,
 			hits: { ...this.hits },
-			swept: { blobs: blobSweep.files, memos: memoSweep.files, bytes: blobSweep.bytes + memoSweep.bytes },
+			swept,
 		};
 	}
 
-	/** releases the lock */
+	/** closes the database and releases the lock */
 	async close(): Promise<void> {
+		if (this.#closed) {
+			return;
+		}
+		this.#closed = true;
+		this.#db.close();
 		if (this.#readOnly) {
 			return;
 		}

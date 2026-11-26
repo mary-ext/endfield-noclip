@@ -391,17 +391,17 @@ enabled by default at `out/.cache` (`--cache <dir>` to relocate, `--no-cache` to
 
 - `blobs/`: shared blob store streamed into archives (without cache, lives in staging `.spool` and
   is deleted after pack).
-- `memo/`: cached intermediate results for mesh/texture conversions, material loads, prefabs,
-  dynamic structures/scripts/interactives/water volumes, static chunks/HLOD/environments,
-  terrain/irradiance steps, and zstd-compressed blocks. entries are fingerprinted by their code
-  import graph, options, and touched bundle/catalog MD5s (geometry and texture converters are
-  fingerprinted separately, and material description stays outside the conversion worker's import
-  graph so material edits don't invalidate cached geometry/textures). failed asset conversions/loads
-  are cached too. turning loaded materials into table entries and script driver linking are not
-  cached.
-- `roots/`: one file per package dir listing its blobs and memos; after each pack, roots missing
-  `core.czar` are dropped and unreferenced entries swept. deleting a package dir frees its cache on
-  next pack; deleting the whole cache is always safe.
+- `cache.sqlite`: SQLite database (WAL mode) holding cached intermediate results for mesh/texture
+  conversions, material loads, prefabs, dynamic structures/scripts/interactives/water volumes,
+  static chunks/HLOD/environments, terrain/irradiance steps, and zstd-compressed blocks, plus the
+  `roots` table listing each package dir's referenced blobs and memos. entries are fingerprinted by
+  their code import graph, options, and touched bundle/catalog MD5s (geometry and texture converters
+  are fingerprinted separately, and material description stays outside the conversion worker's
+  import graph so material edits don't invalidate cached geometry/textures). failed asset
+  conversions/loads are cached too. turning loaded materials into table entries and script driver
+  linking are not cached. after packing, roots missing `core.czar` are dropped and unreferenced
+  memos and blobs are swept. deleting a package dir frees its cache on next pack; deleting the whole
+  cache is always safe.
 - `lock`: holds packer PID to serialize cache access (stale locks from dead processes are taken
   over).
 

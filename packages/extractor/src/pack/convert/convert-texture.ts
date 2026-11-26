@@ -1,7 +1,7 @@
 import { loadTexture } from '../../game/assets/asset-decode.ts';
 import type { AssetResolver } from '../../game/assets/assets.ts';
 import { zstdSync } from '../../zstd.ts';
-import { type BlobDir, storeCompressed } from '../store/blob-file.ts';
+import { type BlobDir, storeCompressed, type StoredBlobLookup } from '../store/blob-file.ts';
 
 import type { ConvertJob, ConvertOutput } from './convert-pool.ts';
 import { convertTexture } from './textures.ts';
@@ -22,7 +22,7 @@ type TextureOutput = Extract<ConvertOutput, { kind: 'texture' }>;
 export const convertTextureJob = async (
 	resolver: AssetResolver,
 	blobs: BlobDir,
-	memos: BlobDir | null,
+	memos: StoredBlobLookup | null,
 	job: TextureJob,
 ): Promise<TextureOutput> => {
 	const { bundleIndex, file, pathId } = job.locator;

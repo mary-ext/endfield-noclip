@@ -29,6 +29,9 @@ export const bundleSources = (resolver: AssetResolver, bundles: readonly number[
 		})),
 	);
 
+/** per-resolver cache of `bundleName:md5` → whether the bundle still matches its recorded MD5 */
+const bundleChecks = new WeakMap<AssetResolver, Map<string, Promise<boolean>>>();
+
 /**
  * checks whether every bundle in `sources` still exists in the install with the same catalog MD5
  *
@@ -40,13 +43,23 @@ export const sourcesCurrent = async (
 	resolver: AssetResolver,
 	sources: readonly BundleSource[],
 ): Promise<boolean> => {
-	const md5s = await Promise.all(
-		sources.map(async (source) => {
-			const index = resolver.manifest.findBundle(source.bundle);
-			return index === undefined ? undefined : resolver.bundleMd5(index);
-		}),
+	if (sources.length === 0) {
+		return true;
+	}
+	let checks = bundleChecks.get(resolver);
+	if (checks === undefined) {
+		checks = new Map();
+		bundleChecks.set(resolver, checks);
+	}
+	const results = await Promise.all(
+		sources.map(({ bundle, md5 }) =>
+			checks.getOrInsertComputed(`${bundle}\0${md5}`, async () => {
+				const index = resolver.manifest.findBundle(bundle);
+				return index !== undefined && (await resolver.bundleMd5(index)) === md5;
+			}),
+		),
 	);
-	return sources.every(({ md5 }, i) => md5s[i] === md5);
+	return results.every(Boolean);
 };
 
 /**

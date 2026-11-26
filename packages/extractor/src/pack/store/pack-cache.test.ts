@@ -8,9 +8,9 @@ import { BlobCodec, BlobKind } from '@endfield-noclip/package-format/blobs';
 
 import type { ConvertResult } from '../convert/convert-pool.ts';
 
-import { BlobDir, storeCompressed } from './blob-file.ts';
+import { BlobDir, type BlobMeta, storeCompressed, type StoredBlobLookup } from './blob-file.ts';
 import { BlobStore } from './blob-store.ts';
-import { PackCache } from './pack-cache.ts';
+import { openStoredBlobLookup, PackCache } from './pack-cache.ts';
 
 const geometry = (hash: string): ConvertResult => ({
 	kind: 'geometry',
@@ -80,7 +80,6 @@ describe('PackCache', () => {
 			assert.equal(report.swept.blobs, 1);
 			assert.equal(report.swept.memos, 1);
 			assert.equal(await cache.recall(keyB, current), undefined);
-			assert.equal((await new BlobDir(join(root, 'roots')).names()).length, 1);
 			await cache.close();
 		} finally {
 			await rm(dir, { recursive: true, force: true });
@@ -141,7 +140,13 @@ describe('PackCache', () => {
 		const dir = await mkdtemp(join(tmpdir(), 'pack-cache-test-'));
 		try {
 			const blobs = new BlobDir(join(dir, 'blobs'));
-			const memos = new BlobDir(join(dir, 'memo'));
+			const map = new Map<string, BlobMeta>();
+			const memos: StoredBlobLookup = {
+				get: (key) => map.get(key),
+				set: (key, meta) => {
+					map.set(key, meta);
+				},
+			};
 			const raw = new Uint8Array(4096).fill(7);
 			let calls = 0;
 			const compress = (data: Uint8Array): Uint8Array => {
@@ -152,6 +157,19 @@ describe('PackCache', () => {
 			const second = await storeCompressed(blobs, memos, raw, 9, compress);
 			assert.equal(calls, 1);
 			assert.deepEqual(second, first);
+
+			// also exercise the SQLite-backed worker lookup
+			const cache = await PackCache.open(join(dir, 'cache'));
+			const workerLookup = openStoredBlobLookup(cache.dbPath);
+			try {
+				const a = await storeCompressed(cache.blobs, workerLookup, raw, 9, compress);
+				const b = await storeCompressed(cache.blobs, workerLookup, raw, 9, compress);
+				assert.equal(calls, 2);
+				assert.deepEqual(b, a);
+			} finally {
+				workerLookup.close();
+				await cache.close();
+			}
 		} finally {
 			await rm(dir, { recursive: true, force: true });
 		}
