@@ -3,6 +3,7 @@ import { crc32 } from 'node:zlib';
 
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
+import { multiplyMatrices } from '@endfield-noclip/formats/unity/transform';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	aabbField,
@@ -36,6 +37,7 @@ import {
 import { isSplineMoverType, splineMoverRenderers } from '../effects/spline-movers.ts';
 
 import { DECAL_PROJECTOR_CLASS, readDecalProjector } from './decal-projector.ts';
+import { LINE_RENDERER_CLASS, readLineRenderer } from './line-renderer.ts';
 import { parentFrame, type PlacedPrefabNode, type PrefabComponent } from './prefab-walk.ts';
 import type { NodeStep, RendererCandidate, RendererNode, RendererWalk } from './renderer-walk.ts';
 
@@ -66,10 +68,11 @@ const candidateOf = (
 	state: RendererNode,
 	fields: Omit<
 		RendererCandidate,
-		'name' | 'posedMaterials' | 'playedMaterials' | 'avatarBones' | 'distances' | 'proxyLevels'
-	>,
+		'name' | 'synthetic' | 'posedMaterials' | 'playedMaterials' | 'avatarBones' | 'distances' | 'proxyLevels'
+	> & { synthetic?: RendererCandidate['synthetic'] },
 ): RendererCandidate => ({
 	...fields,
+	synthetic: fields.synthetic ?? null,
 	name: node.name,
 	posedMaterials: state.posedMaterials,
 	playedMaterials: state.playedMaterials,
@@ -483,6 +486,7 @@ const collectSplineMovers: NodeStep = async (walk, node, state) => {
 		for (const renderer of await splineMoverRenderers(walk.resolver, mover.ref, data, state.standIn)) {
 			walk.candidates.push({
 				...renderer,
+				synthetic: null,
 				matrix: node.matrix,
 				name: node.name,
 				ownSize: false,
@@ -498,12 +502,42 @@ const collectSplineMovers: NodeStep = async (walk, node, state) => {
 	}
 };
 
+/** enabled local-space `LineRenderer`s, baked into synthetic ribbon runs */
+const collectLineRenderers: NodeStep = async (walk, node, state) => {
+	for (const line of node.ofClass(LINE_RENDERER_CLASS)) {
+		const data = await enabledData(line);
+		if (data === null) {
+			continue;
+		}
+		for (const run of readLineRenderer(data)) {
+			const matrix = multiplyMatrices(node.matrix, run.matrix);
+			walk.candidates.push(
+				candidateOf(node, state, {
+					ref: line.ref,
+					data,
+					matrix,
+					mesh: null,
+					synthetic: { mesh: run.mesh, bounds: run.bounds },
+					particles: null,
+					unsupported: state.standIn,
+					ownSize: false,
+					billboard: run.axial
+						? { flag: ChainFlags.BillboardAxial, offset: [0, 0, 0, 1], frame: matrix }
+						: state.billboard,
+					decal: null,
+				}),
+			);
+		}
+	}
+};
+
 /** what a drawn GameObject draws, in the order its candidates are kept */
 export const CANDIDATE_SOURCES: readonly NodeStep[] = [
 	collectLodSizes,
 	collectSkinnedRenderers,
 	collectMeshRenderers,
 	collectDecalProjectors,
+	collectLineRenderers,
 	collectParticles,
 	collectSplineMovers,
 ];

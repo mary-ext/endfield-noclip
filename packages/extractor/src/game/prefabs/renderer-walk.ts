@@ -4,9 +4,15 @@ import type { RectDecal } from '@endfield-noclip/formats/endfield/init-chunk-dat
 import type { ClipMaterialValue, ClipMotion } from '@endfield-noclip/formats/unity/animation-clip';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { hasTypeFields, type TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
-import { booleanField, optionalNumberField, pptrField } from '@endfield-noclip/formats/unity/values';
+import {
+	booleanField,
+	optionalNumberField,
+	pptrField,
+	type Aabb,
+} from '@endfield-noclip/formats/unity/values';
 import type { ParticleSystemInfo } from '@endfield-noclip/package-format/particles';
 
+import type { SyntheticMesh } from '../../pack/convert/synthetic-mesh.ts';
 import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
 import type { LocalTransform } from '../effects/particle-mesh.ts';
 import type { ExternalForcesRead, SubEmitterRead } from '../effects/particle-system.ts';
@@ -61,7 +67,9 @@ export interface RendererCandidate {
 	data: TypeTreeObject;
 	name: string;
 	matrix: Float32Array;
-	mesh: ObjectRef;
+	mesh: ObjectRef | null;
+	/** synthetic geometry generated from a component (e.g. `LineRenderer`), `null` for a mesh asset */
+	synthetic: { mesh: SyntheticMesh; bounds: Aabb } | null;
 	particles: ParticleSystemInfo | null;
 	unsupported: string | null;
 	ownSize: boolean;

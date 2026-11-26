@@ -8,6 +8,7 @@ import type {
 import type { MaterialTextureSlot } from '@endfield-noclip/formats/unity/material';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { trsMatrix } from '@endfield-noclip/formats/unity/transform';
+import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import {
 	aabbField,
 	arrayField,
@@ -20,6 +21,7 @@ import {
 import type { SkinAnimation } from '@endfield-noclip/package-format/geometry';
 import type { ParticleSystemInfo } from '@endfield-noclip/package-format/particles';
 
+import type { SyntheticMesh } from '../../pack/convert/synthetic-mesh.ts';
 import { objectKey, type AssetResolver, type ObjectRef } from '../assets/assets.ts';
 import { particleReach } from '../effects/particle-system.ts';
 import type { DistanceRange } from '../effects/view-state-effects.ts';
@@ -46,7 +48,9 @@ export interface PrefabRenderer {
 	name: string;
 	matrix: Float32Array;
 	bounds: Aabb;
-	mesh: ObjectRef;
+	mesh: ObjectRef | null;
+	/** synthetic geometry generated from a component (e.g. `LineRenderer`), `null` for a mesh asset */
+	synthetic: { mesh: SyntheticMesh; bounds: Aabb } | null;
 	materials: (ObjectRef | null)[];
 	submeshes: number;
 	shadowOnly: boolean;
@@ -292,13 +296,25 @@ const assembleRenderer = async (
 			materials.push(await resolver.resolve(candidate.ref, asPPtr(pointer)));
 		}
 	}
-	// mesh headers are cached by the resolver
-	const mesh = await resolver.read(candidate.mesh);
-	if (arrayField(mesh, 'm_SubMeshes').length === 0 || materials.length === 0) {
+	if (materials.length === 0) {
 		return null;
 	}
 	let matrix = candidate.matrix;
-	let bounds = aabbField(mesh, 'm_LocalAABB');
+	let bounds: Aabb;
+	let submeshes: number;
+	let mesh: TypeTreeObject | null = null;
+	if (candidate.synthetic !== null) {
+		bounds = candidate.synthetic.bounds;
+		submeshes = 1;
+	} else {
+		// mesh headers are cached by the resolver
+		mesh = await resolver.read(candidate.mesh!);
+		submeshes = arrayField(mesh, 'm_SubMeshes').length;
+		if (submeshes === 0) {
+			return null;
+		}
+		bounds = aabbField(mesh, 'm_LocalAABB');
+	}
 	let particles = candidate.particles;
 	if (particles !== null) {
 		bounds = particleReach(particles, Math.hypot(...bounds.center) + Math.hypot(...bounds.extents));
@@ -334,7 +350,7 @@ const assembleRenderer = async (
 			bounds = moving.bounds;
 			matrix = IDENTITY;
 		}
-	} else if (candidate.ref.info.classId === UnityClass.SkinnedMeshRenderer) {
+	} else if (candidate.ref.info.classId === UnityClass.SkinnedMeshRenderer && mesh !== null) {
 		// a skinned mesh the reader can't pose stands in unposed, at its renderer, rather than failing the prefab
 		const meshBounds = bounds;
 		const posed = await poseSkin(
@@ -384,13 +400,14 @@ const assembleRenderer = async (
 		pose: skin,
 		motion,
 		mesh: candidate.mesh,
+		synthetic: candidate.synthetic,
 		materials,
 		materialValues,
 		distances: candidate.distances,
 		proxyLevels: candidate.proxyLevels,
 		sizes: walk.lodSizes.get(key)?.map(({ lod, min, max }) => ({ lod, min, max })) ?? null,
 		lodGroup: walk.lodGroups.get(key) ?? null,
-		submeshes: arrayField(mesh, 'm_SubMeshes').length,
+		submeshes,
 		// Unity's ShadowCastingMode: 3 ShadowsOnly, 4 ShadowsOnlyTwoSided
 		shadowOnly: candidate.decal === null && numberField(candidate.data, 'm_CastShadows') >= 3,
 		sorting: {

@@ -33,13 +33,18 @@ const block = (chains: number[], decalRows: number[] = []): InstanceBlock => ({
 
 it('marks the rows of billboard chains, keeping the rest of their info words', () => {
 	const chain = (flags: number): Chain => ({ flags, draws: [], distanceOrigin: null });
-	const chains = [chain(0), chain(ChainFlags.BillboardFacing), chain(ChainFlags.BillboardUpright)];
-	const rows = buildInstanceRows(block([0, 1, 1, 2]), RowKind.Detail);
+	const chains = [
+		chain(0),
+		chain(ChainFlags.BillboardFacing),
+		chain(ChainFlags.BillboardUpright),
+		chain(ChainFlags.BillboardAxial),
+	];
+	const rows = buildInstanceRows(block([0, 1, 1, 2, 3]), RowKind.Detail);
 	markBillboardRows(rows, chains);
-	const info = Array.from({ length: 4 }, (_, i) => rows.rows[i * ROW_WORDS + 19]);
+	const info = Array.from({ length: 5 }, (_, i) => rows.rows[i * ROW_WORDS + 19]);
 	assert.deepEqual(
 		info.map((word) => word >>> 30),
-		[RowBillboard.None, RowBillboard.Facing, RowBillboard.Facing, RowBillboard.Upright],
+		[RowBillboard.None, RowBillboard.Facing, RowBillboard.Facing, RowBillboard.Upright, RowBillboard.Axial],
 	);
 	assert.ok(info.every((word) => (word & 7) === RowKind.Detail));
 });

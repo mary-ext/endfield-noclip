@@ -3,15 +3,28 @@ import { createHash } from 'node:crypto';
 import { type DecodedMesh, MeshTopology, VertexAttributeFormat } from '@endfield-noclip/formats/unity/mesh';
 import type { Aabb } from '@endfield-noclip/formats/unity/values';
 
+/** one station along a synthetic line ribbon, running along local `+x` */
+export interface LineRibbonSample {
+	/** distance along `+x` in metres */
+	x: number;
+	/** full width across `y` in metres */
+	width: number;
+	/** texture U coordinate */
+	u: number;
+	/** linear RGBA vertex colour */
+	color: readonly [r: number, g: number, b: number, a: number];
+}
+
 /**
  * meshes the packer makes itself rather than reads from the install: the stand-in `cube`, a flat `polygon` at
- * y = 0 from an outline in x, z (a water volume's surface), or a subdivided unit `grid` in `[0, 1]`
- * (heightfield-displaced sludge patches)
+ * y = 0 from an outline in x, z (a water volume's surface), a subdivided unit `grid` in `[0, 1]`
+ * (heightfield-displaced sludge patches), or a `lineRibbon` along `+x` (a `LineRenderer` segment run)
  */
 export type SyntheticMesh =
 	| 'cube'
 	| { kind: 'polygon'; points: readonly (readonly [x: number, z: number])[] }
-	| { kind: 'grid'; cells: number };
+	| { kind: 'grid'; cells: number }
+	| { kind: 'lineRibbon'; samples: readonly LineRibbonSample[] };
 
 /** the object key of a synthetic mesh, standing in for a mesh's `CAB-<hex>:<path id>` */
 export const syntheticMeshKey = (mesh: SyntheticMesh): string => {
@@ -20,6 +33,13 @@ export const syntheticMeshKey = (mesh: SyntheticMesh): string => {
 	}
 	if (mesh.kind === 'grid') {
 		return `synthetic:grid:${mesh.cells}`;
+	}
+	if (mesh.kind === 'lineRibbon') {
+		const digest = createHash('sha256');
+		for (const { x, width, u, color } of mesh.samples) {
+			digest.update(`${x},${width},${u},${color[0]},${color[1]},${color[2]},${color[3]};`);
+		}
+		return `synthetic:line:${digest.digest('hex').slice(0, 32)}`;
 	}
 	const digest = createHash('sha256');
 	for (const [x, z] of mesh.points) {
@@ -39,6 +59,9 @@ export const syntheticMesh = (mesh: SyntheticMesh): DecodedMesh => {
 	}
 	if (mesh.kind === 'grid') {
 		return unitGrid(mesh.cells);
+	}
+	if (mesh.kind === 'lineRibbon') {
+		return lineRibbon(mesh.samples);
 	}
 	return flatPolygon(mesh.points);
 };
@@ -318,6 +341,95 @@ const unitCube = (): DecodedMesh => {
 				baseVertex: 0,
 				firstVertex: 0,
 				vertexCount: positions.length / 3,
+				bounds,
+			},
+		],
+		bounds,
+		skin: null,
+	};
+};
+
+/**
+ * a ribbon lying in the XY plane along `+x`, facing `-z`, with vertex colours and `uv0 = (u, 0|1)`. bounds
+ * carry the half-width on both `y` and `z` so axial billboarding about `+x` stays inside them
+ */
+const lineRibbon = (samples: readonly LineRibbonSample[]): DecodedMesh => {
+	const count = samples.length;
+	const vertexCount = count * 2;
+	const positions = new Float32Array(vertexCount * 3);
+	const normals = new Float32Array(vertexCount * 3);
+	const uvs = new Float32Array(vertexCount * 2);
+	const colors = new Float32Array(vertexCount * 4);
+	let minX = Infinity;
+	let maxX = -Infinity;
+	let maxHalfWidth = 0;
+	for (const [i, { x, width, u, color }] of samples.entries()) {
+		const half = Math.max(width, 0) * 0.5;
+		minX = Math.min(minX, x);
+		maxX = Math.max(maxX, x);
+		maxHalfWidth = Math.max(maxHalfWidth, half);
+		for (let side = 0; side < 2; side++) {
+			const v = i * 2 + side;
+			positions[v * 3] = x;
+			positions[v * 3 + 1] = side === 0 ? -half : half;
+			normals[v * 3 + 2] = -1;
+			uvs[v * 2] = u;
+			uvs[v * 2 + 1] = side;
+			colors[v * 4] = color[0];
+			colors[v * 4 + 1] = color[1];
+			colors[v * 4 + 2] = color[2];
+			colors[v * 4 + 3] = color[3];
+		}
+	}
+	const segments = Math.max(count - 1, 0);
+	const indexCount = segments * 6;
+	const indices = vertexCount > 0xffff ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
+	let at = 0;
+	for (let i = 0; i < segments; i++) {
+		const v0 = i * 2;
+		const v1 = v0 + 1;
+		const v2 = v0 + 2;
+		const v3 = v0 + 3;
+		// clockwise seen from -z (front face in Unity's left-handed frame)
+		indices[at++] = v0;
+		indices[at++] = v1;
+		indices[at++] = v3;
+		indices[at++] = v0;
+		indices[at++] = v3;
+		indices[at++] = v2;
+	}
+	const bounds: Aabb = {
+		center: [(minX + maxX) * 0.5, 0, 0],
+		extents: [(maxX - minX) * 0.5, maxHalfWidth, maxHalfWidth],
+	};
+	return {
+		name: 'line ribbon',
+		vertexCount,
+		channels: [],
+		positions,
+		normals,
+		packedNormals: null,
+		tangents: null,
+		colors: { dimension: 4, format: VertexAttributeFormat.Float32, data: colors },
+		uvs: [
+			{ dimension: 2, format: VertexAttributeFormat.Float32, data: uvs },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		],
+		indices,
+		submeshes: [
+			{
+				firstIndex: 0,
+				indexCount,
+				topology: MeshTopology.Triangles,
+				baseVertex: 0,
+				firstVertex: 0,
+				vertexCount,
 				bounds,
 			},
 		],

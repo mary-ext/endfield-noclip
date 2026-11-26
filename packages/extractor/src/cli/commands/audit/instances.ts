@@ -131,6 +131,9 @@ const summarizeChain = (
 	if ((chain.flags & ChainFlags.BillboardUpright) !== 0) {
 		flags.push('billboard-upright');
 	}
+	if ((chain.flags & ChainFlags.BillboardAxial) !== 0) {
+		flags.push('billboard-axial');
+	}
 	if (isDistance) {
 		flags.push('camera-distance');
 	}

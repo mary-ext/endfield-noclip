@@ -315,12 +315,16 @@ const inspectPrefab = async (
 			: await Promise.all(
 					renderersResult.map(async (renderer) => {
 						const meshName =
-							(await renderer.mesh.file.peekName(renderer.mesh.info)) ?? objectKey(renderer.mesh);
+							renderer.mesh === null
+								? 'line-ribbon'
+								: ((await renderer.mesh.file.peekName(renderer.mesh.info)) ?? objectKey(renderer.mesh));
 						const materials = await Promise.all(
 							renderer.materials.map(async (matRef) => (matRef === null ? null : summarizeMaterial(matRef))),
 						);
 						let kind: string = 'mesh';
-						if (renderer.decal !== null) {
+						if (renderer.synthetic !== null) {
+							kind = 'line';
+						} else if (renderer.decal !== null) {
 							kind = 'decal';
 						} else if (renderer.particles !== null) {
 							kind = 'particles';
@@ -331,7 +335,7 @@ const inspectPrefab = async (
 							name: renderer.name,
 							kind,
 							mesh: meshName,
-							meshObject: objectKey(renderer.mesh),
+							meshObject: renderer.mesh === null ? null : objectKey(renderer.mesh),
 							submeshes: renderer.submeshes,
 							shadowOnly: renderer.shadowOnly,
 							sorting: renderer.sorting,

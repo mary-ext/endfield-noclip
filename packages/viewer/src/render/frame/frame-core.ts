@@ -541,6 +541,23 @@ export const rowBasis = tgpu.fn(
 		const up = d.vec3f(0, 1, 0);
 		return std.mul(d.mat3x3f(right, up, std.cross(right, up)), m);
 	}
+	if (mode === d.u32(3)) {
+		const c0 = d.vec3f(t0.x, t1.x, t2.x);
+		const axisLen = std.length(c0);
+		if (axisLen <= 1e-6) {
+			return m;
+		}
+		const axis = std.div(c0, axisLen);
+		let across = std.cross(frame.viewForward.xyz, axis);
+		if (std.length(across) <= 1e-4) {
+			across = std.cross(frame.viewUp.xyz, axis);
+		}
+		across = std.normalize(across);
+		const face = std.cross(axis, across);
+		const yScale = std.length(d.vec3f(t0.y, t1.y, t2.y));
+		const zScale = std.length(d.vec3f(t0.z, t1.z, t2.z));
+		return d.mat3x3f(c0, std.mul(across, yScale), std.mul(face, zScale));
+	}
 	return m;
 });
 

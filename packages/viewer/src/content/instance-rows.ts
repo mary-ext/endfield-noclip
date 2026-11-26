@@ -111,13 +111,15 @@ export const packRowCustom = (custom: ArrayLike<number>): [xy: number, zw: numbe
 
 /**
  * how a row turns towards the camera (`row_basis` in frame-core.ts), in bits 30–31 of its info word: its
- * transform's rotation is relative to the camera's ({@link ChainFlags.BillboardFacing}), or to the camera's
- * heading about the vertical ({@link ChainFlags.BillboardUpright})
+ * transform's rotation is relative to the camera's ({@link ChainFlags.BillboardFacing}), to the camera's
+ * heading about the vertical ({@link ChainFlags.BillboardUpright}), or turned about its own local `+x` axis
+ * ({@link ChainFlags.BillboardAxial})
  */
 export const RowBillboard = {
 	None: 0,
 	Facing: 1,
 	Upright: 2,
+	Axial: 3,
 } as const;
 
 export type RowBillboard = (typeof RowBillboard)[keyof typeof RowBillboard];
@@ -167,6 +169,8 @@ export const markBillboardRows = (built: InstanceRows, chains: readonly Chain[])
 			billboard = RowBillboard.Facing;
 		} else if (flags & ChainFlags.BillboardUpright) {
 			billboard = RowBillboard.Upright;
+		} else if (flags & ChainFlags.BillboardAxial) {
+			billboard = RowBillboard.Axial;
 		}
 		if (billboard === RowBillboard.None) {
 			continue;

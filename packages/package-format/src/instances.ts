@@ -59,6 +59,11 @@ export const ChainFlags = {
 	 * in m², rather than screen-relative sizes
 	 */
 	CameraDistance: 1 << 2,
+	/**
+	 * the instances turn about their own local `+x` axis (column 0 of the world transform) to face the camera,
+	 * used by view-aligned `LineRenderer` ribbons
+	 */
+	BillboardAxial: 1 << 3,
 } as const;
 
 /** one draw of a LOD chain */
@@ -121,6 +126,8 @@ export const RowFlags = {
 	BillboardUpright: 1 << 2,
 	/** row references a motion clip in `MOTN` */
 	HasMotion: 1 << 3,
+	/** row draws an axial billboard turning about its local `+x` axis */
+	BillboardAxial: 1 << 4,
 } as const;
 
 /** values per row in `MOTN` sparse section: `[animBlob, float32Bits(phaseOffset)]` */

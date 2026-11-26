@@ -24,6 +24,11 @@ Transforms. cross-node passes (followers, force fields) settle after the full hi
   match `Mesh.m_BoneNameHashes`, so static poses and looping clips run through the same path.
 - **decal projectors**: draw the shared decal cube inside the GameObject's box; they skip clip,
   skin, and billboard paths and stay at their saved placement.
+- **line renderers**: enabled local-space `LineRenderer`s bake collinear segment runs into synthetic
+  ribbon meshes carrying `widthCurve` widths, linearised `colorGradient` vertex colours, and
+  `textureMode` UVs. view-aligned lines (`alignment == 0`) use `ChainFlags.BillboardAxial` to turn
+  about their segment axis; `TransformZ` lines stay in their GameObject's XY plane. world-space
+  lines are skipped.
 - **locked looks**: a root `UnlockEffectConfigMono` that swaps models draws its locked model for
   placements with a mini-game or submit lock, and its unlocked model otherwise
   ([gameplay locks](../game-data/interactives.md#gameplay-locks)); the inactive model is omitted,

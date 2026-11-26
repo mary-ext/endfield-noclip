@@ -7,7 +7,12 @@ import {
 	trsMatrix,
 	unityEulerQuaternion,
 } from '@endfield-noclip/formats/unity/transform';
-import { type ChainDraw, DrawRole, type RowPath } from '@endfield-noclip/package-format/instances';
+import {
+	ChainFlags,
+	type ChainDraw,
+	DrawRole,
+	type RowPath,
+} from '@endfield-noclip/package-format/instances';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
@@ -64,12 +69,12 @@ const PREFAB_LIGHTS_ENTRY = new URL('../../game/prefabs/prefab-lights.ts', impor
 
 /** a {@link PrefabRenderer} whose mesh and material refs are located without holding bundles open */
 type LocatedPrefabRenderer = Omit<PrefabRenderer, 'mesh' | 'materials'> & {
-	mesh: LocatedObject;
+	mesh: LocatedObject | null;
 	materials: (LocatedObject | null)[];
 };
 
 type SavedPrefabRenderer = Omit<PrefabRenderer, 'mesh' | 'materials'> & {
-	mesh: SavedLocator;
+	mesh: SavedLocator | null;
 	materials: (SavedLocator | null)[];
 };
 
@@ -91,9 +96,13 @@ const relocateRenderers = (
 ): LocatedPrefabRenderer[] | undefined => {
 	const out: LocatedPrefabRenderer[] = [];
 	for (const renderer of saved) {
-		const mesh = relocateSaved(manifest, renderer.mesh);
-		if (mesh === undefined) {
-			return undefined;
+		let mesh: LocatedObject | null = null;
+		if (renderer.mesh !== null) {
+			const relocated = relocateSaved(manifest, renderer.mesh);
+			if (relocated === undefined) {
+				return undefined;
+			}
+			mesh = relocated;
 		}
 		const materials: (LocatedObject | null)[] = [];
 		for (const material of renderer.materials) {
@@ -265,7 +274,7 @@ export const placePrefabs = async (
 		}
 		const located: LocatedPrefabRenderer[] = loaded.read.map((renderer) => ({
 			...renderer,
-			mesh: locatedObject(renderer.mesh),
+			mesh: renderer.mesh === null ? null : locatedObject(renderer.mesh),
 			materials: renderer.materials.map((material) => (material === null ? null : locatedObject(material))),
 		}));
 		if (memoKey !== null) {
@@ -285,7 +294,7 @@ export const placePrefabs = async (
 				),
 				renderers: located.map((renderer) => ({
 					...renderer,
-					mesh: saveLocated(resolver.manifest, renderer.mesh),
+					mesh: renderer.mesh === null ? null : saveLocated(resolver.manifest, renderer.mesh),
 					materials: renderer.materials.map((material) =>
 						material === null ? null : saveLocated(resolver.manifest, material),
 					),
@@ -387,7 +396,7 @@ const placeRenderer = (
 		matrix = withAxisLengths(matrix, axisLengths(renderer.matrix));
 	}
 	let bounds = transformBounds(renderer.bounds, matrix);
-	if (renderer.billboard !== null) {
+	if (renderer.billboard !== null && renderer.billboard.flag !== ChainFlags.BillboardAxial) {
 		({ matrix, bounds } = billboardPlacement(
 			matrix,
 			multiplyMatrices(rootMatrix, renderer.billboard.frame),
@@ -435,7 +444,9 @@ const placeRenderer = (
 /** @returns a prefab renderer's draws: one per material and LOD span */
 const rendererDraws = (content: PackContent, renderer: LocatedPrefabRenderer): ChainDraw[] => {
 	let geometry: number;
-	if (renderer.decal !== null) {
+	if (renderer.synthetic !== null) {
+		geometry = content.geometries.internSynthetic(renderer.synthetic.mesh);
+	} else if (renderer.decal !== null) {
 		// shared with the world's rect decals, which intern the cube by its path
 		const cube = content.decalCube();
 		if (cube === null) {
@@ -443,11 +454,11 @@ const rendererDraws = (content: PackContent, renderer: LocatedPrefabRenderer): C
 		}
 		geometry = cube;
 	} else if (renderer.motion !== null) {
-		geometry = content.geometries.internAnimatedObject(renderer.mesh, renderer.motion);
+		geometry = content.geometries.internAnimatedObject(renderer.mesh!, renderer.motion);
 	} else if (renderer.pose !== null) {
-		geometry = content.geometries.internPosedObject(renderer.mesh, renderer.pose);
+		geometry = content.geometries.internPosedObject(renderer.mesh!, renderer.pose);
 	} else {
-		geometry = content.geometries.internObject(renderer.mesh);
+		geometry = content.geometries.internObject(renderer.mesh!);
 	}
 	let role: DrawRole = DrawRole.Lit;
 	if (renderer.unsupported !== null) {

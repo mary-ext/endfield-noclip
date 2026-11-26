@@ -233,8 +233,9 @@ packs; decoders remap local palette indices to global chain IDs.
   non-particle draw). otherwise `particles` indexes `tables/particles.json.zst`.
 - **`sortingLayer` / `sortingOrder`**: prefab `m_SortingLayer` / `m_SortingOrder` (used by the
   transparent pass before distance); `0` for static draws.
-- **billboards**: `BillboardFacing` (mode 0) and `BillboardUpright` (other modes, around world +Y)
-  mark camera-relative rotation; stored bounds enclose all orientations
+- **billboards**: `BillboardFacing` (mode 0), `BillboardUpright` (other `VFXBillBoard` modes, around
+  world +Y), and `BillboardAxial` (view-aligned `LineRenderer` ribbons, around local +X) mark
+  camera-relative rotation; stored bounds enclose all orientations
   ([billboards](game-data/assets.md#billboards)). the transform stores the offset times the
   renderer's rotation relative to the billboard at the renderer's own position.
 - **`CameraDistance`**: thresholds are squared camera distances (m²) measured from the chain's
