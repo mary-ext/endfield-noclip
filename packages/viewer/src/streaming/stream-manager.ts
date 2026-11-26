@@ -124,7 +124,9 @@ const NON_TEXTURE_EVICT_BIAS = 600;
 const COARSE_TEXTURE_MAX_BYTES = 64 * 1024;
 const COARSE_TEXTURE_EVICT_BIAS = 120;
 /** fraction of budget evicted down to once over budget, avoiding a full-set sort on every subsequent frame */
-const EVICT_HEADROOM = 0.95;
+const EVICT_HEADROOM = 0.9;
+/** minimum unused frames for the fast fine-texture eviction pass before falling back to a full sort */
+const FAST_EVICT_AGE = 30;
 
 /** @returns effective eviction age of `item` (lower evicts first) */
 const evictAge = (item: ContentItem): number => {
@@ -881,23 +883,47 @@ export class StreamManager {
 			this.#saturated = false;
 			return;
 		}
+		const target = budget * EVICT_HEADROOM;
+		const needed = this.stats.residentBytes - target;
 		const candidates = this.#evictCandidates;
 		candidates.length = 0;
+		const cutoff = this.#frame - FAST_EVICT_AGE;
+		let fineBytes = 0;
+		// fast pass: stale fine textures have zero eviction bias and dominate resident bytes during flight
 		for (const item of this.#evictable) {
-			if (item.usedFrame < this.#frame) {
-				candidates.push(item);
+			if (item.kind === BlobKind.Texture && item.usedFrame < cutoff) {
+				const bytes = item.resident?.bytes ?? 0;
+				if (bytes > COARSE_TEXTURE_MAX_BYTES) {
+					candidates.push(item);
+					fineBytes += bytes;
+				}
 			}
 		}
 		const created = this.#created;
-		// within the same effective age, evict larger (finer) blobs before smaller (coarse) ones
-		candidates.sort(
-			(a, b) =>
-				evictAge(a) - evictAge(b) ||
-				(b.resident?.bytes ?? 0) - (a.resident?.bytes ?? 0) ||
-				a.priority - b.priority ||
-				created[a.blob] - created[b.blob],
-		);
-		const target = budget * EVICT_HEADROOM;
+		if (fineBytes >= needed) {
+			candidates.sort(
+				(a, b) =>
+					a.usedFrame - b.usedFrame ||
+					(b.resident?.bytes ?? 0) - (a.resident?.bytes ?? 0) ||
+					a.priority - b.priority ||
+					created[a.blob] - created[b.blob],
+			);
+		} else {
+			candidates.length = 0;
+			for (const item of this.#evictable) {
+				if (item.usedFrame < this.#frame) {
+					candidates.push(item);
+				}
+			}
+			// within the same effective age, evict larger (finer) blobs before smaller (coarse) ones
+			candidates.sort(
+				(a, b) =>
+					evictAge(a) - evictAge(b) ||
+					(b.resident?.bytes ?? 0) - (a.resident?.bytes ?? 0) ||
+					a.priority - b.priority ||
+					created[a.blob] - created[b.blob],
+			);
+		}
 		for (let i = 0; i < candidates.length; i++) {
 			if (this.stats.residentBytes <= target) {
 				break;
