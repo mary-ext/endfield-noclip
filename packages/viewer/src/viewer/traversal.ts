@@ -1,4 +1,5 @@
 import { animateMotionRows, rideRows, ROW_BYTES, ROW_WORDS, turnRows } from '../content/instance-rows.ts';
+import { beginUploadBatch, flushUploadBatch } from '../gfx/staged-write.ts';
 import type { ResidentInstances } from '../render/core/resident.ts';
 import type { FrameSettings } from '../render/frame/frame-graph.ts';
 import type { Camera, Plane } from '../scene/camera.ts';
@@ -230,9 +231,14 @@ export class Traversal {
 		}
 		times.span('sky, water');
 		renderer.irradiance.prepare(stream, camera.position);
-		stream.update();
-		this.textureReduction.update(stream, input.index, stream.options.budgetBytes);
-		scene.textures.commit();
+		beginUploadBatch(renderer.device);
+		try {
+			stream.update();
+			this.textureReduction.update(stream, input.index, stream.options.budgetBytes);
+			scene.textures.commit();
+		} finally {
+			flushUploadBatch();
+		}
 		times.span('stream');
 		if (!input.prepare) {
 			return;

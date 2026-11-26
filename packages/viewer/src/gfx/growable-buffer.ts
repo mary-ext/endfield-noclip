@@ -1,4 +1,5 @@
 import { type RangeAllocation, RangeAllocator } from './range-allocator.ts';
+import { flushUploadBatch } from './staged-write.ts';
 
 /**
  * GPU storage with stable allocation offsets across growth. check {@link version} before reusing bindings;
@@ -88,6 +89,8 @@ export class GrowableBuffer {
 	}
 
 	#grow(units: number): void {
+		// flush any batched staged writes into the old buffer before copying it to the new one
+		flushUploadBatch({ keepOpen: true });
 		const previous = this.buffer;
 		const next = this.#create(units);
 		// queue order keeps writes made to the old buffer ahead of the copy

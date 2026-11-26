@@ -116,10 +116,24 @@ const REQUEST_BYTES = 2 * 1024 * 1024;
  * textures: textures take ~5× the bytes and reload smoothly, whereas evicting geometry causes visible pop-in
  */
 const NON_TEXTURE_EVICT_BIAS = 600;
+/**
+ * extra LRU frames granted to small coarse texture pieces (≤ 64 KiB, i.e. mip tails) so fine mip levels
+ * always evict before their coarse tail: evicting a tail forces `TextureStore` to drop all finer levels and
+ * re-download them on next view
+ */
+const COARSE_TEXTURE_MAX_BYTES = 64 * 1024;
+const COARSE_TEXTURE_EVICT_BIAS = 120;
+/** fraction of budget evicted down to once over budget, avoiding a full-set sort on every subsequent frame */
+const EVICT_HEADROOM = 0.95;
 
 /** @returns effective eviction age of `item` (lower evicts first) */
-const evictAge = (item: ContentItem): number =>
-	item.usedFrame + (item.kind === BlobKind.Texture ? 0 : NON_TEXTURE_EVICT_BIAS);
+const evictAge = (item: ContentItem): number => {
+	if (item.kind !== BlobKind.Texture) {
+		return item.usedFrame + NON_TEXTURE_EVICT_BIAS;
+	}
+	const bytes = item.resident?.bytes ?? 0;
+	return item.usedFrame + (bytes <= COARSE_TEXTURE_MAX_BYTES ? COARSE_TEXTURE_EVICT_BIAS : 0);
+};
 
 /** one request: ranges of one archive, each covering the blobs of a coalesced read */
 interface RangeRequest {
@@ -211,6 +225,8 @@ export class StreamManager {
 	#uploadingBytes = 0;
 	/** reusable scratch for sorting ready-to-decode blobs in {@link #startDecodes} */
 	readonly #decodeQueue: ContentItem[] = [];
+	/** reusable scratch for sorting eviction candidates in {@link #evict} and {@link #evictForSpace} */
+	readonly #evictCandidates: ContentItem[] = [];
 	#frame = 0;
 	/**
 	 * the budget is full of content still in use: unpinned fetches and uploads pause until something falls out
@@ -840,7 +856,8 @@ export class StreamManager {
 
 	/** evicts unpinned content of the same kind not used this frame, oldest first, to make room for `item` */
 	#evictForSpace(item: ContentItem): boolean {
-		const candidates: ContentItem[] = [];
+		const candidates = this.#evictCandidates;
+		candidates.length = 0;
 		for (const other of this.#evictable) {
 			if (other.kind === item.kind && other.usedFrame < this.#frame) {
 				candidates.push(other);
@@ -850,11 +867,12 @@ export class StreamManager {
 			return false;
 		}
 		const created = this.#created;
-		// oxlint-disable-next-line unicorn/no-array-sort -- sorts a fresh array
 		candidates.sort((a, b) => a.usedFrame - b.usedFrame || created[a.blob] - created[b.blob]);
-		for (let i = 0; i < Math.min(candidates.length, 16); i++) {
+		const count = Math.min(candidates.length, 16);
+		for (let i = 0; i < count; i++) {
 			this.#release(candidates[i]);
 		}
+		candidates.length = 0;
 		return true;
 	}
 
@@ -863,23 +881,30 @@ export class StreamManager {
 			this.#saturated = false;
 			return;
 		}
-		const candidates: ContentItem[] = [];
+		const candidates = this.#evictCandidates;
+		candidates.length = 0;
 		for (const item of this.#evictable) {
 			if (item.usedFrame < this.#frame) {
 				candidates.push(item);
 			}
 		}
 		const created = this.#created;
-		// oxlint-disable-next-line unicorn/no-array-sort -- sorts a fresh array
+		// within the same effective age, evict larger (finer) blobs before smaller (coarse) ones
 		candidates.sort(
-			(a, b) => evictAge(a) - evictAge(b) || a.priority - b.priority || created[a.blob] - created[b.blob],
+			(a, b) =>
+				evictAge(a) - evictAge(b) ||
+				(b.resident?.bytes ?? 0) - (a.resident?.bytes ?? 0) ||
+				a.priority - b.priority ||
+				created[a.blob] - created[b.blob],
 		);
-		for (const item of candidates) {
-			if (this.stats.residentBytes <= budget) {
+		const target = budget * EVICT_HEADROOM;
+		for (let i = 0; i < candidates.length; i++) {
+			if (this.stats.residentBytes <= target) {
 				break;
 			}
-			this.#release(item);
+			this.#release(candidates[i]);
 		}
+		candidates.length = 0;
 		this.#saturated = this.stats.residentBytes > budget;
 	}
 

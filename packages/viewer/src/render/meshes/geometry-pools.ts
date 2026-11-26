@@ -6,7 +6,7 @@
  */
 
 import { type RangeAllocation, RangeAllocator } from '../../gfx/range-allocator.ts';
-import { writeBufferStaged } from '../../gfx/staged-write.ts';
+import { flushUploadBatch, writeBufferStaged } from '../../gfx/staged-write.ts';
 import type { GeometryIndices, GeometryPlacement, GeometryVertices } from '../core/resident.ts';
 
 import { POSITION_FORMATS, type PositionFormat, UV_FORMATS, type UvFormat } from './pipeline-variants.ts';
@@ -120,6 +120,8 @@ class PoolBuffers {
 	 * grow while uploading, before a frame encodes
 	 */
 	#grow(units: number): void {
+		// flush any batched staged writes into the old buffers before copying them to the new ones
+		flushUploadBatch({ keepOpen: true });
 		const previous = this.buffers;
 		const next = this.#create(units);
 		// queue order keeps writes made to the old buffers ahead of the copy

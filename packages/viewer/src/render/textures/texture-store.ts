@@ -6,7 +6,7 @@ import {
 } from '@endfield-noclip/package-format/textures';
 
 import { sampler } from '../../gfx/samplers.ts';
-import { type TexelWrite, writeTexturesStaged } from '../../gfx/staged-write.ts';
+import { type TexelWrite, uploadBatchEncoder, writeTexturesStaged } from '../../gfx/staged-write.ts';
 import type { DecodedTexture } from '../../package/decode-protocol.ts';
 import type { ResidentTexture } from '../core/resident.ts';
 
@@ -357,10 +357,8 @@ export class TextureStore {
 		const previous = state.gpu;
 		const info = TEXTURE_FORMATS[state.entry.format];
 		if (previous !== null && next !== null) {
-			const encoder =
-				batchEncoder !== undefined
-					? batchEncoder()
-					: this.#device.createCommandEncoder({ label: 'texture levels' });
+			const batched = batchEncoder?.() ?? uploadBatchEncoder(this.#device, 'staged upload batch');
+			const encoder = batched ?? this.#device.createCommandEncoder({ label: 'texture levels' });
 			for (let level = Math.max(top, state.top); level < state.entry.mipCount; level++) {
 				const layout = textureLevelLayout(state.entry, level);
 				encoder.copyTextureToTexture(
@@ -373,7 +371,7 @@ export class TextureStore {
 					],
 				);
 			}
-			if (batchEncoder === undefined) {
+			if (batched === null) {
 				this.#device.queue.submit([encoder.finish()]);
 			}
 		}

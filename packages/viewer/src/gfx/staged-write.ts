@@ -14,6 +14,67 @@ export const STAGED_BYTES = 128 * 1024;
 /** the row pitch `copyBufferToTexture` needs for copies of more than one row of blocks */
 const ROW_ALIGNMENT = 256;
 
+interface UploadBatch {
+	device: GPUDevice;
+	encoder: GPUCommandEncoder | null;
+	staging: GPUBuffer[];
+}
+
+let activeBatch: UploadBatch | null = null;
+
+/**
+ * opens a batch that coalesces staged buffer/texture copies and texture-level copies into one command buffer
+ * and one `queue.submit()`, flushed by {@link flushUploadBatch}
+ *
+ * @param device the device
+ */
+export const beginUploadBatch = (device: GPUDevice): void => {
+	if (activeBatch !== null) {
+		flushUploadBatch();
+	}
+	activeBatch = { device, encoder: null, staging: [] };
+};
+
+/**
+ * returns the active batch's shared command encoder for `device`, or `null` when no batch is open
+ *
+ * @param device the device
+ * @param label label if the encoder is created now
+ * @returns the batch's encoder, or `null`
+ */
+export const uploadBatchEncoder = (device: GPUDevice, label: string): GPUCommandEncoder | null => {
+	if (activeBatch === null || activeBatch.device !== device) {
+		return null;
+	}
+	activeBatch.encoder ??= device.createCommandEncoder({ label });
+	return activeBatch.encoder;
+};
+
+/**
+ * submits all copies recorded since {@link beginUploadBatch} (if any) and destroys their staging buffers.
+ * keeps the batch open when `keepOpen` is true (e.g. before a pool growth copy that must order after prior
+ * writes)
+ *
+ * @param options.keepOpen leave the batch open for subsequent writes in the same frame
+ */
+export const flushUploadBatch = (options?: { keepOpen?: boolean }): void => {
+	const batch = activeBatch;
+	if (batch === null) {
+		return;
+	}
+	if (batch.encoder !== null) {
+		batch.device.queue.submit([batch.encoder.finish()]);
+		batch.encoder = null;
+	}
+	for (const buffer of batch.staging) {
+		buffer.destroy();
+	}
+	batch.staging.length = 0;
+	if (!options?.keepOpen) {
+		activeBatch = null;
+	}
+};
+
 /**
  * @param device the device
  * @param bytes the data to stage
@@ -57,6 +118,12 @@ export const writeBufferStaged = (
 		return;
 	}
 	const staging = stage(device, bytesOf(data));
+	const batched = uploadBatchEncoder(device, 'staged upload batch');
+	if (batched !== null && activeBatch !== null) {
+		batched.copyBufferToBuffer(staging, 0, target, offset, data.byteLength);
+		activeBatch.staging.push(staging);
+		return;
+	}
 	const encoder = device.createCommandEncoder({ label: 'staged write' });
 	encoder.copyBufferToBuffer(staging, 0, target, offset, data.byteLength);
 	device.queue.submit([encoder.finish()]);
@@ -91,6 +158,7 @@ export const writeTexturesStaged = (device: GPUDevice, writes: readonly TexelWri
 	let buffer: GPUBuffer | null = null;
 	let mapped: Uint8Array | null = null;
 	let encoder: GPUCommandEncoder | null = null;
+	let ownsEncoder = false;
 	if (stagedBytes > 0) {
 		buffer = device.createBuffer({
 			label: 'staged texels',
@@ -99,7 +167,11 @@ export const writeTexturesStaged = (device: GPUDevice, writes: readonly TexelWri
 			mappedAtCreation: true,
 		});
 		mapped = new Uint8Array(buffer.getMappedRange());
-		encoder = device.createCommandEncoder({ label: 'staged texels' });
+		encoder = uploadBatchEncoder(device, 'staged upload batch');
+		if (encoder === null) {
+			encoder = device.createCommandEncoder({ label: 'staged texels' });
+			ownsEncoder = true;
+		}
 	}
 	let at = 0;
 	for (const write of writes) {
@@ -114,8 +186,12 @@ export const writeTexturesStaged = (device: GPUDevice, writes: readonly TexelWri
 	}
 	if (buffer !== null && encoder !== null) {
 		buffer.unmap();
-		device.queue.submit([encoder.finish()]);
-		buffer.destroy();
+		if (ownsEncoder) {
+			device.queue.submit([encoder.finish()]);
+			buffer.destroy();
+		} else if (activeBatch !== null) {
+			activeBatch.staging.push(buffer);
+		}
 	}
 };
 

@@ -41,8 +41,8 @@ only `map01` and `map02` are tested. other scenes listed by `scene list` are unv
   - missing: lookup jitter, forward-shifted clipmap centres, and prefab-placed reflection probes
     (`p_lightingdeco_*_reflectionprobe`; none in Yinglung Pass).
   - specular ambient falls back to the ambient probe until the sky cubemap streams in; local
-    reflection probes evaluate up to 32 frustum-visible probes per frame (64×64 screen-tile binned in
-    deferred lighting) and fall back to the sky cubemap while their cubemaps stream.
+    reflection probes evaluate up to 32 frustum-visible probes per frame (64×64 screen-tile binned
+    in deferred lighting) and fall back to the sky cubemap while their cubemaps stream.
   - next: compare GPU clipmap samples with the bake at one point and check clipmap seams (L0
     repeats, L1 clamps).
 - **irradiance volume** ([viewer](viewer/lighting.md#irradiance-volume),
