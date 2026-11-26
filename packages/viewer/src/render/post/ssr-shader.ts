@@ -498,7 +498,7 @@ export const fsSsrResolve = tgpu.fragmentFn({
 		const upper = std.clamp(lower + 1, 0, ssr.march.y);
 		const lowColor = pyramidColor(d.vec2f(px), lower, eye);
 		if (frac < 0.01 || upper === lower) {
-			color = lowColor;
+			color = d.vec3f(lowColor);
 		} else {
 			color = std.mix(lowColor, pyramidColor(d.vec2f(px), upper, eye), frac);
 		}
