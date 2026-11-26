@@ -6,7 +6,7 @@ import {
 } from '@endfield-noclip/formats/unity/material';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 
-import { errorText } from '../../errors.ts';
+import { errorText } from '../../util/errors.ts';
 import { loadShaderSummary } from '../assets/asset-decode.ts';
 import {
 	type AssetRef,

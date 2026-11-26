@@ -9,8 +9,6 @@ import type { PPtr, StreamingInfo } from '@endfield-noclip/formats/unity/values'
 
 import { unique } from '@mary-ext/array-fns';
 
-import { compareNumbers } from '../../compare.ts';
-import type { Keys } from '../../config.ts';
 import {
 	archiveFileName,
 	BUNDLE_PREFIX,
@@ -20,9 +18,11 @@ import {
 	findBundleFile,
 	openAssetFiles,
 	openBundle,
-} from '../../hg/bundles.ts';
-import type { Vfs } from '../../hg/vfs.ts';
+} from '../../install/bundles.ts';
+import type { Keys } from '../../install/config.ts';
+import type { Vfs } from '../../install/vfs.ts';
 import type { SyntheticMesh } from '../../ir/synthetic-mesh.ts';
+import { compareNumbers } from '../../util/compare.ts';
 import type { RendererMotion } from '../prefabs/prefab.ts';
 
 // resolves external CAB and .resS files within the referencing bundle's dependency closure, caching each

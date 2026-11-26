@@ -12,8 +12,8 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { mapDefined, unique } from '@mary-ext/array-fns';
 
-import type { Context } from '../context.ts';
-import { VfsGroup } from '../hg/vfs.ts';
+import type { Context } from '../install/context.ts';
+import { VfsGroup } from '../install/vfs.ts';
 
 import { unitCubeShape } from './environment.ts';
 import type { GameCondition } from './state/game-state.ts';

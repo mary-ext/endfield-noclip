@@ -2,12 +2,12 @@ import { voteLevelTags } from '@endfield-noclip/formats/endfield/level-partition
 
 import { mapDefined } from '@mary-ext/array-fns';
 
-import { compareNatural, compareStrings } from '../../../compare.ts';
-import { type Context, withContext } from '../../../context.ts';
 import { stripMarkup } from '../../../game/state/story.ts';
 import { loadDungeonUses, readOperatorNames } from '../../../game/world/dungeons.ts';
 import { indexTerrain } from '../../../game/world/terrain-source.ts';
 import type { WorldIndex } from '../../../game/world/world-index.ts';
+import { type Context, withContext } from '../../../install/context.ts';
+import { compareNatural, compareStrings } from '../../../util/compare.ts';
 
 import type { SceneSubArgs } from './parser.ts';
 import { requirePartition } from './shared.ts';

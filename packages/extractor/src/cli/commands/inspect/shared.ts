@@ -1,7 +1,7 @@
 import { isTextureClass, UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 
-import type { Context } from '../../../context.ts';
 import type { AssetResolver, ObjectRef } from '../../../game/assets/assets.ts';
+import type { Context } from '../../../install/context.ts';
 import { hashText, parseHash } from '../../helpers.ts';
 
 /** matches a bundle hex id or bundle path */

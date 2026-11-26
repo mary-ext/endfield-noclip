@@ -3,7 +3,7 @@ import type { MissionInfo, QuestRef } from '@endfield-noclip/package-format/stat
 
 import { definite, mapDefined } from '@mary-ext/array-fns';
 
-import { compareNatural } from '../../compare.ts';
+import { compareNatural } from '../../util/compare.ts';
 import type { WorldIndex } from '../world/world-index.ts';
 
 import type { DraftControl } from './scene-control.ts';

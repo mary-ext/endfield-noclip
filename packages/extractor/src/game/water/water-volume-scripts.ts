@@ -1,6 +1,6 @@
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
-import { compareStrings } from '../../compare.ts';
+import { compareStrings } from '../../util/compare.ts';
 import type { LevelScripts } from '../script-drivers.ts';
 
 // the fills level scripts set water volumes to: `WaterVolumeInfiniteSetHeight` sets a fraction of the volume's

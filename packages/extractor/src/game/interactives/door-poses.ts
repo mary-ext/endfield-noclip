@@ -1,6 +1,6 @@
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 
-import type { Context } from '../../context.ts';
+import type { Context } from '../../install/context.ts';
 import type { PrefabPose } from '../prefabs/prefab.ts';
 
 import {

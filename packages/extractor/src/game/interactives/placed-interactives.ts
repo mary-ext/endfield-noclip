@@ -9,8 +9,8 @@ import { type LevelSpline, readLevelSplines } from '@endfield-noclip/formats/end
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 import type { PlaceInfo } from '@endfield-noclip/package-format/manifest';
 
-import { compareNatural, compareStrings } from '../../compare.ts';
-import { formatErrorOnly } from '../../errors.ts';
+import { compareNatural, compareStrings } from '../../util/compare.ts';
+import { formatErrorOnly } from '../../util/errors.ts';
 import { type DraftControl, sceneControl, switchValues } from '../state/scene-control.ts';
 
 import type { FacilitySources } from './facility-sources.ts';

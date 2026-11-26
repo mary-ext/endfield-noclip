@@ -13,9 +13,6 @@ import { distanceInsideVolume } from '@endfield-noclip/package-format/environmen
 
 import { definite, mapDefined } from '@mary-ext/array-fns';
 
-import { DEFAULT_OUT } from '../../../config.ts';
-import { type Context, withContext } from '../../../context.ts';
-import { errorText, ignoreMissing } from '../../../errors.ts';
 import type { StructureModel } from '../../../game/dynamic/dynamic-structures.ts';
 import { environmentVolumeShape, loadSceneVolumes } from '../../../game/environment.ts';
 import {
@@ -29,9 +26,12 @@ import { sceneStateControl } from '../../../game/state/scene-conditions.ts';
 import { readSceneWater } from '../../../game/water/water-source.ts';
 import { readWaterVolumes } from '../../../game/water/water-volumes.ts';
 import { pivotOf, type WorldIndex } from '../../../game/world/world-index.ts';
-import { DEBUG_DIR, STAND_INS_FILE, type StandInReport } from '../../../pack/debug.ts';
-import { type ScenePlacementSurvey, surveyPlacements } from '../../../pack/survey.ts';
-import { mapPool } from '../../../pool.ts';
+import { DEFAULT_OUT } from '../../../install/config.ts';
+import { type Context, withContext } from '../../../install/context.ts';
+import { DEBUG_DIR, STAND_INS_FILE, type StandInReport } from '../../../pipeline/debug.ts';
+import { type ScenePlacementSurvey, surveyPlacements } from '../../../pipeline/survey.ts';
+import { errorText, ignoreMissing } from '../../../util/errors.ts';
+import { mapPool } from '../../../util/pool.ts';
 import { hashText, jsonReplacer } from '../../helpers.ts';
 
 import type { SceneSubArgs } from './parser.ts';

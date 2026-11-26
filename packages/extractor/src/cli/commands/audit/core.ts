@@ -1,6 +1,6 @@
 import { CORE_PATHS } from '@endfield-noclip/package-format/manifest';
 
-import { PackedPackage, resolveCorePath } from '../../../pack/read-package.ts';
+import { PackedPackage, resolveCorePath } from '../../../pipeline/read-package.ts';
 import { jsonReplacer } from '../../helpers.ts';
 
 import type { AuditSubArgs } from './parser.ts';

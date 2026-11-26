@@ -12,9 +12,9 @@ import { isObject } from '@endfield-noclip/formats/unity/values';
 
 import { unique } from '@mary-ext/array-fns';
 
-import { compareNumbers } from '../../compare.ts';
-import type { Context } from '../../context.ts';
-import { VfsGroup } from '../../hg/vfs.ts';
+import type { Context } from '../../install/context.ts';
+import { VfsGroup } from '../../install/vfs.ts';
+import { compareNumbers } from '../../util/compare.ts';
 import type { AssetResolver } from '../assets/assets.ts';
 import { type DraftControl, sceneControl, switchValues } from '../state/scene-control.ts';
 

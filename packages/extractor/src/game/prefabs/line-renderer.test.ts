@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 
-import { syntheticMesh } from '../../pack/convert/synthetic-mesh.ts';
+import { syntheticMesh } from '../../pipeline/compile/synthetic-mesh.ts';
 
 import { readLineRenderer } from './line-renderer.ts';
 

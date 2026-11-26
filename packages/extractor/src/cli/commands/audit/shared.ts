@@ -2,11 +2,11 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { compareStrings } from '../../../compare.ts';
-import { DEFAULT_OUT } from '../../../config.ts';
-import { ignoreMissing } from '../../../errors.ts';
-import { DEBUG_DIR } from '../../../pack/debug.ts';
-import { PackedPackage } from '../../../pack/read-package.ts';
+import { DEFAULT_OUT } from '../../../install/config.ts';
+import { DEBUG_DIR } from '../../../pipeline/debug.ts';
+import { PackedPackage } from '../../../pipeline/read-package.ts';
+import { compareStrings } from '../../../util/compare.ts';
+import { ignoreMissing } from '../../../util/errors.ts';
 import { pickFields } from '../../query.ts';
 
 /** reads a JSON file or returns `null` if it does not exist */

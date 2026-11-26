@@ -2,7 +2,6 @@ import { ruleText } from '@endfield-noclip/package-format/conditions';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
-import { type Context, withContext } from '../../../context.ts';
 import { GameState } from '../../../game/state/game-state.ts';
 import {
 	defaultSceneStates,
@@ -12,6 +11,7 @@ import {
 } from '../../../game/state/scene-conditions.ts';
 import { loadSceneryVariants } from '../../../game/state/scenery-variants.ts';
 import { loadUpgradeLinks } from '../../../game/state/settlement-upgrades.ts';
+import { type Context, withContext } from '../../../install/context.ts';
 
 import type { SceneSubArgs } from './parser.ts';
 

@@ -1,7 +1,7 @@
-import { DEFAULT_CONFIG_PATH, decodeKeys, saveConfig, type KeyConfig } from '../../../config.ts';
-import { deriveKeys, resolveGameData } from '../../../hg/key-derive.ts';
-import { importKeys } from '../../../hg/key-import.ts';
-import { Vfs, VfsGroup } from '../../../hg/vfs.ts';
+import { DEFAULT_CONFIG_PATH, decodeKeys, saveConfig, type KeyConfig } from '../../../install/config.ts';
+import { deriveKeys, resolveGameData } from '../../../install/key-derive.ts';
+import { importKeys } from '../../../install/key-import.ts';
+import { Vfs, VfsGroup } from '../../../install/vfs.ts';
 
 import type { InitArgs } from './parser.ts';
 

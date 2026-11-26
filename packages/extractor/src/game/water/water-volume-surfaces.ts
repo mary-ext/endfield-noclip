@@ -12,7 +12,7 @@ import {
 	pptrField,
 } from '@endfield-noclip/formats/unity/values';
 
-import { VfsGroup } from '../../hg/vfs.ts';
+import { VfsGroup } from '../../install/vfs.ts';
 import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 import type { WorldIndex } from '../world/world-index.ts';
 

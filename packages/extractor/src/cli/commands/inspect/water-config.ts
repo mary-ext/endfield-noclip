@@ -8,11 +8,11 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import type { PPtr } from '@endfield-noclip/formats/unity/values';
 
-import { withContext } from '../../../context.ts';
-import { errorText } from '../../../errors.ts';
 import { loadTexture } from '../../../game/assets/asset-decode.ts';
 import { type AssetResolver, objectKey, type ObjectRef } from '../../../game/assets/assets.ts';
 import { loadSectorTexture } from '../../../game/water/water-source.ts';
+import { withContext } from '../../../install/context.ts';
+import { errorText } from '../../../util/errors.ts';
 import { collectTargets, jsonReplacer } from '../../helpers.ts';
 
 import type { InspectSubArgs } from './parser.ts';

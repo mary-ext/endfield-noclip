@@ -1,7 +1,7 @@
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 
-import { compareNumbers } from '../../compare.ts';
-import { mapPool } from '../../pool.ts';
+import { compareNumbers } from '../../util/compare.ts';
+import { mapPool } from '../../util/pool.ts';
 import type { DraftControl } from '../state/scene-control.ts';
 import { progressionControl } from '../state/scenery-variants.ts';
 

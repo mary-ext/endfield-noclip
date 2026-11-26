@@ -6,8 +6,8 @@ import { BundleManifest } from '@endfield-noclip/formats/hg/bundle-manifest';
 import { type ObjectInfo, UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 
-import { BundleAssetFile } from '../../hg/bundles.ts';
-import { Vfs } from '../../hg/vfs.ts';
+import { BundleAssetFile } from '../../install/bundles.ts';
+import { Vfs } from '../../install/vfs.ts';
 import { readPrefabLights } from '../prefabs/prefab-lights.ts';
 import { readPrefabRenderers } from '../prefabs/prefab.ts';
 

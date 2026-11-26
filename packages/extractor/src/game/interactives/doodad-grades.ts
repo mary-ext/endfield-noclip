@@ -1,8 +1,8 @@
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import { isSparkBean, parseSparkTable } from '@endfield-noclip/formats/hg/spark-buffer';
 
-import { compareNumbers } from '../../compare.ts';
-import { VfsGroup } from '../../hg/vfs.ts';
+import { VfsGroup } from '../../install/vfs.ts';
+import { compareNumbers } from '../../util/compare.ts';
 import type { DraftControl } from '../state/scene-control.ts';
 import { progressionControl } from '../state/scenery-variants.ts';
 

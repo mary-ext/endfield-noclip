@@ -2,13 +2,13 @@ import { ShaderPropertyFlags, ShaderPropertyType } from '@endfield-noclip/format
 
 import { definite, mapDefined } from '@mary-ext/array-fns';
 
-import { withContext } from '../../../context.ts';
-import { errorText } from '../../../errors.ts';
 import { loadTexture } from '../../../game/assets/asset-decode.ts';
 import { type AssetResolver, objectKey, type ObjectRef } from '../../../game/assets/assets.ts';
 import { describeMaterial } from '../../../game/materials/material-describe.ts';
 import { loadMaterial, type LoadedMaterial } from '../../../game/materials/material-load.ts';
-import { convertMaterial, ShaderTable } from '../../../pack/convert/materials.ts';
+import { withContext } from '../../../install/context.ts';
+import { convertMaterial, ShaderTable } from '../../../pipeline/compile/materials.ts';
+import { errorText } from '../../../util/errors.ts';
 import { collectTargets, jsonReplacer } from '../../helpers.ts';
 import { pickFields } from '../../query.ts';
 

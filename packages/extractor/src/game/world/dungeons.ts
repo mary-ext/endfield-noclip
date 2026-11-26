@@ -2,8 +2,8 @@ import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import type { MissionRuntime } from '@endfield-noclip/formats/endfield/mission-runtime';
 import { isSparkBean, parseSparkTable, type SparkValue } from '@endfield-noclip/formats/hg/spark-buffer';
 
-import type { Context } from '../../context.ts';
-import { VfsGroup } from '../../hg/vfs.ts';
+import type { Context } from '../../install/context.ts';
+import { VfsGroup } from '../../install/vfs.ts';
 
 // the dungeon entries the client defines and what reaches them (docs/game-data/world.md#scene-names): each
 // DungeonTable row sends the party to a level, the level streams a scene (often its own, sometimes another

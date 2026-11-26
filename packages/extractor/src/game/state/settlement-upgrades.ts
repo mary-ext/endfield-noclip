@@ -1,8 +1,8 @@
 import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import { isSparkBean, parseSparkTable, type SparkValue } from '@endfield-noclip/formats/hg/spark-buffer';
 
-import type { Context } from '../../context.ts';
-import { VfsGroup } from '../../hg/vfs.ts';
+import type { Context } from '../../install/context.ts';
+import { VfsGroup } from '../../install/vfs.ts';
 
 import type { ProgressionLink } from './game-state.ts';
 import { loadProgressions, progressionId, type SceneProgression } from './scenery-variants.ts';

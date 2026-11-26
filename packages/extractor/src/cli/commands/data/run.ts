@@ -4,14 +4,14 @@ import { parseSparkTable } from '@endfield-noclip/formats/hg/spark-buffer';
 
 import { definite } from '@mary-ext/array-fns';
 
-import { compareNatural, compareStrings } from '../../../compare.ts';
-import { type Context, withContext } from '../../../context.ts';
-import { errorText } from '../../../errors.ts';
 import { readViewStates, records, text } from '../../../game/interactives/view-state-poses.ts';
 import { toScript } from '../../../game/script-drivers.ts';
 import type { WorldIndex } from '../../../game/world/world-index.ts';
-import { VfsGroup } from '../../../hg/vfs.ts';
-import { mapPool } from '../../../pool.ts';
+import { type Context, withContext } from '../../../install/context.ts';
+import { VfsGroup } from '../../../install/vfs.ts';
+import { compareNatural, compareStrings } from '../../../util/compare.ts';
+import { errorText } from '../../../util/errors.ts';
+import { mapPool } from '../../../util/pool.ts';
 import { collectTargets, hashText, jsonReplacer, parseHash } from '../../helpers.ts';
 
 import type { DataArgs } from './parser.ts';

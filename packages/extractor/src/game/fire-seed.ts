@@ -2,8 +2,8 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { ControlDriver } from '@endfield-noclip/package-format/states';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { compareStrings } from '../compare.ts';
-import type { Context } from '../context.ts';
+import type { Context } from '../install/context.ts';
+import { compareStrings } from '../util/compare.ts';
 
 import type { LevelScripts } from './script-drivers.ts';
 import { type DraftControl, sceneControl } from './state/scene-control.ts';

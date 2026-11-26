@@ -4,8 +4,8 @@ import type { StreamAreaTable } from '@endfield-noclip/formats/endfield/stream-a
 
 import { groupByDefined, mapDefined } from '@mary-ext/array-fns';
 
-import { compareNumbers, compareStrings } from '../../compare.ts';
-import { mapPool } from '../../pool.ts';
+import { compareNumbers, compareStrings } from '../../util/compare.ts';
+import { mapPool } from '../../util/pool.ts';
 import type { ChunkFile, WorldIndex } from '../world/world-index.ts';
 
 import { type DraftControl, sceneControl } from './scene-control.ts';

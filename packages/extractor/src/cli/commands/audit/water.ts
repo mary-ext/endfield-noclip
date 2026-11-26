@@ -1,4 +1,4 @@
-import { PackedPackage } from '../../../pack/read-package.ts';
+import { PackedPackage } from '../../../pipeline/read-package.ts';
 
 import type { AuditSubArgs } from './parser.ts';
 import { packageDirsOf, readDebugJson, tallyBy } from './shared.ts';

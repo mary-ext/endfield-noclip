@@ -3,7 +3,7 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 
 import { unique } from '@mary-ext/array-fns';
 
-import { formatErrorOnly } from '../../errors.ts';
+import { formatErrorOnly } from '../../util/errors.ts';
 import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 
 /** a prefab's root GameObject, or why it can't be read, and how reports name the prefab */

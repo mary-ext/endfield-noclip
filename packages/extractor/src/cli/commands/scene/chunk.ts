@@ -13,9 +13,9 @@ import {
 	WATER_DECAL_MESH_KEY,
 } from '@endfield-noclip/formats/endfield/streaming-chunk-data';
 
-import { compareStrings } from '../../../compare.ts';
-import { withContext } from '../../../context.ts';
 import type { ChunkFile, WorldIndex } from '../../../game/world/world-index.ts';
+import { withContext } from '../../../install/context.ts';
+import { compareStrings } from '../../../util/compare.ts';
 import { hashText, jsonReplacer } from '../../helpers.ts';
 
 import type { SceneSubArgs } from './parser.ts';

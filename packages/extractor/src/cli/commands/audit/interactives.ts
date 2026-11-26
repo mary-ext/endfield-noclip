@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { DEBUG_DIR, type UnsupportedInput } from '../../../pack/debug.ts';
+import { DEBUG_DIR, type UnsupportedInput } from '../../../pipeline/debug.ts';
 import { matchesWhere, type WherePredicate } from '../../query.ts';
 
 import type { AuditSubArgs } from './parser.ts';

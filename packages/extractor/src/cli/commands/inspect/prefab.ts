@@ -10,8 +10,6 @@ import {
 	pptrField,
 } from '@endfield-noclip/formats/unity/values';
 
-import { type Context, withContext } from '../../../context.ts';
-import { errorText } from '../../../errors.ts';
 import { type AssetResolver, objectKey, type ObjectRef } from '../../../game/assets/assets.ts';
 import { RENDER_PIPELINE_QUAD_PATH } from '../../../game/assets/builtin-resources.ts';
 import { loadMaterial } from '../../../game/materials/material-load.ts';
@@ -20,7 +18,9 @@ import { readPrefabEnvironmentVolumes } from '../../../game/prefabs/prefab-envir
 import { readPrefabLights } from '../../../game/prefabs/prefab-lights.ts';
 import { walkPrefab } from '../../../game/prefabs/prefab-walk.ts';
 import { readPrefabRenderers } from '../../../game/prefabs/prefab.ts';
-import { DECAL_CUBE_PATH } from '../../../pack/content/pack-content.ts';
+import { type Context, withContext } from '../../../install/context.ts';
+import { DECAL_CUBE_PATH } from '../../../pipeline/discover/pack-content.ts';
+import { errorText } from '../../../util/errors.ts';
 import { collectTargets, jsonReplacer } from '../../helpers.ts';
 
 import { describeLoadedMaterial } from './material.ts';

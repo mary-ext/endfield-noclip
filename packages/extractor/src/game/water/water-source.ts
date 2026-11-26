@@ -17,7 +17,7 @@ import { pptrField } from '@endfield-noclip/formats/unity/values';
 
 import { definite } from '@mary-ext/array-fns';
 
-import { mapPool } from '../../pool.ts';
+import { mapPool } from '../../util/pool.ts';
 import type { AssetRef, AssetResolver, ObjectRef } from '../assets/assets.ts';
 import type { ChunkFile, ChunkSource, WorldIndex } from '../world/world-index.ts';
 

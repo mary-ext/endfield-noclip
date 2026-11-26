@@ -26,7 +26,6 @@ import { conditionVisible } from '@endfield-noclip/package-format/conditions';
 
 import { unique } from '@mary-ext/array-fns';
 
-import { formatErrorOnly } from '../../errors.ts';
 import {
 	bundleSources,
 	relocateSaved,
@@ -35,7 +34,8 @@ import {
 	sourcesCurrent,
 } from '../../ir/bundle-memo.ts';
 import type { BundleSource, MemoCache } from '../../ir/cache.ts';
-import { mapPool } from '../../pool.ts';
+import { formatErrorOnly } from '../../util/errors.ts';
+import { mapPool } from '../../util/pool.ts';
 import {
 	type AssetResolver,
 	type LocatedObject,

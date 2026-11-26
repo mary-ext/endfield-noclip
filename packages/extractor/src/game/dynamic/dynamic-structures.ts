@@ -29,10 +29,10 @@ import type { RowPath } from '@endfield-noclip/package-format/instances';
 
 import { mapDefined, partition as partitionArray, range } from '@mary-ext/array-fns';
 
-import type { Context } from '../../context.ts';
-import { type Vfs, VfsGroup } from '../../hg/vfs.ts';
+import type { Context } from '../../install/context.ts';
+import { type Vfs, VfsGroup } from '../../install/vfs.ts';
 import type { MemoCache } from '../../ir/cache.ts';
-import { mapPool } from '../../pool.ts';
+import { mapPool } from '../../util/pool.ts';
 import {
 	readViewStates,
 	settledPose,

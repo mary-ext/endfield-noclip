@@ -1,6 +1,6 @@
 import { BlobKind } from '@endfield-noclip/package-format/blobs';
 
-import { PackedPackage } from '../../../pack/read-package.ts';
+import { PackedPackage } from '../../../pipeline/read-package.ts';
 
 import type { AuditSubArgs } from './parser.ts';
 import { packageDirsOf } from './shared.ts';

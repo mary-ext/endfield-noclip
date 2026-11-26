@@ -2,8 +2,8 @@ import { join } from 'node:path';
 
 import type { Bounds } from '@endfield-noclip/package-format/values';
 
-import { DEBUG_DIR } from '../../../pack/debug.ts';
-import { PackedPackage } from '../../../pack/read-package.ts';
+import { DEBUG_DIR } from '../../../pipeline/debug.ts';
+import { PackedPackage } from '../../../pipeline/read-package.ts';
 import { matchesWhere, type WherePredicate } from '../../query.ts';
 
 import type { AuditSubArgs } from './parser.ts';

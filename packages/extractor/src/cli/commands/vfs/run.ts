@@ -1,6 +1,6 @@
-import { withContext } from '../../../context.ts';
-import { errorText } from '../../../errors.ts';
-import { VfsGroup } from '../../../hg/vfs.ts';
+import { withContext } from '../../../install/context.ts';
+import { VfsGroup } from '../../../install/vfs.ts';
+import { errorText } from '../../../util/errors.ts';
 import { save } from '../../helpers.ts';
 
 import type { VfsArgs } from './parser.ts';

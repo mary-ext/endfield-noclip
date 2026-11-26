@@ -6,8 +6,6 @@ import { compareVolumes, distanceInsideVolume } from '@endfield-noclip/package-f
 
 import { mapDefined } from '@mary-ext/array-fns';
 
-import { type Context, withContext } from '../../../context.ts';
-import { errorText } from '../../../errors.ts';
 import {
 	environmentBlend,
 	environmentVolumeShape,
@@ -20,7 +18,9 @@ import {
 } from '../../../game/environment.ts';
 import { defaultSceneStates, sceneStateControl } from '../../../game/state/scene-conditions.ts';
 import type { ChunkFile } from '../../../game/world/world-index.ts';
-import { surveyPlacedVolumes, surveyPlacements } from '../../../pack/survey.ts';
+import { type Context, withContext } from '../../../install/context.ts';
+import { surveyPlacedVolumes, surveyPlacements } from '../../../pipeline/survey.ts';
+import { errorText } from '../../../util/errors.ts';
 import { hashText } from '../../helpers.ts';
 
 import type { SceneSubArgs } from './parser.ts';

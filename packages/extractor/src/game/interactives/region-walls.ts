@@ -2,8 +2,8 @@ import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import type { LevelInteractive } from '@endfield-noclip/formats/endfield/level-interactives';
 import { parseSparkTable } from '@endfield-noclip/formats/hg/spark-buffer';
 
-import { compareNumbers } from '../../compare.ts';
-import { VfsGroup } from '../../hg/vfs.ts';
+import { VfsGroup } from '../../install/vfs.ts';
+import { compareNumbers } from '../../util/compare.ts';
 import { type DraftControl, sceneControl } from '../state/scene-control.ts';
 
 import type { FacilitySources } from './facility-sources.ts';

@@ -57,10 +57,10 @@ import { parseStringPoolBlock, StringPool } from '@endfield-noclip/formats/hg/st
 
 import { definite, mapDefined } from '@mary-ext/array-fns';
 
-import { compareNatural, compareStrings } from '../../compare.ts';
-import { loadBundleManifest } from '../../hg/bundles.ts';
-import { VfsGroup, type Vfs } from '../../hg/vfs.ts';
-import { mapPool } from '../../pool.ts';
+import { loadBundleManifest } from '../../install/bundles.ts';
+import { VfsGroup, type Vfs } from '../../install/vfs.ts';
+import { compareNatural, compareStrings } from '../../util/compare.ts';
+import { mapPool } from '../../util/pool.ts';
 
 // #region file names
 

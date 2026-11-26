@@ -1,6 +1,6 @@
 import { resolveEnvironment, type EnvironmentSections } from '@endfield-noclip/package-format/environment';
 
-import { PackedPackage } from '../../../pack/read-package.ts';
+import { PackedPackage } from '../../../pipeline/read-package.ts';
 
 import type { AuditSubArgs } from './parser.ts';
 import { packageDirsOf, readDebugJson } from './shared.ts';

@@ -1,4 +1,4 @@
-import { compareStrings } from '../compare.ts';
+import { compareStrings } from '../util/compare.ts';
 
 /** how severe a diagnostic is */
 export type DiagnosticSeverity = 'stand-in' | 'gap' | 'unsupported' | 'skipped';

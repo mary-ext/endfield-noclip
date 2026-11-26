@@ -4,8 +4,8 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import type { TypeTreeObject } from '@endfield-noclip/formats/unity/type-tree';
 import { isObject, numberField, objectField, stringField } from '@endfield-noclip/formats/unity/values';
 
-import type { Context } from '../../context.ts';
-import { VfsGroup } from '../../hg/vfs.ts';
+import type { Context } from '../../install/context.ts';
+import { VfsGroup } from '../../install/vfs.ts';
 import type { Diagnostic } from '../../ir/diagnostics.ts';
 import type { ObjectRef } from '../assets/assets.ts';
 import type { WorldIndex } from '../world/world-index.ts';

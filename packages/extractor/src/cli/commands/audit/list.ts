@@ -1,10 +1,10 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { compareStrings } from '../../../compare.ts';
-import { ignoreMissing } from '../../../errors.ts';
-import { DEBUG_DIR, STAND_INS_FILE, type StandInReport } from '../../../pack/debug.ts';
-import { PackedPackage } from '../../../pack/read-package.ts';
+import { DEBUG_DIR, STAND_INS_FILE, type StandInReport } from '../../../pipeline/debug.ts';
+import { PackedPackage } from '../../../pipeline/read-package.ts';
+import { compareStrings } from '../../../util/compare.ts';
+import { ignoreMissing } from '../../../util/errors.ts';
 
 import type { DebugAssetsFile } from './assets.ts';
 import type { AuditSubArgs } from './parser.ts';

@@ -2,10 +2,10 @@ import { type ObjectInfo, typeName, UnityClass } from '@endfield-noclip/formats/
 import type { TypeTreeValue } from '@endfield-noclip/formats/unity/type-tree';
 import { isObject, numberField, pptrField, stringField } from '@endfield-noclip/formats/unity/values';
 
-import { compareStrings } from '../../../compare.ts';
-import { type Context, withContext } from '../../../context.ts';
-import { surveyPlacements } from '../../../pack/survey.ts';
-import { mapPool } from '../../../pool.ts';
+import { type Context, withContext } from '../../../install/context.ts';
+import { surveyPlacements } from '../../../pipeline/survey.ts';
+import { compareStrings } from '../../../util/compare.ts';
+import { mapPool } from '../../../util/pool.ts';
 import { hashText } from '../../helpers.ts';
 import { matchesWhere, pickFields, type WherePredicate } from '../../query.ts';
 

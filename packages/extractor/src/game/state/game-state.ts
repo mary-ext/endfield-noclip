@@ -9,7 +9,7 @@ import type { SceneControlValue } from '@endfield-noclip/package-format/states';
 
 import { mapDefined, uniqueBy } from '@mary-ext/array-fns';
 
-import { compareNumbers, compareStrings } from '../../compare.ts';
+import { compareNumbers, compareStrings } from '../../util/compare.ts';
 
 import { sceneControl, type DraftControl, type DraftRuleText, type Requirement } from './scene-control.ts';
 

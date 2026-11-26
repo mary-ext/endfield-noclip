@@ -7,14 +7,14 @@ import type { Rect } from '@endfield-noclip/package-format/values';
 
 import { definite, mapDefined } from '@mary-ext/array-fns';
 
-import { compareNumbers, compareStrings } from '../../../compare.ts';
-import { DEFAULT_OUT } from '../../../config.ts';
-import { withContext } from '../../../context.ts';
-import { ignoreMissing } from '../../../errors.ts';
-import { packScene } from '../../../pack/packer.ts';
-import { PackedPackage } from '../../../pack/read-package.ts';
-import type { PackReport } from '../../../pack/report.ts';
-import { PackSession } from '../../../pack/session.ts';
+import { DEFAULT_OUT } from '../../../install/config.ts';
+import { withContext } from '../../../install/context.ts';
+import { packScene } from '../../../pipeline/pack.ts';
+import { PackedPackage } from '../../../pipeline/read-package.ts';
+import type { PackReport } from '../../../pipeline/report.ts';
+import { PackSession } from '../../../pipeline/session.ts';
+import { compareNumbers, compareStrings } from '../../../util/compare.ts';
+import { ignoreMissing } from '../../../util/errors.ts';
 
 import type { PackArgs } from './parser.ts';
 

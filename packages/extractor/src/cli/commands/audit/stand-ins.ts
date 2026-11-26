@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import { DEBUG_DIR, STAND_INS_FILE, type StandInReport } from '../../../pack/debug.ts';
+import { DEBUG_DIR, STAND_INS_FILE, type StandInReport } from '../../../pipeline/debug.ts';
 import { matchesWhere, type WherePredicate } from '../../query.ts';
 
 import type { AuditSubArgs } from './parser.ts';

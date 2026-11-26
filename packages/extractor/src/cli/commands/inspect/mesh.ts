@@ -3,9 +3,9 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
-import { withContext } from '../../../context.ts';
 import { loadMesh } from '../../../game/assets/asset-decode.ts';
 import { objectKey } from '../../../game/assets/assets.ts';
+import { withContext } from '../../../install/context.ts';
 import { collectTargets } from '../../helpers.ts';
 
 import type { InspectSubArgs } from './parser.ts';

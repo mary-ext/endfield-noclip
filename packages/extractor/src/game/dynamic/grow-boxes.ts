@@ -3,8 +3,8 @@ import { isSparkBean, parseSparkTable } from '@endfield-noclip/formats/hg/spark-
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { arrayField, isObject, pptrField, stringField } from '@endfield-noclip/formats/unity/values';
 
-import type { Context } from '../../context.ts';
-import { VfsGroup } from '../../hg/vfs.ts';
+import type { Context } from '../../install/context.ts';
+import { VfsGroup } from '../../install/vfs.ts';
 import type { AssetResolver, ObjectRef } from '../assets/assets.ts';
 
 // the growth chamber's planting boxes (docs/game-data/scene-states.md#dijiang-cabins): each box prefab's

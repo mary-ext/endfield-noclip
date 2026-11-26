@@ -11,8 +11,8 @@ import {
 import { CONTENT_KIND_NAMES, ContentKind, type Tree } from '@endfield-noclip/package-format/tree';
 import type { Bounds, Rect } from '@endfield-noclip/package-format/values';
 
-import { DEBUG_DIR } from '../../../pack/debug.ts';
-import { PackedPackage } from '../../../pack/read-package.ts';
+import { DEBUG_DIR } from '../../../pipeline/debug.ts';
+import { PackedPackage } from '../../../pipeline/read-package.ts';
 
 import type { DebugAssetsFile } from './assets.ts';
 import type { AuditSubArgs } from './parser.ts';

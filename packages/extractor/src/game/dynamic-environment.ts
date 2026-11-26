@@ -8,8 +8,8 @@ import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-par
 import type { MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import type { Context } from '../context.ts';
-import { VfsGroup } from '../hg/vfs.ts';
+import type { Context } from '../install/context.ts';
+import { VfsGroup } from '../install/vfs.ts';
 
 import type { SceneEnvironmentVolume } from './environment.ts';
 

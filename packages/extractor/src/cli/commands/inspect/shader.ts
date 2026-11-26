@@ -8,13 +8,13 @@ import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 
 import { mapDefined } from '@mary-ext/array-fns';
 
-import { compareStrings } from '../../../compare.ts';
-import { type Context, withContext } from '../../../context.ts';
 import { loadShaderSummary } from '../../../game/assets/asset-decode.ts';
 import { type AssetResolver, objectKey, type ObjectRef } from '../../../game/assets/assets.ts';
-import { openAssetFiles, openBundle } from '../../../hg/bundles.ts';
-import { VfsGroup } from '../../../hg/vfs.ts';
-import { mapPool } from '../../../pool.ts';
+import { openAssetFiles, openBundle } from '../../../install/bundles.ts';
+import { type Context, withContext } from '../../../install/context.ts';
+import { VfsGroup } from '../../../install/vfs.ts';
+import { compareStrings } from '../../../util/compare.ts';
+import { mapPool } from '../../../util/pool.ts';
 import { jsonReplacer, parseHash } from '../../helpers.ts';
 
 import type { InspectSubArgs } from './parser.ts';

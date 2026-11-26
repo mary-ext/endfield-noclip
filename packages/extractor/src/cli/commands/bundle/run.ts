@@ -10,10 +10,10 @@ import {
 
 import { mapDefined } from '@mary-ext/array-fns';
 
-import { type Context, withContext } from '../../../context.ts';
-import { errorText } from '../../../errors.ts';
-import { type BundleAssetFile, openAssetFiles, openBundle } from '../../../hg/bundles.ts';
-import { VfsGroup } from '../../../hg/vfs.ts';
+import { type BundleAssetFile, openAssetFiles, openBundle } from '../../../install/bundles.ts';
+import { type Context, withContext } from '../../../install/context.ts';
+import { VfsGroup } from '../../../install/vfs.ts';
+import { errorText } from '../../../util/errors.ts';
 import { collectTargets, parseHash, save } from '../../helpers.ts';
 import { matchesWhere, pickFields, type WherePredicate } from '../../query.ts';
 

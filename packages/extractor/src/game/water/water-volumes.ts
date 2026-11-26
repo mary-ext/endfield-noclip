@@ -2,8 +2,8 @@ import { FormatError } from '@endfield-noclip/formats/binary/binary-reader';
 import type { LevelPartition } from '@endfield-noclip/formats/endfield/level-partition';
 import { isMemoryPackObject, type MemoryPackValue } from '@endfield-noclip/formats/endfield/memory-pack';
 
-import type { Context } from '../../context.ts';
-import { VfsGroup } from '../../hg/vfs.ts';
+import type { Context } from '../../install/context.ts';
+import { VfsGroup } from '../../install/vfs.ts';
 
 // gameplay water volumes: LevelData `waterVolumes`, polygons whose surface level scripts raise and lower, and
 // the interactives that float on them (`BelongToWaterVolume`, interactive component 39). see

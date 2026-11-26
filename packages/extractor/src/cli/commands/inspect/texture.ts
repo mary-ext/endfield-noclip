@@ -5,10 +5,10 @@ import { VkFormat, writeKtx2 } from '@endfield-noclip/formats/binary/ktx2';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 import { type DecodedTexture, toKtx2Texture } from '@endfield-noclip/formats/unity/texture';
 
-import { withContext } from '../../../context.ts';
 import { loadTexture } from '../../../game/assets/asset-decode.ts';
 import { objectKey } from '../../../game/assets/assets.ts';
-import { zstdSync } from '../../../zstd.ts';
+import { withContext } from '../../../install/context.ts';
+import { zstdSync } from '../../../util/zstd.ts';
 import { collectTargets, save as saveFile } from '../../helpers.ts';
 
 import type { InspectSubArgs } from './parser.ts';

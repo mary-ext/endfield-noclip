@@ -29,8 +29,8 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { definite, mapDefined } from '@mary-ext/array-fns';
 
-import { compareNumbers } from '../compare.ts';
-import { mapPool } from '../pool.ts';
+import { compareNumbers } from '../util/compare.ts';
+import { mapPool } from '../util/pool.ts';
 
 import type { AssetResolver, LocatedObject, ObjectRef } from './assets/assets.ts';
 import type { Visibility } from './state/scene-control.ts';

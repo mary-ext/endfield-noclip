@@ -11,9 +11,9 @@ import {
 } from '@endfield-noclip/formats/hg/terrain';
 import { UnityClass } from '@endfield-noclip/formats/unity/serialized-file';
 
-import { compareStrings } from '../../compare.ts';
-import type { Context } from '../../context.ts';
-import { VfsGroup, type Vfs, type VfsFile } from '../../hg/vfs.ts';
+import type { Context } from '../../install/context.ts';
+import { VfsGroup, type Vfs, type VfsFile } from '../../install/vfs.ts';
+import { compareStrings } from '../../util/compare.ts';
 import { loadTexture } from '../assets/asset-decode.ts';
 
 /** one terrain tile's files */
