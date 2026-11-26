@@ -12,6 +12,7 @@ import { readWaterVolumes } from '../../game/water/water-volumes.ts';
 import type { Context } from '../../install/context.ts';
 import { VfsGroup } from '../../install/vfs.ts';
 import type { PackCache } from '../cache/pack-cache.ts';
+import { memoizeValue } from '../runner.ts';
 import { defaultValues } from '../states.ts';
 import type { CabinRoomGroup } from '../tables/irradiance.ts';
 import type { WaterVolumeInput } from '../tables/water.ts';
@@ -77,23 +78,12 @@ export const collectEntities = async (
 	const { scriptWater, waterDrivers, placements, places, fireSeed, unsupported, cabinRooms } =
 		sources.interactives;
 
-	type WaterVolumesResult = Awaited<ReturnType<typeof readWaterVolumes>>;
-	let waterVolumes: WaterVolumesResult | undefined;
-	let waterMemoKey: string | null = null;
-	if (cache !== null) {
-		const [fp, jsonHash] = await Promise.all([
-			cache.fingerprint(WATER_VOLUMES_ENTRY),
-			context.vfs.group(VfsGroup.JsonData).then((g) => g.catalogHash),
-		]);
-		waterMemoKey = cache.keyWith(fp, { kind: 'waterVolumes', scene: scene.id, level: scene.level, jsonHash });
-		waterVolumes = await cache.recallValue<WaterVolumesResult>(waterMemoKey);
-	}
-	if (waterVolumes === undefined) {
-		waterVolumes = await readWaterVolumes(context, scene.id, scene.level, scene.partition);
-		if (waterMemoKey !== null && cache !== null) {
-			await cache.rememberValue(waterMemoKey, waterVolumes);
-		}
-	}
+	const jsonHash = cache === null ? '' : (await context.vfs.group(VfsGroup.JsonData)).catalogHash;
+	const waterVolumes = await memoizeValue(cache, {
+		entry: WATER_VOLUMES_ENTRY,
+		parts: { kind: 'waterVolumes', scene: scene.id, level: scene.level, jsonHash },
+		compute: () => readWaterVolumes(context, scene.id, scene.level, scene.partition),
+	});
 	content.count('waterVolumes', waterVolumes.volumes.length);
 	/** by floating interactive's level logic id, its volume's id */
 	const floaterVolume = new Map<string, string>();
@@ -109,27 +99,11 @@ export const collectEntities = async (
 	const { roots } = sources;
 	await placePrefabs(context.world, roots, content, sources.placements, floaterVolume, cache);
 	const placedVolumes = await collectPlacedVolumes(roots, content, sources.placements, progressions, cache);
-	let dynamicVolumes: SceneEnvironmentVolume[] | undefined;
-	let dynamicEnvMemoKey: string | null = null;
-	if (cache !== null) {
-		const [fp, jsonHash] = await Promise.all([
-			cache.fingerprint(DYNAMIC_ENV_ENTRY),
-			context.vfs.group(VfsGroup.JsonData).then((g) => g.catalogHash),
-		]);
-		dynamicEnvMemoKey = cache.keyWith(fp, {
-			kind: 'dynamicEnvVolumes',
-			scene: scene.id,
-			level: scene.level,
-			jsonHash,
-		});
-		dynamicVolumes = await cache.recallValue<SceneEnvironmentVolume[]>(dynamicEnvMemoKey);
-	}
-	if (dynamicVolumes === undefined) {
-		dynamicVolumes = await readDynamicEnvironmentVolumes(context, scene.id, scene.level, scene.partition);
-		if (dynamicEnvMemoKey !== null && cache !== null) {
-			await cache.rememberValue(dynamicEnvMemoKey, dynamicVolumes);
-		}
-	}
+	const dynamicVolumes = await memoizeValue(cache, {
+		entry: DYNAMIC_ENV_ENTRY,
+		parts: { kind: 'dynamicEnvVolumes', scene: scene.id, level: scene.level, jsonHash },
+		compute: () => readDynamicEnvironmentVolumes(context, scene.id, scene.level, scene.partition),
+	});
 	content.count('dynamicEnvironmentVolumes', dynamicVolumes.length);
 	content.count('unsupportedPrefabs', content.unsupportedPrefabs.length);
 	content.count('standIns', content.standInReports().length);
