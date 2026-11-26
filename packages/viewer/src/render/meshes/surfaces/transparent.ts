@@ -28,7 +28,8 @@ import {
 	sampleSlot,
 	surfaceNormal,
 } from './common.ts';
-import { evalSurface, transparentFresnel } from './surface.ts';
+import { transparentFresnel } from './layer-parallax.ts';
+import { evalSurface } from './surface.ts';
 
 /** fragment entrypoint shading alpha-blended meshes forward over the composited HDR scene */
 export const fsTransparent = tgpu.fragmentFn({

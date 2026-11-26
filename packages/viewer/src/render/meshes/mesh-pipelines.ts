@@ -19,11 +19,11 @@ import {
 import { SHADOW_DEPTH_STATE, shadowDepthState } from '../lighting/shadow-map.ts';
 
 import { type DrawPhase, PHASES, type VertexStreams } from './draw-ranges.ts';
-import { vsEffect } from './effects/common.ts';
 import { fsDecalGbuffer, fsWetnessDecal } from './effects/decal-gbuffer.ts';
 import { fsMistCard, fsMistVolume } from './effects/mist.ts';
 import { fsRadialBlur, fsRefract } from './effects/screen.ts';
 import { fsEffect, fsEffectDecal, fsEffectMultiply, fsEffectOpaque } from './effects/stack.ts';
+import { vsEffect } from './effects/vertex.ts';
 import { fsWaterFoam } from './effects/water-foam.ts';
 import {
 	type FaceCull,
@@ -35,6 +35,9 @@ import {
 	stencilPipelineKey,
 	withStencil,
 } from './pipeline-variants.ts';
+import { fsOpaqueLit } from './surfaces/lit.ts';
+import { fsCutoutOverlay, fsOpaque } from './surfaces/surface.ts';
+import { fsTransparent } from './surfaces/transparent.ts';
 import {
 	fsCutoutDepth,
 	fsDepth,
@@ -43,10 +46,7 @@ import {
 	vsDepth,
 	vsDepthFade,
 	vsMain,
-} from './surfaces/common.ts';
-import { fsOpaqueLit } from './surfaces/lit.ts';
-import { fsCutoutOverlay, fsOpaque } from './surfaces/surface.ts';
-import { fsTransparent } from './surfaces/transparent.ts';
+} from './surfaces/vertex.ts';
 import { NORMAL_STREAM, positionStream } from './vertex-bindings.ts';
 
 /** a phase's pipeline descriptor for a face culling, position format and UV format */

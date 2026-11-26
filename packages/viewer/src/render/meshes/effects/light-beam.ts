@@ -21,12 +21,12 @@ import {
 	BM_TILT,
 	EffectVertexData,
 	FX_UNFOGGED,
-	beamScale,
 	fxAccumulate,
 	fxAdditive,
 	fxRow,
 	fxSceneDepth,
 } from './common.ts';
+import { beamScale } from './vertex.ts';
 
 const beamUnskew = tgpu.fn(
 	[d.u32, d.vec3f],
