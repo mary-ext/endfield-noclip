@@ -290,14 +290,17 @@ const assembleRenderer = async (
 	const materials: (ObjectRef | null)[] = [];
 	if (candidate.decal !== null) {
 		materials.push(await resolver.resolve(candidate.ref, pptrField(candidate.data, 'm_Material')));
-	} else {
+	} else if (Array.isArray(candidate.data.m_Materials)) {
 		for (const pointer of arrayField(candidate.data, 'm_Materials')) {
 			// preserve renderer slot order
 			materials.push(await resolver.resolve(candidate.ref, asPPtr(pointer)));
 		}
 	}
 	if (materials.length === 0) {
-		return null;
+		if (candidate.unsupported === null) {
+			return null;
+		}
+		materials.push(null);
 	}
 	let matrix = candidate.matrix;
 	let bounds: Aabb;

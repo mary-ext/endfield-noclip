@@ -148,6 +148,10 @@ export type ParticleSystemRead =
 			 * `null` without, or when the viewer can't draw them (the particles then play without)
 			 */
 			trail: ParticleTrailInfo | null;
+			/** why an enabled `TrailModule` wasn't kept on a played system, or `null` */
+			trailGap: string | null;
+			/** enabled particle modules the viewer doesn't simulate (e.g. `NoiseModule`, `LightsModule`) */
+			droppedModules: string[];
 			/** active `SubModule` entries (non-null target PPtr, positive probability) */
 			subEmitters: SubEmitterRead[];
 	  }
@@ -159,6 +163,17 @@ export type ParticleSystemRead =
 
 const WRAP_MODES = new Set<number>(Object.values(CurveWrapMode));
 const isWrapMode = (mode: number): mode is CurveWrapMode => WRAP_MODES.has(mode);
+
+/** enabled ParticleSystem modules the viewer does not simulate, reported as gaps */
+const UNSUPPORTED_MODULES = [
+	'NoiseModule',
+	'CollisionModule',
+	'TriggerModule',
+	'LightsModule',
+	'ColorBySpeedModule',
+	'SizeBySpeedModule',
+	'RotationBySpeedModule',
+] as const;
 
 /** @throws {FormatError} on a value that isn't a {@link CurveWrapMode} */
 const readWrapMode = (value: TypeTreeObject, name: string): CurveWrapMode => {
@@ -1108,6 +1123,7 @@ export const readParticleSystem = (
 	}
 	const flip = isObject(renderer['m_Flip']) ? vector3Field(renderer, 'm_Flip') : null;
 	const hasFlip = flip !== null && (flip[0] !== 0 || flip[1] !== 0 || flip[2] !== 0);
+	const droppedModules = UNSUPPORTED_MODULES.filter((mod) => enabled(system, mod));
 	return {
 		info: {
 			renderMode,
@@ -1172,6 +1188,8 @@ export const readParticleSystem = (
 		forces,
 		shapeMesh,
 		trail: typeof trail === 'string' ? null : trail,
+		trailGap: typeof trail === 'string' ? trail : null,
+		droppedModules,
 		subEmitters,
 	};
 };

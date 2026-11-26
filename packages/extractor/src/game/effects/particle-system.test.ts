@@ -998,4 +998,34 @@ test('reads non-zero m_Flip and omits all-zero m_Flip', () => {
 	assert.deepEqual(flipped.info.flip, [1, 0.5, 0]);
 });
 
+test('reports trailGap and droppedModules on played systems instead of silently dropping them', () => {
+	const read = readParticleSystem(
+		system({
+			NoiseModule: { enabled: true },
+			LightsModule: { enabled: true },
+			TrailModule: {
+				enabled: true,
+				mode: 1, // Ribbon — unsupported
+				ratio: 1,
+				lifetime: constant(1),
+				minVertexDistance: 0.2,
+				textureMode: 0,
+				worldSpace: true,
+				dieWithParticles: true,
+				sizeAffectsWidth: true,
+				sizeAffectsLifetime: false,
+				inheritParticleColor: true,
+				colorOverLifetime: { minMaxState: 0, maxColor: { r: 1, g: 1, b: 1, a: 1 } },
+				widthOverTrail: constant(1),
+				colorOverTrail: { minMaxState: 0, maxColor: { r: 1, g: 1, b: 1, a: 1 } },
+			},
+		}),
+		renderer(),
+	);
+	assert.ok(read !== null && 'info' in read);
+	assert.equal(read.trail, null);
+	assert.equal(read.trailGap, 'ribbon trails');
+	assert.deepEqual(read.droppedModules, ['NoiseModule', 'LightsModule']);
+});
+
 // #endregion

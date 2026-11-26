@@ -446,6 +446,22 @@ const collectParticles: NodeStep = async (walk, node, state) => {
 				decal: null,
 			}),
 		);
+	} else if (read.trailGap !== null && trailMaterials.length > 0 && walk.particleQuad !== null) {
+		// an enabled TrailModule that couldn't be simulated still stands in so it isn't silently dropped
+		const placed = particleStandInMatrix(parent, local, scalingMode);
+		candidates.push(
+			candidateOf(node, state, {
+				ref: renderer.ref,
+				data: { ...renderer.data, m_Materials: trailMaterials },
+				matrix: placed,
+				mesh: walk.particleQuad,
+				particles: null,
+				unsupported: read.trailGap,
+				ownSize,
+				billboard: { flag: ChainFlags.BillboardFacing, offset: [0, 0, 0, 1], frame: placed },
+				decal: null,
+			}),
+		);
 	}
 	walk.particleSystems.set(objectKey(system.ref), {
 		ref: system.ref,
@@ -531,6 +547,69 @@ const collectLineRenderers: NodeStep = async (walk, node, state) => {
 	}
 };
 
+/** Unity Renderer subclasses that have no dedicated collector yet, mapped to their class name */
+const UNHANDLED_RENDERER_CLASSES = new Map<number, string>([
+	[96, 'TrailRenderer'],
+	[212, 'SpriteRenderer'],
+	[227, 'BillboardRenderer'],
+	[483693784, 'TilemapRenderer'],
+	[1971053207, 'SpriteShapeRenderer'],
+]);
+
+/** Unity classes already handled by a dedicated collector above */
+const HANDLED_RENDERER_CLASSES = new Set<number>([
+	UnityClass.MeshRenderer,
+	UnityClass.SkinnedMeshRenderer,
+	UnityClass.ParticleSystemRenderer,
+	LINE_RENDERER_CLASS,
+	DECAL_PROJECTOR_CLASS,
+]);
+
+const STAND_IN_CUBE_BOUNDS = { center: [0, 0, 0], extents: [0.5, 0.5, 0.5] } as const;
+
+/**
+ * catches any enabled Unity `Renderer` subclass not claimed by a dedicated collector (known subclasses like
+ * `TrailRenderer` / `SpriteRenderer`, or any custom engine Renderer whose TypeTree carries `m_Materials`) and
+ * emits a stand-in cube so it never disappears silently
+ */
+const collectUnhandledRenderers: NodeStep = async (walk, node, state) => {
+	for (const component of node.components) {
+		const { classId } = component;
+		if (HANDLED_RENDERER_CLASSES.has(classId) || classId === UnityClass.MonoBehaviour) {
+			continue;
+		}
+		let className = UNHANDLED_RENDERER_CLASSES.get(classId);
+		if (className === undefined) {
+			const nodes = component.ref.info.type.nodes;
+			if (!nodes.some((entry) => entry.name === 'm_Materials')) {
+				continue;
+			}
+			className = nodes[0]?.type ?? `class ${classId}`;
+		}
+		const data = await enabledData(component);
+		if (data === null) {
+			continue;
+		}
+		walk.candidates.push(
+			candidateOf(node, state, {
+				ref: component.ref,
+				data,
+				matrix: node.matrix,
+				mesh: null,
+				synthetic: {
+					mesh: 'cube',
+					bounds: { center: [...STAND_IN_CUBE_BOUNDS.center], extents: [...STAND_IN_CUBE_BOUNDS.extents] },
+				},
+				particles: null,
+				unsupported: state.standIn ?? `unhandled renderer ${className}`,
+				ownSize: false,
+				billboard: null,
+				decal: null,
+			}),
+		);
+	}
+};
+
 /** what a drawn GameObject draws, in the order its candidates are kept */
 export const CANDIDATE_SOURCES: readonly NodeStep[] = [
 	collectLodSizes,
@@ -540,4 +619,5 @@ export const CANDIDATE_SOURCES: readonly NodeStep[] = [
 	collectLineRenderers,
 	collectParticles,
 	collectSplineMovers,
+	collectUnhandledRenderers,
 ];
