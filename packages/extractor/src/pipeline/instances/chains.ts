@@ -144,7 +144,8 @@ export class ChainTable {
 				key += `|${keys.geometry(draw.geometry)},${material},${particles},${draw.submesh},${draw.lod},${draw.role},${bits(draw.minSquared)},${bits(draw.maxSquared)},${draw.flags},${draw.sortingLayer},${draw.sortingOrder}`;
 			}
 			// non-zero 64-bit hash (0n is reserved for absent hash)
-			const hash = BigInt(`0x${cryptoHash('sha256', key, 'hex').slice(0, 16)}`) || 1n;
+			const raw = cryptoHash('sha256', key, 'buffer').readBigUInt64BE(0);
+			const hash = raw === 0n ? 1n : raw;
 			hashes[id] = hash;
 			order.push(id);
 		}

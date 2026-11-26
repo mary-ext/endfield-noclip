@@ -166,10 +166,19 @@ export class AssetIds {
 	}
 }
 
-const digestHash = (digest: ReturnType<typeof createHash>): bigint => -BigInt(`0x${digest.digest('hex')}`);
+const negativeHash = (bytes: Buffer): bigint => {
+	const value =
+		(bytes.readBigUInt64BE(0) << 192n) |
+		(bytes.readBigUInt64BE(8) << 128n) |
+		(bytes.readBigUInt64BE(16) << 64n) |
+		bytes.readBigUInt64BE(24);
+	return value === 0n ? -1n : -value;
+};
+
+const digestHash = (digest: ReturnType<typeof createHash>): bigint => negativeHash(digest.digest());
 
 /**
  * @param key an object's {@link objectKey}
  * @returns its hash; negative hashes occupy a namespace separate from unsigned game hashes
  */
-const objectHash = (key: string): bigint => -BigInt(`0x${cryptoHash('sha256', key, 'hex')}`);
+const objectHash = (key: string): bigint => negativeHash(cryptoHash('sha256', key, 'buffer'));

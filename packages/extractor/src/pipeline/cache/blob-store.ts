@@ -430,8 +430,11 @@ export class BlobStore {
 		const parts = new Map<number, number[]>();
 		for (const index of indices) {
 			const { hash, locality } = this.#blobs[index];
-			const spread = locality === null ? hash : cryptoHash('sha256', locality.split('.', 1)[0], 'hex');
-			const part = Number.parseInt(spread.slice(0, 8), 16) >>> (32 - bits);
+			const word =
+				locality === null
+					? Number.parseInt(hash.slice(0, 8), 16)
+					: cryptoHash('sha256', locality.split('.', 1)[0], 'buffer').readUInt32BE(0);
+			const part = word >>> (32 - bits);
 			parts.getOrInsertComputed(part, () => []).push(index);
 		}
 		// oxlint-disable-next-line unicorn/no-array-sort -- sorts a fresh copy
