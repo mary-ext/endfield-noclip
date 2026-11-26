@@ -488,7 +488,7 @@ export class MeshSelector {
 					group.layer = layer;
 					this.#cullGroup(instances, block, g);
 				} else {
-					this.#selectRows(instances, rowFirst, rowEnd, { inside, block });
+					this.#selectRows(instances, rowFirst, rowEnd, inside, block);
 				}
 			}
 		};
@@ -836,7 +836,7 @@ export class MeshSelector {
 			}
 			if (!ready) {
 				if (block.boxes[r] === 1 && !castOnly) {
-					this.#selectRows(instances, runFirst, runEnd, { inside, block });
+					this.#selectRows(instances, runFirst, runEnd, inside, block);
 				}
 				continue;
 			}
@@ -935,48 +935,67 @@ export class MeshSelector {
 			return;
 		}
 		const group = this.#group;
-		const { pixelFactor, viewportHeight } = view;
+		const groupFirst = group.first;
+		const groupEnd = group.end;
+		const groupInside = group.inside;
+		const groupInView = group.inView;
+		const groupLayer = group.layer;
+		const groupCastOnly = !groupInView;
+		const { pixelFactor, viewportHeight, shadowLayers } = view;
+		const metricScale = (2 * pixelFactor) / viewportHeight;
+		const ox = this.#ox;
+		const oy = this.#oy;
+		const oz = this.#oz;
+		const planes = this.#planes;
+		const planeFloats = this.#planeFloats;
+		const casterPlanes = this.#casterPlanes;
+		const casterFloats = this.#casterFloats;
+		const lightCasters = this.#lightCasters;
+		const checkedFrame = this.#checkedFrame;
+		const readyArr = this.#ready;
+		const wantedArr = this.#wanted;
 		const work = this.selection.gpu;
 		const frame = this.#frame;
 		const segments = block.segments;
+		const runCasts = block.runCasts;
+		const gpuRuns = block.gpuRuns;
+		const blockSlots = block.slots;
+		const blockBoxes = block.boxes;
 		const candidates = this.#candidates;
-		const groupCastOnly = !group.inView;
-		for (let s = block.groupSegments[g]; s < block.groupSegments[g + 1]; s++) {
+		const segment = this.#segment;
+		const allocStart = instances.alloc.start;
+		const itemFlags = (groupInside ? ItemFlags.Inside : 0) | (this.#fade << ITEM_FADE_SHIFT);
+		const segEnd = block.groupSegments[g + 1];
+		for (let s = block.groupSegments[g]; s < segEnd; s++) {
 			const at = s * SEGMENT_FLOATS;
-			const first = Math.max(group.first, segments[at + SegmentFloat.first]);
-			const end = Math.min(group.end, segments[at + SegmentFloat.end]);
+			const segFirst = segments[at + SegmentFloat.first];
+			const first = groupFirst > segFirst ? groupFirst : segFirst;
+			const segLast = segments[at + SegmentFloat.end];
+			const end = groupEnd < segLast ? groupEnd : segLast;
 			if (first >= end) {
 				continue;
 			}
 			const run = segments[at + SegmentFloat.run];
-			if (groupCastOnly && block.runCasts[run] === 0) {
+			if (groupCastOnly && runCasts[run] === 0) {
 				continue;
 			}
-			if (block.gpuRuns[run] === 0) {
-				this.#selectRows(instances, first, end, { inside: group.inside, block });
+			if (gpuRuns[run] === 0) {
+				this.#selectRows(instances, first, end, groupInside, block);
 				continue;
 			}
 			// the metric's widest range over the segment's rows: the largest nearest, the smallest farthest
-			const sx = this.#ox + segments[at + SegmentFloat.center];
-			const sy = this.#oy + segments[at + SegmentFloat.center + 1];
-			const sz = this.#oz + segments[at + SegmentFloat.center + 2];
+			const sx = ox + segments[at + SegmentFloat.center];
+			const sy = oy + segments[at + SegmentFloat.center + 1];
+			const sz = oz + segments[at + SegmentFloat.center + 2];
 			const segRadius = segments[at + SegmentFloat.radius];
 			// tighten partially-visible groups per segment so off-frustum segments don't reserve empty main buckets
-			let segInView = group.inView;
-			if (segInView && !group.inside) {
-				segInView = sphereInPlanes(this.#planes, this.#planeFloats, sx, sy, sz, segRadius);
+			let segInView = groupInView;
+			if (segInView && !groupInside) {
+				segInView = sphereInPlanes(planes, planeFloats, sx, sy, sz, segRadius);
 				if (
 					!segInView &&
-					(block.runCasts[run] === 0 ||
-						!inCasterVolume(
-							this.#casterPlanes,
-							this.#casterFloats,
-							this.#lightCasters,
-							sx,
-							sy,
-							sz,
-							segRadius,
-						))
+					(runCasts[run] === 0 ||
+						!inCasterVolume(casterPlanes, casterFloats, lightCasters, sx, sy, sz, segRadius))
 				) {
 					continue;
 				}
@@ -984,21 +1003,21 @@ export class MeshSelector {
 			const castOnly = !segInView;
 			// the segment's own sphere reaches fewer layers than its group's (skip for non-casting runs)
 			const segmentLayer =
-				block.runCasts[run] === 0 || group.layer === SHADOW_LAYERS || view.shadowLayers === null
+				runCasts[run] === 0 || groupLayer === SHADOW_LAYERS || shadowLayers === null
 					? SHADOW_LAYERS
-					: firstShadowLayer(view.shadowLayers, sx, sy, sz, segRadius);
+					: firstShadowLayer(shadowLayers, sx, sy, sz, segRadius);
 			if (castOnly && segmentLayer === SHADOW_LAYERS) {
 				continue;
 			}
 			const centre = Math.sqrt(sx * sx + sy * sy + sz * sz);
 			const centersRadius = segments[at + SegmentFloat.centersRadius];
-			const nearest = Math.max(centre - centersRadius, 0.1);
-			const far = Math.max(centre + centersRadius, 0.1);
+			const nearest = centre - centersRadius > 0.1 ? centre - centersRadius : 0.1;
+			const far = centre + centersRadius > 0.1 ? centre + centersRadius : 0.1;
 			const largest =
 				centersRadius > centre * LOOSE_SEGMENT
 					? this.#largestRelative(instances, first, end)
-					: (2 * segments[at + SegmentFloat.maxSize] * pixelFactor) / (nearest * viewportHeight);
-			const smallest = (2 * segments[at + SegmentFloat.minSize] * pixelFactor) / (far * viewportHeight);
+					: (segments[at + SegmentFloat.maxSize] * metricScale) / nearest;
+			const smallest = (segments[at + SegmentFloat.minSize] * metricScale) / far;
 			const high = largest * largest * BAND_SLACK;
 			if (castOnly && high <= minShadowLayerSquared(segmentLayer)) {
 				continue;
@@ -1006,17 +1025,15 @@ export class MeshSelector {
 			const low = (smallest * smallest) / BAND_SLACK;
 			const scale = castOnly ? CASTER_PRIORITY : 1;
 			const priority = largest * viewportHeight * scale;
-			const slots = block.slots[run];
-			const checkedFrame = this.#checkedFrame;
-			const readyArr = this.#ready;
-			const wantedArr = this.#wanted;
+			const slots = blockSlots[run];
 			// fast path for single-slot chains (~60% of chains): avoids candidate/LOD loops and #needsBox
 			if (slots.length === 1) {
 				const slot = slots[0];
 				if (slot.maxSquared < low || slot.minSquared >= high) {
 					continue;
 				}
-				const slotPriority = Math.min(priority, bandPixels(slot, viewportHeight) * scale);
+				const cap = slot.maxRelative * viewportHeight * scale;
+				const slotPriority = priority < cap ? priority : cap;
 				const geom = slot.geometry;
 				let isReady = true;
 				if (checkedFrame[geom] === frame) {
@@ -1030,30 +1047,29 @@ export class MeshSelector {
 					isReady = false;
 				}
 				if (!isReady) {
-					if (block.boxes[run] === 1 && !castOnly) {
-						this.#selectRows(instances, first, end, { inside: group.inside, block });
+					if (blockBoxes[run] === 1 && !castOnly) {
+						this.#selectRows(instances, first, end, groupInside, block);
 					}
 					continue;
 				}
 				const rows = end - first;
-				const segment = this.#segment;
-				segment.rows = rows;
-				segment.handedness = segments[at + SegmentFloat.handedness];
-				segment.priority = priority;
-				segment.nearest = nearest;
-				segment.layer = segmentLayer;
-				segment.high = high;
-				segment.inView = segInView;
-				addItem(
-					work,
-					instances.alloc.start + first,
-					rows,
-					(group.inside ? ItemFlags.Inside : 0) | (this.#fade << ITEM_FADE_SHIFT),
-				);
-				this.#addSlot(slot, slot);
-				if (work.items[(work.itemCount - 1) * ITEM_WORDS + 3] === 0) {
-					work.itemCount--;
+				const inViewRows = segInView && !slot.shadowOnly ? rows : 0;
+				const layers = casterLayerBits(slot, segmentLayer, high < slot.maxSquared ? high : slot.maxSquared);
+				if (inViewRows === 0 && layers === 0) {
+					continue;
 				}
+				const room = this.#room;
+				room.inView = inViewRows;
+				room.layers = layers;
+				room.rows = rows;
+				room.priority = slotPriority;
+				segment.nearest = nearest;
+				const handedness = segments[at + SegmentFloat.handedness];
+				const buckets = this.#pair;
+				buckets[0] = (handedness & 1) === 0 ? NO_BUCKET : this.#gpuBucket(slot, 0, room);
+				buckets[1] = (handedness & 2) === 0 ? NO_BUCKET : this.#gpuBucket(slot, 1, room);
+				addItem(work, allocStart + first, rows, itemFlags);
+				addSlot(work, slot, slot.gpuFlags, buckets);
 				continue;
 			}
 			let count = 0;
@@ -1064,7 +1080,8 @@ export class MeshSelector {
 					continue;
 				}
 				candidates[count++] = slot;
-				const slotPriority = Math.min(priority, bandPixels(slot, viewportHeight) * scale);
+				const cap = slot.maxRelative * viewportHeight * scale;
+				const slotPriority = priority < cap ? priority : cap;
 				const geom = slot.geometry;
 				if (checkedFrame[geom] === frame) {
 					if (slotPriority > wantedArr[geom]) {
@@ -1082,18 +1099,12 @@ export class MeshSelector {
 			}
 			// rows with no LOD resident draw their box, which only listed rows can
 			const chain = instances.runs[run * 3];
-			if (!ready && block.boxes[run] === 1 && !castOnly && this.#needsBox(chain, slots, count)) {
-				this.#selectRows(instances, first, end, { inside: group.inside, block });
+			if (!ready && blockBoxes[run] === 1 && !castOnly && this.#needsBox(chain, slots, count)) {
+				this.#selectRows(instances, first, end, groupInside, block);
 				continue;
 			}
 			const rows = end - first;
-			addItem(
-				work,
-				instances.alloc.start + first,
-				rows,
-				(group.inside ? ItemFlags.Inside : 0) | (this.#fade << ITEM_FADE_SHIFT),
-			);
-			const segment = this.#segment;
+			addItem(work, allocStart + first, rows, itemFlags);
 			segment.rows = rows;
 			segment.handedness = segments[at + SegmentFloat.handedness];
 			segment.priority = priority;
@@ -1113,7 +1124,7 @@ export class MeshSelector {
 					}
 					let lodReady = true;
 					for (let d = c; d < count; d++) {
-						if (candidates[d].lod === lod && this.#ready[candidates[d].geometry] === 0) {
+						if (candidates[d].lod === lod && readyArr[candidates[d].geometry] === 0) {
 							lodReady = false;
 						}
 					}
@@ -1256,10 +1267,17 @@ export class MeshSelector {
 		if (layers !== 0) {
 			const rows = room.rows;
 			const layerRows = gpu.layerRows;
-			for (let layer = 0; layer < SHADOW_LAYERS; layer++) {
-				if ((layers & (1 << layer)) !== 0) {
-					layerRows[layer] += rows;
-				}
+			if ((layers & 1) !== 0) {
+				layerRows[0] += rows;
+			}
+			if ((layers & 2) !== 0) {
+				layerRows[1] += rows;
+			}
+			if ((layers & 4) !== 0) {
+				layerRows[2] += rows;
+			}
+			if ((layers & 8) !== 0) {
+				layerRows[3] += rows;
 			}
 		}
 		if (room.priority > bucket.pixels) {
@@ -1275,15 +1293,13 @@ export class MeshSelector {
 	/**
 	 * culls, LOD-selects and buckets a block's rows `[first, end)` for this frame's view, the block's origin
 	 * relative to the eye being {@link #ox}, {@link #oy}, {@link #oz}
-	 *
-	 * @param group `inside` when the rows' group is wholly in view, so no row needs the frustum test, and what
-	 *   the block's selection reuses
 	 */
 	#selectRows(
 		instances: ResidentInstances,
 		first: number,
 		end: number,
-		{ inside, block }: { inside: boolean; block: SelectedBlock },
+		inside: boolean,
+		block: SelectedBlock,
 	): void {
 		const view = this.#view;
 		if (view === null) {
