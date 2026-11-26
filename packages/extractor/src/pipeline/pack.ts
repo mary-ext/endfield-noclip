@@ -120,24 +120,41 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 	const spool = join(stage, '.spool');
 	// lazily shared worker pool: starts no workers when everything hits the cache, and serves both zstd block
 	// compression (offloading from libuv's 4-thread pool) and mesh/texture conversion
-	let ownedPool: ConvertPool | null = null;
-	const getPool = async (): Promise<ConvertPool> => {
-		const shared = session === null ? null : await session.sharedPool();
-		if (shared !== null) {
-			return shared;
-		}
-		if (ownedPool === null) {
-			ownedPool = new ConvertPool(options.jobs, {
-				gameData: context.config.gameData,
-				keys: context.keys,
-				blobDir: (cache?.blobs ?? new BlobDir(spool)).root,
-				cacheDb: cache?.dbPath ?? null,
-				manifest: (await context.world.manifest()).bytes,
+	let ownedPoolPromise: Promise<ConvertPool> | null = null;
+	const getPool = (): Promise<ConvertPool> => {
+		if (session !== null) {
+			return session.sharedPool().then((shared) => {
+				if (shared !== null) {
+					return shared;
+				}
+				return (ownedPoolPromise ??= context.world.manifest().then(
+					(manifest) =>
+						new ConvertPool(options.jobs, {
+							gameData: context.config.gameData,
+							keys: context.keys,
+							blobDir: (cache?.blobs ?? new BlobDir(spool)).root,
+							cacheDb: cache?.dbPath ?? null,
+							manifest: manifest.bytes,
+						}),
+				));
 			});
 		}
-		return ownedPool;
+		return (ownedPoolPromise ??= context.world.manifest().then(
+			(manifest) =>
+				new ConvertPool(options.jobs, {
+					gameData: context.config.gameData,
+					keys: context.keys,
+					blobDir: (cache?.blobs ?? new BlobDir(spool)).root,
+					cacheDb: cache?.dbPath ?? null,
+					manifest: manifest.bytes,
+				}),
+		));
 	};
-	const closeOwnedPool = (): Promise<void> => (ownedPool === null ? Promise.resolve() : ownedPool.close());
+	const closeOwnedPool = async (): Promise<void> => {
+		if (ownedPoolPromise !== null) {
+			await (await ownedPoolPromise).close();
+		}
+	};
 	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), {
 		zstdLevel: options.zstdLevel,
 		archiveCap: ARCHIVE_CAP,

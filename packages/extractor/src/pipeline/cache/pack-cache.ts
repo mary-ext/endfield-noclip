@@ -459,17 +459,29 @@ export class PackCache {
 			const deleteMemo = this.#db.prepare('DELETE FROM memos WHERE key = ?');
 			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- matches SELECT columns
 			const memoRows = this.#db
-				.prepare('SELECT key, length(payload) AS bytes FROM memos')
+				.prepare('SELECT key, kind, payload, length(payload) AS bytes FROM memos')
 				.all() as unknown as {
 				key: string;
+				kind: string;
+				payload: Uint8Array;
 				bytes: number;
 			}[];
-			for (const { key, bytes } of memoRows) {
-				if (!liveMemos.has(key)) {
-					deleteMemo.run(key);
-					sweptMemos++;
-					sweptMemoBytes += bytes;
+			for (const { key, kind, payload, bytes } of memoRows) {
+				if (liveMemos.has(key)) {
+					continue;
 				}
+				// worker threads write raw-blob dedup memos (`kind = 'stored'`) directly to SQLite without
+				// reporting keys to the main thread's `#used` set; keep them while their target blob is live
+				if (kind === 'stored') {
+					// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- written as BlobMeta JSON
+					const meta = JSON.parse(decoder.decode(payload)) as BlobMeta;
+					if (liveBlobs.has(meta.hash)) {
+						continue;
+					}
+				}
+				deleteMemo.run(key);
+				sweptMemos++;
+				sweptMemoBytes += bytes;
 			}
 			this.#db.exec('COMMIT');
 		} catch (error) {

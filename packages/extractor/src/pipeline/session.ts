@@ -20,7 +20,7 @@ export class PackSession {
 	readonly context: Context;
 	readonly cache: PackCache | null;
 	readonly #jobs: number;
-	#pool: ConvertPool | null = null;
+	#poolPromise: Promise<ConvertPool> | null = null;
 	#recordedRoots = false;
 
 	private constructor(context: Context, cache: PackCache | null, jobs: number) {
@@ -47,20 +47,21 @@ export class PackSession {
 	 *
 	 * @returns shared conversion pool, or `null` without a cache
 	 */
-	async sharedPool(): Promise<ConvertPool | null> {
+	sharedPool(): Promise<ConvertPool | null> {
 		if (this.cache === null) {
-			return null;
+			return Promise.resolve(null);
 		}
-		if (this.#pool === null) {
-			this.#pool = new ConvertPool(this.#jobs, {
-				gameData: this.context.config.gameData,
-				keys: this.context.keys,
-				blobDir: this.cache.blobs.root,
-				cacheDb: this.cache.dbPath,
-				manifest: (await this.context.world.manifest()).bytes,
-			});
-		}
-		return this.#pool;
+		const cache = this.cache;
+		return (this.#poolPromise ??= this.context.world.manifest().then(
+			(manifest) =>
+				new ConvertPool(this.#jobs, {
+					gameData: this.context.config.gameData,
+					keys: this.context.keys,
+					blobDir: cache.blobs.root,
+					cacheDb: cache.dbPath,
+					manifest: manifest.bytes,
+				}),
+		));
 	}
 
 	/** marks that at least one scene recorded a root in this session, so {@link finish} should sweep */
@@ -77,9 +78,10 @@ export class PackSession {
 	async close(): Promise<CacheReport['swept'] | null> {
 		let swept: CacheReport['swept'] | null = null;
 		try {
-			if (this.#pool !== null) {
-				await this.#pool.close();
-				this.#pool = null;
+			if (this.#poolPromise !== null) {
+				const pool = await this.#poolPromise;
+				this.#poolPromise = null;
+				await pool.close();
 			}
 			if (this.cache !== null && this.#recordedRoots) {
 				swept = await this.cache.sweep();
