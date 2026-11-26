@@ -425,10 +425,13 @@ export const encodeFrame = (
 		});
 		pass.end();
 	}
-	// `HGRP/WetnessDecal` boxes max-blend into `wetnessMask`; skip the clear pass once it is already zeroed
+	// `HGRP/WetnessDecal` boxes max-blend into `wetnessMask`; lazily allocate it and skip clearing while zeroed
 	{
 		const hasWetness = sceneCore !== null && meshes.has('wetnessDecals');
-		if (hasWetness || !targets.wetnessMaskClean) {
+		if (hasWetness) {
+			targets.ensureWetnessMask();
+		}
+		if (hasWetness || (targets.hasWetnessMask && !targets.wetnessMaskClean)) {
 			const pass = beginPass(
 				encoder,
 				{
@@ -487,9 +490,12 @@ export const encodeFrame = (
 		};
 	}
 	if (waterContext !== null) {
+		targets.ensureWaterDepth();
 		draws += water.encodeDepth(encoder, waterContext);
-	} else {
+		targets.waterDepthClean = false;
+	} else if (targets.hasWaterDepth && !targets.waterDepthClean) {
 		water.clearDepth(encoder, scene);
+		targets.waterDepthClean = true;
 	}
 	composer.encodeDeferredAndComposite(encoder, context.frame);
 	/** a pass over the composited scene, testing the main pass's depth */

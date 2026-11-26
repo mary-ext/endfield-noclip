@@ -35,7 +35,7 @@ const RECENTRE = 4;
  * cell buffer size to start with and at most (bytes). the windows around the camera hold tens of MB of cells,
  * and the streaming budget bounds what stays resident besides
  */
-const CELL_BUFFER_INITIAL = 32 * 1024 ** 2;
+const CELL_BUFFER_INITIAL = 8 * 1024 ** 2;
 const CELL_BUFFER_MAX = 192 * 1024 ** 2;
 /** stream priority of cells; coarse levels first, all ahead of scenery */
 const PRIORITY = [1e6, 2e6, 3e6] as const;

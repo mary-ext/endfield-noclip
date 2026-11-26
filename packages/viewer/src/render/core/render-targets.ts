@@ -144,11 +144,15 @@ export class RenderTargets {
 	#colors: GPUTexture[] | null = null;
 	#lit: GPUTexture | null = null;
 	#wetnessMask: GPUTexture | null = null;
+	#emptyWetnessMask: GPUTexture;
+	#emptyWetnessMaskView: GPUTextureView;
 	#gbufferACopy: GPUTexture | null = null;
 	#gbufferACopyView: GPUTextureView | null = null;
 	#gbufferBCopy: GPUTexture | null = null;
 	#gbufferBCopyView: GPUTextureView | null = null;
 	#waterDepth: GPUTexture | null = null;
+	#emptyWaterDepth: GPUTexture;
+	#emptyWaterDepthView: GPUTextureView;
 	#scene: SceneTextures | null = null;
 	/** the passes' attachments, built on first use after each resize */
 	#mainAttachments: PassAttachments | null = null;
@@ -159,7 +163,9 @@ export class RenderTargets {
 	#writableDepth: GPURenderPassDepthStencilAttachment | null = null;
 	#version = 0;
 	/** whether `wetnessMask` currently holds all zeros (freshly allocated or already cleared with no decals) */
-	wetnessMaskClean = false;
+	wetnessMaskClean = true;
+	/** whether `waterDepth` currently holds all zeros (freshly allocated or already cleared with no water) */
+	waterDepthClean = true;
 
 	/**
 	 * @param device the device
@@ -187,6 +193,20 @@ export class RenderTargets {
 		}
 		this.context = context;
 		context.configure({ device, format: colorFormat, alphaMode: 'opaque' });
+		this.#emptyWetnessMask = device.createTexture({
+			label: 'empty wetness mask',
+			size: [1, 1],
+			format: WETNESS_MASK_FORMAT,
+			usage: GPUTextureUsage.TEXTURE_BINDING,
+		});
+		this.#emptyWetnessMaskView = this.#emptyWetnessMask.createView();
+		this.#emptyWaterDepth = device.createTexture({
+			label: 'empty water depth',
+			size: [1, 1],
+			format: WATER_DEPTH_FORMAT,
+			usage: GPUTextureUsage.TEXTURE_BINDING,
+		});
+		this.#emptyWaterDepthView = this.#emptyWaterDepth.createView();
 
 		this.#observer = new ResizeObserver(([entry]) => {
 			const box = entry.contentBoxSize[0];
@@ -283,20 +303,11 @@ export class RenderTargets {
 			format: HDR_FORMAT,
 			usage: usage | GPUTextureUsage.COPY_DST,
 		});
-		this.#wetnessMask = create({
-			label: 'wetness mask',
-			size: [width, height],
-			format: WETNESS_MASK_FORMAT,
-			usage,
-		});
-		this.#waterDepth = create({
-			label: 'water depth',
-			size: [width, height],
-			format: WATER_DEPTH_FORMAT,
-			usage,
-		});
+		this.#wetnessMask = null;
+		this.#waterDepth = null;
 		this.#version++;
-		this.wetnessMaskClean = false;
+		this.wetnessMaskClean = true;
+		this.waterDepthClean = true;
 		this.#mainAttachments = null;
 		this.#transparentDepth = null;
 		this.#writableTransparentDepth = null;
@@ -310,9 +321,9 @@ export class RenderTargets {
 			gbufferC: this.#colors[3].createView(),
 			lit: this.#lit.createView(),
 			litTexture: this.#lit,
-			wetnessMask: this.#wetnessMask.createView(),
+			wetnessMask: this.#emptyWetnessMaskView,
 			depth: this.#depth.createView({ aspect: 'depth-only' }),
-			waterDepth: this.#waterDepth.createView(),
+			waterDepth: this.#emptyWaterDepthView,
 			mipFeedback: this.#colors[4].createView(),
 			velocity: this.#colors[5].createView(),
 			version: this.#version,
@@ -320,15 +331,67 @@ export class RenderTargets {
 		return true;
 	}
 
+	/** @returns whether the full-size wetness mask has been allocated for the current size */
+	get hasWetnessMask(): boolean {
+		return this.#wetnessMask !== null;
+	}
+
+	/** @returns whether the full-size water depth target has been allocated for the current size */
+	get hasWaterDepth(): boolean {
+		return this.#waterDepth !== null;
+	}
+
+	/** lazily allocates the full-size wetness mask when wetness decals are first drawn */
+	ensureWetnessMask(): GPUTextureView {
+		if (this.#scene === null) {
+			throw new Error('render targets used before update()');
+		}
+		if (this.#wetnessMask === null) {
+			this.#wetnessMask = this.#device.createTexture({
+				label: 'wetness mask',
+				size: [this.width, this.height],
+				format: WETNESS_MASK_FORMAT,
+				usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+			});
+			this.#textures.push(this.#wetnessMask);
+			this.#scene.wetnessMask = this.#wetnessMask.createView();
+			this.wetnessMaskClean = false;
+		}
+		return this.#scene.wetnessMask;
+	}
+
+	/** lazily allocates the full-size water depth target when water is first drawn */
+	ensureWaterDepth(): GPUTextureView {
+		if (this.#scene === null) {
+			throw new Error('render targets used before update()');
+		}
+		if (this.#waterDepth === null) {
+			this.#waterDepth = this.#device.createTexture({
+				label: 'water depth',
+				size: [this.width, this.height],
+				format: WATER_DEPTH_FORMAT,
+				usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+			});
+			this.#textures.push(this.#waterDepth);
+			this.#scene.waterDepth = this.#waterDepth.createView();
+			this.#readOnlyWaterDepth = null;
+			this.waterDepthClean = false;
+		}
+		return this.#scene.waterDepth;
+	}
+
 	/** @returns bytes held by the targets (estimate; the swapchain counts as two buffers) */
 	get bytes(): number {
 		// depth with stencil is commonly stored as 8 bytes
 		const depth = this.format.stencil ? 8 : 4;
-		// G-buffer + velocity (28 B) + lit (8 B) + wetnessMask (2 B) + waterDepth (4 B) + optional copies
-		const copies = (this.#depthCopy !== null ? depth : 0) + (this.#gbufferACopy !== null ? 8 : 0);
+		// G-buffer + velocity (28 B) + lit (8 B) + optional wetnessMask (2 B), waterDepth (4 B), copies
+		const optional =
+			(this.#wetnessMask !== null ? 2 : 0) +
+			(this.#waterDepth !== null ? 4 : 0) +
+			(this.#depthCopy !== null ? depth : 0) +
+			(this.#gbufferACopy !== null ? 8 : 0);
 		return (
-			this.width * this.height * (depth + 28 + 8 + 2 + 4 + copies) +
-			this.outputWidth * this.outputHeight * 4 * 2
+			this.width * this.height * (depth + 28 + 8 + optional) + this.outputWidth * this.outputHeight * 4 * 2
 		);
 	}
 
@@ -559,6 +622,8 @@ export class RenderTargets {
 		for (const texture of this.#textures) {
 			texture.destroy();
 		}
+		this.#emptyWetnessMask.destroy();
+		this.#emptyWaterDepth.destroy();
 		this.context.unconfigure();
 	}
 }

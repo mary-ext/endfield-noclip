@@ -40,9 +40,17 @@ export class DeferredLighting {
 	#hasNoise = false;
 	#hasRipple = false;
 	#hasFlow = false;
+	#wetnessDry = false;
 	#sampler: GPUSampler;
 	#repeatSampler: GPUSampler;
-	#sized: { inputs: GPUBindGroup; target: GPUTextureView } | null = null;
+	#sized: {
+		inputs: GPUBindGroup;
+		target: GPUTextureView;
+		scene: SceneTextures;
+		ao: GPUTextureView;
+		reflections: GPUTextureView;
+		wetnessMask: GPUTextureView;
+	} | null = null;
 
 	/**
 	 * @param root the TypeGPU root
@@ -146,12 +154,17 @@ export class DeferredLighting {
 		occlusion: VerticalOcclusionMap,
 		time: number,
 	): void {
-		const data = this.#wetnessData;
-		data.fill(0);
 		if (rain === null || !rain.enableWetness || rain.wetness <= 0) {
-			this.#device.queue.writeBuffer(this.#wetnessUniforms, 0, data);
+			if (!this.#wetnessDry) {
+				this.#wetnessData.fill(0);
+				this.#device.queue.writeBuffer(this.#wetnessUniforms, 0, this.#wetnessData);
+				this.#wetnessDry = true;
+			}
 			return;
 		}
+		this.#wetnessDry = false;
+		const data = this.#wetnessData;
+		data.fill(0);
 		const normalBias = presetting?.rainOcclusionSampleNormalBias ?? 1.8;
 		const depthBias = presetting?.rainOcclusionSampleDepthBias ?? 0;
 		const noiseScale = presetting?.rainOcclusionSampleNoiseScale ?? 0.15;
@@ -195,28 +208,36 @@ export class DeferredLighting {
 		this.#device.queue.writeBuffer(this.#wetnessUniforms, 0, data);
 	}
 
+	#buildInputsGroup(scene: SceneTextures, ao: GPUTextureView, reflections: GPUTextureView): GPUBindGroup {
+		return this.#root.unwrap(
+			this.#root.createBindGroup(deferredInputsLayout, {
+				gbEmission: scene.emission,
+				gbA: scene.gbufferA,
+				gbB: scene.gbufferB,
+				gbC: scene.gbufferC,
+				gbDepth: scene.depth,
+				aoTexture: ao,
+				ssrTexture: reflections,
+				wetnessTexture: scene.wetnessMask,
+				linearSampler: this.#sampler,
+			}),
+		);
+	}
+
 	/**
 	 * rebinds the G-buffer, AO, SSR and wetness mask after a resize.
 	 *
 	 * @param input the main pass's G-buffer, blurred AO and resolved SSR
 	 */
 	resize(input: { scene: SceneTextures; ao: GPUTextureView; reflections: GPUTextureView }): void {
-		const { scene } = input;
+		const { scene, ao, reflections } = input;
 		this.#sized = {
 			target: scene.lit,
-			inputs: this.#root.unwrap(
-				this.#root.createBindGroup(deferredInputsLayout, {
-					gbEmission: scene.emission,
-					gbA: scene.gbufferA,
-					gbB: scene.gbufferB,
-					gbC: scene.gbufferC,
-					gbDepth: scene.depth,
-					aoTexture: input.ao,
-					ssrTexture: input.reflections,
-					wetnessTexture: scene.wetnessMask,
-					linearSampler: this.#sampler,
-				}),
-			),
+			inputs: this.#buildInputsGroup(scene, ao, reflections),
+			scene,
+			ao,
+			reflections,
+			wetnessMask: scene.wetnessMask,
 		};
 	}
 
@@ -234,6 +255,10 @@ export class DeferredLighting {
 		const pipeline = this.#pipelines.get(PIPELINE_KEY);
 		if (pipeline === undefined) {
 			return;
+		}
+		if (sized.wetnessMask !== sized.scene.wetnessMask) {
+			sized.wetnessMask = sized.scene.wetnessMask;
+			sized.inputs = this.#buildInputsGroup(sized.scene, sized.ao, sized.reflections);
 		}
 		const pass = encoder.beginRenderPass({
 			label: 'deferred lighting',
