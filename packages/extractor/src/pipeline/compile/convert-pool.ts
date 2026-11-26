@@ -100,24 +100,41 @@ export const resultMatches = <J extends ConvertJob>(
 	result: ConvertResult,
 ): result is ConvertResultOf<J> => result.kind === job.kind;
 
-export type WorkerRequest = { type: 'job'; id: number; job: ConvertJob } | { type: 'close' };
+export type WorkerRequest =
+	| { type: 'job'; id: number; job: ConvertJob }
+	| { type: 'compress'; id: number; data: Uint8Array; zstdLevel: number }
+	| { type: 'close' };
 
-export type WorkerReply = { id: number; result: ConvertResult } | { id: number; error: string };
+export type WorkerReply =
+	| { id: number; result: ConvertResult }
+	| { id: number; compressed: Uint8Array }
+	| { id: number; error: string };
 
 // #endregion
 
-interface QueuedJob {
-	id: number;
-	job: ConvertJob;
-	/** manifest bundle index the job reads, to prefer a worker that already has it open */
-	affinity: number | undefined;
-	resolve: (result: ConvertResult) => void;
-	reject: (error: Error) => void;
-}
+type QueuedWork =
+	| {
+			type: 'job';
+			id: number;
+			job: ConvertJob;
+			/** manifest bundle index the job reads, to prefer a worker that already has it open */
+			affinity: number | undefined;
+			resolve: (value: ConvertResult) => void;
+			reject: (error: Error) => void;
+	  }
+	| {
+			type: 'compress';
+			id: number;
+			data: Uint8Array;
+			zstdLevel: number;
+			affinity: undefined;
+			resolve: (value: Uint8Array) => void;
+			reject: (error: Error) => void;
+	  };
 
 interface PoolWorker {
 	worker: Worker;
-	pending: Map<number, QueuedJob>;
+	pending: Map<number, QueuedWork>;
 }
 
 /**
@@ -134,7 +151,7 @@ export class ConvertPool {
 	readonly size: number;
 	readonly #data: ConvertWorkerData;
 	readonly #workers: PoolWorker[] = [];
-	readonly #queue = new Queue<QueuedJob>();
+	readonly #queue = new Queue<QueuedWork>();
 	/** last worker assigned a job for each manifest bundle index */
 	readonly #affinity = new Map<number, PoolWorker>();
 	#nextId = 0;
@@ -156,7 +173,29 @@ export class ConvertPool {
 	 */
 	run(job: ConvertJob, affinity?: number): Promise<ConvertResult> {
 		const { promise, resolve, reject } = Promise.withResolvers<ConvertResult>();
-		this.#queue.enqueue({ id: this.#nextId++, job, affinity, resolve, reject });
+		this.#queue.enqueue({ type: 'job', id: this.#nextId++, job, affinity, resolve, reject });
+		this.#dispatch();
+		return promise;
+	}
+
+	/**
+	 * compresses a raw blob with zstd on the worker pool instead of libuv's 4-thread pool
+	 *
+	 * @param data raw bytes to compress
+	 * @param zstdLevel zstd compression level
+	 * @returns compressed zstd frame
+	 */
+	compress(data: Uint8Array, zstdLevel: number): Promise<Uint8Array> {
+		const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+		this.#queue.enqueue({
+			type: 'compress',
+			id: this.#nextId++,
+			data,
+			zstdLevel,
+			affinity: undefined,
+			resolve,
+			reject,
+		});
 		this.#dispatch();
 		return promise;
 	}
@@ -187,8 +226,12 @@ export class ConvertPool {
 				this.#affinity.set(queued.affinity, target);
 			}
 			target.pending.set(queued.id, queued);
+			const message: WorkerRequest =
+				queued.type === 'job'
+					? { type: 'job', id: queued.id, job: queued.job }
+					: { type: 'compress', id: queued.id, data: queued.data, zstdLevel: queued.zstdLevel };
 			// oxlint-disable-next-line unicorn/require-post-message-target-origin -- a node worker, not a window
-			target.worker.postMessage({ type: 'job', id: queued.id, job: queued.job } satisfies WorkerRequest);
+			target.worker.postMessage(message);
 		}
 	}
 
@@ -210,12 +253,16 @@ export class ConvertPool {
 			pending: new Map(),
 		};
 		entry.worker.on('message', (reply: WorkerReply) => {
-			const job = entry.pending.get(reply.id);
+			const work = entry.pending.get(reply.id);
 			entry.pending.delete(reply.id);
-			if ('error' in reply) {
-				job?.reject(new Error(reply.error));
-			} else {
-				job?.resolve(reply.result);
+			if (work !== undefined) {
+				if ('error' in reply) {
+					work.reject(new Error(reply.error));
+				} else if ('compressed' in reply && work.type === 'compress') {
+					work.resolve(reply.compressed);
+				} else if ('result' in reply && work.type === 'job') {
+					work.resolve(reply.result);
+				}
 			}
 			this.#dispatch();
 		});

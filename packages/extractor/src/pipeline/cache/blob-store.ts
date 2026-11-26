@@ -142,6 +142,7 @@ export class BlobStore {
 	readonly #cap: number;
 	readonly #core: string;
 	readonly #memo: StoredMemo | null;
+	readonly #compress: (data: Uint8Array, level: number) => Promise<Uint8Array>;
 	readonly #blobs: StoredBlob[] = [];
 	readonly #byHash = new Map<string, number>();
 	/** dropped whenever a blob is added */
@@ -156,13 +157,20 @@ export class BlobStore {
 	 */
 	constructor(
 		dir: BlobDir,
-		options: { zstdLevel: number; archiveCap: number; core: string; memo: StoredMemo | null },
+		options: {
+			zstdLevel: number;
+			archiveCap: number;
+			core: string;
+			memo: StoredMemo | null;
+			compress?: (data: Uint8Array, level: number) => Promise<Uint8Array>;
+		},
 	) {
 		this.dir = dir;
 		this.#level = options.zstdLevel;
 		this.#cap = options.archiveCap;
 		this.#core = options.core;
 		this.#memo = options.memo;
+		this.#compress = options.compress ?? zstd;
 	}
 
 	/** number of distinct blobs */
@@ -216,7 +224,7 @@ export class BlobStore {
 		if (remembered !== undefined) {
 			return { meta: remembered, options: placement };
 		}
-		const { meta, stored } = storedBlob(raw, await zstd(raw, level));
+		const { meta, stored } = storedBlob(raw, await this.#compress(raw, level));
 		await this.dir.write(meta.hash, stored);
 		if (key !== undefined) {
 			await this.#memo?.rememberStored(key, meta);

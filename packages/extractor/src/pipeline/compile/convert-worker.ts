@@ -11,6 +11,7 @@ import { AssetResolver, recordBundleReads } from '../../game/assets/assets.ts';
 import { sharedBundleManifest } from '../../install/bundles.ts';
 import { Vfs } from '../../install/vfs.ts';
 import { errorText } from '../../util/errors.ts';
+import { zstdSync } from '../../util/zstd.ts';
 import { BlobDir } from '../cache/blob-file.ts';
 import { openStoredBlobLookup } from '../cache/pack-cache.ts';
 
@@ -72,6 +73,15 @@ port.on('message', (request: WorkerRequest) => {
 	if (request.type === 'close') {
 		memos?.close();
 		void vfs.close().finally(() => port.close());
+		return;
+	}
+	if (request.type === 'compress') {
+		try {
+			const compressed = zstdSync(request.data, request.zstdLevel);
+			port.postMessage({ id: request.id, compressed } satisfies WorkerReply);
+		} catch (error) {
+			port.postMessage({ id: request.id, error: errorText(error) } satisfies WorkerReply);
+		}
 		return;
 	}
 	convert(request.job).then(

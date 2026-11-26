@@ -118,11 +118,34 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 	cache?.beginScene();
 	// scratch space for the debug log, and for blobs when there's no cache to hold them
 	const spool = join(stage, '.spool');
+	// lazily shared worker pool: starts no workers when everything hits the cache, and serves both zstd block
+	// compression (offloading from libuv's 4-thread pool) and mesh/texture conversion
+	let ownedPool: ConvertPool | null = null;
+	const getPool = async (): Promise<ConvertPool> => {
+		const shared = session === null ? null : await session.sharedPool();
+		if (shared !== null) {
+			return shared;
+		}
+		if (ownedPool === null) {
+			ownedPool = new ConvertPool(options.jobs, {
+				gameData: context.config.gameData,
+				keys: context.keys,
+				blobDir: (cache?.blobs ?? new BlobDir(spool)).root,
+				cacheDb: cache?.dbPath ?? null,
+				manifest: (await context.world.manifest()).bytes,
+			});
+		}
+		return ownedPool;
+	};
+	const closeOwnedPool = (): Promise<void> => (ownedPool === null ? Promise.resolve() : ownedPool.close());
 	const store = new BlobStore(cache?.blobs ?? new BlobDir(spool), {
 		zstdLevel: options.zstdLevel,
 		archiveCap: ARCHIVE_CAP,
 		core: CORE_ARCHIVE,
 		memo: cache,
+		...(options.convertAssets && options.jobs > 0
+			? { compress: async (raw, level) => (await getPool()).compress(raw, level) }
+			: {}),
 	});
 	try {
 		// #region setup
@@ -340,40 +363,25 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 				content.geometries.assets.length,
 				content.materials.assets.length,
 			);
-			const sharedPool = session === null ? null : await session.sharedPool();
-			const pool =
-				sharedPool ??
-				new ConvertPool(options.jobs, {
-					gameData: context.config.gameData,
-					keys: context.keys,
-					blobDir: store.dir.root,
-					cacheDb: cache?.dbPath ?? null,
-					manifest: (await context.world.manifest()).bytes,
-				});
-			try {
-				conversion = await convertAssets({
-					resolver: await context.resolver(),
-					store,
-					pool,
-					cache,
-					geometries: content.geometries.assets,
-					materials: content.materials.assets,
-					materialOverrides: content.materialOverrides,
-					chains: content.chains.chains,
-					places,
-					extraTextures,
-					archives: layout.assets,
-					geometryZstdLevel: options.zstdLevel,
-					textureZstdLevel: options.textureZstdLevel,
-					maxTextureSize: options.maxTextureSize ?? null,
-					materialConcurrency: MATERIAL_CONCURRENCY,
-					log: options.log,
-				});
-			} finally {
-				if (sharedPool === null) {
-					await pool.close();
-				}
-			}
+			const pool = await getPool();
+			conversion = await convertAssets({
+				resolver: await context.resolver(),
+				store,
+				pool,
+				cache,
+				geometries: content.geometries.assets,
+				materials: content.materials.assets,
+				materialOverrides: content.materialOverrides,
+				chains: content.chains.chains,
+				places,
+				extraTextures,
+				archives: layout.assets,
+				geometryZstdLevel: options.zstdLevel,
+				textureZstdLevel: options.textureZstdLevel,
+				maxTextureSize: options.maxTextureSize ?? null,
+				materialConcurrency: MATERIAL_CONCURRENCY,
+				log: options.log,
+			});
 			assetTables = conversion;
 			timer.adopt(conversion.stats.timings);
 		} else {
@@ -620,6 +628,7 @@ export const packScene = async (context: Context, options: PackOptions): Promise
 			peakRss: process.resourceUsage().maxRSS * 1024,
 		};
 	} finally {
+		await closeOwnedPool();
 		// gone after a successful swap; a failed pack leaves the previous package untouched
 		await rm(stage, { recursive: true, force: true });
 		if (session === null) {
