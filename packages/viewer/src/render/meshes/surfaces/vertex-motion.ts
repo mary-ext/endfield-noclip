@@ -44,7 +44,7 @@ const clothBonePos = tgpu.fn(
 	);
 });
 
-export const clothSkin = tgpu.fn(
+const clothSkin = tgpu.fn(
 	[d.vec3f, d.vec4f, InstanceRow],
 	d.vec3f,
 )((p, color, row) => {
@@ -77,7 +77,7 @@ const prevClothBonePos = tgpu.fn(
 	);
 });
 
-export const clothSkinPrev = tgpu.fn(
+const clothSkinPrev = tgpu.fn(
 	[d.vec3f, d.vec4f, InstanceRow],
 	d.vec3f,
 )((p, color, row) => {
@@ -192,7 +192,7 @@ const mushroomSwayAt = tgpu.fn(
 	);
 });
 
-export const vertexSway = tgpu.fn(
+const vertexSway = tgpu.fn(
 	[d.u32, LookSchema, d.vec3f, d.f32, d.vec3f, d.vec3f, d.f32, d.f32],
 	d.vec3f,
 )((flags, look, p, weight, rel, origin, time, windClock) => {

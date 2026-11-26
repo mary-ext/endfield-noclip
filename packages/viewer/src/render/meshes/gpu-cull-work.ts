@@ -10,8 +10,6 @@
 
 import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../../scene/shadow-volumes.ts';
 
-import type { MeshBucket } from './mesh-buckets.ts';
-
 /**
  * u32 per item: the first row (global), the row count (bits 0–7) and {@link ItemFlags} (above), and where its
  * slots start (in slots, from the slot region) and how many it has
@@ -105,8 +103,13 @@ export interface GpuRows {
 	layerRows: number[];
 }
 
+/** minimal bucket shape required by GPU culling work */
+export interface GpuCullBucket {
+	gpu: GpuRows | null;
+}
+
 /** a frame's GPU culling work, reused across frames */
-export interface GpuCullWork {
+export interface GpuCullWork<B extends GpuCullBucket = GpuCullBucket> {
 	items: Uint32Array<ArrayBuffer>;
 	itemCount: number;
 	slots: Uint32Array<ArrayBuffer>;
@@ -114,14 +117,14 @@ export interface GpuCullWork {
 	slotFloats: Float32Array<ArrayBuffer>;
 	slotCount: number;
 	/** the buckets by {@link GpuRows.index} */
-	buckets: MeshBucket[];
+	buckets: B[];
 	/** the view, {@link VIEW_FLOATS} floats; the counts and offsets are left for the culler */
 	view: Float32Array<ArrayBuffer>;
 	viewWords: Uint32Array<ArrayBuffer>;
 }
 
 /** @returns empty work */
-export const gpuCullWork = (): GpuCullWork => {
+export const gpuCullWork = <B extends GpuCullBucket = GpuCullBucket>(): GpuCullWork<B> => {
 	const slots = new Uint32Array(1024 * SLOT_WORDS);
 	const view = new Float32Array(VIEW_FLOATS);
 	return {

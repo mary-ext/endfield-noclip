@@ -33,7 +33,7 @@ export type ItemState =
  * reads of a blob that may fail before the blob fails for good: a dev server under load now and then answers
  * a range request with no bytes
  */
-export const MAX_READ_FAILURES = 3;
+const MAX_READ_FAILURES = 3;
 
 /** a blob the viewer has asked for at some point */
 export interface ContentItem {

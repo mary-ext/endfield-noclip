@@ -133,8 +133,8 @@ export const LAYER_BLEND = 2147483648;
 
 export const LAYER_SOURCE_TOP = 0;
 
-export const DITHER_RED_ALPHA = 1;
-export const DITHER_VERTEX_COLOR = 2;
+const DITHER_RED_ALPHA = 1;
+const DITHER_VERTEX_COLOR = 2;
 export const DITHER_MASK = 4;
 export const DITHER_MASK_RED = 8;
 export const DITHER_SURFACE = 16;

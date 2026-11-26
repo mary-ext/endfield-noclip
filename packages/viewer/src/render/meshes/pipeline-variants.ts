@@ -9,10 +9,8 @@ import { product } from '@mary-ext/array-fns';
 
 import type { LookStencil } from '../../looks/look.ts';
 
-import type { MeshBucket } from './mesh-buckets.ts';
-
 /** the face culling a draw's pipeline uses; each phase has a pipeline per value */
-export const FACE_CULLS = ['none', 'back', 'front'] as const satisfies readonly GPUCullMode[];
+const FACE_CULLS = ['none', 'back', 'front'] as const satisfies readonly GPUCullMode[];
 export type FaceCull = (typeof FACE_CULLS)[number];
 
 /**
@@ -48,7 +46,7 @@ export const VARIANTS: readonly { cull: FaceCull; positionFormat: PositionFormat
 	);
 
 /** @returns index of `cull` in {@link FACE_CULLS} */
-export const faceCullIndex = (cull: FaceCull): number => {
+const faceCullIndex = (cull: FaceCull): number => {
 	switch (cull) {
 		case 'none': {
 			return 0;
@@ -73,37 +71,6 @@ export const uvFormatIndex = (uvFormat: UvFormat): number => (uvFormat === 'unor
 export const variantOf = (cull: FaceCull, positionFormat: PositionFormat, uvFormat: UvFormat): number =>
 	(faceCullIndex(cull) * POSITION_FORMATS.length + positionFormatIndex(positionFormat)) * UV_FORMATS.length +
 	uvFormatIndex(uvFormat);
-
-/** @returns the cache keys of a phase's pipelines, by {@link variantOf} */
-export const variantKeys = (phase: string): string[] =>
-	VARIANTS.map(({ cull, positionFormat, uvFormat }) => pipelineKey(phase, cull, positionFormat, uvFormat));
-
-/** @returns the faces a bucket's draws cull: the material's, swapped for mirrored instances */
-export const faceCullOf = (bucket: MeshBucket): FaceCull => {
-	switch (bucket.look.cull) {
-		case 'none': {
-			return 'none';
-		}
-		case 'back': {
-			return bucket.mirrored ? 'front' : 'back';
-		}
-		case 'front': {
-			return bucket.mirrored ? 'back' : 'front';
-		}
-	}
-};
-
-/** @returns the position format of a bucket's geometry */
-export const positionFormatOf = (bucket: MeshBucket): PositionFormat => {
-	const resident = bucket.geometry.resident;
-	return resident?.kind === 'geometry' ? resident.positionFormat : 'unorm16x4';
-};
-
-/** @returns the UV format of a bucket's geometry */
-export const uvFormatOf = (bucket: MeshBucket): UvFormat => {
-	const resident = bucket.geometry.resident;
-	return resident?.kind === 'geometry' ? resident.uvFormat : 'float32x2';
-};
 
 /** @returns the cache key of a phase's pipeline variant for a stencil state */
 export const stencilPipelineKey = (base: string, stencil: LookStencil): string =>

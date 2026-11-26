@@ -1,7 +1,7 @@
 import { KEEP, PREMULTIPLIED_OVER } from '../../gfx/blend.ts';
 
 /** the main pass target the meshes report into (`Shaded.mip_feedback` in frame-core.ts) */
-export const MIP_FEEDBACK_FORMAT: GPUTextureFormat = 'r32uint';
+const MIP_FEEDBACK_FORMAT: GPUTextureFormat = 'r32uint';
 
 /**
  * reversed-Z depth: 1 at the near plane, 0 at infinity; cleared to 0 and tested with `greater`. with a
@@ -49,7 +49,7 @@ export const GBUFFER_C_FORMAT: GPUTextureFormat = 'rgba8unorm-srgb';
 export const WETNESS_MASK_FORMAT: GPUTextureFormat = 'rg8unorm';
 
 /** dynamic object screen-space velocity delta (`dyn_prev_uv - static_prev_uv`, 0 on static pixels) */
-export const VELOCITY_FORMAT: GPUTextureFormat = 'rg16float';
+const VELOCITY_FORMAT: GPUTextureFormat = 'rg16float';
 
 /**
  * the main pass's G-buffer targets, in `@location` order: HDR emission (`rgba16float`), G-buffer A/B/C, mip
