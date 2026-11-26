@@ -321,10 +321,12 @@ export class MeshSelector {
 	/** the slots a segment's rows can reach, from {@link #cullGroup} */
 	readonly #candidates: ChainSlot[] = [];
 	/**
-	 * the segment {@link #addSlot} adds to: its rows, handedness bits, priority, nearest row centre and the
-	 * first shadow layer its bounds reach
+	 * the segment {@link #addSlot} adds to: its rows, handedness bits, priority, nearest row centre, whether the
+	 * segment touches the view frustum, and the first shadow layer its bounds reach
 	 */
-	readonly #segment = { rows: 0, handedness: 0, priority: 0, nearest: 0, layer: 0, high: 0 };
+	readonly #segment = { rows: 0, handedness: 0, priority: 0, nearest: 0, layer: 0, high: 0, inView: true };
+	/** per-look non-null texture slot indices, cached on first use to skip empty slots in the per-bucket loop */
+	readonly #textureSlots = new WeakMap<MaterialLook, Uint8Array>();
 	/** a slot entry's buckets, reused */
 	readonly #pair: [unmirrored: number, mirrored: number] = [0, 0];
 	/** the geometries asked about this frame, wanted at their highest priority once the selection is done */
@@ -433,6 +435,7 @@ export class MeshSelector {
 		): void => {
 			const groups = block.groups;
 			const anyCasts = block.anyRunCasts;
+			const pixelOverMin = pixelFactor / minPixels;
 			for (let g = Math.floor(spanFirst / GROUP_ROWS); g * GROUP_ROWS < spanEnd; g++) {
 				// each of #selectRows' rejections, tested on the group's bounds: a group that fails one holds no row
 				// that passes it
@@ -440,10 +443,12 @@ export class MeshSelector {
 				const gx = ox + groups[at + GroupFloat.center];
 				const gy = oy + groups[at + GroupFloat.center + 1];
 				const gz = oz + groups[at + GroupFloat.center + 2];
-				const centre = Math.sqrt(gx * gx + gy * gy + gz * gz);
-				const nearest = Math.max(centre - groups[at + GroupFloat.centersRadius], 0.1);
-				const rowPixels = (groups[at + GroupFloat.rowRadius] * pixelFactor) / nearest;
-				if (rowPixels < minPixels || nearest > groups[at + GroupFloat.reach] * reachScale) {
+				const centersRadius = groups[at + GroupFloat.centersRadius];
+				const rowRadius = groups[at + GroupFloat.rowRadius];
+				const maxNearest = Math.min(rowRadius * pixelOverMin, groups[at + GroupFloat.reach] * reachScale);
+				const maxCentre = maxNearest + centersRadius;
+				const centre2 = gx * gx + gy * gy + gz * gz;
+				if (maxNearest < 0.1 || centre2 > maxCentre * maxCentre) {
 					continue;
 				}
 				const radius = groups[at + GroupFloat.radius];
@@ -462,8 +467,9 @@ export class MeshSelector {
 					if (layer === SHADOW_LAYERS) {
 						continue;
 					}
+					const nearest = Math.max(Math.sqrt(centre2) - centersRadius, 0.1);
 					// upper bound on any row's squared relative size: 2 · rowRadius · pixelFactor / (nearest · height)
-					const maxRelative = (2 * rowPixels) / viewportHeight;
+					const maxRelative = (2 * rowRadius * pixelFactor) / (nearest * viewportHeight);
 					if (radius !== Infinity && maxRelative * maxRelative <= minShadowLayerSquared(layer)) {
 						continue;
 					}
@@ -564,7 +570,19 @@ export class MeshSelector {
 			}
 			// the main pass reports how finely it samples the materials it shades
 			const mips = sampledInMainPass(look) ? view.mips : null;
-			for (let i = 0; i < look.textures.length; i++) {
+			let activeSlots = this.#textureSlots.get(look);
+			if (activeSlots === undefined) {
+				const indices: number[] = [];
+				for (let i = 0; i < look.textures.length; i++) {
+					if (look.textures[i] !== null) {
+						indices.push(i);
+					}
+				}
+				activeSlots = Uint8Array.from(indices);
+				this.#textureSlots.set(look, activeSlots);
+			}
+			for (let k = 0; k < activeSlots.length; k++) {
+				const i = activeSlots[k];
 				const texture = look.textures[i];
 				if (texture === null) {
 					continue;
@@ -858,6 +876,7 @@ export class MeshSelector {
 			segment.nearest = nearest;
 			segment.layer = blockLayer;
 			segment.high = high;
+			segment.inView = inView;
 
 			// emit the first chunk via addItem + #addSlot (reserving bucket room for all `totalRows`), then
 			// share its slot slice across all remaining 64-row chunks
@@ -921,7 +940,7 @@ export class MeshSelector {
 		const frame = this.#frame;
 		const segments = block.segments;
 		const candidates = this.#candidates;
-		const castOnly = !group.inView;
+		const groupCastOnly = !group.inView;
 		for (let s = block.groupSegments[g]; s < block.groupSegments[g + 1]; s++) {
 			const at = s * SEGMENT_FLOATS;
 			const first = Math.max(group.first, segments[at + SegmentFloat.first]);
@@ -930,7 +949,7 @@ export class MeshSelector {
 				continue;
 			}
 			const run = segments[at + SegmentFloat.run];
-			if (castOnly && block.runCasts[run] === 0) {
+			if (groupCastOnly && block.runCasts[run] === 0) {
 				continue;
 			}
 			if (block.gpuRuns[run] === 0) {
@@ -941,11 +960,33 @@ export class MeshSelector {
 			const sx = this.#ox + segments[at + SegmentFloat.center];
 			const sy = this.#oy + segments[at + SegmentFloat.center + 1];
 			const sz = this.#oz + segments[at + SegmentFloat.center + 2];
+			const segRadius = segments[at + SegmentFloat.radius];
+			// tighten partially-visible groups per segment so off-frustum segments don't reserve empty main buckets
+			let segInView = group.inView;
+			if (segInView && !group.inside) {
+				segInView = sphereInPlanes(this.#planes, this.#planeFloats, sx, sy, sz, segRadius);
+				if (
+					!segInView &&
+					(block.runCasts[run] === 0 ||
+						!inCasterVolume(
+							this.#casterPlanes,
+							this.#casterFloats,
+							this.#lightCasters,
+							sx,
+							sy,
+							sz,
+							segRadius,
+						))
+				) {
+					continue;
+				}
+			}
+			const castOnly = !segInView;
 			// the segment's own sphere reaches fewer layers than its group's (skip for non-casting runs)
 			const segmentLayer =
 				block.runCasts[run] === 0 || group.layer === SHADOW_LAYERS || view.shadowLayers === null
 					? SHADOW_LAYERS
-					: firstShadowLayer(view.shadowLayers, sx, sy, sz, segments[at + SegmentFloat.radius]);
+					: firstShadowLayer(view.shadowLayers, sx, sy, sz, segRadius);
 			if (castOnly && segmentLayer === SHADOW_LAYERS) {
 				continue;
 			}
@@ -1002,6 +1043,7 @@ export class MeshSelector {
 				segment.nearest = nearest;
 				segment.layer = segmentLayer;
 				segment.high = high;
+				segment.inView = segInView;
 				addItem(
 					work,
 					instances.alloc.start + first,
@@ -1058,6 +1100,7 @@ export class MeshSelector {
 			segment.nearest = nearest;
 			segment.layer = segmentLayer;
 			segment.high = high;
+			segment.inView = segInView;
 			if (ready) {
 				for (let c = 0; c < count; c++) {
 					this.#addSlot(candidates[c], candidates[c]);
@@ -1156,16 +1199,15 @@ export class MeshSelector {
 	 * @param target the slot that draws them: `band` itself, or its stand-in
 	 */
 	#addSlot(band: ChainSlot, target: ChainSlot): void {
-		const { rows, handedness, priority } = this.#segment;
-		const group = this.#group;
+		const { rows, handedness, priority, inView } = this.#segment;
 		const room = this.#room;
-		room.inView = group.inView && !target.shadowOnly ? rows : 0;
+		room.inView = inView && !target.shadowOnly ? rows : 0;
 		room.layers = casterLayerBits(target, this.#segment.layer, Math.min(this.#segment.high, band.maxSquared));
 		room.rows = rows;
 		// rows drawn in a coarse LOD's band are small on screen, whatever the segment's largest row is
 		const view = this.#view;
 		const cap =
-			view === null ? Infinity : bandPixels(band, view.viewportHeight) * (group.inView ? 1 : CASTER_PRIORITY);
+			view === null ? Infinity : bandPixels(band, view.viewportHeight) * (inView ? 1 : CASTER_PRIORITY);
 		room.priority = Math.min(priority, cap);
 		if (room.inView === 0 && room.layers === 0) {
 			return;
