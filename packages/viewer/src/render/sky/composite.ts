@@ -4,12 +4,12 @@ import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { placeholder } from '../../gfx/placeholders.ts';
 import { LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
-import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
-import { skyReadLayout } from '../sky/atmosphere-shader.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { HDR_FORMAT, type SceneTextures } from '../core/render-targets.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
 
+import { skyReadLayout } from './atmosphere-shader.ts';
 import { compositeFlowNoiseLayout, compositeSceneLayout, fsComposite } from './composite-shader.ts';
-import { postUniformLayout } from './post-schema.ts';
 
 /**
  * the composite (composite-shader.ts): resolves the main pass into the scene at the render size, with the

@@ -15,8 +15,8 @@ import {
 	frameLayout,
 	packGbuffer,
 	packMipFeedback,
-} from '../../frame/frame-core.ts';
-import { normalZ, unpackNormalXy } from '../../shaders/common/normal-map.ts';
+} from '../../core/frame-core.ts';
+import { normalZ, unpackNormalXy } from '../../core/shader-math.ts';
 
 import {
 	BASE_MAP,

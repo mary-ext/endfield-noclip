@@ -7,7 +7,7 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { frameLayout } from '../../frame/frame-core.ts';
+import { frameLayout } from '../../core/frame-core.ts';
 import {
 	SHADING_LIT,
 	gbufferBFlags,
@@ -16,8 +16,8 @@ import {
 	gbufferBValid,
 	gbufferShadingModel,
 	packGbufferB,
-} from '../../shaders/common/gbuffer.ts';
-import { normalZ, unpackNormalXy } from '../../shaders/common/normal-map.ts';
+} from '../../core/gbuffer.ts';
+import { normalZ, unpackNormalXy } from '../../core/shader-math.ts';
 
 import {
 	EffectFragmentIn,

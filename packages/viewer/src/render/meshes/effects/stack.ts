@@ -8,8 +8,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { frameLayout, hermite, packGbufferUnlit } from '../../frame/frame-core.ts';
-import { ambientIrradiance, sunVisibilityFarCloudless } from '../../frame/frame-lighting.ts';
+import { frameLayout, hermite, packGbufferUnlit } from '../../core/frame-core.ts';
+import { ambientIrradiance, sunVisibilityFarCloudless } from '../../lighting/frame-lighting.ts';
 
 import {
 	EffectAccumulatedOut,

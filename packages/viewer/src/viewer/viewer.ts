@@ -4,14 +4,15 @@ import type { WaterSurfaceEntry } from '@endfield-noclip/package-format/water';
 
 import { KeyedEventEmitter } from '@mary-ext/simple-event-emitter';
 
-import { compareStrings } from '../compare.ts';
 import { ROW_BYTES, ROW_WORDS } from '../content/instance-rows.ts';
 import { type AppliedVolume, sameApplied } from '../environment/blend.ts';
 import { windClockRate } from '../environment/environment.ts';
 import { type GfxDevice, createGfxDevice } from '../gfx/device.ts';
+import { compareStrings } from '../math/compare.ts';
 import { DecodePool } from '../package/decode-pool.ts';
 import type { PackageSource } from '../package/package-source.ts';
 import { openViewerPackage } from '../package/viewer-package.ts';
+import type { ResidentInstances } from '../render/core/resident.ts';
 import { frameSettings } from '../render/frame/frame-graph.ts';
 import { SETTLE_FRAMES } from '../render/post/temporal-aa.ts';
 import { revealRadii } from '../scene-states/fire-seed.ts';
@@ -21,7 +22,6 @@ import { WaterLevels, type WaterVolumeState } from '../scene-states/water-levels
 import { Camera } from '../scene/camera.ts';
 import { cellIdAt, levelCellIds, levelPose, levelsByCell, overviewPose } from '../scene/level-pose.ts';
 import { type CameraPose, NoclipControls } from '../scene/noclip-controls.ts';
-import type { ResidentInstances } from '../streaming/resident.ts';
 
 import { EnvironmentState } from './environment-state.ts';
 import { DEFAULT_OPTIONS, type ViewerOptions, postSettings } from './options.ts';

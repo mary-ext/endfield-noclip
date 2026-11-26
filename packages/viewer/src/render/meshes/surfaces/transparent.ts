@@ -8,8 +8,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { fadeOpacity, frameLayout } from '../../frame/frame-core.ts';
-import { shadeSurfaceForward } from '../../frame/frame-lighting.ts';
+import { fadeOpacity, frameLayout } from '../../core/frame-core.ts';
+import { shadeSurfaceForward } from '../../lighting/frame-lighting.ts';
 import { fogPremultiplied } from '../../sky/fog-shader.ts';
 
 import {

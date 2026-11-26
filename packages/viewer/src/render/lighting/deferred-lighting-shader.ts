@@ -8,8 +8,11 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { fresnelSchlick, ggxDistribution } from '../frame/brdf.ts';
-import { Surface, frameLayout, unpackGbuffer } from '../frame/frame-core.ts';
+import { Surface, frameLayout, unpackGbuffer } from '../core/frame-core.ts';
+import { SHADING_UNLIT } from '../core/gbuffer.ts';
+import { postUniformLayout, viewDepth, viewRay } from '../core/post-schema.ts';
+import { fresnelSchlick, ggxDistribution, LUMINANCE_ROUNDED } from '../core/shader-math.ts';
+
 import {
 	ambientIrradiance,
 	environmentBrdf,
@@ -19,10 +22,7 @@ import {
 	smithVisibility,
 	subsurfaceSun,
 	sunVisibility,
-} from '../frame/frame-lighting.ts';
-import { postUniformLayout, viewDepth, viewRay } from '../post/post-schema.ts';
-import { SHADING_UNLIT } from '../shaders/common/gbuffer.ts';
-import { LUMINANCE_ROUNDED } from '../shaders/common/luminance.ts';
+} from './frame-lighting.ts';
 
 /** group 2 bind group layout for deferred lighting: G-buffer, depth, AO, SSR, wetness mask, and linear sampler */
 export const deferredInputsLayout = tgpu

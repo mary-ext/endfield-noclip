@@ -14,7 +14,7 @@ import type {
 } from '@endfield-noclip/package-format/water';
 
 import { ROW_WORDS } from '../content/instance-rows.ts';
-import type { ResidentInstances } from '../streaming/resident.ts';
+import type { ResidentInstances } from '../render/core/resident.ts';
 
 /** a floating row of a resident block */
 interface FloatingRow {

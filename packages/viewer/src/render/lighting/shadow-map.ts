@@ -2,13 +2,12 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
 import { cross, dot, normalize } from '../../math/vec3.ts';
-import { type Camera, type Plane, sweepPlanes } from '../../scene/camera.ts';
-import type { CasterVolume } from '../../streaming/selection.ts';
+import type { Camera } from '../../scene/camera.ts';
+import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../../scene/shadow-volumes.ts';
+import { SHADOW_FORMAT } from '../core/render-targets.ts';
 
 /** shadow map edge, texels */
 const SHADOW_SIZE = 2048;
-/** depth format of the local-light shadow atlas (and of the sun shadow map without `depth-clip-control`) */
-export const SHADOW_FORMAT: GPUTextureFormat = 'depth32float';
 /**
  * 16-bit depth format used by the sun shadow map when `depth-clip-control` clamps far casters to the near
  * plane
@@ -16,18 +15,6 @@ export const SHADOW_FORMAT: GPUTextureFormat = 'depth32float';
 const SUN_SHADOW_FORMAT_16: GPUTextureFormat = 'depth16unorm';
 /** extra depth margin towards the sun when `unclippedDepth` clamps casters past the near plane, m */
 const CLAMPED_CASTER_MARGIN = 64;
-/** depth layers: the sharp cascades, then the far layer */
-export const SHADOW_LAYERS = 4;
-/**
- * minimum camera-view squared relative screen size a caster must exceed to draw into each shadow layer,
- * matching PC high (`CSMScreenSizeMin0..2` = 0.005, 0.01, 0.02; `ASMScreenSizeMin` = 0.01)
- */
-export const SHADOW_LAYER_MIN_SQUARED: readonly number[] = [
-	0.005 * 0.005,
-	0.01 * 0.01,
-	0.02 * 0.02,
-	0.01 * 0.01,
-];
 /** far distance of each layer, m; the first three are the game's cascades (ratios 0.15 and 0.375 of 80 m) */
 const SPLITS = [12, 30, 80, 800];
 /** the sharp cascades fade into the far layer between these distances, m */
@@ -49,25 +36,6 @@ const FAR_SNAP = 32;
 const FAR_RADIUS = SPLITS[SHADOW_LAYERS - 1] + FAR_SNAP;
 /** how far towards the sun casters are kept beyond the layer's sphere, m */
 const CASTER_REACH = 1500;
-
-/**
- * @param planes the view's camera-relative frustum planes
- * @param towardsSun unit vector towards the sun
- * @param layers the fitted shadow layers' volumes
- * @param lights world-space spheres (x, y, z, radius) around what casts into local lights' shadow maps
- * @returns the volumes instances outside the view can cast shadows from: into the view along the sun, or into
- *   a local light's map
- */
-export const offscreenCasters = (
-	planes: readonly Plane[],
-	towardsSun: Vec3,
-	layers: ShadowLayerVolumes,
-	lights: Float64Array,
-): CasterVolume => ({
-	planes: sweepPlanes(planes, [-towardsSun[0], -towardsSun[1], -towardsSun[2]], layers.reach),
-	layers,
-	lights,
-});
 
 /** depth state of a shadow pass's pipelines: standard depth, casters biased along their slope against acne */
 export const shadowDepthState = (format: GPUTextureFormat): GPUDepthStencilState => ({
@@ -91,21 +59,6 @@ interface ShadowLayer {
 	sphere: [number, number, number, number];
 	/** the centre along the light's axes in world space and the radius: equal fits hold the same depth */
 	fit: Float64Array;
-}
-
-/**
- * the layers' volumes in the light's frame, for culling casters per layer: unit axes x, y (across the light)
- * and z (along it), and per layer the camera-relative centre's coordinates along them and the radius. a
- * caster reaches a layer while it's within the radius across the light, and between the layer's far side and
- * {@link CASTER_REACH} beyond its near side along it
- */
-export interface ShadowLayerVolumes {
-	/** x, y and z, three floats each */
-	axes: Float64Array;
-	/** per layer: the centre along x, y and z, and the radius */
-	layers: Float64Array;
-	/** how far towards the sun casters are kept beyond a layer's radius, m */
-	reach: number;
 }
 
 /** owns the shadow map and fits its layers */

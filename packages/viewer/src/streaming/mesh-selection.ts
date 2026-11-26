@@ -3,19 +3,20 @@ import type { Chain } from '@endfield-noclip/package-format/instances';
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { CULL_FLOATS, ROW_WORDS } from '../content/instance-rows.ts';
+import {
+	GROUP_FLOATS,
+	GROUP_ROWS,
+	GroupFloat,
+	SEGMENT_FLOATS,
+	SegmentFloat,
+	chainReach,
+	setGroupReaches,
+} from '../content/row-groups.ts';
 import { alphaTextureOf, LookFlags, type MaterialLook, UV1_SHIFT } from '../looks/look.ts';
 import type { LazyMaterialLooks } from '../looks/material-looks.ts';
 import type { ParticleField } from '../particles/particle-rows.ts';
 import type { ParticleView } from '../particles/row-writer.ts';
-import {
-	SHADOW_LAYER_MIN_SQUARED,
-	SHADOW_LAYERS,
-	type ShadowLayerVolumes,
-} from '../render/shadows/shadow-map.ts';
-import type { MipSteps } from '../render/textures/mip-feedback.ts';
-import type { TextureStore } from '../render/textures/texture-store.ts';
-import type { Plane } from '../scene/camera.ts';
-
+import type { ResidentInstances } from '../render/core/resident.ts';
 import {
 	type GpuCullWork,
 	ITEM_FADE_SHIFT,
@@ -28,14 +29,14 @@ import {
 	addSlot,
 	gpuCullWork,
 	writeCullView,
-} from './gpu-cull-work.ts';
+} from '../render/meshes/gpu-cull-work.ts';
 import {
 	firstRunAt,
 	firstShadowLayer,
 	sphereInPlanes,
 	sphereInsidePlanes,
 	sphereTouchesSpheres,
-} from './instance-culling.ts';
+} from '../render/meshes/instance-culling.ts';
 import {
 	BUCKET_LIFETIME,
 	type ChainSlot,
@@ -45,18 +46,18 @@ import {
 	gpuBucketIndex,
 	slotHidden,
 	sortFarToNear,
-} from './mesh-buckets.ts';
-import type { ResidentInstances } from './resident.ts';
+} from '../render/meshes/mesh-buckets.ts';
+import type { MipSteps } from '../render/textures/mip-feedback.ts';
+import type { TextureStore } from '../render/textures/texture-store.ts';
+import type { Plane } from '../scene/camera.ts';
 import {
-	GROUP_FLOATS,
-	GROUP_ROWS,
-	GroupFloat,
-	SEGMENT_FLOATS,
-	SegmentFloat,
-	chainReach,
-	setGroupReaches,
-} from './row-groups.ts';
-import type { CasterVolume, InstanceRange } from './selection.ts';
+	SHADOW_LAYER_MIN_SQUARED,
+	SHADOW_LAYERS,
+	type ShadowLayerVolumes,
+	type CasterVolume,
+} from '../scene/shadow-volumes.ts';
+
+import type { InstanceRange } from './selection.ts';
 import type { StreamManager } from './stream-manager.ts';
 import { TextureRequests } from './texture-requests.ts';
 

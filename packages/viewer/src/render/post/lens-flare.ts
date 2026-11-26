@@ -8,7 +8,7 @@ import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP_MIPMAPPED, sampler } from '../../gfx/samplers.ts';
 import type { Camera } from '../../scene/camera.ts';
 import type { StreamedTexture } from '../../streaming/texture-requests.ts';
-import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
+import { HDR_FORMAT, type SceneTextures } from '../core/render-targets.ts';
 
 import { flareQuads } from './lens-flare-layout.ts';
 import {

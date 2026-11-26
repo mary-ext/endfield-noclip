@@ -7,23 +7,24 @@
 
 import type { Environment } from '../../environment/environment.ts';
 import type { Camera } from '../../scene/camera.ts';
+import { SHADOW_LAYERS } from '../../scene/shadow-volumes.ts';
+import { CAMERA_HISTORY_FLOATS } from '../core/camera-history.ts';
+import type { DebugView } from '../core/debug-views.ts';
+import type { RenderTargets } from '../core/render-targets.ts';
+import { type PostSettings, effectiveSettings } from '../core/settings.ts';
 import type { InstanceRenderer } from '../instances/instance-renderer.ts';
 import type { IrradianceVolume } from '../lighting/irradiance-volume.ts';
 import type { LightShadows } from '../lighting/light-shadows.ts';
+import type { ShadowMap } from '../lighting/shadow-map.ts';
 import type { ClothSimulator } from '../meshes/cloth-simulator.ts';
 import type { MeshRenderer } from '../meshes/mesh-renderer.ts';
-import { CAMERA_HISTORY_FLOATS } from '../post/camera-history.ts';
 import type { PostProcess } from '../post/post-process.ts';
-import { type PostSettings, effectiveSettings } from '../post/settings.ts';
-import { SHADOW_LAYERS, type ShadowMap } from '../shadows/shadow-map.ts';
 import type { VolumetricFog } from '../sky/volumetric-fog.ts';
 import type { TerrainRenderer } from '../terrain/terrain-renderer.ts';
 import type { WaterContext, WaterRenderer } from '../water/water-renderer.ts';
 import type { VerticalOcclusionMap } from '../weather/vertical-occlusion.ts';
 import type { WeatherRenderer } from '../weather/weather-renderer.ts';
 
-import type { DebugView } from './debug-views.ts';
-import type { RenderTargets } from './render-targets.ts';
 import type { SceneComposer } from './scene-composer.ts';
 
 /** scratch camera history for water reflections, reused across frames */

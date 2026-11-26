@@ -10,7 +10,8 @@ import {
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
-import { HDR_FORMAT } from '../frame/render-targets.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { HDR_FORMAT } from '../core/render-targets.ts';
 
 import {
 	BloomPassSchema,
@@ -21,7 +22,6 @@ import {
 	fsBloomPrefilter,
 	fsBloomUp,
 } from './bloom-shader.ts';
-import { postUniformLayout } from './post-schema.ts';
 
 /** the game's cap on bloom levels */
 const BLOOM_MAX_LEVELS = 16;

@@ -6,7 +6,7 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { frameLayout } from '../../frame/frame-core.ts';
+import { frameLayout } from '../../core/frame-core.ts';
 
 import {
 	EffectFragmentIn,

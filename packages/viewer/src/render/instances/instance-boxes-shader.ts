@@ -16,7 +16,7 @@ import {
 	packGbuffer,
 	packGbufferUnlit,
 	rowBlock,
-} from '../frame/frame-core.ts';
+} from '../core/frame-core.ts';
 
 /** group 1 bind group layout matching `BindLayouts.instances` (bindings 0..2 used by stand-in boxes) */
 export const instanceBoxesLayout = tgpu

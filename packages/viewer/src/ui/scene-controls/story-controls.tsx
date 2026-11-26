@@ -3,7 +3,7 @@ import { storyPointPicks, storyPoints, type StoryPoint } from '@endfield-noclip/
 
 import { definite, mapDefined } from '@mary-ext/array-fns';
 
-import { compareStrings } from '../../compare.ts';
+import { compareStrings } from '../../math/compare.ts';
 import type { ListedControl } from '../../scene-states/listing.ts';
 import type { Viewer } from '../../viewer/viewer.ts';
 import { ChoiceRow } from '../controls.tsx';

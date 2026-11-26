@@ -1,6 +1,4 @@
-import type { DebugView } from '../frame/debug-views.ts';
-
-import type { AutoExposure } from './auto-exposure.ts';
+import type { DebugView } from './debug-views.ts';
 
 /**
  * the tonemapping curves the final pass offers, in the order of their `Post.grade.w` codes: the game's
@@ -63,5 +61,5 @@ export const effectiveSettings = (settings: PostSettings): PostSettings => {
  * @param autoExposure the auto exposure's state
  * @returns the linear exposure the tonemap pass multiplies the scene by
  */
-export const postExposure = (settings: PostSettings, autoExposure: AutoExposure): number =>
+export const postExposure = (settings: PostSettings, autoExposure: { readonly exposure: number }): number =>
 	2 ** settings.exposure * (settings.autoExposure ? autoExposure.exposure : 1);

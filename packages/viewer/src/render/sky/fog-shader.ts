@@ -7,7 +7,7 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { PostSchema, postUniformLayout } from '../post/post-schema.ts';
+import { PostSchema, postUniformLayout } from '../core/post-schema.ts';
 
 /** integrated fog: transmittance multiplying the background and inscattered radiance added in front */
 export const Fog = d.struct({

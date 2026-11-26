@@ -10,8 +10,8 @@ import { LINEAR_CLAMP, LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
 import { writeBufferStaged } from '../../gfx/staged-write.ts';
 import { vec3From } from '../../math/vec3.ts';
 import type { DecodedIrradiance } from '../../package/decode-protocol.ts';
-import type { ResidentIrradiance } from '../../streaming/resident.ts';
 import type { StreamManager } from '../../streaming/stream-manager.ts';
+import type { ResidentIrradiance } from '../core/resident.ts';
 
 import {
 	IrradianceRegionSchema,

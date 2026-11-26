@@ -7,8 +7,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { Surface, frameLayout, hermite } from '../../frame/frame-core.ts';
-import { LUMINANCE } from '../../shaders/common/luminance.ts';
+import { Surface, frameLayout, hermite } from '../../core/frame-core.ts';
+import { LUMINANCE } from '../../core/shader-math.ts';
 
 import { LookSchema, MeshVertexData, meshMaterialLayout } from './common.ts';
 

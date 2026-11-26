@@ -1,10 +1,11 @@
-import { type TgpuBindGroup, type TgpuComputePipeline, type TgpuRoot, d } from 'typegpu';
+import { type TgpuComputePipeline, type TgpuRoot, d } from 'typegpu';
 
 import { createBufferWithData } from '../../gfx/buffers.ts';
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
+import { skinFrame } from '../../math/skin-frame.ts';
 import type { DecodedSkin } from '../../package/decode-protocol.ts';
+import type { ResidentSkin } from '../core/resident.ts';
 
-import { skinFrame } from './skin-frame.ts';
 import { SKIN_NONE, SkinParamsSchema, csSkin, skinLayout } from './skin-shader.ts';
 
 /** bytes of {@link SkinParamsSchema} */
@@ -14,25 +15,6 @@ const PIPELINE_KEY = 'skin';
 
 const streamOutWord = (offset: number | null, from: number): number =>
 	offset !== null && from >= 0 ? offset / 4 : SKIN_NONE;
-
-/** an animated geometry's GPU side: its bind pose, frames and the pass that skins it into its vertices */
-export interface ResidentSkin {
-	vertexCount: number;
-	frameCount: number;
-	frameRate: number;
-	/** `SkinParamsSchema`; the frame fields change with the frame */
-	params: GPUBuffer;
-	/** the params as last written, as words and as floats */
-	paramWords: Uint32Array<ArrayBuffer>;
-	paramFloats: Float32Array<ArrayBuffer>;
-	/** whether the vertices hold the frame the params name; `false` until first skinned */
-	skinned: boolean;
-	group: TgpuBindGroup;
-	/** GPU bytes of the bind pose and frames */
-	bytes: number;
-	/** buffers the skin owns, destroyed with it */
-	buffers: GPUBuffer[];
-}
 
 /** skins animated geometries into their own vertex buffers before they're drawn */
 export class SkinAnimator {

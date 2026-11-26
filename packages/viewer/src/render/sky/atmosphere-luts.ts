@@ -2,8 +2,8 @@ import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common } fr
 
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
-import { HDR_FORMAT } from '../frame/render-targets.ts';
-import { postUniformLayout } from '../post/post-schema.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { HDR_FORMAT } from '../core/render-targets.ts';
 
 import {
 	fsMultiScattering,

@@ -6,11 +6,11 @@
  */
 
 import { GAPS_FLOAT, LookFlags, LookRow, Slot, type MaterialLook } from '../../looks/look.ts';
-import type { MeshBucket } from '../../streaming/mesh-buckets.ts';
 import type { ListedSpan } from '../instances/instance-renderer.ts';
 
 import type { DrawRange, RangeOrder } from './draw-ranges.ts';
 import type { MaterialState } from './material-bindings.ts';
+import type { MeshBucket } from './mesh-buckets.ts';
 
 /** look flags that bail out of the lean `opaqueLit` shader into the full `opaque` uber-shader */
 const COMPLEX_OPAQUE_FLAGS =

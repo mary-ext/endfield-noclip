@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 
-import { CULL_FLOATS, ROW_WORDS } from '../content/instance-rows.ts';
-
+import { CULL_FLOATS, ROW_WORDS } from './instance-rows.ts';
 import {
 	GROUP_FLOATS,
 	GROUP_ROWS,

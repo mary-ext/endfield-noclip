@@ -14,7 +14,8 @@ import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import type { Camera } from '../../scene/camera.ts';
-import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { HDR_FORMAT, type SceneTextures } from '../core/render-targets.ts';
 
 import {
 	ShaftsSchema,
@@ -25,7 +26,6 @@ import {
 	lightShaftsDownsampleLayout,
 	lightShaftsSharedLayout,
 } from './light-shafts-shader.ts';
-import { postUniformLayout } from './post-schema.ts';
 
 /** the game's `lightShaftDownSampleFactor` at PC quality tiers 2000 and up */
 const DOWNSAMPLE = 2;

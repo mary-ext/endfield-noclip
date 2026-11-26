@@ -2,7 +2,7 @@ import { type LightEntry, LightKind } from '@endfield-noclip/package-format/ligh
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { cross, normalize } from '../../math/vec3.ts';
-import { MAX_LIGHT_CASTERS } from '../../streaming/gpu-cull-work.ts';
+import { MAX_LIGHT_CASTERS } from '../meshes/gpu-cull-work.ts';
 
 // the local lights' shadow maps, as the game keeps them (docs/game-data/lighting.md#local-light-shadows): a
 // square atlas of cached tiles in three sizes, handed to the nearest shadow-casting lights and drawn one a

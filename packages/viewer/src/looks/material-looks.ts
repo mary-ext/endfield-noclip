@@ -12,7 +12,7 @@ import type {
 	WaterFoamSurface,
 } from '@endfield-noclip/package-format/surfaces';
 
-import { skinFrame } from '../render/meshes/skin-frame.ts';
+import { skinFrame } from '../math/skin-frame.ts';
 
 import type { EffectLook } from './effects/effect-look.ts';
 import { lightBeamLook } from './effects/light-beam.ts';

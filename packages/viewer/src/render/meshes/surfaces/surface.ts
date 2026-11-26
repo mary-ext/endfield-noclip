@@ -18,9 +18,8 @@ import {
 	packGbuffer,
 	packGbufferUnlit,
 	packMipFeedback,
-} from '../../frame/frame-core.ts';
-import { LUMINANCE, LUMINANCE_ROUNDED } from '../../shaders/common/luminance.ts';
-import { normalZ, unpackNormalXy } from '../../shaders/common/normal-map.ts';
+} from '../../core/frame-core.ts';
+import { LUMINANCE, LUMINANCE_ROUNDED, normalZ, unpackNormalXy } from '../../core/shader-math.ts';
 
 import {
 	ALPHA_NORMAL,

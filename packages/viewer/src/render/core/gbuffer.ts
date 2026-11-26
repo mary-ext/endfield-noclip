@@ -7,7 +7,7 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { octDecode, octEncode } from './octahedral.ts';
+import { octDecode, octEncode } from './shader-math.ts';
 
 /** shading model ids stored in `gbuffer_a.a` (2 bits) */
 export const SHADING_LIT = 0;

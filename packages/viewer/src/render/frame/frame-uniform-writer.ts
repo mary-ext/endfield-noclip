@@ -9,13 +9,13 @@ import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import type { Environment } from '../../environment/environment.ts';
 import type { Camera } from '../../scene/camera.ts';
+import { DEBUG_VIEWS, type DebugView } from '../core/debug-views.ts';
+import { FrameOffsets } from '../core/frame-schema.ts';
 import type { LocalLightFrame } from '../lighting/local-lights.ts';
 import type { ReflectionProbeFrame } from '../lighting/reflection-probes.ts';
-import type { ShadowMap } from '../shadows/shadow-map.ts';
+import type { ShadowMap } from '../lighting/shadow-map.ts';
 
-import { DEBUG_VIEWS, type DebugView } from './debug-views.ts';
 import type { FrameBindings } from './frame-bindings.ts';
-import { FrameOffsets } from './frame-schema.ts';
 
 /** what {@link writeFrameUniforms} packs */
 export interface FrameUniformInputs {

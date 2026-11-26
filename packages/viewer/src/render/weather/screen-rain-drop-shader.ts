@@ -6,7 +6,7 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { frameLayout } from '../frame/frame-core.ts';
+import { frameLayout } from '../core/frame-core.ts';
 
 /** max simultaneous screen-space lens raindrops (`HGScreenRainDropFXRenderer`) */
 export const MAX_SCREEN_DROPS = 30;

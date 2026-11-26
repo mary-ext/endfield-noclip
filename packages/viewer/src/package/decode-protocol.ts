@@ -2,7 +2,7 @@ import type { AnimationBlob } from '@endfield-noclip/package-format/animation';
 import type { BlobCodec } from '@endfield-noclip/package-format/blobs';
 
 import type { InstanceRows, RowKinds } from '../content/instance-rows.ts';
-import type { RowBounds } from '../streaming/row-groups.ts';
+import type { RowBounds } from '../content/row-groups.ts';
 
 /** how a blob's stored bytes are encoded */
 export interface BlobEncoding {

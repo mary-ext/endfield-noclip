@@ -12,8 +12,7 @@ import { BlobKind } from '@endfield-noclip/package-format/blobs';
 
 import type { DecodeJob, StoredBlob } from '../package/decode-pool.ts';
 import type { Decoded } from '../package/decode-protocol.ts';
-
-import type { Resident } from './resident.ts';
+import type { Resident } from '../render/core/resident.ts';
 
 /** a kind of residency, which names its decode job and its decoded blob too */
 export type ResidentKind = Resident['kind'];

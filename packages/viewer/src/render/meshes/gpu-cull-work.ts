@@ -8,7 +8,7 @@
  * @module
  */
 
-import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../render/shadows/shadow-map.ts';
+import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../../scene/shadow-volumes.ts';
 
 import type { MeshBucket } from './mesh-buckets.ts';
 

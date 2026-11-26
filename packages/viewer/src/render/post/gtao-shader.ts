@@ -7,9 +7,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { gbufferBNormal, gbufferBValid } from '../shaders/common/gbuffer.ts';
-
-import { postUniformLayout, viewDepth } from './post-schema.ts';
+import { gbufferBNormal, gbufferBValid } from '../core/gbuffer.ts';
+import { postUniformLayout, viewDepth } from '../core/post-schema.ts';
 
 /** full-resolution pixels per AO pixel along each axis */
 export const AO_SCALE = 2;

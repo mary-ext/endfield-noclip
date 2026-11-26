@@ -1,6 +1,8 @@
 import type { TgpuBindGroup, TgpuComputePipeline, TgpuRoot } from 'typegpu';
 
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
+import { SHADOW_LAYERS } from '../../scene/shadow-volumes.ts';
+
 import {
 	BUCKET_WORDS,
 	COUNTER_WORDS,
@@ -11,9 +13,7 @@ import {
 	STATS_WORDS,
 	VIEW_FLOATS,
 	ViewWord,
-} from '../../streaming/gpu-cull-work.ts';
-import { SHADOW_LAYERS } from '../shadows/shadow-map.ts';
-
+} from './gpu-cull-work.ts';
 import {
 	BUCKET_DRAW,
 	MAX_GROUPS_X,

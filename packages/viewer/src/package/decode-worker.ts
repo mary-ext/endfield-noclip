@@ -23,7 +23,7 @@ import { MeshoptDecoder } from 'meshoptimizer/decoder';
 
 import { buildFoliageRows } from '../content/foliage-rows.ts';
 import { buildInstanceRows } from '../content/instance-rows.ts';
-import { buildRowBounds } from '../streaming/row-groups.ts';
+import { buildRowBounds } from '../content/row-groups.ts';
 
 import type {
 	DecodedGeometry,

@@ -1,5 +1,7 @@
 import { KEEP, PREMULTIPLIED_OVER } from '../../gfx/blend.ts';
-import { MIP_FEEDBACK_FORMAT } from '../textures/mip-feedback.ts';
+
+/** the main pass target the meshes report into (`Shaded.mip_feedback` in frame-core.ts) */
+export const MIP_FEEDBACK_FORMAT: GPUTextureFormat = 'r32uint';
 
 /**
  * reversed-Z depth: 1 at the near plane, 0 at infinity; cleared to 0 and tested with `greater`. with a
@@ -15,6 +17,9 @@ const DEPTH_STENCIL_FORMAT: GPUTextureFormat = 'depth32float-stencil8';
 
 /** the nearest water surface's depth (reversed-Z like the main pass's) */
 export const WATER_DEPTH_FORMAT: GPUTextureFormat = 'depth32float';
+
+/** depth format of shadow maps (sun shadow fallback, local-light shadow atlas, vertical occlusion) */
+export const SHADOW_FORMAT: GPUTextureFormat = 'depth32float';
 
 /** the depth clear value under reversed-Z */
 export const DEPTH_CLEAR = 0;

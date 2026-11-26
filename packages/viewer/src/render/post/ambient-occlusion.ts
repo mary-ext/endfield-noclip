@@ -3,6 +3,7 @@ import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common } fr
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
 
 import {
 	AO_SCALE,
@@ -13,7 +14,6 @@ import {
 	gtaoDepthLayout,
 	gtaoMarchLayout,
 } from './gtao-shader.ts';
-import { postUniformLayout } from './post-schema.ts';
 
 const AO_FORMAT: GPUTextureFormat = 'r8unorm';
 /** the reduced view depth the AO marches */

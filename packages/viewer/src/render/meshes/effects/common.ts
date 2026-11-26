@@ -18,10 +18,10 @@ import {
 	rowCustom,
 	rowPlacement,
 	sheetUv,
-} from '../../frame/frame-core.ts';
-import { PostSchema } from '../../post/post-schema.ts';
-import { gbufferBNoLitDecals, gbufferBNormal, gbufferBValid } from '../../shaders/common/gbuffer.ts';
-import { octDecode } from '../../shaders/common/octahedral.ts';
+} from '../../core/frame-core.ts';
+import { gbufferBNoLitDecals, gbufferBNormal, gbufferBValid } from '../../core/gbuffer.ts';
+import { PostSchema } from '../../core/post-schema.ts';
+import { octDecode } from '../../core/shader-math.ts';
 import { fogPremultiplied } from '../../sky/fog-shader.ts';
 import { DrawSchema, meshInstancesLayout } from '../surfaces/common.ts';
 

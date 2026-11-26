@@ -3,7 +3,7 @@ import tgpu from 'typegpu';
 import { ADD, ALPHA_OVER, KEEP, PREMULTIPLIED_OVER } from '../../gfx/blend.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { EFFECT_SLOT_COUNT, type LookStencil, SLOTS, Slot } from '../../looks/look.ts';
-import type { BindLayouts } from '../frame/bind-layouts.ts';
+import type { BindLayouts } from '../core/bind-layouts.ts';
 import {
 	DEPTH_COMPARE,
 	GBUFFER_A_FORMAT,
@@ -15,8 +15,8 @@ import {
 	WATER_DEPTH_FORMAT,
 	WATER_FOAM_FORMAT,
 	WETNESS_MASK_FORMAT,
-} from '../frame/render-targets.ts';
-import { SHADOW_DEPTH_STATE, shadowDepthState } from '../shadows/shadow-map.ts';
+} from '../core/render-targets.ts';
+import { SHADOW_DEPTH_STATE, shadowDepthState } from '../lighting/shadow-map.ts';
 
 import { type DrawPhase, PHASES, type VertexStreams } from './draw-ranges.ts';
 import { vsEffect } from './effects/common.ts';

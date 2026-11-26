@@ -1,6 +1,6 @@
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
-import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../render/shadows/shadow-map.ts';
+import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../../scene/shadow-volumes.ts';
 
 /**
  * @param runs (chain, first, count) triples in row order

@@ -4,7 +4,7 @@ import { it } from 'node:test';
 import type { GeometryTable } from '@endfield-noclip/package-format/geometry-table';
 import { type Chain, DrawRole } from '@endfield-noclip/package-format/instances';
 
-import { LazyMaterialLooks } from '../looks/material-looks.ts';
+import { LazyMaterialLooks } from '../../looks/material-looks.ts';
 
 import { MeshBuckets } from './mesh-buckets.ts';
 

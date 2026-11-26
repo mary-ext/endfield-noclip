@@ -1,7 +1,7 @@
 import type { Vec3 } from '@endfield-noclip/package-format/values';
 
 import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
-import { SHADOW_FORMAT } from '../shadows/shadow-map.ts';
+import { SHADOW_FORMAT } from '../core/render-targets.ts';
 
 /** vertical occlusion map edge, texels (PC desktop setting: 512²) */
 export const VERTICAL_OCCLUSION_SIZE = 512;

@@ -1,12 +1,12 @@
 import { TERRAIN_PAGE_SAMPLES } from '@endfield-noclip/package-format/terrain';
 import type { ContentRef } from '@endfield-noclip/package-format/tree';
 
-import type { ShadowLayerVolumes } from '../render/shadows/shadow-map.ts';
+import { boxTouchesShadowLayers, boxTouchesSpheres } from '../render/meshes/instance-culling.ts';
 import { type Camera, type Plane, boxInFrustum, distanceToBox } from '../scene/camera.ts';
+import type { CasterVolume } from '../scene/shadow-volumes.ts';
 import { type TileNode, type TileTree, isLeaf } from '../scene/tile-tree.ts';
 
 import type { ContentItem } from './content-item.ts';
-import { boxTouchesShadowLayers, boxTouchesSpheres } from './instance-culling.ts';
 import type { StreamManager } from './stream-manager.ts';
 
 // #region types
@@ -74,19 +74,6 @@ export interface Selection {
 	visited: number;
 	/** whether any HLOD/detail, conditional, or reached transition is still cross-fading */
 	fading: boolean;
-}
-
-/** where instances outside the view can still cast shadows into it */
-export interface CasterVolume {
-	/** the view's planes swept towards the sun (`sweepPlanes` in camera.ts) */
-	planes: Plane[];
-	/** the fitted shadow layers' volumes that bound off-screen sun casters */
-	layers: ShadowLayerVolumes;
-	/**
-	 * world-space spheres (x, y, z, radius) whose instances cast into a local light's shadow map, wherever the
-	 * view looks
-	 */
-	lights: Float64Array;
 }
 
 /** camera state for one traversal */

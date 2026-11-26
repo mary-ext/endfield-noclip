@@ -7,9 +7,9 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { fresnelSchlick } from '../../frame/brdf.ts';
-import { frameLayout, hue } from '../../frame/frame-core.ts';
-import { ambientIrradiance, sunVisibility, sunVisibilityFar } from '../../frame/frame-lighting.ts';
+import { frameLayout, hue } from '../../core/frame-core.ts';
+import { fresnelSchlick } from '../../core/shader-math.ts';
+import { ambientIrradiance, sunVisibility, sunVisibilityFar } from '../../lighting/frame-lighting.ts';
 import { fogPremultiplied } from '../../sky/fog-shader.ts';
 
 import {

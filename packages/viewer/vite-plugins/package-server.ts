@@ -8,7 +8,7 @@ import { definite, mapDefined } from '@mary-ext/array-fns';
 import sirv from 'sirv';
 import type { Connect, Plugin } from 'vite';
 
-import { compareStrings } from '../src/compare.ts';
+import { compareStrings } from '../src/math/compare.ts';
 import { DEV_PACKAGES_INDEX, DEV_PACKAGES_PREFIX, type DevPackage } from '../src/package/dev-packages.ts';
 
 /**

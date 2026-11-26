@@ -1,7 +1,7 @@
 import tgpu, { type TgpuRenderPipeline, type TgpuRoot, d, std } from 'typegpu';
 
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
-import { SHADOW_FORMAT } from '../shadows/shadow-map.ts';
+import { SHADOW_FORMAT } from '../core/render-targets.ts';
 
 import { ATLAS_SIZE, ShadowTiles } from './shadow-tiles.ts';
 

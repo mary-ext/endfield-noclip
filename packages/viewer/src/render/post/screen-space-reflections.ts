@@ -7,10 +7,10 @@ import { LINEAR_CLAMP, sampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import type { Camera } from '../../scene/camera.ts';
-import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
+import { CAMERA_HISTORY_FLOATS, CameraHistory } from '../core/camera-history.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { HDR_FORMAT, type SceneTextures } from '../core/render-targets.ts';
 
-import { CAMERA_HISTORY_FLOATS, CameraHistory } from './camera-history.ts';
-import { postUniformLayout } from './post-schema.ts';
 import {
 	SsrSchema,
 	fsSsrDownsample,

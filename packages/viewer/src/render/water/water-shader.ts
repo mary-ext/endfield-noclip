@@ -9,18 +9,16 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { fresnelSchlick } from '../frame/brdf.ts';
-import { frameLayout, hue } from '../frame/frame-core.ts';
+import { frameLayout, hue } from '../core/frame-core.ts';
+import { postUniformLayout, viewDepth, viewRay } from '../core/post-schema.ts';
+import { ssrDeviceDepth, ssrFade, ssrMarchRay, ssrProject } from '../core/screen-space.ts';
+import { fresnelSchlick, octDecode, henyeyGreenstein } from '../core/shader-math.ts';
 import {
 	ambientIrradiance,
 	environmentBrdfTerms,
 	sampleReflection,
 	sunVisibility,
-} from '../frame/frame-lighting.ts';
-import { postUniformLayout, viewDepth, viewRay } from '../post/post-schema.ts';
-import { octDecode } from '../shaders/common/octahedral.ts';
-import { henyeyGreenstein } from '../shaders/common/phase.ts';
-import { ssrDeviceDepth, ssrFade, ssrMarchRay, ssrProject } from '../shaders/common/screen-space.ts';
+} from '../lighting/frame-lighting.ts';
 import { rayleighPhase, skyReadLayout } from '../sky/atmosphere-shader.ts';
 import { fogOver, froxelsAt } from '../sky/fog-shader.ts';
 

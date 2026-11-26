@@ -7,9 +7,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { LUMINANCE } from '../shaders/common/luminance.ts';
-
-import { viewDepth } from './post-schema.ts';
+import { viewDepth } from '../core/post-schema.ts';
+import { LUMINANCE } from '../core/shader-math.ts';
 
 /** per-frame light shaft uniforms */
 export const ShaftsSchema = d.struct({

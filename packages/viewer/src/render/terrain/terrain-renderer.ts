@@ -21,23 +21,14 @@ import type {
 	DecodedLayer,
 	DecodedSurface,
 } from '../../package/decode-protocol.ts';
-import { firstShadowLayer } from '../../streaming/instance-culling.ts';
-import type {
-	ResidentSplat,
-	ResidentHeights,
-	ResidentLayer,
-	ResidentSurface,
-} from '../../streaming/resident.ts';
+import { SHADOW_LAYERS, type ShadowLayerVolumes } from '../../scene/shadow-volumes.ts';
 import type { TerrainPatch } from '../../streaming/selection.ts';
-import type { BindLayouts } from '../frame/bind-layouts.ts';
-import { describeFill, describeWire } from '../frame/fill-and-wire.ts';
-import type { MainPassFormat } from '../frame/render-targets.ts';
-import {
-	SHADOW_DEPTH_STATE,
-	SHADOW_LAYERS,
-	type ShadowLayerVolumes,
-	shadowDepthState,
-} from '../shadows/shadow-map.ts';
+import type { BindLayouts } from '../core/bind-layouts.ts';
+import { describeFill, describeWire } from '../core/fill-and-wire.ts';
+import type { MainPassFormat } from '../core/render-targets.ts';
+import type { ResidentSplat, ResidentHeights, ResidentLayer, ResidentSurface } from '../core/resident.ts';
+import { SHADOW_DEPTH_STATE, shadowDepthState } from '../lighting/shadow-map.ts';
+import { firstShadowLayer } from '../meshes/instance-culling.ts';
 
 import { fsTerrainMain, fsTerrainShadow, fsTerrainWire, vsTerrain } from './terrain-shader.ts';
 

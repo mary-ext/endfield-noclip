@@ -5,6 +5,7 @@ import { type DecodePool, SharedBytes } from '../package/decode-pool.ts';
 import type { Decoded } from '../package/decode-protocol.ts';
 import { PackageChangedError } from '../package/package-source.ts';
 import type { ViewerPackage } from '../package/viewer-package.ts';
+import type { Resident } from '../render/core/resident.ts';
 
 import { BlobCoalescer } from './coalesce.ts';
 import { type ContentItem, MAX_READ_FAILURES } from './content-item.ts';
@@ -15,7 +16,6 @@ import {
 	releaseResident,
 	uploadResident,
 } from './residency.ts';
-import type { Resident } from './resident.ts';
 
 // #region types
 

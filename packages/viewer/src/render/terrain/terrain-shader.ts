@@ -24,7 +24,7 @@ import {
 	hue,
 	packGbuffer,
 	packGbufferUnlit,
-} from '../frame/frame-core.ts';
+} from '../core/frame-core.ts';
 
 /** GPU schema of one terrain patch instance */
 export const TerrainPatchSchema = d.struct({

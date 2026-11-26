@@ -9,21 +9,20 @@ import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { LINEAR_CLAMP, sampler as sharedSampler } from '../../gfx/samplers.ts';
 import { TextureSet } from '../../gfx/texture-set.ts';
 import type { Camera } from '../../scene/camera.ts';
+import { POST_BYTES, postUniformLayout } from '../core/post-schema.ts';
+import { writeEnvironmentUniforms, writeFrameUniforms } from '../core/post-uniforms.ts';
+import { HDR_FORMAT, type SceneTextures } from '../core/render-targets.ts';
+import { type PostSettings, effectiveSettings } from '../core/settings.ts';
 import { DeferredLighting } from '../lighting/deferred-lighting.ts';
 import { AmbientOcclusion } from '../post/ambient-occlusion.ts';
-import { Composite } from '../post/composite.ts';
-import { POST_BYTES, postUniformLayout } from '../post/post-schema.ts';
-import { writeEnvironmentUniforms, writeFrameUniforms } from '../post/post-uniforms.ts';
 import { ScreenSpaceReflections } from '../post/screen-space-reflections.ts';
-import { type PostSettings, effectiveSettings } from '../post/settings.ts';
 import { AtmosphereLuts } from '../sky/atmosphere-luts.ts';
 import { skyReadLayout } from '../sky/atmosphere-shader.ts';
 import { CelestialLayer } from '../sky/celestial.ts';
+import { Composite } from '../sky/composite.ts';
 import type { VolumetricFog } from '../sky/volumetric-fog.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
 import type { VerticalOcclusionMap } from '../weather/vertical-occlusion.ts';
-
-import { HDR_FORMAT, type SceneTextures } from './render-targets.ts';
 
 /** the composited HDR target sized with the scene textures */
 export interface CompositedTarget {

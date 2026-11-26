@@ -7,38 +7,13 @@
 
 import { type RangeAllocation, RangeAllocator } from '../../gfx/range-allocator.ts';
 import { writeBufferStaged } from '../../gfx/staged-write.ts';
+import type { GeometryIndices, GeometryPlacement, GeometryVertices } from '../core/resident.ts';
 
 import { POSITION_FORMATS, type PositionFormat, UV_FORMATS, type UvFormat } from './pipeline-variants.ts';
 
 /** a geometry's vertex streams, in the order the widest mesh layout binds them */
 export const STREAMS = ['position', 'normal', 'uv0', 'uv1', 'tangent', 'color'] as const;
 export type Stream = (typeof STREAMS)[number];
-
-/** where one of a geometry's vertex streams is bound from */
-export interface StreamBinding {
-	/** the buffer, or `null` for zeros (`VertexBindings` owns them) */
-	buffer: GPUBuffer | null;
-	offset: number;
-	/** bytes bound from `offset`, or `undefined` for the rest of the buffer */
-	size: number | undefined;
-}
-
-/**
- * the buffers a geometry's vertex streams are bound from: a pool's, shared by every geometry in it and
- * repointed when the pool grows, or a geometry's own. compare by identity to skip rebinding
- */
-export interface GeometryVertices {
-	/** per {@link STREAMS} entry */
-	streams: StreamBinding[];
-	/** where draws bound from these buffers sort among a pipeline's: compact pools, full pools, own buffers */
-	order: number;
-}
-
-/** the buffer a geometry's indices are bound from, shared like {@link GeometryVertices} */
-export interface GeometryIndices {
-	buffer: GPUBuffer;
-	format: GPUIndexFormat;
-}
 
 /** bytes per vertex of each stream: positions and UV sets take their format's */
 const strideOf = (stream: Stream, positionFormat: PositionFormat, uvFormat: UvFormat): number => {
@@ -269,14 +244,6 @@ class IndexPool {
 	destroy(): void {
 		this.#buffers.destroy();
 	}
-}
-
-/** a pooled geometry's ranges, which {@link GeometryPools.free} returns */
-export interface GeometryPlacement {
-	pool: VertexPool;
-	vertices: RangeAllocation;
-	indexPool: IndexPool;
-	indices: RangeAllocation;
 }
 
 /** where {@link GeometryPools.place} put a geometry */

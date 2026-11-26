@@ -8,7 +8,7 @@ import {
 import { sampler } from '../../gfx/samplers.ts';
 import { type TexelWrite, writeTexturesStaged } from '../../gfx/staged-write.ts';
 import type { DecodedTexture } from '../../package/decode-protocol.ts';
-import type { ResidentTexture } from '../../streaming/resident.ts';
+import type { ResidentTexture } from '../core/resident.ts';
 
 interface PieceRef {
 	texture: number;

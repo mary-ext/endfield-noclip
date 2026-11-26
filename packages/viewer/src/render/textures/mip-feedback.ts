@@ -10,8 +10,6 @@ import {
 } from './mip-feedback-shader.ts';
 
 const KEY = 'mip feedback';
-/** the main pass target the meshes report into (`Shaded.mip_feedback` in frame-core.ts) */
-export const MIP_FEEDBACK_FORMAT: GPUTextureFormat = 'r32uint';
 /** look slots a report can name (its 17 bits) */
 export const MIP_FEEDBACK_LOOKS = 1 << 17;
 /** look slots to start with room for */

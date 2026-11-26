@@ -7,10 +7,10 @@ import { TextureSet } from '../../gfx/texture-set.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
 import { halton } from '../../math/sequence.ts';
 import type { Camera } from '../../scene/camera.ts';
-import { HDR_FORMAT } from '../frame/render-targets.ts';
+import { CAMERA_HISTORY_FLOATS, CameraHistory } from '../core/camera-history.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { HDR_FORMAT } from '../core/render-targets.ts';
 
-import { CAMERA_HISTORY_FLOATS, CameraHistory } from './camera-history.ts';
-import { postUniformLayout } from './post-schema.ts';
 import { TaaSchema, fsTaa, taaLayout } from './taa-shader.ts';
 
 /** frames rendered after the last change, so the history converges on the still view */

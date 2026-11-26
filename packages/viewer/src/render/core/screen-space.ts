@@ -7,9 +7,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { postUniformLayout } from '../../post/post-schema.ts';
-
-import { gradientNoise } from './noise.ts';
+import { postUniformLayout } from './post-schema.ts';
+import { gradientNoise } from './shader-math.ts';
 
 /** result of a screen-space reflection ray march */
 export const SsrMarchHit = d.struct({

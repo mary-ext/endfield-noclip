@@ -3,8 +3,8 @@ import { it } from 'node:test';
 
 import { ContentKind, type ContentRef } from '@endfield-noclip/package-format/tree';
 
-import { type ShadowLayerVolumes, offscreenCasters } from '../render/shadows/shadow-map.ts';
 import { Camera } from '../scene/camera.ts';
+import { type ShadowLayerVolumes, offscreenCasters } from '../scene/shadow-volumes.ts';
 import type { TileNode, TileTree } from '../scene/tile-tree.ts';
 
 import type { ContentItem } from './content-item.ts';

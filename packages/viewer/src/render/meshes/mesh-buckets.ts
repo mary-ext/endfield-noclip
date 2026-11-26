@@ -1,22 +1,32 @@
 import type { GeometryTable } from '@endfield-noclip/package-format/geometry-table';
 import { type Chain, ChainDrawFlags, DrawRole } from '@endfield-noclip/package-format/instances';
 
-import type { MaterialLook } from '../looks/look.ts';
-import { type LazyMaterialLooks, unsupportedLook } from '../looks/material-looks.ts';
-import { SORTED_RANGES } from '../render/meshes/draw-ranges.ts';
-import { sortBand } from '../render/meshes/sorted-runs.ts';
-import { SHADOW_LAYERS } from '../render/shadows/shadow-map.ts';
+import type { MaterialLook } from '../../looks/look.ts';
+import { type LazyMaterialLooks, unsupportedLook } from '../../looks/material-looks.ts';
+import { SHADOW_LAYERS } from '../../scene/shadow-volumes.ts';
+import type { Resident } from '../core/resident.ts';
 
-import type { ContentItem } from './content-item.ts';
+import { SORTED_RANGES } from './draw-ranges.ts';
 import { type GpuRows, SlotFlags } from './gpu-cull-work.ts';
-import type { StreamManager } from './stream-manager.ts';
+import { sortBand } from './sorted-runs.ts';
+
+/** minimal geometry stream item contract consumed by mesh buckets and the mesh renderer */
+export interface GeometryStreamItem {
+	readonly blob: number;
+	readonly resident: Resident | null;
+}
+
+/** minimal geometry residency lookup consumed by {@link MeshBuckets} */
+export interface GeometryStream {
+	get(blob: number): GeometryStreamItem | undefined;
+}
 
 /**
  * instances sharing one geometry submesh, material and handedness. selection output: only the selector writes
  * it, and renderers keep where its rows landed and its draw order to themselves
  */
 export interface MeshBucket {
-	geometry: ContentItem;
+	geometry: GeometryStreamItem;
 	submesh: number;
 	material: number;
 	look: MaterialLook;
@@ -207,7 +217,7 @@ interface MeshBucketsInit {
 	geometries: GeometryTable;
 	/** by material id */
 	looks: LazyMaterialLooks;
-	stream: Pick<StreamManager, 'get'>;
+	stream: GeometryStream;
 }
 
 /** each chain's drawn slots, and the buckets their instances go to */
@@ -220,7 +230,7 @@ export class MeshBuckets {
 	#standIn: number;
 	/** the look stand-ins draw with, at {@link #standIn} */
 	#standInLook = unsupportedLook();
-	#stream: Pick<StreamManager, 'get'>;
+	#stream: GeometryStream;
 	#buckets = new Map<number, MeshBucket>();
 	/** the slots each bucket is remembered by, cleared when it's pruned */
 	#cachedBy = new Map<MeshBucket, ChainSlot[]>();

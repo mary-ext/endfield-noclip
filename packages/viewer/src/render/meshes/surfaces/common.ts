@@ -16,10 +16,9 @@ import {
 	rowBasis,
 	rowBlock,
 	sheetUv,
-} from '../../frame/frame-core.ts';
-import { PostSchema } from '../../post/post-schema.ts';
-import { gradientNoise } from '../../shaders/common/noise.ts';
-import { octDecode } from '../../shaders/common/octahedral.ts';
+} from '../../core/frame-core.ts';
+import { PostSchema } from '../../core/post-schema.ts';
+import { gradientNoise, octDecode } from '../../core/shader-math.ts';
 
 // #region schemas and layouts
 

@@ -8,7 +8,8 @@
 import { product } from '@mary-ext/array-fns';
 
 import type { LookStencil } from '../../looks/look.ts';
-import type { MeshBucket } from '../../streaming/mesh-buckets.ts';
+
+import type { MeshBucket } from './mesh-buckets.ts';
 
 /** the face culling a draw's pipeline uses; each phase has a pipeline per value */
 export const FACE_CULLS = ['none', 'back', 'front'] as const satisfies readonly GPUCullMode[];

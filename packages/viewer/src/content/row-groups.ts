@@ -9,7 +9,7 @@
 
 import { SPIN_FLOATS } from '@endfield-noclip/package-format/instances';
 
-import { CULL_FLOATS, ROW_WORDS, type RowRides, type RowSpins } from '../content/instance-rows.ts';
+import { CULL_FLOATS, ROW_WORDS, type RowRides, type RowSpins } from './instance-rows.ts';
 
 /** rows per group; groups don't follow chain runs, so a group can hold rows of several chains */
 export const GROUP_ROWS = 64;

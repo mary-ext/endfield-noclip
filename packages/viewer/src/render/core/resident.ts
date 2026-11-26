@@ -1,16 +1,69 @@
 import type { AnimationBlob } from '@endfield-noclip/package-format/animation';
 
-import type { RowFloaters, RowMotions, RowRides, RowSpins } from '../content/instance-rows.ts';
-import type { RangeAllocation } from '../gfx/range-allocator.ts';
-import type { UvTransform } from '../package/decode-protocol.ts';
-import type {
-	GeometryIndices,
-	GeometryPlacement,
-	GeometryVertices,
-} from '../render/meshes/geometry-pools.ts';
-import type { ResidentSkin } from '../render/meshes/skin-animation.ts';
+import type { TgpuBindGroup } from 'typegpu';
 
-import type { RowBounds } from './row-groups.ts';
+import type { RowFloaters, RowMotions, RowRides, RowSpins } from '../../content/instance-rows.ts';
+import type { RowBounds } from '../../content/row-groups.ts';
+import type { RangeAllocation } from '../../gfx/range-allocator.ts';
+import type { UvTransform } from '../../package/decode-protocol.ts';
+
+/** where one of a geometry's vertex streams is bound from */
+export interface StreamBinding {
+	/** the buffer, or `null` for zeros (`VertexBindings` owns them) */
+	buffer: GPUBuffer | null;
+	offset: number;
+	/** bytes bound from `offset`, or `undefined` for the rest of the buffer */
+	size: number | undefined;
+}
+
+/**
+ * the buffers a geometry's vertex streams are bound from: a pool's, shared by every geometry in it and
+ * repointed when the pool grows, or a geometry's own. compare by identity to skip rebinding
+ */
+export interface GeometryVertices {
+	/** per `STREAMS` entry */
+	streams: StreamBinding[];
+	/** where draws bound from these buffers sort among a pipeline's: compact pools, full pools, own buffers */
+	order: number;
+}
+
+/** the buffer a geometry's indices are bound from, shared like {@link GeometryVertices} */
+export interface GeometryIndices {
+	buffer: GPUBuffer;
+	format: GPUIndexFormat;
+}
+
+/** a range-allocated geometry pool that frees a range on release */
+export interface GeometryPoolHandle {
+	free(allocation: RangeAllocation): void;
+}
+
+/** a pooled geometry's ranges, which `GeometryPools.free` returns */
+export interface GeometryPlacement {
+	pool: GeometryPoolHandle;
+	vertices: RangeAllocation;
+	indexPool: GeometryPoolHandle;
+	indices: RangeAllocation;
+}
+
+/** an animated geometry's GPU side: its bind pose, frames and the pass that skins it into its vertices */
+export interface ResidentSkin {
+	vertexCount: number;
+	frameCount: number;
+	frameRate: number;
+	/** `SkinParamsSchema`; the frame fields change with the frame */
+	params: GPUBuffer;
+	/** the params as last written, as words and as floats */
+	paramWords: Uint32Array<ArrayBuffer>;
+	paramFloats: Float32Array<ArrayBuffer>;
+	/** whether the vertices hold the frame the params name; `false` until first skinned */
+	skinned: boolean;
+	group: TgpuBindGroup;
+	/** GPU bytes of the bind pose and frames */
+	bytes: number;
+	/** buffers the skin owns, destroyed with it */
+	buffers: GPUBuffer[];
+}
 
 /** GPU residency of a height page */
 export interface ResidentHeights {

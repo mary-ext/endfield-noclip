@@ -2,8 +2,8 @@ import { type TgpuBindGroup, type TgpuRenderPipeline, type TgpuRoot, common } fr
 
 import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
 
-import { postUniformLayout } from './post-schema.ts';
 import { fsTonemap, tonemapLayout } from './tonemap-shader.ts';
 
 /** the final pass (tonemap-shader.ts): exposure, bloom, vignette, grading and tonemapping into the swapchain */

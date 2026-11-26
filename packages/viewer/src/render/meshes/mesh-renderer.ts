@@ -5,14 +5,12 @@ import { SwayKind, SwayRow } from '../../looks/lit-look.ts';
 import type { LookStencil } from '../../looks/look.ts';
 import type { DecodedGeometry } from '../../package/decode-protocol.ts';
 import type { Camera } from '../../scene/camera.ts';
-import { type GpuCullWork, INDIRECT_WORDS } from '../../streaming/gpu-cull-work.ts';
-import type { MeshBucket } from '../../streaming/mesh-buckets.ts';
-import type { ResidentGeometry } from '../../streaming/resident.ts';
-import type { BindLayouts } from '../frame/bind-layouts.ts';
-import type { MainPassFormat } from '../frame/render-targets.ts';
+import { SHADOW_LAYERS } from '../../scene/shadow-volumes.ts';
+import type { BindLayouts } from '../core/bind-layouts.ts';
+import { CAMERA_HISTORY_FLOATS, CameraHistory } from '../core/camera-history.ts';
+import type { MainPassFormat } from '../core/render-targets.ts';
+import type { GeometryIndices, GeometryVertices, ResidentGeometry, ResidentSkin } from '../core/resident.ts';
 import { LIST_CAPACITY, type ListedSpan } from '../instances/instance-renderer.ts';
-import { CAMERA_HISTORY_FLOATS, CameraHistory } from '../post/camera-history.ts';
-import { SHADOW_LAYERS } from '../shadows/shadow-map.ts';
 import { MipFeedback, type MipSteps } from '../textures/mip-feedback.ts';
 import type { TextureStore } from '../textures/texture-store.ts';
 
@@ -29,8 +27,9 @@ import {
 	SORTED_RANGES,
 	type SurfacePass,
 } from './draw-ranges.ts';
-import { type GeometryIndices, GeometryPools, type GeometryVertices } from './geometry-pools.ts';
+import { GeometryPools } from './geometry-pools.ts';
 import { releaseGeometry, uploadGeometry } from './geometry-residency.ts';
+import { type GpuCullWork, INDIRECT_WORDS } from './gpu-cull-work.ts';
 import { type CullTargets, type CulledBucket, InstanceCuller, type Occlusion } from './instance-culler.ts';
 import { LookTable } from './look-table.ts';
 import {
@@ -39,8 +38,9 @@ import {
 	MaterialBindings,
 	type MaterialState,
 } from './material-bindings.ts';
+import type { MeshBucket } from './mesh-buckets.ts';
 import { type MeshPipelines, prepareMeshPipelines } from './mesh-pipelines.ts';
-import { type ResidentSkin, SkinAnimator } from './skin-animation.ts';
+import { SkinAnimator } from './skin-animation.ts';
 import { type SortedSource, mergeFarToNear } from './sorted-runs.ts';
 import { VertexBindings } from './vertex-bindings.ts';
 

@@ -9,6 +9,8 @@
 import tgpu, { d, std } from 'typegpu';
 
 import { BLOCK_SLOT_BITS } from '../../content/instance-rows.ts';
+
+import { FrameSchema } from './frame-schema.ts';
 import {
 	GBUFFER_NO_LIT_DECALS,
 	GBUFFER_VALID,
@@ -19,10 +21,8 @@ import {
 	gbufferBNormal,
 	gbufferShadingModel,
 	packGbufferB,
-} from '../shaders/common/gbuffer.ts';
-import { gradientNoise } from '../shaders/common/noise.ts';
-
-import { FrameSchema } from './frame-schema.ts';
+} from './gbuffer.ts';
+import { gradientNoise } from './shader-math.ts';
 
 // #region group 0 layout
 

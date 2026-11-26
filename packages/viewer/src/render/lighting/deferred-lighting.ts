@@ -6,8 +6,8 @@ import { createUniformBuffer } from '../../gfx/buffers.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { placeholder } from '../../gfx/placeholders.ts';
 import { LINEAR_CLAMP, LINEAR_REPEAT, sampler } from '../../gfx/samplers.ts';
-import { HDR_FORMAT, type SceneTextures } from '../frame/render-targets.ts';
-import { postUniformLayout } from '../post/post-schema.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { HDR_FORMAT, type SceneTextures } from '../core/render-targets.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
 import type { VerticalOcclusionMap } from '../weather/vertical-occlusion.ts';
 

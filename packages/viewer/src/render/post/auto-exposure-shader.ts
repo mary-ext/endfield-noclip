@@ -8,7 +8,7 @@
 import tgpu, { d, std } from 'typegpu';
 
 import { BINS } from '../../environment/exposure.ts';
-import { LUMINANCE } from '../shaders/common/luminance.ts';
+import { LUMINANCE } from '../core/shader-math.ts';
 
 /** fixed-point scale of the weights accumulated in each histogram bin */
 export const WEIGHT_SCALE = 1024;

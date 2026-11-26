@@ -6,7 +6,7 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { postUniformLayout } from '../post/post-schema.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
 
 import { skyView } from './atmosphere-shader.ts';
 

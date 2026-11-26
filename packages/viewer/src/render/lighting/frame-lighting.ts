@@ -7,7 +7,17 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { IRRADIANCE_TEXELS, irradianceZ, irradianceZClamped } from '../lighting/irradiance-clipmap.ts';
+import { Surface, frameLayout } from '../core/frame-core.ts';
+import {
+	LUMINANCE,
+	LUMINANCE_ROUNDED,
+	gradientNoise,
+	henyeyGreenstein,
+	fresnelSchlick,
+	ggxDistribution,
+} from '../core/shader-math.ts';
+
+import { IRRADIANCE_TEXELS, irradianceZ, irradianceZClamped } from './irradiance-clipmap.ts';
 import {
 	LIGHT_MASK_WORDS,
 	LIGHT_SHADOW_RECORDS,
@@ -15,13 +25,7 @@ import {
 	LIGHT_SLICES,
 	LIGHT_TILE_SIZE,
 	LIGHT_VEC4S,
-} from '../lighting/local-lights.ts';
-import { LUMINANCE, LUMINANCE_ROUNDED } from '../shaders/common/luminance.ts';
-import { gradientNoise } from '../shaders/common/noise.ts';
-import { henyeyGreenstein } from '../shaders/common/phase.ts';
-
-import { fresnelSchlick, ggxDistribution } from './brdf.ts';
-import { Surface, frameLayout } from './frame-core.ts';
+} from './local-lights.ts';
 
 // #region sun shadow
 

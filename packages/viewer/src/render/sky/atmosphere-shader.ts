@@ -8,7 +8,7 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { postUniformLayout } from '../post/post-schema.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
 
 /** bind group layout for `fsMultiScattering` */
 export const multiScatteringLayout = tgpu.bindGroupLayout({

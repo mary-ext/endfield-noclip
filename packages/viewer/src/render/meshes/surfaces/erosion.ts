@@ -6,8 +6,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { Surface, defaultSurface, frameLayout } from '../../frame/frame-core.ts';
-import { normalZ } from '../../shaders/common/normal-map.ts';
+import { Surface, defaultSurface, frameLayout } from '../../core/frame-core.ts';
+import { normalZ } from '../../core/shader-math.ts';
 
 import {
 	BASE_MAP,

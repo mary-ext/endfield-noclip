@@ -7,10 +7,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { hsvToRgb } from '../shaders/common/color.ts';
-import { gradientNoise } from '../shaders/common/noise.ts';
-
-import { postUniformLayout } from './post-schema.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { hsvToRgb, gradientNoise } from '../core/shader-math.ts';
 
 /** group 1 bind group layout for the tonemap pass */
 export const tonemapLayout = tgpu.bindGroupLayout({

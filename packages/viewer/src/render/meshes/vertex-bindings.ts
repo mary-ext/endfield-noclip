@@ -1,5 +1,6 @@
+import type { GeometryVertices, StreamBinding } from '../core/resident.ts';
+
 import type { VertexStreams } from './draw-ranges.ts';
-import type { GeometryVertices, StreamBinding } from './geometry-pools.ts';
 import type { PositionFormat } from './pipeline-variants.ts';
 
 /**

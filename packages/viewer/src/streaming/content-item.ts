@@ -1,8 +1,7 @@
 import type { BlobKind } from '@endfield-noclip/package-format/blobs';
 
 import type { Decoded } from '../package/decode-protocol.ts';
-
-import type { Resident } from './resident.ts';
+import type { Resident } from '../render/core/resident.ts';
 
 /** lifecycle of a blob; `fetched` blobs wait for a decode slot */
 export type ItemState =

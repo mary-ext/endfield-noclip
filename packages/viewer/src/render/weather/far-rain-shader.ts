@@ -6,8 +6,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { frameLayout } from '../frame/frame-core.ts';
-import { viewDepth } from '../post/post-schema.ts';
+import { frameLayout } from '../core/frame-core.ts';
+import { viewDepth } from '../core/post-schema.ts';
 import { fogOver, froxelsAt } from '../sky/fog-shader.ts';
 
 import {

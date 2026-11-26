@@ -7,13 +7,13 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { defaultSurface, frameLayout } from '../frame/frame-core.ts';
+import { defaultSurface, frameLayout } from '../core/frame-core.ts';
 import {
 	ambientIrradiance,
 	localLighting,
 	sampleReflection,
 	sunVisibilityFar,
-} from '../frame/frame-lighting.ts';
+} from '../lighting/frame-lighting.ts';
 
 /** 16-vec4 (256-byte) uniform block shared by world-space weather draws, bound with dynamic offsets */
 export const WeatherParamsSchema = d.struct({

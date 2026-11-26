@@ -8,10 +8,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { fromYcocg, toYcocg } from '../shaders/common/color.ts';
-import { luminanceRounded } from '../shaders/common/luminance.ts';
-
-import { postUniformLayout, viewDepth, viewRayNdc } from './post-schema.ts';
+import { postUniformLayout, viewDepth, viewRayNdc } from '../core/post-schema.ts';
+import { fromYcocg, toYcocg, luminanceRounded } from '../core/shader-math.ts';
 
 /** per-frame TAA uniforms */
 export const TaaSchema = d.struct({

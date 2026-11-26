@@ -5,13 +5,13 @@ import type { LensFlareLook } from '../../environment/lens-flare-look.ts';
 import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import type { Camera } from '../../scene/camera.ts';
 import type { StreamedTexture } from '../../streaming/texture-requests.ts';
-import type { SceneTextures } from '../frame/render-targets.ts';
+import type { SceneTextures } from '../core/render-targets.ts';
+import { type PostSettings, effectiveSettings, postExposure } from '../core/settings.ts';
 
 import { AutoExposure } from './auto-exposure.ts';
 import { Bloom } from './bloom.ts';
 import { LensFlares } from './lens-flare.ts';
 import { LightShafts } from './light-shafts.ts';
-import { type PostSettings, effectiveSettings, postExposure } from './settings.ts';
 import { TemporalAA } from './temporal-aa.ts';
 import { Tonemap } from './tonemap.ts';
 

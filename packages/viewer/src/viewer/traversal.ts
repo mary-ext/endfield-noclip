@@ -1,9 +1,9 @@
 import { animateMotionRows, rideRows, ROW_BYTES, ROW_WORDS, turnRows } from '../content/instance-rows.ts';
+import type { ResidentInstances } from '../render/core/resident.ts';
 import type { FrameSettings } from '../render/frame/frame-graph.ts';
-import { offscreenCasters } from '../render/shadows/shadow-map.ts';
 import type { Camera, Plane } from '../scene/camera.ts';
+import { offscreenCasters } from '../scene/shadow-volumes.ts';
 import type { MeshSelection } from '../streaming/mesh-selection.ts';
-import type { ResidentInstances } from '../streaming/resident.ts';
 import type { InstanceRange } from '../streaming/selection.ts';
 import { TextureReduction } from '../streaming/texture-reduction.ts';
 import { streamWholeTexture } from '../streaming/texture-requests.ts';

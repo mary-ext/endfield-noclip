@@ -7,7 +7,7 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { octDecode } from '../shaders/common/octahedral.ts';
+import { octDecode } from '../core/shader-math.ts';
 
 /** sentinel value for a vertex stream the geometry lacks */
 export const SKIN_NONE = 0xff_ff_ff_ff;

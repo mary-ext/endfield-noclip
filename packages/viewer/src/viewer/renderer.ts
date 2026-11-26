@@ -9,7 +9,10 @@ import { GpuProfiler } from '../gfx/gpu-profiler.ts';
 import { PipelineCache } from '../gfx/pipeline-cache.ts';
 import { destroyPlaceholders } from '../gfx/placeholders.ts';
 import { UniformRing } from '../gfx/uniform-ring.ts';
-import { type BindLayouts, createBindLayouts } from '../render/frame/bind-layouts.ts';
+import { type BindLayouts, createBindLayouts } from '../render/core/bind-layouts.ts';
+import { CAMERA_HISTORY_FLOATS, CameraHistory } from '../render/core/camera-history.ts';
+import { FRAME_UNIFORM_BYTES, FrameOffsets } from '../render/core/frame-schema.ts';
+import { RenderTargets } from '../render/core/render-targets.ts';
 import { FrameBindings } from '../render/frame/frame-bindings.ts';
 import {
 	type FrameSettings,
@@ -17,25 +20,23 @@ import {
 	ShadowLayerCache,
 	encodeFrame,
 } from '../render/frame/frame-graph.ts';
-import { FRAME_UNIFORM_BYTES, FrameOffsets } from '../render/frame/frame-schema.ts';
 import { type FrameUniformInputs, writeFrameUniforms } from '../render/frame/frame-uniform-writer.ts';
-import { RenderTargets } from '../render/frame/render-targets.ts';
 import { SceneComposer } from '../render/frame/scene-composer.ts';
 import { InstanceRenderer } from '../render/instances/instance-renderer.ts';
 import { IrradianceVolume } from '../render/lighting/irradiance-volume.ts';
 import { type LocalLightFrame, LocalLights } from '../render/lighting/local-lights.ts';
 import { ReflectionProbes } from '../render/lighting/reflection-probes.ts';
+import { ShadowMap } from '../render/lighting/shadow-map.ts';
 import { ClothSimulator } from '../render/meshes/cloth-simulator.ts';
 import { MeshRenderer } from '../render/meshes/mesh-renderer.ts';
-import { CAMERA_HISTORY_FLOATS, CameraHistory } from '../render/post/camera-history.ts';
 import { PostProcess } from '../render/post/post-process.ts';
-import { SHADOW_LAYERS, ShadowMap } from '../render/shadows/shadow-map.ts';
 import { VolumetricFog } from '../render/sky/volumetric-fog.ts';
 import { TerrainRenderer } from '../render/terrain/terrain-renderer.ts';
 import { WaterRenderer } from '../render/water/water-renderer.ts';
 import { VerticalOcclusionMap } from '../render/weather/vertical-occlusion.ts';
 import { WeatherRenderer } from '../render/weather/weather-renderer.ts';
 import type { Camera } from '../scene/camera.ts';
+import { SHADOW_LAYERS } from '../scene/shadow-volumes.ts';
 
 import type { EnvironmentLook } from './environment-state.ts';
 import type { FrameTimes } from './stats.ts';

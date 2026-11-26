@@ -1,9 +1,9 @@
 import { createBufferWithData } from '../../gfx/buffers.ts';
 import { GeometryFlags } from '../../looks/look.ts';
 import type { DecodedGeometry } from '../../package/decode-protocol.ts';
-import type { ResidentGeometry } from '../../streaming/resident.ts';
+import type { GeometryVertices, ResidentGeometry } from '../core/resident.ts';
 
-import { type GeometryPools, type GeometryVertices, STREAMS, type Stream } from './geometry-pools.ts';
+import { type GeometryPools, STREAMS, type Stream } from './geometry-pools.ts';
 import type { SkinAnimator } from './skin-animation.ts';
 import type { VertexBindings } from './vertex-bindings.ts';
 

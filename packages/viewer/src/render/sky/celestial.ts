@@ -21,8 +21,8 @@ import type { AsyncPipeline, PipelineCache } from '../../gfx/pipeline-cache.ts';
 import { placeholder } from '../../gfx/placeholders.ts';
 import { LINEAR_REPEAT_MIPMAPPED, NEAREST_REPEAT, sampler } from '../../gfx/samplers.ts';
 import { type TgpuFullscreenPass, encodeTgpuFullscreen } from '../../gfx/tgpu-fullscreen.ts';
-import { HDR_FORMAT } from '../frame/render-targets.ts';
-import { postUniformLayout } from '../post/post-schema.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { HDR_FORMAT } from '../core/render-targets.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
 
 import {

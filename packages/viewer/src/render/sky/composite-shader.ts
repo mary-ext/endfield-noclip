@@ -7,11 +7,11 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { skyReadLayout } from '../sky/atmosphere-shader.ts';
-import { fogOver, froxelsAt } from '../sky/fog-shader.ts';
-import { skyRadiance } from '../sky/sky-shader.ts';
+import { postUniformLayout, viewDepth, viewRay } from '../core/post-schema.ts';
 
-import { postUniformLayout, viewDepth, viewRay } from './post-schema.ts';
+import { skyReadLayout } from './atmosphere-shader.ts';
+import { fogOver, froxelsAt } from './fog-shader.ts';
+import { skyRadiance } from './sky-shader.ts';
 
 /** group 2 bind group layout for composite: deferred-lit scene (celestial on sky) and main-pass depth */
 export const compositeSceneLayout = tgpu.bindGroupLayout({

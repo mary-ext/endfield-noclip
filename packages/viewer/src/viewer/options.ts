@@ -1,5 +1,5 @@
-import type { DebugView } from '../render/frame/debug-views.ts';
-import type { PostSettings, Tonemapper } from '../render/post/settings.ts';
+import type { DebugView } from '../render/core/debug-views.ts';
+import type { PostSettings, Tonemapper } from '../render/core/settings.ts';
 
 /** user-facing switches */
 export interface ViewerOptions {

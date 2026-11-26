@@ -8,11 +8,10 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { fromYcocg, toYcocg } from '../shaders/common/color.ts';
-import { gbufferBNormal, gbufferBValid } from '../shaders/common/gbuffer.ts';
-import { ssrDeviceDepth, ssrFade, ssrMarchRay, ssrProject } from '../shaders/common/screen-space.ts';
-
-import { postUniformLayout, viewDepth, viewRay } from './post-schema.ts';
+import { gbufferBNormal, gbufferBValid } from '../core/gbuffer.ts';
+import { postUniformLayout, viewDepth, viewRay } from '../core/post-schema.ts';
+import { ssrDeviceDepth, ssrFade, ssrMarchRay, ssrProject } from '../core/screen-space.ts';
+import { fromYcocg, toYcocg } from '../core/shader-math.ts';
 
 /** per-frame SSR uniforms */
 export const SsrSchema = d.struct({

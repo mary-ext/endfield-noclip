@@ -12,7 +12,7 @@ import {
 	ParticleSubEmitterType,
 } from '@endfield-noclip/package-format/particles';
 
-import { compareNumbers } from '../compare.ts';
+import { compareNumbers } from '../math/compare.ts';
 
 import {
 	PARTICLE_FLOATS,

@@ -12,7 +12,6 @@ import { LINEAR_CLAMP, LINEAR_REPEAT_MIPMAPPED, sampler } from '../../gfx/sample
 import { TextureSet } from '../../gfx/texture-set.ts';
 import { GeometryFlags } from '../../looks/look.ts';
 import { type Plane, boxInFrustum } from '../../scene/camera.ts';
-import type { ResidentGeometry } from '../../streaming/resident.ts';
 import type { StreamManager } from '../../streaming/stream-manager.ts';
 import { streamWholeTexture } from '../../streaming/texture-requests.ts';
 import {
@@ -22,7 +21,8 @@ import {
 	type SceneTextures,
 	WATER_DEPTH_FORMAT,
 	WATER_FOAM_FORMAT,
-} from '../frame/render-targets.ts';
+} from '../core/render-targets.ts';
+import type { ResidentGeometry } from '../core/resident.ts';
 import { FRONT_FACE, POSITION_FORMATS, type PositionFormat } from '../meshes/pipeline-variants.ts';
 import { NORMAL_STREAM, positionStream } from '../meshes/vertex-bindings.ts';
 import type { TextureBinding, TextureStore } from '../textures/texture-store.ts';

@@ -7,9 +7,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { luminanceRounded } from '../shaders/common/luminance.ts';
-
-import { postUniformLayout } from './post-schema.ts';
+import { postUniformLayout } from '../core/post-schema.ts';
+import { luminanceRounded } from '../core/shader-math.ts';
 
 /** per-pass sizing uniforms for a bloom downsample or upsample pass */
 export const BloomPassSchema = d.struct({

@@ -1,12 +1,11 @@
 import { placeholder } from '../../gfx/placeholders.ts';
 import { LINEAR_CLAMP_MIPMAPPED, sampler } from '../../gfx/samplers.ts';
+import { FRAME_UNIFORM_BYTES } from '../core/frame-schema.ts';
 import type { IrradianceVolume } from '../lighting/irradiance-volume.ts';
 import type { LocalLights } from '../lighting/local-lights.ts';
 import type { ReflectionProbes } from '../lighting/reflection-probes.ts';
-import type { ShadowMap } from '../shadows/shadow-map.ts';
+import type { ShadowMap } from '../lighting/shadow-map.ts';
 import type { TextureBinding } from '../textures/texture-store.ts';
-
-import { FRAME_UNIFORM_BYTES } from './frame-schema.ts';
 
 /** the frame group's streamed 2D textures, each bound as a placeholder until it's resident */
 export type FrameTextureSlot = 'shadowRamp' | 'cloudShadow';

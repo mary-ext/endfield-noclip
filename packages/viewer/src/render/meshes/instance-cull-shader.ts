@@ -9,6 +9,8 @@
 import tgpu, { d, std } from 'typegpu';
 
 import { BLOCK_SLOT_BITS } from '../../content/instance-rows.ts';
+import { SHADOW_LAYER_MIN_SQUARED, SHADOW_LAYERS } from '../../scene/shadow-volumes.ts';
+
 import {
 	BUCKET_WORDS,
 	COUNTER_WORDS,
@@ -19,8 +21,7 @@ import {
 	SLOT_WORDS,
 	STATS_WORDS,
 	SlotFlags,
-} from '../../streaming/gpu-cull-work.ts';
-import { SHADOW_LAYER_MIN_SQUARED, SHADOW_LAYERS } from '../shadows/shadow-map.ts';
+} from './gpu-cull-work.ts';
 
 /** workgroups along x of a dispatch at most (WebGPU's default limit) */
 export const MAX_GROUPS_X = 65_535;

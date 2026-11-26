@@ -8,8 +8,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { postUniformLayout, viewRay } from '../post/post-schema.ts';
-import { hsvToRgb } from '../shaders/common/color.ts';
+import { postUniformLayout, viewRay } from '../core/post-schema.ts';
+import { hsvToRgb } from '../core/shader-math.ts';
 
 /** a planet painted on the sky dome: a sphere at unit distance whose angular size comes from its radius */
 export const SkyPlanetSchema = d.struct({

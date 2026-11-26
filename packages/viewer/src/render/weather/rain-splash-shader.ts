@@ -7,8 +7,8 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { frameLayout } from '../frame/frame-core.ts';
-import { LUMINANCE_ROUNDED } from '../shaders/common/luminance.ts';
+import { frameLayout } from '../core/frame-core.ts';
+import { LUMINANCE_ROUNDED } from '../core/shader-math.ts';
 
 import { weatherLitColor, weatherParamsLayout } from './weather-common.ts';
 

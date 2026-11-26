@@ -26,12 +26,12 @@ import type { PipelineCache } from '../../gfx/pipeline-cache.ts';
 import type { RangeAllocation } from '../../gfx/range-allocator.ts';
 import { writeBufferStaged } from '../../gfx/staged-write.ts';
 import type { DecodedInstances } from '../../package/decode-protocol.ts';
-import type { GpuRows } from '../../streaming/gpu-cull-work.ts';
-import type { ResidentInstances } from '../../streaming/resident.ts';
 import type { InstanceRange } from '../../streaming/selection.ts';
-import type { BindLayouts } from '../frame/bind-layouts.ts';
-import { describeFill, describeWire } from '../frame/fill-and-wire.ts';
-import type { MainPassFormat } from '../frame/render-targets.ts';
+import type { BindLayouts } from '../core/bind-layouts.ts';
+import { describeFill, describeWire } from '../core/fill-and-wire.ts';
+import type { MainPassFormat } from '../core/render-targets.ts';
+import type { ResidentInstances } from '../core/resident.ts';
+import type { GpuRows } from '../meshes/gpu-cull-work.ts';
 
 import {
 	fsBoxFill,
