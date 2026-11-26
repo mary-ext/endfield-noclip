@@ -1,0 +1,10 @@
+{
+	"version": 2,
+	"skills": {
+		"typegpu": {
+			"source": "./packages/viewer/node_modules/typegpu/skills/typegpu",
+			"sourceType": "local",
+			"computedHash": "9510dfbfa1af290bbb26491c5bfb4e61c1ea6322569fb1be154571c7e2f558de"
+		}
+	}
+}
