@@ -21,13 +21,16 @@ measurement instructions are in [driving the viewer](../driving-the-viewer.md#pr
   environment UI tracks a separate revision used only by the settings panel's applied volumes and
   look legend. scene conditions sections render lazily when expanded, cutting map02 re-renders from
   > 100 ms to a few tens of ms (still re-renders on level change).
-- **group culling.** mesh selection rejects 32-row groups before testing individual rows
-  ([per-instance LOD](streaming.md#per-instance-lod)), cutting ~20% off dense map02 views.
+- **group and segment culling.** mesh selection rejects 32-row groups before testing individual rows
+  ([per-instance LOD](streaming.md#per-instance-lod)), and tightens partially-visible groups per
+  segment so off-frustum segments don't reserve empty main-pass buckets, cutting ~20% off dense
+  map02 views and ~53% of draws on map01.
 - **GPU culling and occlusion.** resident groups cull in compute and emit indirect draws
   ([GPU culling](streaming.md#gpu-culling)), cutting ~25% off dense Jingyu frames (halving mesh
   selection). last-frame depth-pyramid occlusion culling cuts ~5% GPU time flying over Jingyu. small
   shadow casters are culled per layer on both CPU and GPU using the game's camera-view screen-size
-  minimums (`0.005` / `0.01` / `0.02` for cascades 0–2, `0.01` for the far layer).
+  minimums (`0.005` / `0.01` / `0.02` for cascades 0–2, `0.01` for the far layer), and GPU culling
+  tests each shadow layer independently via a per-layer mask.
 - **game detail radius.** detail draws within `detailDistance` (default 160 m, game's high preset)
   and HLOD past it ([instance selection](streaming.md#instance-selection)); mesh selection scales
   with rows in reach (a few hundred thousand foliage rows in Jingyu ≈ half the frame).
@@ -65,17 +68,26 @@ measurement instructions are in [driving the viewer](../driving-the-viewer.md#pr
 - **no MSAA.** at 2560×1600 on Apple M-series, 4× MSAA cost ~3× the GPU time of TAA (< 1 ms) and
   > 2× target memory. `renderScale` 0.5 cuts GPU time to ~1/3.
 - **half-resolution SSR and AO.** [SSR](lighting.md#screen-space-reflections) runs at half
-  resolution (matching PC high). `ao depth` downsamples depth once; GTAO marches half-res depth and
-  depth-aware blur upsamples.
-- **cached work.** transmittance and multiple-scattering LUTs render once per environment;
-  irradiance clipmaps update only on re-centre or new cells; local lights select/bin/upload only on
-  camera, size, or visibility changes; the weather vertical occlusion map rebases its cached world
-  centre until the camera drifts past 12 m horizontally (16 m vertically) and throttles content-only
-  refreshes to every 16 frames.
-- **mip feedback.** [mip feedback](streaming.md#mip-feedback) cut resident textures at
-  street/interior stops by 33–67%, downloads by 25–40%, and map02 walk frame median/p95 from ~15/34
-  ms to 12/23 ms (eliminating > 50 ms upload stalls). target costs 4 B/px; compute/readback overhead
-  unprofiled.
+  resolution (matching PC high), skipping rough/distant marches and zero-fade resolves and using 2×2
+  bilinear pyramid taps. `ao depth` downsamples depth once; GTAO marches half-res depth and
+  depth-aware blur upsamples using `textureGather` (4× fewer fetches).
+- **3D parallel volumetric fog and 4-tap shadow PCF.** volumetric fog injects froxels in parallel 3D
+  workgroups (`[4, 4, 4]`) with zero-density/zero-sun early outs before a 2D ray-integration pass.
+  local-light and far sun shadows use 4-tap hardware-bilinear tent PCF, and local shadows early-out
+  before the per-light BRDF.
+- **baked 3D grading/tonemap LUT.** colour grading and tonemapping bake into a 32³ ARRI LogC3 3D LUT
+  whenever grading or the tonemapper changes, reducing `fsTonemap` to a single trilinear lookup.
+- **lazy targets.** `waterDepth` and `wetnessMask` allocate lazily on first use (using 1×1
+  placeholders and skipping clears otherwise), saving ~24 MiB on dry/waterless scenes.
+- **cached work.** transmittance and multiple-scattering LUTs dirty-check atmosphere uniforms before
+  rebuilding; irradiance clipmaps update only on re-centre or new cells; local lights
+  select/bin/upload only on camera, size, or visibility changes; the weather vertical occlusion map
+  rebases its cached world centre until the camera drifts past 12 m horizontally (16 m vertically)
+  and throttles content-only refreshes to every 16 frames.
+- **mip feedback.** [mip feedback](streaming.md#mip-feedback) guards global `atomicMax` updates with
+  `atomicLoad` to avoid L2 contention, cutting resident textures at street/interior stops by 33–67%,
+  downloads by 25–40%, and map02 walk frame median/p95 from ~15/34 ms to 12/23 ms (eliminating > 50
+  ms upload stalls). target costs 4 B/px.
 - **staged uploads.** uploads ≥ 128 KiB use [staged writes](gpu-resources.md#pipelines-and-uploads),
   avoiding 15–30 ms/MiB main-thread stalls.
 - **decode and fetch pipeline.** 64 jobs/worker (64 MiB cap;
@@ -86,13 +98,15 @@ measurement instructions are in [driving the viewer](../driving-the-viewer.md#pr
   over-lifetime random draws are cached while particles live; velocity/spin curve integrals are
   pre-resolved per system, single-curve `sizeOverLifetime`/`colorOverLifetime` and sRGB conversion
   use lookup tables, and constant-zero motion/spin/custom modules are skipped
-  ([motion](particles.md#motion)). after an emitter's first synchronous frame, per-frame simulation
-  and row packing run on a dedicated Web Worker with ping-pong transferred buffers, cutting dense
-  map02 `mesh select` by 47–63%.
-- **zero per-frame hot-path allocation.** selections, buckets, sort scratch, particle worker
-  buffers, and plane arrays reuse storage across frames; per-bucket texture requests allocate
-  nothing and deduplicate within a frame; eviction biases LRU toward textures before
-  geometry/instances.
+  ([motion](particles.md#motion)). when Web Workers are available, emitter creation, simulation, and
+  row packing all run on a dedicated worker with ping-pong transferred buffers (no main-thread
+  simulation spike on first sight), cutting dense map02 `mesh select` by 47–63%.
+- **zero per-frame hot-path allocation and budgeted eviction.** selections, buckets, sort scratch,
+  particle worker buffers, and plane arrays reuse storage across frames; transparent sorting groups
+  contiguous equal-distance runs; per-bucket texture requests allocate nothing and deduplicate
+  within a frame; eviction fast-paths stale fine textures before a full LRU sort, biases toward
+  textures before geometry/instances, clears down to 90% headroom, and time-budgets releases to 1.5
+  ms/frame.
 
 target reuse: `composite` needs its own HDR target so next frame's SSR can read it after `main`
 overwrites radiance; `celestial` reuses the sky reflection target after SSR finishes.
@@ -119,7 +133,6 @@ see [quality settings](../game-data/quality-settings.md) for what the game toggl
   matching reads (`celestial` would need its own target).
 - **geometry pool compaction.** compact or shrink pools when mostly free so unused capacity returns
   to the device ([geometry pools](gpu-resources.md#buffers-and-pools)).
-- **AO blur reads.** pack depth with AO or use `textureGather`.
 - **terrain close-up blending.** profile stochastic projection or lower anisotropy.
 - **timestamp queries.** measure overhead before restricting queries to when the stats panel is
   open.
