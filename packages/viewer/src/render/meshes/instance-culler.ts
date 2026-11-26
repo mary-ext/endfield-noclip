@@ -7,6 +7,7 @@ import {
 	BUCKET_WORDS,
 	COUNTER_WORDS,
 	type GpuCullWork,
+	type GpuRows,
 	INDIRECT_WORDS,
 	ITEM_WORDS,
 	SLOT_WORDS,
@@ -51,19 +52,11 @@ export interface Occlusion {
 	near: number;
 }
 
-/** where a GPU-culled bucket's rows go and how it draws, for {@link InstanceCuller.setBucket} */
-export interface CulledBucket {
-	/** where its rows in view start in the visible list, and how many fit */
-	first: number;
-	room: number;
-	/** per shadow layer, where its casters start, and how many fit */
-	layerFirst: number[];
-	layerRoom: number[];
-	/** its draw's index into the draw parameters */
-	draw: number;
-	indexCount: number;
-	firstIndex: number;
-	baseVertex: number;
+/** submesh index range needed by {@link InstanceCuller.setBucket} */
+export interface CulledSubmesh {
+	readonly indexCount: number;
+	readonly firstIndex: number;
+	readonly baseVertex: number;
 }
 
 /**
@@ -185,22 +178,49 @@ export class InstanceCuller {
 	}
 
 	/**
+	 * places a GPU-culled bucket's in-view and per-shadow-layer row spans and writes its draw arguments,
+	 * copying the allocated per-layer rooms into `outLayerRooms`
+	 *
 	 * @param index the bucket's GPU index
-	 * @param bucket where its rows go and how it draws
+	 * @param first start of the bucket's span in the visible list
+	 * @param spanCount total rows reserved in the visible list
+	 * @param gpu the bucket's requested in-view and per-layer row counts
+	 * @param draw its draw's index into the draw parameters
+	 * @param submesh the submesh's index count, first index, and base vertex
+	 * @param outLayerRooms destination array receiving each layer's allocated room
+	 * @returns allocated room for rows in view
 	 */
-	setBucket(index: number, bucket: CulledBucket): void {
+	setBucket(
+		index: number,
+		first: number,
+		spanCount: number,
+		gpu: GpuRows,
+		draw: number,
+		submesh: CulledSubmesh,
+		outLayerRooms: number[],
+	): number {
 		const data = this.#buckets;
 		const at = index * BUCKET_WORDS;
-		data[at] = bucket.first;
-		data[at + 1] = bucket.room;
+		const end = first + spanCount;
+		const room = gpu.rows < spanCount ? gpu.rows : spanCount;
+		data[at] = first;
+		data[at + 1] = room;
+		let next = first + room;
+		const layerRows = gpu.layerRows;
 		for (let layer = 0; layer < SHADOW_LAYERS; layer++) {
-			data[at + 2 + layer * 2] = bucket.layerFirst[layer];
-			data[at + 3 + layer * 2] = bucket.layerRoom[layer];
+			const avail = end - next;
+			const req = layerRows[layer];
+			const layerRoom = req < avail ? req : avail;
+			data[at + 2 + layer * 2] = next;
+			data[at + 3 + layer * 2] = layerRoom;
+			outLayerRooms[layer] = layerRoom;
+			next += layerRoom;
 		}
-		data[at + BUCKET_DRAW] = bucket.draw;
-		data[at + BUCKET_DRAW + 1] = bucket.indexCount;
-		data[at + BUCKET_DRAW + 2] = bucket.firstIndex;
-		data[at + BUCKET_DRAW + 3] = bucket.baseVertex;
+		data[at + BUCKET_DRAW] = draw;
+		data[at + BUCKET_DRAW + 1] = submesh.indexCount;
+		data[at + BUCKET_DRAW + 2] = submesh.firstIndex;
+		data[at + BUCKET_DRAW + 3] = submesh.baseVertex;
+		return room;
 	}
 
 	/**

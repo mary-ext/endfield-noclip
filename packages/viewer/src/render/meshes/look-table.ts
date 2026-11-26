@@ -67,7 +67,8 @@ export class LookTable {
 	 * @returns its allocated look slot, or -1 if never drawn
 	 */
 	slotOf(material: number): number {
-		return (this.#slots[material] ?? 0) - 1;
+		const slots = this.#slots;
+		return material < slots.length ? slots[material] - 1 : -1;
 	}
 
 	/** clears the per-frame set of animated looks */
@@ -84,14 +85,15 @@ export class LookTable {
 	 * @returns its slot index, or -1 when the table is full
 	 */
 	ensure(material: number, look: MaterialLook): number {
+		const slots = this.#slots;
 		let slot: number;
-		const known = this.#slots[material] ?? 0;
+		const known = material < slots.length ? slots[material] : 0;
 		if (known > 0) {
 			slot = known - 1;
 		} else {
-			if (material >= this.#slots.length) {
-				const grown = new Uint32Array(Math.max(material + 1, this.#slots.length * 2, 1024));
-				grown.set(this.#slots);
+			if (material >= slots.length) {
+				const grown = new Uint32Array(Math.max(material + 1, slots.length * 2, 1024));
+				grown.set(slots);
 				this.#slots = grown;
 			}
 			const allocation = this.#buffer.allocate(1);

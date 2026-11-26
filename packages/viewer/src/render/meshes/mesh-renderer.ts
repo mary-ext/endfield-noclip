@@ -37,7 +37,7 @@ import {
 import { GeometryPools } from './geometry-pools.ts';
 import { releaseGeometry, uploadGeometry } from './geometry-residency.ts';
 import { type GpuCullWork, INDIRECT_WORDS } from './gpu-cull-work.ts';
-import { type CullTargets, type CulledBucket, InstanceCuller, type Occlusion } from './instance-culler.ts';
+import { type CullTargets, InstanceCuller, type Occlusion } from './instance-culler.ts';
 import { LookTable } from './look-table.ts';
 import {
 	type EffectInputs,
@@ -219,17 +219,6 @@ export class MeshRenderer {
 		vertices: null,
 		indices: null,
 		material: null,
-	};
-	/** what {@link #prepareDraw} hands the culler, reused */
-	#culled: CulledBucket = {
-		first: 0,
-		room: 0,
-		layerFirst: Array.from({ length: SHADOW_LAYERS }, () => 0),
-		layerRoom: Array.from({ length: SHADOW_LAYERS }, () => 0),
-		draw: 0,
-		indexCount: 0,
-		firstIndex: 0,
-		baseVertex: 0,
 	};
 
 	/**
@@ -554,21 +543,32 @@ export class MeshRenderer {
 		let listStart = LIST_CAPACITY;
 		let listEnd = 0;
 		let d = 0;
-		for (const range of this.#ranges) {
-			if (range.entries.length > 1) {
-				range.entries.sort(COMPARATORS[range.info.order]);
+		for (let r = 0; r < this.#ranges.length; r++) {
+			const range = this.#ranges[r];
+			const rangeEntries = range.entries;
+			if (rangeEntries.length > 1) {
+				rangeEntries.sort(COMPARATORS[range.info.order]);
 			}
 			range.start = d;
 			range.castOnlyEnd = d;
 			range.castersEnd = d;
-			for (const { bucket, span, state } of range.entries) {
-				if (d >= MAX_DRAWS || !this.#prepareDraw(d, bucket, span, range.info, state)) {
+			const info = range.info;
+			for (let i = 0; i < rangeEntries.length; i++) {
+				const entry = rangeEntries[i];
+				const bucket = entry.bucket;
+				const span = entry.span;
+				if (d >= MAX_DRAWS || !this.#prepareDraw(d, bucket, span, info, entry.state)) {
 					continue;
 				}
 				// the GPU writes its buckets' draw ids
 				if (bucket.gpu === null) {
-					listStart = Math.min(listStart, span.first);
-					listEnd = Math.max(listEnd, span.first + span.count);
+					if (span.first < listStart) {
+						listStart = span.first;
+					}
+					const spanEnd = span.first + span.count;
+					if (spanEnd > listEnd) {
+						listEnd = spanEnd;
+					}
 				}
 				d++;
 				if (bucket.look.castsShadows) {
@@ -704,36 +704,29 @@ export class MeshRenderer {
 		params[at + 14] = uv1[2];
 		params[at + 15] = uv1[3];
 		const gpu = bucket.gpu;
-		const culled = this.#culled;
+		let draw = this.#draws[d];
+		const layerRooms = draw === undefined ? Array.from({ length: SHADOW_LAYERS }, () => 0) : draw.layerRooms;
+		let count: number;
+		let indirect: number;
 		if (gpu === null) {
 			this.#drawIdData.fill(d, span.first, span.first + span.count);
-		} else if (this.#culler !== null) {
-			// the span holds the rows in view, then each layer's casters, as far as it reaches
-			const end = span.first + span.count;
-			culled.first = span.first;
-			culled.room = Math.min(gpu.rows, span.count);
-			let next = span.first + culled.room;
-			for (let layer = 0; layer < SHADOW_LAYERS; layer++) {
-				culled.layerFirst[layer] = next;
-				culled.layerRoom[layer] = Math.min(gpu.layerRows[layer], end - next);
-				next += culled.layerRoom[layer];
-			}
-			culled.draw = d;
-			culled.indexCount = range.indexCount;
-			culled.firstIndex = range.firstIndex;
-			culled.baseVertex = range.baseVertex;
-			this.#culler.setBucket(gpu.index, culled);
+			count = span.count;
+			indirect = -1;
+		} else {
+			indirect = gpu.index * INDIRECT_WORDS * 4;
+			count =
+				this.#culler !== null
+					? this.#culler.setBucket(gpu.index, span.first, span.count, gpu, d, range, layerRooms)
+					: 0;
 		}
-		const indirect = gpu === null ? -1 : gpu.index * INDIRECT_WORDS * 4;
-		const count = gpu === null ? span.count : culled.room;
 
 		// an effect's group also binds the main pass's outputs, so it's built when its pass encodes
 		const material = info.effect ? null : state.group;
 		const effect = info.effect ? state : null;
 		const variant = bucket.cullIndex * 4 + resident.formatVariant;
-		const draw = this.#draws[d];
+		const vertexTextured = look.params[SwayRow.kind] === SwayKind.Mushroom;
 		if (draw === undefined) {
-			this.#draws[d] = {
+			draw = {
 				geometry: resident,
 				indexCount: range.indexCount,
 				firstIndex: range.firstIndex,
@@ -742,7 +735,7 @@ export class MeshRenderer {
 				count,
 				layerCounts: span.layerCounts,
 				indirect,
-				layerRooms: gpu === null ? [] : [...culled.layerRoom],
+				layerRooms,
 				material,
 				variant,
 				effect,
@@ -750,8 +743,9 @@ export class MeshRenderer {
 				distances: bucket.distances,
 				bands: bucket.bands,
 				fading: bucket.fading,
-				vertexTextured: look.params[SwayRow.kind] === SwayKind.Mushroom,
+				vertexTextured,
 			};
+			this.#draws[d] = draw;
 		} else {
 			draw.geometry = resident;
 			draw.indexCount = range.indexCount;
@@ -761,11 +755,6 @@ export class MeshRenderer {
 			draw.count = count;
 			draw.layerCounts = span.layerCounts;
 			draw.indirect = indirect;
-			if (gpu !== null) {
-				for (let layer = 0; layer < SHADOW_LAYERS; layer++) {
-					draw.layerRooms[layer] = culled.layerRoom[layer];
-				}
-			}
 			draw.material = material;
 			draw.variant = variant;
 			draw.effect = effect;
@@ -773,7 +762,7 @@ export class MeshRenderer {
 			draw.distances = bucket.distances;
 			draw.bands = bucket.bands;
 			draw.fading = bucket.fading;
-			draw.vertexTextured = look.params[SwayRow.kind] === SwayKind.Mushroom;
+			draw.vertexTextured = vertexTextured;
 		}
 		if (!bucket.castOnly && gpu === null) {
 			this.instanceCount += span.count;
