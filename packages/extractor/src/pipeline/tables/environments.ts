@@ -65,15 +65,15 @@ import {
 	type Visibility,
 } from '../../game/state/scene-control.ts';
 import type { Context } from '../../install/context.ts';
-import { compareNumbers, compareStrings } from '../../util/compare.ts';
-import { errorText } from '../../util/errors.ts';
 import {
 	bundleSources,
 	relocateSaved,
 	type SavedLocator,
 	saveLocated,
 	sourcesCurrent,
-} from '../cache/bundle-memo.ts';
+} from '../../ir/bundle-memo.ts';
+import { compareNumbers, compareStrings } from '../../util/compare.ts';
+import { errorText } from '../../util/errors.ts';
 import type { PackCache } from '../cache/pack-cache.ts';
 import type { BundleSource } from '../compile/convert-pool.ts';
 import type { ControlRegistry } from '../control-registry.ts';

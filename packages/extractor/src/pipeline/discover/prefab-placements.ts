@@ -33,16 +33,16 @@ import { placePrefabLight, readPrefabLights, type PrefabLight } from '../../game
 import type { PrefabRoots } from '../../game/prefabs/prefab-root.ts';
 import { type EffectLodSource, readPrefabRenderers, type PrefabRenderer } from '../../game/prefabs/prefab.ts';
 import type { WorldIndex } from '../../game/world/world-index.ts';
-import { compareNumbers } from '../../util/compare.ts';
-import { formatErrorOnly } from '../../util/errors.ts';
-import { mapPool } from '../../util/pool.ts';
 import {
 	bundleSources,
 	relocateSaved,
 	type SavedLocator,
 	saveLocated,
 	sourcesCurrent,
-} from '../cache/bundle-memo.ts';
+} from '../../ir/bundle-memo.ts';
+import { compareNumbers } from '../../util/compare.ts';
+import { formatErrorOnly } from '../../util/errors.ts';
+import { mapPool } from '../../util/pool.ts';
 import type { PackCache } from '../cache/pack-cache.ts';
 import type { BundleSource } from '../compile/convert-pool.ts';
 import { chainDistanceOrigin } from '../instances/chains.ts';

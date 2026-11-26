@@ -37,12 +37,12 @@ import {
 } from '../../game/materials/surfaces/sludge.ts';
 import { keywordsNotDrawn, surfaceGaps } from '../../game/materials/surfaces/surface-keywords.ts';
 import type { MaterialValues } from '../../game/prefabs/prefab.ts';
+import { bundleSources, sourcesCurrent } from '../../ir/bundle-memo.ts';
 import { compareNumbers } from '../../util/compare.ts';
 import { errorText, failureReason } from '../../util/errors.ts';
 import { orderedPool } from '../../util/pool.ts';
 import type { BlobMeta } from '../cache/blob-file.ts';
 import type { BlobPlacement, BlobStore } from '../cache/blob-store.ts';
-import { bundleSources, sourcesCurrent } from '../cache/bundle-memo.ts';
 import type { PackCache } from '../cache/pack-cache.ts';
 import { PhaseTimer } from '../phase-timer.ts';
 
