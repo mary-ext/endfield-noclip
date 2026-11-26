@@ -113,7 +113,7 @@ export const evalSurface = tgpu.fn(
 	'use gpu';
 	const frame = frameLayout.$.frame;
 	const draw = meshDrawLayout.$.draws[v.draw];
-	const flags = std.bitcastF32toU32(draw.offset.w);
+	const flags = std.bitcast(d.f32, d.u32)(draw.offset.w);
 	const extra = extraFlags(draw);
 	const id = lookSlot(draw);
 	const look = meshDrawLayout.$.looks[id];
@@ -595,7 +595,7 @@ export const fsCutoutOverlay = tgpu.fragmentFn({
 	'use gpu';
 	const frame = frameLayout.$.frame;
 	const draw = meshDrawLayout.$.draws[input.draw];
-	const flags = std.bitcastF32toU32(draw.offset.w);
+	const flags = std.bitcast(d.f32, d.u32)(draw.offset.w);
 	const id = lookSlot(draw);
 	const look = meshDrawLayout.$.looks[id];
 	const gradientScale = std.exp2(frame.params.y);

@@ -187,7 +187,7 @@ export const vsEffect = tgpu.vertexFn({
 	const row = meshInstancesLayout.$.rows[listRow(entry)];
 	const drawId = effectDrawLayout.$.drawIds[v.ii];
 	const draw = effectDrawLayout.$.draws[drawId];
-	const id = std.bitcastF32toU32(draw.scale.w) & d.u32(0xffff);
+	const id = std.bitcast(d.f32, d.u32)(draw.scale.w) & d.u32(0xffff);
 	let p = std.add(draw.offset.xyz, std.mul(v.position.xyz, draw.scale.xyz));
 	if (fxRow(id, d.u32(FX_UNFOGGED)).y === FX_KIND_BEAM) {
 		p = beamVertex(id, p);
@@ -198,7 +198,7 @@ export const vsEffect = tgpu.vertexFn({
 	);
 	const m = rowBasis(row.t0, row.t1, row.t2, row.info);
 	const inv = std.transpose(inverse3(m));
-	const flags = std.bitcastF32toU32(draw.offset.w);
+	const flags = std.bitcast(d.f32, d.u32)(draw.offset.w);
 	const uv = sheetUv(
 		row.sheet,
 		d.vec4f(

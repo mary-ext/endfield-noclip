@@ -275,7 +275,7 @@ export const lookSlot = tgpu.fn(
 	d.u32,
 )((draw) => {
 	'use gpu';
-	return std.bitcastF32toU32(draw.scale.w) & d.u32(0xffff);
+	return std.bitcast(d.f32, d.u32)(draw.scale.w) & d.u32(0xffff);
 });
 
 /**
@@ -289,7 +289,7 @@ export const extraFlags = tgpu.fn(
 	d.u32,
 )((draw) => {
 	'use gpu';
-	return std.bitcastF32toU32(draw.scale.w) >>> d.u32(16);
+	return std.bitcast(d.f32, d.u32)(draw.scale.w) >>> d.u32(16);
 });
 
 /**

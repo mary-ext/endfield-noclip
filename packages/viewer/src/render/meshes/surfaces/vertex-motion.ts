@@ -228,7 +228,7 @@ export const instanceRel = tgpu.fn(
 		meshInstancesLayout.$.blocks[rowBlock(row.block)].xyz,
 	);
 	const rel = std.add(std.mul(rowBasis(row.t0, row.t1, row.t2, row.info), p), origin);
-	const flags = std.bitcastF32toU32(draw.offset.w);
+	const flags = std.bitcast(d.f32, d.u32)(draw.offset.w);
 	return std.add(
 		std.add(rel, grassLean(flags, look, p.y)),
 		vertexSway(flags, look, p, position.w, rel, origin, frame.eye.w, frame.wind.x),
@@ -248,7 +248,7 @@ export const instancePrevRel = tgpu.fn(
 		meshInstancesLayout.$.blocks[rowBlock(row.block)].xyz,
 	);
 	const rel = std.add(std.mul(rowBasis(row.t0, row.t1, row.t2, row.info), p), origin);
-	const flags = std.bitcastF32toU32(draw.offset.w);
+	const flags = std.bitcast(d.f32, d.u32)(draw.offset.w);
 	return std.add(
 		std.add(rel, grassLean(flags, look, p.y)),
 		vertexSway(flags, look, p, position.w, rel, origin, frame.prevTime.x, frame.prevTime.y),

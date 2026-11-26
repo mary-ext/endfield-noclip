@@ -41,7 +41,7 @@ const mf32 = tgpu.fn(
 	d.f32,
 )((cloth, word) => {
 	'use gpu';
-	return std.bitcastU32toF32(clothSimLayout.$.clothMeta[cloth][word]);
+	return std.bitcast(d.u32, d.f32)(clothSimLayout.$.clothMeta[cloth][word]);
 });
 
 const nf32 = tgpu.fn(
@@ -49,7 +49,7 @@ const nf32 = tgpu.fn(
 	d.f32,
 )((node, word) => {
 	'use gpu';
-	return std.bitcastU32toF32(clothSimLayout.$.clothNodes[node][word]);
+	return std.bitcast(d.u32, d.f32)(clothSimLayout.$.clothNodes[node][word]);
 });
 
 const ni32 = tgpu.fn(
@@ -57,7 +57,7 @@ const ni32 = tgpu.fn(
 	d.i32,
 )((node, word) => {
 	'use gpu';
-	return std.bitcastU32toI32(clothSimLayout.$.clothNodes[node][word]);
+	return std.bitcast(d.u32, d.i32)(clothSimLayout.$.clothNodes[node][word]);
 });
 
 const readSharedPos = tgpu.fn(
@@ -111,9 +111,9 @@ export const csClothSim = tgpu.computeFn({
 	const windBalanceFactor = mf32(clothIdx, 6);
 	const windIntensityScale = mf32(clothIdx, 7);
 
-	const groupNodeOffset = std.bitcastU32toI32(clothSimLayout.$.clothMeta[clothIdx][8]);
-	const groupBatchOffset = std.bitcastU32toI32(clothSimLayout.$.clothMeta[clothIdx][9]);
-	const groupCacheOffset = std.bitcastU32toI32(clothSimLayout.$.clothMeta[clothIdx][10]);
+	const groupNodeOffset = std.bitcast(d.u32, d.i32)(clothSimLayout.$.clothMeta[clothIdx][8]);
+	const groupBatchOffset = std.bitcast(d.u32, d.i32)(clothSimLayout.$.clothMeta[clothIdx][9]);
+	const groupCacheOffset = std.bitcast(d.u32, d.i32)(clothSimLayout.$.clothMeta[clothIdx][10]);
 
 	const longestAnchorDist = mf32(clothIdx, 12);
 	const softClampFlag = mf32(clothIdx, 13) !== 0;
@@ -461,15 +461,15 @@ export const csClothSim = tgpu.computeFn({
 				std.dot(w2l2, mwlC3),
 			);
 
-			clothSimLayout.$.clothNodes[nodeIdx][20] = std.bitcastF32toU32(curPos.x);
-			clothSimLayout.$.clothNodes[nodeIdx][21] = std.bitcastF32toU32(curPos.y);
-			clothSimLayout.$.clothNodes[nodeIdx][22] = std.bitcastF32toU32(curPos.z);
-			clothSimLayout.$.clothNodes[nodeIdx][24] = std.bitcastF32toU32(finalPos.x);
-			clothSimLayout.$.clothNodes[nodeIdx][25] = std.bitcastF32toU32(finalPos.y);
-			clothSimLayout.$.clothNodes[nodeIdx][26] = std.bitcastF32toU32(finalPos.z);
-			clothSimLayout.$.clothNodes[nodeIdx][28] = std.bitcastF32toU32(n.x);
-			clothSimLayout.$.clothNodes[nodeIdx][29] = std.bitcastF32toU32(n.y);
-			clothSimLayout.$.clothNodes[nodeIdx][30] = std.bitcastF32toU32(n.z);
+			clothSimLayout.$.clothNodes[nodeIdx][20] = std.bitcast(d.f32, d.u32)(curPos.x);
+			clothSimLayout.$.clothNodes[nodeIdx][21] = std.bitcast(d.f32, d.u32)(curPos.y);
+			clothSimLayout.$.clothNodes[nodeIdx][22] = std.bitcast(d.f32, d.u32)(curPos.z);
+			clothSimLayout.$.clothNodes[nodeIdx][24] = std.bitcast(d.f32, d.u32)(finalPos.x);
+			clothSimLayout.$.clothNodes[nodeIdx][25] = std.bitcast(d.f32, d.u32)(finalPos.y);
+			clothSimLayout.$.clothNodes[nodeIdx][26] = std.bitcast(d.f32, d.u32)(finalPos.z);
+			clothSimLayout.$.clothNodes[nodeIdx][28] = std.bitcast(d.f32, d.u32)(n.x);
+			clothSimLayout.$.clothNodes[nodeIdx][29] = std.bitcast(d.f32, d.u32)(n.y);
+			clothSimLayout.$.clothNodes[nodeIdx][30] = std.bitcast(d.f32, d.u32)(n.z);
 		}
 		std.workgroupBarrier();
 	}

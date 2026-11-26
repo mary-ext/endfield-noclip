@@ -106,7 +106,7 @@ const holeBit = tgpu.fn(
 	d.u32,
 )(() => {
 	'use gpu';
-	return std.bitcastF32toU32(frameLayout.$.frame.terrain.z);
+	return std.bitcast(d.f32, d.u32)(frameLayout.$.frame.terrain.z);
 });
 
 const heightOf = tgpu.fn(
@@ -178,7 +178,7 @@ export const vsTerrain = tgpu.vertexFn({
 		surface: p.info.w,
 		local,
 		world: d.vec3f(p.detail.x + local.x, h + p.detail.z, p.detail.y + local.y),
-		detail: std.bitcastF32toU32(p.detail.w),
+		detail: std.bitcast(d.f32, d.u32)(p.detail.w),
 	};
 });
 

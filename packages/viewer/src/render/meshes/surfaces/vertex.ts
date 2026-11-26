@@ -65,7 +65,7 @@ export const vsMain = tgpu.vertexFn({
 	);
 	const m = rowBasis(row.t0, row.t1, row.t2, row.info);
 	const mirrored = std.determinant(m) < 0;
-	const flags = std.bitcastF32toU32(draw.offset.w);
+	const flags = std.bitcast(d.f32, d.u32)(draw.offset.w);
 	const uv = d.vec4f(
 		std.add(std.mul(input.uv0, draw.uv0.xy), draw.uv0.zw),
 		std.add(std.mul(input.uv1, draw.uv1.xy), draw.uv1.zw),
@@ -209,7 +209,7 @@ export const vsCutoutDepth = tgpu.vertexFn({
 	const entry = meshInstancesLayout.$.list[input.ii];
 	const row = meshInstancesLayout.$.rows[listRow(entry)];
 	const m = rowBasis(row.t0, row.t1, row.t2, row.info);
-	const flags = std.bitcastF32toU32(draw.offset.w);
+	const flags = std.bitcast(d.f32, d.u32)(draw.offset.w);
 	const uv = d.vec4f(
 		std.add(std.mul(input.uv0, draw.uv0.xy), draw.uv0.zw),
 		std.add(std.mul(input.uv1, draw.uv1.xy), draw.uv1.zw),
@@ -252,7 +252,7 @@ export const fsCutoutDepth = tgpu.fragmentFn({
 	}
 	const frame = frameLayout.$.frame;
 	const draw = meshDrawLayout.$.draws[input.draw];
-	const flags = std.bitcastF32toU32(draw.offset.w);
+	const flags = std.bitcast(d.f32, d.u32)(draw.offset.w);
 	const id = lookSlot(draw);
 	const look = meshDrawLayout.$.looks[id];
 	const gradientScale = std.exp2(frame.params.y);

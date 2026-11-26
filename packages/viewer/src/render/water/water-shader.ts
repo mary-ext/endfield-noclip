@@ -183,7 +183,7 @@ export const vsWater = tgpu.vertexFn({
 		position: d.vec4f(clipXy, post.forward.w, z),
 		rel,
 		normal: n,
-		config: std.bitcastF32toU32(s.offset.w),
+		config: std.bitcast(d.f32, d.u32)(s.offset.w),
 		mirrored: std.select(d.u32(0), d.u32(1), std.dot(std.cross(s.t0.xyz, s.t1.xyz), s.t2.xyz) < 0),
 	};
 });
@@ -292,7 +292,7 @@ export const fsWater = tgpu.fragmentFn({
 		const uv = std.add(std.div(q, std.max(water[0].z, 1)), d.vec2f(0.5));
 		const sampled = std.textureSampleLevel(waterLayout.$.flowMap, waterLayout.$.repeatSampler, uv, 0);
 		flow = std.select(flow, sampled, water[0].y > 0.5);
-		const sectorMask = std.bitcastF32toU32(water[8].w);
+		const sectorMask = std.bitcast(d.f32, d.u32)(water[8].w);
 		if (sectorMask !== d.u32(0)) {
 			const local = std.div(std.sub(q, water[8].xy), std.max(water[8].z, 1));
 			if (std.all(std.ge(local, d.vec2f(0))) && std.all(std.lt(local, d.vec2f(3)))) {
