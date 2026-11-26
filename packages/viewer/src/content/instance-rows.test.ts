@@ -7,12 +7,16 @@ import {
 	assignBlockSlot,
 	BLOCK_SLOT_BITS,
 	buildInstanceRows,
+	CULL_FLOATS,
 	markBillboardRows,
 	movingRows,
 	rideRows,
+	ROW_LOD_SIZE_MASK,
+	ROW_LOD_SIZE_SHIFT,
 	ROW_WORDS,
 	RowBillboard,
 	RowKind,
+	RowWord,
 	turnRows,
 } from './instance-rows.ts';
 
@@ -144,4 +148,34 @@ it('rewrites spinning rows in runs that bridge short gaps of rows holding still'
 		values: new Float32Array(rows.length * 7),
 	};
 	assert.deepEqual([...buildInstanceRows(spinning, RowKind.Detail).spins!.runs], [2, 6, 30, 31]);
+});
+
+it('packs LODGroup half-sizes into RowWord.info in lockstep with CPU cull sizes', () => {
+	const withLod = block([0, 1]);
+	withLod.bounds.set([0, 0, 0, 2.5, 1, 1], 0);
+	withLod.bounds.set([0, 0, 0, 2.5, 1, 1], 6);
+	withLod.lodGroups = {
+		rows: Uint32Array.of(1),
+		values: Float32Array.of(0, 0, 0, 2.418),
+	};
+	const built = buildInstanceRows(withLod, RowKind.Detail);
+	// row 0 has no LODGroup override: info bits 4–19 stay zero and CPU cull keeps max(extent)
+	assert.equal((built.rows[RowWord.info] >>> ROW_LOD_SIZE_SHIFT) & ROW_LOD_SIZE_MASK, 0);
+	assert.equal(built.cull[1], 2.5);
+	// row 1 has a LODGroup override: info bits 4–19 hold f16(refSize * 0.5), matching CPU cull[1]
+	const info1 = built.rows[ROW_WORDS + RowWord.info];
+	const halfBits = (info1 >>> ROW_LOD_SIZE_SHIFT) & ROW_LOD_SIZE_MASK;
+	const decoded = new Float16Array(Uint16Array.of(halfBits).buffer)[0];
+	assert.equal(info1 & 7, RowKind.Detail);
+	assert.equal(built.cull[CULL_FLOATS + 1], decoded);
+	assert.ok(Math.abs(decoded - 1.209) < 1e-3);
+	// marking billboards preserves the packed LOD half-size
+	const chains: Chain[] = [
+		{ flags: 0, draws: [], distanceOrigin: null },
+		{ flags: ChainFlags.BillboardFacing, draws: [], distanceOrigin: null },
+	];
+	markBillboardRows(built, chains);
+	const marked = built.rows[ROW_WORDS + RowWord.info];
+	assert.equal(marked >>> 30, RowBillboard.Facing);
+	assert.equal((marked >>> ROW_LOD_SIZE_SHIFT) & ROW_LOD_SIZE_MASK, halfBits);
 });

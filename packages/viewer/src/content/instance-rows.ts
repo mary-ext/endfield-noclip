@@ -29,7 +29,11 @@ export const RowWord = {
 	block: 15,
 	/** half extents, f32×3 */
 	extent: 16,
-	/** its {@link RowKind} in bits 0–2 and its {@link RowBillboard} in bits 30–31; the bits between are free */
+	/**
+	 * its {@link RowKind} in bits 0–2, {@link ROW_CLOTH_BIT} in bit 3, an optional f16 LODGroup half-size in
+	 * bits 4–19 ({@link ROW_LOD_SIZE_SHIFT}, 0 = use `max(extent)`), and its {@link RowBillboard} in bits
+	 * 30–31
+	 */
 	info: 19,
 	/** the texture sheet tile its mesh's UVs are remapped into ({@link rowSheet}) */
 	sheet: 20,
@@ -129,6 +133,18 @@ export type RowBillboard = (typeof RowBillboard)[keyof typeof RowBillboard];
  * singleSkeleton]`)
  */
 export const ROW_CLOTH_BIT = 1 << 3;
+
+/** bit shift in {@link RowWord.info} of the optional f16 LODGroup half-size override (0 = use `max(extent)`) */
+export const ROW_LOD_SIZE_SHIFT = 4;
+
+/** 16-bit mask of the f16 LODGroup half-size override in {@link RowWord.info} after shifting */
+export const ROW_LOD_SIZE_MASK = 0xffff;
+
+/** largest finite IEEE 754 binary16 value */
+const F16_MAX = 65_504;
+
+const lodHalf = new Float16Array(1);
+const lodHalfWord = new Uint16Array(lodHalf.buffer);
 
 /**
  * marks GPU-simulated cloth rows in their info and custom words, in place, from the package's cloth table
@@ -363,7 +379,15 @@ export const buildInstanceRows = (block: InstanceBlock, kinds: RowKinds): Instan
 		for (let k = 0; k < lodRows.length; k++) {
 			const refSize = lodValues[k * LOD_GROUP_FLOATS + 3];
 			if (refSize > 0) {
-				cull[lodRows[k] * CULL_FLOATS + 1] = refSize * 0.5;
+				// round through f16 so CPU selection and GPU culling see the exact same LOD half-size
+				lodHalf[0] = Math.min(refSize * 0.5, F16_MAX);
+				const halfBits = lodHalfWord[0];
+				if (halfBits !== 0) {
+					const row = lodRows[k];
+					cull[row * CULL_FLOATS + 1] = lodHalf[0];
+					rows[row * ROW_WORDS + RowWord.info] =
+						(rows[row * ROW_WORDS + RowWord.info] | (halfBits << ROW_LOD_SIZE_SHIFT)) >>> 0;
+				}
 			}
 		}
 	}

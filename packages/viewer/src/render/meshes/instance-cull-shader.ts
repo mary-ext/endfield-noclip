@@ -8,8 +8,9 @@
 
 import tgpu, { d, std } from 'typegpu';
 
-import { BLOCK_SLOT_BITS } from '../../content/instance-rows.ts';
+import { BLOCK_SLOT_BITS, ROW_LOD_SIZE_MASK, ROW_LOD_SIZE_SHIFT } from '../../content/instance-rows.ts';
 import { SHADOW_LAYER_MIN_SQUARED, SHADOW_LAYERS } from '../../scene/shadow-volumes.ts';
+import { InstanceRow } from '../core/frame-core.ts';
 
 import {
 	BUCKET_WORDS,
@@ -28,7 +29,6 @@ export const MAX_GROUPS_X = 65_535;
 /** where a bucket's draw index and submesh range start among its words, past its regions */
 export const BUCKET_DRAW = 2 * (1 + SHADOW_LAYERS);
 
-const ROW_VEC4S = 6;
 const SHADOW_MIN_SQUARED = tgpu.const(d.arrayOf(d.f32, SHADOW_LAYERS), [...SHADOW_LAYER_MIN_SQUARED]);
 
 /** uniform view, shadow, and occlusion parameters for GPU instance culling */
@@ -66,7 +66,7 @@ export const CullViewSchema = d.struct({
 /** bind group layout for {@link csCullWrite} and {@link csCullArguments} */
 export const instanceCullLayout = tgpu.bindGroupLayout({
 	view: { uniform: CullViewSchema },
-	rows: { storage: d.arrayOf(d.vec4f), access: 'readonly' },
+	rows: { storage: d.arrayOf(InstanceRow), access: 'readonly' },
 	blocks: { storage: d.arrayOf(d.vec4f), access: 'readonly' },
 	work: { storage: d.arrayOf(d.u32), access: 'readonly' },
 	counters: { storage: d.arrayOf(d.atomic(d.u32)), access: 'mutable' },
@@ -226,15 +226,13 @@ const isOccluded = tgpu.fn(
 const testRow = tgpu.fn(
 	[d.u32, d.u32],
 	Tested,
-)((row, flags) => {
+)((rowIndex, flags) => {
 	'use gpu';
 	const view = instanceCullLayout.$.view;
-	const rows = instanceCullLayout.$.rows;
-	const at = row * ROW_VEC4S;
-	const centre = rows[at + 3];
-	const extent = rows[at + 4].xyz;
-	const block = std.bitcastF32toU32(centre.w) & d.u32((1 << BLOCK_SLOT_BITS) - 1);
-	const p = std.add(instanceCullLayout.$.blocks[block].xyz, centre.xyz);
+	const row = instanceCullLayout.$.rows[rowIndex];
+	const extent = row.extent;
+	const block = row.block & d.u32((1 << BLOCK_SLOT_BITS) - 1);
+	const p = std.add(instanceCullLayout.$.blocks[block].xyz, row.center);
 	const radius = std.length(extent);
 	const dist = std.max(std.length(p), 0.1);
 	const pixels = (radius * view.pixelFactor) / dist;
@@ -252,9 +250,11 @@ const testRow = tgpu.fn(
 	if (!inView && layer >= SHADOW_LAYERS) {
 		return Tested({ drawn: false, inView: false, occluded: false, squared: 0, mirrored: 0, layer: 0 });
 	}
-	const size = std.max(extent.x, std.max(extent.y, extent.z));
+	const lodBits = (row.info >>> d.u32(ROW_LOD_SIZE_SHIFT)) & d.u32(ROW_LOD_SIZE_MASK);
+	const lodSize = std.unpack2x16float(lodBits).x;
+	const size = std.select(std.max(extent.x, std.max(extent.y, extent.z)), lodSize, lodBits !== d.u32(0));
 	const relative = (2 * size * view.pixelFactor) / (dist * view.viewportHeight);
-	const basis = d.mat3x3f(rows[at].xyz, rows[at + 1].xyz, rows[at + 2].xyz);
+	const basis = d.mat3x3f(row.t0.xyz, row.t1.xyz, row.t2.xyz);
 	const mirrored = std.select(d.u32(0), d.u32(1), std.determinant(basis) < 0);
 	const occludedFlag = inView && view.occlusion !== 0 && (flags & 0x00ff0000) === 0 && isOccluded(p, radius);
 	return Tested({
@@ -320,8 +320,8 @@ export const csCullWrite = tgpu.computeFn({
 		const slot = slots + s * SLOT_WORDS;
 		if (
 			!(
-				tested.squared > std.bitcastU32toF32(work[slot]) &&
-				tested.squared <= std.bitcastU32toF32(work[slot + 1])
+				tested.squared > std.bitcast(d.f32, d.u32)(work[slot]) &&
+				tested.squared <= std.bitcast(d.f32, d.u32)(work[slot + 1])
 			)
 		) {
 			continue;
