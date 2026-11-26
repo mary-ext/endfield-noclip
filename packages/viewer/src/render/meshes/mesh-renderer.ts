@@ -200,6 +200,17 @@ export class MeshRenderer {
 	/** the camera last frame's depth was drawn with */
 	#history = new CameraHistory();
 	#previous = new Float32Array(CAMERA_HISTORY_FLOATS);
+	/** reusable per-pass binding tracker for {@link #encode} */
+	#encodeState: EncodeState = {
+		phase: null,
+		variant: -1,
+		fading: false,
+		stencil: null,
+		reference: -1,
+		vertices: null,
+		indices: null,
+		material: null,
+	};
 	/** what {@link #prepareDraw} hands the culler, reused */
 	#culled: CulledBucket = {
 		first: 0,
@@ -867,16 +878,15 @@ export class MeshRenderer {
 		pass.setBindGroup(1, this.#instances.bindGroup);
 		pass.setBindGroup(2, this.#drawGroup);
 		this.#vertexBindings.reset();
-		const state: EncodeState = {
-			phase: null,
-			variant: -1,
-			fading: false,
-			stencil: null,
-			reference: -1,
-			vertices: null,
-			indices: null,
-			material: null,
-		};
+		const state = this.#encodeState;
+		state.phase = null;
+		state.variant = -1;
+		state.fading = false;
+		state.stencil = null;
+		state.reference = -1;
+		state.vertices = null;
+		state.indices = null;
+		state.material = null;
 		let draws = 0;
 		if (which === 'transparent') {
 			const phases = PASS_PHASES.transparent;
@@ -884,11 +894,15 @@ export class MeshRenderer {
 			for (let r = 0; r < runs.length; r += 4) {
 				const draw = this.#draws[runs[r]];
 				if (
-					this.#encodeDraw(pass, state, phases[runs[r + 3]], draw, {
-						first: draw.first + runs[r + 1],
-						count: runs[r + 2],
+					this.#encodeDraw(
+						pass,
+						state,
+						phases[runs[r + 3]],
+						draw,
+						draw.first + runs[r + 1],
+						runs[r + 2],
 						layer,
-					})
+					)
 				) {
 					draws++;
 				}
@@ -910,7 +924,7 @@ export class MeshRenderer {
 				} else {
 					count = draw.layerRooms[layer] ?? 0;
 				}
-				if (this.#encodeDraw(pass, state, phase, draw, { first: draw.first, count, layer })) {
+				if (this.#encodeDraw(pass, state, phase, draw, draw.first, count, layer)) {
 					draws++;
 				}
 			}
@@ -931,7 +945,9 @@ export class MeshRenderer {
 		state: EncodeState,
 		phase: DrawPhase,
 		draw: PreparedDraw,
-		{ first, count, layer }: { first: number; count: number; layer: number },
+		first: number,
+		count: number,
+		layer: number,
 	): boolean {
 		// only an effect drawn outside its pass would lack its group
 		if (draw.material === null || count === 0) {

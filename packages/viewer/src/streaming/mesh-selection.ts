@@ -133,6 +133,9 @@ const BAND_SLACK = 1.02;
  * screen, and so streams their textures at full detail
  */
 const LOOSE_SEGMENT = 0.25;
+/** scratch views for bitcasting foliage cluster sparsity words to float without per-frame allocation */
+const SPARSITY_U32 = new Uint32Array(1);
+const SPARSITY_F32 = new Float32Array(SPARSITY_U32.buffer);
 
 /**
  * @param slot the slot whose LOD band rows are drawn in
@@ -416,8 +419,6 @@ export class MeshSelector {
 		const reachScale = pixelFactor / viewportHeight;
 		const filter = slotFilterKey(view);
 		const foliageDensity = view.foliageDensity ?? 1;
-		const sparsityU32 = new Uint32Array(1);
-		const sparsityF32 = new Float32Array(sparsityU32.buffer);
 
 		const selectSpan = (
 			instances: ResidentInstances,
@@ -518,8 +519,8 @@ export class MeshSelector {
 					if (cFirst >= end || cFirst + cCount <= first) {
 						continue;
 					}
-					sparsityU32[0] = foliageClusters[c + 2];
-					const keepRatio = Math.min(1, Math.max(0.01, sparsityF32[0] * foliageDensity));
+					SPARSITY_U32[0] = foliageClusters[c + 2];
+					const keepRatio = Math.min(1, Math.max(0.01, SPARSITY_F32[0] * foliageDensity));
 					const keep = Math.min(cCount, Math.ceil(cCount * keepRatio));
 					const spanFirst = Math.max(first, cFirst);
 					const spanEnd = Math.min(end, cFirst + keep);
@@ -544,12 +545,8 @@ export class MeshSelector {
 				// a shadow needs only the texture holding the alpha it's cut out by
 				const alpha = look.queue === 'cutout' ? alphaTextureOf(look) : null;
 				if (alpha !== null) {
-					this.#textures.forPixels(
-						alpha,
-						bucket.pixels * texturePixels,
-						look.uvScales[look.textures.indexOf(alpha)],
-						bucket.pixels,
-					);
+					const slot = (look.flags & LookFlags.AlphaNormal) !== 0 ? 1 : 0;
+					this.#textures.forPixels(alpha, bucket.pixels * texturePixels, look.uvScales[slot], bucket.pixels);
 				}
 				continue;
 			}
@@ -762,8 +759,6 @@ export class MeshSelector {
 		const wantedArr = this.#wanted;
 		const candidates = this.#candidates;
 		const itemFlags = (inside ? ItemFlags.Inside : 0) | (this.#fade << ITEM_FADE_SHIFT);
-		const sparsityU32 = new Uint32Array(1);
-		const sparsityF32 = new Float32Array(sparsityU32.buffer);
 
 		for (let r = 0; r < runCount; r++) {
 			const runFirst = Math.max(first, runs[r * 3 + 1]);
@@ -825,8 +820,8 @@ export class MeshSelector {
 					if (cFirst >= runEnd || cFirst + cCount <= runFirst) {
 						continue;
 					}
-					sparsityU32[0] = foliageClusters[c + 2];
-					const keepRatio = Math.min(1, Math.max(0.01, sparsityF32[0] * foliageDensity));
+					SPARSITY_U32[0] = foliageClusters[c + 2];
+					const keepRatio = Math.min(1, Math.max(0.01, SPARSITY_F32[0] * foliageDensity));
 					const keep = Math.min(cCount, Math.ceil(cCount * keepRatio));
 					const sFirst = Math.max(runFirst, cFirst);
 					const sEnd = Math.min(runEnd, cFirst + keep);
@@ -933,9 +928,9 @@ export class MeshSelector {
 			const sx = this.#ox + segments[at + SegmentFloat.center];
 			const sy = this.#oy + segments[at + SegmentFloat.center + 1];
 			const sz = this.#oz + segments[at + SegmentFloat.center + 2];
-			// the segment's own sphere reaches fewer layers than its group's
+			// the segment's own sphere reaches fewer layers than its group's (skip for non-casting runs)
 			const segmentLayer =
-				group.layer === SHADOW_LAYERS || view.shadowLayers === null
+				block.runCasts[run] === 0 || group.layer === SHADOW_LAYERS || view.shadowLayers === null
 					? SHADOW_LAYERS
 					: firstShadowLayer(view.shadowLayers, sx, sy, sz, segments[at + SegmentFloat.radius]);
 			if (castOnly && segmentLayer === SHADOW_LAYERS) {

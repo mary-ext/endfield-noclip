@@ -25,6 +25,7 @@ import {
 	packGbuffer,
 	packGbufferUnlit,
 } from '../core/frame-core.ts';
+import { gradientNoise } from '../core/shader-math.ts';
 
 /** GPU schema of one terrain patch instance */
 export const TerrainPatchSchema = d.struct({
@@ -193,10 +194,9 @@ const standInAlbedo = tgpu.fn(
 });
 
 const Footprint = d.struct({
-	world: d.vec3f,
-	dx: d.vec3f,
-	dy: d.vec3f,
-	axes: d.vec3f,
+	uv: d.vec2f,
+	dx: d.vec2f,
+	dy: d.vec2f,
 });
 
 const sampleLayer = tgpu.fn(
@@ -207,60 +207,14 @@ const sampleLayer = tgpu.fn(
 	const k = layer.tiling.x;
 	const offset = layer.tiling.yz;
 	const index = d.u32(layer.mean.w);
-	let sum = d.vec4f(0);
-	let weight = d.f32(0);
-	if (f.axes.y > 0.02) {
-		sum = std.add(
-			sum,
-			std.mul(
-				std.textureSampleGrad(
-					tex,
-					terrainLayout.$.layerSampler,
-					std.add(std.mul(f.world.xz, k), offset),
-					index,
-					std.mul(f.dx.xz, k),
-					std.mul(f.dy.xz, k),
-				),
-				f.axes.y,
-			),
-		);
-		weight += f.axes.y;
-	}
-	if (f.axes.x > 0.02) {
-		sum = std.add(
-			sum,
-			std.mul(
-				std.textureSampleGrad(
-					tex,
-					terrainLayout.$.layerSampler,
-					std.add(std.mul(f.world.zy, k), offset),
-					index,
-					std.mul(f.dx.zy, k),
-					std.mul(f.dy.zy, k),
-				),
-				f.axes.x,
-			),
-		);
-		weight += f.axes.x;
-	}
-	if (f.axes.z > 0.02) {
-		sum = std.add(
-			sum,
-			std.mul(
-				std.textureSampleGrad(
-					tex,
-					terrainLayout.$.layerSampler,
-					std.add(std.mul(f.world.xy, k), offset),
-					index,
-					std.mul(f.dx.xy, k),
-					std.mul(f.dy.xy, k),
-				),
-				f.axes.z,
-			),
-		);
-		weight += f.axes.z;
-	}
-	return std.div(sum, std.max(weight, EPSILON));
+	return std.textureSampleGrad(
+		tex,
+		terrainLayout.$.layerSampler,
+		std.add(std.mul(f.uv, k), offset),
+		index,
+		std.mul(f.dx, k),
+		std.mul(f.dy, k),
+	);
 });
 
 const sampleControl = tgpu.fn(
@@ -429,7 +383,25 @@ export const fsTerrainMain = tgpu.fragmentFn({
 		if (fade > 0) {
 			const a = std.pow(std.abs(s.normal), d.vec3f(8));
 			const axes = std.div(a, a.x + a.y + a.z + EPSILON);
-			const f = Footprint({ world: d.vec3f(input.world), dx, dy, axes });
+			// stochastic 1-plane triplanar selection (as the game does), resolved by TAA
+			const r = gradientNoise(
+				std.add(input.position.xy, std.mul(d.vec2f(5.588238, 11.176476), frameLayout.$.frame.params.w)),
+			);
+			let uv = d.vec2f(input.world.xz);
+			let dux = d.vec2f(dx.xz);
+			let duy = d.vec2f(dy.xz);
+			if (r >= axes.y) {
+				if (r < axes.y + axes.x) {
+					uv = d.vec2f(input.world.zy);
+					dux = d.vec2f(dx.zy);
+					duy = d.vec2f(dy.zy);
+				} else {
+					uv = d.vec2f(input.world.xy);
+					dux = d.vec2f(dx.xy);
+					duy = d.vec2f(dy.xy);
+				}
+			}
+			const f = Footprint({ uv, dx: dux, dy: duy });
 			const det = detailSurface(input.detail, local, s, f, control);
 			s.albedo = std.mix(s.albedo, det.surface.albedo, fade);
 			s.normal = std.normalize(std.mix(s.normal, det.surface.normal, fade));

@@ -425,23 +425,26 @@ export const encodeFrame = (
 		});
 		pass.end();
 	}
-	// `HGRP/WetnessDecal` boxes max-blend into `wetnessMask` (always cleared so deferred lighting reads 0 without them)
+	// `HGRP/WetnessDecal` boxes max-blend into `wetnessMask`; skip the clear pass once it is already zeroed
 	{
 		const hasWetness = sceneCore !== null && meshes.has('wetnessDecals');
-		const pass = beginPass(
-			encoder,
-			{
-				label: 'wetness decals',
-				colorAttachments: [
-					{ view: scene.wetnessMask, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
-				],
-			},
-			hasWetness ? sceneCore : null,
-		);
-		if (hasWetness) {
-			draws += meshes.encodeEffectPass('wetnessDecals', pass, scene);
+		if (hasWetness || !targets.wetnessMaskClean) {
+			const pass = beginPass(
+				encoder,
+				{
+					label: 'wetness decals',
+					colorAttachments: [
+						{ view: scene.wetnessMask, clearValue: [0, 0, 0, 0], loadOp: 'clear', storeOp: 'store' },
+					],
+				},
+				hasWetness ? sceneCore : null,
+			);
+			if (hasWetness) {
+				draws += meshes.encodeEffectPass('wetnessDecals', pass, scene);
+			}
+			pass.end();
+			targets.wetnessMaskClean = !hasWetness;
 		}
-		pass.end();
 	}
 	const composited = composer.ensureTarget(scene, width, height);
 	const { resized, historyViews } = post.ensureSized(scene, {

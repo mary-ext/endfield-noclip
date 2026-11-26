@@ -18,8 +18,8 @@ const DEPTH_STENCIL_FORMAT: GPUTextureFormat = 'depth32float-stencil8';
 /** the nearest water surface's depth (reversed-Z like the main pass's) */
 export const WATER_DEPTH_FORMAT: GPUTextureFormat = 'depth32float';
 
-/** depth format of shadow maps (sun shadow fallback, local-light shadow atlas, vertical occlusion) */
-export const SHADOW_FORMAT: GPUTextureFormat = 'depth32float';
+/** depth format of local-light shadow atlas and vertical occlusion map (16-bit halves VRAM & bandwidth) */
+export const SHADOW_FORMAT: GPUTextureFormat = 'depth16unorm';
 
 /** the depth clear value under reversed-Z */
 export const DEPTH_CLEAR = 0;
@@ -158,6 +158,8 @@ export class RenderTargets {
 	#readOnlyWaterDepth: GPURenderPassDepthStencilAttachment | null = null;
 	#writableDepth: GPURenderPassDepthStencilAttachment | null = null;
 	#version = 0;
+	/** whether `wetnessMask` currently holds all zeros (freshly allocated or already cleared with no decals) */
+	wetnessMaskClean = false;
 
 	/**
 	 * @param device the device
@@ -294,6 +296,7 @@ export class RenderTargets {
 			usage,
 		});
 		this.#version++;
+		this.wetnessMaskClean = false;
 		this.#mainAttachments = null;
 		this.#transparentDepth = null;
 		this.#writableTransparentDepth = null;

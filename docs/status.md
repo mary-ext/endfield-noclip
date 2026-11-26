@@ -215,9 +215,9 @@ only `map01` and `map02` are tested. other scenes listed by `scene list` are unv
   - unverified in game: sludge erosion/wetness variants (Yinglung Pass puddles), water-flow wet
     rock, and wetness decals.
 - **terrain** ([viewer](viewer/terrain.md), [streaming](viewer/streaming.md#terrain-selection)):
-  - close-up: smooth triplanar replaces random plane choice; cliff projection, cone-map parallax,
-    and `A`-page subsurface curvature not drawn; fade distances are viewer-chosen; GPU cost
-    unprofiled; LOD uses sample spacing (`maxHeightError` purpose unknown).
+  - close-up: cliff projection, cone-map parallax, and `A`-page subsurface curvature not drawn; fade
+    distances are viewer-chosen; GPU cost unprofiled; LOD uses sample spacing (`maxHeightError`
+    purpose unknown).
   - holes ([game-data](game-data/terrain.md#heights-and-holes)): follow base pass (alternating
     diagonals inferred); deformed-terrain subdivision passes aren't drawn (solid ground extends up
     to 1 sample further into holes in game; scenes unsurveyed); hole-touching triangles rasterize

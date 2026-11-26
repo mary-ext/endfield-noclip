@@ -13,6 +13,7 @@ const SHADOW_SIZE = 2048;
  * plane
  */
 const SUN_SHADOW_FORMAT_16: GPUTextureFormat = 'depth16unorm';
+const SUN_SHADOW_FORMAT_32: GPUTextureFormat = 'depth32float';
 /** extra depth margin towards the sun when `unclippedDepth` clamps casters past the near plane, m */
 const CLAMPED_CASTER_MARGIN = 64;
 /** far distance of each layer, m; the first three are the game's cascades (ratios 0.15 and 0.375 of 80 m) */
@@ -101,7 +102,7 @@ export class ShadowMap {
 	 */
 	constructor(device: GPUDevice, { depthClipControl = false }: { depthClipControl?: boolean } = {}) {
 		this.unclippedDepth = depthClipControl;
-		this.format = depthClipControl ? SUN_SHADOW_FORMAT_16 : SHADOW_FORMAT;
+		this.format = depthClipControl ? SUN_SHADOW_FORMAT_16 : SUN_SHADOW_FORMAT_32;
 		this.texture = device.createTexture({
 			label: 'shadow map',
 			size: [SHADOW_SIZE, SHADOW_SIZE, SHADOW_LAYERS],

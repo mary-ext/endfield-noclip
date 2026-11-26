@@ -105,9 +105,9 @@ export class VerticalOcclusionMap {
 		this.rawSampler = sampler(device, {});
 	}
 
-	/** @returns bytes of the vertical occlusion depth texture */
+	/** @returns bytes of the vertical occlusion depth texture (16-bit depth) */
 	get bytes(): number {
-		return VERTICAL_OCCLUSION_SIZE * VERTICAL_OCCLUSION_SIZE * 4;
+		return VERTICAL_OCCLUSION_SIZE * VERTICAL_OCCLUSION_SIZE * 2;
 	}
 
 	/** @returns whether the depth map holds valid data for the current frame */

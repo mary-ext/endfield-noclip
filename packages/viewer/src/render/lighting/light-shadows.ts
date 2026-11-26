@@ -45,9 +45,9 @@ export class LightShadows extends ShadowTiles {
 		);
 	}
 
-	/** @returns bytes of the atlas */
+	/** @returns bytes of the atlas (16-bit depth) */
 	get bytes(): number {
-		return ATLAS_SIZE * ATLAS_SIZE * 4;
+		return ATLAS_SIZE * ATLAS_SIZE * 2;
 	}
 
 	/**

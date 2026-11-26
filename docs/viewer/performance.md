@@ -54,10 +54,11 @@ measurement instructions are in [driving the viewer](../driving-the-viewer.md#pr
   materials) route to a compact pipeline (2 texture samples, no parallax/layer/foliage/erosion/unlit
   branches), cutting main-pass GPU time ~13% on dense views while complex materials use the full
   opaque shader.
-- **16-bit sun shadow map.** when `depth-clip-control` is supported, the sun shadow map uses
+- **16-bit shadow maps.** when `depth-clip-control` is supported, the sun shadow map uses
   `depth16unorm` (32 MiB instead of 64 MiB) with near-plane clamping and a tighter `2·radius + 64 m`
-  depth range, halving shadow write and PCF gather bandwidth. without `depth-clip-control`, it falls
-  back to `depth32float`.
+  depth range, halving shadow write and PCF gather bandwidth (without it, falls back to
+  `depth32float`). the local-light shadow atlas (32 MiB) and weather vertical occlusion map also use
+  `depth16unorm`.
 - **no MSAA.** at 2560×1600 on Apple M-series, 4× MSAA cost ~3× the GPU time of TAA (< 1 ms) and
   > 2× target memory. `renderScale` 0.5 cuts GPU time to ~1/3.
 - **half-resolution SSR and AO.** [SSR](lighting.md#screen-space-reflections) runs at half
@@ -101,8 +102,6 @@ see [quality settings](../game-data/quality-settings.md) for what the game toggl
   viable GPU-LOD path would need tighter per-LOD bounds or GPU-driven draw compaction.
 - **eviction policy.** sizing the stream budget to the device or adding mip hysteresis without
   triggering saturation.
-- **16-bit local-light shadow atlas.** currently `depth32float` (64 MiB); `depth16unorm` needs a
-  larger near plane for short-range perspective depth.
 - **empty GPU-culled draws.** segment-range picking leaves empty buckets the CPU still encodes.
 - **settle-frame selection reuse for moving rows.** spinning/riding rows have exact finite swept
   bounds (so their 64-row groups stay GPU-cullable), and reusing their selection across settle
