@@ -127,6 +127,8 @@ const COARSE_TEXTURE_EVICT_BIAS = 120;
 const EVICT_HEADROOM = 0.9;
 /** minimum unused frames for the fast fine-texture eviction pass before falling back to a full sort */
 const FAST_EVICT_AGE = 30;
+/** time a frame spends releasing evicted blobs at most, ms, preventing multi-thousand-item eviction hitches */
+const EVICT_MS = 1.5;
 
 /** @returns effective eviction age of `item` (lower evicts first) */
 const evictAge = (item: ContentItem): number => {
@@ -924,8 +926,12 @@ export class StreamManager {
 					created[a.blob] - created[b.blob],
 			);
 		}
+		const deadline = performance.now() + EVICT_MS;
 		for (let i = 0; i < candidates.length; i++) {
 			if (this.stats.residentBytes <= target) {
+				break;
+			}
+			if (i > 0 && (i & 15) === 0 && performance.now() > deadline) {
 				break;
 			}
 			this.#release(candidates[i]);
