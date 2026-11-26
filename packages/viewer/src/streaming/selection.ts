@@ -269,6 +269,8 @@ export class Selector {
 	#fadeStep = 1;
 	/** coarsest nodes that hold a terrain page, collected once from the tree */
 	readonly #terrainRoots: TileNode[] = [];
+	/** per node index: 1 when the node or a descendant holds conditional refs */
+	readonly #hasConditional: Uint8Array;
 
 	/**
 	 * @param tree the linked tree
@@ -290,6 +292,7 @@ export class Selector {
 		this.#seenFrame = new Int32Array(tree.nodes.length).fill(-2);
 		this.#conditionalFrame = new Int32Array(tree.nodes.length).fill(-2);
 		this.#reachedFrame = new Int32Array(tree.reached.length).fill(-2);
+		this.#hasConditional = new Uint8Array(tree.nodes.length);
 		const collect = (node: TileNode): void => {
 			if (node.terrain !== null) {
 				this.#terrainRoots.push(node);
@@ -301,8 +304,21 @@ export class Selector {
 				}
 			}
 		};
+		const markConditional = (node: TileNode): boolean => {
+			let has = node.conditional.length > 0;
+			for (const child of node.quadrants) {
+				if (child !== null && markConditional(child)) {
+					has = true;
+				}
+			}
+			if (has) {
+				this.#hasConditional[node.index] = 1;
+			}
+			return has;
+		};
 		for (const root of tree.roots) {
 			collect(root);
+			markConditional(root);
 		}
 	}
 
@@ -365,7 +381,7 @@ export class Selector {
 		if (options.instances) {
 			for (const root of this.#tree.roots) {
 				this.#instances(root, view, options, 0);
-				if (options.detail) {
+				if (options.detail && this.#hasConditional[root.index] === 1) {
 					this.#conditional(root, view, options);
 				}
 			}
@@ -394,6 +410,9 @@ export class Selector {
 	 * detail distance, as the game's detail layers load; children are no nearer, so they're skipped too
 	 */
 	#conditional(node: TileNode, view: SelectionView, options: SelectionOptions): void {
+		if (this.#hasConditional[node.index] === 0) {
+			return;
+		}
 		this.selection.visited++;
 		const eye = view.camera.position;
 		const distance = Math.max(distanceToBox(node.bounds.min, node.bounds.max, eye), 1);
