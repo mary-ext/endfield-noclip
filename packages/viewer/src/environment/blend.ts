@@ -75,17 +75,67 @@ export interface EnvironmentScene {
 	environment: ResolvedEnvironmentTable;
 }
 
-/** volumes with their table index, in the order they stack, per environment */
-const sortedVolumes = new WeakMap<
-	ResolvedEnvironmentTable,
-	{ id: number; volume: EnvironmentVolumeInfo }[]
->();
+interface IndexedVolume {
+	id: number;
+	volume: EnvironmentVolumeInfo;
+	/** world-space AABB for cheap rejection before exact shape math (`null` for global volumes) */
+	aabb: readonly [minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number] | null;
+}
 
-const volumesOf = (
-	environment: ResolvedEnvironmentTable,
-): { id: number; volume: EnvironmentVolumeInfo }[] => {
+const volumeAabb = (shape: EnvironmentVolumeInfo['shape']): IndexedVolume['aabb'] => {
+	switch (shape.kind) {
+		case 'global': {
+			return null;
+		}
+		case 'sphere': {
+			const [cx, cy, cz] = shape.center;
+			const r = shape.radius;
+			return [cx - r, cy - r, cz - r, cx + r, cy + r, cz + r];
+		}
+		case 'box': {
+			const [cx, cy, cz] = shape.center;
+			const [hx, hy, hz] = shape.halfExtents;
+			const m = shape.toBox;
+			// rows of `toBox` are the box's unit axes in world space
+			const rx = Math.abs(m[0]) * hx + Math.abs(m[3]) * hy + Math.abs(m[6]) * hz;
+			const ry = Math.abs(m[1]) * hx + Math.abs(m[4]) * hy + Math.abs(m[7]) * hz;
+			const rz = Math.abs(m[2]) * hx + Math.abs(m[5]) * hy + Math.abs(m[8]) * hz;
+			return [cx - rx, cy - ry, cz - rz, cx + rx, cy + ry, cz + rz];
+		}
+		case 'prism': {
+			let minX = Infinity;
+			let maxX = -Infinity;
+			let minZ = Infinity;
+			let maxZ = -Infinity;
+			for (const [x, z] of shape.points) {
+				if (x < minX) {
+					minX = x;
+				}
+				if (x > maxX) {
+					maxX = x;
+				}
+				if (z < minZ) {
+					minZ = z;
+				}
+				if (z > maxZ) {
+					maxZ = z;
+				}
+			}
+			return [minX, shape.bottom, minZ, maxX, shape.top, maxZ];
+		}
+	}
+};
+
+/** volumes with their table index and world AABB, in the order they stack, per environment */
+const sortedVolumes = new WeakMap<ResolvedEnvironmentTable, IndexedVolume[]>();
+
+const volumesOf = (environment: ResolvedEnvironmentTable): IndexedVolume[] => {
 	return sortedVolumes.getOrInsertComputed(environment, () => {
-		const list = environment.volumes.map((volume, id) => ({ id, volume }));
+		const list: IndexedVolume[] = environment.volumes.map((volume, id) => ({
+			id,
+			volume,
+			aabb: volumeAabb(volume.shape),
+		}));
 		list.sort(({ volume: a }, { volume: b }) => compareVolumes(a, b));
 		return list;
 	});
@@ -240,15 +290,26 @@ export const planBlend = (
 		}
 	} else {
 		const speed = time.fades.step(eye);
-		for (const { id, volume } of volumesOf(table)) {
-			if (volumeApplies(manifest, volume, options)) {
-				apply(
-					id,
-					volume.name,
-					volume.phase,
-					volumeFactor(id, volume, distanceInsideVolume(volume.shape, eye), speed, time),
-				);
+		const ex = eye[0];
+		const ey = eye[1];
+		const ez = eye[2];
+		for (const { id, volume, aabb } of volumesOf(table)) {
+			if (!volumeApplies(manifest, volume, options)) {
+				continue;
 			}
+			let distance: number;
+			if (
+				aabb !== null &&
+				(ex < aabb[0] || ex > aabb[3] || ey < aabb[1] || ey > aabb[4] || ez < aabb[2] || ez > aabb[5])
+			) {
+				if (volume.blend.kind !== 'fade') {
+					continue;
+				}
+				distance = 0;
+			} else {
+				distance = distanceInsideVolume(volume.shape, eye);
+			}
+			apply(id, volume.name, volume.phase, volumeFactor(id, volume, distance, speed, time));
 		}
 	}
 	const post = environment.post === null ? null : (table.posts[environment.post] ?? null);

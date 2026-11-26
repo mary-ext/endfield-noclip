@@ -179,6 +179,7 @@ export class Renderer {
 		);
 		this.post = new PostProcess(this.root, this.pipelines, {
 			swapchainFormat: gfx.presentationFormat,
+			postHdrFormat: gfx.features.rg11b10ufloatRenderable ? 'rg11b10ufloat' : 'rgba16float',
 			postUniforms: this.composer.uniforms,
 			sampler: this.composer.sampler,
 			environment: look.environment,

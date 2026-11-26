@@ -39,6 +39,7 @@ export class TemporalAA {
 	/** jitter and accumulate; off passes the current frame through (upscaled to the output size) */
 	enabled = true;
 	#root: TgpuRoot;
+	#format: GPUTextureFormat;
 	#pipeline: AsyncPipeline<TgpuRenderPipeline>;
 	#postGroup: TgpuBindGroup;
 	#uniforms: GPUBuffer;
@@ -55,14 +56,20 @@ export class TemporalAA {
 	 * @param pipelines the pipeline cache
 	 * @param postUniforms the post chain's `Post` uniforms
 	 */
-	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer) {
+	constructor(
+		root: TgpuRoot,
+		pipelines: PipelineCache,
+		postUniforms: GPUBuffer,
+		format: GPUTextureFormat = HDR_FORMAT,
+	) {
 		this.#root = root;
+		this.#format = format;
 		this.#postGroup = root.createBindGroup(postUniformLayout, { post: postUniforms });
 		this.#pipeline = pipelines.prepareTgpuRender('taa', () =>
 			root.createRenderPipeline({
 				vertex: common.fullScreenTriangle,
 				fragment: fsTaa,
-				targets: { format: HDR_FORMAT },
+				targets: { format },
 			}),
 		);
 		this.#uniforms = createUniformBuffer(root.device, 'taa uniforms', UNIFORM_BYTES);
@@ -133,7 +140,7 @@ export class TemporalAA {
 			this.#targets.create({
 				label: `taa history ${i}`,
 				size: [outputWidth, outputHeight],
-				format: HDR_FORMAT,
+				format: this.#format,
 			});
 		const pair: [GPUTexture, GPUTexture] = [history(0), history(1)];
 		const views: [GPUTextureView, GPUTextureView] = [pair[0].createView(), pair[1].createView()];

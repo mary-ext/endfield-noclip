@@ -4,9 +4,11 @@ const TEXEL_BYTES: Partial<Record<GPUTextureFormat, number>> = {
 	r16float: 2,
 	r32float: 4,
 	rg16float: 4,
+	rg11b10ufloat: 4,
 	rgba8unorm: 4,
 	rgba16float: 8,
 	rg32uint: 8,
+	depth16unorm: 2,
 	depth32float: 4,
 	'depth32float-stencil8': 8,
 };

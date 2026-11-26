@@ -54,6 +54,7 @@ interface Sized {
 /** the game's bloom chain (bloom-shader.ts) at the output size */
 export class Bloom {
 	#root: TgpuRoot;
+	#format: GPUTextureFormat;
 	#sampler: GPUSampler;
 	#postGroup: TgpuBindGroup;
 	#pipelines: Record<'prefilter' | 'blurH' | 'blurV' | 'up', AsyncPipeline<TgpuRenderPipeline>>;
@@ -66,8 +67,15 @@ export class Bloom {
 	 * @param postUniforms the post chain's `Post` uniforms
 	 * @param sampler the bilinear clamping sampler the levels are read with
 	 */
-	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer, sampler: GPUSampler) {
+	constructor(
+		root: TgpuRoot,
+		pipelines: PipelineCache,
+		postUniforms: GPUBuffer,
+		sampler: GPUSampler,
+		format: GPUTextureFormat = HDR_FORMAT,
+	) {
 		this.#root = root;
+		this.#format = format;
 		this.#targets = new TextureSet(root.device);
 		this.#sampler = sampler;
 		this.#postGroup = root.createBindGroup(postUniformLayout, {
@@ -78,7 +86,7 @@ export class Bloom {
 				root.createRenderPipeline({
 					vertex: common.fullScreenTriangle,
 					fragment,
-					targets: { format: HDR_FORMAT },
+					targets: { format },
 				}),
 			);
 		this.#pipelines = {
@@ -122,7 +130,7 @@ export class Bloom {
 			this.#targets.create({
 				label,
 				size: [w, h],
-				format: HDR_FORMAT,
+				format: this.#format,
 				usage:
 					GPUTextureUsage.RENDER_ATTACHMENT |
 					GPUTextureUsage.TEXTURE_BINDING |

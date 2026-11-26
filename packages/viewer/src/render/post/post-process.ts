@@ -45,17 +45,18 @@ export class PostProcess {
 		pipelines: PipelineCache,
 		options: {
 			swapchainFormat: GPUTextureFormat;
+			postHdrFormat: GPUTextureFormat;
 			postUniforms: GPUBuffer;
 			sampler: GPUSampler;
 			environment: Environment;
 		},
 	) {
-		const { swapchainFormat, postUniforms, sampler, environment } = options;
+		const { swapchainFormat, postHdrFormat, postUniforms, sampler, environment } = options;
 		this.#autoExposure = new AutoExposure(root, pipelines);
-		this.#lightShafts = new LightShafts(root, pipelines, postUniforms);
+		this.#lightShafts = new LightShafts(root, pipelines, postUniforms, postHdrFormat);
 		this.#lensFlares = new LensFlares(root, pipelines);
-		this.#taa = new TemporalAA(root, pipelines, postUniforms);
-		this.#bloom = new Bloom(root, pipelines, postUniforms, sampler);
+		this.#taa = new TemporalAA(root, pipelines, postUniforms, postHdrFormat);
+		this.#bloom = new Bloom(root, pipelines, postUniforms, sampler, postHdrFormat);
 		this.#tonemap = new Tonemap(root, pipelines, postUniforms, sampler, swapchainFormat);
 		this.#environment = environment;
 	}

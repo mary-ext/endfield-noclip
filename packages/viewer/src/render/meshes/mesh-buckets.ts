@@ -293,7 +293,6 @@ export class MeshBuckets {
 				const material = draw.role === DrawRole.Unsupported ? this.#standIn : draw.material;
 				const look = material === null ? undefined : this.#lookOf(material);
 				const shadowOnly = draw.role === DrawRole.ShadowOnly;
-				const queue = look?.queue;
 				const layers = {
 					realtime: (draw.flags & ChainDrawFlags.CastsCascades) !== 0,
 					static: (draw.flags & ChainDrawFlags.CastsStatic) !== 0,
@@ -312,6 +311,7 @@ export class MeshBuckets {
 					(shadowOnly ? SlotFlags.ShadowOnly : 0) |
 					(castsRealtime ? SlotFlags.Realtime : 0) |
 					(castsStatic ? SlotFlags.Static : 0);
+				const sorted = SORTED_RANGES.has(look.queue);
 				slots.push({
 					lod: draw.lod,
 					minSquared: draw.minSquared,
@@ -327,10 +327,8 @@ export class MeshBuckets {
 					gpuFlags,
 					hiddenBy: hiddenByOf(draw.role, look),
 					shadowOnly,
-					gpuCullable:
-						draw.particles === null &&
-						(queue === 'opaque' || queue === 'cutout' || queue === 'cutoutOverlay'),
-					sorted: SORTED_RANGES.has(look.queue),
+					gpuCullable: draw.particles === null && !sorted,
+					sorted,
 					band: sortBand(draw.sortingLayer, draw.sortingOrder, this.#renderQueueOf(material)),
 					particles: draw.particles,
 					buckets: Array.from({ length: BUCKET_VARIANTS }, () => null),

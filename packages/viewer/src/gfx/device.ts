@@ -15,6 +15,8 @@ export interface GfxFeatures {
 	depth32floatStencil8: boolean;
 	/** clamping depth past the near plane instead of clipping, which lets sun shadows use 16-bit depth */
 	depthClipControl: boolean;
+	/** `rg11b10ufloat` render targets, halving HDR post-chain VRAM and bandwidth */
+	rg11b10ufloatRenderable: boolean;
 }
 
 /** a ready device plus what it supports */
@@ -56,6 +58,7 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 		timestampQuery: has('timestamp-query'),
 		depth32floatStencil8: has('depth32float-stencil8'),
 		depthClipControl: has('depth-clip-control'),
+		rg11b10ufloatRenderable: has('rg11b10ufloat-renderable'),
 	};
 	const requiredFeatures: GPUFeatureName[] = [];
 	if (features.textureCompressionBc) {
@@ -75,6 +78,9 @@ export const createGfxDevice = async (onLost: (reason: string) => void): Promise
 	}
 	if (features.depthClipControl) {
 		requiredFeatures.push('depth-clip-control');
+	}
+	if (features.rg11b10ufloatRenderable) {
+		requiredFeatures.push('rg11b10ufloat-renderable');
 	}
 
 	const limits = adapter.limits;

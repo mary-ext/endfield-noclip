@@ -45,6 +45,11 @@ export class SceneState {
 	/** what the camera's trigger tests remember of its path, as of {@link #areasEye} */
 	#triggers: TriggerMemory = NO_TRIGGER_MEMORY;
 	#states: StatesInfo | null = null;
+	/**
+	 * pre-filtered camera controls and their original indices in `states.controls`, rebuilt on
+	 * {@link setPackage}
+	 */
+	#cameraControls: { controls: StatesInfo['controls']; indices: number[] } = { controls: [], indices: [] };
 	readonly #events = new KeyedEventEmitter<SceneStateEvents>();
 	readonly #options: { readonly streamAreas: boolean };
 
@@ -97,6 +102,18 @@ export class SceneState {
 	 */
 	setPackage(states: StatesInfo | null): void {
 		this.#states = states;
+		const controls: StatesInfo['controls'] = [];
+		const indices: number[] = [];
+		if (states !== null) {
+			for (let i = 0; i < states.controls.length; i++) {
+				const control = states.controls[i];
+				if (control.source.kind === 'camera') {
+					controls.push(control);
+					indices.push(i);
+				}
+			}
+		}
+		this.#cameraControls = { controls, indices };
 		this.#picks = new Map();
 		this.#triggers = NO_TRIGGER_MEMORY;
 		if (states === null) {
@@ -140,6 +157,21 @@ export class SceneState {
 		this.#picks = new Map();
 	}
 
+	/** evaluates only the package's camera controls and maps their results back to original control indices */
+	#sampleCamera(eye: Vec3, visible: ReadonlySet<number> | null): ReadonlyMap<number, number> {
+		const { controls, indices } = this.#cameraControls;
+		if (controls.length === 0) {
+			return this.#camera;
+		}
+		const camera = cameraValues(controls, eye, visible, this.#triggers);
+		this.#triggers = camera.memory;
+		const mapped = new Map<number, number>();
+		for (const [compactIndex, value] of camera.values) {
+			mapped.set(indices[compactIndex], value);
+		}
+		return mapped;
+	}
+
 	/**
 	 * re-evaluates the values, conditions and visibility groups for the picks and the stream areas and camera
 	 * controls at the camera, and hands the groups to every consumer
@@ -150,9 +182,7 @@ export class SceneState {
 		const visible = this.#streamAreasAt(eye);
 		this.#areasEye = [...eye];
 		// camera controls follow the camera unless pinned, so the camera's values go under the picks
-		const camera = cameraValues(this.#states?.controls ?? [], eye, visible, this.#triggers);
-		this.#triggers = camera.memory;
-		this.#applyResolved(visible, camera.values);
+		this.#applyResolved(visible, this.#sampleCamera(eye, visible));
 	}
 
 	/**
@@ -174,13 +204,21 @@ export class SceneState {
 			visible === null || current === null
 				? visible === current
 				: visible.size === current.size && visible.isSubsetOf(current);
-		const camera = cameraValues(this.#states?.controls ?? [], eye, visible, this.#triggers);
-		this.#triggers = camera.memory;
-		const sameCamera = camera.values.entries().every(([index, value]) => this.#camera.get(index) === value);
+		const camera = this.#sampleCamera(eye, visible);
+		let sameCamera = camera === this.#camera;
+		if (!sameCamera && camera.size === this.#camera.size) {
+			sameCamera = true;
+			for (const [index, value] of camera) {
+				if (this.#camera.get(index) !== value) {
+					sameCamera = false;
+					break;
+				}
+			}
+		}
 		if (same && sameCamera) {
 			return false;
 		}
-		this.#applyResolved(visible, camera.values);
+		this.#applyResolved(visible, camera);
 		return true;
 	}
 

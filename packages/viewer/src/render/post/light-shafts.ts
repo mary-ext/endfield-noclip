@@ -44,6 +44,7 @@ interface Sized {
 /** owns the shafts' reduced-size targets and passes */
 export class LightShafts {
 	#root: TgpuRoot;
+	#format: GPUTextureFormat;
 	#uniforms: TgpuUniform<typeof ShaftsSchema>;
 	/** per blur pass: its index */
 	#passUniforms: TgpuUniform<typeof d.vec4f>[];
@@ -58,8 +59,14 @@ export class LightShafts {
 	 * @param pipelines the pipeline cache
 	 * @param postUniforms the post chain's `Post` uniforms
 	 */
-	constructor(root: TgpuRoot, pipelines: PipelineCache, postUniforms: GPUBuffer) {
+	constructor(
+		root: TgpuRoot,
+		pipelines: PipelineCache,
+		postUniforms: GPUBuffer,
+		format: GPUTextureFormat = HDR_FORMAT,
+	) {
 		this.#root = root;
+		this.#format = format;
 		this.#targets = new TextureSet(root.device);
 		this.#uniforms = root.createUniform(ShaftsSchema);
 		this.#passUniforms = Array.from({ length: BLUR_PASSES }, (_, i) =>
@@ -83,9 +90,9 @@ export class LightShafts {
 				}),
 			);
 		this.#pipelines = {
-			downsample: make('light shaft downsample', fsLightShaftDownsample, { format: HDR_FORMAT }),
-			blur: make('light shaft blur', fsLightShaftBlur, { format: HDR_FORMAT }),
-			// the game adds the colour only
+			downsample: make('light shaft downsample', fsLightShaftDownsample, { format }),
+			blur: make('light shaft blur', fsLightShaftBlur, { format }),
+			// the game adds the colour only onto the composited scene (`HDR_FORMAT`)
 			apply: make('light shaft apply', fsLightShaftApply, {
 				format: HDR_FORMAT,
 				blend: ADDITIVE,
@@ -112,7 +119,7 @@ export class LightShafts {
 		const height = Math.max(1, Math.ceil(input.height / DOWNSAMPLE));
 		const views = [0, 1].map((i) =>
 			this.#targets
-				.create({ label: `light shafts ${i}`, size: [width, height], format: HDR_FORMAT })
+				.create({ label: `light shafts ${i}`, size: [width, height], format: this.#format })
 				.createView(),
 		);
 		const downsampleGroup = root.createBindGroup(lightShaftsDownsampleLayout, {

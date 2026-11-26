@@ -59,6 +59,9 @@ measurement instructions are in [driving the viewer](../driving-the-viewer.md#pr
   depth range, halving shadow write and PCF gather bandwidth (without it, falls back to
   `depth32float`). the local-light shadow atlas (32 MiB) and weather vertical occlusion map also use
   `depth16unorm`.
+- **packed HDR post targets.** when `rg11b10ufloat-renderable` is supported, TAA history, bloom, and
+  light shafts use `rg11b10ufloat` instead of `rgba16float`, halving their VRAM (~44 MiB at
+  2560×1600) and post-chain bandwidth.
 - **no MSAA.** at 2560×1600 on Apple M-series, 4× MSAA cost ~3× the GPU time of TAA (< 1 ms) and
   > 2× target memory. `renderScale` 0.5 cuts GPU time to ~1/3.
 - **half-resolution SSR and AO.** [SSR](lighting.md#screen-space-reflections) runs at half
