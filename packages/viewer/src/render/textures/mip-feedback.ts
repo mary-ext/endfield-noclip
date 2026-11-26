@@ -43,8 +43,15 @@ const csMipFeedbackReduce = tgpu.computeFn({
 	if ((packed & d.u32(0x80000000)) === 0 || look >= params.looks) {
 		return;
 	}
-	std.atomicMax(mipFeedbackLayout.$.seen[look * 2], ((packed >>> 17) & 127) + 1);
-	std.atomicMax(mipFeedbackLayout.$.seen[look * 2 + 1], ((packed >>> 24) & 127) + 1);
+	const u0 = ((packed >>> 17) & 127) + 1;
+	const u1 = ((packed >>> 24) & 127) + 1;
+	const base = look * 2;
+	if (u0 > std.atomicLoad(mipFeedbackLayout.$.seen[base])) {
+		std.atomicMax(mipFeedbackLayout.$.seen[base], u0);
+	}
+	if (u1 > std.atomicLoad(mipFeedbackLayout.$.seen[base + 1])) {
+		std.atomicMax(mipFeedbackLayout.$.seen[base + 1], u1);
+	}
 });
 
 const KEY = 'mip feedback';
