@@ -16,13 +16,12 @@ import { fresnelSchlick, ggxDistribution, LUMINANCE_ROUNDED } from '../core/shad
 import {
 	ambientIrradiance,
 	environmentBrdf,
-	foliageSun,
-	localLighting,
 	sampleReflection,
 	smithVisibility,
-	subsurfaceSun,
-	sunVisibility,
-} from './frame-lighting.ts';
+} from './shaders/ambient-probes.ts';
+import { foliageSun, subsurfaceSun } from './shaders/forward-shading.ts';
+import { localLighting } from './shaders/local-lights.ts';
+import { sunVisibility } from './shaders/sun-shadow.ts';
 
 /** group 2 bind group layout for deferred lighting: G-buffer, depth, AO, SSR, wetness mask, and linear sampler */
 export const deferredInputsLayout = tgpu

@@ -17,8 +17,8 @@ import {
 	ambientIrradiance,
 	environmentBrdfTerms,
 	sampleReflection,
-	sunVisibility,
-} from '../lighting/frame-lighting.ts';
+} from '../lighting/shaders/ambient-probes.ts';
+import { sunVisibility } from '../lighting/shaders/sun-shadow.ts';
 import { rayleighPhase, skyReadLayout } from '../sky/atmosphere-shader.ts';
 import { fogOver, froxelsAt } from '../sky/fog-shader.ts';
 

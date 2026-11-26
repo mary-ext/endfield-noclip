@@ -10,7 +10,8 @@ import tgpu, { d, std } from 'typegpu';
 
 import { frameLayout } from '../core/frame-core.ts';
 import { LUMINANCE_ROUNDED, henyeyGreenstein } from '../core/shader-math.ts';
-import { cloudShadow, localFogLighting } from '../lighting/frame-lighting.ts';
+import { localFogLighting } from '../lighting/shaders/local-lights.ts';
+import { cloudShadow } from '../lighting/shaders/sun-shadow.ts';
 
 /** GPU schema of the volumetric fog uniform block */
 export const VolumetricFogSchema = d.struct({

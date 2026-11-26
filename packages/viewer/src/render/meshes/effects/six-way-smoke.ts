@@ -9,7 +9,8 @@ import tgpu, { d, std } from 'typegpu';
 
 import { frameLayout } from '../../core/frame-core.ts';
 import { LUMINANCE } from '../../core/shader-math.ts';
-import { ambientIrradiance, sunVisibility } from '../../lighting/frame-lighting.ts';
+import { ambientIrradiance } from '../../lighting/shaders/ambient-probes.ts';
+import { sunVisibility } from '../../lighting/shaders/sun-shadow.ts';
 
 import {
 	EffectVertexData,

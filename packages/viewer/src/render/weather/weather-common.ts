@@ -8,12 +8,9 @@
 import tgpu, { d, std } from 'typegpu';
 
 import { defaultSurface, frameLayout } from '../core/frame-core.ts';
-import {
-	ambientIrradiance,
-	localLighting,
-	sampleReflection,
-	sunVisibilityFar,
-} from '../lighting/frame-lighting.ts';
+import { ambientIrradiance, sampleReflection } from '../lighting/shaders/ambient-probes.ts';
+import { localLighting } from '../lighting/shaders/local-lights.ts';
+import { sunVisibilityFar } from '../lighting/shaders/sun-shadow.ts';
 
 /** 16-vec4 (256-byte) uniform block shared by world-space weather draws, bound with dynamic offsets */
 export const WeatherParamsSchema = d.struct({

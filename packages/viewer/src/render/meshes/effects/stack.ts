@@ -9,7 +9,8 @@
 import tgpu, { d, std } from 'typegpu';
 
 import { frameLayout, hermite, packGbufferUnlit } from '../../core/frame-core.ts';
-import { ambientIrradiance, sunVisibilityFarCloudless } from '../../lighting/frame-lighting.ts';
+import { ambientIrradiance } from '../../lighting/shaders/ambient-probes.ts';
+import { sunVisibilityFarCloudless } from '../../lighting/shaders/sun-shadow.ts';
 
 import {
 	EffectAccumulatedOut,
