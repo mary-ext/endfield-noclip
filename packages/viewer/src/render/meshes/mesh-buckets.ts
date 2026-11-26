@@ -166,7 +166,9 @@ export const gpuBucketIndex = (mirrored: 0 | 1, shadowOnly: boolean): number =>
 	4 + mirrored + (shadowOnly ? 2 : 0);
 
 /** scratch arrays reused by {@link sortFarToNear} to avoid per-bucket allocations */
-const sortOrder: number[] = [];
+const sortRunStarts: number[] = [];
+const sortRunEnds: number[] = [];
+const sortRunOrder: number[] = [];
 const sortRows: number[] = [];
 const sortBands: number[] = [];
 const sortDistances: number[] = [];
@@ -174,7 +176,8 @@ const sortDistances: number[] = [];
 /**
  * orders a sorted bucket's rows by their {@link MeshBucket.bands}, then far to near by their
  * {@link MeshBucket.distances}, all in place. rows of one instance (a particle system's particles) share its
- * distance and keep their order
+ * distance and keep their order; grouping contiguous identical `(band, distance)` runs sorts particle buckets
+ * by emitter count rather than particle count
  *
  * @param bucket a bucket of a {@link ChainSlot.sorted} slot, its rows all in the last group
  */
@@ -182,27 +185,64 @@ export const sortFarToNear = (bucket: MeshBucket): void => {
 	const rows = bucket.rows[SHADOW_LAYERS];
 	const { bands, distances } = bucket;
 	const n = distances.length;
+	if (n <= 1) {
+		return;
+	}
 	let sorted = true;
-	for (let i = 1; i < n && sorted; i++) {
-		sorted = bands[i - 1] < bands[i] || (bands[i - 1] === bands[i] && distances[i - 1] >= distances[i]);
+	for (let i = 1; i < n; i++) {
+		if (bands[i - 1] > bands[i] || (bands[i - 1] === bands[i] && distances[i - 1] < distances[i])) {
+			sorted = false;
+			break;
+		}
 	}
 	if (sorted) {
 		return;
 	}
-	sortOrder.length = n;
+	// group contiguous equal (band, distance) runs so particle buckets sort ~10s of emitters instead of 1000s of rows
+	let runCount = 0;
+	let runStart = 0;
+	let prevBand = bands[0];
+	let prevDist = distances[0];
+	for (let i = 1; i < n; i++) {
+		const b = bands[i];
+		const d = distances[i];
+		if (b !== prevBand || d !== prevDist) {
+			sortRunStarts[runCount] = runStart;
+			sortRunEnds[runCount] = i;
+			sortRunOrder[runCount] = runCount;
+			runCount++;
+			runStart = i;
+			prevBand = b;
+			prevDist = d;
+		}
+	}
+	sortRunStarts[runCount] = runStart;
+	sortRunEnds[runCount] = n;
+	sortRunOrder[runCount] = runCount;
+	runCount++;
+	sortRunOrder.length = runCount;
+	// stable, so equal-distance emitters keep their order
+	sortRunOrder.sort((a, b) => {
+		const ia = sortRunStarts[a];
+		const ib = sortRunStarts[b];
+		return bands[ia] - bands[ib] || distances[ib] - distances[ia];
+	});
 	for (let i = 0; i < n; i++) {
-		sortOrder[i] = i;
 		sortRows[i] = rows[i];
 		sortBands[i] = bands[i];
 		sortDistances[i] = distances[i];
 	}
-	// stable, so a system's particles stay together in their order
-	sortOrder.sort((a, b) => sortBands[a] - sortBands[b] || sortDistances[b] - sortDistances[a]);
-	for (let i = 0; i < n; i++) {
-		const k = sortOrder[i];
-		rows[i] = sortRows[k];
-		bands[i] = sortBands[k];
-		distances[i] = sortDistances[k];
+	let out = 0;
+	for (let r = 0; r < runCount; r++) {
+		const idx = sortRunOrder[r];
+		const from = sortRunStarts[idx];
+		const to = sortRunEnds[idx];
+		for (let i = from; i < to; i++) {
+			rows[out] = sortRows[i];
+			bands[out] = sortBands[i];
+			distances[out] = sortDistances[i];
+			out++;
+		}
 	}
 };
 
