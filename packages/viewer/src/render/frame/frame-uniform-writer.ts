@@ -102,17 +102,18 @@ export const writeFrameUniforms = (f32: Float32Array, u32: Uint32Array, inputs: 
 		f32[at + 3] = inputs.time;
 	}
 	{
+		const sun = environment.sunIlluminance;
 		f32.set(environment.sunDirection, FrameOffsets.sun);
-		f32[FrameOffsets.sun + 3] = 1;
-		f32.set(environment.sunIlluminance, FrameOffsets.sunColor);
+		f32[FrameOffsets.sun + 3] = sun[0] > 0 || sun[1] > 0 || sun[2] > 0 ? 1 : 0;
+		f32.set(sun, FrameOffsets.sunColor);
 		f32[FrameOffsets.sunColor + 3] = environment.sunSpecular;
 		f32.set(environment.sh, FrameOffsets.sh);
 		f32.set(environment.ivDefaultSh, FrameOffsets.ivDefaultSh);
 		f32.set(environment.reflectionProbeSh, FrameOffsets.reflectionProbeSh);
 		f32[FrameOffsets.reflectionProbes] = inputs.reflectionProbes.count;
 		f32[FrameOffsets.reflectionProbes + 1] = inputs.reflectionProbes.maxMip;
-		f32[FrameOffsets.reflectionProbes + 2] = 0;
-		f32[FrameOffsets.reflectionProbes + 3] = 0;
+		f32[FrameOffsets.reflectionProbes + 2] = inputs.reflectionProbes.tilesX;
+		f32[FrameOffsets.reflectionProbes + 3] = inputs.reflectionProbes.tilesY;
 		const prev = inputs.previous;
 		if (prev !== undefined) {
 			f32.set(prev.history, FrameOffsets.prevViewProj);

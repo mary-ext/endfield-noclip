@@ -9,6 +9,7 @@ import tgpu, { d, std } from 'typegpu';
 import { frameLayout } from '../../core/frame-core.ts';
 import { LUMINANCE } from '../../core/shader-math.ts';
 import { IRRADIANCE_TEXELS, irradianceZ, irradianceZClamped } from '../irradiance-clipmap.ts';
+import { PROBE_BINS_OFFSET, PROBE_TILE_SIZE } from '../reflection-probes.ts';
 
 /**
  * Unity's ShadeSH9: evaluates the level's ambient spherical-harmonics probe.
@@ -209,33 +210,21 @@ const reflectionNormalisation = tgpu.fn(
 	return (2 * std.clamp(lum / p, 0, 1) + lum) / (2 + p);
 });
 
-/**
- * samples local reflection probes front-to-back over the sky reflection cubemap, normalised against the
- * surface's diffuse irradiance.
- *
- * @param world world-space surface position
- * @param n world-space unit normal
- * @param r world-space reflection direction
- * @param roughness perceptual roughness
- * @param irradiance surface diffuse irradiance
- * @returns indirect specular radiance
- */
-export const sampleReflection = tgpu.fn(
-	[d.vec3f, d.vec3f, d.vec3f, d.f32, d.vec3f],
+const sampleReflectionMask = tgpu.fn(
+	[d.vec3f, d.vec3f, d.vec3f, d.f32, d.vec3f, d.u32],
 	d.vec3f,
-)((world, n, r, roughness, irradiance) => {
+)((world, n, r, roughness, irradiance, maskIn) => {
 	'use gpu';
 	const frame = frameLayout.$.frame;
 	const lum = std.dot(irradiance, LUMINANCE.$);
-	const count = d.u32(frame.reflectionProbes.x);
 	let accum = d.vec3f(0);
 	let remaining = d.f32(1);
 	const probeMip = roughness * frame.reflectionProbes.y;
 	const w4 = d.vec4f(world, 1);
-	for (let i = d.u32(0); i < count; i++) {
-		if (remaining <= 0.01) {
-			break;
-		}
+	let mask = maskIn;
+	while (mask !== d.u32(0) && remaining > 0.01) {
+		const i = std.firstTrailingBit(mask);
+		mask &= mask - d.u32(1);
 		const base = i * d.u32(7);
 		const m1 = frameLayout.$.reflectionProbes[base + d.u32(1)];
 		const m2 = frameLayout.$.reflectionProbes[base + d.u32(2)];
@@ -299,6 +288,61 @@ export const sampleReflection = tgpu.fn(
 		accum = std.add(accum, std.mul(sky, reflectionNormalisation(irradiance, n) * remaining));
 	}
 	return accum;
+});
+
+/**
+ * samples local reflection probes front-to-back over the sky reflection cubemap, normalised against the
+ * surface's diffuse irradiance.
+ *
+ * @param world world-space surface position
+ * @param n world-space unit normal
+ * @param r world-space reflection direction
+ * @param roughness perceptual roughness
+ * @param irradiance surface diffuse irradiance
+ * @returns indirect specular radiance
+ */
+export const sampleReflection = tgpu.fn(
+	[d.vec3f, d.vec3f, d.vec3f, d.f32, d.vec3f],
+	d.vec3f,
+)((world, n, r, roughness, irradiance) => {
+	'use gpu';
+	const count = d.u32(frameLayout.$.frame.reflectionProbes.x);
+	const mask = std.select(
+		std.select((d.u32(1) << count) - d.u32(1), d.u32(0xffffffff), count >= d.u32(32)),
+		d.u32(0),
+		count === d.u32(0),
+	);
+	return sampleReflectionMask(world, n, r, roughness, irradiance, mask);
+});
+
+/**
+ * samples only the local reflection probes overlapping `px`'s screen tile, falling back to the sky cubemap.
+ *
+ * @param world world-space surface position
+ * @param n world-space unit normal
+ * @param r world-space reflection direction
+ * @param roughness perceptual roughness
+ * @param irradiance surface diffuse irradiance
+ * @param px render pixel coordinates
+ * @returns indirect specular radiance
+ */
+export const sampleReflectionTiled = tgpu.fn(
+	[d.vec3f, d.vec3f, d.vec3f, d.f32, d.vec3f, d.vec2f],
+	d.vec3f,
+)((world, n, r, roughness, irradiance, px) => {
+	'use gpu';
+	const frame = frameLayout.$.frame;
+	const tilesX = d.u32(frame.reflectionProbes.z);
+	const tilesY = d.u32(frame.reflectionProbes.w);
+	let mask = d.u32(0);
+	if (tilesX > d.u32(0) && tilesY > d.u32(0)) {
+		const tx = std.min(d.u32(std.max(px.x, 0) / PROBE_TILE_SIZE), tilesX - d.u32(1));
+		const ty = std.min(d.u32(std.max(px.y, 0) / PROBE_TILE_SIZE), tilesY - d.u32(1));
+		const tile = ty * tilesX + tx;
+		const word = frameLayout.$.reflectionProbes[d.u32(PROBE_BINS_OFFSET) + (tile >>> d.u32(2))];
+		mask = std.bitcast(d.f32, d.u32)(word[tile & d.u32(3)]);
+	}
+	return sampleReflectionMask(world, n, r, roughness, irradiance, mask);
 });
 
 /**

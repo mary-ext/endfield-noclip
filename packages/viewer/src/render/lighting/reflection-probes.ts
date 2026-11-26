@@ -20,6 +20,14 @@ const PROBE_MIPS = 8;
 const PROBE_FORMAT: GPUTextureFormat = 'bc6h-rgb-ufloat';
 /** vec4s per probe in the GPU storage buffer */
 const PROBE_VEC4S = 7;
+/** screen tile edge for reflection probe binning, render px */
+export const PROBE_TILE_SIZE = 64;
+/** tiles across and down supported at most (8192 × 4096) */
+const MAX_PROBE_TILES_X = 128;
+const MAX_PROBE_TILES_Y = 64;
+const MAX_PROBE_TILES = MAX_PROBE_TILES_X * MAX_PROBE_TILES_Y;
+/** vec4 offset where the packed u32 screen-tile probe masks start in `reflectionProbes` */
+export const PROBE_BINS_OFFSET = MAX_REFLECTION_PROBES * PROBE_VEC4S;
 /** streaming priority: right behind sky textures, ahead of scenery */
 const PROBE_PRIORITY = 5e5;
 
@@ -29,6 +37,10 @@ export interface ReflectionProbeFrame {
 	count: number;
 	/** last mip level of the probe cube array (`mipCount − 1`) */
 	maxMip: number;
+	/** screen tiles across for probe binning (0 when binning is unused) */
+	tilesX: number;
+	/** screen tiles down for probe binning */
+	tilesY: number;
 }
 
 interface CacheSlot {
@@ -53,13 +65,18 @@ export class ReflectionProbes {
 	readonly #data = new Float32Array(MAX_REFLECTION_PROBES * PROBE_VEC4S * 4);
 	readonly #uploaded = new Float32Array(MAX_REFLECTION_PROBES * PROBE_VEC4S * 4);
 	#uploadedCount = -1;
+	readonly #bins = new Uint32Array(MAX_PROBE_TILES);
+	readonly #uploadedBins = new Uint32Array(MAX_PROBE_TILES);
+	#uploadedTiles = -1;
+	readonly #wantedTextures = new Set<number>();
+	readonly #activeProbes: ReflectionProbeEntry[] = [];
 	#entries: readonly ReflectionProbeEntry[] = [];
 	#groupsShown: readonly boolean[] = [];
 	#shown: ReflectionProbeEntry[] | null = null;
 	readonly #slotsByTexture = new Map<number, CacheSlot>();
 	readonly #slots: (CacheSlot | null)[] = Array.from({ length: MAX_REFLECTION_PROBES }, () => null);
 	#tick = 0;
-	readonly #frame: ReflectionProbeFrame = { count: 0, maxMip: PROBE_MIPS - 1 };
+	readonly #frame: ReflectionProbeFrame = { count: 0, maxMip: PROBE_MIPS - 1, tilesX: 0, tilesY: 0 };
 
 	/**
 	 * @param device the device
@@ -70,7 +87,7 @@ export class ReflectionProbes {
 		this.#bc = bc;
 		this.buffer = device.createBuffer({
 			label: 'reflection probes',
-			size: this.#data.byteLength,
+			size: this.#data.byteLength + this.#bins.byteLength,
 			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 		});
 		if (bc) {
@@ -119,7 +136,10 @@ export class ReflectionProbes {
 		this.#slotsByTexture.clear();
 		this.#slots.fill(null);
 		this.#uploadedCount = -1;
+		this.#uploadedTiles = -1;
 		this.#frame.count = 0;
+		this.#frame.tilesX = 0;
+		this.#frame.tilesY = 0;
 	}
 
 	/** @param shown per visibility group of the package, whether its content shows */
@@ -130,20 +150,25 @@ export class ReflectionProbes {
 
 	/**
 	 * culls shown probes to the view frustum, requests their cubemaps, copies newly resident cubemaps into the
-	 * cache array, and uploads the active probe records. call once per traversal before rendering.
+	 * cache array, bins active probes into screen tiles, and uploads the active probe records. call once per
+	 * traversal before rendering.
 	 *
-	 * @param input camera, view frustum planes, stream manager, and texture store
-	 * @returns active probe count and mip span
+	 * @param input camera, render dimensions, view frustum planes, stream manager, and texture store
+	 * @returns active probe count, mip span, and tile grid
 	 */
 	prepare(input: {
 		camera: Camera;
+		width: number;
+		height: number;
 		planes: readonly Plane[];
 		stream: TextureStream;
 		textures: TextureStore;
 	}): Readonly<ReflectionProbeFrame> {
-		const { camera, planes, stream, textures } = input;
+		const { camera, width, height, planes, stream, textures } = input;
 		if (!this.#bc || this.#entries.length === 0) {
 			this.#frame.count = 0;
+			this.#frame.tilesX = 0;
+			this.#frame.tilesY = 0;
 			return this.#frame;
 		}
 		if (this.#shown === null) {
@@ -154,13 +179,15 @@ export class ReflectionProbes {
 
 		this.#tick++;
 		const tick = this.#tick;
-		const wantedTextures = new Set<number>();
+		const wantedTextures = this.#wantedTextures;
+		wantedTextures.clear();
 		for (const probe of visible) {
 			wantedTextures.add(probe.texture);
 		}
 
 		let encoder: GPUCommandEncoder | null = null;
-		let count = 0;
+		const activeProbes = this.#activeProbes;
+		activeProbes.length = 0;
 		for (const probe of visible) {
 			const streamed = streamWholeTexture({
 				stream,
@@ -198,13 +225,14 @@ export class ReflectionProbes {
 					);
 				}
 			}
-			packProbe(this.#data, count, probe, slot.index);
-			count++;
+			packProbe(this.#data, activeProbes.length, probe, slot.index);
+			activeProbes.push(probe);
 		}
 		if (encoder !== null) {
 			this.#device.queue.submit([encoder.finish()]);
 		}
 
+		const count = activeProbes.length;
 		const floats = count * PROBE_VEC4S * 4;
 		let dirty = count !== this.#uploadedCount;
 		if (!dirty) {
@@ -222,7 +250,39 @@ export class ReflectionProbes {
 			}
 			this.#uploadedCount = count;
 		}
+
+		const tilesX =
+			count > 0 ? Math.min(Math.max(1, Math.ceil(width / PROBE_TILE_SIZE)), MAX_PROBE_TILES_X) : 0;
+		const tilesY =
+			count > 0 ? Math.min(Math.max(1, Math.ceil(height / PROBE_TILE_SIZE)), MAX_PROBE_TILES_Y) : 0;
+		if (count > 0) {
+			const tileCount = tilesX * tilesY;
+			const bins = this.#bins;
+			bins.fill(0, 0, tileCount);
+			binProbes(bins, activeProbes, camera, width, height, tilesX, tilesY);
+			let binsDirty = tileCount !== this.#uploadedTiles;
+			if (!binsDirty) {
+				const uploadedBins = this.#uploadedBins;
+				for (let t = 0; t < tileCount; t++) {
+					if (bins[t] !== uploadedBins[t]) {
+						binsDirty = true;
+						break;
+					}
+				}
+			}
+			if (binsDirty) {
+				const aligned = (tileCount + 3) & ~3;
+				for (let t = tileCount; t < aligned; t++) {
+					bins[t] = 0;
+				}
+				this.#device.queue.writeBuffer(this.buffer, PROBE_BINS_OFFSET * 16, bins, 0, aligned);
+				this.#uploadedBins.set(bins.subarray(0, tileCount));
+				this.#uploadedTiles = tileCount;
+			}
+		}
 		this.#frame.count = count;
+		this.#frame.tilesX = tilesX;
+		this.#frame.tilesY = tilesY;
 		return this.#frame;
 	}
 
@@ -339,6 +399,92 @@ const aabbInFrustum = (center: Vec3, extents: Vec3, eye: Vec3, planes: readonly 
 		}
 	}
 	return true;
+};
+
+const binProbes = (
+	bins: Uint32Array,
+	probes: readonly ReflectionProbeEntry[],
+	camera: Camera,
+	width: number,
+	height: number,
+	tilesX: number,
+	tilesY: number,
+): void => {
+	const eye = camera.position;
+	const right = camera.right();
+	const up = camera.up();
+	const forward = camera.forward();
+	const f = 1 / Math.tan(camera.fovY / 2);
+	const sx = f / (width / height);
+	const near = camera.near;
+	const rx = right[0];
+	const ry = right[1];
+	const rz = right[2];
+	const ux = up[0];
+	const uy = up[1];
+	const uz = up[2];
+	const fx = forward[0];
+	const fy = forward[1];
+	const fz = forward[2];
+
+	for (let i = 0; i < probes.length; i++) {
+		const probe = probes[i];
+		const cx = probe.center[0] - eye[0];
+		const cy = probe.center[1] - eye[1];
+		const cz = probe.center[2] - eye[2];
+		const ex = probe.boundsExtents[0];
+		const ey = probe.boundsExtents[1];
+		const ez = probe.boundsExtents[2];
+		const bit = (1 << i) >>> 0;
+
+		// view-space z of the nearest corner of the world AABB
+		const vzCenter = cx * fx + cy * fy + cz * fz;
+		const vzExtent = Math.abs(fx) * ex + Math.abs(fy) * ey + Math.abs(fz) * ez;
+		let tx0 = 0;
+		let tx1 = tilesX - 1;
+		let ty0 = 0;
+		let ty1 = tilesY - 1;
+		if (vzCenter - vzExtent > near) {
+			let minX = Infinity;
+			let maxX = -Infinity;
+			let minY = Infinity;
+			let maxY = -Infinity;
+			for (let c = 0; c < 8; c++) {
+				const px = cx + ((c & 1) === 0 ? -ex : ex);
+				const py = cy + ((c & 2) === 0 ? -ey : ey);
+				const pz = cz + ((c & 4) === 0 ? -ez : ez);
+				const invZ = 1 / (px * fx + py * fy + pz * fz);
+				const ndcX = (px * rx + py * ry + pz * rz) * sx * invZ;
+				const ndcY = (px * ux + py * uy + pz * uz) * f * invZ;
+				if (ndcX < minX) {
+					minX = ndcX;
+				}
+				if (ndcX > maxX) {
+					maxX = ndcX;
+				}
+				if (ndcY < minY) {
+					minY = ndcY;
+				}
+				if (ndcY > maxY) {
+					maxY = ndcY;
+				}
+			}
+			const pxMin = (minX * 0.5 + 0.5) * width - 1;
+			const pxMax = (maxX * 0.5 + 0.5) * width + 1;
+			const pyMin = (0.5 - maxY * 0.5) * height - 1;
+			const pyMax = (0.5 - minY * 0.5) * height + 1;
+			tx0 = Math.max(0, Math.floor(pxMin / PROBE_TILE_SIZE));
+			tx1 = Math.min(tilesX - 1, Math.floor(pxMax / PROBE_TILE_SIZE));
+			ty0 = Math.max(0, Math.floor(pyMin / PROBE_TILE_SIZE));
+			ty1 = Math.min(tilesY - 1, Math.floor(pyMax / PROBE_TILE_SIZE));
+		}
+		for (let ty = ty0; ty <= ty1; ty++) {
+			const row = ty * tilesX;
+			for (let tx = tx0; tx <= tx1; tx++) {
+				bins[row + tx] |= bit;
+			}
+		}
+	}
 };
 
 const aabbDistance2 = (center: Vec3, extents: Vec3, eye: Vec3): number => {

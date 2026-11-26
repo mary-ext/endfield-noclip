@@ -16,7 +16,7 @@ import { fresnelSchlick, ggxDistribution, LUMINANCE_ROUNDED } from '../core/shad
 import {
 	ambientIrradiance,
 	environmentBrdf,
-	sampleReflection,
+	sampleReflectionTiled,
 	smithVisibility,
 } from './shaders/ambient-probes.ts';
 import { foliageSun, subsurfaceSun } from './shaders/forward-shading.ts';
@@ -373,7 +373,10 @@ export const fsDeferredLighting = tgpu.fragmentFn({
 	const ray = viewRay(input.uv);
 	const rel = std.mul(ray, viewDepth(std.max(depth, 1e-6)));
 	// derivatives must be evaluated in uniform control flow, before the sky discard / unlit early return
-	const geoN = std.cross(std.dpdxFine(rel), std.dpdyFine(rel));
+	let geoN = d.vec3f(0, 1, 0);
+	if (frame.wetness[0].x > 0) {
+		geoN = std.cross(std.dpdxFine(rel), std.dpdyFine(rel));
+	}
 	if (depth <= 0) {
 		std.discard();
 	}
@@ -434,7 +437,7 @@ export const fsDeferredLighting = tgpu.fragmentFn({
 	const ssrWeight = std.mul(environmentBrdf(f0, roughness, nDotV), specularOcclusion);
 	const r = std.normalize(std.mix(std.reflect(std.neg(v), n), n, roughness * roughness));
 	const skySpec = std.mul(
-		sampleReflection(worldPos, n, r, roughness, irradiance),
+		sampleReflectionTiled(worldPos, n, r, roughness, irradiance, input.position.xy),
 		std.mul(ssrWeight, frame.ambient.x),
 	);
 	let specularAmbient = d.vec3f(skySpec);
@@ -453,31 +456,33 @@ export const fsDeferredLighting = tgpu.fragmentFn({
 	}
 
 	let direct = d.vec3f(0);
-	if (s.foliage) {
-		direct = std.mul(
-			std.mul(foliageSun(s, n, v, l, a2, f0, diffuseColor), frame.sunColor.xyz),
-			std.mul(sunVisibility(rel, n, input.position.xy), frame.sun.w),
-		);
-	} else {
-		const h = std.normalize(std.add(l, v));
-		const nDotH = std.clamp(std.dot(n, h), 0, 1);
-		const vDotH = std.clamp(std.dot(v, h), 0, 1);
-		const f = fresnelSchlick(f0, vDotH);
-		const specular = std.mul(
-			f,
-			ggxDistribution(nDotH, a2) * smithVisibility(nDotV, nDotL, a2) * frame.sunColor.w,
-		);
-		const diffuse = std.mul(std.div(diffuseColor, Math.PI), std.sub(d.vec3f(1), f));
-		direct = std.mul(std.add(diffuse, specular), nDotL);
-		const scatters = s.scatter.w > 0;
-		if (scatters) {
-			direct = std.add(direct, std.div(subsurfaceSun(s.scatter, n, v, l), Math.PI));
+	if (frame.sun.w > 0) {
+		if (s.foliage) {
+			direct = std.mul(
+				std.mul(foliageSun(s, n, v, l, a2, f0, diffuseColor), frame.sunColor.xyz),
+				std.mul(sunVisibility(rel, n, input.position.xy), frame.sun.w),
+			);
+		} else {
+			const h = std.normalize(std.add(l, v));
+			const nDotH = std.clamp(std.dot(n, h), 0, 1);
+			const vDotH = std.clamp(std.dot(v, h), 0, 1);
+			const f = fresnelSchlick(f0, vDotH);
+			const specular = std.mul(
+				f,
+				ggxDistribution(nDotH, a2) * smithVisibility(nDotV, nDotL, a2) * frame.sunColor.w,
+			);
+			const diffuse = std.mul(std.div(diffuseColor, Math.PI), std.sub(d.vec3f(1), f));
+			direct = std.mul(std.add(diffuse, specular), nDotL);
+			const scatters = s.scatter.w > 0;
+			if (scatters) {
+				direct = std.add(direct, std.div(subsurfaceSun(s.scatter, n, v, l), Math.PI));
+			}
+			let visibility = d.vec3f(0);
+			if (nDotL > 0 || scatters) {
+				visibility = sunVisibility(rel, n, input.position.xy);
+			}
+			direct = std.mul(direct, std.mul(std.mul(frame.sunColor.xyz, visibility), frame.sun.w));
 		}
-		let visibility = d.vec3f(0);
-		if (nDotL > 0 || scatters) {
-			visibility = sunVisibility(rel, n, input.position.xy);
-		}
-		direct = std.mul(direct, std.mul(std.mul(frame.sunColor.xyz, visibility), frame.sun.w));
 	}
 	direct = std.add(direct, localLighting(s, v, rel, input.position.xy, diffuseColor, f0, roughness));
 	return d.vec4f(std.max(std.add(std.add(direct, ambient), s.emission), d.vec3f(0)), 1);

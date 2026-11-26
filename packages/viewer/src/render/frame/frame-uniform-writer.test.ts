@@ -36,7 +36,7 @@ const inputs = (patch: Partial<FrameUniformInputs> = {}): FrameUniformInputs => 
 		shadows: false,
 		irradiance: [[1, 2, 3], null, null],
 		lights: { count: 5, tilesX: 6, tilesY: 7 },
-		reflectionProbes: { count: 2, maxMip: 7 },
+		reflectionProbes: { count: 2, maxMip: 7, tilesX: 40, tilesY: 25 },
 		revealRadii: [9999, 50000],
 		options: {
 			minBoxPixels: 1.5,

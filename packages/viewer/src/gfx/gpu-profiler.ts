@@ -30,6 +30,7 @@ export class GpuProfiler {
 	#resolve: GPUBuffer | null;
 	#idle: GPUBuffer[] = [];
 	#labels: string[] = [];
+	#frameMap = new Map<string, number>();
 	#pending: Readback | null = null;
 	#destroyed = false;
 
@@ -81,36 +82,19 @@ export class GpuProfiler {
 			labels.push(label ?? 'unlabelled');
 			return { querySet, beginningOfPassWriteIndex: index, endOfPassWriteIndex: index + 1 };
 		};
-		const beginRenderPass = (descriptor: GPURenderPassDescriptor): GPURenderPassEncoder => {
+		const rawRender = encoder.beginRenderPass.bind(encoder);
+		const rawCompute = encoder.beginComputePass.bind(encoder);
+		encoder.beginRenderPass = (descriptor: GPURenderPassDescriptor): GPURenderPassEncoder => {
 			const timestampWrites = nextWrites(descriptor.label);
-			return timestampWrites === null
-				? encoder.beginRenderPass(descriptor)
-				: encoder.beginRenderPass({ ...descriptor, timestampWrites });
+			return timestampWrites === null ? rawRender(descriptor) : rawRender({ ...descriptor, timestampWrites });
 		};
-		const beginComputePass = (descriptor?: GPUComputePassDescriptor): GPUComputePassEncoder => {
+		encoder.beginComputePass = (descriptor?: GPUComputePassDescriptor): GPUComputePassEncoder => {
 			const timestampWrites = nextWrites(descriptor?.label);
 			return timestampWrites === null
-				? encoder.beginComputePass(descriptor)
-				: encoder.beginComputePass({ ...descriptor, timestampWrites });
+				? rawCompute(descriptor)
+				: rawCompute({ ...descriptor, timestampWrites });
 		};
-		// encoder methods must be called on the encoder itself; a frame looks them up dozens of times, so each
-		// is bound once
-		const bound = new Map<PropertyKey, unknown>();
-		return new Proxy(encoder, {
-			get(target, property) {
-				if (property === 'beginRenderPass') {
-					return beginRenderPass;
-				}
-				if (property === 'beginComputePass') {
-					return beginComputePass;
-				}
-				const value: unknown = Reflect.get(target, property);
-				if (typeof value !== 'function') {
-					return value;
-				}
-				return bound.getOrInsertComputed(property, () => value.bind(target));
-			},
-		});
+		return encoder;
 	}
 
 	/**
@@ -149,7 +133,8 @@ export class GpuProfiler {
 					return;
 				}
 				const times = new BigUint64Array(buffer.getMappedRange(), 0, labels.length * 2);
-				const frame = new Map<string, number>();
+				const frame = this.#frameMap;
+				frame.clear();
 				let first = times[0];
 				let last = times[1];
 				for (let i = 0; i < labels.length; i++) {
@@ -185,8 +170,13 @@ export class GpuProfiler {
 			.catch(() => {
 				if (this.#destroyed) {
 					buffer.destroy();
-				} else if (buffer.mapState === 'unmapped') {
-					this.#idle.push(buffer);
+				} else {
+					if (buffer.mapState === 'mapped') {
+						buffer.unmap();
+					}
+					if (buffer.mapState === 'unmapped') {
+						this.#idle.push(buffer);
+					}
 				}
 			});
 	}

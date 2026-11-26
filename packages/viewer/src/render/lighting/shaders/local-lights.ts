@@ -176,6 +176,64 @@ const localLightShadow = tgpu.fn(
 	return std.mix(1, sum / 9, strength);
 });
 
+/** 1-tap local-light shadow lookup for volumetric fog froxels (temporally filtered, so 3×3 PCF is redundant) */
+const localLightShadowSingle = tgpu.fn(
+	[d.u32, d.vec3f, d.vec3f],
+	d.f32,
+)((i, rel, toLight) => {
+	'use gpu';
+	const s = frameLayout.$.lights[i * d.u32(LIGHT_VEC4S) + d.u32(8)];
+	if (s.x < 0 || s.y <= 0) {
+		return 1;
+	}
+	const spot = frameLayout.$.lights[i * d.u32(LIGHT_VEC4S) + d.u32(1)].w < 0.5;
+	let record = d.u32(s.x);
+	if (!spot) {
+		const dir = std.neg(toLight);
+		const a = std.abs(dir);
+		if (a.x >= a.y && a.x >= a.z) {
+			record += std.select(d.u32(1), d.u32(0), dir.x > 0);
+		} else if (a.y >= a.z) {
+			record += std.select(d.u32(3), d.u32(2), dir.y > 0);
+		} else {
+			record += std.select(d.u32(5), d.u32(4), dir.z > 0);
+		}
+	}
+	const base = d.u32(LIGHT_SHADOW_RECORDS) + record * d.u32(LIGHT_SHADOW_VEC4S);
+	const params = frameLayout.$.lights[base + d.u32(5)];
+	if (params.w < 0.5) {
+		return 1;
+	}
+	const m = d.mat4x4f(
+		frameLayout.$.lights[base],
+		frameLayout.$.lights[base + d.u32(1)],
+		frameLayout.$.lights[base + d.u32(2)],
+		frameLayout.$.lights[base + d.u32(3)],
+	);
+	const clip = std.mul(m, d.vec4f(rel, 1));
+	if (clip.w <= 0) {
+		return 1;
+	}
+	const p = std.div(clip.xyz, clip.w);
+	if (std.any(std.le(p, d.vec3f(0))) || std.any(std.ge(p, d.vec3f(1)))) {
+		return 1;
+	}
+	const rect = frameLayout.$.lights[base + d.u32(4)];
+	const uv = std.add(rect.xy, std.mul(p.xy, rect.zw));
+	const vis = std.textureSampleCompareLevel(
+		frameLayout.$.lightShadowMap,
+		frameLayout.$.shadowSampler,
+		uv,
+		p.z,
+	);
+	let strength = s.y;
+	if (spot) {
+		const edge = std.min(std.min(p.x, p.y), std.min(1 - p.x, 1 - p.y));
+		strength = std.min(strength, std.smoothstep(0, 0.05, std.min((params.z - clip.w) * 0.25, edge)));
+	}
+	return std.mix(1, vis, strength);
+});
+
 /**
  * evaluates direct local lights (point, spot, tube, shadowed) on a surface.
  *
@@ -342,7 +400,7 @@ export const localFogLighting = tgpu.fn(
 				continue;
 			}
 			const phase = henyeyGreenstein(g, std.dot(ray, std.normalize(light.toLight)));
-			const shadow = localLightShadow(i, rel, d.vec3f(0), light.toLight);
+			const shadow = localLightShadowSingle(i, rel, light.toLight);
 			sum = std.add(
 				sum,
 				std.mul(

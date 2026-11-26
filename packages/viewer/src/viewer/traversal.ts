@@ -209,6 +209,8 @@ export class Traversal {
 		renderer.cloth.setWindNoise(windNoise?.binding?.view ?? null);
 		renderer.reflectionProbes.prepare({
 			camera,
+			width: targets.width,
+			height: targets.height,
 			planes: view.planes,
 			stream,
 			textures: scene.textures,

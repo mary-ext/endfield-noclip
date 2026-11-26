@@ -38,8 +38,8 @@ const GRID = QUADS / 2 + 1;
 /** u32 words per page slot (two samples per word) */
 const PAGE_WORDS = Math.ceil((PAGE_SIDE * PAGE_SIDE) / 2);
 const PAGE_BYTES = PAGE_WORDS * 4;
-/** height page slots the pool starts with (8 MiB); a level's view holds a few hundred pages */
-const INITIAL_HEIGHT_SLOTS = 1024;
+/** height page slots the pool starts with (0.5 MiB); grows automatically as terrain streams in */
+const INITIAL_HEIGHT_SLOTS = 64;
 const PATCH_FLOATS = 20;
 const FILL_KEY = 'terrain/fill';
 const WIRE_KEY = 'terrain/wire';
@@ -115,14 +115,18 @@ export class TerrainRenderer {
 	#heightsVersion = -1;
 	#albedo: GPUTexture;
 	#normal: GPUTexture;
+	#surfaceAllocated = false;
+	#surfaceCapacity: number;
 	#freeSurfaceSlots: number[];
-	#surfaceBytes: number;
+	#surfaceBytes = 0;
 	#surfaceSampler: GPUSampler;
 	#detailControl: GPUTexture;
 	#detailTint: GPUTexture;
 	#detailIndex: GPUBuffer;
+	#detailAllocated = false;
+	#detailCapacity: number;
 	#freeDetailSlots: number[];
-	#detailBytes: number;
+	#detailBytes = 0;
 	/** the package's layer textures, params and how many of the textures have arrived */
 	#layers: {
 		info: TerrainSplatInfo;
@@ -178,44 +182,20 @@ export class TerrainRenderer {
 			maxUnits: options.capacity,
 			usage: GPUBufferUsage.STORAGE,
 		});
-		// without BC the arrays are 1-layer placeholders, so the bind group stays valid
-		const surfaceSlots = this.surfaces ? Math.min(SURFACE_SLOTS, device.limits.maxTextureArrayLayers) : 0;
-		this.#freeSurfaceSlots = freeSlots(surfaceSlots);
-		const surfaceTexture = (label: string): GPUTexture =>
-			device.createTexture({
-				label,
-				size: this.surfaces ? [SURFACE_SIDE, SURFACE_SIDE, surfaceSlots] : [4, 4, 1],
-				format: this.surfaces ? SURFACE_FORMAT : 'rgba8unorm',
-				dimension: '2d',
-				usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-			});
-		this.#albedo = surfaceTexture('terrain albedo pages');
-		this.#normal = surfaceTexture('terrain normal pages');
-		this.#surfaceBytes = this.surfaces ? surfaceSlots * SURFACE_IMAGE_BYTES * 2 : 0;
+		// surface and splat arrays stay 1-layer placeholders until the first page uploads, avoiding ~79 MiB on
+		// non-terrain scenes (interiors, dungeons)
+		this.#surfaceCapacity = this.surfaces ? Math.min(SURFACE_SLOTS, device.limits.maxTextureArrayLayers) : 0;
+		this.#freeSurfaceSlots = freeSlots(this.#surfaceCapacity);
+		this.#albedo = this.#placeholderTexture('terrain albedo placeholder');
+		this.#normal = this.#placeholderTexture('terrain normal placeholder');
 		this.#surfaceSampler = sampler(device, LINEAR_CLAMP);
 		this.#layerSampler = sampler(device, { ...LINEAR_REPEAT_MIPMAPPED, maxAnisotropy: 8 });
 
-		// splat pages need BC for the tint and the layer textures; without it the pool stays empty
-		const detailSlots = this.surfaces ? Math.min(DETAIL_SLOTS, device.limits.maxTextureArrayLayers) : 0;
-		this.#freeDetailSlots = freeSlots(detailSlots);
-		this.#detailControl = device.createTexture({
-			label: 'terrain splat control',
-			size: this.surfaces ? [SURFACE_SIDE, SURFACE_SIDE, detailSlots] : [4, 4, 1],
-			format: 'rgba8unorm',
-			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-		});
-		this.#detailTint = device.createTexture({
-			label: 'terrain splat tint',
-			size: this.surfaces ? [SURFACE_SIDE, SURFACE_SIDE, detailSlots] : [4, 4, 1],
-			format: this.surfaces ? 'bc3-rgba-unorm-srgb' : 'rgba8unorm',
-			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-		});
-		this.#detailIndex = device.createBuffer({
-			label: 'terrain splat index',
-			size: Math.max(1, detailSlots) * DETAIL_CELLS * DETAIL_CELLS * 4,
-			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-		});
-		this.#detailBytes = detailSlots * (SURFACE_SIDE * SURFACE_SIDE * 4 + SURFACE_IMAGE_BYTES);
+		this.#detailCapacity = this.surfaces ? Math.min(DETAIL_SLOTS, device.limits.maxTextureArrayLayers) : 0;
+		this.#freeDetailSlots = freeSlots(this.#detailCapacity);
+		this.#detailControl = this.#placeholderTexture('terrain splat control placeholder');
+		this.#detailTint = this.#placeholderTexture('terrain splat tint placeholder');
+		this.#detailIndex = this.#placeholderDetailIndex();
 		this.#patchCapacity = 8192;
 		this.#patchData = new Float32Array(this.#patchCapacity * PATCH_FLOATS);
 		this.#patchWords = new Uint32Array(this.#patchData.buffer);
@@ -313,6 +293,97 @@ export class TerrainRenderer {
 		return this.#placeholders;
 	}
 
+	#placeholderTexture(label: string): GPUTexture {
+		return this.#device.createTexture({
+			label,
+			size: [4, 4, 1],
+			format: 'rgba8unorm',
+			dimension: '2d',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		});
+	}
+
+	#placeholderDetailIndex(): GPUBuffer {
+		return this.#device.createBuffer({
+			label: 'terrain splat index placeholder',
+			size: DETAIL_CELLS * DETAIL_CELLS * 4,
+			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+		});
+	}
+
+	#ensureSurfacePools(): void {
+		if (this.#surfaceAllocated || !this.surfaces || this.#surfaceCapacity === 0) {
+			return;
+		}
+		this.#albedo.destroy();
+		this.#normal.destroy();
+		const slots = this.#surfaceCapacity;
+		const make = (label: string): GPUTexture =>
+			this.#device.createTexture({
+				label,
+				size: [SURFACE_SIDE, SURFACE_SIDE, slots],
+				format: SURFACE_FORMAT,
+				dimension: '2d',
+				usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+			});
+		this.#albedo = make('terrain albedo pages');
+		this.#normal = make('terrain normal pages');
+		this.#surfaceBytes = slots * SURFACE_IMAGE_BYTES * 2;
+		this.#surfaceAllocated = true;
+		this.#bindGroup = this.#createBindGroup();
+	}
+
+	#ensureDetailPools(): void {
+		if (this.#detailAllocated || !this.surfaces || this.#detailCapacity === 0) {
+			return;
+		}
+		this.#detailControl.destroy();
+		this.#detailTint.destroy();
+		this.#detailIndex.destroy();
+		const slots = this.#detailCapacity;
+		this.#detailControl = this.#device.createTexture({
+			label: 'terrain splat control',
+			size: [SURFACE_SIDE, SURFACE_SIDE, slots],
+			format: 'rgba8unorm',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		});
+		this.#detailTint = this.#device.createTexture({
+			label: 'terrain splat tint',
+			size: [SURFACE_SIDE, SURFACE_SIDE, slots],
+			format: 'bc3-rgba-unorm-srgb',
+			usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		});
+		this.#detailIndex = this.#device.createBuffer({
+			label: 'terrain splat index',
+			size: slots * DETAIL_CELLS * DETAIL_CELLS * 4,
+			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+		});
+		this.#detailBytes = slots * (SURFACE_SIDE * SURFACE_SIDE * 4 + SURFACE_IMAGE_BYTES);
+		this.#detailAllocated = true;
+		this.#bindGroup = this.#createBindGroup();
+	}
+
+	#releaseUnusedPools(): void {
+		if (this.#surfaceAllocated && this.#freeSurfaceSlots.length === this.#surfaceCapacity) {
+			this.#albedo.destroy();
+			this.#normal.destroy();
+			this.#albedo = this.#placeholderTexture('terrain albedo placeholder');
+			this.#normal = this.#placeholderTexture('terrain normal placeholder');
+			this.#surfaceBytes = 0;
+			this.#surfaceAllocated = false;
+		}
+		if (this.#detailAllocated && this.#freeDetailSlots.length === this.#detailCapacity) {
+			this.#detailControl.destroy();
+			this.#detailTint.destroy();
+			this.#detailIndex.destroy();
+			this.#detailControl = this.#placeholderTexture('terrain splat control placeholder');
+			this.#detailTint = this.#placeholderTexture('terrain splat tint placeholder');
+			this.#detailIndex = this.#placeholderDetailIndex();
+			this.#detailBytes = 0;
+			this.#detailAllocated = false;
+		}
+	}
+
 	/**
 	 * sets the package's terrain layers: allocates their texture arrays and uploads their parameters. the
 	 * textures arrive through {@link uploadLayer}; detail draws once all have.
@@ -325,6 +396,9 @@ export class TerrainRenderer {
 			this.#layers.normal.destroy();
 			this.#layers.params.destroy();
 			this.#layers = null;
+		}
+		if (info === null) {
+			this.#releaseUnusedPools();
 		}
 		if (info !== null && this.surfaces && info.diffuse.length > 0) {
 			const count = info.diffuse.length;
@@ -443,6 +517,7 @@ export class TerrainRenderer {
 		if (slot === undefined) {
 			return null;
 		}
+		this.#ensureDetailPools();
 		const queue = this.#device.queue;
 		const size = [SURFACE_SIDE, SURFACE_SIDE, 1];
 		queue.writeTexture(
@@ -538,6 +613,7 @@ export class TerrainRenderer {
 		if (slot === undefined) {
 			return null;
 		}
+		this.#ensureSurfacePools();
 		const layout = { bytesPerRow: (SURFACE_SIDE / 4) * 16, rowsPerImage: SURFACE_SIDE / 4 };
 		const size = [SURFACE_SIDE, SURFACE_SIDE, 1];
 		this.#device.queue.writeTexture(
