@@ -202,6 +202,15 @@ export const fsSsrMarch = tgpu.fragmentFn({
 	}
 	const uv = std.mul(std.add(d.vec2f(full), d.vec2f(0.5)), post.viewport.zw);
 	const eye = viewDepth(depth);
+	// rough surfaces past 100 m always fade to 0 (`far = clamp((100 - eye) * 0.1, 0, 1)`), so skip marching
+	if (s.roughness >= 0.1 && eye >= 100) {
+		return {
+			color: d.vec4f(0),
+			weight: d.vec4f(0),
+			fade: d.vec4f(0),
+			depth: outDepth,
+		};
+	}
 	const p = unproject(uv, depth);
 	const v = std.normalize(p);
 	const r = std.reflect(v, s.normal);
@@ -254,7 +263,7 @@ export const fsSsrMarch = tgpu.fragmentFn({
 	);
 	const weightX = std.exp(-moved * std.clamp(std.log(0.02 * eye) + 0.01, 0, 1));
 	let weightY = d.f32(0);
-	if (alpha2 > 1e-4) {
+	if (march.hit && alpha2 > 1e-4) {
 		const theta = std.acos(std.pow(0.244, 1 / (2 / alpha2 - 1)));
 		const reach = std.distance(unproject(pos.xy, pos.z), p);
 		const towardsCamera = std.neg(v);
@@ -424,19 +433,24 @@ const pyramidColor = tgpu.fn(
 	'use gpu';
 	const ssr = ssrSharedLayout.$.ssr;
 	const texel = std.mul(ssr.size.zw, std.exp2(mipLevel));
-	const corner = std.sub(std.mul(px, ssr.size.zw), std.mul(1.5, texel));
+	const base = std.mul(px, ssr.size.zw);
+	// 4 bilinear taps at (±0.75, ±0.75) texels reproduce the 4×4 binomial kernel [0.125, 0.375, 0.375, 0.125]
+	// with 4× fewer texture fetches
+	const off = std.mul(texel, 0.75);
 	let color = d.vec3f(0);
 	let weight = d.f32(0);
-	for (let y = 0; y < 4; y++) {
-		for (let x = 0; x < 4; x++) {
-			const at = std.add(corner, std.mul(d.vec2f(d.f32(x), d.f32(y)), texel));
+	for (let y = 0; y < 2; y++) {
+		const oy = std.select(-off.y, off.y, y === 1);
+		for (let x = 0; x < 2; x++) {
+			const ox = std.select(-off.x, off.x, x === 1);
+			const at = std.add(base, d.vec2f(ox, oy));
 			const depth = std.textureSampleLevel(
 				ssrResolveLayout.$.depthPyramid,
 				ssrSharedLayout.$.linearSampler,
 				at,
 				mipLevel,
 			).r;
-			const w = BINOMIAL.$[x] * BINOMIAL.$[y] * std.exp(-0.01 * std.abs(depth - eye));
+			const w = 0.25 * std.exp(-0.01 * std.abs(depth - eye));
 			const sample = std.textureSampleLevel(
 				ssrResolveLayout.$.pyramid,
 				ssrSharedLayout.$.linearSampler,
@@ -465,25 +479,30 @@ export const fsSsrResolve = tgpu.fragmentFn({
 	}
 	const uv = std.mul(std.add(d.vec2f(px), d.vec2f(0.5)), ssr.size.zw);
 	const mipLevel = std.textureLoad(ssrResolveLayout.$.marchWeight, px, 0).y * ssr.march.y;
+	const lower = std.floor(mipLevel);
+	const fade = std.textureSampleLevel(
+		ssrResolveLayout.$.pyramid,
+		ssrSharedLayout.$.linearSampler,
+		uv,
+		lower,
+	).a;
+	if (fade <= 0.001) {
+		return d.vec4f(0);
+	}
 	let color = d.vec3f(0);
 	if (mipLevel < 0.25) {
 		color = std.textureLoad(ssrResolveLayout.$.pyramid, px, 0).rgb;
 	} else {
 		const eye = viewDepth(depth);
-		const lower = std.floor(mipLevel);
+		const frac = mipLevel - lower;
 		const upper = std.clamp(lower + 1, 0, ssr.march.y);
-		color = std.mix(
-			pyramidColor(d.vec2f(px), lower, eye),
-			pyramidColor(d.vec2f(px), upper, eye),
-			mipLevel - lower,
-		);
+		const lowColor = pyramidColor(d.vec2f(px), lower, eye);
+		if (frac < 0.01 || upper === lower) {
+			color = lowColor;
+		} else {
+			color = std.mix(lowColor, pyramidColor(d.vec2f(px), upper, eye), frac);
+		}
 	}
-	const fade = std.textureSampleLevel(
-		ssrResolveLayout.$.pyramid,
-		ssrSharedLayout.$.linearSampler,
-		uv,
-		std.floor(mipLevel),
-	).a;
 	return d.vec4f(expand(color), fade);
 });
 
