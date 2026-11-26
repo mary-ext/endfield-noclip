@@ -187,6 +187,7 @@ const lookMotion = (entry: ReadyMaterial, motion: MaterialMotion, params: Float3
 			bound.push(track);
 		}
 	}
+	const cache: (Float32Array | undefined)[] = Array.from({ length: steps });
 	let shown = -1;
 	return {
 		advance(time) {
@@ -199,11 +200,16 @@ const lookMotion = (entry: ReadyMaterial, motion: MaterialMotion, params: Float3
 				return false;
 			}
 			shown = step;
-			for (let i = 0; i < bound.length; i++) {
-				const track = bound[i];
-				Reflect.set(track.target, track.key, track.values[step]);
+			let cached = cache[step];
+			if (cached === undefined) {
+				for (let i = 0; i < bound.length; i++) {
+					const track = bound[i];
+					Reflect.set(track.target, track.key, track.values[step]);
+				}
+				cached = stillLook(scratchEntry).params;
+				cache[step] = cached;
 			}
-			params.set(stillLook(scratchEntry).params);
+			params.set(cached);
 			return true;
 		},
 	};
