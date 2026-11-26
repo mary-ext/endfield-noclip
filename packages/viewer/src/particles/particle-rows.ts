@@ -7,7 +7,13 @@ import type { ParticleWorkerMessage, ParticleWorkerResponse } from './particle-p
 import { hash2, hashText } from './random.ts';
 import type { ParticleView } from './row-geometry.ts';
 import { type EmitterState, ParticleRowWriter, TRAIL_SEGMENTS } from './row-writer.ts';
-import { MAX_PARTICLES, ParticleSimulation } from './simulation.ts';
+import {
+	MAX_PARTICLES,
+	ParticleSimulation,
+	particleLiveBound,
+	particleLoops,
+	particleSettleTime,
+} from './simulation.ts';
 
 const NO_ROWS: readonly number[] = [];
 
@@ -188,7 +194,6 @@ export class ParticleField {
 		// one emitter per row and system: a renderer's meshes are separate rows
 		const key = row * this.#systems.length + system;
 		let emitter = emitters.get(key);
-		let created = false;
 		if (emitter === undefined) {
 			const info = this.#systems[system];
 			if (info === undefined) {
@@ -201,11 +206,13 @@ export class ParticleField {
 				hash2(this.#salts[system], hashText(`${f32[at + 3]},${f32[at + 7]},${f32[at + 11]}`)),
 				0,
 			);
-			const simulation = new ParticleSimulation(info, seed);
+			const hasWorker = this.#worker !== null;
+			const simulation = hasWorker ? null : new ParticleSimulation(info, seed);
+			const liveBound = simulation !== null ? simulation.liveBound : particleLiveBound(info);
 			// a trail is a row per segment
 			const perParticle = info.trail === null ? 1 : TRAIL_SEGMENTS;
 			const rows = this.#store.allocateRows(
-				Math.max(Math.min(simulation.liveBound * perParticle, MAX_PARTICLES), perParticle),
+				Math.max(Math.min(liveBound * perParticle, MAX_PARTICLES), perParticle),
 			);
 			if (rows === null) {
 				return NO_ROWS;
@@ -213,12 +220,11 @@ export class ParticleField {
 			// a moving emitter's system plays from where its clip starts, the viewer's clock's 0, as in the game, where
 			// both start as the prefab loads. a sub-emitter loops whenever its driving parent loops
 			const moving = info.emitterMotion !== null;
-			const loops = simulation.loops;
+			const loops = simulation !== null ? simulation.loops : particleLoops(info);
 			let offset = 0;
 			if (loops) {
-				offset = moving
-					? Math.ceil(simulation.settleTime / info.duration) * info.duration
-					: simulation.settleTime;
+				const settleTime = simulation !== null ? simulation.settleTime : particleSettleTime(info, seed);
+				offset = moving ? Math.ceil(settleTime / info.duration) * info.duration : settleTime;
 			}
 			const id = this.#nextEmitterId++;
 			const start = moving && loops ? 0 : view.time;
@@ -235,7 +241,6 @@ export class ParticleField {
 			};
 			emitters.set(key, emitter);
 			this.#emitterById.set(id, emitter);
-			created = true;
 			if (this.#worker !== null) {
 				if (this.#sentSystems[system] === 0) {
 					this.#sentSystems[system] = 1;
@@ -262,7 +267,7 @@ export class ParticleField {
 		}
 		if (emitter.frame !== frame) {
 			emitter.frame = frame;
-			if (created || this.#worker === null) {
+			if (this.#worker === null) {
 				this.#writeSync(block, row, emitter, view);
 			}
 			emitter.listedCount = emitter.live.length;

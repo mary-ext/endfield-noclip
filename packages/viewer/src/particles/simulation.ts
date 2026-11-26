@@ -274,6 +274,74 @@ const copy = (out: Vec3, v: Readonly<Vec3>): void => {
 // #endregion
 
 /**
+ * whether a system loops on its own or is driven by a looping parent sub-emitter
+ *
+ * @param info the system
+ * @returns whether it loops
+ */
+export const particleLoops = (info: ParticleSystemInfo): boolean =>
+	info.subEmitter !== null && info.subEmitter !== undefined
+		? particleLoops(info.subEmitter.parent)
+		: info.looping;
+
+/**
+ * upper bound on simultaneously live particles for a system
+ *
+ * @param info the system
+ * @returns the most particles alive at once
+ */
+export const particleLiveBound = (info: ParticleSystemInfo): number => {
+	const { maxParticles, ringBuffer, emissionBound } = info;
+	if (info.subEmitter !== null && info.subEmitter !== undefined) {
+		return Math.min(maxParticles, MAX_PARTICLES);
+	}
+	if (ringBuffer === null) {
+		return Math.min(maxParticles, emissionBound);
+	}
+	return ringBuffer.loop ? maxParticles + emissionBound : maxParticles;
+};
+
+/**
+ * seconds a looping system needs to look as if it had always played, without building a full simulation
+ *
+ * @param info the system
+ * @param seed the emitter's random seed
+ * @returns settle time, s
+ */
+export const particleSettleTime = (info: ParticleSystemInfo, seed: number): number => {
+	const subEmitter = info.subEmitter ?? null;
+	const startDelay = Math.max(evaluateMinMax(info.startDelay, 0, random(seed, 0, Channel.StartDelay)), 0);
+	let longest = Math.max(upperBound(info.startLifetime), 0);
+	if (subEmitter !== null && (subEmitter.properties & ParticleSubEmitterProperty.Lifetime) !== 0) {
+		const parentSpeed = Math.max(subEmitter.parent.simulationSpeed, 1e-6);
+		const parentLongest = Math.max(upperBound(subEmitter.parent.startLifetime), 0);
+		longest = Math.max(longest, (parentLongest * info.simulationSpeed) / parentSpeed);
+	}
+	let lookback = longest;
+	if (info.ringBuffer !== null) {
+		const stream = emissionStream(info.rate, info.duration);
+		const burstsPerLoop = info.bursts.reduce(
+			(sum, burst) => sum + Math.max(upperBound(burst.count), 0) * burst.cycles * burst.probability,
+			0,
+		);
+		const perSecond = (stream?.mean ?? 0) + burstsPerLoop / info.duration;
+		const kept = Math.min(info.maxParticles, MAX_PARTICLES) + 1;
+		if (!info.looping) {
+			lookback = Infinity;
+		} else if (perSecond > 0) {
+			const playOut = info.ringBuffer.loop ? longest : 0;
+			lookback = Math.max(longest, kept / perSecond + info.duration + playOut);
+		}
+	}
+	if (subEmitter !== null) {
+		const speedRatio =
+			Math.max(info.simulationSpeed, 1e-6) / Math.max(subEmitter.parent.simulationSpeed, 1e-6);
+		return particleSettleTime(subEmitter.parent, hash2(seed, 0x517c_c1b7)) * speedRatio + lookback;
+	}
+	return startDelay + lookback + info.duration;
+};
+
+/**
  * a system's particles over time, for one emitter
  *
  * @see ParticleField for the emitter's frame
